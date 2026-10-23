@@ -6,7 +6,8 @@
  * resolved from the app's own dependencies, with the `composer` section of
  * the app's `prisma.config.ts`: the one in the current directory, or the file
  * `--config` names. It does not look in parent directories. The entry is the
- * section's `entry`, or the file `--entry` names, resolved against the current directory.
+ * section's `entry`, relative to the config file, or `--entry`, relative to the
+ * current directory.
  *
  * `--production` and `--stage <name>` are the operation's two targets,
  * `{ kind: 'production' }` and `{ kind: 'stage', stage }`, spelled as flags

@@ -267,6 +267,46 @@ describe('deploy()', () => {
     expect(ran).toBe(true);
   });
 
+  test('an entry that cannot be loaded names where its path came from', async () => {
+    const app = makeAppDir('hello-ops');
+    const configFile = path.join(app.dir, 'prisma.config.ts');
+    const deployFrom = (input: { entry?: string; configEntry?: string }) =>
+      silently(() =>
+        deployWithDeps(
+          {
+            config: {
+              value: {
+                ...fakeConfig(),
+                ...(input.configEntry === undefined ? {} : { entry: input.configEntry }),
+              },
+              file: configFile,
+            },
+            ...(input.entry === undefined ? {} : { entry: input.entry }),
+            cwd: app.dir,
+          },
+          { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+        ),
+      );
+
+    const fromConfig = await deployFrom({ configEntry: './missing.ts' });
+    if (fromConfig.ok) throw new Error('expected a failure');
+    expect(fromConfig.failure).toMatchObject({
+      code: 'COMPOSE.ENTRY_UNLOADABLE',
+      fix: `Check \`entry: "./missing.ts"\` in ${configFile}. It is relative to that file's directory.`,
+      where: { path: path.join(app.dir, 'missing.ts') },
+    });
+
+    const fromOverride = await deployFrom({ entry: 'gone.ts', configEntry: './service.ts' });
+    if (fromOverride.ok) throw new Error('expected a failure');
+    expect(fromOverride.failure).toMatchObject({
+      code: 'COMPOSE.ENTRY_UNLOADABLE',
+      fix:
+        'Check the `--entry` path (the `entry` input when calling @prisma/composer/control) "gone.ts". ' +
+        `It is relative to the current directory, ${app.dir}.`,
+      where: { path: path.join(app.dir, 'gone.ts') },
+    });
+  });
+
   test('without an entry in the config or the input, deploy fails with CONFIG.ENTRY_MISSING before any work', async () => {
     const app = makeAppDir('hello-ops');
     let ran = false;
@@ -287,7 +327,7 @@ describe('deploy()', () => {
     if (result.ok) throw new Error('expected a failure');
     expect(result.failure).toMatchObject({
       code: 'CONFIG.ENTRY_MISSING',
-      fix: "Set `entry: './module.ts'` in the `composer` section of prisma.config.ts, or pass `--entry <path>`.",
+      fix: "Set `entry: './module.ts'` in the `composer` section of prisma.config.ts, or pass `--entry <path>` (the `entry` input when calling @prisma/composer/control).",
     });
     expect(ran).toBe(false);
   });

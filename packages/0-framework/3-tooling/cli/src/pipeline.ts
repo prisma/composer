@@ -82,8 +82,14 @@ export function checkConfigSource(source: ComposerConfigSource, cwd: string): Co
   return { value: checked.value, file };
 }
 
+/** The entry module's absolute path, and what to check when it cannot be loaded. */
+export interface ResolvedEntry {
+  readonly path: string;
+  readonly fix: string;
+}
+
 /**
- * The entry module's absolute path. An override (`--entry`, or an operation's `entry` input) resolves
+ * Resolves the entry module. An override (`--entry`, or an operation's `entry` input) resolves
  * against `cwd`; the section's `entry` resolves against the directory of the file that declares it,
  * as the CLI engine resolves path fields in prisma.config.ts.
  */
@@ -91,11 +97,21 @@ export function resolveEntryPath(
   override: string | undefined,
   source: ComposerConfigSource,
   cwd: string,
-): string {
-  if (override !== undefined) return path.resolve(cwd, override);
+): ResolvedEntry {
+  if (override !== undefined) {
+    return {
+      path: path.resolve(cwd, override),
+      fix:
+        `Check the \`--entry\` path (the \`entry\` input when calling @prisma/composer/control) "${override}". ` +
+        `It is relative to the current directory, ${cwd}.`,
+    };
+  }
   const configured = source.value.entry;
   if (configured === undefined) throw configError([entryMissing], source.file);
-  return path.resolve(path.dirname(source.file), configured);
+  return {
+    path: path.resolve(path.dirname(source.file), configured),
+    fix: `Check \`entry: "${configured}"\` in ${source.file}. It is relative to that file's directory.`,
+  };
 }
 
 /**
@@ -113,7 +129,8 @@ export async function resolveAppIdentity(
 ): Promise<AppIdentity> {
   const checked = checkConfigSource(config, cwd);
   const { value } = checked;
-  const entryModule = await loadEntry(resolveEntryPath(entry, checked, cwd), cwd);
+  const resolved = resolveEntryPath(entry, checked, cwd);
+  const entryModule = await loadEntry(resolved.path, cwd, resolved.fix);
   const name = overrideName ?? entryModule.root.name;
   if (name.length === 0) {
     throw new CliStructuredError('COMPOSE.NAME_MISSING', 'The root node has no name.', {
@@ -142,7 +159,8 @@ export async function runPipeline(
   const config = configSource.value;
 
   // 1. Import the entry module; its default export must be a node.
-  const entryModule = await loadEntry(resolveEntryPath(entry, configSource, cwd), cwd);
+  const resolved = resolveEntryPath(entry, configSource, cwd);
+  const entryModule = await loadEntry(resolved.path, cwd, resolved.fix);
 
   // 2. Resolve the name. It is the root's address, so Load needs it (ADR-0057).
   const name = overrideName ?? entryModule.root.name;

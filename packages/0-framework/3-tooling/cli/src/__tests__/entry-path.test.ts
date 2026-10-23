@@ -16,26 +16,28 @@ const source = (entry: string | undefined): ComposerConfigSource => ({
 
 describe('resolveEntryPath', () => {
   test("the config's entry resolves against the directory of the file that declares it", () => {
-    expect(resolveEntryPath(undefined, source('./module.ts'), '/somewhere/else')).toBe(
+    expect(resolveEntryPath(undefined, source('./module.ts'), '/somewhere/else').path).toBe(
       '/repo/apps/shop/module.ts',
     );
   });
 
   test('an override resolves against cwd and wins over the config', () => {
-    expect(resolveEntryPath('other.ts', source('./module.ts'), '/work')).toBe('/work/other.ts');
+    expect(resolveEntryPath('other.ts', source('./module.ts'), '/work').path).toBe(
+      '/work/other.ts',
+    );
   });
 
   test('the result is absolute, whatever the inputs', () => {
-    expect(path.isAbsolute(resolveEntryPath('rel/x.ts', source(undefined), 'cwd-relative'))).toBe(
-      true,
-    );
+    expect(
+      path.isAbsolute(resolveEntryPath('rel/x.ts', source(undefined), 'cwd-relative').path),
+    ).toBe(true);
   });
 
   test('with neither, it fails with CONFIG.ENTRY_MISSING naming both ways to set one', () => {
     expect(() => resolveEntryPath(undefined, source(undefined), '/work')).toThrow(
       expect.objectContaining({
         code: 'CONFIG.ENTRY_MISSING',
-        fix: "Set `entry: './module.ts'` in the `composer` section of prisma.config.ts, or pass `--entry <path>`.",
+        fix: "Set `entry: './module.ts'` in the `composer` section of prisma.config.ts, or pass `--entry <path>` (the `entry` input when calling @prisma/composer/control).",
       }),
     );
   });
