@@ -2,6 +2,8 @@
 
 Amended by [ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md): the family also ships `dev url`, `dev stop` and `emulator list`, so `prisma dev` is both a command and a group.
 
+Amended by [ADR-0056](ADR-0056-prisma-dev-logs.md): a local app's logs are the `prisma dev logs` command, over a new `devLogs` operation. The `log` operation stays; `destroy` is still not a command.
+
 ## Decision
 
 Composer has no command-line binary of its own. The `prisma` CLI is its only command line, and it mounts exactly two Composer commands:

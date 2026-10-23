@@ -9,16 +9,17 @@ description: >-
   (`@prisma/composer`): wiring its services and Modules, running it locally,
   testing composed services, or standing up / tearing down an environment.
   Triggers on "prisma composer", "@prisma/composer", "prisma app",
-  `prisma deploy`, `prisma dev`, `compute()`, `module()`, `contract()`,
+  `prisma deploy`, `prisma dev`, `prisma dev logs`, `compute()`, `module()`, `contract()`,
   `service.load()`, `mockService`, `bootstrapService`.
 ---
 
 # Prisma Composer core concepts
 
 A **Prisma App** is a tree of typed declarations composed in TypeScript and
-handed to the `prisma` CLI, which has two Composer commands: `prisma deploy`
-and `prisma dev`. Teardown and logs are not commands; they are the `destroy`
-and `log` operations of `@prisma/composer/control`, called from a script.
+handed to the `prisma` CLI, whose main Composer commands are `prisma deploy`
+and `prisma dev` (with `prisma dev url`, `prisma dev logs` and
+`prisma dev stop` beneath it). Teardown is not a command; it is the `destroy`
+operation of `@prisma/composer/control`, called from a script.
 This file covers structures, hierarchies, relationships, and workflows: the
 concepts you cannot observe from the code or the CLI's help output. It is not
 a CLI reference; discover each command's flags with `prisma <command> --help`
@@ -478,17 +479,24 @@ that surprise:
 1. It runs the same pipeline as deploy, so **build first**, exactly like
    deploy. It watches built output and restarts a service when its build
    changes.
-   `ready` prints only once every service accepts connections on its port, except a service declared `compute({ ..., listens: false })` (one that never listens, like the cron scheduler), which counts as running once its process starts. A service that exits before it listens, or does not listen within 30 seconds, fails `dev` (and stops the app's other services) with a message naming the service, its port, and its log file: on a first start it is in the deploy engine's output, before the error that the deploy engine exited (`DEV.CONVERGE_FAILED` from the `dev` operation); on a warm start it is the `DEV.SERVICE_START_FAILED` message. `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` raises the 30-second limit (milliseconds); the compute emulator reads it when it starts, so a running emulator keeps its old value until its process ends. An emulator that does not accept connections fails `dev` and `log` with `DEV.EMULATOR_UNREACHABLE` after a few seconds of retries; nothing else is retried.
+   `ready` prints only once every service accepts connections on its port, except a service declared `compute({ ..., listens: false })` (one that never listens, like the cron scheduler), which counts as running once its process starts. A service that exits before it listens, or does not listen within 30 seconds, fails `dev` (and stops the app's other services) with a message naming the service, its port, and its log file: on a first start it is in the deploy engine's output, before the error that the deploy engine exited (`DEV.CONVERGE_FAILED` from the `dev` operation); on a warm start it is the `DEV.SERVICE_START_FAILED` message. `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` raises the 30-second limit (milliseconds); the compute emulator reads it when it starts, so a running emulator keeps its old value until its process ends. An emulator that does not accept connections fails `dev` and `dev logs` with `DEV.EMULATOR_UNREACHABLE` after a few seconds of retries; nothing else is retried.
 2. Ctrl-C (or `dev` ending on SIGTERM or a failure) stops the app's service processes and its local Postgres servers and keeps their data and ports: the next `dev` is a warm start. Starting clean, wiping this app's local instances and data first, is an explicit opt-in flag. On a fresh start, each service gets the lowest free port from 3000 up, in dependency order: a service before the services that call it, otherwise provision order. A warm start keeps the ports services already have.
    Services, databases and buckets belong to the directory `dev` runs in: two checkouts of one app (two git worktrees) run separate processes on separate ports, with separate databases and buckets, and never restart or write into each other's. `.prisma-composer/dev/emulator-instances.json` records which local instance backs each node. A service or database keeps its port in its directory across runs, even while stopped. If a local instance is gone (a Composer upgrade discarded an emulator's state), the next `dev` re-creates it, empty, and asks for the old port, and a Prisma ORM database's (`postgres()`) committed migrations run again (a `rawPostgres()` database stays empty); when another directory has taken the port, the instance gets the lowest free one and `dev` prints `[dev] service "<address>" now uses port <new>: its previous port <old> is in use` (`database "<address>"` for a database). A directory keeps the local state of every app run from it: running a different app there (another entry, another `--name`) stops the previous app's services and databases, keeps their data and ports, and prints `[dev] stopped the local services of "<app>", the app run here before; its data is kept`; running it again resumes them. `--fresh` wipes only the app it starts. A stopped instance keeps its port reserved and a database its data, so a deleted checkout's instances keep theirs; there is no command to remove them yet.
-3. `dev` does not print service logs. The `log` operation follows the
-   already-running app's merged logs; it never builds, provisions, starts, or
-   stops anything:
-
-   ```ts
-   const attached = await log({ entry: 'module.ts', config, tail: 20, signal });
-   if (attached.ok) for await (const { service, line } of attached.value.lines) console.log(service, line);
-   ```
+3. `dev` does not print service logs; its front door ends with
+   `logs: prisma dev logs`. To see a service's `console.log` output, errors
+   or crash, run `prisma dev logs [address]` in the same directory as `dev`
+   (a second terminal, or after `dev --detach`). It prints each service's last
+   100 lines and exits; `--tail <n>` changes the count and `--follow` keeps
+   printing until Ctrl-C. Log lines are the only thing on stdout, prefixed
+   `[address] ` unless you named one service, so
+   `prisma dev logs gateway | grep -i error` works; `--json` gives one object
+   per line with `data: { service, line }`. Without `--follow`, lines are
+   grouped by service, not interleaved in time. A service's log holds only its
+   current run (each start, including a rebuild, clears it) and is readable
+   while it crash-loops. It fails with `DEV.NO_LOGS` for a database or bucket
+   address, and `DEV.LOGS_UNSUPPORTED` when the app's Composer packages are
+   older than the CLI's (upgrade them, or use `--follow`). The same read is
+   the `devLogs` operation of `@prisma/composer/control`.
    Don't hard-code a local port; ports differ per directory. `prisma dev url
    <address>` (run in the same directory as `dev`) prints where a running node
    answers: a service's `http://localhost:<port>`, a database's connection
@@ -660,8 +668,8 @@ today the blocks above plus your own Modules are the whole set, so verify a
 
 Name the gap instead of inventing an API:
 
-1. **No `prisma` command for teardown or logs.** Use the `destroy` and `log`
-   operations of `@prisma/composer/control` from a script. A destroy script
+1. **No `prisma` command for teardown.** Use the `destroy` operation of
+   `@prisma/composer/control` from a script. A destroy script
    cannot use the `prisma auth login` session; it needs `PRISMA_SERVICE_TOKEN`
    and `PRISMA_WORKSPACE_ID` in the environment.
 2. **No in-memory contract bindings.** A dependency can't yet be wired to a

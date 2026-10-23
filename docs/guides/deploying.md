@@ -29,8 +29,9 @@ differently:
   environment variables, and each is required once the operation reaches
   Prisma Cloud: `PRISMA_SERVICE_TOKEN`, a service token you create in the
   workspace's settings in the [Prisma Console](https://console.prisma.io), and
-  `PRISMA_WORKSPACE_ID`, the workspace's id, shown in the same settings. `dev`
-  and `log` read neither, because they never reach the platform.
+  `PRISMA_WORKSPACE_ID`, the workspace's id, shown in the same settings. `dev`,
+  `devUrl`, `devStop`, `devLogs` and `log` read neither, because they never
+  reach the platform.
 
 A fresh checkout with credentials in place deploys successfully — the CLI
 finds or creates everything else. Keep token values out of the repo (an `.env`
@@ -495,11 +496,12 @@ With the graph empty, planning auto-baselines from the ref: it authors empty →
 ## Driving deploys from code
 
 `@prisma/composer/control` exports typed `deploy`, `destroy`, `dev`, `devUrl`,
-`devStop` and `log` operations that return structured results instead of
-printing and exiting. `prisma deploy`, `prisma dev`, `prisma dev url` and
-`prisma dev stop` are thin renderers over the `deploy`, `dev`, `devUrl` and
-`devStop` operations, so the two surfaces can't drift. `destroy` and `log` have
-no command; these operations are how you run them. They read their
+`devStop`, `devLogs` and `log` operations that return structured results
+instead of printing and exiting. `prisma deploy`, `prisma dev`,
+`prisma dev url`, `prisma dev stop` and `prisma dev logs` are thin renderers
+over the `deploy`, `dev`, `devUrl`, `devStop` and `devLogs` operations, so the
+two surfaces can't drift. `destroy` has no command; the operation is how you
+run it. `log` is the older, entry-based way to follow the logs. They read their
 credentials from the environment (see [Credentials](#credentials)).
 
 A script imports only `@prisma/composer/control`. The extensions' own
@@ -589,6 +591,12 @@ What to know before embedding it:
   Zero running services is a valid result (empty `services`, finished
   stream), not an error. A consumer that falls behind loses oldest lines
   past a bounded queue and is told via a `lines-dropped` event.
+- **`devLogs` resolves to `{ ok: true, value: { app, services, lines } }` or
+  a failure.** It needs no `entry`: like `devUrl`, it reads the app
+  `prisma dev` last ran from `cwd`. Without `follow`, `lines` is each
+  service's last `tail` lines (default 100), grouped by service in address
+  order, and then ends; with `follow: true` it streams until your `signal`
+  aborts, as `log` does.
 
 ## The full picture
 

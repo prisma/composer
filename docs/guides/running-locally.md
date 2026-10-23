@@ -3,15 +3,15 @@
 One command brings your whole app up on your machine — every service, its
 databases and buckets, wired together — with **no cloud credentials**.
 `prisma dev` runs the same pipeline a deploy runs, but against local
-stand-ins for Prisma Cloud, so what you run locally is what you ship. The
-logs come from the `log` operation in `@prisma/composer/control`, which you
-call from a short script; there is no `prisma` command for them.
+stand-ins for Prisma Cloud, so what you run locally is what you ship.
+`prisma dev logs` shows what the services print.
 
 | You want to… | Run |
 | --- | --- |
 | Bring the app up locally | `prisma dev module.ts` |
 | Start clean (wipe local data first) | `prisma dev module.ts --fresh` |
-| Watch the running app's logs | the `log` operation (see [Logs](#logs)) |
+| Read the running app's logs | `prisma dev logs` (see [Logs](#logs)) |
+| Follow them as they're written | `prisma dev logs --follow` |
 
 `module.ts` is your entry file — the one whose default export is the root
 module, the same file you pass to `prisma deploy`. No `PRISMA_*` variables
@@ -39,6 +39,7 @@ dev: ready
 storefront: http://localhost:3004
 catalog.service: http://localhost:3000
 orders.service: http://localhost:3003
+logs: prisma dev logs
 ```
 
 `dev` prints `ready` only once every service accepts connections on its port, so a request to a printed URL right away connects. After a rebuild, `dev` waits the same way before it prints the URLs again. A service must listen on the port Composer gives it, unless it is declared with `compute({ ..., listens: false })`: such a service, like the cron module's scheduler, is running as soon as its process starts.
@@ -47,13 +48,13 @@ If a service exits before it listens, or does not listen within 30 seconds, `dev
 
 A service that needs longer to start, for example one that runs migrations first, can have more time: set `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` to the limit in milliseconds (the default is `30000`). A value that is not a positive whole number fails with `DEV.SERVICE_READY_TIMEOUT_INVALID`. The compute emulator reads the variable when it starts, and a running emulator keeps the value it started with; `--fresh` does not restart it. To apply a new value, end the compute emulator's process (its PID is in `compute.json` in the emulators directory, see below), which stops the services of every app that uses it. The next `prisma dev` starts it again with the new value.
 
-`dev` and the `log` operation retry a call to a local emulator only when they cannot connect to it. If that lasts a few seconds, they fail with `DEV.EMULATOR_UNREACHABLE`, which takes the place of `DEV.SERVICE_START_FAILED`, `DEV.ATTACH_FAILED` and `LOG.ATTACH_FAILED` for this case. An error the emulator returns, such as a service that failed to start, is not retried.
+`dev`, `dev logs` and the `log` operation retry a call to a local emulator only when they cannot connect to it. If that lasts a few seconds, they fail with `DEV.EMULATOR_UNREACHABLE`, which takes the place of `DEV.SERVICE_START_FAILED`, `DEV.ATTACH_FAILED` and `LOG.ATTACH_FAILED` for this case. An error the emulator returns, such as a service that failed to start, is not retried.
 
 From here `dev` keeps running: it watches your built output and, when a
 service's build changes, restarts just that service. It does **not** print
 service logs — with several services running, streaming them all inline would
-bury the front door and the restart notices. Logs are their own operation
-(below).
+bury the front door and the restart notices. Read them with `prisma dev logs`
+in another terminal ([below](#logs)).
 
 `dev` reads the `composer` section of `prisma.config.ts` once, when it starts,
 and watches the file. When the file changes, `dev` prints that it changed and
@@ -205,27 +206,73 @@ The directory in `emulator list` is an absolute path, unlike the paths other `pr
 
 ## Logs
 
-The `log` operation tails the merged logs of the already-running app — one
-stream, each line tagged with the service it came from. Run a script like this
-from the directory you run `prisma dev` in:
+`prisma dev logs` prints what the services of the app `prisma dev` runs from
+this directory write to stdout and stderr: their `console.log` output, errors
+and crashes. Run it from the directory you run `prisma dev` in, in a second
+terminal:
+
+```sh
+$ prisma dev logs
+[catalog.service] listening on 3000
+[storefront] GET / 200 in 41ms
+$ prisma dev logs storefront --tail 20   # one service, its last 20 lines
+GET / 200 in 41ms
+$ prisma dev logs --follow                # keep printing new lines until Ctrl-C
+```
+
+- **How much:** it prints each service's last 100 lines and exits. `--tail <n>`
+  changes the count. Each service's log is cleared when it starts, including
+  after a rebuild, so it only ever holds the current run.
+- **Following:** `--follow` keeps printing new lines until `Ctrl-C`, including
+  lines from a service a later rebuild adds. If the compute emulator restarts,
+  the stream shows a gap rather than ending.
+- **One service:** pass its address, exactly as the front door prints it
+  (`cron.runner` for a nested one). Its lines are printed bare. Without an
+  address, every line starts with its service in brackets. Without
+  `--follow`, all of one service's lines come before the next service's, in
+  address order; with it, lines print as they arrive.
+- **Scripts and agents:** log lines are the only thing on stdout, so
+  `prisma dev logs storefront | grep error` works. With `--json`, each line is
+  one JSON object on stdout whose `data` is `{ service, line }`, then a final
+  result object.
+- **A crashing service** still has the log of its last run, which is usually
+  where the reason is. `dev logs` reads it whatever state the service is in.
+
+It only reads the app; it builds, starts and stops nothing, and needs no
+credentials. It fails with a code a script can branch on:
+
+- `DEV.NOT_STARTED_HERE`: `prisma dev` never ran in this directory.
+- `DEV.ADDRESS_UNKNOWN`: the app has no node at that address; the message
+  lists the ones it has.
+- `DEV.NO_LOGS`: the address is a database or a bucket. Only services have
+  logs.
+- `DEV.EMULATOR_UNREACHABLE`: the compute emulator, which runs the services,
+  is not running. Run `prisma dev`.
+- `DEV.LOGS_UNSUPPORTED`: the app's `@prisma/composer-prisma-cloud` is older
+  than the Composer in the `prisma` CLI and cannot read logs without following
+  them. Upgrade the app's Composer packages, or pass `--follow`.
+
+### From code
+
+The same logs are the `devLogs` operation in `@prisma/composer/control`, for a
+script or a test harness. It takes the `composer` section of
+`prisma.config.ts`, and the same `address`, `tail` (default 100) and `follow`
+(default false) as the command; a followed stream ends when the `signal`
+aborts:
 
 ```ts
 // logs.ts
 import { fileURLToPath } from 'node:url';
-import { log } from '@prisma/composer/control';
+import { devLogs } from '@prisma/composer/control';
 import prismaConfig from './prisma.config.ts';
 
-const stop = new AbortController();
-process.on('SIGINT', () => stop.abort());
-
-const result = await log({
-  entry: 'module.ts',
+const result = await devLogs({
   config: {
     value: prismaConfig.composer,
     file: fileURLToPath(new URL('./prisma.config.ts', import.meta.url)),
   },
+  address: 'storefront',
   tail: 20,
-  signal: stop.signal,
 });
 if (!result.ok) {
   console.error(result.failure.message);
@@ -236,20 +283,10 @@ for await (const { service, line } of result.value.lines) {
 }
 ```
 
-The `log` operation reads no credentials. It follows live, like `tail -f`,
-until the signal aborts. It only *reads* the
-running app — it never builds, provisions, starts, or stops anything, so you
-can start and stop it freely alongside a running `dev`.
-
-- **One service:** pass `address: 'cron.runner'`. A nested module's service
-  address is dotted, exactly as the front door prints it.
-- **How much history:** `tail` sets how many recent lines to show before
-  going live (default 0, live only). Each service's log is cleared when it
-  starts fresh, so it only ever holds the current run — you're never
-  scrolling back through past `dev` sessions.
-- **Nothing running yet?** If you haven't started the app with `prisma dev`
-  (or stopped it), `log` resolves with an empty `services` list and a stream
-  that has already ended.
+The older `log` operation does the same for an app named by its entry module
+(`entry: 'module.ts'`), always follows, and defaults `tail` to 0; when nothing
+is running it resolves with an empty `services` list and a stream that has
+already ended.
 
 ## What's local vs. what's real
 

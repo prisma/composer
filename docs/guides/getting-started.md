@@ -300,9 +300,9 @@ curl localhost:3001
 
 `dev` keeps running and restarts a service when its build changes; `Ctrl-C`
 stops it (your data stays, so the next start is warm). It doesn't print
-service logs, so it doesn't bury the front door. The logs come from the `log`
-operation in `@prisma/composer/control`, which a short script calls;
-[Running locally](running-locally.md#logs) has one.
+service logs, so it doesn't bury the front door. `prisma dev logs`, in a second
+terminal, prints them; [Running locally](running-locally.md#logs) has the
+details.
 
 Under the hood the local providers write the same `COMPOSER_*` environment
 variables a deploy writes, each keyed by the service's address —

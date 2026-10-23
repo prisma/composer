@@ -11,25 +11,26 @@ this doc is the mechanics.
 
 ## Scope
 
-Three commands about the app, one about the machine, and one operation with no
-command:
+Four commands about the app, one about the machine, and one older operation
+with no command:
 
 - **`prisma dev <entry>`** — bring up the application whose root node
   is `entry`'s default export, entirely on the local machine, and keep it up:
   watch built output, restart changed services, until interrupted. It does
   **not** stream service logs — once it is supervising several processes,
-  streaming them all inline drowns the front door and the rebuild notices. To
-  read them, call the `log` operation from a script (see
-  [docs/guides/running-locally.md](../../guides/running-locally.md)).
+  streaming them all inline drowns the front door and the rebuild notices. The
+  front door ends with a `logs: prisma dev logs` line instead.
   With `--detach` (the `dev` operation's `detach`), it returns once every
   service answers and leaves the app running without watching; see
   § Process lifetimes.
 - **`log`**, an operation on `@prisma/composer/control` with no command
-  (ADR-0050) — tail the merged logs of that already-running app: every
+  (ADR-0050) — tail the merged logs of the app an entry module names: every
   service, or one named by its dotted `address` (`catalog.service`). Follows
   live until the caller aborts; a `tail` count sets how many recent lines to
   return first (default 0, which returns live output only). It only reads the running
   app's logs — it neither builds, provisions, starts, nor stops anything.
+  `prisma dev logs` (below) supersedes it for everything but a caller that
+  already holds an entry.
 
 - **`prisma dev url <address>`** — where a node of the app `prisma dev` last
   ran from this directory answers: a service's `http://localhost:<port>`, a
@@ -45,6 +46,20 @@ command:
   it is empty when nothing was, and the command then says so. Piped, it
   writes one tab-separated line per stopped node: node address and node
   kind.
+- **`prisma dev logs [address]`** — what that app's services wrote to stdout
+  and stderr: every service, or the one at `address`. By default each
+  service's last 100 lines (`--tail <n>`), grouped by service in address
+  order, and the command exits; `--follow` streams new lines, merged as they
+  arrive, until Ctrl-C. Lines go to stdout, labelled `[address] ` unless an
+  address was given; `--json` frames each as an output event whose `data` is
+  `{ service, line }`. A service is read whatever its state, because a
+  crash-looping service's log is where its failure is. It is the `devLogs`
+  operation
+  ([ADR-0056](../90-decisions/ADR-0056-prisma-dev-logs.md)). Without
+  `--follow` it calls the attachment's optional `readLogs({ tail })`, which
+  the Prisma Cloud target answers from the compute emulator's non-follow
+  `GET /instances/<id>/logs`; with it, the attachment's `logs()` as `log`
+  does.
 - **`prisma emulator list`** — every local emulator on this machine, whether it
   runs, its admin URL (`null` when it is not running), and its instances with
   id, kind, URL, state and labels. An emulator that runs but cannot be listed
@@ -62,7 +77,7 @@ command:
   stay backward compatible. `prisma emulator start` and `prisma emulator stop`
   are planned.
 
-`dev url` and `dev stop` take no entry and build nothing. The configuration
+`dev url`, `dev stop` and `dev logs` take no entry and build nothing. The configuration
 does not name the app, so they act on the app the directory's record names as
 current. Core reaches it through the local-target seam: a
 `LocalTargetDescriptor` may implement `current({ devDir })`, returning the
@@ -123,9 +138,9 @@ Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
    door (every service's endpoint) and watch for rebuilds, loop. Ctrl-C,
    SIGTERM or a failure stops the app's service processes and database
    servers through the attachment's `stopApp` and exits; emulators and
-   data persist. Logs are not streamed here — the `log` operation reads the
-   same attachment's merged-log view on demand, so `dev`'s own output stays
-   the front door plus lifecycle and rebuild notices.
+   data persist. Logs are not streamed here — `prisma dev logs` reads the
+   same attachment's log views on demand, so `dev`'s own output stays the
+   front door plus lifecycle and rebuild notices.
 
 ## The Compute emulator
 
@@ -368,8 +383,8 @@ dev state is never migrated.
    root replace each other's daemons back and forth; a separate root per
    checkout stops that.
 3. **The dev session owns no processes at all** — it is a view (`attach`):
-   endpoints, the stop control, and the watch loop. That same view's merged
-   logs back the separate `log` operation.
+   endpoints, the stop control, and the watch loop. That same view's logs
+   back `prisma dev logs` and the `log` operation.
 4. **The app's processes** — the service children and database servers the
    emulators run for the app. In the foreground, `prisma dev` stops them when
    it ends (Ctrl-C, SIGTERM or a failure). `prisma dev --detach` converges,
@@ -500,13 +515,15 @@ Deploy's rule holds: every failure names its fix.
 | secret slot unbound | warning (not an error) naming the env var and the placeholder behavior |
 | env-sourced param unbound | hard error listing the missing names, deploy-preflight style |
 | a service exits before it listens, or does not listen within the readiness timeout | the address, the port, the exit code if it exited, and the log path; `dev` stops the app's services before it returns the failure |
-| an emulator does not accept connections (retried briefly; an error response from the emulator is never retried) | `DEV.EMULATOR_UNREACHABLE`, with the emulator's URL, from `dev` and `log` alike |
+| an emulator does not accept connections (retried briefly; an error response from the emulator is never retried) | `DEV.EMULATOR_UNREACHABLE`, with the emulator's URL, from `dev`, `dev logs` and `log` alike |
 | `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` is not a positive whole number | `DEV.SERVICE_READY_TIMEOUT_INVALID`, with the value |
-| `dev url` or `dev stop` in a directory where no extension recorded an app | `DEV.NOT_STARTED_HERE`: run `prisma dev` here first |
-| `dev url` with an address the app does not have | `DEV.ADDRESS_UNKNOWN`, listing the addresses it has |
-| `dev url` for a node whose emulator is not running | `DEV.EMULATOR_UNREACHABLE` |
+| `dev url`, `dev stop` or `dev logs` in a directory where no extension recorded an app | `DEV.NOT_STARTED_HERE`: run `prisma dev` here first |
+| `dev url` or `dev logs` with an address the app does not have | `DEV.ADDRESS_UNKNOWN`, listing the addresses it has |
+| `dev url` for a node whose emulator is not running, or `dev logs` while the compute emulator is not running | `DEV.EMULATOR_UNREACHABLE` |
+| `dev logs` with the address of a node that is not a service | `DEV.NO_LOGS`, naming its kind |
+| `dev logs` without `--follow`, when the app's local target has no `readLogs` (an older `@prisma/composer-prisma-cloud`) | `DEV.LOGS_UNSUPPORTED`: upgrade the app's Composer packages, or follow |
 | `dev url` for a node that exists but is not running | `DEV.NOT_RUNNING`, naming its state; for a stopped node the fix is `prisma dev`, for a crash-looping service it is the service's log, for a node its emulator lost it is `prisma dev`, which creates it again |
-| the local target fails without a code (for example an emulator's error response) in `dev url` or `dev stop` | `DEV.EMULATOR_FAILED` |
+| the local target fails without a code (for example an emulator's error response) in `dev url`, `dev stop` or `dev logs` | `DEV.EMULATOR_FAILED` |
 | service crash-loops | the address, exit code, and the last stderr lines, as a standing message |
 
 ## Out of scope (designed around)
