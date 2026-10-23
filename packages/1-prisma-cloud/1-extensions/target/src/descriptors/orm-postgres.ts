@@ -11,8 +11,8 @@ import { OrmMigration } from '../orm-migration-resource.ts';
 import { isPostgresResourceNode } from '../orm-postgres.ts';
 import { PgWarm } from '../pg-warm-resource.ts';
 import { runPackPreflight } from '../preflight.ts';
-import { addressBelowApp, resourceId } from '../resource-ids.ts';
-import { type ResolvedCloudOptions, stageDatabase, validateName } from './shared.ts';
+import { resourceId } from '../resource-ids.ts';
+import { type ResolvedCloudOptions, stageDatabase, validatePlatformName } from './shared.ts';
 
 /**
  * The migration is a tracked `OrmMigration` Alchemy resource keyed on the
@@ -23,7 +23,7 @@ export function postgresDescriptor(o: () => ResolvedCloudOptions): NodeDescripto
   const lowering: Lowering = ({ id, address, node, application, graph }) =>
     Effect.gen(function* () {
       const app = graph.root.id;
-      validateName(addressBelowApp(address, app), address);
+      validatePlatformName('Connection', address);
       const { db, url } = yield* stageDatabase({
         id,
         address,

@@ -5,8 +5,8 @@ import type { Lowering } from '@internal/core/deploy';
 import * as Effect from 'effect/Effect';
 import { fromLegacyId, legacyNodeResourceId } from '../legacy-resource-ids.ts';
 import { PgWarm } from '../pg-warm-resource.ts';
-import { addressBelowApp, resourceId } from '../resource-ids.ts';
-import { type ResolvedCloudOptions, stageDatabase, validateName } from './shared.ts';
+import { resourceId } from '../resource-ids.ts';
+import { type ResolvedCloudOptions, stageDatabase, validatePlatformName } from './shared.ts';
 
 /**
  * One Database per module-provisioned postgres resource — `id` is the
@@ -17,7 +17,7 @@ export function rawPostgresDescriptor(o: () => ResolvedCloudOptions): NodeDescri
   const lowering: Lowering = ({ id, address, application, graph }) =>
     Effect.gen(function* () {
       const app = graph.root.id;
-      validateName(addressBelowApp(address, app), address);
+      validatePlatformName('Connection', address);
       const { db, url } = yield* stageDatabase({
         id,
         address,

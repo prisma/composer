@@ -605,7 +605,7 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
           'shop.data.connection',
           {
             database: { databaseId: 'shop.data#cloud-id', databaseName: 'shop.data' },
-            name: 'data',
+            name: 'shop.data',
           },
         ],
       ]);
@@ -669,7 +669,7 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
     });
   });
 
-  test('local dev: a branchless container — the Database is named by its address below the app, no attachment', async () => {
+  test('local dev: a branchless container — the Database is named by its address, no attachment', async () => {
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
@@ -688,7 +688,7 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
       run<Outputs>(resourceDescriptorOf(target, 'raw-postgres')(ctx));
 
       expect(recorded.db.slice(before)).toEqual([
-        ['shop.data4', { project: 'local', name: 'data4', region: 'inherit' }],
+        ['shop.data4', { project: 'local', name: 'shop.data4', region: 'inherit' }],
       ]);
     });
   });
@@ -848,13 +848,13 @@ describe("prismaCloud().nodes['s3'] — the real-bucket resource descriptor", ()
       expect(recorded.bucket.slice(before.bucket)).toEqual([
         [
           'shop.files',
-          { project: 'shop-project#cloud-id', name: 'files', logicalId: 'shop.files' },
+          { project: 'shop-project#cloud-id', name: 'shop.files', logicalId: 'shop.files' },
         ],
       ]);
       expect(recorded.bucketKey.slice(before.bucketKey)).toEqual([
         [
           'shop.files.accesskey',
-          { bucket: 'shop.files#cloud-id', name: 'files', role: 'read_write' },
+          { bucket: 'shop.files#cloud-id', name: 'shop.files', role: 'read_write' },
         ],
       ]);
     });
@@ -883,7 +883,7 @@ describe("prismaCloud().nodes['s3'] — the real-bucket resource descriptor", ()
           'shop.assets',
           {
             project: 'shop-project#cloud-id',
-            name: 'assets',
+            name: 'shop.assets',
             branchId: 'branch_1',
             logicalId: 'shop.assets',
           },
@@ -919,7 +919,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       expect(recorded.svc).toEqual([
         [
           'shop.auth',
-          { project: 'shop-project#cloud-id', displayName: 'auth', logicalId: 'shop.auth' },
+          { project: 'shop-project#cloud-id', displayName: 'shop.auth', logicalId: 'shop.auth' },
         ],
       ]);
     });
@@ -948,7 +948,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           'shop.auth2',
           {
             project: 'shop-project#cloud-id',
-            displayName: 'auth2',
+            displayName: 'shop.auth2',
             branchId: 'branch_1',
             logicalId: 'shop.auth2',
           },
@@ -2204,7 +2204,7 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
           'shop.data.connection',
           {
             database: { databaseId: 'shop.data#cloud-id', databaseName: 'shop.data' },
-            name: 'data',
+            name: 'shop.data',
           },
         ],
       ]);
@@ -2696,7 +2696,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
   };
   const bundles = { 'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' } };
 
-  // The plain throw validateName raises becomes an Effect defect; run() (runSync)
+  // The plain throw validatePlatformName raises becomes an Effect defect; run() (runSync)
   // re-raises it synchronously — exactly what `lower()`'s Effect.orDie surfaces
   // at deploy. Capture it directly rather than through the typed error channel.
   const lowerError = (eff: Effect.Effect<unknown, unknown, unknown>): Error => {
@@ -2708,19 +2708,19 @@ describe('name validation — fail fast on Prisma name constraints, before creat
     throw new Error('expected lowering to throw');
   };
 
-  // Every platform name is the address without the app name. `shop.<longId>` is 66 characters,
-  // but its platform name is 61.
-  const longId = 'd'.repeat(61);
-  const longLabel = 'd'.repeat(66);
-  const tooLongMessage = (name: string) =>
-    `prisma-cloud: the node "shop.${name}" gets the platform name "${name}" (${name.length} ` +
-    'characters), but Prisma requires 3–65 characters. The name is the address without the app name.';
+  // Every platform name is the node's address. Each kind of row has its own length limit, and
+  // `shop.<id of length n>` is n + 5 characters.
+  const idForAddressOfLength = (length: number) => 'd'.repeat(length - 'shop.'.length);
+  const tooLongMessage = (id: string, kind: string, limit: number) =>
+    `prisma-cloud: the node "shop.${id}" is ${id.length + 5} characters long, but Prisma allows ` +
+    `at most ${limit} characters in a ${kind} name, and every platform name is the node's address.`;
 
-  test('a too-long database name throws the framework error at lower time, before any Database is recorded', async () => {
+  test('a database whose address is over the Connection limit throws at lower time, before any Database is recorded', async () => {
     await withEnv(containerEnv('shop-project#cloud-id'), () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
+      const id = idForAddressOfLength(66);
       const root = module('shop', {}, ({ provision }) => {
-        const db = provision(rawPostgres({ name: 'db' }), { id: longLabel });
+        const db = provision(rawPostgres({ name: 'db' }), { id });
         provision(compute({ name: 'auth', deps: { main: rawPostgres() }, build }), {
           id: 'auth',
           deps: {
@@ -2733,51 +2733,70 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
       const error = lowerError(lowering(root, configFor(target), { name: 'shop', bundles }));
 
-      // A framework authoring error naming the address, the name and the constraint — not a raw PrismaApiError.
+      // A framework authoring error naming the address and the limit — not a raw PrismaApiError.
       expect(error).toBeInstanceOf(Error);
-      expect(error.message).toContain(tooLongMessage(longLabel));
+      expect(error.message).toContain(tooLongMessage(id, 'Connection', 65));
       expect(error.message).not.toContain('PrismaApiError');
       // It failed BEFORE creating the Database (strictly better than the mid-deploy API error).
       expect(recorded.db.length).toBe(before);
     });
   });
 
-  test('a database name within the limit lowers even when its full address is over it', async () => {
+  test('a database whose address is exactly at the Connection limit lowers, named by its address', async () => {
     await withEnv(containerEnv('shop-project#cloud-id'), () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
+      const id = idForAddressOfLength(65);
       const root = module('shop', {}, ({ provision }) => {
-        provision(rawPostgres({ name: 'db' }), { id: longId });
+        provision(rawPostgres({ name: 'db' }), { id });
         return {};
       });
-      const before = recorded.db.length;
+      const before = recorded.conn.length;
 
       run<undefined>(lowering(root, configFor(target), { name: 'shop', bundles: {} }));
 
-      expect(recorded.db.slice(before).map(([id]) => id)).toEqual([`shop.${longId}`]);
+      expect(recorded.conn[before]?.[1]).toHaveProperty('name', `shop.${id}`);
     });
   });
 
-  test('a too-long bucket name throws the framework error before any Bucket is recorded', async () => {
+  test('a bucket whose address is over the Bucket limit throws before any Bucket is recorded', async () => {
     await withEnv(containerEnv('shop-project#cloud-id'), () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
+      const id = idForAddressOfLength(101);
       const root = module('shop', {}, ({ provision }) => {
-        provision(bucket({ name: 'files' }), { id: longLabel });
+        provision(bucket({ name: 'files' }), { id });
         return {};
       });
       const before = recorded.bucket.length;
 
       const error = lowerError(lowering(root, configFor(target), { name: 'shop', bundles: {} }));
 
-      expect(error.message).toContain(tooLongMessage(longLabel));
+      expect(error.message).toContain(tooLongMessage(id, 'Bucket', 100));
       expect(recorded.bucket.length).toBe(before);
     });
   });
 
-  test('a too-long service display name throws the framework error naming the address', async () => {
+  test('a bucket whose address is over the Connection limit but within the Bucket limit lowers', async () => {
     await withEnv(containerEnv('shop-project#cloud-id'), () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
+      const id = idForAddressOfLength(100);
       const root = module('shop', {}, ({ provision }) => {
-        provision(compute({ name: 'a', deps: {}, build }), { id: longLabel });
+        provision(bucket({ name: 'files' }), { id });
+        return {};
+      });
+      const before = recorded.bucket.length;
+
+      run<undefined>(lowering(root, configFor(target), { name: 'shop', bundles: {} }));
+
+      expect(recorded.bucket[before]?.[1]).toHaveProperty('name', `shop.${id}`);
+    });
+  });
+
+  test('a service whose address is over the App limit throws naming the address', async () => {
+    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const id = idForAddressOfLength(257);
+      const root = module('shop', {}, ({ provision }) => {
+        provision(compute({ name: 'a', deps: {}, build }), { id });
         return {};
       });
       const before = recorded.svc.length;
@@ -2785,20 +2804,21 @@ describe('name validation — fail fast on Prisma name constraints, before creat
       const error = lowerError(
         lowering(root, configFor(target), {
           name: 'shop',
-          bundles: { [`shop.${longLabel}`]: bundles['shop.auth'] },
+          bundles: { [`shop.${id}`]: bundles['shop.auth'] },
         }),
       );
 
-      expect(error.message).toContain(tooLongMessage(longLabel));
+      expect(error.message).toContain(tooLongMessage(id, 'App', 256));
       expect(recorded.svc.length).toBe(before);
     });
   });
 
-  test('a service whose display name is within the limit lowers even when its full address is over it', async () => {
+  test('a service whose address is over the Connection limit lowers, its display name the full address', async () => {
     await withEnv(containerEnv('shop-project#cloud-id'), () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
+      const id = idForAddressOfLength(66);
       const root = module('shop', {}, ({ provision }) => {
-        provision(compute({ name: 'a', deps: {}, build }), { id: longId });
+        provision(compute({ name: 'a', deps: {}, build }), { id });
         return {};
       });
       const before = recorded.svc.length;
@@ -2806,13 +2826,12 @@ describe('name validation — fail fast on Prisma name constraints, before creat
       run<undefined>(
         lowering(root, configFor(target), {
           name: 'shop',
-          bundles: { [`shop.${longId}`]: bundles['shop.auth'] },
+          bundles: { [`shop.${id}`]: bundles['shop.auth'] },
         }),
       );
 
-      expect(`shop.${longId}`.length).toBeGreaterThan(65);
-      expect(recorded.svc.slice(before).map(([id]) => id)).toEqual([`shop.${longId}`]);
-      expect(recorded.svc[before]?.[1]).toHaveProperty('displayName', longId);
+      expect(recorded.svc.slice(before).map(([key]) => key)).toEqual([`shop.${id}`]);
+      expect(recorded.svc[before]?.[1]).toHaveProperty('displayName', `shop.${id}`);
     });
   });
 
@@ -3026,8 +3045,8 @@ describe('resource IDs are built from the full address, and each declares the ID
 
     expect(idsSince(recorded.svc, before.svc)).toEqual(['shop.auth.api']);
     expect(renamedFromOf('App shop.auth.api')).toEqual(['auth.api-svc']);
-    // The display name is the address below the app; upstream updates it in place.
-    expect(recorded.svc[before.svc]?.[1]).toHaveProperty('displayName', 'auth.api');
+    // The display name is the address; upstream updates it in place.
+    expect(recorded.svc[before.svc]?.[1]).toHaveProperty('displayName', 'shop.auth.api');
     expect(idsSince(recorded.deploy, before.deploy)).toEqual(['shop.auth.api.deployment']);
     expect(renamedFromOf('Deployment shop.auth.api.deployment')).toEqual(['auth.api-deploy']);
   });
@@ -3113,7 +3132,7 @@ describe('resource IDs are built from the full address, and each declares the ID
 
       expect(idsSince(recorded.svc, before.svc)).toEqual(['my-shop.web']);
       expect(renamedFromOf('App my-shop.web')).toEqual(['web-svc']);
-      expect(recorded.svc[before.svc]?.[1]).toHaveProperty('displayName', 'web');
+      expect(recorded.svc[before.svc]?.[1]).toHaveProperty('displayName', 'my-shop.web');
       const port = 'my-shop.web.env.COMPOSER_MY_SHOP_WEB_PORT';
       expect(idsSince(recorded.envVar, before.envVar)).toContain(port);
       expect(renamedFromOf(`EnvironmentVariable ${port}`)).toEqual(['COMPOSER_WEB_PORT-var']);
@@ -3193,7 +3212,7 @@ describe('resource IDs are built from the full address, and each declares the ID
     });
   });
 
-  test('raw postgres: the Database, Connection and warm-up; the Connection is named by the address below the app', () => {
+  test('raw postgres: the Database, Connection and warm-up; the Connection is named by the address', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const before = {
       db: recorded.db.length,
@@ -3217,12 +3236,12 @@ describe('resource IDs are built from the full address, and each declares the ID
     expect(renamedFromOf('Database shop.catalog')).toEqual(['catalog-db']);
     expect(idsSince(recorded.conn, before.conn)).toEqual(['shop.catalog.connection']);
     expect(renamedFromOf('Connection shop.catalog.connection')).toEqual(['catalog-conn']);
-    expect(recorded.conn[before.conn]?.[1]).toHaveProperty('name', 'catalog');
+    expect(recorded.conn[before.conn]?.[1]).toHaveProperty('name', 'shop.catalog');
     expect(idsSince(recorded.warm, before.warm)).toEqual(['shop.catalog.warmup']);
     expect(renamedFromOf('PgWarm shop.catalog.warmup')).toEqual(['catalog-warm']);
   });
 
-  test('raw postgres, local dev: the branchless Database is named by the address below the app', () => {
+  test('raw postgres, local dev: the branchless Database is named by the address', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const before = recorded.db.length;
 
@@ -3239,7 +3258,10 @@ describe('resource IDs are built from the full address, and each declares the ID
     );
 
     expect(recorded.db.slice(before)).toEqual([
-      ['shop.catalog', { project: 'shop-project#cloud-id', name: 'catalog', region: 'inherit' }],
+      [
+        'shop.catalog',
+        { project: 'shop-project#cloud-id', name: 'shop.catalog', region: 'inherit' },
+      ],
     ]);
     expect(renamedFromOf('Database shop.catalog')).toEqual(['catalog-db']);
   });
@@ -3282,7 +3304,7 @@ describe('resource IDs are built from the full address, and each declares the ID
       expect(renamedFromOf('Database shop.catalog')).toEqual(['catalog-db']);
       expect(idsSince(recorded.conn, before.conn)).toEqual(['shop.catalog.connection']);
       expect(renamedFromOf('Connection shop.catalog.connection')).toEqual(['catalog-conn']);
-      expect(recorded.conn[before.conn]?.[1]).toHaveProperty('name', 'catalog');
+      expect(recorded.conn[before.conn]?.[1]).toHaveProperty('name', 'shop.catalog');
       expect(idsSince(recorded.warm, before.warm)).toEqual(['shop.catalog.warmup']);
       expect(renamedFromOf('PgWarm shop.catalog.warmup')).toEqual(['catalog-warm']);
       expect(idsSince(recorded.pnMigrate, before.migrate)).toEqual(['shop.catalog.migration']);
@@ -3290,7 +3312,7 @@ describe('resource IDs are built from the full address, and each declares the ID
     });
   });
 
-  test('bucket: the Bucket and its access key, both named by the address below the app', () => {
+  test('bucket: the Bucket and its access key, both named by the address', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const before = { bucket: recorded.bucket.length, bucketKey: recorded.bucketKey.length };
 
@@ -3308,10 +3330,10 @@ describe('resource IDs are built from the full address, and each declares the ID
 
     expect(idsSince(recorded.bucket, before.bucket)).toEqual(['shop.uploads']);
     expect(renamedFromOf('Bucket shop.uploads')).toEqual(['uploads-bucket']);
-    expect(recorded.bucket[before.bucket]?.[1]).toHaveProperty('name', 'uploads');
+    expect(recorded.bucket[before.bucket]?.[1]).toHaveProperty('name', 'shop.uploads');
     expect(idsSince(recorded.bucketKey, before.bucketKey)).toEqual(['shop.uploads.accesskey']);
     expect(renamedFromOf('BucketAccessKey shop.uploads.accesskey')).toEqual(['uploads-key']);
-    expect(recorded.bucketKey[before.bucketKey]?.[1]).toHaveProperty('name', 'uploads');
+    expect(recorded.bucketKey[before.bucketKey]?.[1]).toHaveProperty('name', 'shop.uploads');
   });
 
   test('s3 credentials: one resource under the address', () => {
@@ -3333,7 +3355,7 @@ describe('resource IDs are built from the full address, and each declares the ID
     expect(renamedFromOf('S3Credentials shop.creds')).toEqual(['creds-creds']);
   });
 
-  test('every platform name Composer writes is the address below the app', () => {
+  test('every platform name Composer writes is the address', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const graph = { root: { id: 'my-shop' } };
     const local = { ...application, defaultBranchId: undefined, branchless: true };
@@ -3354,15 +3376,19 @@ describe('resource IDs are built from the full address, and each declares the ID
     const nameOf = (rows: ReadonlyArray<[string, unknown]>, from: number, prop = 'name') =>
       rows.slice(from).map(([id, props]) => [id, (props as Record<string, unknown>)[prop]]);
     expect(nameOf(recorded.svc, before.svc, 'displayName')).toEqual([
-      ['my-shop.auth.api', 'auth.api'],
+      ['my-shop.auth.api', 'my-shop.auth.api'],
     ]);
-    expect(nameOf(recorded.db, before.db)).toEqual([['my-shop.auth.catalog', 'auth.catalog']]);
+    expect(nameOf(recorded.db, before.db)).toEqual([
+      ['my-shop.auth.catalog', 'my-shop.auth.catalog'],
+    ]);
     expect(nameOf(recorded.conn, before.conn)).toEqual([
-      ['my-shop.auth.catalog.connection', 'auth.catalog'],
+      ['my-shop.auth.catalog.connection', 'my-shop.auth.catalog'],
     ]);
-    expect(nameOf(recorded.bucket, before.bucket)).toEqual([['my-shop.auth.files', 'auth.files']]);
+    expect(nameOf(recorded.bucket, before.bucket)).toEqual([
+      ['my-shop.auth.files', 'my-shop.auth.files'],
+    ]);
     expect(nameOf(recorded.bucketKey, before.bucketKey)).toEqual([
-      ['my-shop.auth.files.accesskey', 'auth.files'],
+      ['my-shop.auth.files.accesskey', 'my-shop.auth.files'],
     ]);
   });
 });

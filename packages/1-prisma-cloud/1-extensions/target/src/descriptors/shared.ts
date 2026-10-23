@@ -8,7 +8,7 @@ import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import type { PointerUpdatedAt } from '../control/pointer-timestamps.ts';
 import { fromLegacyId, legacyNodeResourceId } from '../legacy-resource-ids.ts';
-import { addressBelowApp, resourceId } from '../resource-ids.ts';
+import { resourceId } from '../resource-ids.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 
 /**
@@ -93,25 +93,24 @@ export interface ResolvedCloudOptions {
   readonly pointerUpdatedAt: PointerUpdatedAt;
 }
 
-// Prisma's Connection create constrains `name` to 3–65 chars (Management API:
-// POST /v1/connections); applied here to every platform name Composer writes
-// as the tightest of the API's name-length rules.
-const PRISMA_NAME_MIN = 3;
-const PRISMA_NAME_MAX = 65;
+/** The longest name the Management API accepts for each kind of row Composer names. */
+const PLATFORM_NAME_LIMITS = { App: 256, Connection: 65, Bucket: 100 } as const;
 
 /**
- * Checks a platform name Composer writes for the node at `address`: its address below the app
- * name (ADR-0057). The name is a label, so the error says plainly that fixing it means changing
- * the address, which makes the node a different entity.
+ * Checks that the platform can hold the node's address as the name of its `kind` row (ADR-0057).
+ * Fails naming the address; a name is never shortened.
  */
-export function validateName(name: string, address: string): void {
-  if (name.length < PRISMA_NAME_MIN || name.length > PRISMA_NAME_MAX) {
+export function validatePlatformName(
+  kind: keyof typeof PLATFORM_NAME_LIMITS,
+  address: string,
+): void {
+  const limit = PLATFORM_NAME_LIMITS[kind];
+  if (address.length > limit) {
     throw new Error(
-      `prisma-cloud: the node "${address}" gets the platform name "${name}" (${name.length} ` +
-        `characters), but Prisma requires ${PRISMA_NAME_MIN}–${PRISMA_NAME_MAX} characters. ` +
-        'The name is the address without the app name. Changing a provision id or moving the ' +
-        "node changes its address, which makes it a different entity: a database's or bucket's " +
-        'data is not carried over.',
+      `prisma-cloud: the node "${address}" is ${address.length} characters long, but Prisma ` +
+        `allows at most ${limit} characters in a ${kind} name, and every platform name is the ` +
+        "node's address. Shorten the app name or a provision id. Changing the address makes the " +
+        "node a different entity: a database's or bucket's data is not carried over.",
     );
   }
 }
@@ -218,16 +217,15 @@ export const stageDatabase = ({
   Effect.gen(function* () {
     const branchId = attachmentBranchIdOf(application, id);
     // 'inherit' resolves to the project's default region on the platform.
-    const name = addressBelowApp(address, app);
     const db = yield* Prisma.Database(resourceId(address), {
       project: projectIdOf(application),
       region: region ?? 'inherit',
-      ...(branchId !== undefined ? { branchId } : { name }),
+      ...(branchId !== undefined ? { branchId } : { name: address }),
       ...logicalIdProp(application, address),
     }).pipe(asOwnRow, fromLegacyId(legacyNodeResourceId(app, address, 'db')));
     const conn = yield* Prisma.Connection(resourceId(address, 'connection'), {
       database: db,
-      name,
+      name: address,
     }).pipe(fromLegacyId(legacyNodeResourceId(app, address, 'conn')));
     const url = Output.map(conn.directConnectionString, (value) => {
       if (value === undefined) {

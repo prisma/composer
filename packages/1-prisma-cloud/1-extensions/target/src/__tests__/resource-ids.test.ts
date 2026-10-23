@@ -3,6 +3,7 @@ import { RenamePolicy } from 'alchemy/Rename';
 import * as Effect from 'effect/Effect';
 import * as Option from 'effect/Option';
 import {
+  addressBelowApp,
   fromLegacyId,
   legacyConfigKey,
   legacyEnvVarId,
@@ -13,7 +14,7 @@ import {
   legacyServiceKeyId,
   legacyStreamsKeyId,
 } from '../legacy-resource-ids.ts';
-import { addressBelowApp, resourceId } from '../resource-ids.ts';
+import { resourceId } from '../resource-ids.ts';
 
 describe('resourceId', () => {
   test("is the address for a node's main resource", () => {

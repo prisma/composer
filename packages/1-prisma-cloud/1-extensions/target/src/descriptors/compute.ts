@@ -23,7 +23,7 @@ import {
 } from '../legacy-resource-ids.ts';
 import { paramBindingFor, paramName } from '../param.ts';
 import { provisionedEdges } from '../provisioned-edges.ts';
-import { addressBelowApp, resourceId } from '../resource-ids.ts';
+import { resourceId } from '../resource-ids.ts';
 import {
   configKey,
   decodeParamPointer,
@@ -40,7 +40,7 @@ import {
   logicalIdProp,
   projectIdOf,
   type ResolvedCloudOptions,
-  validateName,
+  validatePlatformName,
 } from './shared.ts';
 
 /** `compute({ listens: false })`, read structurally: the node may be a copy made by another bundle of this package, so `instanceof` cannot be relied on. */
@@ -162,13 +162,12 @@ export function computeDescriptor(
     provision: ({ address, application, graph }) =>
       Effect.gen(function* () {
         const app = graph.root.id;
-        const displayName = addressBelowApp(address, app);
-        validateName(displayName, address);
+        validatePlatformName('App', address);
         const projectId = projectIdOf(application);
         const { branchId } = cloudApplicationOf(application);
         const svc = yield* Prisma.App(resourceId(address), {
           project: projectId,
-          displayName,
+          displayName: address,
           ...(o().region !== undefined ? { regionId: o().region } : {}),
           ...(branchId !== undefined ? { branchId } : {}),
           ...logicalIdProp(application, address),

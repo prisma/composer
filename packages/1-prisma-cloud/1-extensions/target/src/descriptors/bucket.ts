@@ -7,14 +7,14 @@ import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { fromLegacyId, legacyNodeResourceId } from '../legacy-resource-ids.ts';
-import { addressBelowApp, resourceId } from '../resource-ids.ts';
+import { resourceId } from '../resource-ids.ts';
 import {
   asOwnRow,
   cloudApplicationOf,
   logicalIdProp,
   projectIdOf,
   type ResolvedCloudOptions,
-  validateName,
+  validatePlatformName,
 } from './shared.ts';
 
 /**
@@ -28,18 +28,17 @@ export function bucketDescriptor(_o: () => ResolvedCloudOptions): NodeDescriptor
   const lowering: Lowering = ({ address, application, graph }) =>
     Effect.gen(function* () {
       const app = graph.root.id;
-      const name = addressBelowApp(address, app);
-      validateName(name, address);
+      validatePlatformName('Bucket', address);
       const { branchId } = cloudApplicationOf(application);
       const bkt = yield* Prisma.Bucket(resourceId(address), {
         project: projectIdOf(application),
-        name,
+        name: address,
         ...(branchId !== undefined ? { branchId } : {}),
         ...logicalIdProp(application, address),
       }).pipe(asOwnRow, fromLegacyId(legacyNodeResourceId(app, address, 'bucket')));
       const key = yield* Prisma.BucketAccessKey(resourceId(address, 'accesskey'), {
         bucket: bkt.bucketId,
-        name,
+        name: address,
         role: 'read_write',
       }).pipe(fromLegacyId(legacyNodeResourceId(app, address, 'key')));
       const secretAccessKey = Output.map(key.secretAccessKey, (v) => Redacted.value(v));

@@ -5,8 +5,16 @@
  * Delete this file once no such stage remains.
  */
 import { renamedFrom } from 'alchemy/Rename';
-import { addressBelowApp } from './resource-ids.ts';
 import { configKey, generatedParamVarName, inputKey } from './serializer.ts';
+
+/** The address without its first segment, the app name: `shop.auth.api` in the app `shop` is `auth.api`. */
+export function addressBelowApp(address: string, app: string): string {
+  const prefix = `${app}.`;
+  if (!address.startsWith(prefix)) {
+    throw new Error(`prisma-cloud: the address "${address}" is not inside the app "${app}".`);
+  }
+  return address.slice(prefix.length);
+}
 
 /** `<address below the app>-<suffix>`: the App, Deployment, Database, Connection, warm-up, migration, Bucket, access key and S3 credentials. */
 export function legacyNodeResourceId(app: string, address: string, suffix: string): string {
