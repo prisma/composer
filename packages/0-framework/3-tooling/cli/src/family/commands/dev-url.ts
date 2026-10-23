@@ -5,6 +5,7 @@
  */
 import { defineCommand, positional } from '@prisma/cli-engine';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
+import { dataLine } from '../data-lines.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
 import { toEngineError } from '../translate-error.ts';
@@ -53,7 +54,7 @@ export const createDevUrlCommand = (operations: ComposerOperations) =>
                 text: `The ${node.kind} ${ui.emphasize(node.address)} is ${node.state} at ${node.url}`,
               },
             ],
-            stdout: () => [node.url],
+            stdout: () => [dataLine([node.url])],
             json: () => node,
             next: () => [],
           },

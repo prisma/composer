@@ -42,14 +42,20 @@ command:
   servers, as ending `prisma dev` does, for a `dev` that was killed without the
   chance. Data and ports stay. It is the `devStop` operation, returning
   `{ app, stopped }`; `stopped` lists only the nodes that were running, so
-  it is empty when nothing was, and the command then says so.
+  it is empty when nothing was, and the command then says so. Piped, it
+  writes one tab-separated line per stopped node: node address and node
+  kind.
 - **`prisma emulator list`** — every local emulator on this machine, whether it
   runs, its admin URL (`null` when it is not running), and its instances with
   id, kind, URL, state and labels. An emulator that runs but cannot be listed
   is reported in its own entry with an `error` of `{ code, message }`, and the
   others are still listed. Piped, it writes one tab-separated line per
   instance: emulator kind, instance id, URL, state, node address and
-  directory. It needs no project or configuration, so it uses
+  directory. The directory is an absolute path, because the list covers
+  every app on the machine and runs from any directory. Every data line
+  escapes a backslash, tab, newline or carriage return inside a field, and
+  fields are only added at the end; see the guide's
+  [Piped output](../../guides/running-locally.md#piped-output). It needs no project or configuration, so it uses
   the emulator client bundled into `@prisma/composer-cli` rather than the
   project's `@prisma/composer-prisma-cloud`. The emulators' registry files and
   instance-list routes are therefore read across Composer versions and must
@@ -515,12 +521,7 @@ Deploy's rule holds: every failure names its fix.
 
 ## Out of scope (designed around)
 
-- **Hot reload / user-supplied dev commands.** The loop's unit of change is a
-  rebuilt artifact. The designed extension (not v1): a service may opt into a
-  dev command (e.g. `next dev`) that replaces its artifact process; the harness
-  still resolves bindings and materializes the same env, and writes the stash
-  so `load()`/`config()`/`secrets()` work without `run()`. The opt-in must be
-  explicit precisely because it trades away artifact parity.
+- **Hot reload / user-supplied dev commands.** Decided in [ADR-0056](../90-decisions/ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): a service runs the dev server its build adapter declares (`next dev`; a `dev` command written on `node()`) in place of its artifact, as a command deployment on the Compute emulator, with the environment its deployment would get, re-stashed address-free so `load()`/`input()` work without `run()`. A service whose adapter declares no dev server runs its artifact as described in this doc. This doc describes the dev-server mechanics once they ship.
 - **Remote bindings** (a local service against real cloud resources,
   Wrangler-style). A possible future opt-in; contradicts credential-free dev
   as a default.

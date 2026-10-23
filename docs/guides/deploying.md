@@ -160,8 +160,14 @@ place. A stage name must be a valid git ref name (`git check-ref-format`);
 an invalid name is a hard error, never a silent rename.
 
 Every node has an **address**: the app name, then the path of provision ids
-down to the node (`storefront-auth.auth.database`). Services, managed Postgres
-databases and buckets record their address as `logicalId` on their Branch. Console uses the same address
+down to the node (`storefront-auth.auth.database`).
+
+Piped, `prisma deploy` writes one line per deployed entity with four tab-separated fields: the node's address, the entity kind, the entity id and its URL, which is empty for an entity without one. On Prisma Cloud the entity kind is `compute-service`, `postgres-database` or `bucket`. For example, `prisma deploy module.ts | cut -f4` prints each entity's URL, or an empty line for one without. Everything else the deploy prints, including Alchemy's progress, goes to stderr. [Piped output](running-locally.md#piped-output) gives the rules every data line follows.
+
+Two successful deploys print fewer lines than you might expect. A node that published no entities, such as S3 credentials, gets no line. A deploy whose run wrote no report prints no lines at all. Both exit 0. A script that must tell these apart from a deploy with nothing in it uses `--json`: its `summary` lists every node, including those without entities, and is `null` when the run wrote no report.
+
+Services, managed Postgres databases and buckets record their address as
+`logicalId` on their Branch. Console uses the same address
 in the topology to find each resource and its counterpart on main. The row on a
 Branch that holds a node's address is that node's resource: if a deploy is
 interrupted after a resource was created but before it was recorded, the next

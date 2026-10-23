@@ -50,6 +50,18 @@ export interface ConvergeContext {
   readonly lastChild: () => ChildResult | undefined;
 }
 
+/**
+ * Node's `--import` of a module that sends the child's stdout to stderr when
+ * stdout is not a terminal. In human format the engine hands a piped run's
+ * stdout to the child, and that pipe carries only the parent's data lines.
+ */
+const STDOUT_TO_STDERR = [
+  '--import',
+  `data:text/javascript,${encodeURIComponent(
+    'if (process.stdout.isTTY !== true) process.stdout.write = process.stderr.write.bind(process.stderr);',
+  )}`,
+] as const;
+
 /** The adapter the operations call, backed by the engine's `ctx.spawn` so the
  *  terminal reaches alchemy natively and the engine owns signal policy. */
 export function convergeSpawn(ctx: ConvergeContext): RunAlchemy {
@@ -57,7 +69,7 @@ export function convergeSpawn(ctx: ConvergeContext): RunAlchemy {
     const commandLine = alchemyCommandLine(invocation);
     const result = await ctx.spawn({
       command: commandLine.command,
-      args: commandLine.args,
+      args: [...STDOUT_TO_STDERR, ...commandLine.args],
       cwd: commandLine.cwd,
       env: commandLine.env,
     });

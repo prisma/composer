@@ -9,6 +9,7 @@ import type { EngineEvent } from '@prisma/cli-engine';
 import { defineCommand, flag, positional } from '@prisma/cli-engine';
 import type { DeployEvent, DeployStep } from '../../operations/deploy.ts';
 import { convergeSpawn, operationDeps, settleConverge } from '../converge.ts';
+import { dataLine } from '../data-lines.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
 import { workspaceIdOf } from '../workspace.ts';
@@ -158,7 +159,12 @@ export const createDeployCommand = (operations: ComposerOperations) =>
                       ]),
                     },
                   ],
-            stdout: () => [],
+            stdout: () =>
+              (summary?.nodes ?? []).flatMap((node) =>
+                node.entities.map((entity) =>
+                  dataLine([node.address, entity.kind, entity.id, entity.url]),
+                ),
+              ),
             json: () => ({ summary: summary ?? null, durationMs }),
             next: () => [],
           },
