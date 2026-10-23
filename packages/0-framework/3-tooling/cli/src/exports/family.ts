@@ -8,6 +8,7 @@
  * proves it against built output.
  */
 
+export { dataLine } from '../family/data-lines.ts';
 export type { ComposerOperations, CreateComposerFamilyOptions } from '../family/family.ts';
 export { createComposerFamily, realOperations } from '../family/family.ts';
 export { composerSection } from '../family/section.ts';

@@ -130,6 +130,8 @@ export function withComposerAdvice(text: string): string {
   );
 }
 
+const STDOUT_CONSOLE_METHODS: ReadonlySet<string> = new Set(['log', 'info', 'debug']);
+
 /**
  * Child half of the failure protocol, called by the generated stack file.
  * Keeps a bounded tail of everything this process logs through `console`,
@@ -138,13 +140,19 @@ export function withComposerAdvice(text: string): string {
  * redacted cause beside the result file. `console`, not the output streams:
  * alchemy's logger and its error reporting both go through it, and under Bun
  * `console` does not reach `process.stdout.write`.
+ *
+ * When stdout is not a terminal it carries the parent's data lines, so
+ * everything this process prints goes to stderr instead.
  */
 export function captureEngineFailure(): void {
   const resultFile = process.env[DEPLOYMENT_RESULT_FILE_ENV];
   if (resultFile === undefined || resultFile.length === 0) return;
+  const stdoutToStderr = process.stdout.isTTY !== true;
+  if (stdoutToStderr) process.stdout.write = process.stderr.write.bind(process.stderr);
   let tail = '';
   for (const method of ['log', 'info', 'warn', 'error', 'debug'] as const) {
-    const original = console[method];
+    const original =
+      stdoutToStderr && STDOUT_CONSOLE_METHODS.has(method) ? console.error : console[method];
     console[method] = (...args: unknown[]) => {
       const text = format(...args);
       const shown = withComposerAdvice(text);

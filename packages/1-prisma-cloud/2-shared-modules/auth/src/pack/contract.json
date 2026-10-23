@@ -608,8 +608,7 @@
                 "accessTokenExpiresAt": {
                   "codecId": "pg/timestamptz-string@1",
                   "dataType": "pg/timestamptz",
-                  "nullable": true,
-                  "typeRef": "Tstz"
+                  "nullable": true
                 },
                 "accountId": {
                   "codecId": "pg/text@1",
@@ -623,8 +622,7 @@
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nullable": false,
-                  "typeRef": "Tstz"
+                  "nullable": false
                 },
                 "id": {
                   "codecId": "pg/text@1",
@@ -654,8 +652,7 @@
                 "refreshTokenExpiresAt": {
                   "codecId": "pg/timestamptz-string@1",
                   "dataType": "pg/timestamptz",
-                  "nullable": true,
-                  "typeRef": "Tstz"
+                  "nullable": true
                 },
                 "scope": {
                   "codecId": "pg/text@1",
@@ -665,8 +662,7 @@
                 "updatedAt": {
                   "codecId": "pg/timestamptz-string@1",
                   "dataType": "pg/timestamptz",
-                  "nullable": false,
-                  "typeRef": "Tstz"
+                  "nullable": false
                 },
                 "userId": {
                   "codecId": "pg/text@1",
@@ -717,14 +713,12 @@
                 "createdAt": {
                   "codecId": "pg/timestamptz-string@1",
                   "dataType": "pg/timestamptz",
-                  "nullable": false,
-                  "typeRef": "Tstz"
+                  "nullable": false
                 },
                 "expiresAt": {
                   "codecId": "pg/timestamptz-string@1",
                   "dataType": "pg/timestamptz",
-                  "nullable": true,
-                  "typeRef": "Tstz"
+                  "nullable": true
                 },
                 "id": {
                   "codecId": "pg/text@1",
@@ -760,14 +754,12 @@
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nullable": false,
-                  "typeRef": "Tstz"
+                  "nullable": false
                 },
                 "expiresAt": {
                   "codecId": "pg/timestamptz-string@1",
                   "dataType": "pg/timestamptz",
-                  "nullable": false,
-                  "typeRef": "Tstz"
+                  "nullable": false
                 },
                 "id": {
                   "codecId": "pg/text@1",
@@ -792,8 +784,7 @@
                 "updatedAt": {
                   "codecId": "pg/timestamptz-string@1",
                   "dataType": "pg/timestamptz",
-                  "nullable": false,
-                  "typeRef": "Tstz"
+                  "nullable": false
                 },
                 "userAgent": {
                   "codecId": "pg/text@1",
@@ -855,8 +846,7 @@
                 "banExpires": {
                   "codecId": "pg/timestamptz-string@1",
                   "dataType": "pg/timestamptz",
-                  "nullable": true,
-                  "typeRef": "Tstz"
+                  "nullable": true
                 },
                 "banReason": {
                   "codecId": "pg/text@1",
@@ -875,8 +865,7 @@
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nullable": false,
-                  "typeRef": "Tstz"
+                  "nullable": false
                 },
                 "email": {
                   "codecId": "pg/text@1",
@@ -915,8 +904,7 @@
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nullable": false,
-                  "typeRef": "Tstz"
+                  "nullable": false
                 }
               },
               "foreignKeys": [],
@@ -943,14 +931,12 @@
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nullable": false,
-                  "typeRef": "Tstz"
+                  "nullable": false
                 },
                 "expiresAt": {
                   "codecId": "pg/timestamptz-string@1",
                   "dataType": "pg/timestamptz",
-                  "nullable": false,
-                  "typeRef": "Tstz"
+                  "nullable": false
                 },
                 "id": {
                   "codecId": "pg/text@1",
@@ -969,8 +955,7 @@
                     "expression": "now()",
                     "kind": "function"
                   },
-                  "nullable": false,
-                  "typeRef": "Tstz"
+                  "nullable": false
                 },
                 "value": {
                   "codecId": "pg/text@1",
@@ -1008,14 +993,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "0df0ef0989ec3dd95124dde6303fbe0572bbab08bebf00abff6a7955cadd786e",
-    "types": {
-      "Tstz": {
-        "codecId": "pg/timestamptz-string@1",
-        "dataType": "pg/timestamptz",
-        "kind": "codec-instance"
-      }
-    }
+    "storageHash": "24a0762cac2c89426d118c9a9a81876ebcf32eba11789722d7c907ba710dc60d"
   },
   "capabilities": {
     "postgres": {

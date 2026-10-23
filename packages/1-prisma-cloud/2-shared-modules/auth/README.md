@@ -226,6 +226,29 @@ model Profile {
 Upgrade procedure: bump this package → `prisma migration plan` (the new
 shipped migrations materialise) → deploy. The deploy preflight fails loudly
 when a wired database's config is missing the pack or is at a stale head.
+A version whose section below says otherwise needs those steps instead.
+
+### Upgrading to Composer 0.34.0
+
+Composer 0.34.0 moves to Prisma ORM 8.0.0-rc.20. The auth pack's contract no longer stores its `Tstz` type alias: each column stores its own type. The tables do not change, but the auth pack's storage hash does, from `0df0ef0989ec3dd95124dde6303fbe0572bbab08bebf00abff6a7955cadd786e` to `24a0762cac2c89426d118c9a9a81876ebcf32eba11789722d7c907ba710dc60d`. Your app keeps its own copy of the auth pack's migrations (`migrations/auth/` and the snapshot in `migrations/snapshots/0df0ef…/`), and Prisma ORM rc.20 refuses to load that snapshot as it is. Every database's marker also still holds the old hash. Until you follow these steps, `prisma deploy` and `prisma dev` fail at the migration step: first with `Contract-space contract validation failed for "auth"`, and after the script in step 3 with `MIGRATION_PATH_NOT_FOUND` for contract space `"auth"`.
+
+1. Commit your work, so the changes below can be reviewed and undone with git.
+2. Upgrade `@prisma/composer`, `@prisma/composer-cli` and `@prisma/composer-prisma-cloud` to 0.34.0, `@prisma/orm-postgres` to 8.0.0-rc.20, and `prisma` to 8.0.0-rc.26 or later. An earlier `prisma` cannot read an rc.20 contract, so `contract emit` and `db sign` fail with `Cannot use 'in' operator to search for 'kind' in typeAlias`.
+3. From the app's root, copy the Prisma skills into the project and run the ORM's type-alias script. Node does not run a TypeScript file from inside `node_modules`, which is why the script runs from the copy:
+
+   ```sh
+   prisma skills sync
+   node .agents/skills/prisma-8/upgrading/app/upgrades/8.0.0-rc.19-to-8.0.0-rc.20/scripts/expand-type-aliases/expand-type-aliases.ts
+   ```
+
+   It renames `migrations/snapshots/0df0ef…/` to `migrations/snapshots/24a0762…/` and rewrites `migrations/auth/0001_init/migration.json` and `migrations/auth/refs/head.json`. It prints `0df0ef… -> 24a0762…`.
+4. Run `prisma contract emit`. For an app whose own contract has no type aliases, this only moves the version stamps in `contract.json` and `contract.d.ts`.
+5. Run `prisma db sign --db <url>` against every database of the app: production, each stage and the local dev database. The database does not change; only its marker moves to the new hash. It prints `auth: signed 24a0762… (was 0df0ef…)`.
+   - **Deployed environments.** A deploy never prints a connection string. Copy each database's connection string from the Prisma Console: the app's Project for production, and the Branch named after the stage for a stage.
+   - **The local dev database.** It must be running: `prisma db sign --db "$(prisma dev url database)"`, where `database` is your auth database's node address. A `prisma dev` that fails stops the app, and `prisma dev url` reports only a running database, so sign before you run `prisma dev` on the new version. A `prisma dev --detach` started before the upgrade keeps the database running. If the database is already stopped, start over with `prisma dev --fresh`, which deletes the local data.
+6. Deploy and run `prisma dev` as usual.
+
+The script also gives the rewritten `0001_init` migration a new hash, and each database's migration history keeps the old one. So `prisma migration status` no longer shows the auth pack's earlier migrations as applied, although it still reports the database as up to date. `prisma db migrate` does not run them again.
 
 ## Sessions & JWTs
 
