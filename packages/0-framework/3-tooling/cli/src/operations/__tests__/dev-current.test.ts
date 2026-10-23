@@ -445,6 +445,59 @@ describe.skipIf(process.platform === 'win32')('devLogs', () => {
     });
   });
 
+  test('an address the attachment does not list is checked before it is called not a service', async () => {
+    // `orders` is a service its emulator lost; `uploads` is a bucket whose emulator is down.
+    const unlisted = attachment({ endpoints: async () => [] }).value;
+    const lost = await devLogs({
+      config: config(
+        async () => recordedApp(running),
+        async () => unlisted,
+      ),
+      address: 'orders',
+      cwd,
+    });
+    const down = await devLogs({
+      config: config(
+        async () => recordedApp(running),
+        async () => unlisted,
+      ),
+      address: 'uploads',
+      cwd,
+    });
+
+    expect(lost).toMatchObject({ ok: false, failure: { code: 'DEV.NOT_RUNNING' } });
+    expect(down).toMatchObject({ ok: false, failure: { code: 'DEV.EMULATOR_UNREACHABLE' } });
+  });
+
+  test('a read that fails fails with DEV.EMULATOR_FAILED, unless the caller aborted it', async () => {
+    const controller = new AbortController();
+    const failing = attachment({
+      readLogs: async () => {
+        throw new Error(controller.signal.aborted ? 'aborted' : 'emulator said 500');
+      },
+    }).value;
+    const failed = await devLogs({
+      config: config(
+        async () => recordedApp(running),
+        async () => failing,
+      ),
+      cwd,
+    });
+    controller.abort();
+    const aborted = await devLogs({
+      config: config(
+        async () => recordedApp(running),
+        async () => failing,
+      ),
+      signal: controller.signal,
+      cwd,
+    });
+
+    expect(failed).toMatchObject({ ok: false, failure: { code: 'DEV.EMULATOR_FAILED' } });
+    if (!aborted.ok) throw new Error(aborted.failure.message);
+    expect(await collect(aborted.value.lines)).toEqual([]);
+  });
+
   test('a compute emulator that is not running fails with DEV.EMULATOR_UNREACHABLE', async () => {
     const down: LocalNodeLocation[] = [
       { address: 'gateway', kind: 'service', emulator: 'not-running' },

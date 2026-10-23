@@ -240,7 +240,13 @@ async function logSources(
       .filter((service) => address === undefined || service === address)
       .sort();
     if (address !== undefined && services.length === 0) {
-      const { kind } = await locateRecorded(current, address);
+      // The attachment does not list it as a service. Rule out the states that
+      // would also hide a service before saying it is not one: its emulator is
+      // down, or the emulator lost it.
+      const location = await locateRecorded(current, address);
+      if (location.emulator === 'not-running') throw emulatorNotRunning(address, location.kind);
+      if (location.condition === 'missing') throw notRunning(address, location);
+      const { kind } = location;
       throw new CliStructuredError(
         'DEV.NO_LOGS',
         `"${address}" is a ${kind}, and only services have logs.`,
@@ -272,7 +278,12 @@ function logsUnsupported(): CliStructuredError {
   );
 }
 
-/** Every source's current lines, one service after another in address order. */
+/**
+ * Every source's current lines, one service after another in address order.
+ * A read cut short by `input.signal` is the caller stopping, not the emulator
+ * failing: it ends with the lines read so far, and the host settles the
+ * interrupt from its own record of the signal.
+ */
 async function readLines(
   sources: readonly LogSource[],
   input: DevLogsInput,
@@ -283,9 +294,16 @@ async function readLines(
     const { readLogs } = attachment;
     if (readLogs === undefined) throw logsUnsupported();
     const wanted = new Set(services);
-    const read = await fromTarget(() =>
-      readLogs({ tail, ...(input.signal === undefined ? {} : { signal: input.signal }) }),
-    );
+    let read: readonly LogLine[];
+    try {
+      read = await readLogs({
+        tail,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      });
+    } catch (error) {
+      if (input.signal?.aborted === true) break;
+      throw toStructured('DEV.EMULATOR_FAILED', error);
+    }
     lines.push(...read.filter(({ service }) => wanted.has(service)));
   }
   // A stable sort, so each service's lines keep their order.

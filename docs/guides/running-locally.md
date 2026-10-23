@@ -246,6 +246,9 @@ credentials. It fails with a code a script can branch on:
   lists the ones it has.
 - `DEV.NO_LOGS`: the address is a database or a bucket. Only services have
   logs.
+- `DEV.NOT_RUNNING`: the emulator no longer has the service at that address,
+  for example after a Composer upgrade discarded its state. The next
+  `prisma dev` creates it again.
 - `DEV.EMULATOR_UNREACHABLE`: the compute emulator, which runs the services,
   is not running. Run `prisma dev`.
 - `DEV.LOGS_UNSUPPORTED`: the app's `@prisma/composer-prisma-cloud` is older

@@ -494,7 +494,8 @@ that surprise:
    grouped by service, not interleaved in time. A service's log holds only its
    current run (each start, including a rebuild, clears it) and is readable
    while it crash-loops. It fails with `DEV.NO_LOGS` for a database or bucket
-   address, and `DEV.LOGS_UNSUPPORTED` when the app's Composer packages are
+   address, `DEV.NOT_RUNNING` for a service the emulator lost (the next `dev`
+   re-creates it), and `DEV.LOGS_UNSUPPORTED` when the app's Composer packages are
    older than the CLI's (upgrade them, or use `--follow`). The same read is
    the `devLogs` operation of `@prisma/composer/control`.
    Don't hard-code a local port; ports differ per directory. `prisma dev url

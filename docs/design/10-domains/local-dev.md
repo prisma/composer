@@ -520,7 +520,8 @@ Deploy's rule holds: every failure names its fix.
 | `dev url`, `dev stop` or `dev logs` in a directory where no extension recorded an app | `DEV.NOT_STARTED_HERE`: run `prisma dev` here first |
 | `dev url` or `dev logs` with an address the app does not have | `DEV.ADDRESS_UNKNOWN`, listing the addresses it has |
 | `dev url` for a node whose emulator is not running, or `dev logs` while the compute emulator is not running | `DEV.EMULATOR_UNREACHABLE` |
-| `dev logs` with the address of a node that is not a service | `DEV.NO_LOGS`, naming its kind |
+| `dev logs` with the address of a node that is not a service | `DEV.NO_LOGS`, naming its kind; an address the attachment does not list is first checked for an emulator that is not running (`DEV.EMULATOR_UNREACHABLE`) or a node the emulator lost (`DEV.NOT_RUNNING`) |
+| `dev logs` interrupted by its signal during a read | not a failure: the lines read so far, and the host settles the interrupt |
 | `dev logs` without `--follow`, when the app's local target has no `readLogs` (an older `@prisma/composer-prisma-cloud`) | `DEV.LOGS_UNSUPPORTED`: upgrade the app's Composer packages, or follow |
 | `dev url` for a node that exists but is not running | `DEV.NOT_RUNNING`, naming its state; for a stopped node the fix is `prisma dev`, for a crash-looping service it is the service's log, for a node its emulator lost it is `prisma dev`, which creates it again |
 | the local target fails without a code (for example an emulator's error response) in `dev url`, `dev stop` or `dev logs` | `DEV.EMULATOR_FAILED` |
