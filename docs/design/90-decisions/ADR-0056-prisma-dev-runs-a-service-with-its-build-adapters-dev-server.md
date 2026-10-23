@@ -1,5 +1,7 @@
 # ADR-0056: `prisma dev` runs a service with its build adapter's dev server
 
+Amended 2026-10-23: `prisma dev` takes no positional entry; the entry is `entry` in the `composer` section of `prisma.config.ts`, or `--entry <path>` ([ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)).
+
 ## Decision
 
 Under `prisma dev`, a service runs the dev server its build adapter declares, when it declares one, in place of its built artifact. `nextjs()` declares `next dev`. `node()` declares none unless the author writes one on it. The dev server runs on the local Compute emulator exactly as an artifact does: on the service's instance, on its port, with the environment a deployment would give it, under the emulator's readiness check, log, crash supervision and restart rules. There is no flag. `prisma dev module.ts` is the whole command.

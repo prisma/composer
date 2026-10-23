@@ -359,7 +359,7 @@ in the workspace's Console settings); `dev` and `log` read neither. The
 default. Composer starts Alchemy with Node, but Alchemy's launcher moves to
 Bun under `bunx` or `bun run`: `bunx prisma` gives Node then Bun,
 `bunx --bun prisma` Bun then Bun. When the modules `module.ts` imports use
-Bun APIs, `bun node_modules/prisma/dist/prisma.js deploy module.ts` from a
+Bun APIs, `bun node_modules/prisma/dist/prisma.js deploy` from a
 shell runs `prisma` under Bun with Alchemy on Node.
 
 A node's **address** is the app name followed by the provision ids down to it

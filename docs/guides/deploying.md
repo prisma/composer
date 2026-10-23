@@ -64,7 +64,7 @@ time, run the bin's JavaScript entry with Bun from a shell, not from a
 `bun run` script:
 
 ```sh
-bun node_modules/prisma/dist/prisma.js deploy module.ts
+bun node_modules/prisma/dist/prisma.js deploy
 ```
 
 `bun node_modules/.bin/prisma` does not run with pnpm, where that file is a
@@ -101,10 +101,23 @@ the section in the file itself rather than building it somewhere the file
 cannot reach.
 
 `entry` is the module whose default export is your app's root module. It is
-relative to `prisma.config.ts`, so the commands find it from any directory.
-`--entry <path>` on `prisma deploy` or `prisma dev` replaces it for one run,
-relative to the directory you run the command in. With neither, the command
-stops with `CONFIG.ENTRY_MISSING` before doing any work.
+relative to `prisma.config.ts`, so `prisma deploy` finds it from any
+directory below that file. `--entry <path>` on `prisma deploy` or `prisma dev`
+replaces it for one run, relative to the directory you run the command in.
+With neither, the command stops with `CONFIG.ENTRY_MISSING` before doing any
+work.
+
+`prisma dev` keeps its local state, the record of which local service,
+database and bucket backs each node, in the directory it runs in. Run
+`prisma dev`, `prisma dev url` and `prisma dev stop` from the same directory
+each time, normally the one that holds `prisma.config.ts`. Run from another
+directory, `prisma dev` starts a second, empty local copy of the app.
+
+**Upgrading from a version that took the entry as an argument.** `prisma
+deploy module.ts` and `prisma dev module.ts` now fail with
+`CLI.INVALID_ARGUMENTS`: "Too many arguments, expected 0 but encountered
+"module.ts"". Add `entry: './module.ts'` to the `composer` section of
+`prisma.config.ts` and run `prisma deploy`, or pass `--entry module.ts`.
 
 Before a command runs, the section is checked: `entry`, when set, must be a
 non-empty path, `extensions` a list of extension descriptors with distinct
