@@ -1,7 +1,7 @@
 /**
  * The published operations double (`@prisma/composer-cli/testing`): the
- * operations the command family calls, `deploy`, `dev`, `devUrl` and
- * `devStop`, with their real
+ * operations the command family calls, `deploy`, `dev`, `devUrl`, `devStop`
+ * and `devLogs`, with their real
  * signatures and Result shapes, backed by fixtures instead of alchemy,
  * containers, or a network. It does not cover `destroy` and `log`, which no
  * command calls.
@@ -22,7 +22,15 @@ import { notOk, ok, type Result } from '@internal/foundation/result';
 import type { ComposerOperations } from '../family/family.ts';
 import type { DeployEvent, DeployInput, DeploySuccess } from '../operations/deploy.ts';
 import type { DevInput, DevSession } from '../operations/dev.ts';
-import type { DevStopInput, DevStopped, DevUrl, DevUrlInput } from '../operations/dev-current.ts';
+import type {
+  DevLogs,
+  DevLogsInput,
+  DevStopInput,
+  DevStopped,
+  DevUrl,
+  DevUrlInput,
+} from '../operations/dev-current.ts';
+import type { LogLine } from '../operations/log.ts';
 import type { OperationDeps, ServiceEndpoint } from '../operations/shared.ts';
 import { type AlchemyInvocation, reproduceCommand } from '../run-alchemy.ts';
 
@@ -42,6 +50,14 @@ export interface OperationsDoubleFixtures {
   readonly devUrl?: Result<DevUrl, CliStructuredError> | undefined;
   /** Returned as-is. Default: an app named `app` with nothing to stop. */
   readonly devStop?: Result<DevStopped, CliStructuredError> | undefined;
+  /**
+   * A failing devLogs: returned as-is. When absent, devLogs succeeds for an app named `app`
+   * whose services are the addresses in `devLogLines`, streaming those lines filtered to the
+   * requested address.
+   */
+  readonly devLogs?: Result<DevLogs, CliStructuredError> | undefined;
+  /** The lines a succeeding devLogs streams. Default: none, from an app with no services. */
+  readonly devLogLines?: readonly LogLine[] | undefined;
 }
 
 /**
@@ -61,6 +77,7 @@ export interface OperationsDoubleCalls {
   readonly dev: readonly DevInput[];
   readonly devUrl: readonly DevUrlInput[];
   readonly devStop: readonly DevStopInput[];
+  readonly devLogs: readonly DevLogsInput[];
   readonly deps: OperationsDoubleDeps;
 }
 
@@ -156,6 +173,10 @@ async function runConverge(
   );
 }
 
+async function* streamOf(lines: readonly LogLine[]): AsyncGenerator<LogLine, void, undefined> {
+  yield* lines;
+}
+
 export function createOperationsDouble(fixtures: OperationsDoubleFixtures = {}): OperationsDouble {
   const deployCalls: DeployInput[] = [];
   const devCalls: DevInput[] = [];
@@ -164,11 +185,13 @@ export function createOperationsDouble(fixtures: OperationsDoubleFixtures = {}):
   const deps = { deploy: deployDeps, dev: devDeps };
   const devUrlCalls: DevUrlInput[] = [];
   const devStopCalls: DevStopInput[] = [];
+  const devLogsCalls: DevLogsInput[] = [];
   const calls = {
     deploy: deployCalls,
     dev: devCalls,
     devUrl: devUrlCalls,
     devStop: devStopCalls,
+    devLogs: devLogsCalls,
     deps,
   };
 
@@ -207,6 +230,15 @@ export function createOperationsDouble(fixtures: OperationsDoubleFixtures = {}):
     devStop: async (input) => {
       devStopCalls.push(input);
       return fixtures.devStop ?? ok({ app: 'app', stopped: [] });
+    },
+    devLogs: async (input) => {
+      devLogsCalls.push(input);
+      if (fixtures.devLogs !== undefined) return fixtures.devLogs;
+      const lines = (fixtures.devLogLines ?? []).filter(
+        ({ service }) => input.address === undefined || service === input.address,
+      );
+      const services = [...new Set(lines.map(({ service }) => service))].sort();
+      return ok({ app: 'app', services, lines: streamOf(lines) });
     },
   };
 

@@ -115,7 +115,14 @@ export function toStructured(code: `${string}.${string}`, error: unknown): CliSt
 
 /** The operation whose executor failed to load — named in the failure so a
  * host driving several operations can tell which one broke. */
-export type OperationName = 'deploy' | 'destroy' | 'dev' | 'dev url' | 'dev stop' | 'log';
+export type OperationName =
+  | 'deploy'
+  | 'destroy'
+  | 'dev'
+  | 'dev url'
+  | 'dev stop'
+  | 'dev logs'
+  | 'log';
 
 /** A failed executor import: an environmental failure of the consumer's
  * installed tree, not a bug here. The import error rides as the cause. */

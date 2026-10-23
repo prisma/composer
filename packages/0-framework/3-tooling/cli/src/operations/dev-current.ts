@@ -1,5 +1,5 @@
 /**
- * The programmatic `devUrl` and `devStop` operations
+ * The programmatic `devUrl`, `devStop` and `devLogs` operations
  * (`@prisma/composer/control`): they act on the app `prisma dev` last ran
  * from a directory, read from that directory's dev state alone — no entry
  * module, no build. The executor loads lazily, so importing this module
@@ -8,6 +8,7 @@
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../composer-config.ts';
+import type { LogEvent, LogLine } from './log.ts';
 import { executorLoadFailure, type OperationName } from './shared.ts';
 
 export interface DevUrlInput {
@@ -42,6 +43,38 @@ export interface DevStopped {
   readonly stopped: readonly { readonly address: string; readonly kind: string }[];
 }
 
+/** How many of each service's last lines `devLogs` shows by default, as `prisma service logs` does for a deployed service. */
+export const DEV_LOGS_DEFAULT_TAIL = 100;
+
+export interface DevLogsInput {
+  readonly config: ComposerConfigSource;
+  /** One service's dotted address. Every service's logs when absent. */
+  readonly address?: string | undefined;
+  /** How many of each service's last lines to show first. Defaults to 100. */
+  readonly tail?: number | undefined;
+  /** Keep streaming new lines until `signal` aborts. Defaults to false: the lines are the logs as they are now, and the stream ends. */
+  readonly follow?: boolean | undefined;
+  /** The directory `prisma dev` ran from. Defaults to the process's working directory. */
+  readonly cwd?: string | undefined;
+  /** Ends a followed stream when aborted. The host owns SIGINT/SIGTERM → abort. */
+  readonly signal?: AbortSignal | undefined;
+  readonly onEvent?: ((event: LogEvent) => void) | undefined;
+}
+
+export interface DevLogs {
+  /** The app `prisma dev` last ran from the directory. */
+  readonly app: string;
+  /** The addresses of the services whose lines `lines` carries, sorted. Empty when the app has no services. */
+  readonly services: readonly string[];
+  /**
+   * Each line labelled with its service's address. Without `follow`, every line of one service
+   * comes before the next service's, services in address order, and the stream then ends. With
+   * `follow`, services are interleaved as their lines arrive, and the stream ends when `signal`
+   * aborts.
+   */
+  readonly lines: AsyncIterable<LogLine>;
+}
+
 async function loadExecutor(
   operation: OperationName,
 ): Promise<Result<typeof import('./execute-dev-current.ts'), CliStructuredError>> {
@@ -66,4 +99,11 @@ export async function devStop(
   const executor = await loadExecutor('dev stop');
   if (!executor.ok) return executor;
   return executor.value.executeDevStop(input, input.cwd ?? process.cwd());
+}
+
+/** The logs of the directory's current app's services, as they are now or followed. */
+export async function devLogs(input: DevLogsInput): Promise<Result<DevLogs, CliStructuredError>> {
+  const executor = await loadExecutor('dev logs');
+  if (!executor.ok) return executor;
+  return executor.value.executeDevLogs(input, input.cwd ?? process.cwd());
 }

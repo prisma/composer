@@ -36,9 +36,9 @@ export const LOG_QUEUE_LIMIT = 10_000;
  * end). No event is delivered after the iterable has ended. Address
  * filtering and `tail` apply exactly as the CLI always has.
  */
-async function* mergeLogStreams(
+export async function* mergeLogStreams(
   attachments: readonly LocalTargetAttachment[],
-  input: LogInput,
+  input: Pick<LogInput, 'address' | 'tail' | 'signal' | 'onEvent'>,
 ): AsyncGenerator<LogLine, void, undefined> {
   // Internal controller linked to the caller's signal: the caller's abort
   // propagates in, and the generator's own end (early break/return) aborts it

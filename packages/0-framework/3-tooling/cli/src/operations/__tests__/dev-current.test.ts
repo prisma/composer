@@ -1,6 +1,7 @@
 /**
- * `devUrl` and `devStop` against a fake local target: how the operations
- * turn what a target recorded into results and structured failures.
+ * `devUrl`, `devStop` and `devLogs` against a fake local target: how the
+ * operations turn what a target recorded into results and structured
+ * failures.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
@@ -9,12 +10,14 @@ import * as path from 'node:path';
 import type { PrismaAppConfig } from '@internal/core/config';
 import type {
   LocalNodeLocation,
+  LocalTargetAttachment,
   LocalTargetCurrentApp,
   LocalTargetDescriptor,
 } from '@internal/core/local-target';
 import { CliStructuredError, InternalError } from '@internal/foundation/errors';
 import * as Layer from 'effect/Layer';
-import { devStop, devUrl } from '../dev-current.ts';
+import { devLogs, devStop, devUrl } from '../dev-current.ts';
+import type { LogLine } from '../log.ts';
 
 const unused = () => {
   throw new Error('not used by devUrl or devStop');
@@ -45,16 +48,19 @@ function recordedApp(locations: readonly LocalNodeLocation[]): LocalTargetCurren
   };
 }
 
-function configWith(current: LocalTargetDescriptor['current']): PrismaAppConfig {
+function configWith(
+  current: LocalTargetDescriptor['current'],
+  attach: LocalTargetDescriptor['attach'] = unused,
+): PrismaAppConfig {
   const descriptor: LocalTargetDescriptor = {
     providers: () => Layer.empty,
     container: {
-      ensure: unused,
+      ensure: async (input) => ({ input, serialize: () => 'local' }),
       locate: unused,
       remove: unused,
       deserialize: unused,
     },
-    attach: unused,
+    attach,
     ...(current !== undefined ? { current } : {}),
   };
   return {
@@ -77,8 +83,11 @@ function configWith(current: LocalTargetDescriptor['current']): PrismaAppConfig 
   };
 }
 
-function config(current: LocalTargetDescriptor['current']) {
-  return { value: configWith(current), file: 'prisma.config.ts' };
+function config(
+  current: LocalTargetDescriptor['current'],
+  attach?: LocalTargetDescriptor['attach'],
+) {
+  return { value: configWith(current, attach), file: 'prisma.config.ts' };
 }
 
 const running: LocalNodeLocation[] = [
@@ -296,6 +305,188 @@ describe.skipIf(process.platform === 'win32')('devStop', () => {
 
   test('a directory where `prisma dev` never ran fails with DEV.NOT_STARTED_HERE', async () => {
     const result = await devStop({ config: config(async () => undefined), cwd });
+
+    expect(result).toMatchObject({ ok: false, failure: { code: 'DEV.NOT_STARTED_HERE' } });
+  });
+});
+
+describe.skipIf(process.platform === 'win32')('devLogs', () => {
+  const written: LogLine[] = [
+    { service: 'quotes', line: 'quotes booting' },
+    { service: 'gateway', line: 'GET / 200' },
+    { service: 'quotes', line: 'quotes crashed' },
+    { service: 'gateway', line: 'GET /health 200' },
+  ];
+
+  /** An attachment over `running`'s services; records what it was asked for. */
+  function attachment(overrides: Partial<LocalTargetAttachment> = {}) {
+    const asked: ({ readTail: number } | { followTail: number })[] = [];
+    const value: LocalTargetAttachment = {
+      startServices: unused,
+      endpoints: async () =>
+        running
+          .filter((l) => l.kind === 'service')
+          .map(({ address }) => ({ address, url: 'http://localhost' })),
+      logs: async function* (signal, opts) {
+        asked.push({ followTail: opts?.tail ?? 0 });
+        yield* written;
+        await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
+      },
+      readLogs: async ({ tail }) => {
+        asked.push({ readTail: tail });
+        return written;
+      },
+      stopApp: unused,
+      ...overrides,
+    };
+    return { value, asked };
+  }
+
+  async function collect(lines: AsyncIterable<LogLine>): Promise<LogLine[]> {
+    const out: LogLine[] = [];
+    for await (const line of lines) out.push(line);
+    return out;
+  }
+
+  test("reads every service's last 100 lines, one service after another in address order", async () => {
+    const fake = attachment();
+    const result = await devLogs({
+      config: config(
+        async () => recordedApp(running),
+        async () => fake.value,
+      ),
+      cwd,
+    });
+
+    if (!result.ok) throw new Error(result.failure.message);
+    expect(result.value.app).toBe('shop');
+    expect(result.value.services).toEqual(['gateway', 'orders', 'quotes']);
+    expect(await collect(result.value.lines)).toEqual([
+      { service: 'gateway', line: 'GET / 200' },
+      { service: 'gateway', line: 'GET /health 200' },
+      { service: 'quotes', line: 'quotes booting' },
+      { service: 'quotes', line: 'quotes crashed' },
+    ]);
+    expect(fake.asked).toEqual([{ readTail: 100 }]);
+  });
+
+  test("reads one service's lines, including a crash-looping service's", async () => {
+    const fake = attachment();
+    const result = await devLogs({
+      config: config(
+        async () => recordedApp(running),
+        async () => fake.value,
+      ),
+      address: 'quotes',
+      tail: 20,
+      cwd,
+    });
+
+    if (!result.ok) throw new Error(result.failure.message);
+    expect(result.value.services).toEqual(['quotes']);
+    expect((await collect(result.value.lines)).map(({ line }) => line)).toEqual([
+      'quotes booting',
+      'quotes crashed',
+    ]);
+    expect(fake.asked).toEqual([{ readTail: 20 }]);
+  });
+
+  test('follows until the signal aborts, starting with the requested tail', async () => {
+    const fake = attachment();
+    const controller = new AbortController();
+    const result = await devLogs({
+      config: config(
+        async () => recordedApp(running),
+        async () => fake.value,
+      ),
+      address: 'gateway',
+      tail: 5,
+      follow: true,
+      signal: controller.signal,
+      cwd,
+    });
+
+    if (!result.ok) throw new Error(result.failure.message);
+    const seen: string[] = [];
+    for await (const { line } of result.value.lines) {
+      seen.push(line);
+      if (seen.length === 2) controller.abort();
+    }
+    expect(seen).toEqual(['GET / 200', 'GET /health 200']);
+    expect(fake.asked).toEqual([{ followTail: 5 }]);
+  });
+
+  test('an address the app does not have fails with DEV.ADDRESS_UNKNOWN', async () => {
+    const result = await devLogs({
+      config: config(
+        async () => recordedApp(running),
+        async () => attachment().value,
+      ),
+      address: 'nope',
+      cwd,
+    });
+
+    expect(result).toMatchObject({ ok: false, failure: { code: 'DEV.ADDRESS_UNKNOWN' } });
+  });
+
+  test('a node that is not a service fails with DEV.NO_LOGS, naming its kind', async () => {
+    const result = await devLogs({
+      config: config(
+        async () => recordedApp(running),
+        async () => attachment().value,
+      ),
+      address: 'catalog',
+      cwd,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      failure: { code: 'DEV.NO_LOGS', meta: { address: 'catalog', kind: 'database' } },
+    });
+  });
+
+  test('a compute emulator that is not running fails with DEV.EMULATOR_UNREACHABLE', async () => {
+    const down: LocalNodeLocation[] = [
+      { address: 'gateway', kind: 'service', emulator: 'not-running' },
+    ];
+    const result = await devLogs({
+      config: config(
+        async () => recordedApp(down),
+        async () => attachment().value,
+      ),
+      cwd,
+    });
+
+    expect(result).toMatchObject({ ok: false, failure: { code: 'DEV.EMULATOR_UNREACHABLE' } });
+  });
+
+  test('a target without readLogs fails with DEV.LOGS_UNSUPPORTED unless following', async () => {
+    const { readLogs: _, ...withoutRead } = attachment().value;
+    const read = await devLogs({
+      config: config(
+        async () => recordedApp(running),
+        async () => withoutRead,
+      ),
+      cwd,
+    });
+    const controller = new AbortController();
+    controller.abort();
+    const followed = await devLogs({
+      config: config(
+        async () => recordedApp(running),
+        async () => withoutRead,
+      ),
+      follow: true,
+      signal: controller.signal,
+      cwd,
+    });
+
+    expect(read).toMatchObject({ ok: false, failure: { code: 'DEV.LOGS_UNSUPPORTED' } });
+    expect(followed.ok).toBe(true);
+  });
+
+  test('a directory where `prisma dev` never ran fails with DEV.NOT_STARTED_HERE', async () => {
+    const result = await devLogs({ config: config(async () => undefined), cwd });
 
     expect(result).toMatchObject({ ok: false, failure: { code: 'DEV.NOT_STARTED_HERE' } });
   });
