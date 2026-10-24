@@ -43,23 +43,23 @@ describe('cron()', () => {
     const graph = Load(root);
     const ids = graph.nodes.map((n) => n.id);
 
-    expect(ids).toContain('cron.runner');
-    expect(ids).toContain('cron.scheduler');
+    expect(ids).toContain('root.cron.runner');
+    expect(ids).toContain('root.cron.scheduler');
     expect(graph.edges).toContainEqual({
-      from: 'worker',
-      to: 'cron.runner',
+      from: 'root.worker',
+      to: 'root.cron.runner',
       input: 'worker',
       kind: 'dependency',
     });
     expect(graph.edges).toContainEqual({
-      from: 'cron.runner',
-      to: 'cron.scheduler',
+      from: 'root.cron.runner',
+      to: 'root.cron.scheduler',
       input: 'trigger',
       kind: 'dependency',
     });
     // The schedule rides the scheduler's input binding (ADR-0042), recorded at provision.
     expect(graph.inputBindings).toContainEqual({
-      serviceAddress: 'cron.scheduler',
+      serviceAddress: 'root.cron.scheduler',
       binding: { jobs: [{ jobId: 'tick', every: '2s' }] },
     });
   });
@@ -85,7 +85,7 @@ describe('cron()', () => {
     const graph = Load(root);
 
     expect(graph.inputBindings).toContainEqual({
-      serviceAddress: 'cron.runner',
+      serviceAddress: 'root.cron.runner',
       binding: { token },
     });
   });
@@ -127,7 +127,7 @@ describe('cron()', () => {
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      'Dependency input "worker" of provisioned module "cron" is not wired to a producer (module "root").',
+      'Dependency input "worker" of provisioned module "root.cron" is not wired to a producer (module "root").',
     );
   });
 });

@@ -1,19 +1,21 @@
 # Deploying and operating
 
 `prisma deploy` takes your entry file (the one whose default export is the
-root module) and stands the whole app up on Prisma Cloud. Tearing an
-environment down is not a `prisma` command: it is the `destroy` operation from
-`@prisma/composer/control`, which you call from a script (see
-[Destroying](#destroying)). Which environment you're touching — production or
-an isolated **stage** — is always your choice when you run it, never something
+root module) and stands the whole app up on Prisma Cloud. To remove the app
+with every environment, delete its Project with `prisma project delete`. To
+remove one branch, call the `destroy` operation from `@prisma/composer/control`
+in a script (see [Removing an app or a branch](#removing-an-app-or-a-branch)).
+Which environment you're touching — the current default branch or
+an isolated **named branch** — is always your choice when you run it, never something
 in your code.
 
 | You want to… | Run |
 | --- | --- |
-| Deploy to production | `prisma deploy module.ts` |
+| Deploy to the current default branch | `prisma deploy module.ts` |
 | Deploy an isolated environment | `prisma deploy module.ts --branch <name>` |
 | Deploy under a different app name | `prisma deploy module.ts --name demo-42` |
-| Tear down an environment | the `destroy` operation (see [Destroying](#destroying)) |
+| Remove the app and every environment | `prisma project delete <id> --confirm <id>` (see [Removing an app or a branch](#removing-an-app-or-a-branch)) |
+| Remove one branch | the `destroy` operation (see [Removing an app or a branch](#removing-an-app-or-a-branch)) |
 
 ## Credentials
 
@@ -135,34 +137,37 @@ build produced:
 turbo run build && prisma deploy module.ts
 ```
 
-Deploy state (what's already provisioned, so re-deploys diff instead of recreate) is stored with the environment it describes, not on your machine — that's the `state: prismaState()` line in the `composer` section of `prisma.config.ts`. The platform hosts each environment's state behind its API, scoped to that environment's Branch inside the app's Project; nothing extra shows up in the Console. Everyone deploying the app shares it, your laptop and CI see the same world, and two concurrent deploys of the same environment lock each other out instead of corrupting it: while one holds the deploy lease, the second fails immediately with a message naming the holder. If a deploy crashes, its lease expires (about a minute) and the next deploy takes over; a run that outlives its lease has every state operation rejected by the platform, so it can't corrupt the takeover's state. State lives and dies with its environment: deleting a stage's Branch — or the whole Project — removes that environment's state with it (production's state lifetime is spelled out under Destroying below).
+Deploy state (what's already provisioned, so re-deploys diff instead of recreate) is stored with the environment it describes, not on your machine — that's the `state: prismaState()` line in the `composer` section of `prisma.config.ts`. The platform hosts each environment's state behind its API, scoped to that environment's Branch inside the app's Project; nothing extra shows up in the Console. Everyone deploying the app shares it, your laptop and CI see the same world, and two concurrent deploys of the same environment lock each other out instead of corrupting it: while one holds the deploy lease, the second fails immediately with a message naming the holder. If a deploy crashes, its lease expires (about a minute) and the next deploy takes over; a run that outlives its lease has every state operation rejected by the platform, so it can't corrupt the takeover's state. State lives and dies with its environment: deleting a Branch — or the whole Project — removes that environment's state with it (the default branch's state lifetime is explained under Removing an app or a branch below).
 
-## Production and stages
+## Default and named branches
 
 Deploying with no `--branch` targets the project's **current default branch**. In Prisma Cloud terms:
-the app is a Project (named after your root module), and production lives at
-the Project level.
+the app is a Project named after your root module, and its current default
+branch holds the default deployment.
 
 `--branch <name>` deploys a complete, isolated copy of the app — every
 service, every database, its own configuration — as a Branch of that same
-Project. Nothing is shared with production except the code:
+Project. Each branch has separate resources and configuration:
 
 ```sh
-prisma deploy module.ts                  # production
+prisma deploy module.ts                  # current default branch
 prisma deploy module.ts --branch staging  # a persistent staging environment
 prisma deploy module.ts --branch pr-42    # one environment per PR
 ```
 
 Re-deploying any environment is idempotent — it updates the resources in
-place. A stage name must be a valid git ref name (`git check-ref-format`);
+place. A branch name must be a valid git ref name (`git check-ref-format`);
 an invalid name is a hard error, never a silent rename.
+
+Every node has an **address**: the app name, then the path of provision ids
+down to the node (`storefront-auth.auth.database`).
 
 Piped, `prisma deploy` writes one line per deployed entity with four tab-separated fields: the node's address, the entity kind, the entity id and its URL, which is empty for an entity without one. On Prisma Cloud the entity kind is `compute-service`, `postgres-database` or `bucket`. For example, `prisma deploy module.ts | cut -f4` prints each entity's URL, or an empty line for one without. Everything else the deploy prints, including Alchemy's progress, goes to stderr. [Piped output](running-locally.md#piped-output) gives the rules every data line follows.
 
 Two successful deploys print fewer lines than you might expect. A node that published no entities, such as S3 credentials, gets no line. A deploy whose run wrote no report prints no lines at all. Both exit 0. A script that must tell these apart from a deploy with nothing in it uses `--json`: its `summary` lists every node, including those without entities, and is `null` when the run wrote no report.
 
-Services, managed Postgres databases and buckets record their node address
-(`auth.database`) as `logicalId` on their Branch. Console uses the same address
+Services, managed Postgres databases and buckets record their address as
+`logicalId` on their Branch. Console uses the same address
 in the topology to find each resource and its counterpart on main. The row on a
 Branch that holds a node's address is that node's resource: if a deploy is
 interrupted after a resource was created but before it was recorded, the next
@@ -240,8 +245,8 @@ storefront-auth
             https://uvw.ewr.prisma.build
 ```
 
-The tree is your module structure: `auth.api` is the `api` service inside the
-`auth` module. Under each name is the platform resource it became and its id
+The tree is your module structure: `storefront-auth.auth.api` is the `api`
+service inside the `auth` module. Under each name is the platform resource it became and its id
 — the thing to search for in the Console when you need it.
 
 **A URL appears only where the address is genuinely public.** A Compute
@@ -260,12 +265,24 @@ A node that deployed but published nothing reportable is still listed, marked
 about your app. It's gone, replaced by the tree above. Nothing you can
 configure printed it and nothing depended on it.
 
-## Destroying
+## Removing an app or a branch
 
-The `prisma` CLI has no teardown command. Call the `destroy` operation from
+To remove an app with every environment, delete its Project. Its id is in the
+`id` column of `prisma project list`:
+
+```bash
+prisma project list
+prisma project delete proj_123 --confirm proj_123
+prisma project list    # the app is gone
+```
+
+This works while the app's services are running, and removes every branch, its
+resources and its deploy state.
+
+To remove one branch and keep the rest, call the `destroy` operation from
 `@prisma/composer/control` in a script, run from the directory you deploy
 from. It refuses to guess: `target` is required, either
-`{ kind: 'stage', stage }` or `{ kind: 'production' }`.
+`{ kind: 'branch', branch }` or `{ kind: 'production' }` for the current default branch.
 
 ```ts
 // destroy-staging.ts
@@ -291,24 +308,25 @@ if (!result.ok) {
 Run it with the two variables under [Credentials](#credentials) set, for
 example `bun destroy-staging.ts`, or `node destroy-staging.ts` on a supported Node.js release (22.18 or newer on the 22 line, 24.11 or newer on the 24 line, or 26 or newer). A `prisma auth login` session is not used.
 
-The three teardown shapes differ in what happens to state. Destroying a **stage** removes its resources, then deletes its Branch — and the Branch takes the stage's deploy state with it. Destroying **production** removes the resources and empties production's deploy state as it goes, but the production Branch survives, so an emptied state scope remains until the Project itself is removed. Deleting the **Project** (below, or from the Console) removes every Branch and all state in one stroke. Destroy never creates: tearing down a stage that was never deployed fails with "nothing deployed" rather than provisioning one first.
-
-Destroying production also removes the app's Project once nothing is left in
-it, so hand-run stacks don't pile up as empty Projects in your workspace. If
-the Project still holds another stage's resources, it's left in place.
+Destroying a named preview branch removes its managed resources, then deletes
+the empty Branch and its deploy state. Destroying the current default deployment
+removes its managed resources and attempts to delete the empty Project. If
+another branch still has resources, the platform keeps the Project and default
+Branch. Deleting the Project explicitly removes every branch and all state.
+Destroy never creates: a never-deployed branch returns "nothing deployed".
 
 ## CI
 
 Nothing is CI-specific — set `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID`
 as CI secrets, build, and run the same commands. The per-PR environment
 pattern: on push, run `prisma deploy module.ts --branch "pr-$PR_NUMBER"`; on
-close, run a script like the one under [Destroying](#destroying) whose
+close, run a script like the one under [Removing an app or a branch](#removing-an-app-or-a-branch) whose
 target is that branch, `{ kind: 'branch', branch: 'pr-42' }` for PR 42.
 
 One extra: if your app binds input fields with `envSecret` or `envParam`
 (see [Building an app § Service input](building-an-app.md#service-input)),
-each stage keeps its own copy of those platform variables, and the platform
-copy is the store — the deploying shell only seeds it. A fresh stage (a new
+each branch keeps its own copy of those platform variables, and the platform
+copy is the store — the deploying shell only seeds it. A fresh branch (a new
 `pr-42`) has none of them yet, so CI must export the values
 (e.g. `AUTH_SIGNING_SECRET`, `APP_ORIGIN`) alongside the two credentials;
 preflight copies missing ones up on that first deploy. A name absent from
@@ -322,7 +340,7 @@ the other end of the wire has to supply them. When one doesn't, the deploy
 stops and names the edge rather than standing the app up:
 
 ```
-Connection input "auth.db" declares param "url", but its producer "db" did not
+Connection input "shop.auth.db" declares param "url", but its producer "shop.db" did not
 supply it — the producer's outputs carry [host]. Add "url" to the outputs the
 producer returns from its lowering, or declare the param optional on the
 connection.
@@ -439,6 +457,68 @@ When something misbehaves in ways these don't explain, check
 [`gotchas.md`](../../gotchas.md) at the repo root — the catalogue of platform
 footguns with diagnoses, kept current as we hit them.
 
+## Upgrading to addresses that start with the app name
+
+Earlier versions left the app name out of every address below the root
+(`auth.database` instead of `storefront-auth.auth.database`), and named the
+deploy engine's resources `auth.database-db`, `auth.database-conn` and so on.
+The first deploy with this version moves every resource of an existing
+environment to its new name in place. Databases keep their rows, buckets keep
+their objects, and generated secrets and service keys keep their values. The
+platform resources' `logicalId`s change to the full address in the same deploy.
+Environment variable keys gain the app name (`COMPOSER_STOREFRONT_AUTH_…`): each
+variable is replaced by one with the same value under the new key, and services
+get a new deployment.
+
+Every name Composer gives a platform resource becomes the full address too:
+apps, buckets and Composer's database connections and bucket access keys are
+named `storefront-auth.auth.database` and so on. Apps and buckets are renamed in
+place, and custom domains stay. Each database connection and bucket access key
+Composer made is replaced by a new one with new credentials, which your services
+receive in the same deploy. The database and the bucket's objects are kept, and
+connections, keys and environment variables you made yourself are not touched.
+Anything outside the app that copied the old connection string or access key
+needs the new one.
+
+Two things to do yourself:
+
+- **`serviceOrigin()` takes the full address.** Change
+  `serviceOrigin('api')` to `serviceOrigin('<app>.api')`. An address that names
+  no service fails the deploy, naming the address, while it plans. By then the
+  Project and named Branch exist and the Branch's topology is the new one, but
+  no resource has been created, changed or deleted. An app that uses
+  `serviceOrigin()` can't be deployed under a different name with `--name`,
+  because its addresses start with the app's own name.
+- **Don't deploy an environment with an older version afterwards.** It would
+  look for the old names and recreate every resource, losing their data.
+
+An app with a module or a service directly below the root named like the app
+(`shop.shop.x` beside `shop.x`, in any letter case), or with modules that spell
+an app name containing `-` or `_` (`my-shop.my.shop.x` beside `my-shop.x`), can
+hit one more step. There, one node's new variable key is the key an earlier
+version wrote for another node. The deploy stops before any resource is created, changed or deleted, and
+names the variable and both nodes. The Branch's topology in the Console already
+shows the new addresses by then. It lists every such variable at once. Delete each,
+then deploy again:
+
+```sh
+prisma project env delete 'COMPOSER_SHOP_X_ORIGIN' --project '<project-id>' --role production
+prisma project env delete 'COMPOSER_SHOP_X_ORIGIN' --project '<project-id>' --branch '<branch>'
+```
+
+The first form is for production, the second for a named branch; the
+Console's Environment variables page works too. Nothing is lost: the deploy
+writes every value under its new key, and running services keep their own copy
+until then. Don't rename either node to get around it: a new address is a new
+entity, and its old rows, and a database's or bucket's data, are deleted.
+
+`prisma dev` keeps its local services, databases and buckets: on its first run
+it rewrites the directory's record to the new addresses. `prisma dev url` takes
+the full address. `prisma emulator list` still shows an instance created before
+the upgrade with its old address label (`api` instead of `shop.api`), because
+the emulators keep the labels they were created with; `prisma dev --fresh`
+recreates the instances with full addresses, and deletes their local data.
+
 ## Upgrading from an older state store
 
 Older framework versions stored deploy state differently: first in a workspace-level `prisma-composer-state` project, later in a small `prisma-composer-state` database on each environment's Branch. The current version stores state behind the platform's API and never reads either legacy store — there is no automated migration. The cutover is the same for both generations: destroy, upgrade, redeploy.
@@ -516,7 +596,7 @@ import prismaConfig from './prisma.config.ts';
 
 const result = await deploy({
   entry: 'module.ts',
-  stage: 'pr-42',
+  branch: 'pr-42',
   config: {
     value: prismaConfig.composer,
     file: fileURLToPath(new URL('./prisma.config.ts', import.meta.url)),
@@ -547,7 +627,7 @@ What to know before embedding it:
   `value`.
 - **Inputs mirror the flags, but typed.** A bare `deploy` targets production,
   exactly like the CLI. `destroy` takes a discriminated target —
-  `{ kind: 'production' }` or `{ kind: 'stage', stage }` — so there is no
+  `{ kind: 'production' }` or `{ kind: 'branch', branch }` — so there is no
   silent default to production and no flag-combination footgun.
 - **Failures are results, not throws.** Every operation resolves to
   `{ ok: true, value }` or `{ ok: false, failure }`. `failure` is a structured
@@ -594,7 +674,7 @@ What to know before embedding it:
 ## The full picture
 
 [`docs/design/10-domains/deploy-cli.md`](../design/10-domains/deploy-cli.md)
-documents the deploy pipeline end to end — stages and containers, the destroy
+documents the deploy pipeline end to end — branches and containers, the destroy
 contract, the error surface.
 
 ## Custom domains
@@ -604,13 +684,13 @@ Declare hostnames in the Prisma Cloud extension in the `composer` section of `pr
 ```ts
 prismaCloud({
   domains: {
-    main: { web: ['example.com', 'www.example.com'] },
-    staging: { web: ['staging.example.com'] },
+    main: { 'shop.web': ['example.com', 'www.example.com'] },
+    staging: { 'shop.web': ['staging.example.com'] },
   },
 })
 ```
 
-Each key (`web`, or a nested address such as `auth.api`) names a Compute service in the module. The outer keys are actual platform branch names. A deploy without `--branch` reads the current default branch's name: if it is `main`, it selects `domains.main`; if it is `trunk`, it selects `domains.trunk`. `prisma deploy module.ts --branch staging` selects `domains.staging`. There is no reserved `production` alias, and changing the default branch never carries the old branch's hostnames to the new one. An unlisted branch receives no custom domains. Each hostname must belong to one service and environment. `prisma dev` keeps its local URLs and makes no domain requests.
+Each inner key (`shop.web`, or a nested address such as `shop.auth.api`) is a Compute service's full address, starting with the deployed app name. An explicit `--name` changes that prefix too. The outer keys are actual platform branch names. A deploy without `--branch` reads the current default branch's name: if it is `main`, it selects `domains.main`; if it is `trunk`, it selects `domains.trunk`. `prisma deploy module.ts --branch staging` selects `domains.staging`. There is no reserved `production` alias, and changing the default branch never carries the old branch's hostnames to the new one. An unlisted branch receives no custom domains. Each hostname must belong to one service and environment. `prisma dev` keeps its local URLs and makes no domain requests.
 
 Build and deploy normally. If DNS is ready, Composer connects the hostname after the service is deployed and promoted. If the workspace TXT ownership record or routing record is missing, the app still deploys successfully. The report keeps the working generated URL and adds a `custom-domain` entry with `status: Setup required` and a Console setup link. The same entries are in the deploy report written by `--report`.
 

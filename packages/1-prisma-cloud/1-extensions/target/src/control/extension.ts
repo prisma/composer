@@ -32,12 +32,14 @@ import type {
   ServiceProviderParam,
 } from '../descriptors/shared.ts';
 import { GeneratedParamProvider } from '../generated-param-resource.ts';
+import { fromLegacyId, legacyServiceKeyId, legacyStreamsKeyId } from '../legacy-resource-ids.ts';
 import { SELF_ORIGIN } from '../origin-key.ts';
 import { OrmMigrationProvider } from '../orm-migration-resource.ts';
 import { PgWarmProvider } from '../pg-warm-resource.ts';
 import { type PrismaCloudPreflightInput, runPreflight } from '../preflight.ts';
 import { RESERVED_PROVIDER_PARAMS } from '../provider-params.ts';
 import { prismaCloudReporter } from '../reporting/reporter.ts';
+import { resourceId } from '../resource-ids.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 import { STREAMS_API_KEY } from '../streams-keys.ts';
@@ -51,16 +53,18 @@ import {
 /**
  * ADR-0031's registered provisioner for RPC_PEER_KEY: mints one `ServiceKey`
  * resource per edge (ADR-0030) and forwards its value as the opaque ref core
- * writes into the consumer's `serviceKey` param. The resource id keeps the
- * `servicekey-${edgeId}` scheme byte-identical to slice 2's, so an existing
- * deploy's keys are found, not re-minted. Defined here, not in service-keys.ts:
+ * writes into the consumer's `serviceKey` param. The resource is renamed from
+ * its legacy ID, so an existing deploy's keys are kept, not re-minted. Defined here, not in service-keys.ts:
  * that module is also reachable from the runtime/authoring side, which must
  * never import `@internal/lowering` or `effect`.
  */
 const serviceKeyProvisioner: ProvisionerDescriptor = {
   provision: (edge) =>
     Effect.gen(function* () {
-      const key = yield* Prisma.ServiceKey(`servicekey-${edge.edgeId}`, {});
+      const key = yield* Prisma.ServiceKey(
+        resourceId(edge.consumerAddress, 'servicekey', edge.input),
+        {},
+      ).pipe(fromLegacyId(legacyServiceKeyId(edge.app, edge.consumerAddress, edge.input)));
       return key.value;
     }),
 };
@@ -95,8 +99,8 @@ const rpcAcceptedKeysValue: ProviderParam['value'] = (refs) =>
 
 /**
  * ADR-0031's registered provisioner for STREAMS_API_KEY — the same `ServiceKey`
- * mint, keyed PER PROVIDER instead of per edge: the resource id is the
- * provider's address, so every consumer edge of one streams module resolves to
+ * mint, keyed PER PROVIDER instead of per edge: the resource id is built from
+ * the providing streams service's address, so every consumer edge of it resolves to
  * the same resource and therefore the same stable value. That is what
  * `@prisma/streams-server` requires (it authenticates a single `API_KEY`), and
  * cardinality is exactly what ADR-0031 leaves to the provisioner. Making it
@@ -106,7 +110,9 @@ const rpcAcceptedKeysValue: ProviderParam['value'] = (refs) =>
 const streamsApiKeyProvisioner: ProvisionerDescriptor = {
   provision: (edge) =>
     Effect.gen(function* () {
-      const key = yield* Prisma.ServiceKey(`streamskey-${edge.providerAddress}`, {});
+      const key = yield* Prisma.ServiceKey(resourceId(edge.providerAddress, 'streamkey'), {}).pipe(
+        fromLegacyId(legacyStreamsKeyId(edge.app, edge.providerAddress)),
+      );
       return key.value;
     }),
 };

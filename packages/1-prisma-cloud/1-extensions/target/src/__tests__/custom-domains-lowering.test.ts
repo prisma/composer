@@ -65,11 +65,15 @@ test('domain setup waits for promotion even when a redeploy keeps a stable deplo
     workspaceId: 'wksp_test',
     providerParams: new Map(),
     pointerUpdatedAt: () => undefined,
-    domains: { main: { web: ['example.com'] }, staging: { web: ['staging.example.com'] } },
+    domains: {
+      main: { 'shop.web': ['example.com'] },
+      staging: { 'shop.web': ['staging.example.com'] },
+    },
   }));
   const context = {
     id: 'web',
-    address: 'web',
+    address: 'shop.web',
+    graph: { root: { id: 'shop' } },
     application: {
       projectId: 'proj_test',
       branchId: 'br_staging',

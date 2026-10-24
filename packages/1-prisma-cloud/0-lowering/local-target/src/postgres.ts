@@ -17,12 +17,7 @@ import type * as Layer from 'effect/Layer';
 import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
-import {
-  type AppScope,
-  ensureDatabaseInstance,
-  recordedInstanceId,
-  recordKeyOf,
-} from './emulator-instances.ts';
+import { type AppScope, ensureDatabaseInstance, recordedInstanceId } from './emulator-instances.ts';
 import { resolvePrismaDevModulePath } from './prisma-dev-module.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
 
@@ -49,8 +44,8 @@ export function LocalDatabaseProvider(
     reconcile: ({ id, news }) =>
       Effect.tryPromise({
         try: async () => {
-          // Hosted branch-stage deploys omit the name; local dev has no branch.
-          const name = recordKeyOf('database', id, news.name);
+          // The resource ID is the node's address, the record's key (ADR-0057).
+          const name = id;
           const { instance } = await ensureDatabaseInstance(
             appScopeOf(input),
             name,

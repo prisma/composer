@@ -443,11 +443,16 @@ describe('buildReporter', () => {
     // The submitted body is the authored graph: stated containment, the
     // resource's reserved $out port, logical ids throughout.
     expect(recordedTopology.replaces[0]?.submission.nodes).toEqual([
-      { logicalId: 'db', parentLogicalId: 'storefront', kind: 'resource', type: 'fake/db' },
+      {
+        logicalId: 'storefront.db',
+        parentLogicalId: 'storefront',
+        kind: 'resource',
+        type: 'fake/db',
+      },
       { logicalId: 'storefront', parentLogicalId: null, kind: 'module' },
     ]);
     expect(recordedTopology.replaces[0]?.submission.ports).toEqual([
-      { logicalId: 'db', direction: 'out', name: '$out', contractKind: 'fake/db' },
+      { logicalId: 'storefront.db', direction: 'out', name: '$out', contractKind: 'fake/db' },
     ]);
     // The hash rides the attach update — until the platform accepts the
     // field, a hash-only body would be stripped empty and rejected

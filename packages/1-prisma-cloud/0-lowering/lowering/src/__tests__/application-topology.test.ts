@@ -90,24 +90,24 @@ describe('composeApplicationTopology', () => {
       kind: 'module',
     });
     expect(topology.nodes).toContainEqual({
-      logicalId: 'catalogDb',
+      logicalId: 'shop.catalogDb',
       parentLogicalId: 'shop',
       kind: 'resource',
       type: 'postgres',
     });
     expect(topology.nodes).toContainEqual({
-      logicalId: 'auth',
+      logicalId: 'shop.auth',
       parentLogicalId: 'shop',
       kind: 'module',
     });
     expect(topology.nodes).toContainEqual({
-      logicalId: 'auth.api',
-      parentLogicalId: 'auth',
+      logicalId: 'shop.auth.api',
+      parentLogicalId: 'shop.auth',
       kind: 'service',
       type: 'compute',
     });
     expect(topology.nodes).toContainEqual({
-      logicalId: 'web',
+      logicalId: 'shop.web',
       parentLogicalId: 'shop',
       kind: 'service',
       type: 'compute',
@@ -120,25 +120,25 @@ describe('composeApplicationTopology', () => {
     const topology = composeApplicationTopology(shopGraph());
 
     expect(topology.ports).toContainEqual({
-      logicalId: 'catalogDb',
+      logicalId: 'shop.catalogDb',
       direction: 'out',
       name: '$out',
       contractKind: 'postgres',
     });
     expect(topology.ports).toContainEqual({
-      logicalId: 'auth',
+      logicalId: 'shop.auth',
       direction: 'in',
       name: 'db',
       contractKind: 'postgres',
     });
     expect(topology.ports).toContainEqual({
-      logicalId: 'auth',
+      logicalId: 'shop.auth',
       direction: 'out',
       name: 'verify',
       contractKind: 'rpc',
     });
     expect(topology.ports).toContainEqual({
-      logicalId: 'web',
+      logicalId: 'shop.web',
       direction: 'in',
       name: 'verify',
       contractKind: 'rpc',
@@ -150,33 +150,33 @@ describe('composeApplicationTopology', () => {
 
     // Directly resource-fed.
     expect(topology.edges).toContainEqual({
-      from: { logicalId: 'catalogDb', direction: 'out', name: '$out' },
-      to: { logicalId: 'web', direction: 'in', name: 'db' },
+      from: { logicalId: 'shop.catalogDb', direction: 'out', name: '$out' },
+      to: { logicalId: 'shop.web', direction: 'in', name: 'db' },
       family: 'data',
     });
     expect(topology.edges).toContainEqual({
-      from: { logicalId: 'catalogDb', direction: 'out', name: '$out' },
-      to: { logicalId: 'auth', direction: 'in', name: 'db' },
+      from: { logicalId: 'shop.catalogDb', direction: 'out', name: '$out' },
+      to: { logicalId: 'shop.auth', direction: 'in', name: 'db' },
       family: 'data',
     });
     // The boundary edge inside auth resolves through auth's own in port to
     // the resource: still data.
     expect(topology.edges).toContainEqual({
-      from: { logicalId: 'auth', direction: 'in', name: 'db' },
-      to: { logicalId: 'auth.api', direction: 'in', name: 'db' },
+      from: { logicalId: 'shop.auth', direction: 'in', name: 'db' },
+      to: { logicalId: 'shop.auth.api', direction: 'in', name: 'db' },
       family: 'data',
     });
     // The rpc port, exposed through the module boundary: communication with
     // the request-response style on both hops.
     expect(topology.edges).toContainEqual({
-      from: { logicalId: 'auth.api', direction: 'out', name: 'verify' },
-      to: { logicalId: 'auth', direction: 'out', name: 'verify' },
+      from: { logicalId: 'shop.auth.api', direction: 'out', name: 'verify' },
+      to: { logicalId: 'shop.auth', direction: 'out', name: 'verify' },
       family: 'communication',
       style: 'request-response',
     });
     expect(topology.edges).toContainEqual({
-      from: { logicalId: 'auth', direction: 'out', name: 'verify' },
-      to: { logicalId: 'web', direction: 'in', name: 'verify' },
+      from: { logicalId: 'shop.auth', direction: 'out', name: 'verify' },
+      to: { logicalId: 'shop.web', direction: 'in', name: 'verify' },
       family: 'communication',
       style: 'request-response',
     });
@@ -216,8 +216,8 @@ describe('composeApplicationTopology', () => {
 
     expect(topology.edges).toEqual([
       {
-        from: { logicalId: 'upstream', direction: 'out', name: 'http' },
-        to: { logicalId: 'gateway', direction: 'in', name: 'upstream' },
+        from: { logicalId: 'web.upstream', direction: 'out', name: 'http' },
+        to: { logicalId: 'web.gateway', direction: 'in', name: 'upstream' },
         family: 'communication',
       },
     ]);

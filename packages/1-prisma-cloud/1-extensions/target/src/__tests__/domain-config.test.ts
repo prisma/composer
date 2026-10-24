@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import type { Graph } from '@internal/core';
+import { type Graph, Load, module } from '@internal/core';
 import { domainsForBranch, validateDomains } from '../control/domain-config.ts';
+import { compute } from '../exports/index.ts';
 
 const config = { main: { web: ['example.com'] }, staging: { web: ['staging.example.com'] } };
 describe('custom domain configuration', () => {
@@ -24,5 +25,26 @@ describe('custom domain configuration', () => {
     expect(() => validateDomains(config, { nodes: [] } as unknown as Graph)).toThrow(
       'unknown Compute service',
     );
+  });
+  test('requires the full service address from the loaded app', () => {
+    const graph = Load(
+      module('shop', {}, ({ provision }) => {
+        provision(
+          compute({
+            name: 'web',
+            deps: {},
+            build: {
+              extension: '@prisma/composer/node',
+              type: 'node',
+              module: 'file:///test/web.ts',
+              entry: 'server.js',
+            },
+          }),
+        );
+        return {};
+      }),
+    );
+    expect(() => validateDomains({ main: { 'shop.web': ['example.com'] } }, graph)).not.toThrow();
+    expect(() => validateDomains(config, graph)).toThrow('unknown Compute service "web"');
   });
 });

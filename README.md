@@ -154,7 +154,7 @@ have.
 | [Getting started](docs/guides/getting-started.md) | Your first app end to end; porting an existing Node or Next.js app |
 | [Building an app](docs/guides/building-an-app.md) | Contracts, databases (plain + Prisma-ORM-typed with migrations), reusable Modules, cron/storage/streams, config, secrets |
 | [Testing](docs/guides/testing.md) | Unit tests with `mockService`, integration tests with `bootstrapService` |
-| [Deploying and operating](docs/guides/deploying.md) | Stages, destroy, CI, how apps behave in production |
+| [Deploying and operating](docs/guides/deploying.md) | Stages, removing an app, CI, how apps behave in production |
 
 ## Examples
 

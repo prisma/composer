@@ -1,4 +1,4 @@
-# ADR-0057: Keep custom domains in branch deployment configuration and guard destructive changes
+# ADR-0058: Keep custom domains in branch deployment configuration and guard destructive changes
 
 ## Decision
 
@@ -8,13 +8,13 @@ Declare custom hostnames in the Prisma Cloud deployment target, keyed by actual 
 // The Prisma Cloud extension in prisma.config.ts's composer section.
 prismaCloud({
   domains: {
-    main: { web: ['example.com', 'www.example.com'] },
-    staging: { web: ['staging.example.com'] },
+    main: { 'shop.web': ['example.com', 'www.example.com'] },
+    staging: { 'shop.web': ['staging.example.com'] },
   },
 })
 ```
 
-Here, `web` is the service's address in the module graph. A branch is the platform container for one environment's services, data, configuration and deploy state. Only the deploying branch's entry is applied. An unlisted branch gets no declared custom domains. A default deploy reads the project's current default branch name from the platform; `main` is an ordinary name, and `production` is not a configuration alias. Changing which branch is default does not move hostnames.
+Here, `shop.web` is the service's full address in the module graph, starting with the deployed app name (ADR-0057). The same prefix changes when `--name` overrides the app name. A branch is the platform container for one environment's services, data, configuration and deploy state. Only the deploying branch's entry is applied. An unlisted branch gets no declared custom domains. A default deploy reads the project's current default branch name from the platform; `main` is an ordinary name, and `production` is not a configuration alias. Changing which branch is default does not move hostnames.
 
 Use **branch** as the public name for this concept. The public CLI spelling is:
 
@@ -81,6 +81,6 @@ Future Console-managed domains must preserve that separation. App deploys and br
 - [Environment-neutral modules and deploy-time stage selection](ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md).
 - [Public deploy command](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md).
 - [Shared configuration file](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md).
-- [Address changes change resource identity](ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md).
+- [Full addresses and resource identity](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md).
 - [Upstream resource providers](ADR-0048-prisma-cloud-resources-come-from-the-upstream-alchemy-provider.md).
 - [Guiding principles](../01-principles/guiding-principles.md) and [architectural principles](../01-principles/architectural-principles.md).

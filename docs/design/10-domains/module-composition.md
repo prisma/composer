@@ -105,8 +105,9 @@ everything downstream consumes:
   (exactly once, pure), its children joining the same graph. Services remain
   the only leaves; lowering, target packs, and assembly never learn that
   nesting exists.
-- **Hierarchical addresses.** A child's deploy address is its parent's address
-  plus its provision id, joined with `.` — the separator the address scheme
+- **Hierarchical addresses.** The root's address is the deployed app name. A
+  child's deploy address is its parent's address plus its provision id, joined
+  with `.` (`shop.auth.api`) — the separator the address scheme
   and the serializer's config-key derivation already use. Deploy-time bundle
   correlation keys carry the full address, since provision ids are unique only
   within their scope.

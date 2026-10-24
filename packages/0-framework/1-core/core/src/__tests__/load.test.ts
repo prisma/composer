@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { string } from '../config.ts';
-import { Load, LoadError } from '../graph.ts';
+import { assertAppName, Load, LoadError } from '../graph.ts';
 import { dependency, module, resource, service } from '../node.ts';
 import { conn, providerContract } from './helpers.ts';
 
@@ -143,5 +143,36 @@ describe('Load', () => {
     expect(() => Load(root, { id: 'hello' })).toThrow(
       /Input "db" of "hello" is a resource node — a resource is provisioned by the composing module, never created for a service that mentions it\./,
     );
+  });
+});
+
+describe('assertAppName', () => {
+  test.each(['shop', 'my-shop', 'my_shop', 'Shop2'])('accepts %p', (name) => {
+    expect(() => assertAppName(name)).not.toThrow();
+  });
+
+  test.each(['acme.shop', 'My Shop', 'acme/shop', '@acme/shop', '-shop', ''])(
+    'rejects %p with a LoadError naming it',
+    (name) => {
+      expect(() => assertAppName(name)).toThrow(LoadError);
+      expect(() => assertAppName(name)).toThrow(`The app name "${name}" is not valid.`);
+    },
+  );
+
+  test("Load rejects a module root whose name can't be an app name", () => {
+    const root = module('acme.shop', ({ provision }) => {
+      provision(dbResource());
+    });
+    expect(() => Load(root)).toThrow(LoadError);
+    expect(() => Load(root)).toThrow('The app name "acme.shop" is not valid.');
+  });
+
+  test('Load checks the id it is given in place of the root name', () => {
+    const root = module('shop', ({ provision }) => {
+      provision(dbResource());
+    });
+    expect(() => Load(root, { id: 'acme.shop' })).toThrow(LoadError);
+    expect(() => Load(root, { id: 'acme.shop' })).toThrow('The app name "acme.shop" is not valid.');
+    expect(Load(root, { id: 'acme-shop' }).root.id).toBe('acme-shop');
   });
 });

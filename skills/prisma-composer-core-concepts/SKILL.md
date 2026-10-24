@@ -17,8 +17,9 @@ description: >-
 
 A **Prisma App** is a tree of typed declarations composed in TypeScript and
 handed to the `prisma` CLI, which has two Composer commands: `prisma deploy`
-and `prisma dev`. Teardown and logs are not commands; they are the `destroy`
-and `log` operations of `@prisma/composer/control`, called from a script.
+and `prisma dev`. Removing a whole app is `prisma project delete`. Removing
+one branch and reading logs are not commands; they are the `destroy` and `log`
+operations of `@prisma/composer/control`, called from a script.
 This file covers structures, hierarchies, relationships, and workflows: the
 concepts you cannot observe from the code or the CLI's help output. It is not
 a CLI reference; discover each command's flags with `prisma <command> --help`
@@ -144,7 +145,7 @@ Rules that bite:
    expects `SecretString` fails the deploy; `envSecret` bound to a plain
    string field fails the same way.
 2. **`envParam` values arrive as raw strings**; bind them to string fields.
-   The stage's platform variable is the store; the deploying shell only seeds
+   The branch's platform variable is the store; the deploying shell only seeds
    a missing name (and the deploy fails early, naming the variable, when both
    lack it). Changing the platform value needs a redeploy.
 3. **Absence is the schema's call.** An env-bound field whose variable is
@@ -355,7 +356,11 @@ Bun under `bunx` or `bun run`: `bunx prisma` gives Node then Bun,
 Bun APIs, `bun node_modules/prisma/dist/prisma.js deploy module.ts` from a
 shell runs `prisma` under Bun with Alchemy on Node.
 
-Services, managed Postgres databases and buckets record their node address as
+A node's **address** is the app name followed by the provision ids down to it
+(`shop.auth.api`); the root's address is the app name, or `--name` when given.
+Every surface uses this full form: `serviceOrigin('shop.api')`,
+`prisma dev url shop.api`, the `log` operation's `address`, errors and reports.
+Services, managed Postgres databases and buckets record their address as
 `logicalId` on their Branch. Console uses that address to match topology nodes
 to resources and compare them with main. Existing environments receive the
 identity on their next deploy. A deploy interrupted after creating a resource
@@ -366,7 +371,7 @@ deletes the old rows, and a database's or bucket's data with them.
 
 **Progress.** `prisma deploy` prints each step as it starts and finishes, with
 its duration (`✔ assemble web (3m 42s)`), and ends with the real total
-(`Deployed <app> to <stage> in 5m 25s.`). Steps: load config and app, one
+(`Deployed <app> to <branch> in 5m 25s.`). Steps: load config and app, one
 assemble per service, connect to project and branch, check environment
 variables, plan and apply (one step: alchemy does both in one process), record
 result. A slow assemble is usually a Node service with
@@ -376,28 +381,33 @@ those extra fields vary, so don't parse them as a stable format. The
 `deploy` operation's `onEvent` receives the same steps, and its result's
 `durationMs` is the total.
 
-**Stages.** A stage is an environment name chosen on the command line at
+**Branches.** A branch is an environment name chosen on the command line at
 deploy time, never written in the topology. The identical graph deploys
 everywhere. On the Prisma Cloud target, a Prisma App is one Project and a
-stage is a Branch of it, with its own running services, its own empty
-database, its own configuration. A stage name must be a valid git ref name;
+named environment is a Branch of it, with its own running services, its own empty
+database, its own configuration. A branch name must be a valid git ref name;
 an invalid name is a hard error.
 
-**Destroy** is the `destroy` operation, and its `target` is required:
-`{ kind: 'stage', stage }` or `{ kind: 'production' }`, never a default:
+**Removing an app** with every branch is a platform command: find the Project
+id with `prisma project list`, then `prisma project delete <id> --confirm <id>`,
+and check `prisma project list` again to confirm it is gone. It works while the
+app's services are running. Don't write a script for this.
+
+**Destroying one branch** is the `destroy` operation, and its `target` is required:
+`{ kind: 'branch', branch }` or `{ kind: 'production' }` for the current default branch, never an implicit target:
 
 ```ts
-await destroy({ entry: 'module.ts', target: { kind: 'stage', stage: 'pr-42' }, config });
+await destroy({ entry: 'module.ts', target: { kind: 'branch', branch: 'pr-42' }, config });
 ```
 
-Destroying a stage
+Destroying a preview branch
 deletes its Branch after removing its resources. Destroying production
 removes only the resources inside the production Branch, never the Branch
 itself directly; once the Project is empty it is deleted too, and that
 deletion takes the production Branch with it. A Project still holding
-another stage's resources is kept. Destroy never creates anything:
+another branch's resources is kept. Destroy never creates anything:
 destroying a
-never-deployed stage fails rather than standing one up.
+never-deployed branch fails rather than standing one up.
 
 **The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.83 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
@@ -493,7 +503,7 @@ that surprise:
    <address>` (run in the same directory as `dev`) prints where a running node
    answers: a service's `http://localhost:<port>`, a database's connection
    string, a bucket's S3 endpoint plus `/<bucket>`. The URL alone goes to
-   stdout, piped or not, so scripts use `url=$(prisma dev url gateway) && curl "$url"`
+   stdout, piped or not, so scripts use `url=$(prisma dev url shop.gateway) && curl "$url"`
    (`dev url`, `dev stop` and `emulator list` first ship in the `prisma`
    release after 8.0.0-rc.23).
    `--json` gives the full result or the error with its code. It fails with
@@ -634,9 +644,14 @@ today the blocks above plus your own Modules are the whole set, so verify a
    node names must be ASCII letters and digits only (`[A-Za-z0-9]`): they
    derive config keys and address segments, so a hyphenated name like
    `my-db` passes `tsc` and then fails the load. The root module's name is
-   exempt. A provision id shorter than 3 characters is rejected by the
-   platform (name the database `'database'`, not `'db'`), and a service
-   whose name equals its enclosing Module's reads as `auth.auth` unless
+   the app name and may also contain `-` and `_`. Every platform name is the
+   node's full address, so short provision ids are fine: `db` in the app
+   `shop` names its platform rows `shop.db`. Only a full address over its
+   kind's limit fails the deploy: 52 characters for a database's
+   Connection, 100 for a bucket, 256 for a service. The platform's minimums
+   (3 for a Connection, 1 otherwise) are always met, because the shortest
+   address below the root, such as `a.b`, has 3 characters. A service
+   whose name equals its enclosing Module's reads as `shop.auth.auth` unless
    given an explicit `id`.
 8. **`MIGRATION_PATH_NOT_FOUND`**: see Databases above; author the missing
    migration, don't skip the plan step.
@@ -660,8 +675,10 @@ today the blocks above plus your own Modules are the whole set, so verify a
 
 Name the gap instead of inventing an API:
 
-1. **No `prisma` command for teardown or logs.** Use the `destroy` and `log`
-   operations of `@prisma/composer/control` from a script. A destroy script
+1. **No `prisma` command for removing one branch, or for logs.** Remove a whole
+   app with `prisma project delete <id> --confirm <id>`. For one branch and for
+   logs, use the `destroy` and `log` operations of `@prisma/composer/control`
+   from a script. A destroy script
    cannot use the `prisma auth login` session; it needs `PRISMA_SERVICE_TOKEN`
    and `PRISMA_WORKSPACE_ID` in the environment.
 2. **No in-memory contract bindings.** A dependency can't yet be wired to a
@@ -677,7 +694,7 @@ there rather than guessing.
 
 ## Custom domains
 
-`prismaCloud({ domains: { main: { web: ['example.com'] }, staging: { web: ['staging.example.com'] } } })` declares desired hostnames by actual branch name and Compute service address in `prisma.config.ts`'s `composer` section. Nested service addresses such as `auth.api` work. A deploy without `--branch` reads the current default branch name; it does not assume `main`. There is no reserved `production` alias. Changing the default branch does not move hostnames. Unlisted branches inherit no domains. `prisma dev` makes no domain requests.
+`prismaCloud({ domains: { main: { 'shop.web': ['example.com'] }, staging: { 'shop.web': ['staging.example.com'] } } })` declares desired hostnames by actual branch name and Compute service address in `prisma.config.ts`'s `composer` section. Use full service addresses such as `shop.web` or `shop.auth.api`, starting with the deployed app name. `--name` changes that prefix too. A deploy without `--branch` reads the current default branch name; it does not assume `main`. There is no reserved `production` alias. Changing the default branch does not move hostnames. Unlisted branches inherit no domains. `prisma dev` makes no domain requests.
 
 `prisma deploy` connects a declared hostname after deployment when DNS is ready. Missing TXT ownership or routing DNS completes the app deploy with a `custom-domain` report entry, `status: Setup required`, and a Console setup link; the generated URL remains usable. The same entries appear in `--report`. The link opens DNS instructions with the hostname prefilled; it makes no write. Configure TXT/CNAME at the DNS provider, then choose **Verify and connect**. Certificate provisioning is distinct from `active`. Conflicts, quotas and API failures remain errors.
 

@@ -32,11 +32,14 @@ import {
 } from '../emulator-instances.ts';
 
 const APP = 'data-app';
-const NODES: readonly AppNode[] = [
-  { address: 'catalog', kind: 'database' },
-  { address: 'uploads', kind: 'bucket' },
-  { address: 'web', kind: 'service' },
-];
+function nodesOf(app: string): readonly AppNode[] {
+  return [
+    { address: `${app}.catalog`, kind: 'database' },
+    { address: `${app}.uploads`, kind: 'bucket' },
+    { address: `${app}.web`, kind: 'service' },
+  ];
+}
+const NODES = nodesOf(APP);
 const DAEMONS: readonly DaemonName[] = ['compute', 'postgres', 'buckets'];
 const savedEmulatorsDir = process.env[EMULATORS_DIR_ENV];
 
@@ -93,7 +96,9 @@ describe.skipIf(process.platform === 'win32')('databases and buckets through the
     return scope;
   }
 
-  async function nodeOf(scope: AppScope & { readonly directory: string }, address: string) {
+  /** The instance recorded for `<app>.<name>`. */
+  async function nodeOf(scope: AppScope & { readonly directory: string }, name: string) {
+    const address = `${scope.app}.${name}`;
     const node: NodeInstance | undefined = (await readEmulatorInstances(scope.directory))?.apps[
       scope.app
     ]?.nodes[address];
@@ -176,7 +181,7 @@ describe.skipIf(process.platform === 'win32')('databases and buckets through the
 
     expect(await selectApp(b)).toBe(APP);
     expect((await databaseOf(a)).status).toBe('stopped');
-    await ensureAppInstances(b, NODES);
+    await ensureAppInstances(b, nodesOf(b.app));
 
     expect(await selectApp(a)).toBe('other-app');
     const changes = await ensureAppInstances(a, NODES);

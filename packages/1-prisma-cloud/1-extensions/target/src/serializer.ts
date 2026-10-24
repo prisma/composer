@@ -3,14 +3,15 @@
  * the extension, SHARED by run() (boot) and /control's serialize (deploy) so writer
  * and reader cannot drift.
  *
- * Keys are unique per service within the shared project namespace: the
- * serializer prefixes them with the deployment address (its segments after the app
- * root — empty for a lone-service deploy, the "unprefixed" case), then the
- * owner (the input name, dropped for the service's own params), then the
- * param name. auth's db.url ↔ AUTH_DB_URL; a lone service's db.url ↔ DB_URL.
- * The platform's DATABASE_URL is never among them: Prisma Cloud owns that name
- * and the framework refuses to bind it (see
- * docs/design/05-prisma-cloud/alchemy-lowering.md).
+ * Every key is `COMPOSER_`, then the service's full address starting with the
+ * app name (its segments upper-cased, `-` turned into `_`), then the owner (the
+ * input name, dropped for the service's own params), then the param name
+ * (ADR-0057): in the app `shop`, `shop.auth`'s db.url ↔ COMPOSER_SHOP_AUTH_DB_URL.
+ * The deploy writes and boot reads these keys. The only address-free form is
+ * the boot stash: run() re-emits the resolved config as COMPOSER_DB_URL and so
+ * on, which load() reads back without knowing the address. The platform's
+ * DATABASE_URL is never among them: Prisma Cloud owns that name and the
+ * framework refuses to bind it (see docs/design/05-prisma-cloud/alchemy-lowering.md).
  *
  * This module works off the node's RAW params (`node.params` and each
  * `node.inputs[k].connection.params`) rather than `configOf`'s pure-data
@@ -69,11 +70,21 @@ export function paramEntries(node: ServiceNode): readonly ParamEntry[] {
   return entries;
 }
 
+/**
+ * An address's segments as they appear in a `COMPOSER_` key. The app name may
+ * contain `-`, which no POSIX variable name may, so it becomes `_` (ADR-0057).
+ */
+export const addressKeySegments = (address: string): string[] =>
+  address
+    .split('.')
+    .filter((s) => s.length > 0)
+    .map((s) => s.replaceAll('-', '_'));
+
 export const configKey = (
   address: string,
   d: { owner: ParamEntry['owner']; name: string },
 ): string => {
-  const segments = address.split('.').filter((s) => s.length > 0);
+  const segments = addressKeySegments(address);
   const owner = d.owner === 'service' ? [] : [d.owner.input];
   // Every generated key lives in the framework's reserved COMPOSER_ namespace
   // (ADR-0029), so it can never collide with — and silently overwrite — a
@@ -245,7 +256,7 @@ export const inputKey = (address: string): string =>
  * user-provisioned var.
  */
 export const generatedParamVarName = (address: string, path: string): string => {
-  const segments = address.split('.').filter((s) => s.length > 0);
+  const segments = addressKeySegments(address);
   const pathSegments = path.split('.').filter((s) => s.length > 0);
   return ['COMPOSER', ...segments, ...pathSegments, 'GENERATED'].join('_').toUpperCase();
 };
