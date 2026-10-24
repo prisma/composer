@@ -12,6 +12,7 @@ import type { Graph } from '@internal/core';
 import type {
   ContainerCredentials,
   ContainerInstance,
+  DestructivePlan,
   ReporterDescriptor,
   RunReporter,
 } from '@internal/core/config';
@@ -26,7 +27,12 @@ import {
   readDeploymentSummary,
   readEngineFailureCause,
 } from '../deployment-summary.ts';
-import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from '../generate-stack.ts';
+import { readDestructivePlan } from '../destructive-plan.ts';
+import {
+  GENERATED_STACK_RELATIVE_PATH,
+  writeApplyFile,
+  writeStackFile,
+} from '../generate-stack.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
 import {
   type AlchemyOutcome,
@@ -112,6 +118,8 @@ interface StackPipelineOptions {
   /** Deploy only: where to write the run report, already resolved. */
   readonly reportPath: string | undefined;
   readonly steps: DeploySteps;
+  readonly destructiveApproval: string | undefined;
+  readonly approveDestructivePlan: ((plan: DestructivePlan) => Promise<boolean>) | undefined;
 }
 
 export async function executeDeploy(
@@ -119,17 +127,27 @@ export async function executeDeploy(
   deps: OperationDeps,
   cwd: string,
 ): Promise<Result<Omit<DeploySuccess, 'durationMs'>, CliStructuredError>> {
+  if (input.branch !== undefined && input.stage !== undefined) {
+    return notOk(
+      new CliStructuredError(
+        'DEPLOY.BRANCH_CONFLICT',
+        'Pass branch or the deprecated stage alias, not both.',
+      ),
+    );
+  }
   const outcome = await runStackPipeline('deploy', {
     entry: input.entry,
     config: input.config,
     name: input.name,
-    stage: input.stage,
+    stage: input.branch ?? input.stage,
     cwd,
     onEvent: undefined,
     deps,
     reportId: input.reportId,
     reportPath: resolveRunReportPath(input.reportPath, process.env[RUN_REPORT_FILE_ENV], cwd),
     steps: deploySteps(input.onEvent),
+    destructiveApproval: input.destructiveApproval,
+    approveDestructivePlan: input.approveDestructivePlan,
   });
   if (!outcome.ok) return outcome;
   return ok({ summary: outcome.value });
@@ -144,13 +162,20 @@ export async function executeDestroy(
     entry: input.entry,
     config: input.config,
     name: input.name,
-    stage: input.target.kind === 'stage' ? input.target.stage : undefined,
+    stage:
+      input.target.kind === 'stage'
+        ? input.target.stage
+        : input.target.kind === 'branch'
+          ? input.target.branch
+          : undefined,
     cwd,
     onEvent: input.onEvent,
     deps,
     reportId: undefined,
     reportPath: undefined,
     steps: deploySteps(undefined),
+    destructiveApproval: input.destructiveApproval,
+    approveDestructivePlan: input.approveDestructivePlan,
   });
   if (!outcome.ok) return outcome;
   return okVoid();
@@ -480,7 +505,7 @@ async function runStackPipelineInner(
         {
           fix:
             action === 'deploy'
-              ? 'Pass --stage <name> to choose the deploy scope explicitly.'
+              ? 'Pass --branch <name> to choose the deploy scope explicitly.'
               : 'Destroying production needs a target whose container supplies the production ' +
                 'deploy scope.',
         },
@@ -548,6 +573,8 @@ async function runStackPipelineInner(
   // from THIS child's report hook: concurrent runs sharing a cwd (two stages
   // deployed from one checkout) cannot read or delete each other's file.
   let stackPath: string;
+  let applyPath: string | undefined;
+  let keepApplyFile = false;
   const resultFilePath = path.join(
     cwd,
     '.prisma-composer',
@@ -572,25 +599,66 @@ async function runStackPipelineInner(
       return notOk(toStructured('DEPLOY.STACK_WRITE_FAILED', error));
     }
 
-    const invocation = alchemyInvocation({
-      command: action,
-      stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
+    const planFile = `${resultFilePath}.plan.json`;
+    const applyInput = {
       cwd,
+      configFile: pipeline.configSource.file,
       stage: alchemyStage,
-      containerEnv: containerEnv(containers),
-      preflightEnv: preflightTransportEnv,
-      env: {
-        ...reporterChildEnv(reporters),
-        [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath,
-      },
-    });
+      operation: action,
+      planFile,
+    };
+    const invocation = {
+      ...alchemyInvocation({
+        command: action,
+        stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
+        cwd,
+        stage: alchemyStage,
+        containerEnv: containerEnv(containers),
+        preflightEnv: preflightTransportEnv,
+        env: {
+          ...reporterChildEnv(reporters),
+          [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath,
+        },
+      }),
+      guardedEntry: writeApplyFile({ ...applyInput, approval: opts.destructiveApproval }),
+    };
+
+    applyPath = invocation.guardedEntry;
+    keepApplyFile = true;
 
     // Hand the terminal to alchemy against the generated file. Alchemy plans
     // and applies in this one child, so the two cannot be timed apart here.
     steps.start({ name: 'apply' });
     let outcome: AlchemyOutcome;
     try {
-      outcome = await (deps.alchemy ?? spawnAlchemy)(invocation);
+      const run = deps.alchemy ?? spawnAlchemy;
+      outcome = await run(invocation);
+      if (outcome.signal === null && outcome.exitCode === 42 && fs.existsSync(planFile)) {
+        let plan = readDestructivePlan(planFile);
+        if (
+          opts.destructiveApproval === undefined &&
+          opts.approveDestructivePlan !== undefined &&
+          (await opts.approveDestructivePlan(plan))
+        ) {
+          writeApplyFile({ ...applyInput, approval: plan.token });
+          fs.rmSync(planFile, { force: true });
+          outcome = await run(invocation);
+          if (outcome.signal === null && outcome.exitCode === 42)
+            plan = readDestructivePlan(planFile);
+        }
+        if (outcome.signal === null && outcome.exitCode === 42) {
+          return notOk(
+            new CliStructuredError(
+              'DEPLOY.DESTRUCTIVE_APPROVAL_REQUIRED',
+              'This deployment would remove or replace resources. No changes from this plan were applied.',
+              {
+                fix: `Review the destructive plan and retry with --confirm ${plan.token}.`,
+                meta: { plan },
+              },
+            ),
+          );
+        }
+      }
     } catch (error) {
       if (CliStructuredError.is(error)) return notOk(error);
       return notOk(
@@ -669,6 +737,7 @@ async function runStackPipelineInner(
         ),
       );
     }
+    keepApplyFile = false;
     steps.finish({ name: 'apply' });
 
     try {
@@ -715,6 +784,8 @@ async function runStackPipelineInner(
     try {
       fs.rmSync(resultFilePath, { force: true });
       fs.rmSync(engineFailureFilePath(resultFilePath), { force: true });
+      fs.rmSync(`${resultFilePath}.plan.json`, { force: true });
+      if (!keepApplyFile && applyPath !== undefined) fs.rmSync(applyPath, { force: true });
     } catch {
       // Best-effort cleanup — never masks the result it wraps.
     }

@@ -68,7 +68,7 @@ export function renderStackFile(input: StackFileInput): string {
 // without them lower() refuses because no container is resolved), by the
 // command Composer starts, which a failed run prints:
 //
-//   <node> <bin of the alchemy @prisma/composer depends on> deploy ${GENERATED_DIR}/${GENERATED_FILE} --yes --stage <stage>
+//   <node> --import <alchemy Oxc loader> ${GENERATED_DIR}/apply.mjs
 //
 // bisects a CLI bug from an Alchemy bug (deploy-cli.md § Implementation decisions).
 import { lower } from '@prisma/composer/deploy';
@@ -100,3 +100,32 @@ export function writeStackFile(input: StackFileInput): string {
 }
 
 export const GENERATED_STACK_RELATIVE_PATH = path.join(GENERATED_DIR, GENERATED_FILE);
+
+/** The guard runs from the app's own Composer install, alongside its Alchemy and providers. */
+export function writeApplyFile(input: {
+  readonly cwd: string;
+  readonly configFile: string;
+  readonly stage: string;
+  readonly operation: 'deploy' | 'destroy';
+  readonly planFile: string;
+  readonly approval?: string | undefined;
+}): string {
+  const dir = path.join(input.cwd, GENERATED_DIR);
+  const file = path.join(dir, `${path.basename(input.planFile)}.apply.mjs`);
+  const configImport = relativeImportSpecifier(dir, input.configFile);
+  fs.writeFileSync(
+    file,
+    `import { runDeployment } from '@prisma/composer/report';
+import prismaConfig from ${quote(configImport)};
+runDeployment({
+  entrypoint: ${quote(path.join(dir, GENERATED_FILE))},
+  config: prismaConfig.composer,
+  stage: ${quote(input.stage)},
+  operation: ${quote(input.operation)},
+  planFile: ${quote(input.planFile)},
+  approval: ${input.approval === undefined ? 'undefined' : quote(input.approval)},
+});
+`,
+  );
+  return file;
+}

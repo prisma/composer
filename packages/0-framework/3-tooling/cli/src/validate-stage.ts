@@ -9,14 +9,14 @@ export function validateStageName(stage: string): void {
   if (result.error) {
     throw new CliStructuredError(
       'DEPLOY.STAGE_UNVALIDATABLE',
-      `git is required to validate --stage "${stage}" (git check-ref-format): ${result.error.message}.`,
+      `git is required to validate --branch "${stage}" (git check-ref-format): ${result.error.message}.`,
       { cause: result.error },
     );
   }
   if (result.status !== 0) {
     throw new CliStructuredError(
       'DEPLOY.STAGE_INVALID',
-      `Invalid --stage "${stage}": must be a valid git ref name (git check-ref-format rejected "refs/heads/${stage}").`,
+      `Invalid --branch "${stage}": must be a valid git ref name (git check-ref-format rejected "refs/heads/${stage}").`,
     );
   }
 }

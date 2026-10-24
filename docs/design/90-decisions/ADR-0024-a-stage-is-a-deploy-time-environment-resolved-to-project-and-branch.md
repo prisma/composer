@@ -1,5 +1,7 @@
 # ADR-0024: A stage is a deploy-time environment; the CLI resolves its Project and Branch before Alchemy
 
+Amended by [ADR-0058](ADR-0058-custom-domains-are-environment-bindings-with-console-setup.md): the public deploy flag is `--branch`, with `--stage` as a deprecated alias. Deploy and destroy apply the complete engine plan only after explicit approval of destructive changes. Branch IDs and existing deploy state remain unchanged.
+
 Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): deploys run as `prisma deploy <entry> [--stage <name>]`. Teardown is the `destroy` operation on `@prisma/composer/control`, whose required `target` is `{ kind: 'stage', stage }` or `{ kind: 'production' }`; there is no destroy command. The `prisma-composer` binary is retired. Stage resolution below is unchanged.
 
 Amended by [ADR-0051](ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md): the CLI finds the Project by its `logicalId`, which is the app name, and creates new Projects with it. When no Project has that `logicalId`, the CLI falls back to matching by display name, oldest first; this exists for Projects created before they carried a `logicalId`.

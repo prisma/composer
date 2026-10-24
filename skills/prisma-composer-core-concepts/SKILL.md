@@ -18,7 +18,7 @@ description: >-
 A **Prisma App** is a tree of typed declarations composed in TypeScript and
 handed to the `prisma` CLI, which has two Composer commands: `prisma deploy`
 and `prisma dev`. Removing a whole app is `prisma project delete`. Removing
-one stage and reading logs are not commands; they are the `destroy` and `log`
+one branch and reading logs are not commands; they are the `destroy` and `log`
 operations of `@prisma/composer/control`, called from a script.
 This file covers structures, hierarchies, relationships, and workflows: the
 concepts you cannot observe from the code or the CLI's help output. It is not
@@ -145,7 +145,7 @@ Rules that bite:
    expects `SecretString` fails the deploy; `envSecret` bound to a plain
    string field fails the same way.
 2. **`envParam` values arrive as raw strings**; bind them to string fields.
-   The stage's platform variable is the store; the deploying shell only seeds
+   The branch's platform variable is the store; the deploying shell only seeds
    a missing name (and the deploy fails early, naming the variable, when both
    lack it). Changing the platform value needs a redeploy.
 3. **Absence is the schema's call.** An env-bound field whose variable is
@@ -371,7 +371,7 @@ deletes the old rows, and a database's or bucket's data with them.
 
 **Progress.** `prisma deploy` prints each step as it starts and finishes, with
 its duration (`✔ assemble web (3m 42s)`), and ends with the real total
-(`Deployed <app> to <stage> in 5m 25s.`). Steps: load config and app, one
+(`Deployed <app> to <branch> in 5m 25s.`). Steps: load config and app, one
 assemble per service, connect to project and branch, check environment
 variables, plan and apply (one step: alchemy does both in one process), record
 result. A slow assemble is usually a Node service with
@@ -381,33 +381,33 @@ those extra fields vary, so don't parse them as a stable format. The
 `deploy` operation's `onEvent` receives the same steps, and its result's
 `durationMs` is the total.
 
-**Stages.** A stage is an environment name chosen on the command line at
+**Branches.** A branch is an environment name chosen on the command line at
 deploy time, never written in the topology. The identical graph deploys
 everywhere. On the Prisma Cloud target, a Prisma App is one Project and a
-stage is a Branch of it, with its own running services, its own empty
-database, its own configuration. A stage name must be a valid git ref name;
+named environment is a Branch of it, with its own running services, its own empty
+database, its own configuration. A branch name must be a valid git ref name;
 an invalid name is a hard error.
 
-**Removing an app** with every stage is a platform command: find the Project
+**Removing an app** with every branch is a platform command: find the Project
 id with `prisma project list`, then `prisma project delete <id> --confirm <id>`,
 and check `prisma project list` again to confirm it is gone. It works while the
 app's services are running. Don't write a script for this.
 
-**Destroying one stage** is the `destroy` operation, and its `target` is required:
-`{ kind: 'stage', stage }` or `{ kind: 'production' }`, never a default:
+**Destroying one branch** is the `destroy` operation, and its `target` is required:
+`{ kind: 'branch', branch }` or `{ kind: 'production' }` for the current default branch, never an implicit target:
 
 ```ts
-await destroy({ entry: 'module.ts', target: { kind: 'stage', stage: 'pr-42' }, config });
+await destroy({ entry: 'module.ts', target: { kind: 'branch', branch: 'pr-42' }, config });
 ```
 
-Destroying a stage
+Destroying a preview branch
 deletes its Branch after removing its resources. Destroying production
 removes only the resources inside the production Branch, never the Branch
 itself directly; once the Project is empty it is deleted too, and that
 deletion takes the production Branch with it. A Project still holding
-another stage's resources is kept. Destroy never creates anything:
+another branch's resources is kept. Destroy never creates anything:
 destroying a
-never-deployed stage fails rather than standing one up.
+never-deployed branch fails rather than standing one up.
 
 **The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.83 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
@@ -427,7 +427,7 @@ needed.
 2. Failures are bisectable through that file. A failing deploy names its
    path and prints a reproduce command: Node running the bin of the `alchemy`
    Composer depends on, with `deploy .prisma-composer/alchemy.run.ts --yes
-   --stage <stage>`. Running it directly separates "the framework computed the wrong thing" from "the engine or
+   --stage <stage>`. For deploy and destroy, use the guarded runner printed by Composer; raw Alchemy bypasses Composer checks. Running it directly separates "the framework computed the wrong thing" from "the engine or
    platform rejected the right thing". An engine failure surfaces as
    `DEPLOY.ENGINE_FAILED` carrying the exit code, the engine's own error
    lines (credentials redacted, capped at 1000 characters) and that reproduce
@@ -675,8 +675,8 @@ today the blocks above plus your own Modules are the whole set, so verify a
 
 Name the gap instead of inventing an API:
 
-1. **No `prisma` command for removing one stage, or for logs.** Remove a whole
-   app with `prisma project delete <id> --confirm <id>`. For one stage and for
+1. **No `prisma` command for removing one branch, or for logs.** Remove a whole
+   app with `prisma project delete <id> --confirm <id>`. For one branch and for
    logs, use the `destroy` and `log` operations of `@prisma/composer/control`
    from a script. A destroy script
    cannot use the `prisma auth login` session; it needs `PRISMA_SERVICE_TOKEN`
@@ -691,3 +691,34 @@ Name the gap instead of inventing an API:
 For anything else missing, check `examples/`, `docs/design/10-domains/`, and
 `docs/design/90-decisions/` in the prisma/composer repo, then file an issue
 there rather than guessing.
+
+## Custom domains
+
+`prismaCloud({ domains: { main: { 'shop.web': ['example.com'] }, staging: { 'shop.web': ['staging.example.com'] } } })` declares desired hostnames by actual branch name and Compute service address in `prisma.config.ts`'s `composer` section. Use full service addresses such as `shop.web` or `shop.auth.api`, starting with the deployed app name. `--name` changes that prefix too. A deploy without `--branch` reads the current default branch name; it does not assume `main`. There is no reserved `production` alias. Changing the default branch does not move hostnames. Unlisted branches inherit no domains. `prisma dev` makes no domain requests.
+
+`prisma deploy` connects a declared hostname after deployment when DNS is ready. Missing TXT ownership, missing routing DNS or a Cloudflare proxy that prevents registration completes the app deploy with a `custom-domain` report entry, `status: Setup required`, and a Console setup link; the generated URL remains usable. The report includes the API's setup hint when available. The same entries appear in `--report`. The link opens DNS instructions with the hostname prefilled; it makes no write. Configure TXT/CNAME at the DNS provider, then choose **Verify and connect**. Follow the Cloudflare hint to switch temporarily to **DNS only**, connect the domain, then restore **Proxied** with **Full (strict)** TLS. Certificate provisioning is distinct from `active`. Conflicts, quotas and API failures remain errors.
+
+Later deploys retry missing bindings and reuse Console-completed ones. A declaration opts that exact binding into Composer ownership, including an existing one on the app. Removing it requests detachment and requires explicit plan approval; undeclared Console domains remain. Moving a hostname between environments needs an explicit detach. Approved Composer teardown removes declared bindings before their apps and branch; parent deletion also warns about Console-only bindings and requires approval. Automatic Git deletion and idle cleanup preserve branches with attached domains and respect pins. A failed domain lookup preserves the branch. Console links to the bindings to remove. GitHub Actions OIDC credentials cannot auto-recreate a deleted branch name: a new Git branch event or explicit Console action must establish it first, followed by a new deployment. Old CI credentials cannot modify a replacement branch. Workspace TXT proof survives branch recreation; another workspace needs its own proof. Domain registrations and DNS zones keep their own lifetimes. Set `prismaCloud({ consoleUrl: 'https://your-console.example' })` when targeting a separate Console deployment. Domain purchase and managed DNS are future Console concerns; Composer needs no registrar credentials.
+
+### Branch selection and destructive changes
+
+Use `prisma deploy module.ts --branch staging` for a named branch. With no flag,
+Composer selects the project's current default branch. `--stage` is a deprecated
+alias; passing both flags is an error. Programmatic deploys use `branch`; the old
+`stage` input remains an alias. State stays keyed by the resolved branch ID.
+
+Before applying a deploy or destroy plan, Composer checks every deletion and
+replacement. Routine Prisma Compute code-version replacements preserve apps,
+bindings and data and do not require destructive approval. Removing a hostname,
+renaming a service, replacing a database or bucket, and deleting a parent container
+do require approval. The plan shows the target branch, resource identities and
+possible cascades, including bindings managed outside Composer. Review it before
+approving. Do not treat an omitted declaration, preview branch, or `--yes` as consent.
+
+The CLI asks for an exact plan token. In CI, pass `--confirm <token>` only after
+reviewing the refusal's plan. A changed target, prior state or destructive action
+invalidates it. Programmatic callers receive
+`DEPLOY.DESTRUCTIVE_APPROVAL_REQUIRED` with `failure.meta.plan`; retry with that
+plan's `token` in `destructiveApproval`, or supply `approveDestructivePlan(plan)`
+to obtain explicit consent. Destroy has the same protection, including deletion
+of its branch or project and resources managed outside Composer.

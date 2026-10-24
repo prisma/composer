@@ -392,7 +392,7 @@ Re-deploying is idempotent — it updates the same Project. For an isolated
 copy of the whole app (own services, own config), deploy a **stage**:
 
 ```sh
-pnpm prisma deploy module.ts --stage demo
+pnpm prisma deploy module.ts --branch demo
 ```
 
 When you're done with the whole app, delete its Project. Find its id in

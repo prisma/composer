@@ -1,5 +1,7 @@
 # ADR-0007: Deploy drives Alchemy through a generated stack file
 
+Amended by [ADR-0058](ADR-0058-custom-domains-are-environment-bindings-with-console-setup.md): the public deploy flag is `--branch`, with `--stage` as a deprecated alias. Deploy and destroy apply the complete engine plan only after explicit approval of destructive changes. Branch IDs and existing deploy state remain unchanged.
+
 Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the commands that generate and drive the stack file are `prisma deploy` and `prisma dev`; teardown is the `destroy` operation on `@prisma/composer/control`, which drives `alchemy destroy` against the same generated file. The `prisma-composer` binary is retired. The generated-file mechanism below is unchanged.
 
 ## Decision

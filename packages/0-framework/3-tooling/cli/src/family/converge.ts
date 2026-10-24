@@ -122,7 +122,7 @@ export function settleConvergeFailure(
   ctx: ConvergeContext,
 ): Result<ChildStatusSettlement, CliStructuredError> {
   const child = ctx.lastChild();
-  if (child !== undefined && child.exitCode !== 0) {
+  if (executionDiagnostics(failure) !== undefined && child !== undefined && child.exitCode !== 0) {
     return ok(exitWithChildStatus({ nextActions: reproduceHint(failure) }));
   }
   return notOk(toEngineError(failure));

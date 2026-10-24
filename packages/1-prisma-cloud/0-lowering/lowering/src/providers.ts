@@ -7,6 +7,7 @@ import * as HttpClient from 'effect/http/HttpClient';
 import * as HttpClientRequest from 'effect/http/HttpClientRequest';
 import * as Layer from 'effect/Layer';
 import * as client from './client.ts';
+import { CustomDomain, CustomDomainProvider } from './compute/CustomDomain.ts';
 import {
   deploySourceHeaders,
   fromEnv,
@@ -114,9 +115,11 @@ export const providers = () =>
       Prisma.EnvironmentVariable,
       Prisma.Bucket,
       Prisma.BucketAccessKey,
+      CustomDomain,
     ]),
   ).pipe(
     Layer.provideMerge(upstreamPrismaProviders()),
+    Layer.provideMerge(CustomDomainProvider()),
     Layer.provideMerge(prismaManagementHttpLayer),
     Layer.provideMerge(client.layer()),
     Layer.provideMerge(fromEnv()),

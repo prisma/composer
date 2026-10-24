@@ -15,6 +15,7 @@ import type { ServiceNode } from '@internal/core';
 import type {
   ContainerDescriptor,
   ContainerInstance,
+  DestructivePlan,
   ExtensionDescriptor,
   LocateContainerInput,
   PrismaAppConfig,
@@ -404,7 +405,7 @@ describe('deploy()', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
     expect(result.failure.code).toBe('DEPLOY.STAGE_INVALID');
-    expect(result.failure.message).toContain('Invalid --stage');
+    expect(result.failure.message).toContain('Invalid --branch');
     expect(containerCalls).toEqual([]);
   });
 
@@ -614,7 +615,7 @@ describe('deploy()', () => {
     expect(executionDiagnostics(result.failure)).toEqual({
       exitCode: 42,
       stackFilePath: path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'),
-      reproduceCommand: `alchemy deploy ${path.join('.prisma-composer', 'alchemy.run.ts')} --yes --stage ci-7`,
+      reproduceCommand: expect.stringContaining('node --import '),
       cwd: app.dir,
     });
   });
@@ -647,9 +648,11 @@ describe('deploy()', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
-    expect(executionDiagnostics(result.failure)?.reproduceCommand).toBe(
-      `/usr/bin/node /store/alchemy/bin/cli.js deploy ${path.join('.prisma-composer', 'alchemy.run.ts')} --yes --stage ci-7`,
+    expect(executionDiagnostics(result.failure)?.reproduceCommand).toContain(
+      `/usr/bin/node --import ${path.join('/store/alchemy/bin', 'register-oxc.js')} `,
     );
+    expect(executionDiagnostics(result.failure)?.reproduceCommand).toContain(app.dir);
+    expect(executionDiagnostics(result.failure)?.reproduceCommand).toEndWith('.apply.mjs');
   });
 
   test('an engine failure carries the cause the child recorded, after the status sentence and in meta', async () => {
@@ -2565,5 +2568,104 @@ describe('deploy-run reporting', () => {
       outcome: 'failed',
       failure: { code: 'DEPLOY.PREFLIGHT_FAILED' },
     });
+  });
+});
+
+describe('destructive plan handoff', () => {
+  const plan: DestructivePlan = {
+    token: `remove-${'a'.repeat(64)}`,
+    scopes: [],
+    changes: [
+      {
+        resource: 'web/domain',
+        type: 'CustomDomain',
+        action: 'delete',
+        consequence: 'Disconnect example.com.',
+      },
+    ],
+  };
+  test('programmatic deploy refuses with a public plan and never retries without approval', async () => {
+    const app = makeAppDir();
+    let calls = 0;
+    const result = await deployWithDeps(
+      {
+        config: composerConfig(fakeConfig()),
+        entry: app.entryPath,
+        branch: 'staging',
+        cwd: app.dir,
+      },
+      {
+        runAssembler: fakeAssembler,
+        alchemy: async (input) => {
+          calls++;
+          fs.writeFileSync(
+            `${input.env[DEPLOYMENT_RESULT_FILE_ENV]}.plan.json`,
+            JSON.stringify(plan),
+          );
+          expect(fs.readFileSync(input.guardedEntry!, 'utf8')).toContain('approval: undefined');
+          return { exitCode: 42, signal: null };
+        },
+      },
+    );
+    expect(calls).toBe(1);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEPLOY.DESTRUCTIVE_APPROVAL_REQUIRED');
+    expect(result.failure.meta?.['plan']).toEqual(plan);
+  });
+  test.each([false, true])(
+    'approved retry rechecks state and handles a changed plan: %s',
+    async (stale) => {
+      const app = makeAppDir();
+      let calls = 0;
+      const result = await deployWithDeps(
+        {
+          config: composerConfig(fakeConfig()),
+          entry: app.entryPath,
+          branch: 'staging',
+          cwd: app.dir,
+          approveDestructivePlan: async (proposed) => {
+            expect(proposed).toEqual(plan);
+            return true;
+          },
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async (input) => {
+            calls++;
+            if (calls === 1 || stale) {
+              fs.writeFileSync(
+                `${input.env[DEPLOYMENT_RESULT_FILE_ENV]}.plan.json`,
+                JSON.stringify({
+                  ...plan,
+                  token: calls === 1 ? plan.token : `remove-${'b'.repeat(64)}`,
+                }),
+              );
+              return { exitCode: 42, signal: null };
+            }
+            expect(fs.readFileSync(input.guardedEntry!, 'utf8')).toContain(plan.token);
+            return { exitCode: 0, signal: null };
+          },
+        },
+      );
+      expect(calls).toBe(2);
+      expect(result.ok).toBe(!stale);
+      if (!result.ok) expect(result.failure.code).toBe('DEPLOY.DESTRUCTIVE_APPROVAL_REQUIRED');
+    },
+  );
+  test('branch and stage cannot both reach container creation', async () => {
+    const app = makeAppDir();
+    const result = await deployWithDeps(
+      {
+        config: composerConfig(fakeConfig()),
+        entry: app.entryPath,
+        branch: 'main',
+        stage: 'main',
+        cwd: app.dir,
+      },
+      {},
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.failure.code).toBe('DEPLOY.BRANCH_CONFLICT');
   });
 });

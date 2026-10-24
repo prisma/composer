@@ -3,10 +3,11 @@
  *
  * `--production` is gone. It was accepted and then always errored ("only
  * valid with destroy"), so no invocation using it could ever have succeeded;
- * deploy targets production by default when no `--stage` is given.
+ * deploy targets the project's default branch when no `--branch` is given.
  */
 import type { EngineEvent } from '@prisma/cli-engine';
 import { defineCommand, flag, positional } from '@prisma/cli-engine';
+import { CliStructuredError, notOk } from '@prisma/cli-engine/protocol';
 import type { DeployEvent, DeployStep } from '../../operations/deploy.ts';
 import { convergeSpawn, operationDeps, settleConverge } from '../converge.ts';
 import { dataLine } from '../data-lines.ts';
@@ -65,7 +66,7 @@ export const createDeployCommand = (operations: ComposerOperations) =>
   defineCommand({
     help: {
       summary: "Deploy the application whose root node is <entry>'s default export.",
-      examples: ['{bin} deploy module.ts', '{bin} deploy module.ts --stage feat-auth'],
+      examples: ['{bin} deploy module.ts', '{bin} deploy module.ts --branch feat-auth'],
     },
     args: {
       positionals: {
@@ -83,12 +84,13 @@ export const createDeployCommand = (operations: ComposerOperations) =>
             "and buckets (default: the root module's name).",
           placeholder: 'name',
         }),
-        stage: flag.string({
+        branch: flag.string({
           brief:
-            'Deploy a complete, isolated copy of the app under this name instead of production, ' +
-            'such as staging or one per pull request (default: production).',
-          placeholder: 'stage',
+            'Deploy a complete, isolated copy of the app under this name on a named branch, ' +
+            "such as staging or one per pull request (default: the project's current default branch).",
+          placeholder: 'branch',
         }),
+        stage: flag.string({ brief: 'Deprecated alias for --branch.', placeholder: 'branch' }),
         report: flag.string({
           brief:
             "Write the deploy's outcome as JSON to this path — resources, preview URLs, and " +
@@ -110,13 +112,40 @@ export const createDeployCommand = (operations: ComposerOperations) =>
     needs: { config: composerSection, credentials: 'child' },
     maySpawn: true,
     handler: async (args, ctx) => {
+      if (args.flags.branch !== undefined && args.flags.stage !== undefined) {
+        return notOk(
+          new CliStructuredError(
+            'DEPLOY.BRANCH_CONFLICT',
+            'Pass --branch or the deprecated --stage alias, not both.',
+          ),
+        );
+      }
+      if (args.flags.stage !== undefined)
+        ctx.report({
+          kind: 'message',
+          severity: 'warn',
+          text: '--stage is deprecated. Use --branch instead.',
+        });
+      const branch = args.flags.branch ?? args.flags.stage;
       const alchemy = convergeSpawn(ctx);
       const result = await operations.deploy(
         {
           entry: args.positionals.entry,
           config: ctx.config,
           name: args.flags.name,
-          stage: args.flags.stage,
+          branch,
+          approveDestructivePlan: (plan) =>
+            ctx.prompt.consent(
+              [
+                ...plan.scopes.map((scope) => scope.label),
+                ...plan.changes.map(
+                  (change) =>
+                    `${change.action} ${change.type} ${change.resource}: ${change.consequence}`,
+                ),
+                'Approve this destructive plan?',
+              ].join('\n'),
+              { token: plan.token },
+            ),
           cwd: ctx.cwd,
           reportPath: args.flags.report,
           reportId: args.flags.buildId,
@@ -130,7 +159,7 @@ export const createDeployCommand = (operations: ComposerOperations) =>
       );
 
       return settleConverge(result, ctx, ({ summary, durationMs }) => {
-        const target = `to ${args.flags.stage ?? 'production'} in ${formatDuration(durationMs)}`;
+        const target = `to ${branch ?? 'the default branch'} in ${formatDuration(durationMs)}`;
         for (const node of summary?.nodes ?? []) {
           for (const entity of node.entities) {
             if (entity.url !== undefined) {
