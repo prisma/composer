@@ -614,7 +614,7 @@ describe('deploy()', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
     expect(executionDiagnostics(result.failure)?.reproduceCommand).toContain(
-      '/usr/bin/node --import /store/alchemy/bin/register-oxc.js ',
+      `/usr/bin/node --import ${path.join('/store/alchemy/bin', 'register-oxc.js')} `,
     );
     expect(executionDiagnostics(result.failure)?.reproduceCommand).toContain(app.dir);
     expect(executionDiagnostics(result.failure)?.reproduceCommand).toEndWith('.apply.mjs');
