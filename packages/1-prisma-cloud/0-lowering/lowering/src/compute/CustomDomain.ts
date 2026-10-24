@@ -17,6 +17,7 @@ export interface CustomDomainAttributes {
   readonly hostname: string;
   readonly status: string;
   readonly setupUrl: string;
+  readonly setupHint?: string;
   readonly domainId?: string;
 }
 
@@ -42,13 +43,17 @@ function attributes(
   };
 }
 
-function isSetupRequired(status: number, body: unknown): boolean {
+function isSetupRequired(
+  status: number,
+  body: unknown,
+): body is { error: { code: string; hint?: unknown } } {
   if (typeof body !== 'object' || body === null || !('error' in body)) return false;
   const error = body.error;
   if (typeof error !== 'object' || error === null || !('code' in error)) return false;
   return (
     (status === 422 && error.code === 'domain-ownership-required') ||
-    (status === 400 && error.code === 'domain-dns-required')
+    (status === 400 &&
+      (error.code === 'domain-dns-required' || error.code === 'domain-cloudflare-proxy'))
   );
 }
 
@@ -100,7 +105,14 @@ export function customDomainProviderService(
           catch: (cause) => new PrismaApiError({ status: 0, message: String(cause) }),
         });
         if (response.data) return attributes(news, url, response.data.data);
-        if (isSetupRequired(response.response.status, response.error)) return attributes(news, url);
+        if (isSetupRequired(response.response.status, response.error)) {
+          return {
+            ...attributes(news, url),
+            ...(typeof response.error.error.hint === 'string'
+              ? { setupHint: response.error.error.hint }
+              : {}),
+          };
+        }
         if (response.response.status === 409) {
           const raced = yield* find(news);
           if (raced) return attributes(news, url, raced);

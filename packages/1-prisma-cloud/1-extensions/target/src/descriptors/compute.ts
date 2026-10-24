@@ -475,14 +475,15 @@ export function computeDescriptor(
             });
             domains.push(
               Output.map(
-                Output.all(domain.hostname, domain.status, domain.setupUrl),
-                ([hostname, status, setupUrl]) => ({
+                Output.all(domain.hostname, domain.status, domain.setupUrl, domain.setupHint),
+                ([hostname, status, setupUrl, setupHint]) => ({
                   kind: 'custom-domain',
                   id: hostname,
                   url: status === 'active' ? `https://${hostname}` : setupUrl,
                   details: {
                     status: status === 'setup_required' ? 'Setup required' : status,
                     setup: setupUrl,
+                    ...(setupHint ? { hint: setupHint } : {}),
                   },
                 }),
               ),

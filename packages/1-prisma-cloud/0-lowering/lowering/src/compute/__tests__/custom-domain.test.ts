@@ -21,7 +21,7 @@ const props = {
 };
 const url = 'https://console.prisma.io/test/test/compute/test/domains?setup=staging.example.com';
 const domain = { id: 'dom_test', hostname: props.hostname, status: 'active' };
-function fixture(status = 422, code = 'domain-ownership-required') {
+function fixture(status = 422, code = 'domain-ownership-required', hint?: unknown) {
   let domains: (typeof domain)[] = [];
   const requests: string[] = [];
   const client = createManagementApiClient({
@@ -42,7 +42,7 @@ function fixture(status = 422, code = 'domain-ownership-required') {
       }
       return status === 201
         ? Response.json({ data: domain }, { status })
-        : Response.json({ error: { code, message: 'Setup needed' } }, { status });
+        : Response.json({ error: { code, message: 'Setup needed', hint } }, { status });
     },
   });
   const service = customDomainProviderService(client);
@@ -70,6 +70,7 @@ describe('custom domain lifecycle', () => {
   for (const [status, code] of [
     [422, 'domain-ownership-required'],
     [400, 'domain-dns-required'],
+    [400, 'domain-cloudflare-proxy'],
   ] as const) {
     test(`completes deployment while ${code} needs setup`, async () => {
       const f = fixture(status, code);
@@ -84,6 +85,31 @@ describe('custom domain lifecycle', () => {
       ).toBeUndefined();
     });
   }
+  test('reports the Cloudflare setup hint and clears it when Console completes setup', async () => {
+    const hint = 'Switch to DNS only, verify and connect, then turn Proxied back on.';
+    const f = fixture(400, 'domain-cloudflare-proxy', hint);
+    expect(await Effect.runPromise(f.service.reconcile(f.context))).toEqual({
+      hostname: props.hostname,
+      status: 'setup_required',
+      setupUrl: url,
+      setupHint: hint,
+    });
+    f.setDomains([domain]);
+    expect(await Effect.runPromise(f.service.reconcile(f.context))).toEqual({
+      hostname: props.hostname,
+      status: 'active',
+      setupUrl: url,
+      domainId: domain.id,
+    });
+  });
+  test('does not treat the Cloudflare code at an unexpected status as setup required', async () => {
+    const f = fixture(422, 'domain-cloudflare-proxy');
+    await expect(Effect.runPromise(f.service.reconcile(f.context))).rejects.toThrow();
+  });
+  test('ignores a setup hint that is not text', async () => {
+    const f = fixture(400, 'domain-cloudflare-proxy', { untrusted: true });
+    expect(await Effect.runPromise(f.service.reconcile(f.context))).not.toHaveProperty('setupHint');
+  });
   test('connects automatically when DNS is ready', async () => {
     const f = fixture(201);
     expect(await Effect.runPromise(f.service.reconcile(f.context))).toMatchObject({
