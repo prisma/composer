@@ -14,6 +14,7 @@ in your code.
 | Deploy to production | `prisma deploy` |
 | Deploy an isolated environment | `prisma deploy --stage <name>` |
 | Deploy under a different app name | `prisma deploy --name demo-42` |
+| See what is deployed on a stage | `prisma deploy list --stage <name>` (see [Listing what is deployed](#listing-what-is-deployed)) |
 | Remove the app and every environment | `prisma project delete <id> --confirm <id>` (see [Removing an app or a stage](#removing-an-app-or-a-stage)) |
 | Remove one stage | the `destroy` operation (see [Removing an app or a stage](#removing-an-app-or-a-stage)) |
 
@@ -284,6 +285,41 @@ A node that deployed but published nothing reportable is still listed, marked
 `{ outputs: {} }` blob from the underlying deploy engine — always empty, never
 about your app. It's gone, replaced by the tree above. Nothing you can
 configure printed it and nothing depended on it.
+
+## Listing what is deployed
+
+`prisma deploy list` shows every node the app has deployed on a stage, the
+platform ID each one deployed to and, for a service, its URL. It reads the
+stage on Prisma Cloud, so it works from any machine and does not need the
+terminal that ran the deploy:
+
+```
+$ prisma deploy list --stage pr-42
+Address                          Kind      Platform ID                     URL
+storefront-auth                  project   proj_avmiqutogcve9ojwdfb8l28z
+storefront-auth.auth             module
+storefront-auth.auth.database    postgres  db_p93c9pzn1k75bdmbgtuazav4
+storefront-auth.auth.service     service   cps_p2wu05hfr90sknm62mk4n1ke    https://p2wu05hfr90sknm62mk4n1ke.ewr.prisma.build
+storefront-auth.storefront       service   cps_uihnu0asxk2mr4csj736tai7    https://uihnu0asxk2mr4csj736tai7.ewr.prisma.build
+```
+
+Without `--stage` it lists production. It finds the app by the name of the
+entry's root module, so run it where you run `prisma deploy`, or pass
+`--name` and `--entry` as you would to `prisma deploy`.
+
+The root's platform ID is the Project's. A module has no platform ID, and
+nor does a resource with no row of its own on the platform, such as S3
+credentials. The list is the topology the last deploy recorded: if that
+deploy stopped before a node's resource was created, the node is listed
+with no platform ID.
+
+It fails with `DEPLOY.TARGET_NOT_FOUND` when the stage has nothing deployed,
+and with `DEPLOY.STAGE_INVALID` when the stage name is not a valid git ref
+name. Piped, it writes one line per node: address, kind, platform ID and URL,
+with an empty field for a missing value. With `--json` the result is an
+array of `{ address, kind, platformId, url }`, with `null` for a missing
+value. `prisma deploy list` needs a `prisma` CLI release that includes it;
+8.0.0-rc.26 does not.
 
 ## Removing an app or a stage
 
