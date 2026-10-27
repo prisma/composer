@@ -7,14 +7,25 @@ import type { ManagementApiClient } from '@prisma/cli-engine';
 import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
 import { createComposerFamily } from '../src/exports/family.ts';
 
-const ENTRY = path.join(import.meta.dir, 'fixtures', 'shop.ts');
-
 /** The app directory: the engine's config file must exist there, though the test seeds its sections. */
 const CWD = (() => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'composer-deploy-list-')));
   fs.writeFileSync(path.join(dir, 'prisma.config.ts'), '');
   return dir;
 })();
+
+/** An entry module in the app directory whose root module is named `name`. */
+function entryNamed(name: string): string {
+  const file = path.join(CWD, `${name}.ts`);
+  fs.writeFileSync(
+    file,
+    `import { module } from ${JSON.stringify(import.meta.resolve('@prisma/composer'))};\n` +
+      `export default module(${JSON.stringify(name)}, {}, () => ({}));\n`,
+  );
+  return file;
+}
+
+const ENTRY = entryNamed('shop');
 
 interface FakeApi {
   readonly projects?: readonly unknown[];
@@ -172,10 +183,9 @@ describe('deploy list', () => {
       projects: [{ ...project, id: 'proj_3', logicalId: 'shop-c' }],
     });
 
-    const result = await cli.run(
-      ['deploy', 'list', '--entry', path.join(import.meta.dir, 'fixtures', 'shop-c.ts'), '--json'],
-      { cwd: CWD },
-    );
+    const result = await cli.run(['deploy', 'list', '--entry', entryNamed('shop-c'), '--json'], {
+      cwd: CWD,
+    });
 
     expect(result.exitCode).toBe(0);
     expect(result.json.at(-1)).toMatchObject({
