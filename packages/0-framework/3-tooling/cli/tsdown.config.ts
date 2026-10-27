@@ -5,6 +5,7 @@ import { defineConfig } from '@internal/tsdown-config';
 // import nothing but core's types.
 export default defineConfig({
   entry: {
+    'app-identity': 'src/exports/app-identity.ts',
     report: 'src/exports/render-deployment.ts',
     control: 'src/exports/control.ts',
     family: 'src/exports/family.ts',
