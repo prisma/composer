@@ -1,4 +1,4 @@
-import type { DeployedStage } from '@internal/lowering/deployed';
+import { type DeployedStage, RESOURCE_ROW_KINDS } from '@internal/lowering/deployed';
 
 /** One row of `deploy list`: a topology node and the platform row it deployed to. */
 export interface DeployedNode {
@@ -8,19 +8,15 @@ export interface DeployedNode {
   readonly url: string | null;
 }
 
-const RESOURCE_KINDS: Readonly<Record<string, 'postgres' | 'bucket'>> = {
-  postgres: 'postgres',
-  'raw-postgres': 'postgres',
-  s3: 'bucket',
-};
-
 type TopologyNode = DeployedStage['nodes'][number];
 
 function kindOf(node: TopologyNode): string {
   if (node.parentLogicalId === null) return 'project';
   if (node.kind === 'resource') {
     if (node.type === undefined) return 'resource';
-    return RESOURCE_KINDS[node.type] ?? node.type;
+    const rowKind = RESOURCE_ROW_KINDS.get(node.type);
+    if (rowKind === 'database') return 'postgres';
+    return rowKind ?? node.type;
   }
   return node.kind;
 }
