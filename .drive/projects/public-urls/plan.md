@@ -53,10 +53,10 @@ A `Prisma.ServiceUrl` resource: create (no DNS needed), read conditions, update 
 
 ### P2. Pending hostnames
 
-`hostname()` lowers to `Prisma.ServiceUrl`. A hostname without DNS deploys in a pending state, the deploy output names the outstanding step and prints the Console link, and finishing DNS needs no redeploy. The scenarios doc gains the slice that made each scenario true.
+`hostname()` lowers to `Prisma.ServiceUrl`, and `generated()` to an assigned public one. Lowering declares a private `Prisma.ServiceUrl` for every service that another node in the app calls and creates services with the platform's default URL turned off. A hostname without DNS deploys with its unmet conditions reported, the deploy output names the first one and prints the Console link, and finishing DNS needs no redeploy. The scenarios doc gains the slice that made each scenario true.
 
 - **Builds on:** P1, U2.
-- **Done when:** the spec's "At a glance" app deploys production before `shop.com`'s DNS exists, succeeds, and the hostname goes active after DNS is added with no further deploy.
+- **Done when:** the spec's "At a glance" app deploys production before `shop.com`'s DNS exists, succeeds, and the hostname goes active after DNS is added with no further deploy; a service nothing calls has no hostname on the platform; a service another service calls has a private ServiceUrl and no default URL.
 
 ## Track D — PDP (prisma/pdp-control-plane)
 

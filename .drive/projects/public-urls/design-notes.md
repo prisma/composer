@@ -30,7 +30,7 @@ The spike on typed per-key input references, `module()` taking `input`, `resolve
 
 ## 5. Who does what
 
-Will and the orchestrating agent do the PDP record (D1) and the upstream Alchemy change (U1) together in this session. The remaining slices are dispatched, each in its own session, following the Drive process. Will tracks the work outside Linear.
+Will and the orchestrating agent designed the platform records (D1) together on 2026-10-27; their implementation goes to the control-plane team under another agent, with `projects/service-urls/` in pdp-control-plane as the brief. U1 and C2 run in sessions this one started. The remaining slices are dispatched, each in its own session, following the Drive process. Will tracks the work outside Linear.
 
 ## 6. Prisma now requires an ownership TXT record before registering a hostname
 
