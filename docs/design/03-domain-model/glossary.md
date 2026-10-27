@@ -194,10 +194,10 @@ A Module consuming a Postgres Resource.
 ### Ingress / Egress
 
 **Ingress** = a request/response Output exposed to the public (e.g. the website) —
-a real edge at the topology's public boundary. It is authored as an `ingress()`
-node: a driver that routes one hostname to one exposed HTTP port; with no
-hostname, the platform generates one
-([ADR-0060](../90-decisions/ADR-0060-ingress-is-a-driver-on-an-exposed-http-port.md)).
+a real edge at the topology's public boundary. It is authored as a `publicUrl()`
+node: a driver wired to the HTTP connection a service exposes, serving a named
+hostname or one the platform generates
+([ADR-0060](../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md)).
 **Egress** = a Service's declared
 **outbound dependency** on something outside the topology (an external URL/API).
 Egress is *not* an edge to a node — the far end isn't in the graph; it's a property
@@ -263,15 +263,15 @@ An addressable unit the platform can execute (by id/kind), defined by an artifac
 reference plus its declared required Inputs. The execution-plane handle for a
 Service.
 
-### Stage
+### Stage (becoming **Environment**)
 
-A deploy-time **environment** name, chosen with `--stage` and never authored in
-the topology — the same graph deploys to any stage. Every stage has a name:
-`prisma deploy` defaults to `production` and `prisma dev` to `dev`, and no
-stage is special. On Prisma Cloud, `production` resolves to the Project's
+A deploy-time **environment** name, chosen with `--environment` (`--stage` until
+ADR-0062 lands) and never authored in the topology — the same graph deploys to
+any environment. Every environment has a name: `prisma deploy` defaults to
+`production` and `prisma dev` to `dev`, and none is special. On Prisma Cloud, `production` resolves to the Project's
 default Branch and any other stage to the **Branch** whose `gitName` is the
 stage name
-([ADR-0062](../90-decisions/ADR-0062-stage-configuration-comes-from-providers.md)). See
+([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). See
 [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)
 and
 [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md).

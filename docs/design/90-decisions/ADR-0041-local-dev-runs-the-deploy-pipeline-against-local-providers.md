@@ -1,6 +1,6 @@
 # ADR-0041: Local dev runs the deploy pipeline against local providers
 
-Amended by [ADR-0062](ADR-0062-stage-configuration-comes-from-providers.md): local dev runs at a stage the user names, `dev` by default.
+Amended by [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): local dev runs as an environment the user names, `dev` by default.
 
 Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the command is `prisma dev <entry>`, and reading the running app's logs is the `log` operation on `@prisma/composer/control`, not a command. The `prisma-composer` binary is retired. The local pipeline below is unchanged.
 

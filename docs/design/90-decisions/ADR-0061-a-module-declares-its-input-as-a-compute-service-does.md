@@ -24,7 +24,7 @@ provision(authModule, {
 });
 ```
 
-The root module may declare `input` too. Nothing provisions the root, so the deploy binds the root's input from the stage configuration providers ([ADR-0062](ADR-0062-stage-configuration-comes-from-providers.md)). The root still may not declare `deps`, because a dependency needs a producer in the graph.
+The root module may declare `input` too. Nothing provisions the root, so the deploy binds the root's input from the config adapters ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). The root still may not declare `deps`, because a dependency needs a producer in the graph.
 
 ## Reasoning
 
@@ -32,7 +32,7 @@ The root module may declare `input` too. Nothing provisions the root, so the dep
 
 **Everything the service input decision gave services, modules now get.** Legality can be relational ("no `stripeSecretKey` unless `stripeEnabled`"), because a schema library expresses that and per-key slots cannot. The caller brings the schema library, and Composer keeps no type vocabulary of its own ([ADR-0018](ADR-0018-config-params-carry-a-caller-owned-schema.md)). Secretness is enforced by validation: binding a plain value where the schema expects a `SecretString` fails the deploy, and so does binding a secret source where it expects a string.
 
-**The module's references are opaque, so the graph cannot branch on configuration.** `input.baseUrl` in the body is a reference, not the string. The body can pass it into a child's input and nothing else, so a module cannot provision different children on different stages. The topology is the same on every stage, which stage resolution requires ([ADR-0024](ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)).
+**The module's references are opaque, so the graph cannot branch on configuration.** `input.baseUrl` in the body is a reference, not the string. The body can pass it into a child's input and nothing else, so a module cannot provision different children on different stages. The topology is the same in every environment, which the structure rule requires ([ADR-0024](ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)).
 
 **Validation happens at deploy, as for a service.** The deploy resolves the module's binding (literals as-is, sources resolved, secrets as opaque boxes) and passes it to the module's schema. The value then flows into a child's input and is validated again by the child's schema. A module that only forwards a value can use a permissive schema for it; a module that constrains it says so once.
 
@@ -57,12 +57,12 @@ The decision stands on the shape above; the mechanism is settled by the spike.
 - **Keep per-key slots on modules and rename `paramNeed()`.** Rejected: modules and services would still take configuration in two shapes.
 - **Separate `config` and `secrets` declarations on modules, through builder callbacks with a Composer type vocabulary** (`(c) => ({ foo: c.string() })`). Rejected: it splits what the service input decision deliberately merged, and gives Composer a type vocabulary to maintain beside the schema libraries.
 - **Input on the root only.** Rejected: the root would take configuration in a shape no other module uses.
-- **Hand the body the actual values.** Rejected: the body could branch on them, and the graph would differ per stage.
+- **Hand the body the actual values.** Rejected: the body could branch on them, and the graph would differ per environment.
 
 ## Related
 
 - [ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md): a module has the same boundary as a service. Amended by this ADR.
 - [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md): service input is one standard schema. Extended to modules by this ADR.
 - [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) and [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md): the forwardable secret and param slots this replaces on modules; their sources (`envSecret`, `envParam`) are unchanged.
-- [ADR-0062](ADR-0062-stage-configuration-comes-from-providers.md): how the root's input is bound.
+- [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): how the root's input is bound.
 - [module-composition.md](../10-domains/module-composition.md) and [config-params.md](../10-domains/config-params.md).

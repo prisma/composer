@@ -1,6 +1,6 @@
 # ADR-0049: Composer's configuration is the `composer` section of `prisma.config.ts`
 
-Amended by [ADR-0062](ADR-0062-stage-configuration-comes-from-providers.md): the section gains `config` (and later `secrets`), each an array of providers.
+Amended by [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): the section gains `config` (and later `secrets`), each an array of adapters.
 
 Amended after acceptance: the Alternatives section adds four rejected ways to keep a Composer-owned effect check, and the Consequences state the exit code of `CLI.CONFIG_UNREADABLE`. The decision is unchanged.
 
