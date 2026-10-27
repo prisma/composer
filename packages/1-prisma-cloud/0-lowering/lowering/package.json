@@ -6,6 +6,7 @@
     ".": "./dist/index.mjs",
     "./builds": "./dist/builds.mjs",
     "./compute": "./dist/compute.mjs",
+    "./deployed": "./dist/deployed.mjs",
     "./state": "./dist/state.mjs",
     "./package.json": "./package.json"
   },

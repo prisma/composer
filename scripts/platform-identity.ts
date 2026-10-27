@@ -6,6 +6,7 @@
  */
 
 import type { ApplicationTopologyNodeBody } from '../packages/1-prisma-cloud/0-lowering/lowering/src/builds/application-topology.ts';
+import { RESOURCE_ROW_KINDS } from '../packages/1-prisma-cloud/0-lowering/lowering/src/resource-rows.ts';
 
 export type RowKind = 'app' | 'database' | 'bucket';
 
@@ -16,18 +17,14 @@ export interface PlatformRow {
   readonly id: string;
   readonly branchId: string | null;
   readonly logicalId: string | null;
+  /** An App row's endpoint: the full URL its service is served from. */
+  readonly appEndpointDomain?: string;
 }
-
-const RESOURCE_ROW_KINDS: Readonly<Record<string, RowKind>> = {
-  'raw-postgres': 'database',
-  postgres: 'database',
-  s3: 'bucket',
-};
 
 /** The kind of platform row a topology node lowers to, or `undefined` when it has none (a module, an S3 credentials resource). */
 export function rowKindOf(node: TopologyNode): RowKind | undefined {
   if (node.kind === 'service') return 'app';
-  if (node.kind === 'resource' && node.type !== undefined) return RESOURCE_ROW_KINDS[node.type];
+  if (node.kind === 'resource' && node.type !== undefined) return RESOURCE_ROW_KINDS.get(node.type);
   return undefined;
 }
 

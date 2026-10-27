@@ -22,11 +22,14 @@ const sources = COMMAND_DIRS.flatMap((dir) =>
 describe('command stdout', () => {
   test('reads every command source', () => {
     expect(sources.map((source) => source.name).sort()).toEqual([
+      'deploy-list.ts',
       'deploy.ts',
+      'deployed-nodes.ts',
       'dev-stop.ts',
       'dev-url.ts',
       'dev.ts',
       'emulator-list.ts',
+      'list-deployed.ts',
     ]);
   });
 

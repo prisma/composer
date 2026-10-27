@@ -28,8 +28,9 @@ and
 
 Two commands, mounted by the `prisma` CLI from `@prisma/composer-cli`'s
 command family, plus one operation with no command. The family also carries
-`dev url`, `dev stop` and `emulator list`, which act on the local app and the
-local emulators; [local-dev.md](local-dev.md) covers them
+`prisma deploy list`, below, and `dev url`, `dev stop` and `emulator list`,
+which act on the local app and the local emulators; [local-dev.md](local-dev.md)
+covers those three
 ([ADR-0053](../90-decisions/ADR-0053-dev-url-dev-stop-and-emulator-list.md)).
 
 - **`prisma deploy`** — deploy the application whose root node is the default
@@ -39,6 +40,20 @@ local emulators; [local-dev.md](local-dev.md) covers them
   working directory. With neither, the command fails with `CONFIG.ENTRY_MISSING`.
   The entry is an input to the tool, not an application fact ([ADR-0003](../90-decisions/ADR-0003-deploy-derives-everything-from-the-root-node.md)).
   The generated stack file gets the entry as an absolute path.
+- **`prisma deploy list`** — list every node the app has deployed on a stage
+  (default: production), one row per node of the application topology the
+  last deploy wrote, in topology order. Each row has the node's address, its
+  kind (`project` for the root, `service`, `postgres`, `bucket`, `module`, or
+  another resource's type), its platform ID and, for a service, its URL. The
+  root's ID is the Project's; every other ID is the Branch's service, database
+  or bucket row with the node's `logicalId`. A node with no row has no ID. It
+  finds the stage with the find-only lookup `destroy` uses and creates
+  nothing. It reads the topology, not the deploy state, so it never contends
+  for the deploy lease. Flags: `--stage`, `--name` and `--entry`, as on
+  `deploy`. An invalid stage name fails with `DEPLOY.STAGE_INVALID`; no
+  Project, no Branch or no topology fails with `DEPLOY.TARGET_NOT_FOUND`.
+  `@prisma/composer-cli` adds it to the family, because it reads Prisma Cloud
+  ([ADR-0053](../90-decisions/ADR-0053-dev-url-dev-stop-and-emulator-list.md)).
 - **`destroy`**, an operation on `@prisma/composer/control` with no command —
   tear a stage down (same derivation, Alchemy destroy); the target is always
   explicit (see § Stages and containers). Users call it from a script.

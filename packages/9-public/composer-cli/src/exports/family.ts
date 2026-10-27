@@ -17,6 +17,7 @@ import {
   type CreateComposerFamilyOptions as FrameworkFamilyOptions,
 } from '@internal/cli/family';
 import type { CommandFamily } from '@prisma/cli-engine';
+import { createDeployListCommand, type ListDeployed, listDeployed } from '../family/deploy-list.ts';
 import {
   createEmulatorListCommand,
   type ListEmulators,
@@ -24,18 +25,24 @@ import {
 } from '../family/emulator-list.ts';
 
 export * from '@internal/cli/family';
+export type { ListDeployed } from '../family/deploy-list.ts';
+export type { DeployedNode } from '../family/deployed-nodes.ts';
 export type { ListEmulators } from '../family/emulator-list.ts';
+export type { ListDeployedInput } from '../family/list-deployed.ts';
 
 export interface CreateComposerFamilyOptions extends FrameworkFamilyOptions {
   /** Defaults to the real listing of this machine's emulators. */
   readonly listEmulators?: ListEmulators | undefined;
+  /** Defaults to the real read of what the app has deployed on Prisma Cloud. */
+  readonly listDeployed?: ListDeployed | undefined;
 }
 
-/** Composer's command family: `deploy`, `dev`, `dev url`, `dev stop` and `emulator list`, keyed by the path each is meant to mount at. */
+/** Composer's command family: `deploy`, `deploy list`, `dev`, `dev url`, `dev stop` and `emulator list`, keyed by the path each is meant to mount at. */
 export function createComposerFamily(options: CreateComposerFamilyOptions = {}): CommandFamily {
   return createFrameworkFamily({
     ...options,
     commands: {
+      'deploy list': createDeployListCommand(options.listDeployed ?? listDeployed),
       'emulator list': createEmulatorListCommand(options.listEmulators ?? listEmulators),
       ...options.commands,
     },

@@ -4,6 +4,7 @@ export default defineConfig({
   entry: {
     index: 'src/exports/index.ts',
     builds: 'src/exports/builds.ts',
+    deployed: 'src/exports/deployed.ts',
     compute: 'src/exports/compute.ts',
     state: 'src/exports/state.ts',
   },

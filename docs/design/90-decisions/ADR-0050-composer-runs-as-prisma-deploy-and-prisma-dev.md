@@ -4,6 +4,8 @@ Amended by [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-a
 
 Amended by [ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md): the family also ships `dev url`, `dev stop` and `emulator list`, so `prisma dev` is both a command and a group.
 
+Amended 2026-10-27: the family also ships `deploy list`, so `prisma deploy` is both a command and a group too ([ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md)).
+
 Amended 2026-10-23: neither command takes a positional entry. The entry is `entry` in the `composer` section of `prisma.config.ts` ([ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md)), and both commands take `--entry <path>` to override it for one run. The `entry` input of the `deploy`, `destroy`, `dev` and `log` operations is optional and overrides the config's.
 
 ## Decision

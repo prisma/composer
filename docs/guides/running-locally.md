@@ -295,6 +295,7 @@ The rules for every line:
 | Command | One line per | Fields |
 | --- | --- | --- |
 | `prisma deploy` | deployed entity | node address, entity kind (`compute-service`, `postgres-database` or `bucket`), entity id, URL (empty for an entity without one) |
+| `prisma deploy list` | deployed node | node address, kind (`project`, `service`, `postgres`, `bucket`, `module`, or another resource's type), platform ID, URL |
 | `prisma dev stop` | node it stopped | node address, node kind (`service`, `database` or `bucket`) |
 | `prisma dev url` | the node asked for | URL |
 | `prisma emulator list` | emulator instance | emulator kind (`service`, `database` or `bucket`), instance id, URL, state, node address, directory |
