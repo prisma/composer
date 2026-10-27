@@ -4,7 +4,7 @@ The design itself is in the ADRs (0059 to 0062, pdp-control-plane ADR 015) and `
 
 ## 1. Day one, a named hostname may fail the deploy
 
-Until the PDP Public URL record and the Alchemy resource over it exist, `publicUrl.hostname()` lowers to `Prisma.CustomDomain`, which calls Foundry's `registerDomain` at once and is refused when the hostname's CNAME isn't in place. So on day one a hostname without DNS fails the deploy, naming the hostname and the DNS step.
+Until the PDP ServiceUrl record and the Alchemy resource over it exist, `publicUrl.hostname()` lowers to `Prisma.CustomDomain`, which calls Foundry's `registerDomain` at once and is refused when the hostname's CNAME isn't in place. So on day one a hostname without DNS fails the deploy, naming the hostname and the DNS step.
 
 **Why.** It lets `publicUrl()` ship on Composer's timeline and gives authors the model (which service is public, at which URL per environment) now. The failure is the same one a custom domain gives today, so nothing gets worse. When the record lands, `hostname()` switches resource with no change to authored code.
 
@@ -31,3 +31,7 @@ The spike on typed per-key input references, `module()` taking `input`, `resolve
 ## 5. Who does what
 
 Will and the orchestrating agent do the PDP record (D1) and the upstream Alchemy change (U1) together in this session. The remaining slices are dispatched, each in its own session, following the Drive process. Will tracks the work outside Linear.
+
+## 6. Prisma now requires an ownership TXT record before registering a hostname
+
+Since prisma/pdp-control-plane#5785 (2026-10-24), `POST /v1/apps/{appId}/domains` refuses with 422 `domain-ownership-required` unless `_prisma-verification.<hostname>` carries the workspace's value. Composer never publishes DNS, so for Composer this is one more record the author publishes, the ownership proof ADR-0060 already describes. P1's "DNS not ready" error and its live check must cover this record as well as the CNAME. Alchemy's website functions and its live custom-domain test don't publish it; Will handed that to the provider's maintainers on 2026-10-27. It does not block U1.

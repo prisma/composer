@@ -19,8 +19,8 @@ flowchart LR
     Br[Branch]
     PApp[Compute Service]
     Dep[Deployment]
-    PPU[Public URL]
-    Dom[Domain]
+    PPU[ServiceUrl]
+    Dom[Domain ownership record]
   end
   subgraph Foundry
     CV[Compute version]
@@ -40,9 +40,9 @@ flowchart LR
   PApp -- has --> Dep
   Dep -- runs as --> CV
   PPU -- sends traffic to --> PApp
-  PPU -- is allowed by --> Dom
-  PPU -- generated, served by --> EP
-  PPU -- claimed, served by --> CD
+  PPU -- named, is allowed by --> Dom
+  PPU -- assigned, served by --> EP
+  PPU -- named, served by --> CD
   EP -- routes to --> CV
   CD -- routes to --> CV
 ```
@@ -69,14 +69,14 @@ Exists today:
 | **Database**, **Bucket**, **ConfigVariable** | Data, file storage, and per-Branch configuration values. |
 | **ApplicationTopology** | A record, written on each deploy, of the graph that deploy declared. It is for display only; nothing is deployed from it. |
 
-PDP has no record of custom domains today. They exist only in Foundry. To add one, the user must publish a TXT record proving they own the hostname (prisma/pdp-control-plane#5785) and point the hostname's DNS at Foundry.
+PDP has no record of custom domains today. They exist only in Foundry. To add one, the user must publish a TXT record proving they own the hostname (prisma/pdp-control-plane#5785) and point the hostname's DNS at Foundry. Every service also gets a `*.prisma.build` endpoint at promote whether anyone asked or not.
 
 New:
 
 | Entity | What it is |
 | --- | --- |
-| **Public URL** | A URL on one Branch that receives traffic and sends it to one service, whichever of the service's deployments is live. Its URL is either one the user names or one the platform generates. It exists as soon as it's declared. Until its URL is allowed (see Domain) and its DNS is set up, it receives no traffic, but the deploy still succeeds. It survives its service being deleted. Composer finds it by its `logicalId`. |
-| **Domain** | A domain a workspace has proven it owns. Today's ownership proof already works this way: the user publishes a TXT record carrying a value specific to their workspace (prisma/pdp-control-plane#5785), so the proof is per workspace and shared by every project in it. The user proves ownership on the platform; Composer has no part in it. A Public URL with a named hostname starts receiving traffic once the hostname is under a proven Domain. The platform owns `prisma.build` itself, so generated URLs need no proof. |
+| **ServiceUrl** | A URL at which a service answers, whichever of the service's deployments is live. One entity for internal and external reach: its hostname is either named by the user or assigned by the platform, and its visibility is public or private. It exists as soon as it's declared and calls no Foundry API on creation. A named hostname receives traffic once all of its conditions hold (ownership proven, service present, live version, DNS pointing at the region, certificate issued, routing bound); until then the deploy still succeeds and the record shows the first unmet condition. A reconciler keeps Foundry's records bound to the live version. It survives its service being deleted. Composer finds it by its `logicalId`. A hostname belongs to one ServiceUrl on the whole platform. Nothing is created unless something asked for it. |
+| **Domain ownership record** | A name the workspace has proven it may use: an exact hostname or an exact wildcard string covering one label. Today's proof, unchanged: the user publishes a TXT record at `_prisma-verification.<name>` carrying a value specific to their workspace (prisma/pdp-control-plane#5785), so the record belongs to the workspace and is shared by every project in it. The user proves ownership on the platform; Composer has no part in it. A named public ServiceUrl starts receiving traffic once its hostname is covered by a proven record. The platform owns `prisma.build` itself, so assigned hostnames need no proof. |
 
 ## Composer: how authors describe the app
 
@@ -99,23 +99,24 @@ New:
 | A deploy to `production` | goes into the Project's default Branch (created as `main`) | — |
 | A deploy to any other environment, such as `staging` | goes into the Branch named `staging`, which is created if it doesn't exist | — |
 | A run of `prisma dev` | nothing; it runs on your machine | nothing |
-| Compute service | a Compute Service, with a new Deployment whenever its code or configuration changed | one compute version per Deployment, plus the service's Endpoint |
-| `publicUrl` with a generated URL | a Public URL that uses the service's existing `*.prisma.build` hostname | the service's Endpoint |
-| `publicUrl` with a named hostname | a Public URL that needs a proven Domain | a Custom domain |
+| Compute service | a Compute Service, created with its default URL turned off, with a new Deployment whenever its code or configuration changed | one compute version per Deployment |
+| A service that another part of the app calls | a private assigned ServiceUrl on that service | the service's Endpoint |
+| `publicUrl` with a generated URL | a public assigned ServiceUrl, which today is given the service's existing `*.prisma.build` hostname | the service's Endpoint |
+| `publicUrl` with a named hostname | a public named ServiceUrl that needs a proven domain ownership record | a Custom domain |
 | Root module input and config adapters | nothing; Composer works out their values before deploying | nothing |
 
-Each time a deployment goes live, PDP points the Foundry records behind every Public URL at that deployment's compute version.
+Each time a deployment goes live, PDP points the Foundry records behind every ServiceUrl at that deployment's compute version, and its reconciler repairs any that promote missed.
 
-## A named URL can belong to only one Public URL
+## A hostname can belong to only one ServiceUrl
 
-If two Public URLs name the same hostname, traffic goes to whichever one Foundry's records happen to match. So a named hostname can belong to only one Public URL: across all environments of a project, and across all projects that share the Domain.
+If two ServiceUrls named the same hostname, traffic would go to whichever one Foundry's records happened to match. So a hostname belongs to one ServiceUrl on the whole platform, across every workspace, project and environment. This rule is unrelated to ownership.
 
-PDP has to refuse the second claim when the Public URL is created. Today Foundry refuses a hostname that's already registered, but only at the moment the hostname is attached to routing. Once Public URLs exist before their DNS is set up, two of them could both wait for DNS, and whichever connected first would win.
+PDP refuses the second claim when the ServiceUrl is created. Today Foundry refuses a hostname that's already registered, but only at the moment the hostname is attached to routing, and only within one region. Once ServiceUrls exist before their DNS is set up, two of them could both wait for DNS, and whichever connected first would win.
 
-Generated URLs can't clash, because the platform makes each one unique. Composer can only spot a duplicate inside one deploy of one app; only the platform can check across environments and projects.
+Assigned hostnames can't clash, because the platform makes each one unique. Composer can only spot a duplicate inside one deploy of one app; only the platform can check across environments and projects.
 
-## Not yet settled
+## Settled on 2026-10-27
 
-- Whether a workspace-level Domain is enough, or a project needs to be able to own a domain on its own; and whether proving ownership of `example.com` also covers names such as `preview.example.com`.
-- Whether Foundry could send a hostname's traffic to a service, instead of to one compute version at a time.
-- What a deploy does when its Public URL names a hostname another Public URL already holds.
+- The ownership record belongs to the workspace, because the proof does. It claims an exact name or an exact wildcard covering one label; proving `example.com` does not cover `preview.example.com`.
+- Foundry is not changed; the control plane reconciles over its existing APIs.
+- A deploy whose public URL names a hostname another ServiceUrl holds is refused with a conflict.

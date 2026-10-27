@@ -4,7 +4,7 @@
 
 Eight slices in four tracks across four repositories. Eight is above the usual limit of four. The tracks share no code; what they share is the design, which is already recorded, so they run in parallel with no coordination beyond the Management API routes ADR 015 defines. Splitting them into one project per repository would add bookkeeping without removing a dependency. The module-input work that would have made eleven is a follow-on project (`.drive/deferred.md`).
 
-Owners: Will and the orchestrating agent do U1 and D1 together in this session. Every other slice is dispatched to its own session. Will tracks this work outside Linear, so no Linear issues are created.
+Owners: Will and the orchestrating agent designed D1 together and drive U1 and C2 through their own sessions; D1's implementation goes to the control-plane team under another agent. Every other slice is dispatched to its own session. Will tracks this work outside Linear, so no Linear issues are created.
 
 ## Track U — upstream Alchemy (alchemy-run/alchemy, `src/Prisma/`)
 
@@ -14,15 +14,15 @@ Remove `ensureDefaultBranchApp` from `src/Prisma/CustomDomain.ts` and the test t
 
 - **Builds on:** nothing. Starts immediately. Will and the orchestrating agent.
 - **Hands to:** P1 can attach a hostname on any environment.
-- **Done when:** the upstream resource registers a hostname on a non-default Branch of a test project, the change is in an Alchemy release, and Composer's pin moves to it.
+- **Done when:** a provider test against a fake Management API creates a domain on an App whose Branch is not the default, the change is in an Alchemy release, and Composer's pin moves to it. No live test: after the change the request carries no Branch, so a live run would only test PDP, whose own tests cover branch domains (prisma/pdp-control-plane#5746).
 
-### U2. A Public URL resource over PDP's new routes
+### U2. A ServiceUrl resource over PDP's new routes
 
-A `Prisma.PublicUrl` resource: create (no DNS needed), read state, update hostname or target, delete; found by `logicalId`. Replaces `Prisma.CustomDomain` for Composer.
+A `Prisma.ServiceUrl` resource: create (no DNS needed), read conditions, update hostname or service, delete; found by `logicalId`; public or private, named or assigned. `Prisma.App` gains the parameter that turns the platform's default URL off. Replaces `Prisma.CustomDomain` for Composer.
 
 - **Builds on:** D1 deployed.
 - **Hands to:** P2.
-- **Done when:** a hostname with no DNS creates a pending record and the resource reports its state on later reads, and the change is in an Alchemy release.
+- **Done when:** a hostname with no DNS creates a record whose conditions the resource reports on later reads, an app can be created without a default URL, and the change is in an Alchemy release.
 
 ## Track C — Composer core (prisma/composer)
 
@@ -60,20 +60,20 @@ A `Prisma.PublicUrl` resource: create (no DNS needed), read state, update hostna
 
 ## Track D — PDP (prisma/pdp-control-plane)
 
-### D1. Public URL and Domain records
+### D1. ServiceUrl and domain ownership records, routes, reconciler
 
-Per ADR 015: the two tables; Management API routes (Public URL create, update, delete, list by Branch, lookup by `logicalId`; Domain prove, list); creation with no Foundry call; Verify and connect driving the record through `verifying`, `provisioning_tls`, `active` and `failed`; promote re-pointing each record's Foundry rows with failures on the record's `state`; the uniqueness rule enforced on create; the backfill of existing custom domains and TXT proofs. No Foundry change.
+The control plane's own project, `projects/service-urls/` in pdp-control-plane, with its own spec and a four-slice plan: the two tables, routes and backfill; the reconciler and lifecycle hooks; retiring the old domain paths; the Console. Its first two slices are what U2 and P2 build on. No Foundry change.
 
-- **Builds on:** ADR 015 (prisma/pdp-control-plane#5795) agreed. Starts immediately; the longest slice. Will and the orchestrating agent.
-- **Hands to:** U2, D2.
-- **Done when:** a Public URL created without DNS is `pending`, becomes `active` after Verify and connect, survives a promote and a service deletion, a second record naming its hostname is refused, and an existing custom domain appears as a record with no `logicalId`.
+- **Builds on:** pdp-control-plane's ADR 015 agreed. Designed with Will on 2026-10-27; implementation is handed to the control-plane team, managed by another agent.
+- **Hands to:** U2 after its first slice is deployed; P2 after its second.
+- **Done when:** its own project's acceptance criteria pass.
 
-### D2. Console shows public URLs and actual exposure
+### D2. Console: URLs on the service page, Domains in workspace settings
 
-Each service's public URLs with their state and the setup link, and every service's actual reachability while all services are still public, so no service is presented as private.
+The fourth slice of the control plane's project, listed here because the Composer project's DoD depends on it.
 
-- **Builds on:** D1.
-- **Done when:** the Console page for a service in the test project shows both, verified with screenshots in the PR.
+- **Builds on:** D1's second slice.
+- **Done when:** the Console page for a service in the test project shows its URLs with visibility and conditions, and the workspace's Domains page shows the ownership records, verified with screenshots in the PR.
 
 ## Order
 

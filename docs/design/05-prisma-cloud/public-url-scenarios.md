@@ -30,7 +30,7 @@ export default module('shop', ({ environment, provision }) => {
 
 **Topology:** `shop.auth.service`, `shop.web`, `shop.site`; edge `shop.site → shop.web.http`.
 
-**Every environment:** Branch holds Compute Services `shop.auth.service` and `shop.web`, and a generated Public URL `shop.site` pointing at `shop.web`, which uses `shop.web`'s existing `*.prisma.build` hostname (Foundry: the service's Endpoint). No Domain needed.
+**Every environment:** Branch holds Compute Services `shop.auth.service` and `shop.web`, a private ServiceUrl on `shop.web` because `shop.site` is wired to it, and a public assigned ServiceUrl `shop.site` on `shop.web`, which today is given the service's existing `*.prisma.build` hostname (Foundry: the service's Endpoint). No ownership record needed. `shop.auth.service` has a private ServiceUrl too, because `web` calls it.
 
 **What's different from today:** nothing is reachable differently yet, because every service keeps its Endpoint until the platform can address services privately. What changes is the model: the topology now says `web` is the one public service. Console must still show that the other services are reachable, so the topology never presents an unenforced boundary as private.
 
@@ -48,9 +48,9 @@ provision(publicUrl({
 
 **Topology:** identical in every environment (one `shop.site` node). Only the resolved value of `url` differs.
 
-**Production Branch:** named Public URL `shop.site` = `shop.com` → `shop.web`. Receives traffic once the workspace has proven the Domain `shop.com` and DNS points at Foundry (Foundry: a Custom domain). Until then the deploy succeeds and `web` still answers on its `*.prisma.build` hostname. The deploy output says which step is outstanding (ownership proof, DNS, or the certificate) and prints the Console link to finish it. The user can also prove `shop.com` in Console before this deploy ever runs; neither order is required. Finishing DNS never needs another deploy.
+**Production Branch:** named public ServiceUrl `shop.site` = `shop.com` → `shop.web`. Receives traffic once the workspace has a proven domain ownership record for `shop.com` and DNS points at the service's region (Foundry: a Custom domain, registered by the control plane once every condition holds). Until then the deploy succeeds and `web` still answers on its `*.prisma.build` hostname. The deploy output says which step is outstanding (ownership proof, DNS, or the certificate) and prints the Console link to finish it. The user can also prove `shop.com` in Console before this deploy ever runs; neither order is required. Finishing DNS never needs another deploy.
 
-**Any other Branch:** generated Public URL `shop.site` on the service's `*.prisma.build` hostname.
+**Any other Branch:** assigned public ServiceUrl `shop.site`, given the service's `*.prisma.build` hostname.
 
 ## 3. Production, staging and previews, each different
 
@@ -63,7 +63,7 @@ url: resolve([environment.name], ([name]) =>
   : publicUrl.generated()),
 ```
 
-**PDP:** as scenario 2, with a second named Public URL on the `staging` Branch. One proven Domain, `shop.com`, covers both hostnames if proving a domain covers the names under it (open); otherwise `staging.shop.com` needs its own proof. A team that controls only `staging.shop.com` can prove that subdomain without owning `shop.com`.
+**PDP:** as scenario 2, with a second named ServiceUrl on the `staging` Branch. Ownership is per exact name, so `shop.com` and `staging.shop.com` are two domain ownership records, each with its own TXT record carrying the same workspace value. A team that controls only `staging.shop.com` can prove that name without owning `shop.com`.
 
 ## 4. Every preview on its own subdomain
 
@@ -78,7 +78,7 @@ url: resolve([environment.name], ([name]) =>
 
 **How it runs:** Composer builds the graph with the `resolve()` function unexecuted, disables `provision`, then calls it once with the environment's name and validates the result. The graph is the same shape everywhere.
 
-**PDP, `pr-42` Branch:** named Public URL `shop.site` = `pr-42.preview.shop.com` → `shop.web`. For this to work without a person doing DNS per preview, the workspace must have proven `preview.shop.com` once, with proof covering the names under it, and one wildcard DNS record must send `*.preview.shop.com` to Foundry. Certificates need no extra work: Foundry issues one certificate per hostname (ACME HTTP-01), so each new preview hostname gets its own once the wildcard record resolves to Foundry. A preview's hostname must stay one label under the namespace, and a hostname under the wildcard that no Public URL holds must not reach anything.
+**PDP, `pr-42` Branch:** named ServiceUrl `shop.site` = `pr-42.preview.shop.com` → `shop.web`. For this to work without a person doing DNS per preview, the workspace must hold a proven domain ownership record for the wildcard `*.preview.shop.com` (TXT at `_prisma-verification.preview.shop.com`), which covers exactly one label below it, and one wildcard DNS record must send `*.preview.shop.com` to Foundry. Certificates need no extra work: Foundry issues one certificate per hostname (ACME HTTP-01), so each new preview hostname gets its own once the wildcard record resolves to Foundry. A preview's hostname must stay one label under the namespace, and a hostname under the wildcard that no ServiceUrl holds reaches nothing.
 
 A preview whose code names `shop.com` is refused, because production holds it, and production is unaffected.
 
@@ -121,7 +121,7 @@ const identity = provision(auth(), { deps: { db, email: mail.send }, input: { ba
 provision(publicUrl({ name: 'authUrl', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('auth.shop.com') : publicUrl.generated()), target: identity.api }));
 ```
 
-The `auth()` module exposes `api` as a raw HTTP connection. At Load, `identity.api` resolves to the service inside the module (`shop.auth.service`), so the Public URL points at that service's Compute Service. The module decided its `api` could be made public by exposing it; the app decided it is. `identity.admin` is a service RPC connection, so wiring a `publicUrl` to it is a type error.
+The `auth()` module exposes `api` as a raw HTTP connection. At Load, `identity.api` resolves to the service inside the module (`shop.auth.service`), so the ServiceUrl points at that service. The module decided its `api` could be made public by exposing it; the app decided it is. `identity.admin` is a service RPC connection, so wiring a `publicUrl` to it is a type error.
 
 ## 8. A service that needs its own public URL
 
@@ -134,7 +134,7 @@ const identity = provision(auth(), { deps: { db, email: mail.send }, input: { ba
 provision(publicUrl({ name: 'authUrl', url: authUrl, target: identity.api }));
 ```
 
-The Public URL's value feeds the service's input through a second `resolve()`, so the service gets a string URL derived from whatever hostname the Public URL ends up with. The framework keeps no list of a service's URLs and `origin()` keeps meaning the platform-assigned hostname. This works for a generated URL too, because the Public URL record is created before the service's deployment, so its hostname is known by the time the service's input is written.
+The ServiceUrl's value feeds the service's input through a second `resolve()`, so the service gets a string URL derived from whatever hostname the ServiceUrl ends up with. The framework keeps no list of a service's URLs and `origin()` keeps meaning the platform-assigned hostname. This works for a generated URL too, because the ServiceUrl record is created before the service's deployment, so its hostname is known by the time the service's input is written.
 
 ## 9. The hostname comes from outside the code (optional path)
 
@@ -157,13 +157,13 @@ export default module('shop', { input: type({ 'SITE_HOSTNAME?': 'string' }) }, (
 
 **User:** "Production moves from `shop.com` to `theshop.com`."
 
-The code changes `publicUrl.hostname('shop.com')` to `publicUrl.hostname('theshop.com')`. `shop.site` keeps its node address, so PDP updates the same Public URL record: its hostname is now `theshop.com`, and `shop.com` stops being served by it. `theshop.com` receives traffic once it is proven and its DNS is set up; until then the record is pending, exactly as for a new hostname. No node is deleted and no consent is involved.
+The code changes `publicUrl.hostname('shop.com')` to `publicUrl.hostname('theshop.com')`. `shop.site` keeps its node address, so PDP updates the same ServiceUrl record: its hostname is now `theshop.com`, and `shop.com` stops being served by it. `theshop.com` receives traffic once its conditions hold; until then the record shows the first unmet one, exactly as for a new hostname. No node is deleted and no consent is involved.
 
 ## 11. Removing a public URL
 
 **User:** "`web` should no longer be reachable from outside."
 
-The `publicUrl` line is deleted. The deploy plan deletes `shop.site`, which removes the Public URL record and its Foundry Custom domain. This is an ordinary topology removal, covered by the general "ask before losing something" work, not by anything specific to URLs. The proven Domain is untouched.
+The `publicUrl` line is deleted. The deploy plan deletes `shop.site`, which removes the public ServiceUrl record and its Foundry Custom domain; the private ServiceUrl other services use stays. This is an ordinary topology removal, covered by the general "ask before losing something" work, not by anything specific to URLs. The domain ownership record is untouched.
 
 ## 12. Local development
 
@@ -175,7 +175,7 @@ The environment is `dev`. `environment.name` resolves to `'dev'`. The local targ
 
 **User:** "`worker` consumes a queue. Nothing outside should reach it."
 
-No `publicUrl` is declared for it. Today it still has an Endpoint and a `*.prisma.build` hostname, because service-to-service connections use it and the platform can't yet address services privately. The topology says it isn't public; the platform doesn't enforce that yet. When private addressing arrives, a service with no Public URL stops being reachable from outside, and nothing in the user's code changes.
+No `publicUrl` is declared for it, and nothing in the app calls it, so Composer creates no ServiceUrl for it and creates the service with the platform's default URL turned off: `worker` has no hostname at all. A service that other services call but that has no `publicUrl` gets a private ServiceUrl, which today is still a reachable `*.prisma.build` hostname because the platform can't yet address services privately; the Console says so. When private addressing arrives, private ServiceUrls stop being reachable from outside, and nothing in the user's code changes.
 
 ## What the scenarios need from each side
 
@@ -183,9 +183,9 @@ No `publicUrl` is declared for it. Today it still has an Endpoint and a `*.prism
 | --- | --- |
 | `publicUrl` node with its two strategy constructors; `resolve(deps, fn)` producing a `ResolvedValue`, run after the graph is built with `provision` disabled; the `environment` references handed to the module body | Composer core |
 | Module and root `input` as one schema; config adapters (separate work; only scenario 9 uses them) | Composer core |
-| Public URL record on a Branch, found by `logicalId`, created before DNS and before the service's deployment, pointing at a service, surviving promotes; a hostname change replaces the old hostname | PDP |
+| ServiceUrl record on a Branch (named or assigned, public or private), found by `logicalId`, created before DNS and before the service's deployment, pointing at a service, kept bound to the live version by a reconciler; a hostname change replaces the old hostname; a service-create parameter to skip the default URL | PDP |
 | Deploy output and Console distinguish: deployed, generated URL ready, awaiting ownership proof, awaiting DNS, certificate pending; Console shows each service's actual exposure | PDP and Composer |
-| Workspace-proven Domain; whether proof covers names under it; proving a delegated subdomain; both Console-first and code-first setup | PDP |
-| Refusing a second Public URL that names a hostname another Public URL holds | PDP |
-| Public URL resource replacing `Prisma.CustomDomain` | upstream Alchemy provider |
+| Workspace domain ownership record claiming an exact name or wildcard, with today's TXT value; both Console-first and code-first setup | PDP |
+| Refusing a second ServiceUrl that names a hostname another one holds, platform-wide | PDP |
+| ServiceUrl resource replacing `Prisma.CustomDomain`, and the service-create parameter on `Prisma.App` | upstream Alchemy provider |
 | Private addressing between services, so "no public URL" becomes enforced | platform, later |
