@@ -11,6 +11,7 @@ import * as path from 'node:path';
 import type { Graph } from '@internal/core';
 import type {
   ContainerCredentials,
+  ContainerDescriptor,
   ContainerInstance,
   ReporterDescriptor,
   RunReporter,
@@ -282,21 +283,32 @@ async function finishReporters(
 }
 
 /**
- * An extension older than this CLI resolves its container from a key without
- * `environment`, and may read every name as production. Refusing here keeps a
- * mismatched install from deploying into, or destroying, the wrong place.
+ * An extension older than this Composer stores the input it is given but
+ * resolves from a key without `environment`, so it may read every name as
+ * production. Its `deserialize` rebuilds only the fields it knows, so the
+ * container the Alchemy child rebuilds shows which environment it really
+ * resolved. Refusing here keeps a mismatched install from deploying into, or
+ * destroying, the wrong place.
  */
 function requireContainerForEnvironment(
+  action: 'deploy' | 'destroy',
   extensionId: ExtensionId,
+  descriptor: ContainerDescriptor,
   instance: ContainerInstance,
   environment: string,
 ): void {
-  if (instance.input.environment === environment) return;
+  let rebuiltEnvironment: string | undefined;
+  try {
+    rebuiltEnvironment = descriptor.deserialize(instance.serialize()).input.environment;
+  } catch {
+    rebuiltEnvironment = undefined;
+  }
+  if (rebuiltEnvironment === environment) return;
   throw new CliStructuredError(
-    'DEPLOY.CONTAINER_MISMATCH',
-    `The extension ${extensionId} resolved its container without the environment ${environment}, probably because it is older than the prisma CLI's Composer.`,
+    'DEPS.EXTENSION_INCOMPATIBLE',
+    `The extension ${extensionId} is older than the Composer running this ${action}, so it would not resolve the environment ${environment}.`,
     {
-      fix: `Install the same Composer version of ${extensionId} as the prisma CLI uses.`,
+      fix: `Install the same Composer version of ${extensionId} as the Composer that runs the ${action}.`,
     },
   );
 }
@@ -465,7 +477,13 @@ async function runStackPipelineInner(
             { appName: resolvedName, environment },
             deps.credentials,
           );
-          requireContainerForEnvironment(extension.id, instance, environment);
+          requireContainerForEnvironment(
+            action,
+            extension.id,
+            extension.container,
+            instance,
+            environment,
+          );
           containers.set(extension.id, instance);
         } else {
           const instance = await extension.container.locate(
@@ -479,7 +497,13 @@ async function runStackPipelineInner(
               { fix: 'Deploy it first.' },
             );
           }
-          requireContainerForEnvironment(extension.id, instance, environment);
+          requireContainerForEnvironment(
+            action,
+            extension.id,
+            extension.container,
+            instance,
+            environment,
+          );
           containers.set(extension.id, instance);
         }
       } catch (error) {

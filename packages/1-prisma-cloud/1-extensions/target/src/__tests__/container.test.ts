@@ -324,7 +324,7 @@ describe('a request from an older CLI, with no environment name', () => {
       await withEnv(baseEnv, async () => {
         const descriptor = containerDescriptor({ client: fakeClient(state) });
         await expect(descriptor[op](olderInput)).rejects.toThrow(
-          /names no environment\. The prisma CLI is probably older than this extension\. Use the same Composer version for both\./,
+          /names no environment\. The Composer running it is probably older than this extension\. Use the same Composer version for both\./,
         );
         expect(state.projectCreateCalls).toBe(0);
         expect(state.branchCreateCalls).toBe(0);

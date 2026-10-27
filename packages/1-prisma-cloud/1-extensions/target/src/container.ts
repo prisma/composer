@@ -209,7 +209,7 @@ function requireEnvironmentName(input: LocateContainerInput): void {
   if (typeof environment === 'string' && environment.length > 0) return;
   throw new Error(
     `${PRISMA_CLOUD_EXTENSION_ID}: the container request names no environment. ` +
-      'The prisma CLI is probably older than this extension. Use the same Composer version for both.',
+      'The Composer running it is probably older than this extension. Use the same Composer version for both.',
   );
 }
 

@@ -1068,7 +1068,7 @@ describe('deploy() step events', () => {
         get alchemyStage(): string {
           throw new Error('container bug');
         },
-        serialize: () => '{}',
+        serialize: () => JSON.stringify({ input }),
       }),
     };
     const config = fakeConfig();
@@ -1291,64 +1291,113 @@ describe('destroy()', () => {
     expect(result.failure.fix).toBe('Deploy it first.');
   });
 
-  test.each(['deploy', 'destroy'] as const)(
-    '%s refuses a container resolved without the environment, before Alchemy runs',
-    async (action) => {
-      const app = makeAppDir();
-      fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
-      fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
-      const olderExtensionInstance = (input: LocateContainerInput): ContainerInstance => ({
-        input: { appName: input.appName, stage: undefined } as unknown as LocateContainerInput,
-        serialize: () => '{}',
-      });
-      const config = fakeConfig();
-      const [extension, ...rest] = config.extensions;
-      if (extension === undefined) throw new Error('unreachable');
-      const olderConfig: PrismaAppConfig = {
-        ...config,
-        extensions: [
-          {
-            ...extension,
-            container: {
-              ensure: async (input) => olderExtensionInstance(input),
-              locate: async (input) => olderExtensionInstance(input),
-              remove: async () => {
-                throw new Error('remove must not run');
-              },
-              deserialize: unused,
-            },
-          },
-          ...rest,
-        ],
-      };
-      let alchemyRan = false;
-      const input = {
-        config: composerConfig(olderConfig),
-        entry: app.entryPath,
-        environment: 'staging',
-        cwd: app.dir,
-      };
-      const deps = {
-        runAssembler: fakeAssembler,
-        alchemy: async () => {
-          alchemyRan = true;
-          return { exitCode: 0, signal: null };
-        },
-      };
+  /** Behaves like the released 0.35.0 extension: it keeps the input it is given, but its `deserialize` rebuilds only `{ appName, stage }`. */
+  function releasedExtensionContainer(): ContainerDescriptor {
+    const instance = (input: LocateContainerInput): ContainerInstance => ({
+      input,
+      serialize: () => JSON.stringify({ input }),
+    });
+    return {
+      ensure: async (input) => instance(input),
+      locate: async (input) => instance(input),
+      remove: async () => {
+        throw new Error('remove must not run');
+      },
+      deserialize: (serialized) => {
+        const parsed = JSON.parse(serialized) as { input: { appName: string; stage?: string } };
+        const { appName, stage } = parsed.input;
+        return instance({ appName, stage } as unknown as LocateContainerInput);
+      },
+    };
+  }
 
-      const result =
-        action === 'deploy'
-          ? await silently(() => deployWithDeps(input, deps))
-          : await silently(() => destroyWithDeps(input, deps));
+  function withContainer(config: PrismaAppConfig, container: ContainerDescriptor): PrismaAppConfig {
+    const [extension, ...rest] = config.extensions;
+    if (extension === undefined) throw new Error('unreachable');
+    return { ...config, extensions: [{ ...extension, container }, ...rest] };
+  }
+
+  async function runAgainst(action: 'deploy' | 'destroy', config: PrismaAppConfig) {
+    const app = makeAppDir();
+    fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
+    fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
+    const ran: string[] = [];
+    const input = {
+      config: composerConfig(config),
+      entry: app.entryPath,
+      environment: 'staging',
+      cwd: app.dir,
+    };
+    const deps = {
+      runAssembler: fakeAssembler,
+      alchemy: async () => {
+        ran.push('alchemy');
+        return { exitCode: 0, signal: null };
+      },
+    };
+    const result =
+      action === 'deploy'
+        ? await silently(() => deployWithDeps(input, deps))
+        : await silently(() => destroyWithDeps(input, deps));
+    return { result, ran };
+  }
+
+  const recordingHooks = (ran: string[]) => ({
+    preflight: async () => {
+      ran.push('preflight');
+      return undefined;
+    },
+    teardown: async () => void ran.push('teardown'),
+  });
+
+  test.each(['deploy', 'destroy'] as const)(
+    '%s refuses an extension older than this Composer, before preflight, Alchemy, teardown or removal',
+    async (action) => {
+      const hookRuns: string[] = [];
+      const config = withContainer(
+        fakeConfig(recordingHooks(hookRuns)),
+        releasedExtensionContainer(),
+      );
+
+      const { result, ran } = await runAgainst(action, config);
 
       if (result.ok) throw new Error('expected a failure');
       expect(result.failure).toMatchObject({
-        code: 'DEPLOY.CONTAINER_MISMATCH',
-        message:
-          "The extension fixture-extension resolved its container without the environment staging, probably because it is older than the prisma CLI's Composer.",
-        fix: 'Install the same Composer version of fixture-extension as the prisma CLI uses.',
+        code: 'DEPS.EXTENSION_INCOMPATIBLE',
+        message: `The extension fixture-extension is older than the Composer running this ${action}, so it would not resolve the environment staging.`,
+        fix: `Install the same Composer version of fixture-extension as the Composer that runs the ${action}.`,
       });
-      expect(alchemyRan).toBe(false);
+      expect([...ran, ...hookRuns]).toEqual([]);
+    },
+  );
+
+  test.each(['deploy', 'destroy'] as const)(
+    '%s refuses an extension whose deserialize throws on its own container',
+    async (action) => {
+      const config = withContainer(fakeConfig(), {
+        ...releasedExtensionContainer(),
+        deserialize: () => {
+          throw new Error('unknown payload');
+        },
+      });
+
+      const { result, ran } = await runAgainst(action, config);
+
+      if (result.ok) throw new Error('expected a failure');
+      expect(result.failure.code).toBe('DEPS.EXTENSION_INCOMPATIBLE');
+      expect(ran).toEqual([]);
+    },
+  );
+
+  test.each(['deploy', 'destroy'] as const)(
+    '%s accepts an extension of the same Composer version',
+    async (action) => {
+      const hookRuns: string[] = [];
+
+      const { result, ran } = await runAgainst(action, fakeConfig(recordingHooks(hookRuns)));
+
+      expect(result.ok).toBe(true);
+      expect(ran).toEqual(['alchemy']);
     },
   );
 

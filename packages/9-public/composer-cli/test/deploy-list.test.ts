@@ -186,13 +186,16 @@ describe('deploy list', () => {
     });
   });
 
-  test('rejects --stage', async () => {
+  test('rejects --stage as an unknown flag', async () => {
     const requests: Request[] = [];
     const cli = cliWith(deployed, requests);
 
     const result = await cli.run(['deploy', 'list', '--stage', 'pr-42', '--json'], { cwd: CWD });
 
-    expect(result.exitCode).not.toBe(0);
+    expect(result.exitCode).toBe(2);
+    expect(result.json.at(-1)).toMatchObject({
+      envelope: { ok: false, error: { code: 'CLI.INVALID_ARGUMENTS' } },
+    });
     expect(requests).toEqual([]);
   });
 

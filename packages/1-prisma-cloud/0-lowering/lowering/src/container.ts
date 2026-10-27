@@ -243,12 +243,7 @@ const resolveBranch = (
 > =>
   Effect.gen(function* () {
     const existing = yield* findBranch(client, projectId, gitName);
-    if (existing?.isDefault === true) {
-      return yield* Effect.fail(
-        new DefaultBranchUnderAnotherNameError({ environment: gitName, branchId: existing.id }),
-      );
-    }
-    if (existing !== undefined) return existing.id;
+    if (existing !== undefined) return yield* refuseDefaultBranch(existing, gitName);
 
     if (!ensure) {
       return yield* Effect.fail(new ContainerNotFoundError({ appName, environment: gitName }));
@@ -263,15 +258,25 @@ const resolveBranch = (
       Effect.map((r) => r.data.id),
       Effect.catch((err) =>
         err.status === 409
-          ? findBranch(client, projectId, gitName).pipe(
-              Effect.flatMap((found) =>
-                found === undefined ? Effect.fail(err) : Effect.succeed(found.id),
-              ),
-            )
+          ? Effect.gen(function* () {
+              const found = yield* findBranch(client, projectId, gitName);
+              if (found === undefined) return yield* Effect.fail(err);
+              return yield* refuseDefaultBranch(found, gitName);
+            })
           : Effect.fail(err),
       ),
     );
   });
+
+const refuseDefaultBranch = (
+  branch: FoundBranch,
+  gitName: string,
+): Effect.Effect<string, DefaultBranchUnderAnotherNameError> =>
+  branch.isDefault === true
+    ? Effect.fail(
+        new DefaultBranchUnderAnotherNameError({ environment: gitName, branchId: branch.id }),
+      )
+    : Effect.succeed(branch.id);
 
 /**
  * Resolves the two containers an environment's deploy runs into (ADR-0019):

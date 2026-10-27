@@ -75,9 +75,12 @@ already created). The `destroy` operation takes the same
 `name` and a required `environment`, with no default. `--stage`, the flag's
 old name, is retired on `deploy`: it fails with `CLI.COMMAND_MOVED`, naming
 `--environment <name>`. `deploy list` has no such redirect, and there
-`--stage` is an unknown flag. The engine refuses to start when a redirect
-names a command the host has not mounted, released hosts do not mount
-`deploy list` yet, and no released host ever offered `deploy list --stage`.
+`--stage` is an unknown flag (`CLI.INVALID_ARGUMENTS`). The engine refuses
+to start when a redirect names a command the host has not mounted. This
+repository's examples and CI run the released `prisma` CLI with the workspace
+Composer, and that release does not mount `deploy list`. The redirect can be
+added once this repository's `prisma` devDependency is a release that mounts
+`deploy list`.
 A build command
 and topology emission are out of scope (see § Out of scope).
 
@@ -158,12 +161,20 @@ user can rerun it by hand (ADR-0007).
    `<app>`/`<environment>`" rather than creating one. What resolving a container
    means is entirely the extension's own business — the CLI holds the result
    as an opaque value. See § Environments and containers. The one thing the
-   CLI checks is that each container's `input.environment` is the name it
-   asked for. An extension older than the CLI resolves its container without
-   that name and could read every name as production, so a mismatch fails
-   with `DEPLOY.CONTAINER_MISMATCH`, naming the extension and telling the user
-   to install the same Composer version of it. The check runs on `deploy` and
-   `destroy`, before preflight, Alchemy, teardown or removal.
+   CLI checks is that each container, rebuilt the way the Alchemy child will
+   rebuild it, names the environment it asked for. The CLI passes the
+   container's `serialize()` output to the same extension's `deserialize` and
+   compares the result's `input.environment` with the name. An extension older
+   than the running Composer keeps the input it is given, but resolves from a
+   key without `environment`, and its `deserialize` rebuilds only the fields
+   it knows. So it could read every name as production, and its rebuilt
+   container has no environment. A mismatch, or a `deserialize` that throws,
+   fails with `DEPS.EXTENSION_INCOMPATIBLE`, naming the extension and telling
+   the user to install the same Composer version of it as the Composer that
+   runs the deploy. The check runs on `deploy` and `destroy`, after each
+   `ensure` or `locate` and before preflight, Alchemy, teardown or removal.
+   On `deploy`, an older extension's `ensure` may already have created the
+   app's Project by then; the check stops everything after that.
 7. **Lower and drive.** Write the pipeline's results as a runnable stack
    module at `.prisma-composer/alchemy.run.ts` and drive the `alchemy` CLI against
    it (ADR-0007), started as § Runtime describes, carrying every resolved container across to the child as one

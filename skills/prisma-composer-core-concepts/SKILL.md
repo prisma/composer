@@ -438,8 +438,10 @@ never-deployed environment fails rather than standing one up.
 **Upgrading from stages.** `--stage <name>` is now `--environment <name>`;
 `destroy({ target })` is now `destroy({ environment })`, with production as
 `'production'`; the `--report` file's `stage` field is now `environment`, at
-`version` 2. Keep `@prisma/composer-prisma-cloud` and `prisma` on the same
-Composer version, or deploy and destroy fail with `DEPLOY.CONTAINER_MISMATCH`.
+`version` 2. Keep `@prisma/composer-prisma-cloud` on the same Composer version
+as the Composer that runs the deploy. An older extension would read every
+environment as production, so deploy and destroy refuse it with
+`DEPS.EXTENSION_INCOMPATIBLE`.
 
 **The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.83 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 

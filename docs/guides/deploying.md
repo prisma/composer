@@ -530,9 +530,11 @@ production has a name, `production`:
   `environment: 'production'`.
 - The `--report` file's `stage` field is now `environment`, and its `version`
   is `2`.
-- The Prisma Cloud extension (`@prisma/composer-prisma-cloud`) and the
-  `prisma` CLI must be on the same Composer version. A deploy or destroy with
-  an older extension fails with `DEPLOY.CONTAINER_MISMATCH`.
+- The Prisma Cloud extension (`@prisma/composer-prisma-cloud`) must be the
+  same Composer version as the Composer that runs the deploy (the `prisma`
+  CLI's, or your own `@prisma/composer` in a script). An older extension would
+  read every environment as production, so a deploy or destroy with one fails
+  with `DEPS.EXTENSION_INCOMPATIBLE` before anything is deployed or destroyed.
 
 ## Upgrading to addresses that start with the app name
 

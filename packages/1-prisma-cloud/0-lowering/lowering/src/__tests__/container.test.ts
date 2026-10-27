@@ -35,6 +35,8 @@ interface FakeState {
   branchCreateCalls: number;
   /** When set, the first create for this gitName 409s (racing create), after seeding the winner's branch as if a concurrent caller created it first. */
   raceGitName?: string;
+  /** When set, the racing winner is the Project's default Branch. */
+  raceWinnerIsDefault?: boolean;
   raced: boolean;
   deleteBranchCalls: string[];
   /** Overrides the DELETE response status — defaults to a 204 success. */
@@ -166,7 +168,7 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
         const winner: FakeBranch = {
           id: `br-race-${gitName}`,
           gitName,
-          isDefault: false,
+          isDefault: state.raceWinnerIsDefault === true,
           createdAt: new Date().toISOString(),
         };
         state.branches[projectId] = [...(state.branches[projectId] ?? []), winner];
@@ -643,6 +645,21 @@ describe('resolveContainer — Branch resolution', () => {
     });
 
     expect(result.branchId).toBe('br-race-staging');
+    expect(state.branchCreateCalls).toBe(1);
+  });
+
+  test('a racing create whose winner is the default Branch is refused, not adopted', async () => {
+    state.raceGitName = 'main';
+    state.raceWinnerIsDefault = true;
+
+    const error: unknown = await run(state, {
+      workspaceId: 'ws-1',
+      appName: 'storefront',
+      environment: 'main',
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(DefaultBranchUnderAnotherNameError);
+    expect((error as Error).message).toContain('"main" names the Branch br-race-main');
     expect(state.branchCreateCalls).toBe(1);
   });
 
