@@ -106,10 +106,10 @@ Who imports what, end to end:
   bundles this file (their bundler, or `next build`) — the framework never touches it;
 - the **deploy entry is the app module itself**: everything about the
   *application* is still derived from the root node (ADR-0003).
-  `prisma deploy <entry>` imports it and calls
+  `prisma deploy` imports it (the `composer` section's `entry`, or `--entry`) and calls
   `@prisma/composer/deploy`'s `lower()` internally;
 - the **`composer` section of `prisma.config.ts`** carries the two things the
-  graph cannot yield — the **extension list** and the **state store** (ADR-0017,
+  graph cannot yield — the **extension list** and the **state store** — plus the **entry** path, an input to the tool that says where the root module is (ADR-0017,
   ADR-0049). The Prisma CLI engine finds and loads the file, searching from the
   command's working directory up to the repository root. The section is the only importer of the `/control` entries where heavy code lives, and app
   code never imports it, which is what keeps that code out of the artifact. The
@@ -740,7 +740,7 @@ recreated for), tracked as an upstream follow-up.
 Secrets are platform-sourced and rotate through the platform, not this edge (see
 the [config/secret glossary](../03-domain-model/glossary.md#configuration--config-and-secrets)).
 
-**Deployment identity — address, bootstrap, and why.** A node's identity is its **address**: the path of provision ids from the app root, assigned by Load from graph position. A provision id is the node's name unless `provision()` sets an `id`, and the path qualifies it, so registry modules with common internal names (`db`, `service`) cannot collide. Identity cannot travel through the environment: every App in a Project boots a byte-identical env (ConfigVariables are project+branch-scoped and snapshotted at version create — see the [PDP data model](../05-prisma-cloud/pdp-data-model.md)), so any "who am I" variable is one shared key, last write wins. The only per-service channel is the artifact itself. Hence the bootstrap: the artifact's entrypoint takes identity as a parameter, and deploy is the caller. The Compute artifact the pack assembles:
+**Deployment identity — address, bootstrap, and why.** A node's identity is its **address**: the path of provision ids starting at the root, assigned by Load from graph position. The root's address is the deployed app name, so every address starts with it (`shop`, `shop.catalog`, `shop.auth.api`). A provision id is the node's name unless `provision()` sets an `id`, and the path qualifies it, so registry modules with common internal names (`db`, `service`) cannot collide. Identity cannot travel through the environment: every App in a Project boots a byte-identical env (ConfigVariables are project+branch-scoped and snapshotted at version create — see the [PDP data model](../05-prisma-cloud/pdp-data-model.md)), so any "who am I" variable is one shared key, last write wins. The only per-service channel is the artifact itself. Hence the bootstrap: the artifact's entrypoint takes identity as a parameter, and deploy is the caller. The Compute artifact the pack assembles:
 
 ```
 server.js              ← the app's OWN built entry (Hono bundle / Next standalone). Calls service.load().
@@ -749,9 +749,9 @@ bootstrap.js           ← pack-printed: `import main from "./main.js"; await ma
 compute.manifest.json  ← pack-written envelope; entrypoint = bootstrap.js
 ```
 
-The node carries its own runner: the pack's service node has `run(address, boot)` and `load()` (§ Runtime), so the wrapper already contains the boot loop — the bootstrap is a two-line sliver that imports `./main.js` and dynamically imports the app's entry, and the artifact holds a single copy of core. There is **no import cycle**: the app's entry imports the service module (for `load()`), and the bootstrap imports the wrapper and dynamically imports the entry — nothing imports the bootstrap, and the serve code lives in the app's entry, never in the service module. Every byte is deterministic — the app's built entry, the framework's wrapper, the printed bootstrap — so unchanged services hash identically and noop, once the app's build is itself deterministic (the Next standalone case is a named follow-up). Because the same Load walk feeds both `serialize`'s env keys and the bootstrap's address (and the pack derives config keys from that address on both sides), the config writer and the boot-time reader cannot drift. An address changes only when the graph position changes (a changed provision ID, or a move into another module), which correctly cascades: new keys, new bootstrap, new version.
+The node carries its own runner: the pack's service node has `run(address, boot)` and `load()` (§ Runtime), so the wrapper already contains the boot loop — the bootstrap is a two-line sliver that imports `./main.js` and dynamically imports the app's entry, and the artifact holds a single copy of core. There is **no import cycle**: the app's entry imports the service module (for `load()`), and the bootstrap imports the wrapper and dynamically imports the entry — nothing imports the bootstrap, and the serve code lives in the app's entry, never in the service module. Every byte is deterministic — the app's built entry, the framework's wrapper, the printed bootstrap — so unchanged services hash identically and noop, once the app's build is itself deterministic (the Next standalone case is a named follow-up). Because the same Load walk feeds both `serialize`'s env keys and the bootstrap's address (and the pack derives config keys from that address on both sides), the config writer and the boot-time reader cannot drift. An address changes only when the graph position changes (a changed provision ID, a move into another module, or a different deployed app name), which correctly cascades: new keys, new bootstrap, new version.
 
-The address is also the node's identity on the platform. Composer writes it as the `logicalId` of the node's platform row and of its node in the application topology, so a changed address is a different entity there too ([ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md)).
+The address is also the node's identity on the platform. Composer writes it as the `logicalId` of the node's platform row and of its node in the application topology, and builds the node's Alchemy resource IDs from it (`shop.catalog`, `shop.catalog.connection`), so a changed address is a different entity there too ([ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md)).
 
 Notes:
 
@@ -918,9 +918,10 @@ export const compute = <D extends Deps>(def: {
 
 // The pack's config serializer — the semantic↔physical mapping, private to the pack,
 // SHARED by serialize (deploy), run() (re-key), and load() (read) so no reader or
-// writer drifts. Keys are UPPER_SNAKE(address ▸ owner ▸ name): the address prefix
-// makes them unique per service within the shared project namespace (auth's db.url
-// ↔ AUTH_DB_URL); an empty address yields the address-free stash keys run() writes
+// writer drifts. Keys are COMPOSER_ + UPPER_SNAKE(address ▸ owner ▸ name), with `-` in
+// the app name turned into `_`: the address prefix makes them unique per service within
+// the shared project namespace (shop.auth's db.url ↔ COMPOSER_SHOP_AUTH_DB_URL); an
+// empty address yields the address-free stash keys run() writes
 // and load() reads (DB_URL). The platform's DATABASE_URL is never among them — the
 // name is rejected at authoring time (see alchemy-lowering.md).
 export const configKey = (address: string, d: ConfigDeclaration): string => /* UPPER_SNAKE(address ▸ owner ▸ name) */
@@ -993,17 +994,19 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
       // (Object.assign — a resource lowers once). Returns a LoweredResult: OUTPUTS
       // for dependents (resolved by param name), plus the ENTITIES it became on the
       // deployment target. No `url` entity — a connection string is not a public
-      // endpoint, and only this descriptor could know that (ADR-0033). `id` is the
-      // module provision id (e.g. "db"), so a resource shared by several consumers
-      // is created exactly once. The `url` output references the whole migration,
+      // endpoint, and only this descriptor could know that (ADR-0033). `address` is
+      // the node's full address (e.g. "shop.db"), so a resource shared by several
+      // consumers is created exactly once. Resource IDs are the address, or the
+      // address plus `.` and a role; each also declares its previous ID with
+      // `renamedFrom` (ADR-0057). The `url` output references the whole migration,
       // so every consumer deploys only after the schema is at the target (ADR-0022).
       postgres: Object.assign(
-        ({ id, application }) =>
+        ({ address, application }) =>
           Effect.gen(function* () {
-            const db = yield* Prisma.Database(`${id}-db`, { project: projectIdOf(application), name: id, region })
-            const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id })
-            const warm = yield* PgWarm(`${id}-warm`, { url: conn.directConnectionString })  // FT-5226 cold-start
-            const migration = yield* OrmMigration(`${id}-migrate`, { url: warm.url, /* target ref, config path */ })
+            const db = yield* Prisma.Database(address, { project: projectIdOf(application), region, logicalId: address })
+            const conn = yield* Prisma.Connection(`${address}.connection`, { database: db, name: address })
+            const warm = yield* PgWarm(`${address}.warmup`, { url: conn.directConnectionString })  // FT-5226 cold-start
+            const migration = yield* OrmMigration(`${address}.migration`, { url: warm.url, /* target ref, config path */ })
             const url = Output.map(Output.all(warm.url, Output.of(migration)), ([value]) => value)
             return { outputs: { url }, entities: [{ kind: "postgres-database", id: db.databaseId }] }
           }),
@@ -1020,10 +1023,10 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         // serviceId is an Output<string> (an unresolved ref) — the honest type,
         // since the whole stack effect runs before Alchemy applies. projectId is a
         // real string (from the CLI env, not a resource attribute).
-        provision: ({ id, application }) =>
+        provision: ({ address, application }) =>
           Effect.gen(function* () {
-            const svc = yield* Prisma.App(`${id}-svc`, {
-              project: projectIdOf(application), displayName: id, regionId: o.region ?? "us-east-1",
+            const svc = yield* Prisma.App(address, {
+              project: projectIdOf(application), displayName: address, regionId: o.region ?? "us-east-1", logicalId: address,
             })
             return { serviceId: svc.appId, projectId: projectIdOf(application) }  // : ComputeProvisioned
           }),
@@ -1039,7 +1042,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
             for (const d of configOf(node)) {
               const value = d.owner === "service" ? config.service[d.name] : config.inputs[d.owner.input]?.[d.name]
               if (value === undefined) continue
-              records.push(yield* Prisma.EnvironmentVariable(`${configKey(address, d)}-var`, {
+              records.push(yield* Prisma.EnvironmentVariable(`${address}.env.${configKey(address, d)}`, {
                 project: provisioned.projectId, key: configKey(address, d),
                 value: Redacted.make(encode(d.owner, value)), class: "production",
               }))
@@ -1061,9 +1064,9 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         // published here — a Compute service's deployed URL is a public endpoint,
         // and this descriptor is the only party that knows it. Both fields are
         // still Output refs until apply.
-        deploy: ({ id }, provisioned, artifact, serialized) =>
+        deploy: ({ address }, provisioned, artifact, serialized) =>
           Effect.gen(function* () {
-            const deployment = yield* Prisma.Deployment(`${id}-deploy`, {
+            const deployment = yield* Prisma.Deployment(`${address}.deployment`, {
               app: appAfterEnvironment(provisioned.serviceId, serialized.environment),
               artifactPath: artifact.path,
               artifactContentType: "application/gzip",
@@ -1176,7 +1179,7 @@ Bun.serve({ port, hostname: "0.0.0.0",
 
 // The app builds itself first (its own bundler produces dist/server.js), then:
 //
-//   prisma deploy src/module.ts
+//   prisma deploy        # the composer section names it: entry: './src/module.ts'
 //
 // The application is derived from the module root (ADR-0003); the extension list
 // and state store come from the `composer` section of prisma.config.ts (ADR-0017,
@@ -1244,8 +1247,9 @@ export default module("storefront-auth", (h) => {
   h.provision("storefront", storefrontService, { auth: authRef.http })  // auth→storefront dependency edge
 })
 
-// No deploy config file (ADR-0003): build both apps, then
-//   prisma deploy app.ts
+// Application facts stay in code (ADR-0003): build both apps, then, with
+// `entry: './app.ts'` in the composer section,
+//   prisma deploy
 ```
 
 At deploy, core sequences: the db resource (lowered once) → auth provision →

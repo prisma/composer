@@ -22,6 +22,8 @@ import { deleteAppInstances, readEmulatorInstances } from '../emulator-instances
 import { LocalConnectionProvider, LocalDatabaseProvider } from '../postgres.ts';
 
 const APP = 'pg-providers-app';
+const CATALOG = `${APP}.catalog.database`;
+const ORDERS = `${APP}.orders`;
 const savedEmulatorsDir = process.env[EMULATORS_DIR_ENV];
 let root: string;
 let registryRoot: string;
@@ -39,12 +41,19 @@ const reconcileInput = (id: string, news: Record<string, unknown>) =>
     bindings: [],
   }) as never;
 
-async function reconcileDatabase(name: string): Promise<Database['Attributes']> {
+/** The resource ID is the node's address and keys the record; `name` is only the label. */
+async function reconcileDatabase(address: string): Promise<Database['Attributes']> {
   const service = await Effect.runPromise(
     Database.Provider.pipe(Effect.provide(LocalDatabaseProvider(input))),
   );
   return Effect.runPromise(
-    service.reconcile(reconcileInput('db', { project: 'p', name, region: 'us-east-1' })),
+    service.reconcile(
+      reconcileInput(address, {
+        project: 'p',
+        name: address.slice(address.indexOf('.') + 1),
+        region: 'us-east-1',
+      }),
+    ),
   );
 }
 
@@ -72,7 +81,7 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
   });
 
   test('a Database creates a database instance, and its Connection resolves the same one', async () => {
-    const database = await reconcileDatabase('catalog.database');
+    const database = await reconcileDatabase(CATALOG);
 
     const service = await Effect.runPromise(
       Connection.Provider.pipe(Effect.provide(LocalConnectionProvider(input))),
@@ -82,7 +91,7 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
     );
 
     const instance = await postgresClient().getInstance(database.databaseId);
-    expect(instance?.labels['composer.address']).toBe('catalog.database');
+    expect(instance?.labels['composer.address']).toBe(CATALOG);
     expect(connection.databaseId).toBe(database.databaseId);
     const direct = connection.directConnectionString;
     if (direct === undefined) throw new Error('expected a direct connection string');
@@ -90,10 +99,10 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
   }, 60_000);
 
   test('reconciling a Database again reuses its instance, starting it when stopped', async () => {
-    const first = await reconcileDatabase('orders');
+    const first = await reconcileDatabase(ORDERS);
     await postgresClient().stopInstances([first.databaseId]);
 
-    const second = await reconcileDatabase('orders');
+    const second = await reconcileDatabase(ORDERS);
 
     expect(second.databaseId).toBe(first.databaseId);
     expect((await postgresClient().getInstance(first.databaseId))?.status).toBe('running');
@@ -109,15 +118,18 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
   }
 
   test('a Database whose recorded instance was re-created asks for an update', async () => {
-    const database = await reconcileDatabase('orders');
+    const database = await reconcileDatabase(ORDERS);
     expect(await databaseDiff(database)).toBeUndefined();
 
     await postgresClient().deleteInstance(database.databaseId);
-    const again = await reconcileDatabase('orders');
+    const again = await reconcileDatabase(ORDERS);
 
     expect(again.databaseId).not.toBe(database.databaseId);
     expect(await databaseDiff(database)).toEqual({ action: 'update' });
     const recorded = (await readEmulatorInstances(path.join(root, 'project')))?.apps[APP];
-    expect(recorded?.nodes['orders']).toMatchObject({ kind: 'database', id: again.databaseId });
+    expect(recorded?.nodes[ORDERS]).toMatchObject({
+      kind: 'database',
+      id: again.databaseId,
+    });
   }, 90_000);
 });

@@ -48,7 +48,7 @@ describe('Load records input bindings (ADR-0042)', () => {
     // Core records the binding at the right address as opaque plain data; it
     // never reads a leaf's payload (the target's concern).
     expect(graph.inputBindings).toHaveLength(1);
-    expect(graph.inputBindings[0]?.serviceAddress).toBe('auth');
+    expect(graph.inputBindings[0]?.serviceAddress).toBe('root.auth');
     expect(graph.inputBindings[0]?.binding).toBe(binding);
   });
 
@@ -65,7 +65,7 @@ describe('Load records input bindings (ADR-0042)', () => {
     // The source flows root -> module.secrets.key -> a leaf of inner's input
     // binding; recorded at the inner service's full address.
     expect(graph.inputBindings).toHaveLength(1);
-    expect(graph.inputBindings[0]?.serviceAddress).toBe('auth.inner');
+    expect(graph.inputBindings[0]?.serviceAddress).toBe('root.auth.inner');
     const binding = blindCast<
       Record<string, unknown> | undefined,
       'test reads the recorded plain-object binding by key'

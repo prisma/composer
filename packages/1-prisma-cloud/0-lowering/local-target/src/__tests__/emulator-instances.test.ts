@@ -31,7 +31,9 @@ import {
 } from '../emulator-instances.ts';
 
 const APP = 'shared-app';
-const ADDRESSES = ['quotes', 'gateway'];
+const QUOTES = `${APP}.quotes`;
+const GATEWAY = `${APP}.gateway`;
+const ADDRESSES = [QUOTES, GATEWAY];
 const savedEmulatorsDir = process.env[EMULATORS_DIR_ENV];
 let root: string;
 let registryRoot: string;
@@ -52,7 +54,7 @@ function artifactFor(address: string, version: string): string {
   fs.writeFileSync(
     path.join(bundleDir, 'main.js'),
     `export default { run: async (address) => {
-  const port = Number(process.env['COMPOSER_' + address.toUpperCase() + '_PORT']);
+  const port = Number(process.env['COMPOSER_' + address.replace(/[.-]/g, '_').toUpperCase() + '_PORT']);
   Bun.serve({ port, fetch: () => new Response(address + ' ' + process.cwd() + ' ${version}') });
 } };
 `,
@@ -243,7 +245,7 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       await Promise.all(ADDRESSES.map((address) => deploy(b.devDir, address, 'v2')));
 
       expect(await Promise.all(Object.values(nodesA).map((n) => pidOf(n.id)))).toEqual(pidsA);
-      const quotesB = await nodeOf(b.directory, 'quotes');
+      const quotesB = await nodeOf(b.directory, QUOTES);
       expect(await (await fetch(`http://localhost:${String(quotesB.port)}`)).text()).toEndWith(
         ' v2',
       );
@@ -253,13 +255,13 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
   describe('reusing the recorded instances', () => {
     test('a recorded instance the emulator no longer has is re-created on its remembered port', async () => {
       const { directory, devDir } = projectDir('lost');
-      await ensureServiceInstances(container, devDir, ['quotes']);
-      const before = await nodeOf(directory, 'quotes');
+      await ensureServiceInstances(container, devDir, [QUOTES]);
+      const before = await nodeOf(directory, QUOTES);
       await computeClient().deleteInstance(before.id);
 
-      const changes = await ensureServiceInstances(container, devDir, ['quotes']);
+      const changes = await ensureServiceInstances(container, devDir, [QUOTES]);
 
-      const after = await nodeOf(directory, 'quotes');
+      const after = await nodeOf(directory, QUOTES);
       expect(after.id).not.toBe(before.id);
       expect(after.port).toBe(before.port);
       expect(changes).toEqual([]);
@@ -267,17 +269,17 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
 
     test('a remembered port another instance now holds gives a new port, reported as a change', async () => {
       const { directory, devDir } = projectDir('moved');
-      await ensureServiceInstances(container, devDir, ['quotes']);
-      const before = await nodeOf(directory, 'quotes');
+      await ensureServiceInstances(container, devDir, [QUOTES]);
+      const before = await nodeOf(directory, QUOTES);
       await computeClient().deleteInstance(before.id);
       await computeClient().createInstance({ labels: {}, port: before.port });
 
-      const changes = await ensureServiceInstances(container, devDir, ['quotes']);
+      const changes = await ensureServiceInstances(container, devDir, [QUOTES]);
 
-      const after = await nodeOf(directory, 'quotes');
+      const after = await nodeOf(directory, QUOTES);
       expect(after.port).not.toBe(before.port);
       expect(changes).toEqual([
-        { kind: 'service', address: 'quotes', previous: before.port, given: after.port },
+        { kind: 'service', address: QUOTES, previous: before.port, given: after.port },
       ]);
     });
 
@@ -301,12 +303,12 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
 
     test('a deployment whose instance was re-created is deployed again even when nothing changed', async () => {
       const { directory, devDir } = projectDir('redeploy');
-      await ensureServiceInstances(container, devDir, ['quotes']);
-      const deployed = await deploy(devDir, 'quotes', 'v1');
+      await ensureServiceInstances(container, devDir, [QUOTES]);
+      const deployed = await deploy(devDir, QUOTES, 'v1');
       expect(await deploymentDiff(devDir, deployed)).toBeUndefined();
 
-      await computeClient().deleteInstance((await nodeOf(directory, 'quotes')).id);
-      await ensureServiceInstances(container, devDir, ['quotes']);
+      await computeClient().deleteInstance((await nodeOf(directory, QUOTES)).id);
+      await ensureServiceInstances(container, devDir, [QUOTES]);
 
       expect(await deploymentDiff(devDir, deployed)).toEqual({ action: 'update' });
     }, 30_000);
@@ -314,34 +316,38 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
     test("deleting a removed service's App deletes its instance and forgets it", async () => {
       const { directory, devDir } = projectDir('removed');
       await ensureServiceInstances(container, devDir, ADDRESSES);
-      const quotes = await nodeOf(directory, 'quotes');
+      const quotes = await nodeOf(directory, QUOTES);
       const provider = await appProvider(devDir);
 
-      await Effect.runPromise(provider.delete({ output: { name: 'quotes' } } as never));
+      await Effect.runPromise(provider.delete({ output: { name: QUOTES } } as never));
 
       expect(await computeClient().getInstance(quotes.id)).toBeUndefined();
-      expect(Object.keys((await mappingOf(directory))?.nodes ?? {})).toEqual(['gateway']);
+      expect(Object.keys((await mappingOf(directory))?.nodes ?? {})).toEqual([GATEWAY]);
     });
   });
 
   test('the record is one JSON file in the dev directory, readable from the directory alone', async () => {
     const { directory, devDir } = projectDir('file');
-    await ensureServiceInstances(container, devDir, ['quotes']);
+    await ensureServiceInstances(container, devDir, [QUOTES]);
 
     const onDisk: unknown = JSON.parse(
       fs.readFileSync(path.join(devDir, EMULATOR_INSTANCES_FILE), 'utf8'),
     );
-    const node = await nodeOf(directory, 'quotes');
-    expect(onDisk).toEqual({ current: APP, apps: { [APP]: { nodes: { quotes: node } } } });
+    const node = await nodeOf(directory, QUOTES);
+    expect(onDisk).toEqual({
+      formatVersion: 2,
+      current: APP,
+      apps: { [APP]: { nodes: { [QUOTES]: node } } },
+    });
     expect((await computeClient().getInstance(node.id))?.labels).toEqual({
       'composer.directory': directory,
       'composer.app': APP,
-      'composer.address': 'quotes',
+      'composer.address': QUOTES,
     });
     expect(await readEmulatorInstances(path.join(root, 'never-ran'))).toBeUndefined();
   });
 
-  test('a single-app record written by an earlier version reads as that one app, its compute nodes as services', async () => {
+  test('a single-app record written by an earlier version reads as that one app, its compute nodes as services under their full addresses', async () => {
     const { directory, devDir } = projectDir('legacy');
     fs.mkdirSync(devDir, { recursive: true });
     const quotes = { id: 'svc_0123456789abcdef', port: 3999 };
@@ -352,10 +358,11 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
 
     expect(await readEmulatorInstances(directory)).toEqual({
       current: APP,
-      apps: { [APP]: { nodes: { quotes: { kind: 'service', ...quotes } } } },
+      apps: { [APP]: { nodes: { [QUOTES]: { kind: 'service', ...quotes } } } },
     });
   });
 
+  const WEB = 'other-app.web';
   const otherApp: ContainerInstance = {
     input: { appName: 'other-app', stage: undefined },
     serialize: () => 'x',
@@ -369,8 +376,8 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
   describe('switching apps in a directory', () => {
     test("running another app stops the previous app's services and keeps its instances and ports", async () => {
       const { directory, devDir } = projectDir('switch');
-      await ensureServiceInstances(container, devDir, ['quotes']);
-      await deploy(devDir, 'quotes', 'v1');
+      await ensureServiceInstances(container, devDir, [QUOTES]);
+      await deploy(devDir, QUOTES, 'v1');
       const before = await mappingOf(directory);
 
       const previous = await selectApp({ devDir, app: 'other-app' });
@@ -378,7 +385,7 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       expect(previous).toBe(APP);
       expect((await readEmulatorInstances(directory))?.current).toBe('other-app');
       expect(await mappingOf(directory)).toEqual(before);
-      const quotes = await nodeOf(directory, 'quotes');
+      const quotes = await nodeOf(directory, QUOTES);
       expect(await computeClient().getInstance(quotes.id)).toMatchObject({
         status: 'stopped',
         port: quotes.port,
@@ -390,7 +397,7 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       await ensureServiceInstances(container, devDir, ADDRESSES);
       const before = await mappingOf(directory);
       await selectApp({ devDir, app: 'other-app' });
-      await ensureServiceInstances(otherApp, devDir, ['web']);
+      await ensureServiceInstances(otherApp, devDir, [WEB]);
 
       expect(await selectApp({ devDir, app: APP })).toBe('other-app');
       const changes = await ensureServiceInstances(container, devDir, ADDRESSES);
@@ -402,7 +409,7 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
     test('running the same app again changes nothing', async () => {
       const { devDir } = projectDir('same');
       await selectApp({ devDir, app: APP });
-      await ensureServiceInstances(container, devDir, ['quotes']);
+      await ensureServiceInstances(container, devDir, [QUOTES]);
 
       expect(await selectApp({ devDir, app: APP })).toBeUndefined();
     });
@@ -411,7 +418,7 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
   describe('--fresh', () => {
     test("deletes the app's instances and entry, and leaves another app's alone", async () => {
       const { directory, devDir } = projectDir('fresh');
-      await ensureServiceInstances(otherApp, devDir, ['web']);
+      await ensureServiceInstances(otherApp, devDir, [WEB]);
       await selectApp({ devDir, app: APP });
       await ensureServiceInstances(container, devDir, ADDRESSES);
       const mine = Object.values((await mappingOf(directory))?.nodes ?? {}).map((n) => n.id);
@@ -422,7 +429,7 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       expect(await liveIds(mine)).toEqual([]);
       expect(await mappingOf(directory)).toBeUndefined();
       expect(await mappingOf(directory, 'other-app')).toEqual(theirs);
-      const web = theirs?.nodes['web'];
+      const web = theirs?.nodes[WEB];
       expect(await liveIds(web ? [web.id] : [])).toEqual(web ? [web.id] : []);
     });
   });
@@ -432,7 +439,10 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       const provider = await appProvider(devDir);
       return Effect.runPromise(
         provider.reconcile(
-          reconcileInput(`${address}-svc`, { project: 'local', displayName: address }),
+          reconcileInput(address, {
+            project: 'local',
+            displayName: address.slice(address.indexOf('.') + 1),
+          }),
         ),
       );
     }
@@ -445,27 +455,27 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
 
     test('asks for an update when the re-created instance got another port', async () => {
       const { directory, devDir } = projectDir('app-moved');
-      await ensureServiceInstances(container, devDir, ['quotes']);
-      const before = await reconcileApp(devDir, 'quotes');
-      const recorded = await nodeOf(directory, 'quotes');
+      await ensureServiceInstances(container, devDir, [QUOTES]);
+      const before = await reconcileApp(devDir, QUOTES);
+      const recorded = await nodeOf(directory, QUOTES);
       await computeClient().deleteInstance(recorded.id);
       await computeClient().createInstance({ labels: {}, port: recorded.port });
-      await ensureServiceInstances(container, devDir, ['quotes']);
+      await ensureServiceInstances(container, devDir, [QUOTES]);
 
       expect(await appDiff(devDir, before)).toEqual({ action: 'update' });
-      const after = await reconcileApp(devDir, 'quotes');
+      const after = await reconcileApp(devDir, QUOTES);
       expect(after.appEndpointDomain).toBe(
-        `http://localhost:${String((await nodeOf(directory, 'quotes')).port)}`,
+        `http://localhost:${String((await nodeOf(directory, QUOTES)).port)}`,
       );
       expect(after.appEndpointDomain).not.toBe(before.appEndpointDomain);
     });
 
     test('asks for nothing when the re-created instance kept its port', async () => {
       const { directory, devDir } = projectDir('app-kept');
-      await ensureServiceInstances(container, devDir, ['quotes']);
-      const before = await reconcileApp(devDir, 'quotes');
-      await computeClient().deleteInstance((await nodeOf(directory, 'quotes')).id);
-      await ensureServiceInstances(container, devDir, ['quotes']);
+      await ensureServiceInstances(container, devDir, [QUOTES]);
+      const before = await reconcileApp(devDir, QUOTES);
+      await computeClient().deleteInstance((await nodeOf(directory, QUOTES)).id);
+      await ensureServiceInstances(container, devDir, [QUOTES]);
 
       expect(await appDiff(devDir, before)).toBeUndefined();
     });
@@ -474,14 +484,16 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
   describe('errors name services by address', () => {
     test('a deployed service that exits before it listens fails naming its address', async () => {
       const { devDir } = projectDir('crash');
-      await ensureServiceInstances(container, devDir, ['quotes']);
+      await ensureServiceInstances(container, devDir, [QUOTES]);
 
-      const failure = await deploy(devDir, 'quotes', 'v1', crashingArtifactFor('quotes')).then(
+      const failure = await deploy(devDir, QUOTES, 'v1', crashingArtifactFor(QUOTES)).then(
         () => undefined,
         (error: unknown) => (error instanceof Error ? error.message : String(error)),
       );
 
-      expect(failure).toContain('service "quotes" exited (code 1) before it accepted connections');
+      expect(failure).toContain(
+        `service "${QUOTES}" exited (code 1) before it accepted connections`,
+      );
       expect(failure).not.toContain('instance "svc_');
     }, 30_000);
   });

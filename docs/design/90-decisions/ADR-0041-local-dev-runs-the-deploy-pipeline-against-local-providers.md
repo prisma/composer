@@ -1,12 +1,14 @@
 # ADR-0041: Local dev runs the deploy pipeline against local providers
 
+Amended 2026-10-23: `prisma dev` takes no positional entry; the entry is `entry` in the `composer` section of `prisma.config.ts`, or `--entry <path>` ([ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)).
+
 Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the command is `prisma dev <entry>`, and reading the running app's logs is the `log` operation on `@prisma/composer/control`, not a command. The `prisma-composer` binary is retired. The local pipeline below is unchanged.
 
 Amended by [ADR-0052](ADR-0052-composer-maps-its-nodes-to-emulator-instances-per-directory.md): the emulators know nothing about Composer. A dev instance is no longer identified on the emulators by the app name: the Compute, Postgres and bucket emulators key their instances by ids they generate, and Composer records, per working directory, which instance backs each node of each app run there. When `prisma dev` ends it stops the app's database servers as well as its services.
 
 Amended by [ADR-0056](ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): under `prisma dev`, a service runs the dev server its build adapter declares (`next dev`; a `dev` command written on `node()`) in place of its artifact, when it declares one. Such a service is not assembled and lowers without its `Deployment`; the Compute emulator runs the dev server as a command deployment on the service's instance, with the environment its deployment would get, re-stashed address-free as `run()` does. The dev session still owns no processes. A service whose adapter declares no dev server still boots exactly as deployed.
 
-Amended by [ADR-0057](ADR-0057-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md): `prisma dev` takes secrets and env-sourced params only from the environment of the run, the shell or a `.env` that `prisma.config.ts` loads, and never makes one up. A required secret that is unset or empty is an error; an optional one reaches the service as absent; an unset env-sourced param is still always an error. Each run takes values from its environment and never reuses one from an earlier run. The secrets bullet under Consequences is replaced by that ADR. To match it, the `preflight` signature in the `LocalTargetDescriptor` block below now returns a payload, and "minted placeholders" was removed from the dev-state list.
+Amended by [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md): `prisma dev` takes secrets and env-sourced params only from the environment of the run, the shell or a `.env` that `prisma.config.ts` loads, and never makes one up. A required secret that is unset or empty is an error; an optional one reaches the service as absent; an unset env-sourced param is still always an error. Each run takes values from its environment and never reuses one from an earlier run. The secrets bullet under Consequences is replaced by that ADR. To match it, the `preflight` signature in the `LocalTargetDescriptor` block below now returns a payload, and "minted placeholders" was removed from the dev-state list.
 
 ## Decision
 
@@ -237,7 +239,7 @@ this repo owns.
   readiness, version-skew restart) and the Compute emulator's supervision
   policy; the dev command itself supervises nothing — it renders the
   `attach` hook's view.
-- **The strict secrets model is unchanged** (ADR-0029). Dev policy lives in `localTarget.preflight`. *(Replaced by ADR-0056: every secret and env-sourced param comes from the environment of the run; a required one that is unset or empty is an error, an optional secret reaches the service as absent, and no value is reused from an earlier run. The original text gave an unbound secret a minted, stored placeholder and a printed warning.)*
+- **The strict secrets model is unchanged** (ADR-0029). Dev policy lives in `localTarget.preflight`. *(Replaced by ADR-0058: every secret and env-sourced param comes from the environment of the run; a required one that is unset or empty is an error, an optional secret reaches the service as absent, and no value is reused from an earlier run. The original text gave an unbound secret a minted, stored placeholder and a printed warning.)*
 - **Scheduled work runs for real** (ADR-0020): the scheduler is an ordinary
   service and fires locally. A manual-trigger affordance for
   determinism-sensitive workflows is a domain-doc concern, not a model change.

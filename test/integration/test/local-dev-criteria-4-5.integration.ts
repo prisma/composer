@@ -191,7 +191,13 @@ function startDevRaw(
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, `session-${sessionCount}.log`);
   const logFd = fs.openSync(logPath, 'w');
-  const args = ['dev', fixtureEntry, '--json', ...(opts.fresh === true ? ['--fresh'] : [])];
+  const args = [
+    'dev',
+    '--entry',
+    fixtureEntry,
+    '--json',
+    ...(opts.fresh === true ? ['--fresh'] : []),
+  ];
   const child = spawn(CLI_BIN, args, {
     cwd: fixtureDir,
     env,
@@ -249,18 +255,14 @@ async function stopDev(session: DevSession): Promise<void> {
 }
 
 /** The Deployment's row in Alchemy's local state; it changes only when that deployment is updated. */
-function deploymentState(service: string): string {
-  return fs.readFileSync(
-    path.join(
-      fixtureDir,
-      '.alchemy',
-      'state',
-      'localdevs4fixture',
-      'dev',
-      `${service}-deploy.json`,
-    ),
-    'utf8',
-  );
+function deploymentState(address: string): string {
+  const stateDir = path.join(fixtureDir, '.alchemy', 'state');
+  const files = fs.readdirSync(stateDir, { recursive: true, encoding: 'utf8' });
+  const file = files.find((name) => path.basename(name) === `${address}.deployment.json`);
+  if (file === undefined) {
+    throw new Error(`no Deployment state for ${address} under ${stateDir}: ${files.join(', ')}`);
+  }
+  return fs.readFileSync(path.join(stateDir, file), 'utf8');
 }
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -295,7 +297,7 @@ interface BgStatus {
 }
 
 async function bgStatus(session: DevSession): Promise<BgStatus> {
-  const bkg = session.endpoints.find((e) => e.address === 'bkg');
+  const bkg = session.endpoints.find((e) => e.address === 'localdevs4fixture.bkg');
   assert(bkg !== undefined, 'the bkg service must appear in the front door');
   return waitForAsync(
     () =>
@@ -320,7 +322,7 @@ async function main(): Promise<void> {
       const log = await expectPreflightFailure(
         baseEnv({ ...GREETING, LOCALDEV_FIXTURE_API_KEY: value }),
       );
-      assertNamesMissing(log, 'LOCALDEV_FIXTURE_API_KEY', 'bkg');
+      assertNamesMissing(log, 'LOCALDEV_FIXTURE_API_KEY', 'localdevs4fixture.bkg');
     }
     console.log('[proving] PASS: a required secret that is unset or empty stops dev, naming it');
 
@@ -331,7 +333,7 @@ async function main(): Promise<void> {
         LOCALDEV_FIXTURE_GREETING: undefined,
       }),
     );
-    assertNamesMissing(paramLog, 'LOCALDEV_FIXTURE_GREETING', 'bkg');
+    assertNamesMissing(paramLog, 'LOCALDEV_FIXTURE_GREETING', 'localdevs4fixture.bkg');
     console.log('[proving] PASS: an unset env-sourced param stops dev, naming it');
 
     // ——— Criterion 5: a value loaded by prisma.config.ts reaches the service; an unset optional secret arrives absent ———
@@ -354,7 +356,7 @@ async function main(): Promise<void> {
     );
 
     // ——— Criterion 4: bucket round-trip through the app ———
-    const web = session.endpoints.find((e) => e.address === 'web');
+    const web = session.endpoints.find((e) => e.address === 'localdevs4fixture.web');
     assert(web !== undefined, 'the web service must appear in the front door');
 
     const putRes = await waitForAsync(
@@ -399,8 +401,8 @@ async function main(): Promise<void> {
 
     // ——— Criterion 5: a changed value reaches the service on a warm start; an empty optional secret arrives absent ———
     fs.rmSync(envFile, { force: true });
-    const webStateBefore = deploymentState('web');
-    const bkgStateBefore = deploymentState('bkg');
+    const webStateBefore = deploymentState('localdevs4fixture.web');
+    const bkgStateBefore = deploymentState('localdevs4fixture.bkg');
     // An older prisma dev stored secret values here; starting dev must delete it.
     fs.writeFileSync(path.join(devDir, 'secrets.json'), '{"LOCALDEV_FIXTURE_API_KEY":"old"}');
     session = await startDevUntilReady(
@@ -415,9 +417,12 @@ async function main(): Promise<void> {
       { apiKeySha256: sha256('changed-in-the-shell'), hasWebhookSecret: false },
       'the changed value reaches bkg on a warm start, and the empty optional secret arrives absent',
     );
-    assert(deploymentState('bkg') !== bkgStateBefore, 'bkg, which reads the secret, is redeployed');
+    assert(
+      deploymentState('localdevs4fixture.bkg') !== bkgStateBefore,
+      'bkg, which reads the secret, is redeployed',
+    );
     assertEqual(
-      deploymentState('web'),
+      deploymentState('localdevs4fixture.web'),
       webStateBefore,
       'web, which does not read the secret, is not redeployed',
     );
@@ -470,7 +475,7 @@ async function main(): Promise<void> {
         `[proving] final cleanup did not complete cleanly: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    const stray = spawnSync('pgrep', ['-f', `prisma dev ${fixtureEntry}`]);
+    const stray = spawnSync('pgrep', ['-f', `prisma dev --entry ${fixtureEntry}`]);
     for (const line of (stray.stdout?.toString() ?? '').split('\n')) {
       const pid = Number(line.trim());
       if (Number.isFinite(pid) && pid > 0) {

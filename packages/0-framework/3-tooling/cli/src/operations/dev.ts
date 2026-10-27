@@ -28,6 +28,17 @@ export type DevEvent =
       readonly reproduceCommand: string;
       readonly cwd: string;
     }
+  /** Once per service that runs its build adapter's dev server, before the first converge (ADR-0056). `cwd` is absolute. */
+  | {
+      readonly kind: 'dev-server';
+      readonly address: string;
+      readonly command: string;
+      readonly cwd: string;
+    }
+  /** A reconverge changed a dev server's environment, so the emulator restarted it. */
+  | { readonly kind: 'dev-server-restarted'; readonly address: string; readonly command: string }
+  /** One line a dev server wrote, while the session runs. */
+  | { readonly kind: 'dev-server-output'; readonly address: string; readonly line: string }
   | { readonly kind: 'stopping' }
   /** One service refused to stop during stop(); teardown continues and `stopped` still follows. */
   | { readonly kind: 'stop-error'; readonly message: string }
@@ -38,7 +49,8 @@ export interface DevInput {
    * Composer's configuration: the `composer` section of `prisma.config.ts` and that file. The operation does not look for a config file; it refuses a section the CLI would refuse, before any work starts.
    */
   readonly config: ComposerConfigSource;
-  readonly entry: string;
+  /** The entry module, resolved against `cwd`. Overrides the `entry` in `config`; without either the operation fails with `CONFIG.ENTRY_MISSING`. */
+  readonly entry?: string | undefined;
   readonly name?: string | undefined;
   readonly fresh?: boolean | undefined;
   /**

@@ -100,7 +100,7 @@ function deploySteps(onEvent: ((event: DeployEvent) => void) | undefined) {
 type DeploySteps = ReturnType<typeof deploySteps>;
 
 interface StackPipelineOptions {
-  readonly entry: string;
+  readonly entry: string | undefined;
   readonly config: ComposerConfigSource;
   readonly name: string | undefined;
   readonly stage: string | undefined;

@@ -1,6 +1,12 @@
 # ADR-0053: `prisma dev url`, `prisma dev stop`, `prisma dev --detach` and `prisma emulator list`
 
+Amended 2026-10-23: `prisma dev` takes no positional entry; the entry is `entry` in the `composer` section of `prisma.config.ts`, or `--entry <path>` ([ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)).
+
 Amended by [ADR-0056](ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): `devUrl`'s result gains `runs`, `"artifact"` or `"dev-server"`, for a service. `dev stop`, `--detach` and `emulator list` need nothing new, because the emulator runs a dev server as a deployment.
+
+Amended by [ADR-0057](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md): `dev url` takes the full address, starting with the app name (`prisma dev url shop.gateway`).
+
+Amended 2026-10-27: the family also ships `deploy list`. It lists every node an app has deployed on a stage, with the platform ID each one deployed to and, for a service, its URL. It reads the stage's application topology and the Branch's services, databases and buckets on Prisma Cloud. Like `emulator list`, it needs Prisma Cloud code, so `@prisma/composer-cli` adds it to the family. It takes `--stage`, `--name` and `--entry` as `deploy` does, and fails with `DEPLOY.STAGE_INVALID` for an invalid stage name and `DEPLOY.TARGET_NOT_FOUND` when the stage has nothing deployed. Its data lines are address, kind, platform ID and URL. Its JSON result is an array of `{ address, kind, platformId, url }`, with `null` for a missing value.
 
 ## Decision
 

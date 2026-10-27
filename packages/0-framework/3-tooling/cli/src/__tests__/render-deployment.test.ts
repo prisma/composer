@@ -35,11 +35,11 @@ const result = (app: string, nodes: readonly DeployedNode[]): DeploymentResult =
 describe('renderDeployment', () => {
   test('renders the pinned tree: nested addresses, aligned entities, urls on their own line', () => {
     const results = [
-      deployed('auth.api', [
+      deployed('storefront-auth.auth.api', [
         { kind: 'compute-service', id: 'cps_abc123', url: 'https://xyz.ewr.prisma.build' },
       ]),
-      deployed('db', [{ kind: 'postgres-database', id: 'pdb_def456' }]),
-      deployed('web', [
+      deployed('storefront-auth.db', [{ kind: 'postgres-database', id: 'pdb_def456' }]),
+      deployed('storefront-auth.web', [
         { kind: 'compute-service', id: 'cps_ghi789', url: 'https://uvw.ewr.prisma.build' },
       ]),
     ];
@@ -59,8 +59,8 @@ describe('renderDeployment', () => {
 
   test('a node that reported no entities is listed, not silently dropped — it deployed, it just published nothing', () => {
     const results = [
-      deployed('creds', []),
-      deployed('store', [{ kind: 'compute-service', id: 'cps_1' }]),
+      deployed('app.creds', []),
+      deployed('app.store', [{ kind: 'compute-service', id: 'cps_1' }]),
     ];
 
     expect(renderDeployment(result('app', results))).toBe(
@@ -70,7 +70,7 @@ describe('renderDeployment', () => {
 
   test('an intermediate address segment is structure, not a deployed node — it carries no entity column', () => {
     // Only `auth.api` deployed; `auth` exists solely to hold it.
-    const results = [deployed('auth.api', [{ kind: 'compute-service', id: 'cps_1' }])];
+    const results = [deployed('app.auth.api', [{ kind: 'compute-service', id: 'cps_1' }])];
 
     expect(renderDeployment(result('app', results))).toBe(
       ['app', '└─ auth', '   └─ api   compute-service cps_1'].join('\n'),
@@ -79,7 +79,7 @@ describe('renderDeployment', () => {
 
   test('a node with several entities puts each on its own line, aligned under the first', () => {
     const results = [
-      deployed('svc', [
+      deployed('app.svc', [
         { kind: 'compute-service', id: 'cps_1', url: 'https://a.example' },
         { kind: 'postgres-database', id: 'pdb_1' },
       ]),
@@ -97,7 +97,7 @@ describe('renderDeployment', () => {
 
   test("an entity's details render one labeled line each — a newline-holding value one line per entry (ADR-0042's input document + absent keys)", () => {
     const results = [
-      deployed('web', [
+      deployed('app.web', [
         {
           kind: 'compute-service',
           id: 'cps_1',
@@ -124,7 +124,7 @@ describe('renderDeployment', () => {
 
   test('an empty details value emits no line — the common zero-absent case renders nothing spurious', () => {
     const results = [
-      deployed('web', [
+      deployed('app.web', [
         {
           kind: 'compute-service',
           id: 'cps_1',
@@ -153,8 +153,8 @@ describe('renderDeployment', () => {
 
   test('deep nesting keeps every entity in one column', () => {
     const results = [
-      deployed('a.b.c', [{ kind: 'compute-service', id: 'cps_1' }]),
-      deployed('z', [{ kind: 'postgres-database', id: 'pdb_1' }]),
+      deployed('app.a.b.c', [{ kind: 'compute-service', id: 'cps_1' }]),
+      deployed('app.z', [{ kind: 'postgres-database', id: 'pdb_1' }]),
     ];
 
     expect(renderDeployment(result('app', results))).toBe(
@@ -172,11 +172,11 @@ describe('renderDeployment', () => {
 describe('toDeploymentSummary', () => {
   test('projects app + per-node address/entities, dropping the in-process node', () => {
     const input = result('app', [
-      deployed('auth.api', [
+      deployed('app.auth.api', [
         { kind: 'compute-service', id: 'cps_1', url: 'https://a.example' },
         { kind: 'postgres-database', id: 'pdb_1' },
       ]),
-      deployed('db', []),
+      deployed('app.db', []),
     ]);
 
     const summary = toDeploymentSummary(input);
@@ -185,13 +185,13 @@ describe('toDeploymentSummary', () => {
       app: 'app',
       nodes: [
         {
-          address: 'auth.api',
+          address: 'app.auth.api',
           entities: [
             { kind: 'compute-service', id: 'cps_1', url: 'https://a.example' },
             { kind: 'postgres-database', id: 'pdb_1' },
           ],
         },
-        { address: 'db', entities: [] },
+        { address: 'app.db', entities: [] },
       ],
     });
     expect(JSON.parse(JSON.stringify(summary))).toEqual(summary);
@@ -220,7 +220,7 @@ describe('deploymentReport', () => {
     };
     try {
       deploymentReport(
-        result('app', [deployed('db', [{ kind: 'postgres-database', id: 'pdb_1' }])]),
+        result('app', [deployed('app.db', [{ kind: 'postgres-database', id: 'pdb_1' }])]),
       );
     } finally {
       console.log = original;
@@ -233,7 +233,7 @@ describe('deploymentReport', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-report-'));
     const file = path.join(dir, 'deployment-result.json');
     process.env[DEPLOYMENT_RESULT_FILE_ENV] = file;
-    const input = result('app', [deployed('db', [{ kind: 'postgres-database', id: 'pdb_1' }])]);
+    const input = result('app', [deployed('app.db', [{ kind: 'postgres-database', id: 'pdb_1' }])]);
     const lines: unknown[] = [];
     const original = console.log;
     console.log = (value?: unknown) => {

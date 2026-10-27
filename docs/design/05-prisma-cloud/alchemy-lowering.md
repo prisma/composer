@@ -122,29 +122,65 @@ destroying a stage that served traffic seconds earlier. The upstream ask is in
 
 ## Platform identity: `logicalId`
 
-A node that has a platform row has exactly one row that represents it, and that row's `logicalId` is the node's address, byte for byte ([ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md)). The application topology submitted on each deploy uses the same string for the node, so the platform can match the two.
+A node's address is the path of provision IDs starting at the root, and the root's address is the deployed app name (the root module's name, or `--name`): `shop`, `shop.catalog`, `shop.auth.api`. A node that has a platform row has exactly one row that represents it, and that row's `logicalId` is the node's address, byte for byte ([ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md)). The application topology submitted on each deploy uses the same string for the node, and for its parent, so the platform can match the two.
 
 | Node | Row that carries the `logicalId` | Written by |
 | --- | --- | --- |
 | the root | Project | container resolution, before Alchemy runs: `POST /v1/projects` with `logicalId`, and later deploys find the Project by it |
-| compute service | App (the platform's Service table) | ``Prisma.App(`${address}-svc`, { …, logicalId: address })`` |
-| postgres resource | Database | ``Prisma.Database(`${address}-db`, { …, logicalId: address })`` |
-| bucket | Bucket | ``Prisma.Bucket(`${address}-bucket`, { …, logicalId: address })`` |
+| compute service | App (the platform's Service table) | `Prisma.App(address, { …, logicalId: address })` |
+| postgres resource | Database | `Prisma.Database(address, { …, logicalId: address })` |
+| bucket | Bucket | `Prisma.Bucket(address, { …, logicalId: address })` |
 | module | none | — |
 
 Rules:
 
-- The value is the address, never the Alchemy resource ID. Upstream's Prisma resources default `logicalId` to their fully qualified resource ID (`catalog-db` for Composer), so the lowering always passes it explicitly.
+- The value is the address. Composer passes it explicitly, even where it equals the Alchemy resource ID, because upstream's Prisma resources default `logicalId` to their own fully qualified resource ID.
 - For App, Database and Bucket, the resource that creates the row writes its `logicalId`, as a prop. No separate resource or later API call writes it.
 - On the app's own Project and Branch, the row holding a node's `logicalId` is that node's row. The descriptors declare App, Database, Bucket and `COMPOSER_` EnvironmentVariable resources with `asOwnRow` (Alchemy's `adopt(true)`), so a deploy resuming an interrupted create uses the row instead of failing with `OwnedBySomeoneElse`. On resume, Connections need nothing: their generated name already proves which create made them. Deployments and bucket access keys are never reported as someone else's, so an interrupted create of one is simply made again, and the first attempt can be left behind.
 - Other platform rows a node lowers to carry no `logicalId`: `Prisma.Connection`, `Prisma.Deployment`, `Prisma.EnvironmentVariable`, `Prisma.BucketAccessKey`. Composer's local resources (`ServiceKey`, `PgWarm`, `OrmMigration`, `GeneratedParam`, `S3Credentials`) create no platform row.
 - Branchless local dev creates no platform rows and writes none.
 
+### Resource IDs
+
+Every Alchemy resource ID is built from the address. A node's main resource uses the address itself; every other piece adds `.` and a role. A module has no resources and a service or resource has no children, so `<address>.<role>` is never another node's address. Every resource also declares the ID the previous format gave it, with `renamedFrom` from `alchemy/Rename`, so an existing stage's first deploy with this format moves each state entry and updates the resource in place instead of recreating it. On a stage that never had the old ID, the declaration does nothing.
+
+For the app `shop`:
+
+| Node kind | Resource | ID | Renamed from |
+| --- | --- | --- | --- |
+| compute service `shop.web` | `Prisma.App` | `shop.web` | `web-svc` |
+| | `Prisma.Deployment` | `shop.web.deployment` | `web-deploy` |
+| | `Prisma.EnvironmentVariable`, one per key | `shop.web.env.<KEY>` | `<old KEY>-var` |
+| | `GeneratedParam`, one per generated input leaf | `shop.web.generated.<leaf path>` | `<old input KEY>:<leaf path>-generated` |
+| | `ServiceKey` for an RPC input (per calling service and input) | `shop.web.servicekey.<input>` | `servicekey-web.<input>` |
+| | `ServiceKey` for a streams provider (per providing service) | `<provider address>.streamkey` | `streamskey-<old provider address>` |
+| postgres resource `shop.catalog` | `Prisma.Database` | `shop.catalog` | `catalog-db` |
+| | `Prisma.Connection` | `shop.catalog.connection` | `catalog-conn` |
+| | `PgWarm` | `shop.catalog.warmup` | `catalog-warm` |
+| | `OrmMigration` (ORM postgres only) | `shop.catalog.migration` | `catalog-migrate` |
+| bucket `shop.uploads` | `Prisma.Bucket` | `shop.uploads` | `uploads-bucket` |
+| | `Prisma.BucketAccessKey` | `shop.uploads.accesskey` | `uploads-key` |
+| s3 credentials `shop.creds` | `S3Credentials` | `shop.creds` | `creds-creds` |
+
+Every role is a noun naming the piece: `deployment`, `env`, `generated`, `servicekey`, `streamkey`, `connection`, `warmup`, `migration`, `accesskey`. The old ID is computed in `legacy-resource-ids.ts` from `addressBelowApp(address, app)`, which removes the known `<app>.` prefix, by the rule the previous release used. `<old KEY>` is the environment variable key the previous release wrote, built from that shorter address.
+
+**Platform names.** Every platform name Composer writes is the node's address (`shop.catalog`, `shop.auth.api`): the App `displayName`, the branchless Database `name`, and the Connection, Bucket and BucketAccessKey `name`. They are labels, never identity. Upstream adds `-` and a 12-character token to every Connection name, so a Connection's platform name is the address plus that suffix. `validatePlatformName` checks the address against each kind's limit (Connection 52, so the address fits beside the suffix in the platform's 65; Bucket 100; App 256; an access key has none) and fails naming the address; it never shortens a name. A hosted Database takes no name from Composer, because upstream refuses a name together with branch attachment; upstream derives its physical name from the resource ID and updates it in place.
+
+On the upgrade deploy every one of these names changes from the short address to the full one. Upstream `alchemy/Prisma` replaces, rather than updates:
+
+- a Connection when its `name` or database changes, which mints new credentials;
+- a BucketAccessKey when its `name`, `role` or bucket changes, which mints new credentials;
+- an EnvironmentVariable when its `key`, `class`, `branchId` or project changes;
+- an App, Database or Bucket only when its project (or, for a Database, its region, source or default flag) changes;
+- a Deployment when its artifact or `triggers` fingerprint changes.
+
+So the upgrade updates every App, Database and Bucket in place, along with every `logicalId` and a hosted Database's derived name; a Bucket's display name is not its S3 bucket name, so its objects stay. It recreates each of Composer's Connections and bucket access keys with new credentials, and Composer's services receive them in the same deploy. Each replace is create-first and then deletes only the old Connection or key, by the id Composer stored, after checking its database or bucket and name still match. The database, the bucket's objects and any Connection or key made by hand are untouched. Environment variable rows are replaced because their keys change; their values are rewritten on every deploy, so nothing is lost, and the changed environment makes a new Deployment as any environment change does.
+
 Status:
 
 - The Project carries its `logicalId` when Composer created it. Projects created before that are found by display name and have none.
-- App, Database and Bucket rows carry the address as `logicalId` on every stage, through the prop upstream alchemy added in [alchemy-run/alchemy#1849](https://github.com/alchemy-run/alchemy/pull/1849) (first in `2.0.0-beta.83`). Rows created before that gain it on their next deploy, as an in-place update. The `deploy-verify-destroy` CI action checks after each real deploy that every service, database and bucket node matches exactly one row on the stage's Branch (`scripts/e2e-verify-identity.ts`).
-- With `prisma deploy --name`, the Project's `logicalId` is the `--name` value, but the topology's root node is still submitted under the module's own name, so the two don't match. The CLI loads the graph it reports without the override. This is a defect.
+- App, Database and Bucket rows carry the address as `logicalId` on every stage, through the prop upstream alchemy added in [alchemy-run/alchemy#1849](https://github.com/alchemy-run/alchemy/pull/1849) (first in `2.0.0-beta.83`). Rows created before that, or with the shorter address, gain the new value on their next deploy, as an in-place update. The `deploy-verify-destroy` CI action checks after each real deploy that every service, database and bucket node matches exactly one row on the stage's Branch (`scripts/e2e-verify-identity.ts`).
+- With `prisma deploy --name`, the deployed name is the root's address everywhere: the Project's `logicalId`, the topology's root node, and the first segment of every other address.
 
 ## Stages and container resolution
 
@@ -194,14 +230,14 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  subgraph P [Project: storefront-auth]
-    DBa[(Database auth-db)] --> Ca[Connection] -- url --> EVa["EnvironmentVariable(AUTH_DB_URL)"]
-    DBs[(Database storefront-db)] --> Cs[Connection] -- url --> EVs["EnvironmentVariable(STOREFRONT_DB_URL)"]
-    Sa[App auth] --> Da[Deployment_a]
-    Ss[App storefront] --> Ds[Deployment_s]
+  subgraph P [Project: shop]
+    DBa[(Database shop.authdb)] --> Ca[Connection shop.authdb.connection] -- url --> EVa["EnvironmentVariable(COMPOSER_SHOP_AUTH_DB_URL)"]
+    DBs[(Database shop.storefrontdb)] --> Cs[Connection shop.storefrontdb.connection] -- url --> EVs["EnvironmentVariable(COMPOSER_SHOP_STOREFRONT_DB_URL)"]
+    Sa[App shop.auth] --> Da[Deployment shop.auth.deployment]
+    Ss[App shop.storefront] --> Ds[Deployment shop.storefront.deployment]
     EVa -- resource ref --> Da
     EVs -- resource ref --> Ds
-    Da -- appEndpointDomain --> EVu["EnvironmentVariable(STOREFRONT_AUTH_URL)"]
+    Da -- appEndpointDomain --> EVu["EnvironmentVariable(COMPOSER_SHOP_STOREFRONT_AUTH_URL)"]
     EVu -- resource ref --> Ds
   end
 ```
@@ -267,4 +303,4 @@ author and no app author ever hand-wires them.
 - [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)
   / [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)
   — the decisions this section documents.
-- [ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md) — a node's address is its `logicalId` on the platform.
+- [ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md) — a node's address is its full path from the app name, its `logicalId` on the platform, and the base of its resource IDs.

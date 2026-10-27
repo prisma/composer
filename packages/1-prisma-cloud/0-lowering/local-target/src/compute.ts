@@ -78,14 +78,20 @@ async function artifactSha256(artifactPath: string): Promise<string> {
  * encode one shared wire protocol (ADR-0029) and must never diverge.
  */
 function servicePortEnvKey(address: string): string {
-  const segments = address.split('.').filter((s) => s.length > 0);
-  return ['COMPOSER', ...segments, 'PORT'].join('_').toUpperCase();
+  return ['COMPOSER', ...addressKeySegments(address), 'PORT'].join('_').toUpperCase();
 }
 
 /** The `COMPOSER_<ADDRESS SEGMENTS>_` prefix every env row this address OWNS carries — `configKey`'s convention (see `servicePortEnvKey`'s doc comment). */
 function ownEnvKeyPrefix(address: string): string {
-  const segments = address.split('.').filter((s) => s.length > 0);
-  return `${['COMPOSER', ...segments].join('_').toUpperCase()}_`;
+  return `${['COMPOSER', ...addressKeySegments(address)].join('_').toUpperCase()}_`;
+}
+
+/** The serializer's `addressKeySegments`, duplicated for the same reason as `servicePortEnvKey`: `-` in the app name becomes `_`. */
+function addressKeySegments(address: string): string[] {
+  return address
+    .split('.')
+    .filter((s) => s.length > 0)
+    .map((s) => s.replaceAll('-', '_'));
 }
 
 const COMPOSER_NAMESPACE_PREFIX = 'COMPOSER_';
@@ -200,7 +206,13 @@ export function readComputeManifest(artifactDir: string): {
   return { address: parsed.address, listens: parsed.listens !== false };
 }
 
-/** A service's full environment: its scoped env rows, its port, the current values of the variables its rows point at, and `PATH`/`HOME`. */
+/**
+ * The environment a service's deployment runs with: its own rows from
+ * `env.json` (`scopedEnvRows`), `COMPOSER_<ADDRESS>_PORT`, the current values
+ * of the variables its rows point at, and `PATH` and `HOME` from the shell.
+ * The `Deployment` provider puts it with an artifact; a dev server is given it
+ * too (ADR-0056).
+ */
 export async function materializeEnv(
   devDir: string,
   address: string,
@@ -241,7 +253,8 @@ export function LocalAppProvider(
     reconcile: ({ id, news }) =>
       Effect.tryPromise({
         try: async () => {
-          const name = news.displayName ?? id;
+          // The resource ID is the node's address, the record's key (ADR-0057).
+          const name = id;
           const { instance } = await ensureServiceInstance(appScopeOf(input), name);
           const url = localUrl(instance.port);
           return {

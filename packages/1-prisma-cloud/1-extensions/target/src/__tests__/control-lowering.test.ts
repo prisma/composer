@@ -2,9 +2,8 @@ import { afterAll, describe, expect, mock, test } from 'bun:test';
 import * as path from 'node:path';
 import type { Contract } from '@internal/core';
 import type { NodeDescriptor } from '@internal/core/config';
-import { containerEnvVarName } from '@internal/core/config';
+import { type ContainerInstance, containerEnvVarName } from '@internal/core/config';
 import type { LowerContext, LoweredResult, Outputs } from '@internal/core/deploy';
-import { secretString } from '@internal/foundation/arktype';
 // Import the REAL modules the mocks below stub, so each mock can spread them.
 // This matters beyond convenience: `bun test` runs every test file in ONE
 // process and `mock.module` is process-global. When the real module is already
@@ -13,10 +12,14 @@ import { secretString } from '@internal/foundation/arktype';
 // REPLACES the module and a sibling's import of an unlisted export throws.
 // Static-importing the real module here forces the survivable patch-in-place
 // mode regardless of the (filesystem-dependent) test-file order.
+import * as RealDevEmulators from '@internal/dev-emulators';
+import { secretString } from '@internal/foundation/arktype';
+import * as RealLocalTarget from '@internal/local-target';
 import * as RealPrismaAlchemy from '@internal/lowering';
 import { AdoptPolicy } from 'alchemy/AdoptPolicy';
 import * as RealOutput from 'alchemy/Output';
 import * as RealAlchemyPrisma from 'alchemy/Prisma';
+import { type FormerId, RenamePolicy } from 'alchemy/Rename';
 import { type } from 'arktype';
 import * as Effect from 'effect/Effect';
 import * as Option from 'effect/Option';
@@ -37,6 +40,7 @@ import * as RealGeneratedParam from '../generated-param-resource.ts';
 import * as RealOrmMigration from '../orm-migration-resource.ts';
 import * as RealPgWarm from '../pg-warm-resource.ts';
 import * as RealS3Credentials from '../s3-credentials-resource.ts';
+import { scopedFakes } from './scoped-fakes.ts';
 
 // Stub the provider layer AND alchemy/Output so the compute target's data
 // flow (id derivation, props threading, outputs shape) runs purely — no
@@ -60,6 +64,7 @@ const recorded: {
   pnMigrate: Array<[string, unknown]>;
   databaseUrlClaims: string[];
   adoptPolicy: Array<[string, boolean | undefined]>;
+  renamePolicy: Array<[string, readonly FormerId[] | undefined]>;
 } = {
   envVar: [],
   envVarProps: [],
@@ -77,6 +82,7 @@ const recorded: {
   pnMigrate: [],
   databaseUrlClaims: [],
   adoptPolicy: [],
+  renamePolicy: [],
 };
 
 mock.module('alchemy/Output', () => ({
@@ -105,11 +111,22 @@ const recordingAdoptPolicy = <A>(resource: string, result: Effect.Effect<A>) =>
     return result;
   });
 
+/** Records the former IDs the resource declaration runs under, as Alchemy captures them at registration. */
+const recordingRenamePolicy = <A>(resource: string, result: Effect.Effect<A>) =>
+  Effect.flatMap(Effect.serviceOption(RenamePolicy), (policy) => {
+    recorded.renamePolicy.push([resource, Option.getOrUndefined(policy)]);
+    return result;
+  });
+
+/** Every mocked resource records both policies under `<Kind> <id>`. */
+const recordingPolicies = <A>(resource: string, result: Effect.Effect<A>) =>
+  recordingRenamePolicy(resource, recordingAdoptPolicy(resource, result));
+
 mock.module('alchemy/Prisma', () => ({
   ...RealAlchemyPrisma,
   App: (id: string, props: unknown) => {
     recorded.svc.push([id, props]);
-    return recordingAdoptPolicy(
+    return recordingPolicies(
       `App ${id}`,
       Effect.succeed({
         appId: `${id}#cloud-id`,
@@ -120,10 +137,13 @@ mock.module('alchemy/Prisma', () => ({
   },
   Deployment: (id: string, props: unknown) => {
     recorded.deploy.push([id, props]);
-    return Effect.succeed({
-      deploymentId: 'v1',
-      appEndpointDomain: `https://${id}.example`,
-    });
+    return recordingRenamePolicy(
+      `Deployment ${id}`,
+      Effect.succeed({
+        deploymentId: 'v1',
+        appEndpointDomain: `https://${id}.example`,
+      }),
+    );
   },
   EnvironmentVariable: (id: string, props: { key: string; value: unknown }) => {
     // Upstream's prop is `Redacted`. Recorded UNWRAPPED so every row
@@ -137,39 +157,42 @@ mock.module('alchemy/Prisma', () => ({
         value: Redacted.isRedacted(props.value) ? Redacted.value(props.value) : props.value,
       },
     ]);
-    return recordingAdoptPolicy(
+    return recordingPolicies(
       `EnvironmentVariable ${id}`,
       Effect.succeed({ environmentVariableId: `${id}#cloud-id`, key: props.key }),
     );
   },
   Bucket: (id: string, props: unknown) => {
     recorded.bucket.push([id, props]);
-    return recordingAdoptPolicy(
+    return recordingPolicies(
       `Bucket ${id}`,
       Effect.succeed({ bucketId: `${id}#cloud-id`, name: id }),
     );
   },
   BucketAccessKey: (id: string, props: unknown) => {
     recorded.bucketKey.push([id, props]);
-    return Effect.succeed({
-      bucketAccessKeyId: `${id}#cloud-id`,
-      bucketId: (props as { bucket: string }).bucket,
-      accessKeyId: 'AKIA-BUCKET-STUB',
-      secretAccessKey: Redacted.make('bucket-secret-stub'),
-      endpoint: 'https://t3.storage.dev',
-      bucketName: 'user-bucket-stub',
-    });
+    return recordingRenamePolicy(
+      `BucketAccessKey ${id}`,
+      Effect.succeed({
+        bucketAccessKeyId: `${id}#cloud-id`,
+        bucketId: (props as { bucket: string }).bucket,
+        accessKeyId: 'AKIA-BUCKET-STUB',
+        secretAccessKey: Redacted.make('bucket-secret-stub'),
+        endpoint: 'https://t3.storage.dev',
+        bucketName: 'user-bucket-stub',
+      }),
+    );
   },
   Database: (id: string, props: unknown) => {
     recorded.db.push([id, props]);
-    return recordingAdoptPolicy(
+    return recordingPolicies(
       `Database ${id}`,
       Effect.succeed({ databaseId: `${id}#cloud-id`, databaseName: id }),
     );
   },
   Connection: (id: string, props: unknown) => {
     recorded.conn.push([id, props]);
-    return recordingAdoptPolicy(
+    return recordingPolicies(
       `Connection ${id}`,
       Effect.succeed({
         connectionId: `${id}#cloud-id`,
@@ -196,7 +219,7 @@ mock.module('@internal/lowering', () => ({
   // are distinguishable in assertions.
   ServiceKey: (id: string, props: unknown) => {
     recorded.serviceKey.push([id, props]);
-    return Effect.succeed({ value: `key-for-${id}` });
+    return recordingRenamePolicy(`ServiceKey ${id}`, Effect.succeed({ value: `key-for-${id}` }));
   },
   packageComputeArtifact: (opts: { id: string }) => {
     recorded.pkg.push([opts]);
@@ -220,7 +243,7 @@ mock.module('../pg-warm-resource.ts', () => ({
   ...RealPgWarm,
   PgWarm: (id: string, props: { url: unknown }) => {
     recorded.warm.push([id, props]);
-    return Effect.succeed({ url: props.url });
+    return recordingRenamePolicy(`PgWarm ${id}`, Effect.succeed({ url: props.url }));
   },
   PgWarmProvider: () => ({ stub: 'pg-warm-provider' }),
 }));
@@ -232,7 +255,10 @@ mock.module('../s3-credentials-resource.ts', () => ({
   ...RealS3Credentials,
   S3Credentials: (id: string, props: unknown) => {
     recorded.creds.push([id, props]);
-    return Effect.succeed({ accessKeyId: 'AKIA-STUB', secretAccessKey: 'secret-stub' });
+    return recordingRenamePolicy(
+      `S3Credentials ${id}`,
+      Effect.succeed({ accessKeyId: 'AKIA-STUB', secretAccessKey: 'secret-stub' }),
+    );
   },
   S3CredentialsProvider: () => ({ stub: 's3-credentials-provider' }),
 }));
@@ -244,7 +270,10 @@ mock.module('../generated-param-resource.ts', () => ({
   ...RealGeneratedParam,
   GeneratedParam: (id: string, props: unknown) => {
     recorded.generated.push([id, props]);
-    return Effect.succeed({ value: `generated-for-${id}` });
+    return recordingRenamePolicy(
+      `GeneratedParam ${id}`,
+      Effect.succeed({ value: `generated-for-${id}` }),
+    );
   },
   GeneratedParamProvider: () => ({ stub: 'generated-param-provider' }),
 }));
@@ -254,12 +283,33 @@ mock.module('../orm-migration-resource.ts', () => ({
   ...RealOrmMigration,
   OrmMigration: (id: string, props: unknown) => {
     recorded.pnMigrate.push([id, props]);
-    return Effect.succeed({});
+    return recordingRenamePolicy(`OrmMigration ${id}`, Effect.succeed({}));
   },
   OrmMigrationProvider: () => ({ stub: 'pn-migration-provider' }),
 }));
 
+// The emulators hook, with no daemons and no record: it only reports the key it gives each node.
+const fake = scopedFakes();
+const ensuredNodes: Array<{ address: string; kind: string }> = [];
+mock.module('@internal/dev-emulators', () => ({
+  ...RealDevEmulators,
+  ensureDaemon: fake(RealDevEmulators.ensureDaemon, async () => ({ url: 'http://127.0.0.1' })),
+}));
+mock.module('@internal/local-target', () => ({
+  ...RealLocalTarget,
+  resolvePackageEntry: fake(RealLocalTarget.resolvePackageEntry, (specifier: string) => specifier),
+  selectApp: fake(RealLocalTarget.selectApp, async () => undefined),
+  ensureAppInstances: fake(
+    RealLocalTarget.ensureAppInstances,
+    async (_scope: unknown, nodes: readonly { address: string; kind: string }[]) => {
+      ensuredNodes.push(...nodes);
+      return [];
+    },
+  ),
+}));
+
 const { prismaCloud } = await import('../exports/control.ts');
+const { runDevEmulators } = await import('../local-target/emulators.ts');
 const {
   compute,
   envParam,
@@ -521,8 +571,9 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
       const target = prismaCloud({ workspaceId: 'ws_1' });
       // ctx.id is the module provision id — one Database per provisioned resource.
       const ctx = {
-        id: 'data',
-        address: 'data',
+        id: 'shop.data',
+        address: 'shop.data',
+        graph: { root: { id: 'shop' } },
         application: {
           projectId: 'shop-project#cloud-id',
           branchId: undefined,
@@ -533,28 +584,28 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
 
       const result = run<LoweredResult>(resourceDescriptorOf(target, 'raw-postgres')(ctx));
 
-      expect(result.outputs).toEqual({ url: 'postgres://data-conn' });
+      expect(result.outputs).toEqual({ url: 'postgres://shop.data.connection' });
       // The entity carries NO `url`: a connection string is not a public
       // endpoint. The outputs above still carry one — same key, opposite
       // meaning, which is exactly why only the descriptor can decide.
-      expect(result.entities).toEqual([{ kind: 'postgres-database', id: 'data-db#cloud-id' }]);
+      expect(result.entities).toEqual([{ kind: 'postgres-database', id: 'shop.data#cloud-id' }]);
       expect(recorded.db).toEqual([
         [
-          'data-db',
+          'shop.data',
           {
             project: 'shop-project#cloud-id',
             region: 'inherit',
             branchId: 'br_default',
-            logicalId: 'data',
+            logicalId: 'shop.data',
           },
         ],
       ]);
       expect(recorded.conn).toEqual([
         [
-          'data-conn',
+          'shop.data.connection',
           {
-            database: { databaseId: 'data-db#cloud-id', databaseName: 'data-db' },
-            name: 'data',
+            database: { databaseId: 'shop.data#cloud-id', databaseName: 'shop.data' },
+            name: 'shop.data',
           },
         ],
       ]);
@@ -565,8 +616,9 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
-        id: 'data2',
-        address: 'data2',
+        id: 'shop.data2',
+        address: 'shop.data2',
+        graph: { root: { id: 'shop' } },
         application: {
           projectId: 'shop-project#cloud-id',
           branchId: 'branch_1',
@@ -582,12 +634,12 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
       // permits WITHOUT an explicit display name — so `name` is absent here.
       expect(recorded.db.slice(before)).toEqual([
         [
-          'data2-db',
+          'shop.data2',
           {
             project: 'shop-project#cloud-id',
             region: 'inherit',
             branchId: 'branch_1',
-            logicalId: 'data2',
+            logicalId: 'shop.data2',
           },
         ],
       ]);
@@ -598,8 +650,9 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
-        id: 'data3',
-        address: 'data3',
+        id: 'shop.data3',
+        address: 'shop.data3',
+        graph: { root: { id: 'shop' } },
         application: {
           projectId: 'shop-project#cloud-id',
           branchId: undefined,
@@ -610,18 +663,19 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
       const before = recorded.db.length;
 
       expect(() => run<Outputs>(resourceDescriptorOf(target, 'raw-postgres')(ctx))).toThrow(
-        /cannot attach database "data3" to a Branch/,
+        /cannot attach database "shop.data3" to a Branch/,
       );
       expect(recorded.db.slice(before)).toEqual([]);
     });
   });
 
-  test('local dev: a branchless container — the Database keeps the display name, no attachment', async () => {
+  test('local dev: a branchless container — the Database is named by its address, no attachment', async () => {
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
-        id: 'data4',
-        address: 'data4',
+        id: 'shop.data4',
+        address: 'shop.data4',
+        graph: { root: { id: 'shop' } },
         application: {
           projectId: 'local',
           branchId: undefined,
@@ -634,7 +688,7 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
       run<Outputs>(resourceDescriptorOf(target, 'raw-postgres')(ctx));
 
       expect(recorded.db.slice(before)).toEqual([
-        ['data4-db', { project: 'local', name: 'data4', region: 'inherit' }],
+        ['shop.data4', { project: 'local', name: 'shop.data4', region: 'inherit' }],
       ]);
     });
   });
@@ -658,10 +712,10 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
         config: widgetConfig,
       });
       const ctx = {
-        id: 'pndata',
-        address: 'pndata',
+        id: 'shop.pndata',
+        address: 'shop.pndata',
         node,
-        graph: { edges: [], nodes: [] },
+        graph: { root: { id: 'shop' }, edges: [], nodes: [] },
         application: {
           projectId: 'shop-project#cloud-id',
           branchId: undefined,
@@ -675,19 +729,19 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
 
       expect(recorded.db.slice(before.db)).toEqual([
         [
-          'pndata-db',
+          'shop.pndata',
           {
             project: 'shop-project#cloud-id',
             region: 'inherit',
             branchId: 'br_default',
-            logicalId: 'pndata',
+            logicalId: 'shop.pndata',
           },
         ],
       ]);
       const [migrateId, migrateProps] = recorded.pnMigrate[before.migrate] ?? ['', {}];
       const persisted = migrateProps as Record<string, unknown>;
-      expect(migrateId).toBe('pndata-migrate');
-      expect(persisted['url']).toBe('postgres://pndata-conn');
+      expect(migrateId).toBe('shop.pndata.migration');
+      expect(persisted['url']).toBe('postgres://shop.pndata.connection');
       expect(persisted['currentContractHash']).toBe(widgetContractJson.storage.storageHash);
       expect(persisted['targetHash']).toBe(widgetContractJson.storage.storageHash);
       expect(path.normalize(persisted['migrationsDir'] as string)).toBe(
@@ -696,7 +750,7 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
       expect(persisted['configPath']).toBe(widgetConfig);
       expect(persisted['packHeadRefHashes']).toEqual([]);
       expect('contractJson' in persisted).toBe(false);
-      expect(result.entities).toEqual([{ kind: 'postgres-database', id: 'pndata-db#cloud-id' }]);
+      expect(result.entities).toEqual([{ kind: 'postgres-database', id: 'shop.pndata#cloud-id' }]);
     });
   });
 
@@ -712,10 +766,10 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
           config: widgetConfig,
         });
         const ctx = {
-          id: 'oversized',
-          address: 'oversized',
+          id: 'shop.oversized',
+          address: 'shop.oversized',
           node,
-          graph: { edges: [], nodes: [] },
+          graph: { root: { id: 'shop' }, edges: [], nodes: [] },
           application: {
             projectId: 'shop-project#cloud-id',
             branchId: undefined,
@@ -743,7 +797,11 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
 describe("prismaCloud().nodes['credentials'] — the resource descriptor", () => {
   test('reports NO entities — a minted keypair is secret material, and an entity is built to be printed', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
-    const ctx = { id: 'creds' } as unknown as LowerContext;
+    const ctx = {
+      id: 'shop.creds',
+      address: 'shop.creds',
+      graph: { root: { id: 'shop' } },
+    } as unknown as LowerContext;
 
     const result = run<LoweredResult>(resourceDescriptorOf(target, 'credentials')(ctx));
 
@@ -763,8 +821,9 @@ describe("prismaCloud().nodes['s3'] — the real-bucket resource descriptor", ()
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
-        id: 'files',
-        address: 'files',
+        id: 'shop.files',
+        address: 'shop.files',
+        graph: { root: { id: 'shop' } },
         application: {
           projectId: 'shop-project#cloud-id',
           branchId: undefined,
@@ -785,12 +844,18 @@ describe("prismaCloud().nodes['s3'] — the real-bucket resource descriptor", ()
       });
       // Entity carries the bucket id so the deploy tree can show it.
       // No credentials on the entity: secret material must never reach an entity.
-      expect(result.entities).toEqual([{ kind: 'bucket', id: 'files-bucket#cloud-id' }]);
+      expect(result.entities).toEqual([{ kind: 'bucket', id: 'shop.files#cloud-id' }]);
       expect(recorded.bucket.slice(before.bucket)).toEqual([
-        ['files-bucket', { project: 'shop-project#cloud-id', name: 'files', logicalId: 'files' }],
+        [
+          'shop.files',
+          { project: 'shop-project#cloud-id', name: 'shop.files', logicalId: 'shop.files' },
+        ],
       ]);
       expect(recorded.bucketKey.slice(before.bucketKey)).toEqual([
-        ['files-key', { bucket: 'files-bucket#cloud-id', name: 'files', role: 'read_write' }],
+        [
+          'shop.files.accesskey',
+          { bucket: 'shop.files#cloud-id', name: 'shop.files', role: 'read_write' },
+        ],
       ]);
     });
   });
@@ -799,8 +864,9 @@ describe("prismaCloud().nodes['s3'] — the real-bucket resource descriptor", ()
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
-        id: 'assets',
-        address: 'assets',
+        id: 'shop.assets',
+        address: 'shop.assets',
+        graph: { root: { id: 'shop' } },
         application: {
           projectId: 'shop-project#cloud-id',
           branchId: 'branch_1',
@@ -814,12 +880,12 @@ describe("prismaCloud().nodes['s3'] — the real-bucket resource descriptor", ()
 
       expect(recorded.bucket.slice(before)).toEqual([
         [
-          'assets-bucket',
+          'shop.assets',
           {
             project: 'shop-project#cloud-id',
-            name: 'assets',
+            name: 'shop.assets',
             branchId: 'branch_1',
-            logicalId: 'assets',
+            logicalId: 'shop.assets',
           },
         ],
       ]);
@@ -832,8 +898,9 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
-        id: 'auth',
-        address: 'auth',
+        id: 'shop.auth',
+        address: 'shop.auth',
+        graph: { root: { id: 'shop' } },
         application: {
           projectId: 'shop-project#cloud-id',
           branchId: undefined,
@@ -845,12 +912,15 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       const result = run<MockedProvisioned>(serviceDescriptorOf(target, 'compute').provision(ctx));
 
       expect(result).toEqual({
-        serviceId: 'auth-svc#cloud-id',
+        serviceId: 'shop.auth#cloud-id',
         projectId: 'shop-project#cloud-id',
-        endpointDomain: 'https://auth-svc.example',
+        endpointDomain: 'https://shop.auth.example',
       });
       expect(recorded.svc).toEqual([
-        ['auth-svc', { project: 'shop-project#cloud-id', displayName: 'auth', logicalId: 'auth' }],
+        [
+          'shop.auth',
+          { project: 'shop-project#cloud-id', displayName: 'shop.auth', logicalId: 'shop.auth' },
+        ],
       ]);
     });
   });
@@ -859,8 +929,9 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
-        id: 'auth2',
-        address: 'auth2',
+        id: 'shop.auth2',
+        address: 'shop.auth2',
+        graph: { root: { id: 'shop' } },
         application: {
           projectId: 'shop-project#cloud-id',
           branchId: 'branch_1',
@@ -874,12 +945,12 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
 
       expect(recorded.svc.slice(before)).toEqual([
         [
-          'auth2-svc',
+          'shop.auth2',
           {
             project: 'shop-project#cloud-id',
-            displayName: 'auth2',
+            displayName: 'shop.auth2',
             branchId: 'branch_1',
-            logicalId: 'auth2',
+            logicalId: 'shop.auth2',
           },
         ],
       ]);
@@ -902,9 +973,9 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         },
       });
       const ctx = {
-        address: 'auth',
+        address: 'shop.auth',
         node,
-        graph: { inputBindings: [], edges: [] },
+        graph: { root: { id: 'shop' }, inputBindings: [], edges: [] },
         application: {
           projectId: 'shop-project#cloud-id',
           branchId: undefined,
@@ -925,10 +996,10 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
 
       expect(recorded.envVar.slice(-3)).toEqual([
         [
-          'COMPOSER_AUTH_DB_URL-var',
+          'shop.auth.env.COMPOSER_SHOP_AUTH_DB_URL',
           {
             project: 'shop-project#cloud-id',
-            key: 'COMPOSER_AUTH_DB_URL',
+            key: 'COMPOSER_SHOP_AUTH_DB_URL',
             value: 'postgres://real-db',
             class: 'production',
           },
@@ -937,10 +1008,10 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         // the ConfigVariable value field is string-typed, and deserialize reads
         // it back to a number (round-tripped in pack.test.ts).
         [
-          'COMPOSER_AUTH_PORT-var',
+          'shop.auth.env.COMPOSER_SHOP_AUTH_PORT',
           {
             project: 'shop-project#cloud-id',
-            key: 'COMPOSER_AUTH_PORT',
+            key: 'COMPOSER_SHOP_AUTH_PORT',
             value: '3000',
             class: 'production',
           },
@@ -948,10 +1019,10 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         // The framework-resolved origin row — one per compute service,
         // unconditional, the provisioned service's own endpoint domain.
         [
-          'COMPOSER_AUTH_ORIGIN-var',
+          'shop.auth.env.COMPOSER_SHOP_AUTH_ORIGIN',
           {
             project: 'shop-project#cloud-id',
-            key: 'COMPOSER_AUTH_ORIGIN',
+            key: 'COMPOSER_SHOP_AUTH_ORIGIN',
             value: '"https://auth-svc.example"',
             class: 'production',
           },
@@ -959,13 +1030,16 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       ]);
       expect(result.environment).toEqual([
         {
-          environmentVariableId: 'COMPOSER_AUTH_DB_URL-var#cloud-id',
-          key: 'COMPOSER_AUTH_DB_URL',
+          environmentVariableId: 'shop.auth.env.COMPOSER_SHOP_AUTH_DB_URL#cloud-id',
+          key: 'COMPOSER_SHOP_AUTH_DB_URL',
         },
-        { environmentVariableId: 'COMPOSER_AUTH_PORT-var#cloud-id', key: 'COMPOSER_AUTH_PORT' },
         {
-          environmentVariableId: 'COMPOSER_AUTH_ORIGIN-var#cloud-id',
-          key: 'COMPOSER_AUTH_ORIGIN',
+          environmentVariableId: 'shop.auth.env.COMPOSER_SHOP_AUTH_PORT#cloud-id',
+          key: 'COMPOSER_SHOP_AUTH_PORT',
+        },
+        {
+          environmentVariableId: 'shop.auth.env.COMPOSER_SHOP_AUTH_ORIGIN#cloud-id',
+          key: 'COMPOSER_SHOP_AUTH_ORIGIN',
         },
       ]);
       // The same three rows as the deploy hook declares them on
@@ -973,9 +1047,9 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       // the row writes (Redacted; under these mocks already resolved). No
       // pointed platform variable here, so no pointer names ride along.
       expect(unwrapTriggers(result.triggers)).toEqual({
-        COMPOSER_AUTH_DB_URL: 'postgres://real-db',
-        COMPOSER_AUTH_PORT: '3000',
-        COMPOSER_AUTH_ORIGIN: '"https://auth-svc.example"',
+        COMPOSER_SHOP_AUTH_DB_URL: 'postgres://real-db',
+        COMPOSER_SHOP_AUTH_PORT: '3000',
+        COMPOSER_SHOP_AUTH_ORIGIN: '"https://auth-svc.example"',
       });
       expect(result.pointers).toEqual([]);
       // serialize also surfaces the resolved listen port for deploy() — the
@@ -1000,9 +1074,9 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         },
       });
       const ctx = {
-        address: 'auth',
+        address: 'shop.auth',
         node,
-        graph: { inputBindings: [], edges: [] },
+        graph: { root: { id: 'shop' }, inputBindings: [], edges: [] },
         application: {
           projectId: 'shop-project#cloud-id',
           branchId: undefined,
@@ -1055,9 +1129,9 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         },
       });
       const ctx = {
-        address: 'consumer',
+        address: 'shop.consumer',
         node,
-        graph: { inputBindings: [], edges: [] },
+        graph: { root: { id: 'shop' }, inputBindings: [], edges: [] },
         application: {
           projectId: 'shop-project#cloud-id',
           branchId: undefined,
@@ -1085,13 +1159,13 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       // The provided url still writes its row...
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_CONSUMER_AUTH_URL',
+        key: 'COMPOSER_SHOP_CONSUMER_AUTH_URL',
         value: 'http://auth.internal',
         class: 'production',
       });
       // ...but the unprovisioned serviceKey writes none — no "value: Required" at deploy.
       const writtenKeys = writes.map((p) => (p as { key: string }).key);
-      expect(writtenKeys).not.toContain('COMPOSER_CONSUMER_AUTH_SERVICEKEY');
+      expect(writtenKeys).not.toContain('COMPOSER_SHOP_CONSUMER_AUTH_SERVICEKEY');
     });
   });
 
@@ -1115,16 +1189,17 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         });
         // The provision call bound the input — it rides on graph.inputBindings.
         const graph = {
+          root: { id: 'shop' },
           inputBindings: [
             {
-              serviceAddress: 'ingest',
+              serviceAddress: 'shop.ingest',
               binding: { stripeEnabled: true, stripeKey: envSecret('STRIPE_SECRET_KEY') },
             },
           ],
           edges: [],
         };
         const ctx = {
-          address: 'ingest',
+          address: 'shop.ingest',
           node,
           graph,
           application: {
@@ -1150,7 +1225,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         // the platform var, never a value.
         expect(writes).toContainEqual({
           project: 'shop-project#cloud-id',
-          key: 'COMPOSER_INGEST_INPUT',
+          key: 'COMPOSER_SHOP_INGEST_INPUT',
           value: '{"stripeEnabled":true,"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
           class: 'production',
         });
@@ -1160,7 +1235,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         // document rides as its own (secret-free) text, and the platform
         // variable it points at is named in `pointers`, so its rotation
         // timestamp can join the triggers — the VALUE is nowhere near it.
-        expect(unwrapTriggers(result.triggers)['COMPOSER_INGEST_INPUT']).toBe(
+        expect(unwrapTriggers(result.triggers)['COMPOSER_SHOP_INGEST_INPUT']).toBe(
           '{"stripeEnabled":true,"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
         );
         expect(result.pointers).toEqual(['STRIPE_SECRET_KEY']);
@@ -1168,7 +1243,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         // The row also rides the serialize → deploy handoff, so deploy() can
         // put the document (secret-free by construction) on the report entity.
         expect(result.input).toEqual({
-          key: 'COMPOSER_INGEST_INPUT',
+          key: 'COMPOSER_SHOP_INGEST_INPUT',
           value: '{"stripeEnabled":true,"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
           absent: [],
           generated: [],
@@ -1195,13 +1270,14 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         },
       });
       const graph = {
+        root: { id: 'shop' },
         inputBindings: [
-          { serviceAddress: 'ingest', binding: { secret: generatedParam({ bytes: 48 }) } },
+          { serviceAddress: 'shop.ingest', binding: { secret: generatedParam({ bytes: 48 }) } },
         ],
         edges: [],
       };
       const ctx = {
-        address: 'ingest',
+        address: 'shop.ingest',
         node,
         graph,
         application: {
@@ -1225,32 +1301,37 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
 
       // The GeneratedParam resource: id stable per service+leaf, bytes threaded.
       expect(recorded.generated.slice(beforeGen)).toEqual([
-        ['COMPOSER_INGEST_INPUT:secret-generated', { bytes: 48 }],
+        ['shop.ingest.generated.secret', { bytes: 48 }],
       ]);
       // The env row carries the resource's value under the framework var the
       // document's $generated pointer names.
       const writes = recorded.envVar.slice(beforeEnv).map(([, props]) => props);
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_INGEST_SECRET_GENERATED',
-        value: 'generated-for-COMPOSER_INGEST_INPUT:secret-generated',
+        key: 'COMPOSER_SHOP_INGEST_SECRET_GENERATED',
+        value: 'generated-for-shop.ingest.generated.secret',
         class: 'production',
       });
       // The input document is a $generated pointer, never a value; the leaf also
       // rides the serialize → deploy handoff.
       expect(result.input?.value).toBe(
-        '{"secret":{"$generated":"COMPOSER_INGEST_SECRET_GENERATED","redacted":true}}',
+        '{"secret":{"$generated":"COMPOSER_SHOP_INGEST_SECRET_GENERATED","redacted":true}}',
       );
       expect(result.input?.generated).toEqual([
-        { varName: 'COMPOSER_INGEST_SECRET_GENERATED', bytes: 48, redacted: true, path: 'secret' },
+        {
+          varName: 'COMPOSER_SHOP_INGEST_SECRET_GENERATED',
+          bytes: 48,
+          redacted: true,
+          path: 'secret',
+        },
       ]);
       // The generated row's trigger member carries the mint-once-stable value
       // (Redacted): it holds still across redeploys and moves exactly when
       // the value is re-generated. It is NOT joined by a platform `updatedAt`
       // either — Composer rewrites this row every deploy, so that timestamp
       // would move every deploy and the fingerprint would never settle.
-      expect(unwrapTriggers(result.triggers)['COMPOSER_INGEST_SECRET_GENERATED']).toBe(
-        'generated-for-COMPOSER_INGEST_INPUT:secret-generated',
+      expect(unwrapTriggers(result.triggers)['COMPOSER_SHOP_INGEST_SECRET_GENERATED']).toBe(
+        'generated-for-shop.ingest.generated.secret',
       );
       expect(result.pointers).toEqual([]);
     });
@@ -1271,11 +1352,14 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         },
       });
       const graph = {
-        inputBindings: [{ serviceAddress: 'login', binding: { baseUrl: serviceOrigin('web') } }],
+        root: { id: 'shop' },
+        inputBindings: [
+          { serviceAddress: 'shop.login', binding: { baseUrl: serviceOrigin('shop.web') } },
+        ],
         edges: [],
       };
       const ctx = {
-        address: 'login',
+        address: 'shop.login',
         node,
         graph,
         application: {
@@ -1286,11 +1370,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         },
         services: new Map([
           [
-            'login',
+            'shop.login',
             { projectId: 'shop-project#cloud-id', endpointDomain: 'https://login.example' },
           ],
           [
-            'web',
+            'shop.web',
             { projectId: 'shop-project#cloud-id', endpointDomain: 'https://web-preview.example' },
           ],
         ]),
@@ -1312,15 +1396,15 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       expect(recorded.generated.slice(beforeGen)).toEqual([]);
       expect(recorded.envVar.slice(beforeEnv).map(([, props]) => props)).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_LOGIN_BASEURL_GENERATED',
+        key: 'COMPOSER_SHOP_LOGIN_BASEURL_GENERATED',
         value: 'https://web-preview.example',
         class: 'preview',
         branchId: 'br_preview',
       });
       expect(result.input?.value).toBe(
-        '{"baseUrl":{"$generated":"COMPOSER_LOGIN_BASEURL_GENERATED","redacted":false}}',
+        '{"baseUrl":{"$generated":"COMPOSER_SHOP_LOGIN_BASEURL_GENERATED","redacted":false}}',
       );
-      expect(unwrapTriggers(result.triggers)['COMPOSER_LOGIN_BASEURL_GENERATED']).toBe(
+      expect(unwrapTriggers(result.triggers)['COMPOSER_SHOP_LOGIN_BASEURL_GENERATED']).toBe(
         'https://web-preview.example',
       );
     });
@@ -1341,10 +1425,13 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         },
       });
       const ctx = {
-        address: 'login',
+        address: 'shop.login',
         node,
         graph: {
-          inputBindings: [{ serviceAddress: 'login', binding: { baseUrl: serviceOrigin('wbe') } }],
+          root: { id: 'shop' },
+          inputBindings: [
+            { serviceAddress: 'shop.login', binding: { baseUrl: serviceOrigin('shop.wbe') } },
+          ],
           edges: [],
         },
         application: {
@@ -1354,8 +1441,8 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           branchless: false,
         },
         services: new Map<string, unknown>([
-          ['web', { projectId: 'p#cloud-id', endpointDomain: 'https://w' }],
-          ['wbe', { notCompute: true }],
+          ['shop.web', { projectId: 'p#cloud-id', endpointDomain: 'https://w' }],
+          ['shop.wbe', { notCompute: true }],
         ]),
       } as unknown as LowerContext;
       expect(() =>
@@ -1367,7 +1454,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           ),
         ),
       ).toThrow(
-        'binds serviceOrigin("wbe"), but no compute service has that address — known services: web.',
+        'service "shop.login" binds serviceOrigin("shop.wbe"), but no compute service has that address — known services: shop.web.',
       );
     });
   });
@@ -1387,13 +1474,17 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         },
       });
       const graph = {
+        root: { id: 'shop' },
         inputBindings: [
-          { serviceAddress: 'ingest', binding: { greeting: envParam('NOT_SET_GREETING_VAR') } },
+          {
+            serviceAddress: 'shop.ingest',
+            binding: { greeting: envParam('NOT_SET_GREETING_VAR') },
+          },
         ],
         edges: [],
       };
       const ctx = {
-        address: 'ingest',
+        address: 'shop.ingest',
         node,
         graph,
         application: {
@@ -1414,7 +1505,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       );
 
       expect(result.input).toEqual({
-        key: 'COMPOSER_INGEST_INPUT',
+        key: 'COMPOSER_SHOP_INGEST_INPUT',
         value: '{}',
         absent: ['greeting → NOT_SET_GREETING_VAR'],
         generated: [],
@@ -1442,12 +1533,15 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         });
         // The provision call bound the reserved port to PLATFORM_PORT — it rides on graph.params.
         const graph = {
+          root: { id: 'shop' },
           inputBindings: [],
-          params: [{ serviceAddress: 'web', slot: 'port', binding: envParam('PLATFORM_PORT') }],
+          params: [
+            { serviceAddress: 'shop.web', slot: 'port', binding: envParam('PLATFORM_PORT') },
+          ],
           edges: [],
         };
         const ctx = {
-          address: 'web',
+          address: 'shop.web',
           node,
           graph,
           application: {
@@ -1474,7 +1568,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         // The pointer row holds the bound platform NAME, never a value.
         expect(writes).toContainEqual({
           project: 'shop-project#cloud-id',
-          key: 'COMPOSER_WEB_PORT',
+          key: 'COMPOSER_SHOP_WEB_PORT',
           value: '@composer-param-pointer:PLATFORM_PORT',
           class: 'production',
         });
@@ -1483,7 +1577,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         // The pointer row triggers on its text (the platform NAME) AND the
         // named variable joins `pointers`, so rotating PLATFORM_PORT out of
         // band ships a new deployment even though the row itself never moves.
-        expect(unwrapTriggers(result.triggers)['COMPOSER_WEB_PORT']).toBe(
+        expect(unwrapTriggers(result.triggers)['COMPOSER_SHOP_WEB_PORT']).toBe(
           '@composer-param-pointer:PLATFORM_PORT',
         );
         expect(result.pointers).toEqual(['PLATFORM_PORT']);
@@ -1505,9 +1599,9 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           entry: 'server.js',
         },
       });
-      const graph = { inputBindings: [], params: [], edges: [] };
+      const graph = { root: { id: 'shop' }, inputBindings: [], params: [], edges: [] };
       const ctx = {
-        address: 'web',
+        address: 'shop.web',
         node,
         graph,
         application: {
@@ -1534,7 +1628,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       const writes = recorded.envVar.slice(before).map(([, props]) => props);
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_WEB_PORT',
+        key: 'COMPOSER_SHOP_WEB_PORT',
         value: '4100',
         class: 'production',
       });
@@ -1555,9 +1649,9 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         },
       });
       const ctx = {
-        address: 'auth3',
+        address: 'shop.auth3',
         node,
-        graph: { inputBindings: [], edges: [] },
+        graph: { root: { id: 'shop' }, inputBindings: [], edges: [] },
         application: {
           projectId: 'shop-project#cloud-id',
           branchId: 'branch_1',
@@ -1578,20 +1672,20 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
 
       expect(recorded.envVar.slice(before)).toEqual([
         [
-          'COMPOSER_AUTH3_PORT-var',
+          'shop.auth3.env.COMPOSER_SHOP_AUTH3_PORT',
           {
             project: 'shop-project#cloud-id',
-            key: 'COMPOSER_AUTH3_PORT',
+            key: 'COMPOSER_SHOP_AUTH3_PORT',
             value: '3000',
             class: 'preview',
             branchId: 'branch_1',
           },
         ],
         [
-          'COMPOSER_AUTH3_ORIGIN-var',
+          'shop.auth3.env.COMPOSER_SHOP_AUTH3_ORIGIN',
           {
             project: 'shop-project#cloud-id',
-            key: 'COMPOSER_AUTH3_ORIGIN',
+            key: 'COMPOSER_SHOP_AUTH3_ORIGIN',
             value: '"https://svc.example"',
             class: 'preview',
             branchId: 'branch_1',
@@ -1615,9 +1709,9 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         },
       });
       const ctx = {
-        address: 'auth',
+        address: 'shop.auth',
         node,
-        graph: { inputBindings: [], edges: [] },
+        graph: { root: { id: 'shop' }, inputBindings: [], edges: [] },
         application: {
           projectId: 'shop-project#cloud-id',
           branchId: undefined,
@@ -1704,7 +1798,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
 
   test("deploy declares serialize's triggers (plus pointer timestamps) and rides the app ordering edge — PRO-211", () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
-    const ctx = { id: 'auth' } as unknown as LowerContext;
+    const ctx = {
+      id: 'shop.auth',
+      address: 'shop.auth',
+      graph: { root: { id: 'shop' } },
+    } as unknown as LowerContext;
     const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
     const artifact = { path: '/tmp/auth.tar.gz', sha256: 'sha-auth' };
     const serialized = {
@@ -1734,7 +1832,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     // with the pointer timestamp folded in ('?' — no preflight ran here).
     expect(recorded.deploy).toEqual([
       [
-        'auth-deploy',
+        'shop.auth.deployment',
         {
           app: 'auth-svc#cloud-id',
           artifactPath: '/tmp/auth.tar.gz',
@@ -1750,7 +1848,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       ],
     ]);
     expect(result.outputs).toEqual({
-      url: 'https://auth-deploy.example',
+      url: 'https://shop.auth.deployment.example',
       projectId: 'shop-project#cloud-id',
     });
     // compute publishes its URL deliberately — a Compute service's deployed
@@ -1759,14 +1857,18 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       {
         kind: 'compute-service',
         id: 'auth-svc#cloud-id',
-        url: 'https://auth-deploy.example',
+        url: 'https://shop.auth.deployment.example',
       },
     ]);
   });
 
   test("deploy puts the input document and its absent keys on the report entity's details (ADR-0042)", () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
-    const ctx = { id: 'auth' } as unknown as LowerContext;
+    const ctx = {
+      id: 'shop.auth',
+      address: 'shop.auth',
+      graph: { root: { id: 'shop' } },
+    } as unknown as LowerContext;
     const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
     const artifact = { path: '/tmp/auth.tar.gz', sha256: 'sha-auth' };
     const serialized = {
@@ -1789,7 +1891,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       {
         kind: 'compute-service',
         id: 'auth-svc#cloud-id',
-        url: 'https://auth-deploy.example',
+        url: 'https://shop.auth.deployment.example',
         details: {
           input: '{"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
           absent: 'greeting → ENV_GREETING\nregion → ENV_REGION',
@@ -1800,7 +1902,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
 
   test('deploy omits the absent detail when no key is absent (the common case) — no spurious blank report line (ADR-0042)', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
-    const ctx = { id: 'auth' } as unknown as LowerContext;
+    const ctx = {
+      id: 'shop.auth',
+      address: 'shop.auth',
+      graph: { root: { id: 'shop' } },
+    } as unknown as LowerContext;
     const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
     const artifact = { path: '/tmp/auth.tar.gz', sha256: 'sha-auth' };
     const serialized = {
@@ -1823,7 +1929,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       {
         kind: 'compute-service',
         id: 'auth-svc#cloud-id',
-        url: 'https://auth-deploy.example',
+        url: 'https://shop.auth.deployment.example',
         details: {
           input: '{"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
         },
@@ -1850,10 +1956,11 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
         build,
       });
       const ctx = {
-        address: 'store',
+        address: 'shop.store',
         node,
         graph: {
-          inputBindings: [{ serviceAddress: 'store', binding: { bucket: 'streams' } }],
+          root: { id: 'shop' },
+          inputBindings: [{ serviceAddress: 'shop.store', binding: { bucket: 'streams' } }],
           edges: [],
         },
         application: {
@@ -1897,9 +2004,9 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
       };
       const ctxFor = (node: unknown, inputBindings: readonly unknown[]) =>
         ({
-          address: 'store',
+          address: 'shop.store',
           node,
-          graph: { inputBindings, edges: [] },
+          graph: { root: { id: 'shop' }, inputBindings, edges: [] },
           application: {
             projectId: 'shop-project#cloud-id',
             branchId: undefined,
@@ -1925,7 +2032,7 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
       });
       expect(() =>
         serialize(
-          ctxFor(withBucket, [{ serviceAddress: 'store', binding: { bucket: 'streams' } }]),
+          ctxFor(withBucket, [{ serviceAddress: 'shop.store', binding: { bucket: 'streams' } }]),
           { service: { port: 3000 }, inputs: {} },
         ),
       ).toThrow(/must wire a 'credentials' dependency and declare a 'bucket' input key/);
@@ -1943,7 +2050,11 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
 
   test('deploy outputs carry all four S3Config field names for a consumer s3() slot', async () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
-    const ctx = { id: 'store' } as unknown as LowerContext;
+    const ctx = {
+      id: 'shop.store',
+      address: 'shop.store',
+      graph: { root: { id: 'shop' } },
+    } as unknown as LowerContext;
     const provisioned = { serviceId: 'store-svc#cloud-id', projectId: 'shop-project#cloud-id' };
     const artifact = { path: '/tmp/store.tar.gz', sha256: 'sha-store' };
     const serialized = {
@@ -1962,7 +2073,7 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
 
     // The four S3Config fields a consumer's s3() slot resolves by name, plus url.
     expect(result.outputs).toEqual({
-      url: 'https://store-deploy.example',
+      url: 'https://shop.store.deployment.example',
       projectId: 'shop-project#cloud-id',
       bucket: 'streams',
       accessKeyId: 'AKIA123',
@@ -1976,7 +2087,7 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
       {
         kind: 'compute-service',
         id: 'store-svc#cloud-id',
-        url: 'https://store-deploy.example',
+        url: 'https://shop.store.deployment.example',
       },
     ]);
   });
@@ -1984,7 +2095,9 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
   test('provision + package delegate to compute unchanged', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const ctx = {
-      id: 'store',
+      id: 'shop.store',
+      address: 'shop.store',
+      graph: { root: { id: 'shop' } },
       application: {
         projectId: 'p#cloud-id',
         branchId: undefined,
@@ -1995,15 +2108,15 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
     const provisionResult = run<MockedProvisioned>(
       serviceDescriptorOf(target, 's3-store').provision(ctx),
     );
-    expect(provisionResult.serviceId).toBe('store-svc#cloud-id');
+    expect(provisionResult.serviceId).toBe('shop.store#cloud-id');
 
     const pkg = run(
       serviceDescriptorOf(target, 's3-store').package(ctx, {
         assembled: { dir: 'd', entry: 'server.js' },
-        address: 'store',
+        address: 'shop.store',
       }),
     );
-    expect(pkg).toEqual({ path: '/tmp/store.tar.gz', sha256: 'sha-store' });
+    expect(pkg).toEqual({ path: '/tmp/shop.store.tar.gz', sha256: 'sha-shop.store' });
   });
 });
 
@@ -2069,29 +2182,29 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
         lowering(root, configFor(target), {
           name: 'shop',
           bundles: {
-            auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-            billing: { dir: 'modules/billing/dist/bundle', entry: 'server.js' },
+            'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+            'shop.billing': { dir: 'modules/billing/dist/bundle', entry: 'server.js' },
           },
         }),
       );
 
       expect(recorded.db.slice(before.db)).toEqual([
         [
-          'data-db',
+          'shop.data',
           {
             project: 'shop-project#cloud-id',
             region: 'inherit',
             branchId: 'br_default',
-            logicalId: 'data',
+            logicalId: 'shop.data',
           },
         ],
       ]);
       expect(recorded.conn.slice(before.conn)).toEqual([
         [
-          'data-conn',
+          'shop.data.connection',
           {
-            database: { databaseId: 'data-db#cloud-id', databaseName: 'data-db' },
-            name: 'data',
+            database: { databaseId: 'shop.data#cloud-id', databaseName: 'shop.data' },
+            name: 'shop.data',
           },
         ],
       ]);
@@ -2099,14 +2212,14 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
       const writes = recorded.envVar.slice(before.envVar).map(([, props]) => props);
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_AUTH_MAIN_URL',
-        value: 'postgres://data-conn',
+        key: 'COMPOSER_SHOP_AUTH_MAIN_URL',
+        value: 'postgres://shop.data.connection',
         class: 'production',
       });
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_BILLING_STORE_URL',
-        value: 'postgres://data-conn',
+        key: 'COMPOSER_SHOP_BILLING_STORE_URL',
+        value: 'postgres://shop.data.connection',
         class: 'production',
       });
     });
@@ -2162,28 +2275,28 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
         lowering(root, configFor(target), {
           name: 'shop',
           bundles: {
-            auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-            web: { dir: 'modules/web/dist/bundle', entry: 'server.js' },
+            'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+            'shop.web': { dir: 'modules/web/dist/bundle', entry: 'server.js' },
           },
         }),
       );
 
       // One ServiceKey minted, its id carrying the edge id.
       expect(recorded.serviceKey.slice(before.serviceKey).map(([id]) => id)).toEqual([
-        'servicekey-web.auth',
+        'shop.web.servicekey.auth',
       ]);
 
       const writes = recorded.envVar.slice(before.envVar).map(([, props]) => props);
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_WEB_AUTH_SERVICEKEY',
-        value: 'key-for-servicekey-web.auth',
+        key: 'COMPOSER_SHOP_WEB_AUTH_SERVICEKEY',
+        value: 'key-for-shop.web.servicekey.auth',
         class: 'production',
       });
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_AUTH_RPC_ACCEPTED_KEYS',
-        value: '["key-for-servicekey-web.auth"]',
+        key: 'COMPOSER_SHOP_AUTH_RPC_ACCEPTED_KEYS',
+        value: '["key-for-shop.web.servicekey.auth"]',
         class: 'production',
       });
     });
@@ -2213,9 +2326,9 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
         lowering(root, configFor(target), {
           name: 'shop',
           bundles: {
-            auth2: { dir: 'modules/auth2/dist/bundle', entry: 'server.js' },
-            web1: { dir: 'modules/web1/dist/bundle', entry: 'server.js' },
-            web2: { dir: 'modules/web2/dist/bundle', entry: 'server.js' },
+            'shop.auth2': { dir: 'modules/auth2/dist/bundle', entry: 'server.js' },
+            'shop.web1': { dir: 'modules/web1/dist/bundle', entry: 'server.js' },
+            'shop.web2': { dir: 'modules/web2/dist/bundle', entry: 'server.js' },
           },
         }),
       );
@@ -2223,13 +2336,15 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
       const writes = recorded.envVar
         .slice(before)
         .map(([, props]) => props as { key: string; value: string });
-      const web1Key = writes.find((w) => w.key === 'COMPOSER_WEB1_AUTH_SERVICEKEY')?.value;
-      const web2Key = writes.find((w) => w.key === 'COMPOSER_WEB2_AUTH_SERVICEKEY')?.value;
+      const web1Key = writes.find((w) => w.key === 'COMPOSER_SHOP_WEB1_AUTH_SERVICEKEY')?.value;
+      const web2Key = writes.find((w) => w.key === 'COMPOSER_SHOP_WEB2_AUTH_SERVICEKEY')?.value;
       expect(web1Key).toBeDefined();
       expect(web2Key).toBeDefined();
       expect(web1Key).not.toBe(web2Key);
 
-      const acceptedRaw = writes.find((w) => w.key === 'COMPOSER_AUTH2_RPC_ACCEPTED_KEYS')?.value;
+      const acceptedRaw = writes.find(
+        (w) => w.key === 'COMPOSER_SHOP_AUTH2_RPC_ACCEPTED_KEYS',
+      )?.value;
       if (acceptedRaw === undefined) throw new Error('expected an accepted-keys row');
       expect(JSON.parse(acceptedRaw).sort()).toEqual([web1Key, web2Key].sort());
     });
@@ -2250,7 +2365,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
       run<undefined>(
         lowering(root, configFor(target), {
           name: 'shop',
-          bundles: { auth3: { dir: 'modules/auth3/dist/bundle', entry: 'server.js' } },
+          bundles: { 'shop.auth3': { dir: 'modules/auth3/dist/bundle', entry: 'server.js' } },
         }),
       );
 
@@ -2260,7 +2375,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
       const writes = recorded.envVar.slice(before.envVar).map(([, props]) => props);
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_AUTH3_RPC_ACCEPTED_KEYS',
+        key: 'COMPOSER_SHOP_AUTH3_RPC_ACCEPTED_KEYS',
         value: '[]',
         class: 'production',
       });
@@ -2288,8 +2403,8 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
         lowering(root, configFor(target), {
           name: 'shop',
           bundles: {
-            auth4: { dir: 'modules/auth4/dist/bundle', entry: 'server.js' },
-            storefront: { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+            'shop.auth4': { dir: 'modules/auth4/dist/bundle', entry: 'server.js' },
+            'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
           },
         }),
       );
@@ -2297,11 +2412,11 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
       const writtenKeys = recorded.envVar
         .slice(before)
         .map(([, props]) => (props as { key: string }).key);
-      expect(writtenKeys).not.toContain('COMPOSER_STOREFRONT_RPC_ACCEPTED_KEYS');
+      expect(writtenKeys).not.toContain('COMPOSER_SHOP_STOREFRONT_RPC_ACCEPTED_KEYS');
       // The origin row is service-derived, not edge-derived, so the expose
       // check above does not apply to it: the non-exposing storefront still
       // gets its own origin row.
-      expect(writtenKeys).toContain('COMPOSER_STOREFRONT_ORIGIN');
+      expect(writtenKeys).toContain('COMPOSER_SHOP_STOREFRONT_ORIGIN');
     });
   });
 });
@@ -2353,9 +2468,9 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
         lowering(root, configFor(target), {
           name: 'shop',
           bundles: {
-            events: { dir: 'modules/events/dist/bundle', entry: 'server.js' },
-            reader: { dir: 'modules/reader/dist/bundle', entry: 'server.js' },
-            writer: { dir: 'modules/writer/dist/bundle', entry: 'server.js' },
+            'shop.events': { dir: 'modules/events/dist/bundle', entry: 'server.js' },
+            'shop.reader': { dir: 'modules/reader/dist/bundle', entry: 'server.js' },
+            'shop.writer': { dir: 'modules/writer/dist/bundle', entry: 'server.js' },
           },
         }),
       );
@@ -2363,7 +2478,7 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
       // Both edges resolve to ONE resource id — the PROVIDER's address, not
       // the edge's — so the mint is shared (upstream auths a single API_KEY).
       expect([...new Set(recorded.serviceKey.slice(before.serviceKey).map(([id]) => id))]).toEqual([
-        'streamskey-events',
+        'shop.events.streamkey',
       ]);
 
       const writes = recorded.envVar.slice(before.envVar).map(([, props]) => props);
@@ -2373,8 +2488,12 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
             | { value?: unknown }
             | undefined
         )?.value;
-      expect(writtenValue('COMPOSER_READER_EVENTS_APIKEY')).toBe('key-for-streamskey-events');
-      expect(writtenValue('COMPOSER_WRITER_EVENTS_APIKEY')).toBe('key-for-streamskey-events');
+      expect(writtenValue('COMPOSER_SHOP_READER_EVENTS_APIKEY')).toBe(
+        'key-for-shop.events.streamkey',
+      );
+      expect(writtenValue('COMPOSER_SHOP_WRITER_EVENTS_APIKEY')).toBe(
+        'key-for-shop.events.streamkey',
+      );
 
       // The provider's own reserved provider param: the same key, under the
       // name the streams entrypoint reads (address-scoped; compute's run
@@ -2382,8 +2501,8 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
       // literal param.
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_EVENTS_STREAMS_API_KEY',
-        value: '"key-for-streamskey-events"',
+        key: 'COMPOSER_SHOP_EVENTS_STREAMS_API_KEY',
+        value: '"key-for-shop.events.streamkey"',
         class: 'production',
       });
     });
@@ -2403,19 +2522,20 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
     });
     const consumerNode = compute({ name: 'reader', deps: { events: streamsLikeDep() }, build });
     const graph = {
+      root: { id: 'shop' },
       nodes: [
-        { id: 'events', node },
-        { id: 'reader', node: consumerNode },
-        { id: 'writer', node: consumerNode },
+        { id: 'shop.events', node },
+        { id: 'shop.reader', node: consumerNode },
+        { id: 'shop.writer', node: consumerNode },
       ],
       edges: [
-        { kind: 'dependency', from: 'events', to: 'reader', input: 'events' },
-        { kind: 'dependency', from: 'events', to: 'writer', input: 'events' },
+        { kind: 'dependency', from: 'shop.events', to: 'shop.reader', input: 'events' },
+        { kind: 'dependency', from: 'shop.events', to: 'shop.writer', input: 'events' },
       ],
       inputBindings: [],
     };
     const ctx = {
-      address: 'events',
+      address: 'shop.events',
       node,
       graph,
       application: {
@@ -2425,8 +2545,8 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
         branchless: false,
       },
       provisioned: new Map([
-        ['reader.events', 'key-one'],
-        ['writer.events', 'key-two'],
+        ['shop.reader.events', 'key-one'],
+        ['shop.writer.events', 'key-two'],
       ]),
     } as unknown as LowerContext;
 
@@ -2458,7 +2578,7 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
       run<undefined>(
         lowering(root, configFor(target), {
           name: 'shop',
-          bundles: { lonely: { dir: 'modules/lonely/dist/bundle', entry: 'server.js' } },
+          bundles: { 'shop.lonely': { dir: 'modules/lonely/dist/bundle', entry: 'server.js' } },
         }),
       );
 
@@ -2466,7 +2586,7 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
       const keys = recorded.envVar
         .slice(before.envVar)
         .map(([, props]) => (props as { key: string }).key);
-      expect(keys).not.toContain('COMPOSER_LONELY_STREAMS_API_KEY');
+      expect(keys).not.toContain('COMPOSER_SHOP_LONELY_STREAMS_API_KEY');
     });
   });
 });
@@ -2521,9 +2641,9 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
       };
       const node = compute({ name: 'multi', deps: {}, build, expose: { any: anyContract } });
       const ctx = {
-        address: 'multi',
+        address: 'shop.multi',
         node,
-        graph: { inputBindings: [], edges: [] },
+        graph: { root: { id: 'shop' }, inputBindings: [], edges: [] },
         application: {
           projectId: 'shop-project#cloud-id',
           branchId: undefined,
@@ -2550,18 +2670,18 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
       const writes = recorded.envVar.slice(before).map(([, props]) => props);
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_MULTI_PARAM_ONE',
+        key: 'COMPOSER_SHOP_MULTI_PARAM_ONE',
         value: '"value-one"',
         class: 'production',
       });
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_MULTI_PARAM_TWO',
+        key: 'COMPOSER_SHOP_MULTI_PARAM_TWO',
         value: '"value-two"',
         class: 'production',
       });
       expect(writes.map((w) => (w as { key: string }).key)).not.toContain(
-        'COMPOSER_MULTI_PARAM_THREE',
+        'COMPOSER_SHOP_MULTI_PARAM_THREE',
       );
     });
   });
@@ -2589,12 +2709,13 @@ describe('a secret the prisma dev preflight found unset', () => {
       },
     });
     const ctx = {
-      address: 'billing',
+      address: 'shop.billing',
       node,
       graph: {
+        root: { id: 'shop' },
         inputBindings: [
           {
-            serviceAddress: 'billing',
+            serviceAddress: 'shop.billing',
             binding: {
               stripeKey: envSecret('STRIPE_SECRET_KEY'),
               webhookSecret: envSecret('STRIPE_WEBHOOK_SECRET'),
@@ -2627,7 +2748,7 @@ describe('a secret the prisma dev preflight found unset', () => {
     const writes = recorded.envVar.slice(before).map(([, props]) => props);
     expect(writes).toContainEqual({
       project: 'shop-project#cloud-id',
-      key: 'COMPOSER_BILLING_INPUT',
+      key: 'COMPOSER_SHOP_BILLING_INPUT',
       value: '{"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
       class: 'production',
     });
@@ -2641,9 +2762,9 @@ describe('name validation — fail fast on Prisma name constraints, before creat
     module: 'file:///test/service.ts',
     entry: 'server.js',
   };
-  const bundles = { auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' } };
+  const bundles = { 'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' } };
 
-  // The plain throw validateName raises becomes an Effect defect; run() (runSync)
+  // The plain throw validatePlatformName raises becomes an Effect defect; run() (runSync)
   // re-raises it synchronously — exactly what `lower()`'s Effect.orDie surfaces
   // at deploy. Capture it directly rather than through the typed error channel.
   const lowerError = (eff: Effect.Effect<unknown, unknown, unknown>): Error => {
@@ -2655,11 +2776,19 @@ describe('name validation — fail fast on Prisma name constraints, before creat
     throw new Error('expected lowering to throw');
   };
 
-  test('a too-short postgres provision id throws the framework error at lower time, before any Database is recorded', async () => {
+  // Every platform name is the node's address. Each kind of row has its own length limit, and
+  // `shop.<id of length n>` is n + 5 characters.
+  const idForAddressOfLength = (length: number) => 'd'.repeat(length - 'shop.'.length);
+  const tooLongMessage = (id: string, kind: string, min: number, max: number) =>
+    `prisma-cloud: the node "shop.${id}" is ${id.length + 5} characters long, but ${kind} ` +
+    `names on Prisma Cloud take ${min} to ${max} characters, and every platform name is the node's address.`;
+
+  test('a database whose address is over the Connection limit throws at lower time, before any Database is recorded', async () => {
     await withEnv(containerEnv('shop-project#cloud-id'), () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
+      const id = idForAddressOfLength(53);
       const root = module('shop', {}, ({ provision }) => {
-        const db = provision(rawPostgres({ name: 'db' }), { id: 'db' });
+        const db = provision(rawPostgres({ name: 'db' }), { id });
         provision(compute({ name: 'auth', deps: { main: rawPostgres() }, build }), {
           id: 'auth',
           deps: {
@@ -2672,32 +2801,105 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
       const error = lowerError(lowering(root, configFor(target), { name: 'shop', bundles }));
 
-      // A framework authoring error naming the id and the constraint — not a raw PrismaApiError.
+      // A framework authoring error naming the address and the limit — not a raw PrismaApiError.
       expect(error).toBeInstanceOf(Error);
-      expect(error.message).toContain('resource name (from provision id) "db"');
-      expect(error.message).toContain('3–65 characters');
+      expect(error.message).toContain(tooLongMessage(id, 'Connection', 3, 52));
       expect(error.message).not.toContain('PrismaApiError');
       // It failed BEFORE creating the Database (strictly better than the mid-deploy API error).
       expect(recorded.db.length).toBe(before);
     });
   });
 
-  test('a too-short service provision id throws the framework error naming the service name', async () => {
+  test('a database whose address is exactly at the Connection limit lowers, named by its address', async () => {
     await withEnv(containerEnv('shop-project#cloud-id'), () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
+      const id = idForAddressOfLength(52);
       const root = module('shop', {}, ({ provision }) => {
-        provision(compute({ name: 'a', deps: {}, build }), { id: 'a' });
+        provision(rawPostgres({ name: 'db' }), { id });
+        return {};
+      });
+      const before = recorded.conn.length;
+
+      run<undefined>(lowering(root, configFor(target), { name: 'shop', bundles: {} }));
+
+      expect(recorded.conn[before]?.[1]).toHaveProperty('name', `shop.${id}`);
+    });
+  });
+
+  test('a bucket whose address is over the Bucket limit throws before any Bucket is recorded', async () => {
+    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const id = idForAddressOfLength(101);
+      const root = module('shop', {}, ({ provision }) => {
+        provision(bucket({ name: 'files' }), { id });
+        return {};
+      });
+      const before = recorded.bucket.length;
+
+      const error = lowerError(lowering(root, configFor(target), { name: 'shop', bundles: {} }));
+
+      expect(error.message).toContain(tooLongMessage(id, 'Bucket', 1, 100));
+      expect(recorded.bucket.length).toBe(before);
+    });
+  });
+
+  test('a bucket whose address is over the Connection limit but within the Bucket limit lowers', async () => {
+    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const id = idForAddressOfLength(100);
+      const root = module('shop', {}, ({ provision }) => {
+        provision(bucket({ name: 'files' }), { id });
+        return {};
+      });
+      const before = recorded.bucket.length;
+
+      run<undefined>(lowering(root, configFor(target), { name: 'shop', bundles: {} }));
+
+      expect(recorded.bucket[before]?.[1]).toHaveProperty('name', `shop.${id}`);
+    });
+  });
+
+  test('a service whose address is over the App limit throws naming the address', async () => {
+    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const id = idForAddressOfLength(257);
+      const root = module('shop', {}, ({ provision }) => {
+        provision(compute({ name: 'a', deps: {}, build }), { id });
         return {};
       });
       const before = recorded.svc.length;
 
       const error = lowerError(
-        lowering(root, configFor(target), { name: 'shop', bundles: { a: bundles.auth } }),
+        lowering(root, configFor(target), {
+          name: 'shop',
+          bundles: { [`shop.${id}`]: bundles['shop.auth'] },
+        }),
       );
 
-      expect(error.message).toContain('service name (from provision id) "a"');
-      expect(error.message).toContain('3–65 characters');
+      expect(error.message).toContain(tooLongMessage(id, 'App', 1, 256));
       expect(recorded.svc.length).toBe(before);
+    });
+  });
+
+  test('a service whose address is over the Connection limit lowers, its display name the full address', async () => {
+    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const id = idForAddressOfLength(66);
+      const root = module('shop', {}, ({ provision }) => {
+        provision(compute({ name: 'a', deps: {}, build }), { id });
+        return {};
+      });
+      const before = recorded.svc.length;
+
+      run<undefined>(
+        lowering(root, configFor(target), {
+          name: 'shop',
+          bundles: { [`shop.${id}`]: bundles['shop.auth'] },
+        }),
+      );
+
+      expect(recorded.svc.slice(before).map(([key]) => key)).toEqual([`shop.${id}`]);
+      expect(recorded.svc[before]?.[1]).toHaveProperty('displayName', `shop.${id}`);
     });
   });
 
@@ -2739,6 +2941,7 @@ describe('topology identities on platform resources', () => {
         defaultBranchId,
         branchless,
       };
+      const graph = { root: { id: 'shop' } };
       const before = {
         db: recorded.db.length,
         svc: recorded.svc.length,
@@ -2749,12 +2952,18 @@ describe('topology identities on platform resources', () => {
         resourceDescriptorOf(
           target,
           'raw-postgres',
-        )({ id: 'auth.data', address: 'auth.data', application } as unknown as LowerContext),
+        )({
+          id: 'shop.auth.data',
+          address: 'shop.auth.data',
+          graph,
+          application,
+        } as unknown as LowerContext),
       );
       run<MockedProvisioned>(
         serviceDescriptorOf(target, 'compute').provision({
-          id: 'auth.api',
-          address: 'auth.api',
+          id: 'shop.auth.api',
+          address: 'shop.auth.api',
+          graph,
           application,
         } as unknown as LowerContext),
       );
@@ -2762,7 +2971,12 @@ describe('topology identities on platform resources', () => {
         resourceDescriptorOf(
           target,
           's3',
-        )({ id: 'auth.files', address: 'auth.files', application } as unknown as LowerContext),
+        )({
+          id: 'shop.auth.files',
+          address: 'shop.auth.files',
+          graph,
+          application,
+        } as unknown as LowerContext),
       );
 
       const [database] = recorded.db.slice(before.db).map(([, props]) => props);
@@ -2774,9 +2988,9 @@ describe('topology identities on platform resources', () => {
         expect(service).not.toHaveProperty('logicalId');
         expect(bucket).not.toHaveProperty('logicalId');
       } else {
-        expect(database).toHaveProperty('logicalId', 'auth.data');
-        expect(service).toHaveProperty('logicalId', 'auth.api');
-        expect(bucket).toHaveProperty('logicalId', 'auth.files');
+        expect(database).toHaveProperty('logicalId', 'shop.auth.data');
+        expect(service).toHaveProperty('logicalId', 'shop.auth.api');
+        expect(bucket).toHaveProperty('logicalId', 'shop.auth.files');
       }
     },
   );
@@ -2814,7 +3028,7 @@ describe('platform identity: each row carries its topology node logicalId — th
       run<undefined>(
         lowering(root, configFor(target), {
           name: 'shop',
-          bundles: { 'auth.service': { dir: 'modules/auth/dist/bundle', entry: 'server.js' } },
+          bundles: { 'shop.auth.service': { dir: 'modules/auth/dist/bundle', entry: 'server.js' } },
         }),
       );
 
@@ -2838,38 +3052,493 @@ describe('platform identity: each row carries its topology node logicalId — th
         )
         .sort();
 
-      expect(nodes).toEqual(['app auth.service', 'bucket files', 'database auth.database']);
+      expect(nodes).toEqual([
+        'app shop.auth.service',
+        'bucket shop.files',
+        'database shop.auth.database',
+      ]);
       expect(rows).toEqual(nodes);
 
       const policies = new Map(recorded.adoptPolicy.slice(before.adoptPolicy));
       const ownRows = [...policies].filter(([resource]) => !resource.startsWith('Connection '));
       expect(ownRows.map(([resource]) => resource)).toEqual(
         expect.arrayContaining([
-          'App auth.service-svc',
-          'Database auth.database-db',
-          'Bucket files-bucket',
+          'App shop.auth.service',
+          'Database shop.auth.database',
+          'Bucket shop.files',
         ]),
       );
       expect(ownRows.some(([resource]) => resource.startsWith('EnvironmentVariable '))).toBe(true);
       expect(ownRows.filter(([, adopt]) => adopt !== true)).toEqual([]);
-      expect(policies.has('Connection auth.database-conn')).toBe(true);
-      expect(policies.get('Connection auth.database-conn')).toBeUndefined();
+      expect(policies.has('Connection shop.auth.database.connection')).toBe(true);
+      expect(policies.get('Connection shop.auth.database.connection')).toBeUndefined();
     });
   });
 });
 
+describe('resource IDs are built from the full address, and each declares the ID the previous release used (ADR-0057)', () => {
+  const build = {
+    extension: '@prisma/composer/node',
+    type: 'node',
+    module: 'file:///test/service.ts',
+    entry: 'server.js',
+  };
+  const application = {
+    projectId: 'shop-project#cloud-id',
+    branchId: undefined,
+    defaultBranchId: 'br_default',
+    branchless: false,
+  };
+  /** The former IDs the most recent declaration of `resource` ran under. */
+  const renamedFromOf = (resource: string) =>
+    recorded.renamePolicy.filter(([r]) => r === resource).at(-1)?.[1];
+  const idsSince = (rows: ReadonlyArray<[string, unknown]>, before: number) =>
+    rows.slice(before).map(([id]) => id);
+  const shopGraph = { root: { id: 'shop' } };
+
+  test('compute: the App and Deployment of a nested service', () => {
+    const target = prismaCloud({ workspaceId: 'ws_1' });
+    const ctx = { id: 'shop.auth.api', address: 'shop.auth.api', graph: shopGraph, application };
+    const before = { svc: recorded.svc.length, deploy: recorded.deploy.length };
+
+    run(serviceDescriptorOf(target, 'compute').provision(ctx as unknown as LowerContext));
+    run(
+      serviceDescriptorOf(target, 'compute').deploy(
+        ctx as unknown as LowerContext,
+        { serviceId: 'shop.auth.api#cloud-id', projectId: 'shop-project#cloud-id' },
+        { path: '/tmp/api.tar.gz', sha256: 'sha-api' },
+        { environment: [], triggers: {}, pointers: [], port: 3000 },
+      ),
+    );
+
+    expect(idsSince(recorded.svc, before.svc)).toEqual(['shop.auth.api']);
+    expect(renamedFromOf('App shop.auth.api')).toEqual(['auth.api-svc']);
+    // The display name is the address; upstream updates it in place.
+    expect(recorded.svc[before.svc]?.[1]).toHaveProperty('displayName', 'shop.auth.api');
+    expect(idsSince(recorded.deploy, before.deploy)).toEqual(['shop.auth.api.deployment']);
+    expect(renamedFromOf('Deployment shop.auth.api.deployment')).toEqual(['auth.api-deploy']);
+  });
+
+  test('compute: config rows, the input row, a generated value and its row, and a provider-param row', async () => {
+    await withEnv({}, () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const node = compute({
+        name: 'api',
+        deps: { db: rawPostgres() },
+        input: type({ secret: secretString() }),
+        build,
+      });
+      const ctx = {
+        address: 'shop.auth.api',
+        node,
+        graph: {
+          root: { id: 'shop' },
+          inputBindings: [
+            { serviceAddress: 'shop.auth.api', binding: { secret: generatedParam({ bytes: 32 }) } },
+          ],
+          edges: [],
+        },
+        application,
+      } as unknown as LowerContext;
+      const before = { envVar: recorded.envVar.length, generated: recorded.generated.length };
+
+      run<MockedSerialized>(
+        serviceDescriptorOf(target, 'compute').serialize(
+          ctx,
+          { projectId: 'shop-project#cloud-id', endpointDomain: 'https://api.example' },
+          { service: { port: 3000 }, inputs: { db: { url: 'postgres://catalog' } } },
+        ),
+      );
+
+      expect(idsSince(recorded.generated, before.generated)).toEqual([
+        'shop.auth.api.generated.secret',
+      ]);
+      expect(renamedFromOf('GeneratedParam shop.auth.api.generated.secret')).toEqual([
+        'COMPOSER_AUTH_API_INPUT:secret-generated',
+      ]);
+
+      const rows = idsSince(recorded.envVar, before.envVar).map((id) => [
+        id,
+        renamedFromOf(`EnvironmentVariable ${id}`),
+      ]);
+      expect(rows).toEqual([
+        // Config rows: an input's dependency param, then the service's own param.
+        ['shop.auth.api.env.COMPOSER_SHOP_AUTH_API_DB_URL', ['COMPOSER_AUTH_API_DB_URL-var']],
+        ['shop.auth.api.env.COMPOSER_SHOP_AUTH_API_PORT', ['COMPOSER_AUTH_API_PORT-var']],
+        ['shop.auth.api.env.COMPOSER_SHOP_AUTH_API_INPUT', ['COMPOSER_AUTH_API_INPUT-var']],
+        [
+          'shop.auth.api.env.COMPOSER_SHOP_AUTH_API_SECRET_GENERATED',
+          ['COMPOSER_AUTH_API_SECRET_GENERATED-var'],
+        ],
+        // The origin is a provider param every compute service writes.
+        ['shop.auth.api.env.COMPOSER_SHOP_AUTH_API_ORIGIN', ['COMPOSER_AUTH_API_ORIGIN-var']],
+      ]);
+    });
+  });
+
+  test('compute: an app name with `-` builds the new key with `_`, and the legacy key from the address without the app name', async () => {
+    await withEnv({}, () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const node = compute({ name: 'web', deps: {}, build });
+      const ctx = {
+        id: 'my-shop.web',
+        address: 'my-shop.web',
+        node,
+        graph: { root: { id: 'my-shop' }, inputBindings: [], edges: [] },
+        application,
+      } as unknown as LowerContext;
+      const before = { svc: recorded.svc.length, envVar: recorded.envVar.length };
+
+      run(serviceDescriptorOf(target, 'compute').provision(ctx));
+      run<MockedSerialized>(
+        serviceDescriptorOf(target, 'compute').serialize(
+          ctx,
+          { projectId: 'shop-project#cloud-id', endpointDomain: 'https://web.example' },
+          { service: { port: 3000 }, inputs: {} },
+        ),
+      );
+
+      expect(idsSince(recorded.svc, before.svc)).toEqual(['my-shop.web']);
+      expect(renamedFromOf('App my-shop.web')).toEqual(['web-svc']);
+      expect(recorded.svc[before.svc]?.[1]).toHaveProperty('displayName', 'my-shop.web');
+      const port = 'my-shop.web.env.COMPOSER_MY_SHOP_WEB_PORT';
+      expect(idsSince(recorded.envVar, before.envVar)).toContain(port);
+      expect(renamedFromOf(`EnvironmentVariable ${port}`)).toEqual(['COMPOSER_WEB_PORT-var']);
+    });
+  });
+
+  test('compute: an RPC service key is named under the calling service, and a streams key under the provider', async () => {
+    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const rpcContract: Contract<'rpc', Record<never, never>> = {
+        kind: 'rpc',
+        __cmp: {},
+        satisfies: () => true,
+      };
+      const streamsContract: Contract<'streams', Record<never, never>> = {
+        kind: 'streams',
+        __cmp: {},
+        satisfies: () => true,
+      };
+      const rpcDep = dependency({
+        type: 'rpc',
+        connection: {
+          params: {
+            url: string(),
+            serviceKey: string({ optional: true, provision: provisionNeed(RPC_PEER_KEY) }),
+          },
+          hydrate: (v) => v,
+        },
+      });
+      const streamsDep = dependency({
+        type: 'streams',
+        connection: {
+          params: { url: string(), apiKey: string({ provision: provisionNeed(STREAMS_API_KEY) }) },
+          hydrate: (v) => v,
+        },
+      });
+      const root = module('shop', {}, ({ provision }) => {
+        const auth = provision(
+          compute({ name: 'auth', deps: {}, build, expose: { verify: rpcContract } }),
+        );
+        const events = provision(
+          compute({ name: 'events', deps: {}, build, expose: { streams: streamsContract } }),
+        );
+        provision(compute({ name: 'web', deps: { auth: rpcDep, events: streamsDep }, build }), {
+          deps: { auth: auth.verify, events: events.streams },
+        });
+        return {};
+      });
+      const before = { serviceKey: recorded.serviceKey.length, envVar: recorded.envVar.length };
+      const bundle = { dir: 'dist/bundle', entry: 'server.js' };
+
+      run<undefined>(
+        lowering(root, configFor(target), {
+          name: 'shop',
+          bundles: { 'shop.auth': bundle, 'shop.events': bundle, 'shop.web': bundle },
+        }),
+      );
+
+      expect(idsSince(recorded.serviceKey, before.serviceKey).sort()).toEqual([
+        'shop.events.streamkey',
+        'shop.web.servicekey.auth',
+      ]);
+      expect(renamedFromOf('ServiceKey shop.web.servicekey.auth')).toEqual(['servicekey-web.auth']);
+      expect(renamedFromOf('ServiceKey shop.events.streamkey')).toEqual(['streamskey-events']);
+      // The provider-param rows the keys feed.
+      const accepted = 'shop.auth.env.COMPOSER_SHOP_AUTH_RPC_ACCEPTED_KEYS';
+      const streams = 'shop.events.env.COMPOSER_SHOP_EVENTS_STREAMS_API_KEY';
+      expect(idsSince(recorded.envVar, before.envVar)).toEqual(
+        expect.arrayContaining([accepted, streams]),
+      );
+      expect(renamedFromOf(`EnvironmentVariable ${accepted}`)).toEqual([
+        'COMPOSER_AUTH_RPC_ACCEPTED_KEYS-var',
+      ]);
+      expect(renamedFromOf(`EnvironmentVariable ${streams}`)).toEqual([
+        'COMPOSER_EVENTS_STREAMS_API_KEY-var',
+      ]);
+    });
+  });
+
+  test('raw postgres: the Database, Connection and warm-up; the Connection is named by the address', () => {
+    const target = prismaCloud({ workspaceId: 'ws_1' });
+    const before = {
+      db: recorded.db.length,
+      conn: recorded.conn.length,
+      warm: recorded.warm.length,
+    };
+
+    run(
+      resourceDescriptorOf(
+        target,
+        'raw-postgres',
+      )({
+        id: 'shop.catalog',
+        address: 'shop.catalog',
+        graph: shopGraph,
+        application,
+      } as unknown as LowerContext),
+    );
+
+    expect(idsSince(recorded.db, before.db)).toEqual(['shop.catalog']);
+    expect(renamedFromOf('Database shop.catalog')).toEqual(['catalog-db']);
+    expect(idsSince(recorded.conn, before.conn)).toEqual(['shop.catalog.connection']);
+    expect(renamedFromOf('Connection shop.catalog.connection')).toEqual(['catalog-conn']);
+    expect(recorded.conn[before.conn]?.[1]).toHaveProperty('name', 'shop.catalog');
+    expect(idsSince(recorded.warm, before.warm)).toEqual(['shop.catalog.warmup']);
+    expect(renamedFromOf('PgWarm shop.catalog.warmup')).toEqual(['catalog-warm']);
+  });
+
+  test('raw postgres, local dev: the branchless Database is named by the address', () => {
+    const target = prismaCloud({ workspaceId: 'ws_1' });
+    const before = recorded.db.length;
+
+    run(
+      resourceDescriptorOf(
+        target,
+        'raw-postgres',
+      )({
+        id: 'shop.catalog',
+        address: 'shop.catalog',
+        graph: shopGraph,
+        application: { ...application, defaultBranchId: undefined, branchless: true },
+      } as unknown as LowerContext),
+    );
+
+    expect(recorded.db.slice(before)).toEqual([
+      [
+        'shop.catalog',
+        { project: 'shop-project#cloud-id', name: 'shop.catalog', region: 'inherit' },
+      ],
+    ]);
+    expect(renamedFromOf('Database shop.catalog')).toEqual(['catalog-db']);
+  });
+
+  test('ORM postgres: the Database, Connection, warm-up and migration', async () => {
+    await withEnv({}, async () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const node = postgres({
+        name: 'catalog',
+        contract: dataContract(widgetContractJson),
+        config: path.join(
+          import.meta.dir,
+          'fixtures',
+          'widget-contract',
+          'source',
+          'prisma.config.ts',
+        ),
+      });
+      const before = {
+        db: recorded.db.length,
+        conn: recorded.conn.length,
+        warm: recorded.warm.length,
+        migrate: recorded.pnMigrate.length,
+      };
+
+      await runAsync(
+        resourceDescriptorOf(
+          target,
+          'postgres',
+        )({
+          id: 'shop.catalog',
+          address: 'shop.catalog',
+          node,
+          graph: { root: { id: 'shop' }, edges: [], nodes: [] },
+          application,
+        } as unknown as LowerContext),
+      );
+
+      expect(idsSince(recorded.db, before.db)).toEqual(['shop.catalog']);
+      expect(renamedFromOf('Database shop.catalog')).toEqual(['catalog-db']);
+      expect(idsSince(recorded.conn, before.conn)).toEqual(['shop.catalog.connection']);
+      expect(renamedFromOf('Connection shop.catalog.connection')).toEqual(['catalog-conn']);
+      expect(recorded.conn[before.conn]?.[1]).toHaveProperty('name', 'shop.catalog');
+      expect(idsSince(recorded.warm, before.warm)).toEqual(['shop.catalog.warmup']);
+      expect(renamedFromOf('PgWarm shop.catalog.warmup')).toEqual(['catalog-warm']);
+      expect(idsSince(recorded.pnMigrate, before.migrate)).toEqual(['shop.catalog.migration']);
+      expect(renamedFromOf('OrmMigration shop.catalog.migration')).toEqual(['catalog-migrate']);
+    });
+  });
+
+  test('bucket: the Bucket and its access key, both named by the address', () => {
+    const target = prismaCloud({ workspaceId: 'ws_1' });
+    const before = { bucket: recorded.bucket.length, bucketKey: recorded.bucketKey.length };
+
+    run(
+      resourceDescriptorOf(
+        target,
+        's3',
+      )({
+        id: 'shop.uploads',
+        address: 'shop.uploads',
+        graph: shopGraph,
+        application,
+      } as unknown as LowerContext),
+    );
+
+    expect(idsSince(recorded.bucket, before.bucket)).toEqual(['shop.uploads']);
+    expect(renamedFromOf('Bucket shop.uploads')).toEqual(['uploads-bucket']);
+    expect(recorded.bucket[before.bucket]?.[1]).toHaveProperty('name', 'shop.uploads');
+    expect(idsSince(recorded.bucketKey, before.bucketKey)).toEqual(['shop.uploads.accesskey']);
+    expect(renamedFromOf('BucketAccessKey shop.uploads.accesskey')).toEqual(['uploads-key']);
+    expect(recorded.bucketKey[before.bucketKey]?.[1]).toHaveProperty('name', 'shop.uploads');
+  });
+
+  test('s3 credentials: one resource under the address', () => {
+    const target = prismaCloud({ workspaceId: 'ws_1' });
+    const before = recorded.creds.length;
+
+    run(
+      resourceDescriptorOf(
+        target,
+        'credentials',
+      )({
+        id: 'shop.creds',
+        address: 'shop.creds',
+        graph: shopGraph,
+      } as unknown as LowerContext),
+    );
+
+    expect(idsSince(recorded.creds, before)).toEqual(['shop.creds']);
+    expect(renamedFromOf('S3Credentials shop.creds')).toEqual(['creds-creds']);
+  });
+
+  test('every platform name Composer writes is the address', () => {
+    const target = prismaCloud({ workspaceId: 'ws_1' });
+    const graph = { root: { id: 'my-shop' } };
+    const local = { ...application, defaultBranchId: undefined, branchless: true };
+    const ctx = (address: string, app: unknown) =>
+      ({ id: address, address, graph, application: app }) as unknown as LowerContext;
+    const before = {
+      svc: recorded.svc.length,
+      db: recorded.db.length,
+      conn: recorded.conn.length,
+      bucket: recorded.bucket.length,
+      bucketKey: recorded.bucketKey.length,
+    };
+
+    run(serviceDescriptorOf(target, 'compute').provision(ctx('my-shop.auth.api', application)));
+    run(resourceDescriptorOf(target, 'raw-postgres')(ctx('my-shop.auth.catalog', local)));
+    run(resourceDescriptorOf(target, 's3')(ctx('my-shop.auth.files', application)));
+
+    const nameOf = (rows: ReadonlyArray<[string, unknown]>, from: number, prop = 'name') =>
+      rows.slice(from).map(([id, props]) => [id, (props as Record<string, unknown>)[prop]]);
+    expect(nameOf(recorded.svc, before.svc, 'displayName')).toEqual([
+      ['my-shop.auth.api', 'my-shop.auth.api'],
+    ]);
+    expect(nameOf(recorded.db, before.db)).toEqual([
+      ['my-shop.auth.catalog', 'my-shop.auth.catalog'],
+    ]);
+    expect(nameOf(recorded.conn, before.conn)).toEqual([
+      ['my-shop.auth.catalog.connection', 'my-shop.auth.catalog'],
+    ]);
+    expect(nameOf(recorded.bucket, before.bucket)).toEqual([
+      ['my-shop.auth.files', 'my-shop.auth.files'],
+    ]);
+    expect(nameOf(recorded.bucketKey, before.bucketKey)).toEqual([
+      ['my-shop.auth.files.accesskey', 'my-shop.auth.files'],
+    ]);
+  });
+});
+
+describe('local dev: the emulators hook keys each node by its main resource ID', () => {
+  // The local providers find a node's instance by the resource ID they are given, and the hook
+  // records instances under its own key. A mismatch would give the node a new, empty instance.
+  test('a compute service, a branchless database and a bucket', async () => {
+    const target = prismaCloud({ workspaceId: 'ws_1' });
+    const build = {
+      extension: '@prisma/composer/node',
+      type: 'node',
+      module: 'file:///test/service.ts',
+      entry: 'server.js',
+    };
+    const auth = module('auth', {}, ({ provision }) => {
+      provision(compute({ name: 'api', deps: {}, build }));
+      provision(rawPostgres({ name: 'catalog' }));
+      provision(bucket({ name: 'files' }));
+      return {};
+    });
+    const graph = Load(
+      module('my-shop', {}, ({ provision }) => {
+        provision(auth);
+        return {};
+      }),
+    );
+    const container: ContainerInstance = {
+      input: { appName: 'my-shop', stage: undefined },
+      serialize: () => 'x',
+    };
+    ensuredNodes.length = 0;
+
+    await runDevEmulators({ graph, container, devDir: '/dev/null/unused' });
+
+    const application = {
+      projectId: 'local',
+      branchId: undefined,
+      defaultBranchId: undefined,
+      branchless: true,
+    };
+    const before = {
+      svc: recorded.svc.length,
+      db: recorded.db.length,
+      bkt: recorded.bucket.length,
+    };
+    for (const { id, node } of graph.nodes) {
+      const ctx = { id, address: id, node, graph, application } as unknown as LowerContext;
+      if (node.kind === 'service') run(serviceDescriptorOf(target, 'compute').provision(ctx));
+      if (node.kind === 'resource') run(resourceDescriptorOf(target, node.type)(ctx));
+    }
+
+    const lowered = [
+      ...recorded.svc.slice(before.svc).map(([id]) => ({ address: id, kind: 'service' })),
+      ...recorded.db.slice(before.db).map(([id]) => ({ address: id, kind: 'database' })),
+      ...recorded.bucket.slice(before.bkt).map(([id]) => ({ address: id, kind: 'bucket' })),
+    ];
+    expect(lowered).toEqual([
+      { address: 'my-shop.auth.api', kind: 'service' },
+      { address: 'my-shop.auth.catalog', kind: 'database' },
+      { address: 'my-shop.auth.files', kind: 'bucket' },
+    ]);
+    expect([...ensuredNodes].sort((a, b) => a.kind.localeCompare(b.kind))).toEqual(
+      [...lowered].sort((a, b) => a.kind.localeCompare(b.kind)),
+    );
+  });
+});
+
 afterAll(() => {
+  // Every resource declared anywhere in this file named exactly one former ID.
+  expect(recorded.renamePolicy.filter(([, former]) => former?.length !== 1)).toEqual([]);
   const declared = recorded.adoptPolicy.filter(([resource]) => !resource.startsWith('Connection '));
   const variables = declared
     .map(([resource]) => resource)
     .filter((resource) => resource.startsWith('EnvironmentVariable '));
   // Every declaration site in compute.ts ran somewhere in this file: params, the input document,
   // generated leaves and provider params.
-  for (const suffix of ['_INPUT-var', '_GENERATED-var', '_RPC_ACCEPTED_KEYS-var', '_PORT-var']) {
+  for (const suffix of ['_INPUT', '_GENERATED', '_RPC_ACCEPTED_KEYS', '_PORT']) {
     expect(variables.some((resource) => resource.endsWith(suffix))).toBe(true);
   }
   expect(
-    variables.filter((resource) => !resource.startsWith('EnvironmentVariable COMPOSER_')),
+    variables.filter((resource) => !/^EnvironmentVariable \S+\.env\.COMPOSER_/.test(resource)),
   ).toEqual([]);
   expect(declared.filter(([, adopt]) => adopt !== true)).toEqual([]);
 });

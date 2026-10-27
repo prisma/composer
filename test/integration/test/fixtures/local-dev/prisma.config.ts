@@ -28,6 +28,7 @@ if (existsSync('.env')) {
 
 export default definePrismaConfig({
   composer: composer({
+    entry: './module.ts',
     extensions: [prismaCloud(), nodeBuild()],
     state: prismaState(),
   }),

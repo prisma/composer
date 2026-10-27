@@ -63,7 +63,10 @@ async function reconcileApp(container: ContainerInstance, address: string): Prom
   );
   const attributes: App['Attributes'] = await Effect.runPromise(
     provider.reconcile(
-      reconcileInput(`${address}-svc`, { project: 'local', displayName: address }),
+      reconcileInput(address, {
+        project: 'local',
+        displayName: address.slice(address.indexOf('.') + 1),
+      }),
     ),
   );
   return Number(new URL(attributes.appEndpointDomain ?? '').port);
@@ -78,17 +81,19 @@ test('each App provider returns the port reserved for its service, even when the
   for (let run = 0; run < 10; run++) {
     const appName = `port-order-${String(run)}`;
     const container = fakeContainer(appName);
-    await ensureServiceInstances(container, devDir, ['quotes', 'gateway']);
+    const QUOTES = `${appName}.quotes`;
+    const GATEWAY = `${appName}.gateway`;
+    await ensureServiceInstances(container, devDir, [QUOTES, GATEWAY]);
     const reserved = await reservedPorts(appName);
 
     const [gateway, quotes] = await Promise.all([
-      reconcileApp(container, 'gateway'),
-      reconcileApp(container, 'quotes'),
+      reconcileApp(container, GATEWAY),
+      reconcileApp(container, QUOTES),
     ]);
 
     expect({ quotes, gateway }).toEqual({
-      quotes: reserved['quotes'] ?? -1,
-      gateway: reserved['gateway'] ?? -1,
+      quotes: reserved[QUOTES] ?? -1,
+      gateway: reserved[GATEWAY] ?? -1,
     });
   }
 });
@@ -97,29 +102,34 @@ test('a failed reservation names the service', async () => {
   await stopDaemon('compute', { registryRoot });
 
   await expect(
-    ensureServiceInstances(fakeContainer('port-order-down'), devDir, ['quotes']),
-  ).rejects.toThrow('service "quotes"');
+    ensureServiceInstances(fakeContainer('port-order-down'), devDir, ['port-order-down.quotes']),
+  ).rejects.toThrow('service "port-order-down.quotes"');
 });
 
 test('reserving the services of an app that already has ports keeps those ports', async () => {
   const container = fakeContainer('port-order-warm');
   const scope = { devDir, app: 'port-order-warm' };
-  const { instance: gateway } = await ensureServiceInstance(scope, 'gateway');
-  const { instance: quotes } = await ensureServiceInstance(scope, 'quotes');
+  const { instance: gateway } = await ensureServiceInstance(scope, 'port-order-warm.gateway');
+  const { instance: quotes } = await ensureServiceInstance(scope, 'port-order-warm.quotes');
 
-  await ensureServiceInstances(container, devDir, ['quotes', 'gateway']);
+  await ensureServiceInstances(container, devDir, [
+    'port-order-warm.quotes',
+    'port-order-warm.gateway',
+  ]);
 
-  expect(await reconcileApp(container, 'quotes')).toBe(quotes.port);
-  expect(await reconcileApp(container, 'gateway')).toBe(gateway.port);
+  expect(await reconcileApp(container, 'port-order-warm.quotes')).toBe(quotes.port);
+  expect(await reconcileApp(container, 'port-order-warm.gateway')).toBe(gateway.port);
 });
 
 test('a dotted service address reserves the same emulator instance the App provider uses', async () => {
   const container = fakeContainer('port-order-nested');
-  await ensureServiceInstances(container, devDir, ['shop.quotes']);
+  await ensureServiceInstances(container, devDir, ['port-order-nested.shop.quotes']);
 
   const listed = (await nodeInstancesOf({ devDir, app: 'port-order-nested' }, 'service')).map(
     (node) => node.instance,
   );
-  expect(await reconcileApp(container, 'shop.quotes')).toBe(listed[0]?.port ?? -1);
+  expect(await reconcileApp(container, 'port-order-nested.shop.quotes')).toBe(
+    listed[0]?.port ?? -1,
+  );
   expect(listed).toHaveLength(1);
 });

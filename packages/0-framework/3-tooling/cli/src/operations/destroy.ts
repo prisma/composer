@@ -25,7 +25,8 @@ export interface DestroyInput {
    * Composer's configuration: the `composer` section of `prisma.config.ts` and that file. The operation does not look for a config file; it refuses a section the CLI would refuse, before any work starts.
    */
   readonly config: ComposerConfigSource;
-  readonly entry: string;
+  /** The entry module, resolved against `cwd`. Overrides the `entry` in `config`; without either the operation fails with `CONFIG.ENTRY_MISSING`. */
+  readonly entry?: string | undefined;
   readonly name?: string | undefined;
   readonly target: DestroyTarget;
   readonly cwd?: string | undefined;

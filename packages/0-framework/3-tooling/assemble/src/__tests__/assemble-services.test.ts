@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ServiceNode } from '@internal/core';
 import { Load, module, service } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
+import { CliStructuredError } from '@internal/foundation/errors';
 import { AssembleError } from '../assemble-error.ts';
 import { type AssembleEvent, assembleServices } from '../assemble-services.ts';
 
@@ -50,8 +51,8 @@ describe('assembleServices()', () => {
     const assembled = await assembleServices(graph, emptyConfig, CWD, fakeRun);
 
     expect(assembled.bundles).toEqual({
-      auth: { dir: '/bundles/auth', entry: 'server.js' },
-      storefront: { dir: '/bundles/storefront', entry: 'server.js' },
+      'fixture-module.auth': { dir: '/bundles/auth', entry: 'server.js' },
+      'fixture-module.storefront': { dir: '/bundles/storefront', entry: 'server.js' },
     });
   });
 
@@ -68,7 +69,7 @@ describe('assembleServices()', () => {
 
     const assembled = await assembleServices(graph, emptyConfig, CWD, fakeRun);
 
-    expect(Object.keys(assembled.bundles)).toEqual(['auth.api']);
+    expect(Object.keys(assembled.bundles)).toEqual(['shop.auth.api']);
   });
 
   test('a module with no provisioned services throws AssembleError', async () => {
@@ -92,7 +93,7 @@ describe('assembleServices()', () => {
 
     await assembleServices(graph, emptyConfig, CWD, run);
 
-    expect(seen).toEqual([{ address: 'auth', cwd: CWD }]);
+    expect(seen).toEqual([{ address: 'fixture-module.auth', cwd: CWD }]);
   });
 
   test("the default RunAssembler routes through the config's build descriptor — (build.extension, build.type), any community id — and forwards the address + cwd", async () => {
@@ -128,8 +129,8 @@ describe('assembleServices()', () => {
 
     const assembled = await assembleServices(graph, config, CWD);
 
-    expect(seen).toEqual([{ type: 'cron', address: 'svc', cwd: CWD }]);
-    expect(assembled.bundles['svc']).toEqual({ dir: '/bundles/cron', entry: 'x' });
+    expect(seen).toEqual([{ type: 'cron', address: 'fixture-module.svc', cwd: CWD }]);
+    expect(assembled.bundles['fixture-module.svc']).toEqual({ dir: '/bundles/cron', entry: 'x' });
   });
 
   test('each service reports its start and end, carrying what its build descriptor reported', async () => {
@@ -165,10 +166,14 @@ describe('assembleServices()', () => {
     await assembleServices(Load(root), config, CWD, undefined, (event) => events.push(event));
 
     expect(events).toEqual([
-      { kind: 'service-started', address: 'loud' },
-      { kind: 'service-assembled', address: 'loud', data: { strategy: 'copy', files: 3 } },
-      { kind: 'service-started', address: 'quiet' },
-      { kind: 'service-assembled', address: 'quiet', data: {} },
+      { kind: 'service-started', address: 'fixture-module.loud' },
+      {
+        kind: 'service-assembled',
+        address: 'fixture-module.loud',
+        data: { strategy: 'copy', files: 3 },
+      },
+      { kind: 'service-started', address: 'fixture-module.quiet' },
+      { kind: 'service-assembled', address: 'fixture-module.quiet', data: {} },
     ]);
   });
 
@@ -233,7 +238,7 @@ describe('assembleServices()', () => {
     if (!(error instanceof AssembleError)) throw new Error('unreachable');
     expect(error.code).toBe('ASSEMBLE.BUILD_FAILED');
     expect(error.message).toBe('no built entry at /some/dist/server.js');
-    expect(error.meta).toEqual({ address: 'auth' });
+    expect(error.meta).toEqual({ address: 'fixture-module.auth' });
     expect(error.cause).toBe(cause);
   });
 
@@ -255,5 +260,111 @@ describe('assembleServices()', () => {
     );
 
     expect(error).toBe(structured);
+  });
+});
+
+describe('assembleServices({ devServers }) (ADR-0056)', () => {
+  const server = { cwd: '/app/web', argv: () => ['next', 'dev'], display: 'next dev' };
+  const devConfig = (serve: () => Promise<typeof server | undefined>): PrismaAppConfig => ({
+    extensions: [
+      {
+        id: '@community/adapter',
+        nodes: {
+          web: {
+            kind: 'build',
+            assemble: async () => ({ dir: '/bundles/web', entry: 'x' }),
+            serve,
+          },
+          api: { kind: 'build', assemble: async () => ({ dir: '/bundles/api', entry: 'x' }) },
+        },
+      },
+    ],
+    state: emptyConfig.state,
+  });
+  const root = () =>
+    module('fixture-module', {}, ({ provision }) => {
+      provision(makeService('web', { extension: '@community/adapter', type: 'web' }), {
+        id: 'web',
+      });
+      provision(makeService('api', { extension: '@community/adapter', type: 'api' }), {
+        id: 'api',
+      });
+      return {};
+    });
+
+  test('a service whose descriptor declares a dev server is recorded and not assembled', async () => {
+    const events: AssembleEvent[] = [];
+
+    const assembled = await assembleServices(
+      Load(root()),
+      devConfig(async () => server),
+      CWD,
+      undefined,
+      (event) => events.push(event),
+      { devServers: true },
+    );
+
+    expect(assembled.devServers).toEqual({ 'fixture-module.web': server });
+    expect(Object.keys(assembled.bundles)).toEqual(['fixture-module.api']);
+    expect(events.map((e) => `${e.kind}:${e.address}`)).toEqual([
+      'service-started:fixture-module.api',
+      'service-assembled:fixture-module.api',
+    ]);
+  });
+
+  test('a serve step returning undefined assembles the service as before', async () => {
+    const assembled = await assembleServices(
+      Load(root()),
+      devConfig(async () => undefined),
+      CWD,
+      undefined,
+      undefined,
+      { devServers: true },
+    );
+
+    expect(assembled.devServers).toEqual({});
+    expect(Object.keys(assembled.bundles).sort()).toEqual([
+      'fixture-module.api',
+      'fixture-module.web',
+    ]);
+  });
+
+  test('without devServers every service is assembled and serve is never asked', async () => {
+    let asked = false;
+    const assembled = await assembleServices(
+      Load(root()),
+      devConfig(async () => {
+        asked = true;
+        return server;
+      }),
+      CWD,
+    );
+
+    expect(asked).toBe(false);
+    expect(assembled.devServers).toEqual({});
+    expect(Object.keys(assembled.bundles).sort()).toEqual([
+      'fixture-module.api',
+      'fixture-module.web',
+    ]);
+  });
+
+  test('a serve step that throws is DEV.DEV_SERVER_UNAVAILABLE naming the address and the message', async () => {
+    const error = await assembleServices(
+      Load(root()),
+      devConfig(async () => {
+        throw new Error('cannot find the `next` package from /app/web');
+      }),
+      CWD,
+      undefined,
+      undefined,
+      { devServers: true },
+    ).catch((e: unknown) => e);
+
+    if (!CliStructuredError.is(error)) throw new Error('expected a structured error');
+    expect(error.code).toBe('DEV.DEV_SERVER_UNAVAILABLE');
+    expect(error.message).toBe(
+      'service "fixture-module.web" cannot run its dev server: cannot find the `next` package from /app/web',
+    );
+    expect(error.meta).toEqual({ address: 'fixture-module.web' });
   });
 });

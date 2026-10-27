@@ -12,6 +12,7 @@ describe('renderStackFile() — a module root', () => {
       configFile: '/repo/app/prisma.config.ts',
       name: 'app',
       assembled: {
+        devServers: {},
         bundles: {
           auth: { dir: '/repo/app/modules/auth/dist/bundle', entry: 'server.js' },
           storefront: { dir: '/repo/app/modules/storefront/standalone', entry: 'server.js' },
@@ -43,7 +44,7 @@ describe('renderStackFile() — a module root', () => {
       cwd: '/app',
       configFile: '/app/prisma.config.ts',
       name: 'app',
-      assembled: { bundles: {} },
+      assembled: { devServers: {}, bundles: {} },
     });
 
     expect(content).not.toContain("from 'alchemy");
@@ -55,7 +56,10 @@ describe('renderStackFile() — a module root', () => {
       cwd: '/repo/app',
       configFile: '/repo/app/prisma.config.ts',
       name: 'storefront-auth',
-      assembled: { bundles: { app: { dir: '/repo/app/dist', entry: 'server.js' } } },
+      assembled: {
+        devServers: {},
+        bundles: { app: { dir: '/repo/app/dist', entry: 'server.js' } },
+      },
     });
 
     expect(content).toContain("import * as report from '@prisma/composer/report';");
@@ -72,7 +76,10 @@ describe('renderStackFile() — a module root', () => {
       cwd: '/repo/app',
       configFile: '/repo/app/prisma.config.ts',
       name: 'storefront-auth',
-      assembled: { bundles: { app: { dir: '/repo/app/dist', entry: 'server.js' } } },
+      assembled: {
+        devServers: {},
+        bundles: { app: { dir: '/repo/app/dist', entry: 'server.js' } },
+      },
     });
 
     // Optional call: an app pinned to an older @prisma/composer lacks the export.
@@ -88,7 +95,10 @@ describe('renderStackFile() — a module root', () => {
       cwd: '/repo/apps/shop',
       configFile: '/repo/prisma.config.ts',
       name: 'app',
-      assembled: { bundles: { app: { dir: '/repo/apps/shop/dist', entry: 'server.js' } } },
+      assembled: {
+        devServers: {},
+        bundles: { app: { dir: '/repo/apps/shop/dist', entry: 'server.js' } },
+      },
     });
 
     expect(content).toContain('import prismaConfig from "../../../prisma.config.ts";');
@@ -107,6 +117,7 @@ describe('renderStackFile() — a module root', () => {
       configFile: '/repo/examples/foo*/app/prisma.config.ts',
       name: 'app',
       assembled: {
+        devServers: {},
         bundles: { app: { dir: '/repo/examples/foo*/app/dist/bundle', entry: 'server.js' } },
       },
     });
@@ -137,6 +148,7 @@ describe('the generated stack file for a real module entry (no alchemy run)', ()
       configFile: path.join(fixtureDir, 'prisma.config.ts'),
       name: entry.root.name,
       assembled: {
+        devServers: {},
         bundles: {
           one: { dir: path.join(fixtureDir, 'one', 'dist', 'bundle'), entry: 'server.js' },
           two: { dir: path.join(fixtureDir, 'two', 'dist', 'bundle'), entry: 'server.js' },
@@ -184,19 +196,22 @@ describe('nested-module proof (H1: module-composition) — dotted addresses surv
     });
     const graph = Load(root);
 
-    // The full hierarchical address (H1) — not the bare provision id "api".
-    expect(graph.nodes.some((n) => n.id === 'auth.api')).toBe(true);
+    // The full address from the root's id, not the bare provision id "api".
+    expect(graph.nodes.some((n) => n.id === 'shop.auth.api')).toBe(true);
 
     const content = renderStackFile({
       entryPath: '/repo/app/module.ts',
       cwd: '/repo/app',
       configFile: '/repo/app/prisma.config.ts',
       name: 'shop',
-      assembled: { bundles: { 'auth.api': { dir: '/bundles/auth-api', entry: 'server.js' } } },
+      assembled: {
+        devServers: {},
+        bundles: { 'shop.auth.api': { dir: '/bundles/auth-api', entry: 'server.js' } },
+      },
     });
 
     // The dotted key survives intact into the generated stack source, quoted
     // as a plain string literal — a bare property key can't spell a ".".
-    expect(content).toContain('"auth.api": { dir: "/bundles/auth-api", entry: "server.js" }');
+    expect(content).toContain('"shop.auth.api": { dir: "/bundles/auth-api", entry: "server.js" }');
   });
 });

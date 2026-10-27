@@ -14,19 +14,24 @@ this doc is the mechanics.
 Three commands about the app, one about the machine, and one operation with no
 command:
 
-- **`prisma dev <entry>`** — bring up the application whose root node
-  is `entry`'s default export, entirely on the local machine, and keep it up:
-  watch built output, restart changed services, until interrupted. It does
-  **not** stream service logs — once it is supervising several processes,
-  streaming them all inline drowns the front door and the rebuild notices. To
-  read them, call the `log` operation from a script (see
+- **`prisma dev`** — bring up the application whose root node
+  is the default export of the entry module (`entry` in the `composer` section,
+  or `--entry <path>`), entirely on the local machine, and keep it up:
+  watch built output, restart changed services, until interrupted. A service
+  whose build adapter declares a dev server runs it instead of its artifact,
+  and the foreground session streams that dev server's output, prefixed with
+  its address
+  ([ADR-0056](../90-decisions/ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md)).
+  It does **not** stream the other services' logs — once it is supervising
+  several processes, streaming them all inline drowns the front door and the
+  rebuild notices. To read them, call the `log` operation from a script (see
   [docs/guides/running-locally.md](../../guides/running-locally.md)).
   With `--detach` (the `dev` operation's `detach`), it returns once every
   service answers and leaves the app running without watching; see
   § Process lifetimes.
 - **`log`**, an operation on `@prisma/composer/control` with no command
   (ADR-0050) — tail the merged logs of that already-running app: every
-  service, or one named by its dotted `address` (`catalog.service`). Follows
+  service, or one named by its full dotted `address` (`shop.catalog.service`). Follows
   live until the caller aborts; a `tail` count sets how many recent lines to
   return first (default 0, which returns live output only). It only reads the running
   app's logs — it neither builds, provisions, starts, nor stops anything.
@@ -78,7 +83,7 @@ record; other apps run from the directory keep theirs) and `--detach` (return on
 running; see § Process lifetimes). Stages do not apply — a working directory has
 exactly one dev instance; parallel instances are parallel checkouts.
 
-**Naming.** The `prisma` CLI mounts this as `prisma dev <entry>`
+**Naming.** The `prisma` CLI mounts this as `prisma dev`
 ([ADR-0050](../90-decisions/ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)).
 Local Postgres comes from `@prisma/dev`, the local Prisma Postgres server
 library that the Prisma 7 ORM CLI's own `prisma dev` command runs. Composer
@@ -147,7 +152,8 @@ one, or list them all. Creating an instance is the one call the client never
 retries, because a retry after a lost response would create a second
 instance. The emulator never interprets Composer's data: an app name, a
 node address or a directory reaches it only as a label value or inside the
-deployment payload (the artifact directory and the env), which it stores
+deployment payload (the artifact directory, or a command's `cwd` and `argv`,
+and the env), which it stores
 verbatim and hands to the process. No route, state key, file name or field the
 emulator generates carries one, and a test fails if one does.
 
@@ -266,7 +272,7 @@ store labels verbatim, and keep a database's port until it is deleted; see
 The emulator's failure messages name the instance (`instance "svc_…" exited
 (code 1) before it accepted connections…`). The local providers and the
 attachment replace the id with the service's address before the message
-reaches the user, so `prisma dev` says `service "gateway" …`.
+reaches the user, so `prisma dev` says `service "shop.gateway" …`.
 
 ### Which instance backs a node
 
@@ -275,26 +281,28 @@ node of each app run there, in `.prisma-composer/dev/emulator-instances.json`:
 
 ```json
 {
+  "formatVersion": 2,
   "current": "shop",
   "apps": {
     "shop": {
       "nodes": {
-        "quotes": { "kind": "service", "id": "svc_0b6e2f4a91c3d758", "port": 3000 },
-        "gateway": { "kind": "service", "id": "svc_81ad5c07e2f94b31", "port": 3001 },
-        "catalog": { "kind": "database", "id": "db_02c4e81f6a9b3d70", "port": 51300 },
-        "uploads": { "kind": "bucket", "id": "bkt-77e1a4c90b2d5f36" }
+        "shop.quotes": { "kind": "service", "id": "svc_0b6e2f4a91c3d758", "port": 3000 },
+        "shop.gateway": { "kind": "service", "id": "svc_81ad5c07e2f94b31", "port": 3001 },
+        "shop.catalog": { "kind": "database", "id": "db_02c4e81f6a9b3d70", "port": 51300 },
+        "shop.uploads": { "kind": "bucket", "id": "bkt-77e1a4c90b2d5f36" }
       }
     }
   }
 }
 ```
 
-`current` names the app `prisma dev` last ran from the directory. A record
+`formatVersion` is the record's format. `current` names the app `prisma dev` last ran from the directory. A record
 written by the previous version (`{ "app", "nodes" }`, one app, whose
 services have kind `compute`) reads as that one app with `service` nodes and
-is rewritten on the next write. A database's and a bucket's key is its
-resource name, from the same helper the lowering uses; a local provider
-refuses a database or bucket resource without a name.
+is rewritten on the next write. Every node's key is its address, which is
+also the resource ID of its main resource (a service's `App`, a database's
+`Database`, a bucket's `Bucket`), so the local providers find their instance
+by resource ID.
 
 The record is the only place Composer's names are mapped to instances. The
 emulators hook, the local `App`, `Deployment`, `Database`, `Connection`,
@@ -303,7 +311,15 @@ start, stop) and `--fresh` all go through it; no Composer code finds an
 instance by its labels. The labels Composer writes on create —
 `composer.directory` (the absolute directory), `composer.app` and
 `composer.address` — are for people reading an emulator listing. The record
-can be read from the directory alone, without running the pipeline.
+can be read from the directory alone, without running the pipeline. Its node
+keys are full addresses (`shop.catalog`). A record without `formatVersion` was
+written by an older release, whose keys left out the app name: every one of
+its keys reads with the app name in front, whatever it looks like, and the
+next write stores the current format, so existing instances, ports and data
+are reused. A bucket's objects live in
+`buckets/<app>/<address without the app name>`, the folder earlier releases
+used, so they need no move
+([ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md)).
 
 - **Ensuring an instance.** The emulators hook goes through the app's nodes
   in `graph.nodes` order (dependencies first, ties in declaration order):
@@ -465,7 +481,7 @@ The same table the port's hand-rolled script implemented, now standard:
 | dependency connection values (URLs) | the local provider's resolved value, through the normal lowering |
 | service params | bound literals / defaults, identical to deploy |
 | `envParam` sources (ADR-0032) | the dev shell's environment, same names; missing → a hard error listing the names (params feed boot-time schema validation — junk there is a confusing crash, not a legible degraded mode) |
-| secrets (ADR-0029, ADR-0057) | the run's environment: the shell, or a `.env` that `prisma.config.ts` loads. Unset or empty counts as missing. A missing secret the service's schema requires is a hard error naming the variable, the service and both ways to set it; a missing optional secret is left out of the service's input. No value is reused from an earlier run. |
+| secrets (ADR-0029, ADR-0058) | the run's environment: the shell, or a `.env` that `prisma.config.ts` loads. Unset or empty counts as missing. A missing secret the service's schema requires is a hard error naming the variable, the service and both ways to set it; a missing optional secret is left out of the service's input. No value is reused from an earlier run. |
 | minted needs (ADR-0030/0031: service keys, streams keys) | minted locally by the unchanged provisioners |
 | origin (ADR-0039) | `http://localhost:<port>` via the unchanged origin channel |
 
@@ -506,10 +522,13 @@ Deploy's rule holds: every failure names its fix.
 | `dev url` for a node that exists but is not running | `DEV.NOT_RUNNING`, naming its state; for a stopped node the fix is `prisma dev`, for a crash-looping service it is the service's log, for a node its emulator lost it is `prisma dev`, which creates it again |
 | the local target fails without a code (for example an emulator's error response) in `dev url` or `dev stop` | `DEV.EMULATOR_FAILED` |
 | service crash-loops | the address, exit code, and the last stderr lines, as a standing message |
+| a build descriptor's `serve` step throws (for Next.js: `next` cannot be resolved from `appDir`) | `DEV.DEV_SERVER_UNAVAILABLE`: `service "<address>" cannot run its dev server: <message>`, before anything starts |
+| a service runs a dev server but its service descriptor has no `reserve`, or its target's attachment has no `serve` | `DEV.DEV_SERVER_UNSUPPORTED`, naming the address and the package to update, before the first converge |
+| a dev server exits before it listens, never listens, or its executable is not on the deployment's `PATH` | `DEV.SERVICE_START_FAILED` with the emulator's message, the address in place of the instance id, plus `A dev server must listen on the port in its PORT variable.` when it did not listen |
 
 ## Out of scope (designed around)
 
-- **Hot reload / user-supplied dev commands.** Decided in [ADR-0056](../90-decisions/ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): a service runs the dev server its build adapter declares (`next dev`; a `dev` command written on `node()`) in place of its artifact, as a command deployment on the Compute emulator, with the environment its deployment would get, re-stashed address-free so `load()`/`input()` work without `run()`. A service whose adapter declares no dev server runs its artifact as described in this doc. This doc describes the dev-server mechanics once they ship.
+- **Hot reload / user-supplied dev commands.** Decided in [ADR-0056](../90-decisions/ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): a service runs the dev server its build adapter declares (`next dev`; a `dev` command written on `node()`) in place of its artifact, as a command deployment on the Compute emulator, with the environment its deployment would get, re-stashed address-free so `load()`/`input()` work without `run()`. A service whose adapter declares no dev server runs its artifact as described in this doc. The ADR is the full description of the dev-server mechanics: the `serve` build step, `unassembled` lowering with `reserve`, the emulator's command deployments, `stashRows`, and the serve step after every converge.
 - **Remote bindings** (a local service against real cloud resources,
   Wrangler-style). A possible future opt-in; contradicts credential-free dev
   as a default.
@@ -526,7 +545,7 @@ gaps found during implementation.)
 
 ## Proven against a real app
 
-The design's founding claim was proven against open-chat — a real, pre-existing Composer app in its own repo (chat service, Postgres, streams and storage modules), written before local dev existed. With no cloud credentials of any kind in the shell, `prisma dev module.ts` brought it up: sign-in worked, chat history loaded, and the live-tail stream delivered events. Chat generation failed at one place, the outbound OpenRouter call, because local dev at the time gave the unset `OPENROUTER_API_KEY` secret a made-up placeholder value. ADR-0057 removed placeholders: today that run stops at start with an error naming `OPENROUTER_API_KEY`, or, if the schema marks it optional, starts with the key absent. The port itself was one commit: point the app's framework dependency at the build under test, switch its service to `node()`'s directory build form, fix a launcher path that only worked un-moved, catch up with two API changes — and delete the app's 169-line hand-rolled dev script, which the framework command replaces.
+The design's founding claim was proven against open-chat — a real, pre-existing Composer app in its own repo (chat service, Postgres, streams and storage modules), written before local dev existed. With no cloud credentials of any kind in the shell, `prisma dev` brought it up: sign-in worked, chat history loaded, and the live-tail stream delivered events. Chat generation failed at one place, the outbound OpenRouter call, because local dev at the time gave the unset `OPENROUTER_API_KEY` secret a made-up placeholder value. ADR-0058 removed placeholders: today that run stops at start with an error naming `OPENROUTER_API_KEY`, or, if the schema marks it optional, starts with the key absent. The port itself was one commit: point the app's framework dependency at the build under test, switch its service to `node()`'s directory build form, fix a launcher path that only worked un-moved, catch up with two API changes — and delete the app's 169-line hand-rolled dev script, which the framework command replaces.
 
 ## Known limitations (found while proving the implementation)
 
@@ -543,6 +562,13 @@ The design's founding claim was proven against open-chat — a real, pre-existin
   loop picks rebuilds up on its own. A build descriptor that still returns
   no `watch` entries reports `[dev] <address> has no watchable inputs` at
   startup and needs its rebuilds triggered manually.
+- **A topology edit reconverges, but the session's own view of the app is
+  the one it started with.** The entry module is imported once per process,
+  so after an edit to `module.ts` or a `service.ts` the Alchemy child (a fresh
+  process) converges the new topology while the session keeps the graph, the
+  bundles and the dev servers it loaded. Edits that keep the set of services
+  and their build adapters — wiring, inputs, bindings — apply fully; adding,
+  removing or re-adapting a service needs `prisma dev` restarted.
 - **App-owned migrations are not run by `dev`** (by design — ADR-0022, spec
   § 4's `OrmMigration` line is for framework-run migrations only). An app that
   runs its own migrations (e.g. via `prisma db init`, like the

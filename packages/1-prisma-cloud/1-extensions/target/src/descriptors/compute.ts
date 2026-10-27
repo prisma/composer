@@ -1,4 +1,4 @@
-/** The `compute` node kind's descriptor: the four service hooks — provision, serialize, package, deploy. */
+/** The `compute` node kind's descriptor: the four service hooks — provision, serialize, package, deploy — plus `reserve`, which stands in for the last two when the service runs a dev server (ADR-0056). */
 
 import { isParamSource } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
@@ -12,8 +12,18 @@ import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { GeneratedParam } from '../generated-param-resource.ts';
+import {
+  fromLegacyId,
+  legacyConfigKey,
+  legacyEnvVarId,
+  legacyGeneratedParamId,
+  legacyGeneratedParamVarName,
+  legacyInputKey,
+  legacyNodeResourceId,
+} from '../legacy-resource-ids.ts';
 import { paramBindingFor, paramName } from '../param.ts';
 import { provisionedEdges } from '../provisioned-edges.ts';
+import { resourceId } from '../resource-ids.ts';
 import {
   configKey,
   decodeParamPointer,
@@ -24,14 +34,13 @@ import {
   paramEntries,
   serializeInput,
 } from '../serializer.ts';
-import { serviceAppName } from '../service-app.ts';
 import {
   asOwnRow,
   cloudApplicationOf,
   logicalIdProp,
   projectIdOf,
   type ResolvedCloudOptions,
-  validateName,
+  validatePlatformName,
 } from './shared.ts';
 
 /** `compute({ listens: false })`, read structurally: the node may be a copy made by another bundle of this package, so `instanceof` cannot be relied on. */
@@ -139,6 +148,25 @@ interface EnvRow {
 }
 
 /**
+ * The report's two lines of honesty (ADR-0042): the serialized input
+ * document (secret-free by construction — every secret leaf is a `$secret`
+ * pointer) and every binding key that resolved absent in the deploy shell (a
+ * possible typo'd variable name). Newlines in a detail value render as one
+ * line per entry.
+ */
+function inputDetails(serialized: ComputeSerialized): {
+  readonly details?: Readonly<Record<string, string>>;
+} {
+  if (serialized.input === undefined) return {};
+  return {
+    details: {
+      input: serialized.input.value,
+      ...(serialized.input.absent.length > 0 ? { absent: serialized.input.absent.join('\n') } : {}),
+    },
+  };
+}
+
+/**
  * Returns the PRECISE descriptor type, not the erased `NodeDescriptor`: the
  * registry in control.ts erases it on assignment anyway (method bivariance),
  * but s3-store composes over these hooks and needs their P/S to stay visible.
@@ -151,18 +179,19 @@ export function computeDescriptor(
     kind: 'service' as const,
     // The service as a PLACE inside the application's Project: the App,
     // identity-bearing only, no code runs.
-    provision: ({ id, address, application }) =>
+    provision: ({ address, application, graph }) =>
       Effect.gen(function* () {
-        validateName(id, 'service name (from provision id)');
+        const app = graph.root.id;
+        validatePlatformName('App', address);
         const projectId = projectIdOf(application);
         const { branchId } = cloudApplicationOf(application);
-        const svc = yield* Prisma.App(`${id}-svc`, {
+        const svc = yield* Prisma.App(resourceId(address), {
           project: projectId,
-          displayName: serviceAppName(id),
+          displayName: address,
           ...(o().region !== undefined ? { regionId: o().region } : {}),
           ...(branchId !== undefined ? { branchId } : {}),
           ...logicalIdProp(application, address),
-        }).pipe(asOwnRow);
+        }).pipe(asOwnRow, fromLegacyId(legacyNodeResourceId(app, address, 'svc')));
         return { serviceId: svc.appId, projectId, endpointDomain: svc.appEndpointDomain };
       }),
 
@@ -174,6 +203,7 @@ export function computeDescriptor(
     serialize: (ctx, provisioned, config) =>
       Effect.gen(function* () {
         const { address, node, graph } = ctx;
+        const app = graph.root.id;
         const branchId = cloudApplicationOf(ctx.application).branchId;
         const cls = branchId ? ('preview' as const) : ('production' as const);
         const branch = branchId !== undefined ? { branchId } : {};
@@ -201,13 +231,13 @@ export function computeDescriptor(
               ? encodeParamPointer(paramName(paramBindingFor(graph.params, address, d.name)))
               : encode(d.owner, value);
           const wrapped = envValue(rowValue);
-          const record = yield* Prisma.EnvironmentVariable(`${key}-var`, {
+          const record = yield* Prisma.EnvironmentVariable(resourceId(address, 'env', key), {
             project: projectId,
             key,
             value: wrapped,
             class: cls,
             ...branch,
-          }).pipe(asOwnRow);
+          }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyConfigKey(app, address, d))));
           // A pointer row triggers on its text (the platform NAME); the pointed
           // variable's own rotation joins as a `<name>:updatedAt` member.
           const pointer =
@@ -234,7 +264,7 @@ export function computeDescriptor(
           // only as that variable's `updatedAt`.
           const inputValue = envValue(inputRow.value);
           rows.push({
-            record: yield* Prisma.EnvironmentVariable(`${inputRow.key}-var`, {
+            record: yield* Prisma.EnvironmentVariable(resourceId(address, 'env', inputRow.key), {
               project: projectId,
               key: inputRow.key,
               // The defaults-applied document — secret leaves are `$secret`
@@ -243,7 +273,7 @@ export function computeDescriptor(
               value: inputValue,
               class: cls,
               ...branch,
-            }).pipe(asOwnRow),
+            }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(app, address)))),
             key: inputRow.key,
             value: inputValue,
             pointers: inputRow.secrets,
@@ -258,21 +288,24 @@ export function computeDescriptor(
             const value =
               leaf.origin !== undefined
                 ? originOf(ctx.services, leaf.origin, address)
-                : (yield* GeneratedParam(`${inputRow.key}:${leaf.path}-generated`, {
+                : (yield* GeneratedParam(resourceId(address, 'generated', leaf.path), {
                     bytes: leaf.bytes,
-                  })).value;
+                  }).pipe(fromLegacyId(legacyGeneratedParamId(app, address, leaf.path)))).value;
             // The generated value is mint-once-stable (the resource returns
             // its persisted output), so this trigger member holds still across
             // redeploys and moves exactly when the value is re-generated.
             const generatedValue = envValue(value);
             rows.push({
-              record: yield* Prisma.EnvironmentVariable(`${leaf.varName}-var`, {
+              record: yield* Prisma.EnvironmentVariable(resourceId(address, 'env', leaf.varName), {
                 project: projectId,
                 key: leaf.varName,
                 value: generatedValue,
                 class: cls,
                 ...branch,
-              }).pipe(asOwnRow),
+              }).pipe(
+                asOwnRow,
+                fromLegacyId(legacyEnvVarId(legacyGeneratedParamVarName(app, address, leaf.path))),
+              ),
               key: leaf.varName,
               value: generatedValue,
             });
@@ -337,13 +370,20 @@ export function computeDescriptor(
           // trigger member.
           const providerValue = envValue(value);
           rows.push({
-            record: yield* Prisma.EnvironmentVariable(`${key}-var`, {
+            record: yield* Prisma.EnvironmentVariable(resourceId(address, 'env', key), {
               project: projectId,
               key,
               value: providerValue,
               class: cls,
               ...branch,
-            }).pipe(asOwnRow),
+            }).pipe(
+              asOwnRow,
+              fromLegacyId(
+                legacyEnvVarId(
+                  legacyConfigKey(app, address, { owner: 'service', name: entry.name }),
+                ),
+              ),
+            ),
             key,
             value: providerValue,
           });
@@ -376,7 +416,7 @@ export function computeDescriptor(
         }),
       ),
 
-    deploy: ({ id }, provisioned, artifact, serialized) =>
+    deploy: ({ address, graph }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
         const { pointerVersion } = o().preflight;
         // Env keys never contain ':', so a `<name>:updatedAt` member cannot
@@ -389,7 +429,8 @@ export function computeDescriptor(
             serialized.pointers.map((name) => [`${name}:updatedAt`, pointerVersion(name) ?? '?']),
           ),
         };
-        const deployment = yield* Prisma.Deployment(`${id}-deploy`, {
+        const app = graph.root.id;
+        const deployment = yield* Prisma.Deployment(resourceId(address, 'deployment'), {
           // `app` carries the ordering edge on serialize's variable writes as
           // well as the app id — see `appAfterEnvironment` for why it is the
           // only prop that can (PRO-211).
@@ -413,28 +454,12 @@ export function computeDescriptor(
           // expresses.
           start: true,
           promote: true,
-        });
+        }).pipe(fromLegacyId(legacyNodeResourceId(app, address, 'deploy')));
         // `url` IS published here: a Compute service's deployed URL is a
         // public endpoint, and this descriptor is the only party that knows
         // that. Both fields are still unresolved Output references at this
         // point — apply resolves them before the report's runner sees them.
         //
-        // The report's two lines of honesty (ADR-0042): the serialized input
-        // document (secret-free by construction — every secret leaf is a
-        // `$secret` pointer) and every binding key that resolved absent in
-        // the deploy shell (a possible typo'd variable name). Newlines in a
-        // detail value render as one line per entry.
-        const inputDetails =
-          serialized.input !== undefined
-            ? {
-                details: {
-                  input: serialized.input.value,
-                  ...(serialized.input.absent.length > 0
-                    ? { absent: serialized.input.absent.join('\n') }
-                    : {}),
-                },
-              }
-            : {};
         return {
           outputs: { url: deployment.appEndpointDomain, projectId: provisioned.projectId },
           entities: [
@@ -442,7 +467,35 @@ export function computeDescriptor(
               kind: 'compute-service',
               id: provisioned.serviceId,
               url: deployment.appEndpointDomain,
-              ...inputDetails,
+              ...inputDetails(serialized),
+            },
+          ],
+        };
+      }),
+
+    // ADR-0056: a service that runs its build adapter's dev server under
+    // `prisma dev` has no artifact. What `deploy` returns, with the
+    // `Deployment` removed: the URL comes from the App, which locally is the
+    // same `http://localhost:<port>` the Deployment would report, so
+    // dependents' rows do not change between a served and an assembled run.
+    reserve: (_ctx, provisioned, serialized) =>
+      Effect.sync(() => {
+        const url = Output.map(provisioned.endpointDomain, (domain) => {
+          if (domain === undefined) {
+            throw new Error(
+              'the App reported no endpoint domain for a service without a deployment.',
+            );
+          }
+          return domain;
+        });
+        return {
+          outputs: { url, projectId: provisioned.projectId },
+          entities: [
+            {
+              kind: 'compute-service',
+              id: provisioned.serviceId,
+              url,
+              ...inputDetails(serialized),
             },
           ],
         };

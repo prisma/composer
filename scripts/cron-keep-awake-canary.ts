@@ -58,8 +58,11 @@ async function findProjectId(): Promise<string> {
 async function findRunnerDeploymentId(projectId: string): Promise<string> {
   const apps = await apiData(`/apps?projectId=${projectId}&limit=100`);
   const list = Array.isArray(apps) ? apps : [];
-  const runner = list.find((app) => isRecord(app) && app['name'] === 'cron.runner');
-  if (runner === undefined) throw new Error(`stack "${stackName}" has no cron.runner app`);
+  const runner = list.find(
+    (app) => isRecord(app) && app['logicalId'] === `${stackName}.cron.runner`,
+  );
+  if (runner === undefined)
+    throw new Error(`stack "${stackName}" has no ${stackName}.cron.runner app`);
   return requireString(runner, 'latestDeploymentId');
 }
 

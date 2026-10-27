@@ -37,7 +37,8 @@ export interface LogInput {
    * `log` reads only the section; it takes the same input as the other operations so a host builds it once.
    */
   readonly config: ComposerConfigSource;
-  readonly entry: string;
+  /** The entry module, resolved against `cwd`. Overrides the `entry` in `config`; without either the operation fails with `CONFIG.ENTRY_MISSING`. */
+  readonly entry?: string | undefined;
   readonly name?: string | undefined;
   /** Restrict to one service's dotted address; validated against running services. */
   readonly address?: string | undefined;

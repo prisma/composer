@@ -18,8 +18,9 @@
  * The family ships `deploy`, `dev`, `dev url` and `dev stop`, keyed by the
  * path they are meant to mount at; the host decides where each one mounts.
  * A host may add commands of its own through `commands` — the published
- * family adds `emulator list`, which needs no project. `destroy` and `log`
- * are programmatic operations in `@prisma/composer/control`, not commands.
+ * family adds `deploy list` and `emulator list`, which need Prisma Cloud
+ * code. `destroy` and `log` are programmatic operations in
+ * `@prisma/composer/control`, not commands.
  */
 import { type CommandFamily, defineCommandFamily } from '@prisma/cli-engine';
 import { deployWithDeps } from '../operations/deploy.ts';

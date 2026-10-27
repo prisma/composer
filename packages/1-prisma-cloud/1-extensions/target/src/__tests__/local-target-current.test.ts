@@ -33,9 +33,9 @@ import { localTargetDescriptor } from '../local-target/descriptor.ts';
 
 const APP = 'current-app';
 const NODES: readonly AppNode[] = [
-  { address: 'gateway', kind: 'service' },
-  { address: 'catalog', kind: 'database' },
-  { address: 'uploads', kind: 'bucket' },
+  { address: 'current-app.gateway', kind: 'service' },
+  { address: 'current-app.catalog', kind: 'database' },
+  { address: 'current-app.uploads', kind: 'bucket' },
 ];
 const DAEMONS: readonly DaemonName[] = ['compute', 'postgres', 'buckets'];
 const SERVING_BOOTSTRAP =
@@ -104,8 +104,8 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
     const devDir = path.join(directory, '.prisma-composer', 'dev');
     await ensureAppInstances({ devDir, app: APP }, NODES);
     const nodes = (await readEmulatorInstances(directory))?.apps[APP]?.nodes ?? {};
-    const gateway = nodes['gateway'];
-    const uploads = nodes['uploads'];
+    const gateway = nodes['current-app.gateway'];
+    const uploads = nodes['current-app.uploads'];
     if (gateway?.kind !== 'service' || uploads === undefined) throw new Error('not recorded');
     const artifactDir = path.join(root, `${name}-artifact`);
     fs.mkdirSync(artifactDir, { recursive: true });
@@ -123,8 +123,10 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
   async function redeployGateway(
     directory: string,
     source: string,
-  ): Promise<{ readonly id: string; readonly port: number; readonly deployed: Promise<void> }> {
-    const gateway = (await readEmulatorInstances(directory))?.apps[APP]?.nodes['gateway'];
+  ): Promise<{ readonly id: string; readonly port: number; readonly deployed: Promise<unknown> }> {
+    const gateway = (await readEmulatorInstances(directory))?.apps[APP]?.nodes[
+      'current-app.gateway'
+    ];
     if (gateway?.kind !== 'service') throw new Error('not recorded');
     const artifactDir = fs.mkdtempSync(path.join(root, 'redeploy-'));
     fs.writeFileSync(path.join(artifactDir, 'bootstrap.js'), source);
@@ -168,18 +170,24 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
     const current = await currentOf(devDir);
 
     expect(current.app).toBe(APP);
-    expect([...current.addresses].sort()).toEqual(['catalog', 'gateway', 'uploads']);
+    expect([...current.addresses].sort()).toEqual([
+      'current-app.catalog',
+      'current-app.gateway',
+      'current-app.uploads',
+    ]);
 
-    const service = await urlOf(current, 'gateway');
+    const service = await urlOf(current, 'current-app.gateway');
     expect(Number(new URL(service).port)).toBeGreaterThanOrEqual(FIRST_SERVICE_PORT);
     expect(await (await fetch(service)).text()).toBe('hello from gateway');
 
-    const database = new pg.Client({ connectionString: await urlOf(current, 'catalog') });
+    const database = new pg.Client({
+      connectionString: await urlOf(current, 'current-app.catalog'),
+    });
     await database.connect();
     expect((await database.query('select 1 as one')).rows).toEqual([{ one: 1 }]);
     await database.end();
 
-    const bucketUrl = new URL(await urlOf(current, 'uploads'));
+    const bucketUrl = new URL(await urlOf(current, 'current-app.uploads'));
     const bucket = bucketUrl.pathname.slice(1);
     const s3 = new S3Client({
       region: 'auto',
@@ -199,22 +207,22 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
     const { directory, devDir } = await runApp('a');
     const current = await currentOf(devDir);
     const nodes = (await readEmulatorInstances(directory))?.apps[APP]?.nodes ?? {};
-    const gateway = nodes['gateway'];
-    const catalog = nodes['catalog'];
+    const gateway = nodes['current-app.gateway'];
+    const catalog = nodes['current-app.catalog'];
     if (gateway?.kind !== 'service' || catalog?.kind !== 'database')
       throw new Error('not recorded');
 
     const stopped = await current.stop();
 
     expect([...stopped].sort((a, b) => a.address.localeCompare(b.address))).toEqual([
-      { address: 'catalog', kind: 'database' },
-      { address: 'gateway', kind: 'service' },
+      { address: 'current-app.catalog', kind: 'database' },
+      { address: 'current-app.gateway', kind: 'service' },
     ]);
     expect(await computeClient().getInstance(gateway.id)).toMatchObject({ status: 'stopped' });
     expect(await postgresClient().getInstance(catalog.id)).toMatchObject({ status: 'stopped' });
     expect(await acceptsConnection(gateway.port)).toBe(false);
     expect(await acceptsConnection(catalog.port)).toBe(false);
-    expect(await current.locate('catalog')).toMatchObject({
+    expect(await current.locate('current-app.catalog')).toMatchObject({
       state: 'stopped',
       condition: 'stopped',
     });
@@ -248,7 +256,7 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
 
     const stopped = await (await currentOf(devDir)).stop();
 
-    expect(stopped).toContainEqual({ address: 'gateway', kind: 'service' });
+    expect(stopped).toContainEqual({ address: 'current-app.gateway', kind: 'service' });
     expect(await statusOf(crashing.id)).toBe('stopped');
     await new Promise((resolve) => setTimeout(resolve, 2500));
     expect(await statusOf(crashing.id)).toBe('stopped');
@@ -262,8 +270,8 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
 
     const stopped = await (await currentOf(devDir)).stop();
 
-    expect(stopped).not.toContainEqual({ address: 'gateway', kind: 'service' });
-    expect(stopped).toContainEqual({ address: 'catalog', kind: 'database' });
+    expect(stopped).not.toContainEqual({ address: 'current-app.gateway', kind: 'service' });
+    expect(stopped).toContainEqual({ address: 'current-app.catalog', kind: 'database' });
     expect(await statusOf(crashing.id)).toBe('held');
   }, 120_000);
 
@@ -281,7 +289,7 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
 
     const stopped = await (await currentOf(devDir)).stop();
 
-    expect(stopped).toEqual([{ address: 'catalog', kind: 'database' }]);
+    expect(stopped).toEqual([{ address: 'current-app.catalog', kind: 'database' }]);
   }, 90_000);
 
   test('stopping with an emulators directory that is not absolute fails with its code, and stops nothing', async () => {
@@ -293,7 +301,7 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
 
     await expect(stopping).rejects.toMatchObject({ code: 'DEV.EMULATORS_DIR_INVALID' });
     process.env[EMULATORS_DIR_ENV] = registryRoot;
-    expect(await current.locate('gateway')).toMatchObject({ state: 'running' });
+    expect(await current.locate('current-app.gateway')).toMatchObject({ state: 'running' });
   }, 90_000);
 
   test('a directory where `prisma dev` never ran has no current app', async () => {
@@ -306,8 +314,8 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
     const { devDir } = await runApp('a');
     await stopDaemon('buckets', { registryRoot });
 
-    expect(await (await currentOf(devDir)).locate('uploads')).toEqual({
-      address: 'uploads',
+    expect(await (await currentOf(devDir)).locate('current-app.uploads')).toEqual({
+      address: 'current-app.uploads',
       kind: 'bucket',
       emulator: 'not-running',
     });

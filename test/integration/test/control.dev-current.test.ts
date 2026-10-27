@@ -112,7 +112,7 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
       fs.readFileSync(path.join(devDir, 'emulator-instances.json'), 'utf8'),
     ) as { apps: Record<string, { nodes: Record<string, RecordedNode> }> };
     nodes = record.apps[APP]?.nodes ?? {};
-    const web = nodes['web'];
+    const web = nodes[`${APP}.web`];
     if (web?.port === undefined) throw new Error('web is not recorded with a port');
 
     const artifactDir = path.join(root, 'web-artifact');
@@ -149,11 +149,11 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
   }, 60_000);
 
   test("devUrl gives the URL a service answers at, and a database's connection string", async () => {
-    const web = await devUrl({ config, cwd, address: 'web' });
-    const appdb = await devUrl({ config, cwd, address: 'appdb' });
+    const web = await devUrl({ config, cwd, address: `${APP}.web` });
+    const appdb = await devUrl({ config, cwd, address: `${APP}.appdb` });
 
     if (!web.ok) throw new Error(web.failure.message);
-    expect(web.value).toMatchObject({ address: 'web', kind: 'service', state: 'running' });
+    expect(web.value).toMatchObject({ address: `${APP}.web`, kind: 'service', state: 'running' });
     expect(Number(new URL(web.value.url).port)).toBeGreaterThanOrEqual(FIRST_SERVICE_PORT);
     expect(await (await fetch(web.value.url)).text()).toBe('hello from web');
     if (!appdb.ok) throw new Error(appdb.failure.message);
@@ -161,8 +161,8 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
   }, 30_000);
 
   test('devStop stops the running service and the database server, and their ports close', async () => {
-    const web = nodes['web'];
-    const appdb = nodes['appdb'];
+    const web = nodes[`${APP}.web`];
+    const appdb = nodes[`${APP}.appdb`];
     if (web?.port === undefined || appdb?.port === undefined) throw new Error('not recorded');
 
     const result = await devStop({ config, cwd });
@@ -171,12 +171,12 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
     expect(result.value.app).toBe(APP);
     // bkg was never deployed, so it was not running and is not reported.
     expect([...result.value.stopped].sort((a, b) => a.address.localeCompare(b.address))).toEqual([
-      { address: 'appdb', kind: 'database' },
-      { address: 'web', kind: 'service' },
+      { address: `${APP}.appdb`, kind: 'database' },
+      { address: `${APP}.web`, kind: 'service' },
     ]);
     expect(await acceptsConnection(web.port)).toBe(false);
     expect(await acceptsConnection(appdb.port)).toBe(false);
-    expect(await devUrl({ config, cwd, address: 'web' })).toMatchObject({
+    expect(await devUrl({ config, cwd, address: `${APP}.web` })).toMatchObject({
       ok: false,
       failure: { code: 'DEV.NOT_RUNNING' },
     });

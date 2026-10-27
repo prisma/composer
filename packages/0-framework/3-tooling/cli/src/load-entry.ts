@@ -19,7 +19,12 @@ export interface LoadedEntry {
   readonly root: ServiceNode | ModuleNode;
 }
 
-export async function loadEntry(entryArg: string, cwd: string): Promise<LoadedEntry> {
+/** `unloadableFix`, when given, says where the path came from, so a wrong path names its source. */
+export async function loadEntry(
+  entryArg: string,
+  cwd: string,
+  unloadableFix?: string,
+): Promise<LoadedEntry> {
   registerEntryResolution();
   const resolvedPath = path.resolve(cwd, entryArg);
   let mod: unknown;
@@ -38,7 +43,11 @@ export async function loadEntry(entryArg: string, cwd: string): Promise<LoadedEn
     throw new CliStructuredError(
       'COMPOSE.ENTRY_UNLOADABLE',
       `Failed to import entry module "${resolvedPath}": ${error instanceof Error ? error.message : String(error)}`,
-      { where: { path: resolvedPath }, cause: error },
+      {
+        ...(unloadableFix === undefined ? {} : { fix: unloadableFix }),
+        where: { path: resolvedPath },
+        cause: error,
+      },
     );
   }
   const root: unknown = blindCast<

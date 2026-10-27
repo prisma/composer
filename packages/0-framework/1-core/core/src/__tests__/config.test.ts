@@ -144,8 +144,8 @@ describe('inputManifest', () => {
     // leaves' payloads (env-var names) are the target's, which core never reads.
     const manifest = inputManifest(graph);
     expect(manifest).toHaveLength(2);
-    expect(manifest).toContainEqual({ serviceAddress: 'ingest', binding: ingestBinding });
-    expect(manifest).toContainEqual({ serviceAddress: 'web', binding: webBinding });
+    expect(manifest).toContainEqual({ serviceAddress: 'app.ingest', binding: ingestBinding });
+    expect(manifest).toContainEqual({ serviceAddress: 'app.web', binding: webBinding });
   });
 
   test('is empty when no service declares an input schema', () => {

@@ -2,6 +2,8 @@
 
 Amended after acceptance: the Alternatives section adds four rejected ways to keep a Composer-owned effect check, and the Consequences state the exit code of `CLI.CONFIG_UNREADABLE`. The decision is unchanged.
 
+Amended 2026-10-23: the section takes an optional `entry`, the path to the module whose default export is the application root. It is an input to the tool, like the ORM section's schema path, not an application fact. The validator checks that it is a non-empty string, and it resolves against the directory of the declaring file. `--entry <path>` on `prisma deploy` and `prisma dev`, or an operation's `entry` input, overrides it and resolves against the working directory. With neither, the command fails with `CONFIG.ENTRY_MISSING`.
+
 ## Decision
 
 Composer reads its configuration from one place: the `composer` section of the app's `prisma.config.ts`, the file every Prisma CLI command family already shares. There is no separate Composer config file.
@@ -15,6 +17,7 @@ import { definePrismaConfig } from 'prisma/config';
 
 export default definePrismaConfig({
   composer: composer({
+    entry: './module.ts',
     extensions: [prismaCloud(), nodeBuild()],
     state: prismaState(),
   }),
@@ -22,13 +25,13 @@ export default definePrismaConfig({
 });
 ```
 
-The section's content is the `PrismaAppConfig` that [ADR-0017](ADR-0017-control-plane-loads-through-the-app-config.md) describes: the extension descriptors the deploy looks nodes up in, and the one state store. The CLI engine (the command-line runtime every Prisma command family mounts into) loads the file, and Composer's section validator hands the command a `ComposerConfigSource`: `{ value, file }`, the validated section and the file that declared it. The programmatic operations on `@prisma/composer/control` take the same `ComposerConfigSource` as a required `config` input, and run the same checks on it.
+The section's content is the `PrismaAppConfig` that [ADR-0017](ADR-0017-control-plane-loads-through-the-app-config.md) describes: the extension descriptors the deploy looks nodes up in, and the one state store, plus the optional `entry` path (amended 2026-10-23). The CLI engine (the command-line runtime every Prisma command family mounts into) loads the file, and Composer's section validator hands the command a `ComposerConfigSource`: `{ value, file }`, the validated section and the file that declared it. The programmatic operations on `@prisma/composer/control` take the same `ComposerConfigSource` as a required `config` input, and run the same checks on it.
 
 ## Reasoning
 
 The Prisma CLI engine already discovers, evaluates and merges `prisma.config.ts`, and it gives each command family a named section with a validator of its own. A second Composer-only file meant a second loader, a second discovery rule (walking up from the deploy entry rather than from where the command runs), and a second file for users to learn. With the configuration in the shared file, Composer has one loader, the engine's, and one discovery rule, the engine's: from the command's working directory up to the repository root.
 
-The section holds executable values. Extension descriptors carry provider layers, container lifecycles and preflight hooks, none of which can be described by a schema. So the validator checks only the fields that identify each descriptor: `extensions` is an array of objects, each with a non-empty string `id` and an object `nodes`, and the ids are distinct; `state` is an object with a string `extension` and a `create` function. Everything else passes through untouched: the command receives the descriptors as the very objects the config file built, never copies. Any other top-level key of the section is an error, because a key the validator does not know is a key the deploy would silently ignore.
+The section holds executable values. Extension descriptors carry provider layers, container lifecycles and preflight hooks, none of which can be described by a schema. So the validator checks only the fields that identify each descriptor: `extensions` is an array of objects, each with a non-empty string `id` and an object `nodes`, and the ids are distinct; `state` is an object with a string `extension` and a `create` function; `entry`, when present, is a non-empty string (amended 2026-10-23). Everything else passes through untouched: the command receives the descriptors as the very objects the config file built, never copies. Any other top-level key of the section is an error, because a key the validator does not know is a key the deploy would silently ignore.
 
 The engine resolves a section over the chain of config files it loaded, nearest first, and by default merges a section key by key. Composer's section declares its own merge, which takes the nearest declaring file's section whole. A section therefore always comes from exactly one file, and that matters beyond tidiness: the deploy runs its infrastructure engine (Alchemy) in a child process, and the stack file generated for that child imports the declaring `prisma.config.ts` and reads its `composer` export. A section assembled from two files would have no single file to import.
 
@@ -45,7 +48,7 @@ Moving evaluation into the engine also retires Composer's effect pre-flight. The
 - `prisma.config.ts` is the only config file Composer reads. Examples and fixtures declare the section there, next to any `orm` section.
 - The generated deploy and dev stack files import the declaring `prisma.config.ts` and pass its `composer` export to `lower()`. The child evaluates the whole file, not only Composer's section: the imports of every section in it, such as the ORM's config module and `definePrismaConfig`'s package, run in the deploy child with the child's environment, and a failure in any of them fails the deploy. This is accepted because the section's descriptors are functions that cannot cross a process boundary, so the child must import the file that built them, and one config file is the point of this decision.
 - `dev` reads the section once, at start, and watches the declaring file. After an edit it reports that the file changed and pauses rebuilds until it is restarted, so the in-process steps and the child never run against different versions of the file.
-- `deploy`, `destroy`, `dev` and `log` on `@prisma/composer/control` take a required `config: ComposerConfigSource` and never look for a config file. This is a breaking change to that surface. `log` reads only `value`; it takes the same input so a host builds it once.
+- `deploy`, `destroy`, `dev` and `log` on `@prisma/composer/control` take a required `config: ComposerConfigSource` and never look for a config file. Their `entry` input is optional and overrides `config.value.entry` (amended 2026-10-23). This is a breaking change to that surface. `log` reads only `value`; it takes the same input so a host builds it once.
 - `@prisma/composer-cli/family` no longer exports `ComposerSection`; the section's value type is `ComposerConfigSource`, exported from `@prisma/composer/control`.
 - A broken `effect` tree fails fast: it surfaces as the engine's `CLI.CONFIG_UNREADABLE` with exit code 2, not as a Composer code. `DEPS.EFFECT_VERSION_CONFLICT` no longer exists.
 - On the CLI, every section-level failure (`CONFIG.SECTION_MISSING`, `CONFIG.FIELD_RETIRED`, `CONFIG.FILE_RETIRED` and field errors) appears as a diagnostic under the engine's `CLI.CONFIG_SECTION_INVALID` headline. In code, the same `CONFIG.` code is the failure itself.

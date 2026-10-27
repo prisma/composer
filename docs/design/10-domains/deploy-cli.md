@@ -28,24 +28,44 @@ and
 
 Two commands, mounted by the `prisma` CLI from `@prisma/composer-cli`'s
 command family, plus one operation with no command. The family also carries
-`dev url`, `dev stop` and `emulator list`, which act on the local app and the
-local emulators; [local-dev.md](local-dev.md) covers them
+`prisma deploy list`, below, and `dev url`, `dev stop` and `emulator list`,
+which act on the local app and the local emulators; [local-dev.md](local-dev.md)
+covers those three
 ([ADR-0053](../90-decisions/ADR-0053-dev-url-dev-stop-and-emulator-list.md)).
 
-- **`prisma deploy <entry>`** — deploy the application whose root node is
-  `entry`'s default export, to a stage (default: production).
+- **`prisma deploy`** — deploy the application whose root node is the default
+  export of the entry module, to a stage (default: production). The entry is
+  `entry` in the `composer` section of `prisma.config.ts`, resolved against
+  that file's directory; `--entry <path>` overrides it, resolved against the
+  working directory. With neither, the command fails with `CONFIG.ENTRY_MISSING`.
+  The entry is an input to the tool, not an application fact ([ADR-0003](../90-decisions/ADR-0003-deploy-derives-everything-from-the-root-node.md)).
+  The generated stack file gets the entry as an absolute path.
+- **`prisma deploy list`** — list every node the app has deployed on a stage
+  (default: production), one row per node of the application topology the
+  last deploy wrote, in topology order. Each row has the node's address, its
+  kind (`project` for the root, `service`, `postgres`, `bucket`, `module`, or
+  another resource's type), its platform ID and, for a service, its URL. The
+  root's ID is the Project's; every other ID is the Branch's service, database
+  or bucket row with the node's `logicalId`. A node with no row has no ID. It
+  finds the stage with the find-only lookup `destroy` uses and creates
+  nothing. It reads the topology, not the deploy state, so it never contends
+  for the deploy lease. Flags: `--stage`, `--name` and `--entry`, as on
+  `deploy`. An invalid stage name fails with `DEPLOY.STAGE_INVALID`; no
+  Project, no Branch or no topology fails with `DEPLOY.TARGET_NOT_FOUND`.
+  `@prisma/composer-cli` adds it to the family, because it reads Prisma Cloud
+  ([ADR-0053](../90-decisions/ADR-0053-dev-url-dev-stop-and-emulator-list.md)).
 - **`destroy`**, an operation on `@prisma/composer/control` with no command —
   tear a stage down (same derivation, Alchemy destroy); the target is always
   explicit (see § Stages and containers). Users call it from a script.
-- **`prisma dev <entry>`** — bring up the application whose root node
-  is `entry`'s default export, entirely on this machine, credential-free —
+- **`prisma dev`** — bring up the application whose root node
+  is the entry module's default export (found as for deploy), entirely on this machine, credential-free —
   local counterparts of every provisioned resource, real service processes,
   no platform account. See [local-dev.md](local-dev.md) (ADR-0041) for the
-  design; flags: `--name` (same override semantics as deploy), `--fresh`
+  design; flags: `--entry` and `--name` (same override semantics as deploy), `--fresh`
   (before starting, delete the current app's local services, databases and
   buckets and their data; other apps run from the directory keep theirs).
 
-`deploy` flags: `--name` (override the root's name — per-run ephemeral
+`deploy` flags: `--entry <path>` (override the config's entry for one run), `--name` (override the root's name — per-run ephemeral
 deploys in shared workspaces), `--stage <name>` (target a named, isolated
 environment instead of production), `--report <path>` (write the deploy's
 outcome as JSON to that file), `--build-id <id>` (join a deploy record that CI
@@ -99,7 +119,14 @@ user can rerun it by hand (ADR-0007).
    evaluation, erroring with the exact variable name — before any slow work.
 4. **Resolve the name.** The root node's name (every node is named — ADR-0006),
    unless `--name` overrides it — CI's per-run ephemeral deploys use this so a
-   name never collides with a standing demo.
+   name never collides with a standing demo. The resolved name is the root's
+   address, so every node's address starts with it (`shop.catalog`), on the
+   graph the CLI reports and the graph it lowers alike
+   ([ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md)).
+   The name must start with a letter or digit and contain only letters,
+   digits, `-` and `_`; Load refuses any other. An app that uses
+   `serviceOrigin()` can't be deployed under `--name`: the addresses in its
+   code start with its own name, which then names no node.
 5. **Assemble each service.** Look up the service's build descriptor in the
    registries — `extensions[build.extension].nodes[build.type].assemble` — and
    run it. The assembler resolves its `entry` (and any other path field)
@@ -161,7 +188,7 @@ targets **production**; `--stage <name>` targets a **named stage**.
   environment.
 - **Destroy is explicit.** The `destroy` operation requires a `target`, `{ kind: 'stage', stage }` or `{ kind: 'production' }`; a call without one is an error, so an omitted or mistyped stage can never silently tear down production. `destroy` resolves find-only (no container is ever created); after `alchemy destroy` succeeds and after every extension's `teardown` has run, the CLI removes each resolved container. That two-loop order — every teardown, then every removal — is what guarantees every extension's teardown runs against a still-live container.
 
-**Prisma Cloud's own containers** are its app's **Project** and, for a named stage, that stage's **Branch** — found by name, created if absent on deploy, never created on destroy; each stage's deploy state lives behind the platform state API, scoped to its Branch (production's to the Project's implicit default Branch). See [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md) (App = one Project, Stage = Branch), [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md) (stage resolution mechanics), and [ADR-0045](../90-decisions/ADR-0045-deploy-state-lives-behind-the-platform-state-api.md) (deploy state behind the platform state API, per Branch).
+**Prisma Cloud's own containers** are its app's **Project** and, for a named stage, that stage's **Branch** — the Project found by its `logicalId`, the app name, and the Branch by its name; created if absent on deploy, never created on destroy; each stage's deploy state lives behind the platform state API, scoped to its Branch (production's to the Project's implicit default Branch). See [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md) (App = one Project, Stage = Branch), [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md) (stage resolution mechanics), and [ADR-0045](../90-decisions/ADR-0045-deploy-state-lives-behind-the-platform-state-api.md) (deploy state behind the platform state API, per Branch).
 
 ## Build ownership
 
@@ -241,9 +268,9 @@ them:
 - **Topology emission** — the serialized-topology artifact for agents/tooling;
   when it lands it must strip the machine-specific `build.module` (ADR-0004).
 - **Freshness checks** — detecting stale (not just missing) built output.
-- **Entry discovery** — the entry path is required; bare invocation errors
-  with usage. A discovery convention (e.g. a `package.json` field) would be
-  additive.
+- **Entry discovery** — the entry comes from the config's `entry` or `--entry`;
+  with neither, the command fails with `CONFIG.ENTRY_MISSING`. Nothing searches
+  the directory for an entry module.
 
 ## CLI behavior notes
 

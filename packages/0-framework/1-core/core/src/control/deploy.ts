@@ -42,6 +42,8 @@ export interface ApplicationDescriptor {
  * derive from it and stay stable across redeploys.
  */
 export interface ProvisionEdge {
+  /** The deployed app name: the first segment of every address. */
+  readonly app: string;
   readonly edgeId: string;
   readonly consumerAddress: string;
   readonly providerAddress: string;
@@ -93,6 +95,16 @@ export interface ServiceLowering<P = unknown, S = unknown> {
     artifact: Artifact,
     serialized: S,
   ): Effect.Effect<LoweredResult, unknown, unknown>;
+  /**
+   * Lowers the service without an artifact: the outputs and entities `deploy` returns, with no
+   * deployment behind them. Called in place of `package` and `deploy` for an address in
+   * `LowerOptions.unassembled` (ADR-0056). Optional: a descriptor without it cannot run a dev server.
+   */
+  reserve?(
+    ctx: LowerContext,
+    provisioned: P,
+    serialized: S,
+  ): Effect.Effect<LoweredResult, unknown, unknown>;
 }
 
 /** Input to an extension's package() step: the built bundle and the node's graph address. */
@@ -110,7 +122,7 @@ export interface LowerContext {
   readonly id: NodeId;
   /**
    * The node's deployment address: its full, dot-joined hierarchical
-   * position in the graph (e.g. "auth.api"). The config-key namespace and
+   * position in the graph, starting with the app name (e.g. "shop.auth.api"). The config-key namespace and
    * the bootstrap parameter.
    */
   readonly address: string;
@@ -215,6 +227,8 @@ export interface LowerOptions {
    * declared at all.
    */
   readonly report?: (result: DeploymentResult) => void;
+  /** Addresses lowered without an artifact: `package` and `deploy` are skipped and `reserve` runs instead (ADR-0056). Only the dev stack file sets it. */
+  readonly unassembled?: readonly string[];
 }
 
 /** A build descriptor's normalized output: the produced bundle dir plus the app's runnable entry within it. */
@@ -240,6 +254,27 @@ export interface AssembleInput {
   readonly cwd: string;
   /** Counts and labels this assemble measured, for the deploy's progress output. Core never reads them. */
   readonly report?: ((data: Readonly<Record<string, string | number>>) => void) | undefined;
+}
+
+/** Input to a build descriptor's `serve` step (ADR-0056). */
+export interface ServeInput {
+  /** The service's build adapter declaration, as `assemble` receives it: paths relative to `dirname(build.module)`. */
+  readonly build: BuildAdapter;
+  /** The service's graph address, as `assemble` receives it. */
+  readonly address: string;
+}
+
+/** How a service runs in development: what its build adapter's `serve` step returns (ADR-0056). */
+export interface DevServer {
+  /** Absolute. The command's working directory. */
+  readonly cwd: string;
+  /**
+   * The command for the port and host the service is given. `argv[0]` is an absolute path, or a bare
+   * name the emulator resolves on the command's `PATH`. The same input always returns the same argv.
+   */
+  argv(input: { readonly port: number; readonly host: string }): readonly string[];
+  /** The command as the front door and `dev url` show it: `argv` without the port and host flags, joined by spaces. */
+  readonly display: string;
 }
 
 /** package()'s product. */
@@ -421,6 +456,25 @@ export function joinDeployment(
 function missingBundleError(id: NodeId): LowerError {
   return new LowerError(
     `No bundle provided for service "${id}" (opts.bundles["${id}"] is required).`,
+  );
+}
+
+/** The message `prisma dev` structures as `DEV.DEV_SERVER_UNSUPPORTED` (ADR-0056). */
+function noReserveError(id: NodeId, extension: string, type: string): LowerError {
+  return new LowerError(
+    `service "${id}" runs a dev server but its descriptor (${extension}/${type}) has no \`reserve\` step`,
+  );
+}
+
+function unassembledWithBundleError(address: string): LowerError {
+  return new LowerError(
+    `"${address}" is listed in opts.unassembled and also has a bundle in opts.bundles — a service is either assembled or not.`,
+  );
+}
+
+function unassembledNotServiceError(address: string): LowerError {
+  return new LowerError(
+    `"${address}" is listed in opts.unassembled but is not a service in the graph.`,
   );
 }
 
@@ -660,6 +714,7 @@ export function lowering(
         return yield* Effect.fail(unknownProvisionerError(extension, need.brand, edgeId));
       }
       const ref = yield* provisioner.provision({
+        app: graph.root.id,
         edgeId,
         consumerAddress: edge.to,
         providerAddress: edge.from,
@@ -667,6 +722,15 @@ export function lowering(
         need,
       });
       provisioned.set(edgeId, ref);
+    }
+
+    const unassembled = new Set(opts.unassembled ?? []);
+    for (const address of unassembled) {
+      if (address in opts.bundles) return yield* Effect.fail(unassembledWithBundleError(address));
+      const found = graph.nodes.find((n) => n.id === address);
+      if (found === undefined || found.node.kind !== 'service') {
+        return yield* Effect.fail(unassembledNotServiceError(address));
+      }
     }
 
     const services = new Map<string, unknown>();
@@ -722,6 +786,18 @@ export function lowering(
       const provisionedNode = services.get(id);
       const typedConfig = buildConfig(service, id, graph, lowered, provisioned);
       const serialized = yield* descriptor.serialize(ctx, provisionedNode, typedConfig);
+      // ADR-0056: a service that runs its build adapter's dev server has no
+      // artifact. It keeps its identity and its environment rows; `reserve`
+      // stands in for `package` + `deploy` and hands dependents the same URL.
+      if (unassembled.has(id)) {
+        if (descriptor.reserve === undefined) {
+          return yield* Effect.fail(noReserveError(id, node.extension, node.type));
+        }
+        const result = yield* descriptor.reserve(ctx, provisionedNode, serialized);
+        lowered.set(id, result.outputs);
+        entries.push({ address: id, entities: result.entities });
+        continue;
+      }
       const bundle = opts.bundles[id];
       if (bundle === undefined) {
         return yield* Effect.fail(missingBundleError(id));

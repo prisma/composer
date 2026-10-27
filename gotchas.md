@@ -576,7 +576,7 @@ Setting `NODE_OPTIONS=--import=tsx` globally around the deploy command does make
 **Reproduction.**
 
 1. Add a `.tsx` file with real JSX syntax anywhere in a module's `module.ts` → `service.ts` → dependency-argument import graph.
-2. `prisma deploy module.ts` → `TypeError: Unknown file extension ".tsx"` from Node's ESM loader, before any resources are planned.
+2. `prisma deploy` → `TypeError: Unknown file extension ".tsx"` from Node's ESM loader, before any resources are planned.
 3. Precompile the JSX away (e.g. `bun build --target=node --format=esm` with npm packages kept `--external`) into a plain `.ts`/`.mjs` file, and import that from `service.ts` instead → deploy succeeds.
 
 **References.**

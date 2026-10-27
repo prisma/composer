@@ -252,7 +252,7 @@ export default module('my-app', ({ provision }) => {
 ```
 
 Next to it goes `prisma.config.ts`, the one config file the Prisma CLI reads.
-Composer's configuration is its `composer` section: the extensions that deploy
+Composer's configuration is its `composer` section: the module your app starts from (`entry`), the extensions that deploy
 your app and the store that keeps deploy state. Composer's commands read the
 `composer` section; your app code never imports the file:
 
@@ -265,6 +265,7 @@ import { definePrismaConfig } from 'prisma/config';
 
 export default definePrismaConfig({
   composer: composer({
+    entry: './module.ts',
     extensions: [prismaCloud(), nodeBuild()],
     state: prismaState(),
   }),
@@ -283,7 +284,7 @@ build first (the build is §6, just below):
 
 ```sh
 pnpm build
-pnpm prisma dev module.ts
+pnpm prisma dev
 ```
 
 It runs the same pipeline a deploy runs, against local stand-ins for Prisma
@@ -299,16 +300,21 @@ curl localhost:3001
 ```
 
 `dev` keeps running and restarts a service when its build changes; `Ctrl-C`
-stops it (your data stays, so the next start is warm). It doesn't print
-service logs, so it doesn't bury the front door. The logs come from the `log`
+stops it (your data stays, so the next start is warm). It doesn't print these
+services' logs, so it doesn't bury the front door. The logs come from the `log`
 operation in `@prisma/composer/control`, which a short script calls;
-[Running locally](running-locally.md#logs) has one.
+[Running locally](running-locally.md#logs) has one. A service can skip the
+build-and-restart loop by running a dev server instead: add
+`dev: ['bun', '--watch', 'server.ts']` to its `node()` adapter and `dev` runs
+that command, with its output in your terminal
+([Dev servers](running-locally.md#dev-servers)).
 
 Under the hood the local providers write the same `COMPOSER_*` environment
-variables a deploy writes, each keyed by the service's address —
-`COMPOSER_QUOTES_PORT` for the `quotes` service's own `port`,
-`COMPOSER_QUOTES_INPUT` for its input document, `COMPOSER_QUOTES_URL` for a
-`quotes` dependency's URL — so `service.load()`, `service.input()`, and
+variables a deploy writes, each keyed by the service's address, which starts
+with the app name (`my-app.quotes`, with `-` turned into `_`) —
+`COMPOSER_MY_APP_QUOTES_PORT` for the `quotes` service's own `port`,
+`COMPOSER_MY_APP_QUOTES_INPUT` for its input document,
+`COMPOSER_MY_APP_GATEWAY_QUOTES_URL` for the gateway's `quotes` dependency's URL — so `service.load()`, `service.input()`, and
 `service.port()` read exactly what they'll read in production. You never set
 them by hand locally; `dev` *is* the deploy. Full workflow (logs, `--fresh`,
 what persists) in
@@ -342,7 +348,7 @@ stores a session for one workspace:
 
 ```sh
 pnpm prisma auth login
-pnpm prisma deploy module.ts
+pnpm prisma deploy
 ```
 
 In CI, set `PRISMA_SERVICE_TOKEN` to a service token from the
@@ -391,13 +397,21 @@ Re-deploying is idempotent — it updates the same Project. For an isolated
 copy of the whole app (own services, own config), deploy a **stage**:
 
 ```sh
-pnpm prisma deploy module.ts --stage demo
+pnpm prisma deploy --stage demo
 ```
 
-Tear it down when you're done with the `destroy` operation from
-`@prisma/composer/control`; [Deploying and operating](deploying.md#destroying)
-has the script. The script runs outside the `prisma` CLI, so it does not use
-your `prisma auth login` session: it needs `PRISMA_SERVICE_TOKEN` and
+When you're done with the whole app, delete its Project. Find its id in
+`prisma project list`, then:
+
+```sh
+pnpm prisma project delete <id> --confirm <id>
+```
+
+That removes production and every stage. To remove only the `demo` stage, use
+the `destroy` operation from `@prisma/composer/control`;
+[Removing an app or a stage](deploying.md#removing-an-app-or-a-stage) has the
+script. The script runs outside the `prisma` CLI, so it does not use your
+`prisma auth login` session: it needs `PRISMA_SERVICE_TOKEN` and
 `PRISMA_WORKSPACE_ID` in the environment, and
 [Credentials](deploying.md#credentials) says where to find both.
 
@@ -441,6 +455,16 @@ Add `nextjsBuild()` from `@prisma/composer/nextjs/control` to the deploy
 config's `extensions`. Any page or server action that calls `service.load()`
 needs `export const dynamic = 'force-dynamic'`, because the runtime
 environment doesn't exist at build time.
+
+Locally there is nothing to build: `prisma dev` runs `next dev` for
+the service, on its URL, with hot reload and its output in your terminal, and
+`service.load()` and `service.input()` return what they will in production.
+Drop any `process.env` fallback you kept for plain `next dev` — run the app
+through `prisma dev` instead. A secret the app reads must be in the shell
+`prisma` runs in, or in a `.env` your `prisma.config.ts` loads; Next's own
+`.env` loading comes too late
+([Dev servers](running-locally.md#dev-servers)). `next build` is only needed
+for `prisma deploy`.
 [`examples/storefront-auth`](../../examples/storefront-auth/) is a complete
 ported-shaped app: a Next.js frontend calling a Bun API service that owns a
 Postgres.
@@ -459,7 +483,7 @@ the wiring for free.
   with `bootstrapService`.
 - [Running locally](running-locally.md) — `prisma dev` and the `log`
   operation in full: one service, history, `--fresh`, warm restarts.
-- [Deploying and operating](deploying.md) — stages, destroy, CI, how the app
+- [Deploying and operating](deploying.md) — stages, removing an app, CI, how the app
   behaves in production.
 - [`examples/`](../../examples/) — complete apps: start with
   [orm-demo](../../examples/orm-demo/) (one service + one Prisma

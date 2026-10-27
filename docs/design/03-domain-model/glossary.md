@@ -140,7 +140,7 @@ Configuration, not a node.
 
 ### Address and logical ID
 
-A node's **address** is its identity: the path of provision IDs from the root, assigned by Load (`auth.api`). A provision ID is the node's name unless `provision()` sets an `id`, so a node's name is, by default, part of its identity. The root's direct children have bare addresses, and the root's address is the application's name. Below the root, addresses contain only letters, digits and dots. On Prisma Cloud the address is the node's **logical ID** (`logicalId`): Composer writes it, byte for byte, on the node's topology entry and on the node's one platform row (Project, App, Database or Bucket). The same node on two branches has the same logical ID. A **display name** is a label only and never identity. An **Alchemy resource ID** (`catalog-db`, `web-svc`) is Composer's internal naming for the resources a node lowers to, and is never an identity; Alchemy's own docs call it a "logical ID", which is a different value from the platform's `logicalId`. Changing a node's address, including by changing its name, makes it a different entity; it is not a rename. See [ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md).
+A node's **address** is its identity: the path of provision IDs starting at the root, assigned by Load (`shop`, `shop.catalog`, `shop.auth.api`). The root's address is the deployed app name, so every address starts with it. A provision ID is the node's name unless `provision()` sets an `id`, so a node's name is, by default, part of its identity. The app name starts with a letter or digit and contains only letters, digits, `-` and `_`; below the root, provision IDs contain only letters and digits. Every platform **name** Composer writes (an App's display name, a Connection's, Bucket's or access key's `name`) is the address too; it is a label, never identity. On the platform a Connection's name is the address followed by `-` and a 12-character token that upstream adds. On Prisma Cloud the address is the node's **logical ID** (`logicalId`): Composer writes it, byte for byte, on the node's topology entry and on the node's one platform row (Project, App, Database or Bucket). The same node on two branches has the same logical ID. A **display name** is a label only and never identity. An **Alchemy resource ID** names one of the resources a node lowers to: the address for the node's main resource (`shop.catalog`), and the address plus `.` and a role for its other pieces (`shop.catalog.connection`, `shop.web.deployment`). Alchemy's own docs call it a "logical ID"; it is a different field from the platform's `logicalId`. Composer's environment variable keys are `COMPOSER_` plus the address upper-cased, with `.` and `-` turned into `_` (`COMPOSER_SHOP_WEB_…`). Changing a node's address, including by changing its name, makes it a different entity; it is not a rename. See [ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md).
 
 ## Connections
 
@@ -378,8 +378,8 @@ is in `layering.md`; this is the term-by-term catalogue.
 
 - **Stack** — the root of an Alchemy program; a set of Resources deployed as a
   unit. `Alchemy.Stack(name, { providers, state }, Effect.gen(…))`. `lower()`
-  emits one Stack for the whole app; `prisma deploy <entry>` drives it over the
-  app module directly (no hand-written stack file, no config file — ADR-0003).
+  emits one Stack for the whole app; `prisma deploy` drives it over the
+  app module the config's `entry` names (no hand-written stack file — ADR-0003).
   `→` **Topology / implicit root Module**.
 - **Resource\<Type, Props, Attributes>** — a managed entity with a string type
   tag, desired-input **Props**, and cloud-returned **Attributes**. Declared, then

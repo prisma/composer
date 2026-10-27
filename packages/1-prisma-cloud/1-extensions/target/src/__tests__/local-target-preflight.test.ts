@@ -138,10 +138,10 @@ function billingDocument(
   graph: ReturnType<typeof Load>,
   childEnv: Record<string, string>,
 ): unknown {
-  const node = graph.nodes.find((entry) => entry.id === 'billing')?.node as ServiceNode;
-  const binding = graph.inputBindings.find((b) => b.serviceAddress === 'billing')?.binding;
+  const node = graph.nodes.find((entry) => entry.id === 'app.billing')?.node as ServiceNode;
+  const binding = graph.inputBindings.find((b) => b.serviceAddress === 'app.billing')?.binding;
   const { absentSecrets } = transportedPreflight(new Map(), childEnv);
-  const row = serializeInput(node, 'billing', binding, { env: {}, absentSecrets });
+  const row = serializeInput(node, 'app.billing', binding, { env: {}, absentSecrets });
   return JSON.parse(row?.value ?? 'null');
 }
 
@@ -179,7 +179,7 @@ describe('prisma dev preflight', () => {
     const message = await preflightError(billingGraph(requiresSecrets('stripeKey')));
 
     expect(message).toContain('STRIPE_SECRET_KEY');
-    expect(message).toContain('service "billing"');
+    expect(message).toContain('service "app.billing"');
     expect(message).toContain('stripeKey is required');
     expect(message).toContain('export it in the shell you run `prisma dev` from');
     expect(message).toContain(
@@ -194,7 +194,7 @@ describe('prisma dev preflight', () => {
 
     const message = await preflightError(billingGraph(requiresSecrets('stripeKey')));
 
-    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "billing"');
+    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
   });
 
   test('the error lists every missing required secret and leaves out the optional ones', async () => {
@@ -204,8 +204,8 @@ describe('prisma dev preflight', () => {
     expect(message).not.toContain('STRIPE_WEBHOOK_SECRET');
 
     const both = await preflightError(billingGraph(requiresSecrets('stripeKey', 'webhookSecret')));
-    expect(both).toContain('STRIPE_SECRET_KEY  (required by service "billing"');
-    expect(both).toContain('STRIPE_WEBHOOK_SECRET  (required by service "billing"');
+    expect(both).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
+    expect(both).toContain('STRIPE_WEBHOOK_SECRET  (required by service "app.billing"');
   });
 
   test('when the schema needs some of several unset secrets but none alone, the error says so instead of calling each one required', async () => {
@@ -280,7 +280,7 @@ describe('prisma dev preflight', () => {
     const message = await preflightError(paramGraph());
 
     expect(message).toContain('APP_PORT');
-    expect(message).toContain('service "web"');
+    expect(message).toContain('service "app.web"');
     expect(message).toContain('export it in the shell you run `prisma dev` from');
     expect(message).toContain("import 'dotenv/config'");
   });
@@ -288,18 +288,18 @@ describe('prisma dev preflight', () => {
   test('missing params and secrets are reported together, with the ways to set them given once', async () => {
     const message = await preflightError(mixedGraph(requiresSecrets('stripeKey')));
 
-    expect(message).toContain('APP_PORT  (required by service "web")');
-    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "billing"');
+    expect(message).toContain('APP_PORT  (required by service "app.web")');
+    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
     expect(message.split('Set each missing variable').length - 1).toBe(1);
   });
 
   test('an input that fails even with every secret set is reported as invalid, next to the other problems', async () => {
     const message = await preflightError(mixedGraph(requiresSecrets('somethingElse')));
 
-    expect(message).toContain('invalid input for service "billing": somethingElse is required');
+    expect(message).toContain('invalid input for service "app.billing": somethingElse is required');
     expect(message).not.toContain('Deploy-time');
     expect(message).not.toContain('STRIPE_SECRET_KEY');
-    expect(message).toContain('APP_PORT  (required by service "web")');
+    expect(message).toContain('APP_PORT  (required by service "app.web")');
   });
 
   test('an env-sourced param that is set is fingerprinted for the alchemy process', async () => {
@@ -337,8 +337,8 @@ describe('prisma dev preflight', () => {
   test('a secret shared by two services stops dev naming only the service that requires it', async () => {
     const message = await preflightError(sharedGraph());
 
-    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "billing"');
-    expect(message).not.toContain('service "reports"');
+    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
+    expect(message).not.toContain('service "app.reports"');
   });
 
   test('a secret shared by two services that is set gets one fingerprint', async () => {

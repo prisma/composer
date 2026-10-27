@@ -55,7 +55,7 @@ Bun.serve({
         // local-dev spec § 4) — exposed here so a test can assert on it
         // directly, through the documented HTTP contract, rather than
         // inferring it indirectly from a successful bind.
-        portEnv: process.env['COMPOSER_WEB_PORT'] ?? null,
+        portEnv: process.env['COMPOSER_LOCALDEVS4FIXTURE_WEB_PORT'] ?? null,
       });
     }
     if (url.pathname.startsWith('/blobs/')) {

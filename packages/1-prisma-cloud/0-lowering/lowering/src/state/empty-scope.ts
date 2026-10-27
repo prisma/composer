@@ -78,7 +78,7 @@ const listBranchResources = (
  * older Composer version whose state store is never read, or the resources
  * belong to something other than this app. The rows could be identified by
  * logicalId, but the rest of the state could not be rebuilt from them
- * (ADR-0051), so fail once, up front. A genuinely fresh deploy sees an empty
+ * (ADR-0057), so fail once, up front. A genuinely fresh deploy sees an empty
  * Branch and passes. Connections are not counted: they are children of databases, which
  * are. Local dev never reaches this — the dev stack pins
  * `state: localState()` (generate-dev-stack.ts).

@@ -105,7 +105,7 @@ importers:
         version: link:../../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 2.0.0-beta.83
-        version: 2.0.0-beta.83(@effect/platform-bun@4.0.3(effect@4.0.3))(@effect/platform-node@4.0.3(effect@4.0.3)(redis@6.2.1))(@effect/vitest@4.0.3(effect@4.0.3)(vitest@5.0.4(@types/node@26.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))))(@prisma/orm-postgres@8.0.0-rc.20(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)))(@types/node@26.1.2)(@types/react@19.2.17)(@vercel/nft@1.10.2)(effect@4.0.3)(hono@4.12.31)(mongodb@6.21.0(@aws-sdk/credential-providers@3.1077.0))(pg@8.22.0)(prisma@8.0.0-rc.26(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))(ws@8.22.0)
+        version: 2.0.0-beta.83(@effect/platform-bun@4.0.3(effect@4.0.3))(@effect/platform-node@4.0.3(effect@4.0.3)(redis@6.2.1))(@effect/vitest@4.0.3(effect@4.0.3)(vitest@5.0.4(@types/node@26.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))))(@prisma/orm-postgres@8.0.0-rc.20(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)))(@types/node@26.1.2)(@types/react@19.2.17)(@vercel/nft@1.10.2)(effect@4.0.3)(hono@4.11.4)(mongodb@6.21.0(@aws-sdk/credential-providers@3.1077.0))(pg@8.22.0)(prisma@8.0.0-rc.26(magicast@0.5.5)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))(ws@8.22.0)
       effect:
         specifier: 4.0.3
         version: 4.0.3
@@ -133,7 +133,7 @@ importers:
         version: link:../../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 2.0.0-beta.83
-        version: 2.0.0-beta.83(@effect/platform-bun@4.0.3(effect@4.0.3))(@effect/platform-node@4.0.3(effect@4.0.3)(redis@6.2.1))(@effect/vitest@4.0.3(effect@4.0.3)(vitest@5.0.4(@types/node@26.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))))(@prisma/orm-postgres@8.0.0-rc.20(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)))(@types/node@26.1.2)(@types/react@19.2.17)(@vercel/nft@1.10.2)(effect@4.0.3)(hono@4.11.4)(mongodb@6.21.0(@aws-sdk/credential-providers@3.1077.0))(pg@8.22.0)(prisma@8.0.0-rc.26(magicast@0.5.5)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))(ws@8.22.0)
+        version: 2.0.0-beta.83(@effect/platform-bun@4.0.3(effect@4.0.3))(@effect/platform-node@4.0.3(effect@4.0.3)(redis@6.2.1))(@effect/vitest@4.0.3(effect@4.0.3)(vitest@5.0.4(@types/node@26.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))))(@prisma/orm-postgres@8.0.0-rc.20(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)))(@types/node@26.1.2)(@types/react@19.2.17)(@vercel/nft@1.10.2)(effect@4.0.3)(hono@4.12.31)(mongodb@6.21.0(@aws-sdk/credential-providers@3.1077.0))(pg@8.22.0)(prisma@8.0.0-rc.26(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))(ws@8.22.0)
       arktype:
         specifier: ^2.2.3
         version: 2.2.7
@@ -1402,6 +1402,9 @@ importers:
       '@prisma/composer':
         specifier: workspace:0.34.0
         version: link:../composer
+      '@prisma/management-api-sdk':
+        specifier: ^1.80.0
+        version: 1.80.0
       alchemy:
         specifier: 2.0.0-beta.83
         version: 2.0.0-beta.83(@effect/platform-bun@4.0.3(effect@4.0.3))(@effect/platform-node@4.0.3(effect@4.0.3)(redis@6.2.1))(@effect/vitest@4.0.3(effect@4.0.3)(vitest@5.0.4(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))))(@prisma/orm-postgres@8.0.0-rc.20(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)))(@types/node@26.1.1)(@types/react@19.2.17)(@vercel/nft@1.10.2)(effect@4.0.3)(hono@4.12.31)(mongodb@6.21.0(@aws-sdk/credential-providers@3.1077.0))(pg@8.22.0)(prisma@8.0.0-rc.26(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))(ws@8.22.0)
@@ -1424,6 +1427,9 @@ importers:
       '@internal/foundation':
         specifier: workspace:0.34.0
         version: link:../../0-framework/0-foundation/foundation
+      '@internal/lowering':
+        specifier: workspace:0.34.0
+        version: link:../../1-prisma-cloud/0-lowering/lowering
       '@internal/tsdown-config':
         specifier: workspace:0.34.0
         version: link:../../0-framework/0-foundation/tsdown-config

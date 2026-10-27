@@ -120,7 +120,8 @@ type Call =
       readonly id: string;
       readonly artifact: Artifact;
       readonly environment: unknown;
-    };
+    }
+  | { readonly phase: 'reserve'; readonly id: string; readonly environment: unknown };
 
 // The fake 'fake/compute' descriptor's own intra-node handoff types — stand-
 // ins for a real extension's descriptor-owned provision/serialize products.
@@ -132,7 +133,9 @@ interface FakeSerialized {
   readonly environment: ReadonlyArray<{ input: string; name: string; value: unknown }>;
 }
 
-function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescriptor> } = {}) {
+function fakeExtension(
+  opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescriptor>; noReserve?: boolean } = {},
+) {
   const calls: Call[] = [];
   const descriptor: ExtensionDescriptor = {
     id: 'test/pack',
@@ -208,6 +211,24 @@ function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescr
             ],
           });
         },
+        ...(opts.noReserve === true
+          ? {}
+          : {
+              reserve: (
+                ctx: LowerContext,
+                provisioned: FakeProvisioned,
+                serialized: FakeSerialized,
+              ) => {
+                calls.push({ phase: 'reserve', id: ctx.id, environment: serialized.environment });
+                return Effect.succeed({
+                  outputs: {
+                    url: `https://${ctx.id}.example`,
+                    resourceRef: provisioned.resourceRef,
+                  },
+                  entities: [{ kind: 'fake-compute', id: provisioned.serviceId }],
+                });
+              },
+            }),
       } satisfies { readonly kind: 'service' } & ServiceLowering<FakeProvisioned, FakeSerialized>,
     },
   };
@@ -232,9 +253,9 @@ describe('buildConfig', () => {
       return {};
     });
     const graph = Load(root);
-    const lowered = new Map<string, Outputs>([['db', { url: 'db://db' }]]);
+    const lowered = new Map<string, Outputs>([['shop.db', { url: 'db://db' }]]);
 
-    expect(buildConfig(auth, 'auth', graph, lowered, new Map())).toEqual({
+    expect(buildConfig(auth, 'shop.auth', graph, lowered, new Map())).toEqual({
       service: { port: 3000 },
       inputs: { db: { url: 'db://db' } },
     });
@@ -257,14 +278,14 @@ describe('buildConfig', () => {
     const graph = Load(root);
     // The producer lowered, but its outputs carry no `url` — the exact
     // param `dbEnd()`'s connection declares and does not mark optional.
-    const lowered = new Map<string, Outputs>([['db', { host: 'db.internal' }]]);
+    const lowered = new Map<string, Outputs>([['shop.db', { host: 'db.internal' }]]);
 
-    const build = () => buildConfig(auth, 'auth', graph, lowered, new Map());
+    const build = () => buildConfig(auth, 'shop.auth', graph, lowered, new Map());
 
     expect(build).toThrow(LowerError);
-    expect(build).toThrow(/"auth\.db"/); // the edge id
+    expect(build).toThrow(/"shop\.auth\.db"/); // the edge id
     expect(build).toThrow(/"url"/); // the param
-    expect(build).toThrow(/"db"/); // the producer
+    expect(build).toThrow(/"shop\.db"/); // the producer
     expect(build).toThrow(/host/); // the producer's actual key list
   });
 
@@ -278,7 +299,7 @@ describe('buildConfig', () => {
     const graph = Load(root);
 
     // `lowered` empty: the producer is wired but produced no outputs.
-    expect(() => buildConfig(auth, 'auth', graph, new Map(), new Map())).toThrow(/nothing/);
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(/nothing/);
   });
 
   test('a declared param the consumer marked optional is exempt — absent stays undefined, no error', () => {
@@ -299,7 +320,7 @@ describe('buildConfig', () => {
 
     // The consumer said absent is legal, so the producer under-delivering is
     // not a contract breach — boot's coerce() reads a missing var as absent.
-    expect(buildConfig(auth, 'auth', graph, new Map(), new Map())).toEqual({
+    expect(buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toEqual({
       service: {},
       inputs: { db: { url: undefined } },
     });
@@ -321,7 +342,7 @@ describe('buildConfig', () => {
     const graph = Load(root);
     const withoutEdges = { ...graph, edges: graph.edges.filter((e) => e.kind !== 'dependency') };
 
-    expect(buildConfig(auth, 'auth', withoutEdges, new Map(), new Map())).toEqual({
+    expect(buildConfig(auth, 'shop.auth', withoutEdges, new Map(), new Map())).toEqual({
       service: {},
       inputs: { db: { url: undefined } },
     });
@@ -347,10 +368,10 @@ describe('buildConfig', () => {
     const graph = Load(root);
     // The producer IS lowered (with some unrelated output), but a provisioned
     // param must ignore it entirely — its value comes only from `provisioned`.
-    const lowered = new Map<string, Outputs>([['auth', { token: 'wrong-value' }]]);
-    const provisioned = new Map<string, unknown>([['consumer.auth', 'minted-value']]);
+    const lowered = new Map<string, Outputs>([['shop.auth', { token: 'wrong-value' }]]);
+    const provisioned = new Map<string, unknown>([['shop.consumer.auth', 'minted-value']]);
 
-    expect(buildConfig(consumer, 'consumer', graph, lowered, provisioned)).toEqual({
+    expect(buildConfig(consumer, 'shop.consumer', graph, lowered, provisioned)).toEqual({
       service: {},
       inputs: { auth: { token: 'minted-value' } },
     });
@@ -375,9 +396,9 @@ describe('buildConfig', () => {
     const graph = Load(root);
     // The producer supplies NOTHING — which for a non-provisioned required
     // param would now be a LowerError. Here the mint is the source.
-    const provisioned = new Map<string, unknown>([['consumer.auth', 'minted-value']]);
+    const provisioned = new Map<string, unknown>([['shop.consumer.auth', 'minted-value']]);
 
-    expect(buildConfig(consumer, 'consumer', graph, new Map(), provisioned)).toEqual({
+    expect(buildConfig(consumer, 'shop.consumer', graph, new Map(), provisioned)).toEqual({
       service: {},
       inputs: { auth: { token: 'minted-value' } },
     });
@@ -393,7 +414,7 @@ describe('buildConfig — provision-time param binding', () => {
     });
     const graph = Load(root);
 
-    expect(buildConfig(auth, 'auth', graph, new Map(), new Map())).toEqual({
+    expect(buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toEqual({
       service: { port: 8080 },
       inputs: {},
     });
@@ -407,7 +428,7 @@ describe('buildConfig — provision-time param binding', () => {
     });
     const graph = Load(root);
 
-    expect(buildConfig(auth, 'auth', graph, new Map(), new Map())).toEqual({
+    expect(buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toEqual({
       service: { port: 3000 },
       inputs: {},
     });
@@ -421,9 +442,11 @@ describe('buildConfig — provision-time param binding', () => {
     });
     const graph = Load(root);
 
-    expect(() => buildConfig(auth, 'auth', graph, new Map(), new Map())).toThrow(LowerError);
-    expect(() => buildConfig(auth, 'auth', graph, new Map(), new Map())).toThrow(/"origin"/);
-    expect(() => buildConfig(auth, 'auth', graph, new Map(), new Map())).toThrow(/"auth"/);
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(LowerError);
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(/"origin"/);
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(
+      /"shop\.auth"/,
+    );
   });
 
   test('an optional param with no default and never bound resolves to absent, not an error', () => {
@@ -434,7 +457,7 @@ describe('buildConfig — provision-time param binding', () => {
     });
     const graph = Load(root);
 
-    expect(buildConfig(auth, 'auth', graph, new Map(), new Map())).toEqual({
+    expect(buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toEqual({
       service: {},
       inputs: {},
     });
@@ -449,7 +472,7 @@ describe('buildConfig — provision-time param binding', () => {
     });
     const graph = Load(root);
 
-    const config = buildConfig(auth, 'auth', graph, new Map(), new Map());
+    const config = buildConfig(auth, 'shop.auth', graph, new Map(), new Map());
     expect(isParamSource(config.service['origin'])).toBe(true);
     expect(config.service['origin']).toBe(source);
   });
@@ -463,8 +486,8 @@ describe('buildConfig — provision-time param binding', () => {
     });
     const graph = Load(root);
 
-    expect(() => buildConfig(auth, 'auth', graph, new Map(), new Map())).toThrow(LowerError);
-    expect(() => buildConfig(auth, 'auth', graph, new Map(), new Map())).toThrow(/"port"/);
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(LowerError);
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(/"port"/);
   });
 
   test('a param claiming BOTH a provision need and a provision-time binding is a LowerError naming the param and both sources', () => {
@@ -480,13 +503,15 @@ describe('buildConfig — provision-time param binding', () => {
     });
 
     const sourceGraph = Load(asSource);
-    expect(() => buildConfig(auth, 'auth', sourceGraph, new Map(), new Map())).toThrow(LowerError);
-    expect(() => buildConfig(auth, 'auth', sourceGraph, new Map(), new Map())).toThrow(
+    expect(() => buildConfig(auth, 'shop.auth', sourceGraph, new Map(), new Map())).toThrow(
+      LowerError,
+    );
+    expect(() => buildConfig(auth, 'shop.auth', sourceGraph, new Map(), new Map())).toThrow(
       /"token".*two sources.*a param source.*test:both-sources/,
     );
 
     const literalGraph = Load(asLiteral);
-    expect(() => buildConfig(auth, 'auth', literalGraph, new Map(), new Map())).toThrow(
+    expect(() => buildConfig(auth, 'shop.auth', literalGraph, new Map(), new Map())).toThrow(
       /"token".*two sources.*a literal value.*test:both-sources/,
     );
   });
@@ -512,7 +537,7 @@ const singleServiceWithDbModule = (params: Params = {}) =>
     return {};
   });
 
-const svcBundles = { bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } };
+const svcBundles = { bundles: { 'hello.svc': { dir: 'dist/bundle', entry: 'server.js' } } };
 
 describe('lowering a module root — a single service', () => {
   test('a dependency-less service sequences application → provision → serialize → package → deploy; nothing is auto-provisioned', () => {
@@ -568,7 +593,7 @@ describe('lowering a module root — a single service', () => {
 
     const serialize = calls.find((c) => c.phase === 'serialize');
     expect(serialize).toMatchObject({
-      config: { service: { port: 3000 }, inputs: { db: { url: 'db://db' } } },
+      config: { service: { port: 3000 }, inputs: { db: { url: 'db://hello.db' } } },
     });
   });
 
@@ -577,10 +602,10 @@ describe('lowering a module root — a single service', () => {
     const root = singleServiceModule('fake/compute');
     const bundle: Bundle = { dir: 'dist/bundle', entry: 'main.mjs' };
 
-    run(lowering(root, config, opts({ bundles: { svc: bundle } })));
+    run(lowering(root, config, opts({ bundles: { 'hello.svc': bundle } })));
 
     const pkg = calls.find((c) => c.phase === 'package');
-    expect(pkg).toMatchObject({ assembled: bundle, address: 'svc' });
+    expect(pkg).toMatchObject({ assembled: bundle, address: 'hello.svc' });
   });
 
   test("the environment edge: deploy's `environment` IS serialize's returned records (by recording, not order)", () => {
@@ -595,7 +620,7 @@ describe('lowering a module root — a single service', () => {
     expect(deploy).toBeDefined();
     if (serialize?.phase !== 'serialize' || deploy?.phase !== 'deploy')
       throw new Error('unreachable');
-    expect(deploy.environment).toEqual([{ input: 'db', name: 'url', value: 'db://db' }]);
+    expect(deploy.environment).toEqual([{ input: 'db', name: 'url', value: 'db://hello.db' }]);
     // Same records the serialize call's own return produced (identity, not
     // a coincidental re-derivation) — the fake extension only ever returns
     // them once, from serialize, and threads them through to deploy's
@@ -627,7 +652,7 @@ describe('lowering a module root — a single service', () => {
     const error = runError(lowering(root, config, opts()));
 
     expect(error).toBeInstanceOf(LowerError);
-    expect(error.message).toContain('opts.bundles["svc"]');
+    expect(error.message).toContain('opts.bundles["hello.svc"]');
   });
 
   test('fails with LowerError naming the type and the known types on an unknown service type', () => {
@@ -708,8 +733,8 @@ describe('lowering a module root — a provisioned resource and two connected se
       lowering(twoServiceModule(), config, {
         name: 'shop',
         bundles: {
-          auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          storefront: { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
         },
       }),
     );
@@ -719,15 +744,15 @@ describe('lowering a module root — a provisioned resource and two connected se
     const order = calls.map((c) => (c.phase === 'application' ? c.phase : `${c.phase}:${c.id}`));
     expect(order).toEqual([
       'application',
-      'provision:auth',
-      'provision:storefront',
-      'resource:db',
-      'serialize:auth',
-      'package:auth',
-      'deploy:auth',
-      'serialize:storefront',
-      'package:storefront',
-      'deploy:storefront',
+      'provision:shop.auth',
+      'provision:shop.storefront',
+      'resource:shop.db',
+      'serialize:shop.auth',
+      'package:shop.auth',
+      'deploy:shop.auth',
+      'serialize:shop.storefront',
+      'package:shop.storefront',
+      'deploy:shop.storefront',
     ]);
   });
 
@@ -738,39 +763,41 @@ describe('lowering a module root — a provisioned resource and two connected se
       lowering(twoServiceModule(), config, {
         name: 'shop',
         bundles: {
-          auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          storefront: { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
         },
       }),
     );
 
-    const auth = calls.find((c) => c.phase === 'serialize' && c.id === 'auth');
+    const auth = calls.find((c) => c.phase === 'serialize' && c.id === 'shop.auth');
     expect(auth?.phase === 'serialize' ? [...auth.services.keys()] : []).toEqual([
-      'auth',
-      'storefront',
+      'shop.auth',
+      'shop.storefront',
     ]);
-    expect(auth?.phase === 'serialize' ? auth.services.get('storefront') : undefined).toMatchObject(
-      { serviceId: 'storefront#svc' },
-    );
+    expect(
+      auth?.phase === 'serialize' ? auth.services.get('shop.storefront') : undefined,
+    ).toMatchObject({ serviceId: 'shop.storefront#svc' });
   });
 
-  test("each module-provisioned service's address is its own provision id", () => {
+  test("each module-provisioned service's address is the root id followed by its provision id", () => {
     const { config, calls } = fakeExtension();
 
     run(
       lowering(twoServiceModule(), config, {
         name: 'shop',
         bundles: {
-          auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          storefront: { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
         },
       }),
     );
 
-    const authProvision = calls.find((c) => c.phase === 'provision' && c.id === 'auth');
-    const storefrontProvision = calls.find((c) => c.phase === 'provision' && c.id === 'storefront');
-    expect(authProvision).toMatchObject({ address: 'auth' });
-    expect(storefrontProvision).toMatchObject({ address: 'storefront' });
+    const authProvision = calls.find((c) => c.phase === 'provision' && c.id === 'shop.auth');
+    const storefrontProvision = calls.find(
+      (c) => c.phase === 'provision' && c.id === 'shop.storefront',
+    );
+    expect(authProvision).toMatchObject({ address: 'shop.auth' });
+    expect(storefrontProvision).toMatchObject({ address: 'shop.storefront' });
   });
 
   test("auth's Config.inputs.db carries the module-provisioned resource's lowered url", () => {
@@ -780,15 +807,15 @@ describe('lowering a module root — a provisioned resource and two connected se
       lowering(twoServiceModule(), config, {
         name: 'shop',
         bundles: {
-          auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          storefront: { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
         },
       }),
     );
 
-    const authSerialize = calls.find((c) => c.phase === 'serialize' && c.id === 'auth');
+    const authSerialize = calls.find((c) => c.phase === 'serialize' && c.id === 'shop.auth');
     expect(authSerialize).toMatchObject({
-      config: { inputs: { db: { url: 'db://db' } } },
+      config: { inputs: { db: { url: 'db://shop.db' } } },
     });
   });
 
@@ -799,15 +826,17 @@ describe('lowering a module root — a provisioned resource and two connected se
       lowering(twoServiceModule(), config, {
         name: 'shop',
         bundles: {
-          auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          storefront: { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
         },
       }),
     );
 
-    const storefrontSerialize = calls.find((c) => c.phase === 'serialize' && c.id === 'storefront');
+    const storefrontSerialize = calls.find(
+      (c) => c.phase === 'serialize' && c.id === 'shop.storefront',
+    );
     expect(storefrontSerialize).toMatchObject({
-      config: { inputs: { auth: { url: 'https://auth.example' } } },
+      config: { inputs: { auth: { url: 'https://shop.auth.example' } } },
     });
   });
 
@@ -818,15 +847,15 @@ describe('lowering a module root — a provisioned resource and two connected se
       lowering(twoServiceModule(), config, {
         name: 'shop',
         bundles: {
-          auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          storefront: { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
         },
       }),
     );
 
-    const authDeploy = calls.find((c) => c.phase === 'deploy' && c.id === 'auth');
+    const authDeploy = calls.find((c) => c.phase === 'deploy' && c.id === 'shop.auth');
     expect(authDeploy).toMatchObject({
-      environment: [{ input: 'db', name: 'url', value: 'db://db' }],
+      environment: [{ input: 'db', name: 'url', value: 'db://shop.db' }],
     });
     // Same records the serialize call's own return produced (identity, not
     // a coincidental re-derivation) — the fake extension only ever returns
@@ -845,7 +874,7 @@ describe('lowering a module root — a provisioned resource and two connected se
       h.provision(storefrontService(), {
         id: 'storefront',
         deps: {
-          auth: { id: 'auth' } as never,
+          auth: { id: 'shop.auth' } as never,
         },
       });
       h.provision(authService(), { id: 'auth', deps: { db } });
@@ -856,22 +885,24 @@ describe('lowering a module root — a provisioned resource and two connected se
       lowering(root, config, {
         name: 'shop',
         bundles: {
-          auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          storefront: { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
         },
       }),
     );
 
-    const authDeploy = calls.findIndex((c) => c.phase === 'deploy' && c.id === 'auth');
+    const authDeploy = calls.findIndex((c) => c.phase === 'deploy' && c.id === 'shop.auth');
     const storefrontSerializeIndex = calls.findIndex(
-      (c) => c.phase === 'serialize' && c.id === 'storefront',
+      (c) => c.phase === 'serialize' && c.id === 'shop.storefront',
     );
     expect(authDeploy).toBeGreaterThanOrEqual(0);
     expect(authDeploy).toBeLessThan(storefrontSerializeIndex);
 
-    const storefrontSerialize = calls.find((c) => c.phase === 'serialize' && c.id === 'storefront');
+    const storefrontSerialize = calls.find(
+      (c) => c.phase === 'serialize' && c.id === 'shop.storefront',
+    );
     expect(storefrontSerialize).toMatchObject({
-      config: { inputs: { auth: { url: 'https://auth.example' } } },
+      config: { inputs: { auth: { url: 'https://shop.auth.example' } } },
     });
   });
 
@@ -881,12 +912,12 @@ describe('lowering a module root — a provisioned resource and two connected se
     const error = runError(
       lowering(twoServiceModule(), config, {
         name: 'shop',
-        bundles: { auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' } },
+        bundles: { 'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' } },
       }),
     );
 
     expect(error).toBeInstanceOf(LowerError);
-    expect(error.message).toContain('opts.bundles["storefront"]');
+    expect(error.message).toContain('opts.bundles["shop.storefront"]');
   });
 
   test("a module root's own lowering has no outputs yet (boundary ports are future work)", () => {
@@ -896,8 +927,8 @@ describe('lowering a module root — a provisioned resource and two connected se
       lowering(twoServiceModule(), config, {
         name: 'shop',
         bundles: {
-          auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          storefront: { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
         },
       }),
     );
@@ -942,8 +973,8 @@ describe('lowering a module root — one resource shared by two consumers', () =
   const sharedOpts = {
     name: 'shop',
     bundles: {
-      auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-      billing: { dir: 'modules/billing/dist/bundle', entry: 'server.js' },
+      'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+      'shop.billing': { dir: 'modules/billing/dist/bundle', entry: 'server.js' },
     },
   };
 
@@ -953,7 +984,7 @@ describe('lowering a module root — one resource shared by two consumers', () =
     run(lowering(sharedModule(), config, sharedOpts));
 
     expect(calls.filter((c) => c.phase === 'resource')).toEqual([
-      { phase: 'resource', id: 'db', type: 'fake/db' },
+      { phase: 'resource', id: 'shop.db', type: 'fake/db' },
     ]);
   });
 
@@ -962,13 +993,13 @@ describe('lowering a module root — one resource shared by two consumers', () =
 
     run(lowering(sharedModule(), config, sharedOpts));
 
-    const authSerialize = calls.find((c) => c.phase === 'serialize' && c.id === 'auth');
-    const billingSerialize = calls.find((c) => c.phase === 'serialize' && c.id === 'billing');
+    const authSerialize = calls.find((c) => c.phase === 'serialize' && c.id === 'shop.auth');
+    const billingSerialize = calls.find((c) => c.phase === 'serialize' && c.id === 'shop.billing');
     expect(authSerialize).toMatchObject({
-      config: { inputs: { authDb: { url: 'db://db' } } },
+      config: { inputs: { authDb: { url: 'db://shop.db' } } },
     });
     expect(billingSerialize).toMatchObject({
-      config: { inputs: { billingDb: { url: 'db://db' } } },
+      config: { inputs: { billingDb: { url: 'db://shop.db' } } },
     });
   });
 });
@@ -1000,8 +1031,8 @@ describe('provision phase (ADR-0031): resolving a provisioned param against the 
   const provisionBundles = {
     name: 'shop',
     bundles: {
-      auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-      consumer: { dir: 'modules/consumer/dist/bundle', entry: 'server.js' },
+      'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+      'shop.consumer': { dir: 'modules/consumer/dist/bundle', entry: 'server.js' },
     },
   };
 
@@ -1023,16 +1054,19 @@ describe('provision phase (ADR-0031): resolving a provisioned param against the 
 
     expect(provisioner.calls).toHaveLength(1);
     expect(provisioner.calls[0]).toMatchObject({
-      edgeId: 'consumer.auth',
-      consumerAddress: 'consumer',
-      providerAddress: 'auth',
+      app: 'shop',
+      edgeId: 'shop.consumer.auth',
+      consumerAddress: 'shop.consumer',
+      providerAddress: 'shop.auth',
       input: 'auth',
     });
     expect(provisioner.calls[0]?.need.brand).toBe(PROVISION_BRAND);
 
-    const consumerSerialize = calls.find((c) => c.phase === 'serialize' && c.id === 'consumer');
+    const consumerSerialize = calls.find(
+      (c) => c.phase === 'serialize' && c.id === 'shop.consumer',
+    );
     expect(consumerSerialize).toMatchObject({
-      config: { inputs: { auth: { token: 'minted:consumer.auth' } } },
+      config: { inputs: { auth: { token: 'minted:shop.consumer.auth' } } },
     });
   });
 
@@ -1050,7 +1084,7 @@ describe('provision phase (ADR-0031): resolving a provisioned param against the 
     const error = runError(lowering(root, config, provisionBundles));
 
     expect(error).toBeInstanceOf(LowerError);
-    expect(error.message).toContain('consumer.auth');
+    expect(error.message).toContain('shop.consumer.auth');
     expect(error.message).toContain(String(PROVISION_BRAND));
   });
 
@@ -1079,7 +1113,7 @@ describe('provision phase (ADR-0031): resolving a provisioned param against the 
     const error = runError(lowering(root, config, provisionBundles));
 
     expect(error).toBeInstanceOf(LowerError);
-    expect(error.message).toContain('consumer.auth');
+    expect(error.message).toContain('shop.consumer.auth');
     expect(error.message).toContain('cross-extension');
     expect(provisioner.calls).toHaveLength(0);
   });
@@ -1113,7 +1147,7 @@ describe('provision phase (ADR-0031): resolving a provisioned param against the 
     const error = runError(lowering(root, config, provisionBundles));
 
     expect(error).toBeInstanceOf(LowerError);
-    expect(error.message).toContain('consumer.auth');
+    expect(error.message).toContain('shop.consumer.auth');
     expect(error.message).toContain('token');
     expect(error.message).toContain('secondToken');
     // Nothing is minted — the deploy fails before any provisioner runs.
@@ -1138,14 +1172,14 @@ describe('joinDeployment', () => {
   test('puts each entry back together with its graph node, preserving entry order', () => {
     const graph = twoNodeGraph();
     const entries = [
-      { address: 'db', entities: [{ kind: 'fake-db', id: 'db#1' }] },
-      { address: 'auth', entities: [{ kind: 'fake-compute', id: 'svc#1', url: 'https://a' }] },
+      { address: 'shop.db', entities: [{ kind: 'fake-db', id: 'db#1' }] },
+      { address: 'shop.auth', entities: [{ kind: 'fake-compute', id: 'svc#1', url: 'https://a' }] },
     ];
 
     const results = joinDeployment(graph, entries);
 
     expect(results).toHaveLength(2);
-    expect(results.map((r) => r.address)).toEqual(['db', 'auth']);
+    expect(results.map((r) => r.address)).toEqual(['shop.db', 'shop.auth']);
     expect(results[0]?.node.name).toBe('db');
     expect(results[1]?.node.name).toBe('test-service');
     expect(results[1]?.entities).toEqual([{ kind: 'fake-compute', id: 'svc#1', url: 'https://a' }]);
@@ -1154,19 +1188,19 @@ describe('joinDeployment', () => {
   test('skips an address the graph no longer holds — entries are data, the graph is truth', () => {
     const graph = twoNodeGraph();
     const entries = [
-      { address: 'db', entities: [] },
-      { address: 'ghost', entities: [{ kind: 'fake-compute', id: 'gone#1' }] },
+      { address: 'shop.db', entities: [] },
+      { address: 'shop.ghost', entities: [{ kind: 'fake-compute', id: 'gone#1' }] },
     ];
 
     const results = joinDeployment(graph, entries);
 
-    expect(results.map((r) => r.address)).toEqual(['db']);
+    expect(results.map((r) => r.address)).toEqual(['shop.db']);
   });
 
   test('a node that reported no entities still yields a result — it deployed, it just published nothing', () => {
     const graph = twoNodeGraph();
 
-    const results = joinDeployment(graph, [{ address: 'auth', entities: [] }]);
+    const results = joinDeployment(graph, [{ address: 'shop.auth', entities: [] }]);
 
     expect(results).toHaveLength(1);
     expect(results[0]?.entities).toEqual([]);
@@ -1204,7 +1238,7 @@ describe('lower()', () => {
     const stack = lower(
       root,
       config,
-      opts({ bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } }),
+      opts({ bundles: { 'hello.svc': { dir: 'dist/bundle', entry: 'server.js' } } }),
     );
 
     expect(stack).toBeDefined();
@@ -1224,13 +1258,16 @@ describe('lowering a nested module — dotted addresses (H1: module-composition)
     });
     const graph = Load(root);
 
-    expect(graph.nodes.some((n) => n.id === 'auth.api')).toBe(true);
+    expect(graph.nodes.some((n) => n.id === 'shop.auth.api')).toBe(true);
 
     const result = run(
       lowering(
         root,
         config,
-        opts({ bundles: { 'auth.api': { dir: 'dist/bundle', entry: 'server.js' } } }),
+        opts({
+          name: 'shop',
+          bundles: { 'shop.auth.api': { dir: 'dist/bundle', entry: 'server.js' } },
+        }),
       ),
     );
 
@@ -1504,5 +1541,115 @@ describe('isBuildOnlyExtension', () => {
 
   test('true for an extension with no nodes at all (vacuously every node is build)', () => {
     expect(isBuildOnlyExtension({ id: 'test/empty', nodes: {} })).toBe(true);
+  });
+});
+
+describe('lowering a service that runs a dev server (ADR-0056)', () => {
+  const twoServiceModule = () =>
+    module('shop', {}, (h) => {
+      const db = h.provision(dbResource(), { id: 'db' });
+      const authRef = h.provision(app('fake/compute', { db: dbEnd() }), {
+        id: 'auth',
+        deps: { db },
+      });
+      h.provision(app('fake/compute', { auth: httpEnd() }), {
+        id: 'storefront',
+        deps: { auth: authRef },
+      });
+      return {};
+    });
+  const storefrontBundle = {
+    'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+  };
+
+  test('an unassembled service is provisioned and serialized, then reserved: no package, no deploy', () => {
+    const { config, calls } = fakeExtension();
+
+    run(
+      lowering(twoServiceModule(), config, {
+        name: 'shop',
+        bundles: storefrontBundle,
+        unassembled: ['shop.auth'],
+      }),
+    );
+
+    const order = calls.map((c) => (c.phase === 'application' ? c.phase : `${c.phase}:${c.id}`));
+    expect(order).toEqual([
+      'application',
+      'provision:shop.auth',
+      'provision:shop.storefront',
+      'resource:shop.db',
+      'serialize:shop.auth',
+      'reserve:shop.auth',
+      'serialize:shop.storefront',
+      'package:shop.storefront',
+      'deploy:shop.storefront',
+    ]);
+    expect(calls.find((c) => c.phase === 'reserve')).toMatchObject({
+      environment: [{ input: 'db', name: 'url', value: 'db://shop.db' }],
+    });
+  });
+
+  test("a dependent of an unassembled service sees reserve's outputs, as it would deploy's", () => {
+    const { config, calls } = fakeExtension();
+
+    run(
+      lowering(twoServiceModule(), config, {
+        name: 'shop',
+        bundles: storefrontBundle,
+        unassembled: ['shop.auth'],
+      }),
+    );
+
+    expect(calls.find((c) => c.phase === 'serialize' && c.id === 'shop.storefront')).toMatchObject({
+      config: { inputs: { auth: { url: 'https://shop.auth.example' } } },
+    });
+  });
+
+  test('a descriptor without reserve fails, naming the service and the descriptor', () => {
+    const { config } = fakeExtension({ noReserve: true });
+
+    const error = runError(
+      lowering(twoServiceModule(), config, {
+        name: 'shop',
+        bundles: storefrontBundle,
+        unassembled: ['shop.auth'],
+      }),
+    );
+
+    expect(error).toBeInstanceOf(LowerError);
+    expect(error.message).toBe(
+      'service "shop.auth" runs a dev server but its descriptor (test/pack/fake/compute) has no `reserve` step',
+    );
+  });
+
+  test('an address both unassembled and given a bundle is a LowerError naming it', () => {
+    const { config } = fakeExtension();
+
+    const error = runError(
+      lowering(twoServiceModule(), config, {
+        name: 'shop',
+        bundles: { ...storefrontBundle, 'shop.auth': { dir: 'x', entry: 'y' } },
+        unassembled: ['shop.auth'],
+      }),
+    );
+
+    expect(error).toBeInstanceOf(LowerError);
+    expect(error.message).toContain('"shop.auth"');
+  });
+
+  test('an unassembled address that is not a service is a LowerError naming it', () => {
+    const { config } = fakeExtension();
+
+    const error = runError(
+      lowering(twoServiceModule(), config, {
+        name: 'shop',
+        bundles: { ...storefrontBundle, 'shop.auth': { dir: 'x', entry: 'y' } },
+        unassembled: ['shop.db'],
+      }),
+    );
+
+    expect(error).toBeInstanceOf(LowerError);
+    expect(error.message).toContain('"shop.db"');
   });
 });
