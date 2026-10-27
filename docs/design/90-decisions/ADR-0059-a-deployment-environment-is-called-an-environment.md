@@ -53,4 +53,4 @@ A Prisma Cloud Branch is that target's container for one deployed environment. I
 - [ADR-0023](ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md): on Prisma Cloud, an app is one Project and an environment is a Branch.
 - [ADR-0024](ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md): how an environment resolves to its Project and Branch.
 - [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the `prisma deploy` flags and the `destroy` operation's targets.
-- [Glossary: Environment](../03-domain-model/glossary.md#stage).
+- [Glossary: Environment](../03-domain-model/glossary.md#environment-formerly-stage).

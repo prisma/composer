@@ -276,9 +276,10 @@ and
 
 ### Container — Project / Branch
 
-The two Prisma Cloud objects a stage resolves to before Alchemy runs: the
-app's **Project** (one per application, found by name or created) and, for a
-named stage, that stage's **Branch** (found by `gitName` or created). The
+The two Prisma Cloud objects an environment resolves to before Alchemy runs:
+the app's **Project** (one per application, found by name or created) and that
+environment's **Branch** (the Project's default Branch for `production`;
+otherwise found by `gitName` or created). The
 deploy CLI resolves and ensures both; Alchemy provisions only the resources
 inside them and never creates or destroys a container itself.
 
