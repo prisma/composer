@@ -16,6 +16,8 @@ export interface PlatformRow {
   readonly id: string;
   readonly branchId: string | null;
   readonly logicalId: string | null;
+  /** An App row's endpoint: the full URL its service is served from. */
+  readonly appEndpointDomain?: string;
 }
 
 const RESOURCE_ROW_KINDS: Readonly<Record<string, RowKind>> = {
