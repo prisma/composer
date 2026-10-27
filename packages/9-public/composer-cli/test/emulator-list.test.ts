@@ -53,6 +53,7 @@ describe('emulator list', () => {
   test('the published family ships it beside the framework commands', () => {
     expect(Object.keys(createComposerFamily().commands).sort()).toEqual([
       'deploy',
+      'deploy list',
       'dev',
       'dev stop',
       'dev url',
