@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { Load, module, service } from '@internal/core';
 import { authoringModuleTargets, startWatch, watchTargetsFrom } from '../watch.ts';
 
@@ -142,24 +142,27 @@ describe('authoringModuleTargets() (ADR-0056)', () => {
       build: { extension: 'b', type: 'node', module: moduleUrl, entry: 'server.js' },
     });
 
+  // Built from paths so they carry a drive letter on Windows, where a bare
+  // `file:///repo/...` URL is not a valid file path.
+  const fileUrl = (p: string) => pathToFileURL(path.resolve(p)).href;
+
   test("watches the entry and each service's authoring module once, skipping a non-file module", () => {
     const root = module('shop', {}, ({ provision }) => {
-      provision(svc('web', 'file:///repo/apps/web/src/service.ts'), { id: 'web' });
-      provision(svc('admin', 'file:///repo/apps/web/src/service.ts'), { id: 'admin' });
-      provision(svc('api', 'file:///repo/apps/api/src/service.ts'), { id: 'api' });
+      provision(svc('web', fileUrl('/repo/apps/web/src/service.ts')), { id: 'web' });
+      provision(svc('admin', fileUrl('/repo/apps/web/src/service.ts')), { id: 'admin' });
+      provision(svc('api', fileUrl('/repo/apps/api/src/service.ts')), { id: 'api' });
       provision(svc('virtual', 'virtual:service'), { id: 'virtual' });
       return {};
     });
 
     const entry = path.resolve('/repo/module.ts');
-    const fileOf = (url: string) => path.resolve(fileURLToPath(url));
 
     const targets = authoringModuleTargets(entry, Load(root));
 
     expect(targets.map((t) => t.paths)).toEqual([
       [entry],
-      [fileOf('file:///repo/apps/web/src/service.ts')],
-      [fileOf('file:///repo/apps/api/src/service.ts')],
+      [path.resolve('/repo/apps/web/src/service.ts')],
+      [path.resolve('/repo/apps/api/src/service.ts')],
     ]);
   });
 });
