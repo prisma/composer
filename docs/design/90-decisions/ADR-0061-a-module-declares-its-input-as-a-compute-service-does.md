@@ -32,7 +32,7 @@ The root module may declare `input` too. Nothing provisions the root, so the dep
 
 **Everything the service input decision gave services, modules now get.** Legality can be relational ("no `stripeSecretKey` unless `stripeEnabled`"), because a schema library expresses that and per-key slots cannot. The caller brings the schema library, and Composer keeps no type vocabulary of its own ([ADR-0018](ADR-0018-config-params-carry-a-caller-owned-schema.md)). Secretness is enforced by validation: binding a plain value where the schema expects a `SecretString` fails the deploy, and so does binding a secret source where it expects a string.
 
-**The module's references are opaque, so the graph cannot branch on configuration.** `input.baseUrl` in the body is a reference, not the string. The body can pass it into a child's input and nothing else, so a module cannot provision different children on different stages. The topology is the same in every environment, which the structure rule requires ([ADR-0024](ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)).
+**The module's references are opaque, so the graph cannot branch on configuration.** `input.baseUrl` in the body is a reference, not the string. The body can pass it into a child's input and nothing else, so a module cannot provision different children in different environments. The topology is the same in every environment, which the structure rule requires ([ADR-0024](ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)).
 
 **Validation happens at deploy, as for a service.** The deploy resolves the module's binding (literals as-is, sources resolved, secrets as opaque boxes) and passes it to the module's schema. The value then flows into a child's input and is validated again by the child's schema. A module that only forwards a value can use a permissive schema for it; a module that constrains it says so once.
 
@@ -49,7 +49,7 @@ The decision stands on the shape above; the mechanism is settled by the spike.
 
 - **Breaking authoring change for modules.** `module()` takes `input` instead of `params` and `secrets`; `provision(module, …)` takes one `input` binding. The shipped modules (`auth()`, `email()`) and the examples migrate.
 - **`paramNeed()` and the module form of `secret()` are removed.** `paramSource()` and `secretSource()`, which targets use to build their sources, are unchanged.
-- **Load accepts `input` on a root.** Today Load refuses param and secret slots on a root, because nothing above the root binds them. With stage configuration providers, the deploy binds them. Load still refuses `deps` on a root.
+- **Load accepts `input` on a root.** Today Load refuses param and secret slots on a root, because nothing above the root binds them. With config adapters, the deploy binds them. Load still refuses `deps` on a root.
 - **A forwarded value is validated twice**, by the module's schema and by the child's. Both run at deploy, before anything is created.
 
 ## Alternatives considered

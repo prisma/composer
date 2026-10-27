@@ -269,8 +269,8 @@ A deploy-time **environment** name, chosen with `--environment` (`--stage` until
 ADR-0062 lands) and never authored in the topology — the same graph deploys to
 any environment. Every environment has a name: `prisma deploy` defaults to
 `production` and `prisma dev` to `dev`, and none is special. On Prisma Cloud, `production` resolves to the Project's
-default Branch and any other stage to the **Branch** whose `gitName` is the
-stage name
+default Branch and any other environment to the **Branch** whose `gitName` is
+the environment's name
 ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). See
 [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)
 and
@@ -278,9 +278,10 @@ and
 
 ### Container — Project / Branch
 
-The two Prisma Cloud objects a stage resolves to before Alchemy runs: the
-app's **Project** (one per application, found by name or created) and, for a
-named stage, that stage's **Branch** (found by `gitName` or created). The
+The two Prisma Cloud objects an environment resolves to before Alchemy runs:
+the app's **Project** (one per application, found by name or created) and that
+environment's **Branch** (the Project's default Branch for `production`;
+otherwise found by `gitName` or created). The
 deploy CLI resolves and ensures both; Alchemy provisions only the resources
 inside them and never creates or destroys a container itself.
 

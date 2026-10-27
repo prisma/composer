@@ -41,7 +41,7 @@ export default module('shop', ({ provision }) => {
 ```ts
 provision(publicUrl({
   name: 'site',
-  url: resolve([], resolve([], (environment) => environment === 'production' ? publicUrl.hostname('shop.com') : publicUrl.generated())),
+  url: resolve([], (environment) => environment === 'production' ? publicUrl.hostname('shop.com') : publicUrl.generated()),
   target: web.http,
 }));
 ```
@@ -147,12 +147,13 @@ composer({ extensions: [...], state: prismaState(), config: [dotenv()] })
 // module.ts
 export default module('shop', { input: type({ 'SITE_HOSTNAME?': 'string' }) }, ({ input, provision }) => {
   const web = provision(webService, { deps: { auth: auth.rpc } });
-  const url = resolve([input.SITE_HOSTNAME], (hostname) => publicUrl.hostname(hostname));
+  const url = resolve([input.SITE_HOSTNAME], (hostname) =>
+    hostname === undefined ? publicUrl.generated() : publicUrl.hostname(hostname));
   provision(publicUrl({ name: 'site', url, target: web.http }));
 });
 ```
 
-`dotenv()` receives the environment's name, reads `.env` and `.env.production`, and the result fills the root's input. The `resolve()` turns the string into a strategy; an environment with no `SITE_HOSTNAME` fails the schema here, or the function can return `publicUrl.generated()` for an absent value if the schema makes the key optional.
+`dotenv()` receives the environment's name, reads `.env` and `.env.production`, and the result fills the root's input. The `resolve()` turns the string into a strategy. The key is optional in the schema, so an environment with no `SITE_HOSTNAME` reaches the function as `undefined` and gets a generated URL; making the key required would fail that deploy instead.
 
 ## 10. Changing a hostname
 
