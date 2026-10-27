@@ -151,7 +151,7 @@ export default module('shop', { input: type({ 'SITE_HOSTNAME?': 'string' }) }, (
 });
 ```
 
-`dotenv()` receives the environment's name, reads `.env` and `.env.production`, and the result fills the root's input. A string is shorthand for `publicUrl.hostname(...)`, so the input is passed straight through. An environment with no `SITE_HOSTNAME` has no value for `url` and fails the deploy; to fall back to a generated URL instead, wrap it in a `resolve()` that returns `publicUrl.generated()` when the value is absent.
+`dotenv()` receives the environment's name, reads `.env` and `.env.production`, and the result fills the root's input. A string is shorthand for `publicUrl.hostname(...)`, and an input reference may be passed anywhere a value is accepted, so the input goes straight into `url`. An environment with no `SITE_HOSTNAME` has no value for `url` and fails the deploy; to fall back to a generated URL instead, wrap it in a `resolve()` that returns `publicUrl.generated()` when the value is absent.
 
 ## 10. Changing a hostname
 
@@ -181,7 +181,7 @@ No `publicUrl` is declared for it. Today it still has an Endpoint and a `*.prism
 
 | Need | Where |
 | --- | --- |
-| `publicUrl` node with its two strategy constructors; `resolve(deps, fn)` producing a `ResolvedValue`, run after the graph is built with `provision` disabled; a DNS-safe form of the environment name | Composer core |
+| `publicUrl` node with its two strategy constructors; `resolve(deps, fn)` producing a `ResolvedValue`, run after the graph is built with `provision` disabled | Composer core |
 | Module and root `input` as one schema; config adapters (separate work; only scenario 9 uses them) | Composer core |
 | Public URL record on a Branch, found by `logicalId`, created before DNS and before the service's deployment, pointing at a service, surviving promotes; a hostname change replaces the old hostname | PDP |
 | Deploy output and Console distinguish: deployed, generated URL ready, awaiting ownership proof, awaiting DNS, certificate pending; Console shows each service's actual exposure | PDP and Composer |

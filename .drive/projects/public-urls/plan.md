@@ -43,7 +43,7 @@ A `Prisma.PublicUrl` resource: create (no DNS needed), read status, update hostn
 
 ### C3. Spike: typed per-key references to a module's `input`
 
-Prove that a module body can read `input.someKey` as an opaque, typed reference without Composer introspecting the schema, that Load records which key flows where, and that a reference passed anywhere other than an input or `resolve()` errors clearly.
+Prove that a module body can read `input.someKey` as an opaque, typed reference without Composer introspecting the schema, that Load records which key flows where, and that reading a reference or branching on it, rather than passing it where a value is accepted (a child's input, a node parameter, a `resolve()` dependency), errors clearly.
 
 - **Builds on:** nothing.
 - **Hands to:** a findings note in `assets/`; if it fails, back to design before C4.

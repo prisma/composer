@@ -2,7 +2,7 @@
 
 ## Decision
 
-A module declares all of its incoming configuration as **one Standard Schema**, `input`, exactly as `compute()` does. Secret fields are typed `secretString()`. The module's body receives `input` as a set of opaque references, one per key, which it can only pass into a child's input. The per-key `params: { … paramNeed() }` and `secrets: { … secret() }` slots on modules are removed.
+A module declares all of its incoming configuration as **one Standard Schema**, `input`, exactly as `compute()` does. Secret fields are typed `secretString()`. The module's body receives `input` as a set of opaque references, one per key, which it can only pass on: into a child's input, into a node's parameter that takes a value (such as a public URL's `url`), or as a `resolve()` dependency. The per-key `params: { … paramNeed() }` and `secrets: { … secret() }` slots on modules are removed.
 
 ```ts
 // a reusable module
@@ -32,7 +32,7 @@ The root module may declare `input` too. Nothing provisions the root, so the dep
 
 **Everything the service input decision gave services, modules now get.** Legality can be relational ("no `stripeSecretKey` unless `stripeEnabled`"), because a schema library expresses that and per-key slots cannot. The caller brings the schema library, and Composer keeps no type vocabulary of its own ([ADR-0018](ADR-0018-config-params-carry-a-caller-owned-schema.md)). Secretness is enforced by validation: binding a plain value where the schema expects a `SecretString` fails the deploy, and so does binding a secret source where it expects a string.
 
-**The module's references are opaque, so the graph cannot branch on configuration.** `input.baseUrl` in the body is a reference, not the string. The body can pass it into a child's input and nothing else, so a module cannot provision different children in different environments. The topology is the same in every environment, which the structure rule requires ([ADR-0024](ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)).
+**The module's references are opaque, so the graph cannot branch on configuration.** `input.baseUrl` in the body is a reference, not the string. The body can pass it where a value is accepted (a child's input, a node parameter, a `resolve()` dependency) and nothing else: it cannot read it or branch on it, so a module cannot provision different children in different environments. The topology is the same in every environment, which the structure rule requires ([ADR-0024](ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)).
 
 **Validation happens at deploy, as for a service.** The deploy resolves the module's binding (literals as-is, sources resolved, secrets as opaque boxes) and passes it to the module's schema. The value then flows into a child's input and is validated again by the child's schema. A module that only forwards a value can use a permissive schema for it; a module that constrains it says so once.
 
