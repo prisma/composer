@@ -67,8 +67,12 @@ describe.skipIf(process.platform === 'win32')("the dev session's stop", () => {
   });
 
   test("stops the app's database servers and keeps their ports", async () => {
-    await ensureAppInstances({ devDir, app: APP }, [{ address: 'catalog', kind: 'database' }]);
-    const recorded = (await readEmulatorInstances(directory))?.apps[APP]?.nodes['catalog'];
+    await ensureAppInstances({ devDir, app: APP }, [
+      { address: 'attach-app.catalog', kind: 'database' },
+    ]);
+    const recorded = (await readEmulatorInstances(directory))?.apps[APP]?.nodes[
+      'attach-app.catalog'
+    ];
     if (recorded?.kind !== 'database') throw new Error('no database recorded');
     expect(await acceptsConnection(recorded.port)).toBe(true);
     const container = new PrismaCloudContainer(

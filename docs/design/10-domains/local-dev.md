@@ -30,7 +30,7 @@ command:
   § Process lifetimes.
 - **`log`**, an operation on `@prisma/composer/control` with no command
   (ADR-0050) — tail the merged logs of that already-running app: every
-  service, or one named by its dotted `address` (`catalog.service`). Follows
+  service, or one named by its full dotted `address` (`shop.catalog.service`). Follows
   live until the caller aborts; a `tail` count sets how many recent lines to
   return first (default 0, which returns live output only). It only reads the running
   app's logs — it neither builds, provisions, starts, nor stops anything.
@@ -271,7 +271,7 @@ store labels verbatim, and keep a database's port until it is deleted; see
 The emulator's failure messages name the instance (`instance "svc_…" exited
 (code 1) before it accepted connections…`). The local providers and the
 attachment replace the id with the service's address before the message
-reaches the user, so `prisma dev` says `service "gateway" …`.
+reaches the user, so `prisma dev` says `service "shop.gateway" …`.
 
 ### Which instance backs a node
 
@@ -280,26 +280,28 @@ node of each app run there, in `.prisma-composer/dev/emulator-instances.json`:
 
 ```json
 {
+  "formatVersion": 2,
   "current": "shop",
   "apps": {
     "shop": {
       "nodes": {
-        "quotes": { "kind": "service", "id": "svc_0b6e2f4a91c3d758", "port": 3000 },
-        "gateway": { "kind": "service", "id": "svc_81ad5c07e2f94b31", "port": 3001 },
-        "catalog": { "kind": "database", "id": "db_02c4e81f6a9b3d70", "port": 51300 },
-        "uploads": { "kind": "bucket", "id": "bkt-77e1a4c90b2d5f36" }
+        "shop.quotes": { "kind": "service", "id": "svc_0b6e2f4a91c3d758", "port": 3000 },
+        "shop.gateway": { "kind": "service", "id": "svc_81ad5c07e2f94b31", "port": 3001 },
+        "shop.catalog": { "kind": "database", "id": "db_02c4e81f6a9b3d70", "port": 51300 },
+        "shop.uploads": { "kind": "bucket", "id": "bkt-77e1a4c90b2d5f36" }
       }
     }
   }
 }
 ```
 
-`current` names the app `prisma dev` last ran from the directory. A record
+`formatVersion` is the record's format. `current` names the app `prisma dev` last ran from the directory. A record
 written by the previous version (`{ "app", "nodes" }`, one app, whose
 services have kind `compute`) reads as that one app with `service` nodes and
-is rewritten on the next write. A database's and a bucket's key is its
-resource name, from the same helper the lowering uses; a local provider
-refuses a database or bucket resource without a name.
+is rewritten on the next write. Every node's key is its address, which is
+also the resource ID of its main resource (a service's `App`, a database's
+`Database`, a bucket's `Bucket`), so the local providers find their instance
+by resource ID.
 
 The record is the only place Composer's names are mapped to instances. The
 emulators hook, the local `App`, `Deployment`, `Database`, `Connection`,
@@ -308,7 +310,15 @@ start, stop) and `--fresh` all go through it; no Composer code finds an
 instance by its labels. The labels Composer writes on create —
 `composer.directory` (the absolute directory), `composer.app` and
 `composer.address` — are for people reading an emulator listing. The record
-can be read from the directory alone, without running the pipeline.
+can be read from the directory alone, without running the pipeline. Its node
+keys are full addresses (`shop.catalog`). A record without `formatVersion` was
+written by an older release, whose keys left out the app name: every one of
+its keys reads with the app name in front, whatever it looks like, and the
+next write stores the current format, so existing instances, ports and data
+are reused. A bucket's objects live in
+`buckets/<app>/<address without the app name>`, the folder earlier releases
+used, so they need no move
+([ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md)).
 
 - **Ensuring an instance.** The emulators hook goes through the app's nodes
   in `graph.nodes` order (dependencies first, ties in declaration order):

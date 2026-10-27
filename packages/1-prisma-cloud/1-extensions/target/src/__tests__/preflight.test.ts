@@ -316,12 +316,25 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(error).toBeInstanceOf(Error);
     const message = (error as Error).message;
     expect(message).toContain('STRIPE_SECRET_KEY');
-    expect(message).toContain('service "ingest"');
+    expect(message).toContain('service "app.ingest"');
     expect(message).toContain('production');
     expect(message).toContain(
-      'prisma project env add STRIPE_SECRET_KEY="<value>" --project proj --role production',
+      "prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role production",
     );
     expect(state.posts).toEqual([]);
+  });
+
+  test('quotes the stage in the printed add command so it is safe to paste', async () => {
+    state.rows = [];
+
+    const error = await runPreflight(
+      { graph: secretGraph(), container: fakeContainer('proj', 'br_1'), stage: `it's "$HOME" x` },
+      { client: fakeClient(state) },
+    ).catch((e: unknown) => e);
+
+    expect(String(error)).toContain(
+      `prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --branch 'it'\\''s "$HOME" x'`,
+    );
   });
 
   test('reports how many names it checked, filled from the shell, and found missing', async () => {
@@ -447,7 +460,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain('STRIPE_SECRET_KEY');
-    expect((error as Error).message).toMatch(/service "(web|ingest)"/);
+    expect((error as Error).message).toMatch(/service "app\.(web|ingest)"/);
     // The shared name is deduped to a single platform existence check.
     expect(state.gets).toHaveLength(1);
   });
@@ -464,7 +477,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(error).toBeInstanceOf(Error);
     const message = (error as Error).message;
     expect(message).toContain('APP_ORIGIN');
-    expect(message).toContain('service "web"');
+    expect(message).toContain('service "app.web"');
     expect(state.posts).toEqual([]);
   });
 
@@ -713,5 +726,142 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
       expect(JSON.stringify([...timestamps])).not.toContain('sk_live_sentinel');
     });
+  });
+});
+
+describe('runPreflight — a COMPOSER_ key that changes owner in the move to full addresses (ADR-0057)', () => {
+  const clashGraph = () =>
+    Load(
+      module('shop', ({ provision }) => {
+        provision(compute({ name: 'x', deps: {}, build }), { id: 'x' });
+        provision(
+          module('shop', ({ provision: p }) => {
+            p(compute({ name: 'x', deps: {}, build }), { id: 'x' });
+          }),
+          { id: 'shop' },
+        );
+      }),
+    );
+  const row = (key: string): Row => ({
+    projectId: 'proj',
+    class: 'preview',
+    key,
+    branchId: 'br_1',
+  });
+  let state: FakeState;
+
+  beforeEach(() => {
+    state = { gets: [], posts: [], rows: [], postStatus: 201 };
+  });
+
+  const preflight = () =>
+    runPreflight(
+      { graph: clashGraph(), container: fakeContainer('proj', 'br_1'), stage: 'pr-1' },
+      { client: fakeClient(state) },
+    );
+
+  test('fails before any resource changes while the old owner still holds the key', async () => {
+    state.rows = [row('COMPOSER_SHOP_X_ORIGIN')];
+
+    const error = await preflight().catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toContain(
+      'COMPOSER_SHOP_X_ORIGIN belongs to "shop.shop.x" from the previous Composer release. ' +
+        'This release writes it for "shop.x"',
+    );
+    expect(String(error)).toContain(
+      "prisma project env delete 'COMPOSER_SHOP_X_ORIGIN' --project 'proj' --branch 'pr-1'",
+    );
+    expect(state.posts).toEqual([]);
+  });
+
+  test('quotes the stage so the printed command is safe to paste', async () => {
+    state.rows = [row('COMPOSER_SHOP_X_ORIGIN')];
+
+    const error = await runPreflight(
+      { graph: clashGraph(), container: fakeContainer('proj', 'br_1'), stage: `it's "$HOME" x` },
+      { client: fakeClient(state) },
+    ).catch((e: unknown) => e);
+
+    expect(String(error)).toContain(`--branch 'it'\\''s "$HOME" x'`);
+  });
+
+  test('passes once that variable is deleted', async () => {
+    await preflight();
+  });
+
+  test("passes after the move, when the old owner's row has its new key", async () => {
+    state.rows = [row('COMPOSER_SHOP_X_ORIGIN'), row('COMPOSER_SHOP_SHOP_X_ORIGIN')];
+
+    await preflight();
+  });
+
+  test('ignores a row with that key in another scope', async () => {
+    state.rows = [{ ...row('COMPOSER_SHOP_X_ORIGIN'), branchId: null }];
+
+    await preflight();
+  });
+});
+
+describe('runPreflight — a chain of COMPOSER_ keys that change owner', () => {
+  /** `shop.x`, `shop.shop.x` and `shop.shop.shop.x`: each node's new key is the next one's old key. */
+  const chainGraph = () =>
+    Load(
+      module('shop', ({ provision }) => {
+        provision(compute({ name: 'x', deps: {}, build }), { id: 'x' });
+        provision(
+          module('shop', ({ provision: p }) => {
+            p(compute({ name: 'x', deps: {}, build }), { id: 'x' });
+            p(
+              module('shop', ({ provision: q }) => {
+                q(compute({ name: 'x', deps: {}, build }), { id: 'x' });
+              }),
+              { id: 'shop' },
+            );
+          }),
+          { id: 'shop' },
+        );
+      }),
+    );
+  const row = (key: string): Row => ({
+    projectId: 'proj',
+    class: 'production',
+    key,
+    branchId: null,
+  });
+  const preflight = (state: FakeState) =>
+    runPreflight(
+      { graph: chainGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+      { client: fakeClient(state) },
+    );
+
+  test('reports every link in one run', async () => {
+    const state: FakeState = {
+      gets: [],
+      posts: [],
+      rows: [row('COMPOSER_SHOP_X_ORIGIN'), row('COMPOSER_SHOP_SHOP_X_ORIGIN')],
+      postStatus: 201,
+    };
+
+    const message = String(await preflight(state).catch((e: unknown) => e));
+
+    expect(message).toContain('COMPOSER_SHOP_X_ORIGIN belongs to "shop.shop.x"');
+    expect(message).toContain('COMPOSER_SHOP_SHOP_X_ORIGIN belongs to "shop.shop.shop.x"');
+  });
+
+  test('passes once every node has moved', async () => {
+    const state: FakeState = {
+      gets: [],
+      posts: [],
+      rows: [
+        row('COMPOSER_SHOP_X_ORIGIN'),
+        row('COMPOSER_SHOP_SHOP_X_ORIGIN'),
+        row('COMPOSER_SHOP_SHOP_SHOP_X_ORIGIN'),
+      ],
+      postStatus: 201,
+    };
+
+    await preflight(state);
   });
 });

@@ -51,8 +51,8 @@ describe('assembleServices()', () => {
     const assembled = await assembleServices(graph, emptyConfig, CWD, fakeRun);
 
     expect(assembled.bundles).toEqual({
-      auth: { dir: '/bundles/auth', entry: 'server.js' },
-      storefront: { dir: '/bundles/storefront', entry: 'server.js' },
+      'fixture-module.auth': { dir: '/bundles/auth', entry: 'server.js' },
+      'fixture-module.storefront': { dir: '/bundles/storefront', entry: 'server.js' },
     });
   });
 
@@ -69,7 +69,7 @@ describe('assembleServices()', () => {
 
     const assembled = await assembleServices(graph, emptyConfig, CWD, fakeRun);
 
-    expect(Object.keys(assembled.bundles)).toEqual(['auth.api']);
+    expect(Object.keys(assembled.bundles)).toEqual(['shop.auth.api']);
   });
 
   test('a module with no provisioned services throws AssembleError', async () => {
@@ -93,7 +93,7 @@ describe('assembleServices()', () => {
 
     await assembleServices(graph, emptyConfig, CWD, run);
 
-    expect(seen).toEqual([{ address: 'auth', cwd: CWD }]);
+    expect(seen).toEqual([{ address: 'fixture-module.auth', cwd: CWD }]);
   });
 
   test("the default RunAssembler routes through the config's build descriptor — (build.extension, build.type), any community id — and forwards the address + cwd", async () => {
@@ -129,8 +129,8 @@ describe('assembleServices()', () => {
 
     const assembled = await assembleServices(graph, config, CWD);
 
-    expect(seen).toEqual([{ type: 'cron', address: 'svc', cwd: CWD }]);
-    expect(assembled.bundles['svc']).toEqual({ dir: '/bundles/cron', entry: 'x' });
+    expect(seen).toEqual([{ type: 'cron', address: 'fixture-module.svc', cwd: CWD }]);
+    expect(assembled.bundles['fixture-module.svc']).toEqual({ dir: '/bundles/cron', entry: 'x' });
   });
 
   test('each service reports its start and end, carrying what its build descriptor reported', async () => {
@@ -166,10 +166,14 @@ describe('assembleServices()', () => {
     await assembleServices(Load(root), config, CWD, undefined, (event) => events.push(event));
 
     expect(events).toEqual([
-      { kind: 'service-started', address: 'loud' },
-      { kind: 'service-assembled', address: 'loud', data: { strategy: 'copy', files: 3 } },
-      { kind: 'service-started', address: 'quiet' },
-      { kind: 'service-assembled', address: 'quiet', data: {} },
+      { kind: 'service-started', address: 'fixture-module.loud' },
+      {
+        kind: 'service-assembled',
+        address: 'fixture-module.loud',
+        data: { strategy: 'copy', files: 3 },
+      },
+      { kind: 'service-started', address: 'fixture-module.quiet' },
+      { kind: 'service-assembled', address: 'fixture-module.quiet', data: {} },
     ]);
   });
 
@@ -234,7 +238,7 @@ describe('assembleServices()', () => {
     if (!(error instanceof AssembleError)) throw new Error('unreachable');
     expect(error.code).toBe('ASSEMBLE.BUILD_FAILED');
     expect(error.message).toBe('no built entry at /some/dist/server.js');
-    expect(error.meta).toEqual({ address: 'auth' });
+    expect(error.meta).toEqual({ address: 'fixture-module.auth' });
     expect(error.cause).toBe(cause);
   });
 
@@ -300,11 +304,11 @@ describe('assembleServices({ devServers }) (ADR-0056)', () => {
       { devServers: true },
     );
 
-    expect(assembled.devServers).toEqual({ web: server });
-    expect(Object.keys(assembled.bundles)).toEqual(['api']);
+    expect(assembled.devServers).toEqual({ 'fixture-module.web': server });
+    expect(Object.keys(assembled.bundles)).toEqual(['fixture-module.api']);
     expect(events.map((e) => `${e.kind}:${e.address}`)).toEqual([
-      'service-started:api',
-      'service-assembled:api',
+      'service-started:fixture-module.api',
+      'service-assembled:fixture-module.api',
     ]);
   });
 
@@ -319,7 +323,10 @@ describe('assembleServices({ devServers }) (ADR-0056)', () => {
     );
 
     expect(assembled.devServers).toEqual({});
-    expect(Object.keys(assembled.bundles).sort()).toEqual(['api', 'web']);
+    expect(Object.keys(assembled.bundles).sort()).toEqual([
+      'fixture-module.api',
+      'fixture-module.web',
+    ]);
   });
 
   test('without devServers every service is assembled and serve is never asked', async () => {
@@ -335,7 +342,10 @@ describe('assembleServices({ devServers }) (ADR-0056)', () => {
 
     expect(asked).toBe(false);
     expect(assembled.devServers).toEqual({});
-    expect(Object.keys(assembled.bundles).sort()).toEqual(['api', 'web']);
+    expect(Object.keys(assembled.bundles).sort()).toEqual([
+      'fixture-module.api',
+      'fixture-module.web',
+    ]);
   });
 
   test('a serve step that throws is DEV.DEV_SERVER_UNAVAILABLE naming the address and the message', async () => {
@@ -350,12 +360,11 @@ describe('assembleServices({ devServers }) (ADR-0056)', () => {
       { devServers: true },
     ).catch((e: unknown) => e);
 
-    expect(CliStructuredError.is(error)).toBe(true);
-    expect(error).toMatchObject({
-      code: 'DEV.DEV_SERVER_UNAVAILABLE',
-      message:
-        'service "web" cannot run its dev server: cannot find the `next` package from /app/web',
-      meta: { address: 'web' },
-    });
+    if (!CliStructuredError.is(error)) throw new Error('expected a structured error');
+    expect(error.code).toBe('DEV.DEV_SERVER_UNAVAILABLE');
+    expect(error.message).toBe(
+      'service "fixture-module.web" cannot run its dev server: cannot find the `next` package from /app/web',
+    );
+    expect(error.meta).toEqual({ address: 'fixture-module.web' });
   });
 });

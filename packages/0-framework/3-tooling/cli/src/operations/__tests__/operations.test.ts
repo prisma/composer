@@ -408,6 +408,41 @@ describe('deploy()', () => {
     expect(containerCalls).toEqual([]);
   });
 
+  test('a --name that cannot be an app name fails before anything is assembled or any container call', async () => {
+    const app = makeAppDir();
+    const containerCalls: ContainerCall[] = [];
+    let assembled = false;
+    let alchemyRan = false;
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(fakeConfig({}, { calls: containerCalls })),
+          entry: app.entryPath,
+          name: 'acme.shop',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: async (node) => {
+            assembled = true;
+            return fakeAssembler(node);
+          },
+          alchemy: async () => {
+            alchemyRan = true;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.message).toContain('The app name "acme.shop" is not valid.');
+    expect(assembled).toBe(false);
+    expect(alchemyRan).toBe(false);
+    expect(containerCalls).toEqual([]);
+  });
+
   describe('a config the CLI would refuse is refused before any container call', () => {
     async function deployWith(
       app: { dir: string; entryPath: string },
@@ -835,8 +870,8 @@ describe('deploy() step events', () => {
       'started prepare',
       'finished prepare ok',
       'started assemble',
-      'started assemble-service:app',
-      'finished assemble-service:app ok',
+      'started assemble-service:hello-steps.app',
+      'finished assemble-service:hello-steps.app ok',
       'finished assemble ok',
       'started connect',
       'finished connect ok',
@@ -901,8 +936,8 @@ describe('deploy() step events', () => {
       'started prepare',
       'finished prepare ok',
       'started assemble',
-      'started assemble-service:app',
-      'finished assemble-service:app ok',
+      'started assemble-service:hello-steps-defect.app',
+      'finished assemble-service:hello-steps-defect.app ok',
       'finished assemble ok',
       'started connect',
       'finished connect failed',
@@ -937,8 +972,8 @@ describe('deploy() step events', () => {
       'started prepare',
       'finished prepare ok',
       'started assemble',
-      'started assemble-service:app',
-      'finished assemble-service:app failed',
+      'started assemble-service:hello-steps-fail.app',
+      'finished assemble-service:hello-steps-fail.app failed',
       'finished assemble failed',
       'started record',
       'finished record ok',
@@ -2592,11 +2627,11 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
       stopApp: () => Promise.resolve(),
       endpoints: async () => {
         order.push('endpoints');
-        return [{ address: 'app', url: 'http://localhost:3001' }];
+        return [{ address: 'hello-dev.app', url: 'http://localhost:3001' }];
       },
       logs: async function* (_signal, opts) {
         followed.push(opts?.addresses);
-        yield { service: 'app', line: '✓ Ready in 1.2s' };
+        yield { service: 'hello-dev.app', line: '✓ Ready in 1.2s' };
       },
       serve: async ({ address, server }) => {
         order.push('serve');
@@ -2635,30 +2670,30 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
       if (!start.ok) throw new Error(`expected a started session: ${start.failure.message}`);
       await until(() => events.some((event) => event.kind === 'dev-server-output'));
       expect(start.value.endpoints).toEqual([
-        { address: 'app', url: 'http://localhost:3001', devServer: 'next dev' },
+        { address: 'hello-dev.app', url: 'http://localhost:3001', devServer: 'next dev' },
       ]);
       await start.value.stop();
     });
 
     expect(events[0]).toEqual({
       kind: 'dev-server',
-      address: 'app',
+      address: 'hello-dev.app',
       command: 'next dev',
       cwd: '/app/web',
     });
     expect(order).toEqual(['converge', 'startServices', 'serve', 'endpoints']);
-    expect(stackFile).toContain('unassembled: ["app"],');
+    expect(stackFile).toContain('unassembled: ["hello-dev.app"],');
     expect(served).toEqual([
       {
-        address: 'app',
+        address: 'hello-dev.app',
         display: 'next dev',
         argv: ['next', 'dev', '-p', '3001', '-H', '0.0.0.0'],
       },
     ]);
-    expect(followed).toEqual([['app']]);
+    expect(followed).toEqual([['hello-dev.app']]);
     expect(events).toContainEqual({
       kind: 'dev-server-output',
-      address: 'app',
+      address: 'hello-dev.app',
       line: '✓ Ready in 1.2s',
     });
   }, 15_000);
@@ -2706,7 +2741,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
     expect(serves).toBe(2);
     expect(events).toContainEqual({
       kind: 'dev-server-restarted',
-      address: 'app',
+      address: 'hello-dev.app',
       command: 'next dev',
     });
   }, 20_000);
@@ -2739,7 +2774,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
     if (result.ok) throw new Error('unreachable');
     expect(result.failure.code).toBe('DEV.DEV_SERVER_UNSUPPORTED');
     expect(result.failure.message).toBe(
-      'service "app" runs a dev server but its descriptor (fixture-extension/fixture/compute) has no `reserve` step — update fixture-extension',
+      'service "hello-dev.app" runs a dev server but its descriptor (fixture-extension/fixture/compute) has no `reserve` step — update fixture-extension',
     );
     expect(converges).toBe(0);
   }, 15_000);
@@ -2769,7 +2804,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
     if (result.ok) throw new Error('unreachable');
     expect(result.failure.code).toBe('DEV.DEV_SERVER_UNSUPPORTED');
     expect(result.failure.message).toBe(
-      'service "app" runs a dev server but its target\'s local attachment has no `serve` — update fixture-extension',
+      'service "hello-dev.app" runs a dev server but its target\'s local attachment has no `serve` — update fixture-extension',
     );
     expect(converges).toBe(0);
   }, 15_000);

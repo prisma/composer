@@ -16,11 +16,21 @@
  * platform's own names, banned in param.ts/secret.ts and owned by the
  * platform (control/extension.ts).
  */
+/**
+ * An address's segments as they appear in a `COMPOSER_` key. The app name may
+ * contain `-`, which no POSIX variable name may, so it becomes `_` (ADR-0057).
+ */
+export const addressKeySegments = (address: string): string[] =>
+  address
+    .split('.')
+    .filter((s) => s.length > 0)
+    .map((s) => s.replaceAll('-', '_'));
+
 export const configKey = (
   address: string,
   d: { owner: 'service' | { readonly input: string }; name: string },
 ): string => {
-  const segments = address.split('.').filter((s) => s.length > 0);
+  const segments = addressKeySegments(address);
   const owner = d.owner === 'service' ? [] : [d.owner.input];
   return ['COMPOSER', ...segments, ...owner, d.name].join('_').toUpperCase();
 };

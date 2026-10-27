@@ -24,15 +24,15 @@ describe('the pipeline surfaces core Load() errors as-is (deploy-cli.md step 2)'
     expect((error as LoadError).code).toBe('COMPOSE.GRAPH_INVALID');
   });
 
-  test('a module root loads its provisioned services under their provision ids', async () => {
+  test('a module root loads its provisioned services under addresses that start with the root id', async () => {
     const entry = await loadEntry(fixture('valid-module.ts'), import.meta.dir);
 
     const graph = Load(entry.root);
 
     expect(graph.root.node.kind).toBe('module');
     expect(graph.nodes.filter((n) => n.node.kind === 'service').map((n) => n.id)).toEqual([
-      'one',
-      'two',
+      'fixture-module.one',
+      'fixture-module.two',
     ]);
   });
 });

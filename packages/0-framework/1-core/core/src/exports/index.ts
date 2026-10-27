@@ -28,7 +28,7 @@ export type {
   PortEndpoint,
   ServiceInputBinding,
 } from '../graph.ts';
-export { Load, LoadError, RESOURCE_OUT_PORT } from '../graph.ts';
+export { assertAppName, Load, LoadError, RESOURCE_OUT_PORT } from '../graph.ts';
 export { hydrate, hydrateSync } from '../hydrate.ts';
 export type {
   BuildAdapter,

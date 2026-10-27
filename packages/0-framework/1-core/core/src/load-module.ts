@@ -345,9 +345,7 @@ function validateParamNeedBinding(
  * Recursively flattens one module's body into the shared graph state and
  * returns its resolved ModuleOutputs (one ref-port per expose key) for the
  * caller (the enclosing provision() call, or Load itself for the root) to
- * use. `address` is this module's OWN full address, or `undefined` for the root
- * scope — its direct children then get bare (unprefixed) addresses, keeping
- * a single-level module identical to before nesting existed. `wiring` supplies a
+ * use. `wiring` supplies a
  * resolved producer ref-port for each of this module's OWN declared deps (empty
  * for the root, which may not declare any — see the root non-empty-deps
  * check in loadModule). `nodes`, `edges`, `pending`, and `byId` are shared
@@ -355,14 +353,14 @@ function validateParamNeedBinding(
  * forward in a producer provisioned by an ancestor scope, and it is the
  * shared `byId` (keyed by full address) that lets that resolve.
  *
- * `selfId` is this module's own node id — the root's given id when `address`
- * is `undefined`, the full address otherwise. It anchors the authored view:
+ * `selfId` is this module's own full address — for the root, the deployed app
+ * name (ADR-0057). Every child's address is `selfId` plus its provision id, so
+ * every address starts with the app name. It also anchors the authored view:
  * children carry it as their `parent`, and this module's own boundary ports
  * (and the authored edges touching them) are recorded against it.
  */
 function flatten(
   moduleNode: ModuleNode,
-  address: string | undefined,
   selfId: NodeId,
   wiring: Record<string, unknown>,
   secretWiring: Record<string, unknown>,
@@ -525,7 +523,7 @@ function flatten(
       );
     }
     localIds.add(id);
-    const fullAddress = address === undefined ? id : `${address}.${id}`;
+    const fullAddress = `${selfId}.${id}`;
 
     if (child.kind === 'resource') {
       if (provisionWiring !== undefined) {
@@ -661,7 +659,6 @@ function flatten(
     });
     const childOutputs = flatten(
       child,
-      fullAddress,
       fullAddress,
       localWiring,
       localSecrets,
@@ -811,7 +808,6 @@ export function loadModule(root: ModuleNode, opts?: { id?: NodeId }): Graph {
 
   flatten(
     root,
-    undefined,
     rootId,
     {},
     {},

@@ -17,7 +17,7 @@ import {
   type RunAssembler,
 } from '@internal/assemble';
 import type { Graph } from '@internal/core';
-import { Load } from '@internal/core';
+import { assertAppName, Load } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import {
@@ -104,11 +104,12 @@ export async function resolveAppIdentity(
       fix: 'Name it at authoring, or pass --name.',
     });
   }
+  assertAppName(name);
   return { config: value, name };
 }
 
 /**
- * Runs entry load, Load, registry coverage, name resolution, and assemble — steps 1–5 of `run()`. `onAssembleError`, when
+ * Runs entry load, name resolution, Load, registry coverage, and assemble — steps 1–5 of `run()`. `onAssembleError`, when
  * given, lets a caller decorate an assemble failure with command-specific
  * guidance (destroy's "build first" hint) without this shared step knowing
  * about any one command.
@@ -127,8 +128,16 @@ export async function runPipeline(
   // 1. Import the entry module; its default export must be a node.
   const entryModule = await loadEntry(entry, cwd);
 
-  // 2. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
-  const graph = Load(entryModule.root);
+  // 2. Resolve the name. It is the root's address, so Load needs it (ADR-0057).
+  const name = overrideName ?? entryModule.root.name;
+  if (name.length === 0) {
+    throw new CliStructuredError('COMPOSE.NAME_MISSING', 'The root node has no name.', {
+      fix: 'Name it at authoring, or pass --name.',
+    });
+  }
+
+  // 3. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
+  const graph = Load(entryModule.root, { id: name });
   if (graph.root.node.kind !== 'module') {
     throw new CliStructuredError('COMPOSE.ROOT_NOT_MODULE', 'The deploy root must be a module.', {
       fix:
@@ -137,16 +146,8 @@ export async function runPipeline(
     });
   }
 
-  // 3. Registry coverage: every node/build in the graph has a matching descriptor in the config.
+  // 4. Registry coverage: every node/build in the graph has a matching descriptor in the config.
   validateRegistryCoverage(graph, config);
-
-  // 4. Resolve the name.
-  const name = overrideName ?? entryModule.root.name;
-  if (name.length === 0) {
-    throw new CliStructuredError('COMPOSE.NAME_MISSING', 'The root node has no name.', {
-      fix: 'Name it at authoring, or pass --name.',
-    });
-  }
 
   // 5. Assemble each service through the config's registries.
   deps.onEvent?.({ kind: 'loaded' });

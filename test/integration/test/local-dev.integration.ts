@@ -86,6 +86,8 @@ function assertEqual<T>(actual: T, expected: T, message: string): void {
 }
 
 const APP_NAME = 'localdevs4fixture';
+const WEB = `${APP_NAME}.web`;
+const BKG = `${APP_NAME}.bkg`;
 const integrationDir = path.resolve(import.meta.dir, '..');
 const fixtureDir = path.join(integrationDir, 'test', 'fixtures', 'local-dev');
 const devDir = path.join(fixtureDir, DEV_DIR);
@@ -173,15 +175,15 @@ async function assembleFixture(): Promise<Record<string, FixtureBundle>> {
   }
   const web = await buildDescriptor.assemble({
     build: webService.build,
-    address: 'web',
+    address: WEB,
     cwd: fixtureDir,
   });
   const bkg = await buildDescriptor.assemble({
     build: bgService.build,
-    address: 'bkg',
+    address: BKG,
     cwd: fixtureDir,
   });
-  return { web, bkg };
+  return { [WEB]: web, [BKG]: bkg };
 }
 
 /** The dev stack file `dev` itself writes, from the real generator. */
@@ -489,7 +491,7 @@ async function main(): Promise<void> {
     // bounded deadline rather than asserted on the very first attempt.
     attachment = await dev.attach({ container: devContainer, devDir });
     const endpoints = await attachment.endpoints();
-    const web = endpoints.find((e) => e.address === 'web');
+    const web = endpoints.find((e) => e.address === WEB);
     assert(web !== undefined, 'the web service must appear in attach().endpoints()');
     if (web === undefined) throw new Error('unreachable');
     const health = (await waitFor(
@@ -505,8 +507,8 @@ async function main(): Promise<void> {
     // 9. Emulator listing correct: both services running, stable ports/pids present.
     const { webInfo, bkgInfo } = await waitFor(async () => {
       const services = await listComputeServices();
-      const web = services.find((s) => s.address === 'web');
-      const bkg = services.find((s) => s.address === 'bkg');
+      const web = services.find((s) => s.address === WEB);
+      const bkg = services.find((s) => s.address === BKG);
       if (web?.status === 'running' && bkg?.status === 'running') {
         return { webInfo: web, bkgInfo: bkg };
       }
@@ -546,7 +548,7 @@ async function main(): Promise<void> {
     assertEqual(
       health.portEnv,
       JSON.stringify(webInfo.port),
-      'the deployed web child carries COMPOSER_WEB_PORT = the emulator-assigned port, JSON-encoded',
+      'the deployed web child carries COMPOSER_LOCALDEVS4FIXTURE_WEB_PORT = the emulator-assigned port, JSON-encoded',
     );
 
     // secrets.json: the shell-sourced secret + env-param this run set above,
@@ -569,7 +571,7 @@ async function main(): Promise<void> {
     // 11. The database the directory's record names for `appdb`, as the
     // postgres emulator reports it, + a real, running `@prisma/dev` server.
     const databases = await listPostgresDatabases();
-    const dbEntry = databases.find((d) => d.address === 'appdb');
+    const dbEntry = databases.find((d) => d.address === `${APP_NAME}.appdb`);
     assertEqual(dbEntry?.status, 'running', 'the recorded appdb database is running');
     const dbUrl = new URL(dbEntry?.url ?? '');
     const dbReachable = await probeTcp(dbUrl.hostname, Number(dbUrl.port), 2000);
@@ -587,17 +589,17 @@ async function main(): Promise<void> {
     }
     const servicesAfterNoop = await waitFor(async () => {
       const services = await listComputeServices();
-      const web = services.find((s) => s.address === 'web');
-      const bkg = services.find((s) => s.address === 'bkg');
+      const web = services.find((s) => s.address === WEB);
+      const bkg = services.find((s) => s.address === BKG);
       return web?.pid !== undefined && bkg?.pid !== undefined ? services : undefined;
     }, 15_000);
     assertEqual(
-      servicesAfterNoop.find((s) => s.address === 'web')?.pid,
+      servicesAfterNoop.find((s) => s.address === WEB)?.pid,
       webInfo.pid,
       'web pid stable across a no-op converge',
     );
     assertEqual(
-      servicesAfterNoop.find((s) => s.address === 'bkg')?.pid,
+      servicesAfterNoop.find((s) => s.address === BKG)?.pid,
       bkgInfo.pid,
       'bkg pid stable across a no-op converge',
     );
@@ -620,20 +622,20 @@ async function main(): Promise<void> {
 
       const servicesAfterChange = await waitFor(async () => {
         const services = await listComputeServices();
-        const web = services.find((s) => s.address === 'web');
-        const bkg = services.find((s) => s.address === 'bkg');
+        const web = services.find((s) => s.address === WEB);
+        const bkg = services.find((s) => s.address === BKG);
         // The web pid must have moved on (restarted); bkg's must be present
         // and unchanged — wait for both to settle before asserting.
         return web?.pid !== undefined && web.pid !== webInfo.pid && bkg?.pid !== undefined
           ? services
           : undefined;
       }, 15_000);
-      const webAfterChange = servicesAfterChange.find((s) => s.address === 'web');
-      const bkgAfterChange = servicesAfterChange.find((s) => s.address === 'bkg');
+      const webAfterChange = servicesAfterChange.find((s) => s.address === WEB);
+      const bkgAfterChange = servicesAfterChange.find((s) => s.address === BKG);
       assert(webAfterChange?.pid !== webInfo.pid, 'web service must restart on a changed artifact');
       assertEqual(bkgAfterChange?.pid, bkgInfo.pid, 'bkg service must stay untouched');
 
-      const webAfterChangeUrl = endpoints.find((e) => e.address === 'web')?.url;
+      const webAfterChangeUrl = endpoints.find((e) => e.address === WEB)?.url;
       const healthAfterChange = await waitFor(
         () => fetch(`${webAfterChangeUrl}/health`).then((r) => (r.ok ? r.json() : undefined)),
         15_000,

@@ -309,10 +309,11 @@ that command, with its output in your terminal
 ([Dev servers](running-locally.md#dev-servers)).
 
 Under the hood the local providers write the same `COMPOSER_*` environment
-variables a deploy writes, each keyed by the service's address —
-`COMPOSER_QUOTES_PORT` for the `quotes` service's own `port`,
-`COMPOSER_QUOTES_INPUT` for its input document, `COMPOSER_QUOTES_URL` for a
-`quotes` dependency's URL — so `service.load()`, `service.input()`, and
+variables a deploy writes, each keyed by the service's address, which starts
+with the app name (`my-app.quotes`, with `-` turned into `_`) —
+`COMPOSER_MY_APP_QUOTES_PORT` for the `quotes` service's own `port`,
+`COMPOSER_MY_APP_QUOTES_INPUT` for its input document,
+`COMPOSER_MY_APP_GATEWAY_QUOTES_URL` for the gateway's `quotes` dependency's URL — so `service.load()`, `service.input()`, and
 `service.port()` read exactly what they'll read in production. You never set
 them by hand locally; `dev` *is* the deploy. Full workflow (logs, `--fresh`,
 what persists) in
@@ -398,10 +399,18 @@ copy of the whole app (own services, own config), deploy a **stage**:
 pnpm prisma deploy module.ts --stage demo
 ```
 
-Tear it down when you're done with the `destroy` operation from
-`@prisma/composer/control`; [Deploying and operating](deploying.md#destroying)
-has the script. The script runs outside the `prisma` CLI, so it does not use
-your `prisma auth login` session: it needs `PRISMA_SERVICE_TOKEN` and
+When you're done with the whole app, delete its Project. Find its id in
+`prisma project list`, then:
+
+```sh
+pnpm prisma project delete <id> --confirm <id>
+```
+
+That removes production and every stage. To remove only the `demo` stage, use
+the `destroy` operation from `@prisma/composer/control`;
+[Removing an app or a stage](deploying.md#removing-an-app-or-a-stage) has the
+script. The script runs outside the `prisma` CLI, so it does not use your
+`prisma auth login` session: it needs `PRISMA_SERVICE_TOKEN` and
 `PRISMA_WORKSPACE_ID` in the environment, and
 [Credentials](deploying.md#credentials) says where to find both.
 
@@ -473,7 +482,7 @@ the wiring for free.
   with `bootstrapService`.
 - [Running locally](running-locally.md) — `prisma dev` and the `log`
   operation in full: one service, history, `--fresh`, warm restarts.
-- [Deploying and operating](deploying.md) — stages, destroy, CI, how the app
+- [Deploying and operating](deploying.md) — stages, removing an app, CI, how the app
   behaves in production.
 - [`examples/`](../../examples/) — complete apps: start with
   [orm-demo](../../examples/orm-demo/) (one service + one Prisma

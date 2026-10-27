@@ -22,8 +22,8 @@ project_id="$(curl -sS -H "$auth_header" "$api/projects?limit=100" \
 # current Management API surface for what used to be `/v1/compute-services`
 # (same underlying resources — see cold-start-canary.ts and gotchas.md PRO-217).
 domain="$(curl -sS -H "$auth_header" "$api/apps?projectId=$project_id&limit=100" \
-  | node -e "let d='';process.stdin.on('data',(c)=>{d+=c}).on('end',()=>{const s=(JSON.parse(d).data??[]).find((x)=>x.name==='storefront');console.log(s?.appEndpointDomain??'')})")"
-[ -n "$domain" ] || { echo "Project $project_id has no 'storefront' app with an endpoint domain."; exit 1; }
+  | node -e "let d='';process.stdin.on('data',(c)=>{d+=c}).on('end',()=>{const s=(JSON.parse(d).data??[]).find((x)=>x.logicalId===process.argv[1]);console.log(s?.appEndpointDomain??'')})" "$stack.storefront")"
+[ -n "$domain" ] || { echo "Project $project_id has no '$stack.storefront' app with an endpoint domain."; exit 1; }
 # appEndpointDomain arrives WITH the https:// scheme (see the PRO-200
 # gotcha's captured responses); tolerate either shape.
 case "$domain" in

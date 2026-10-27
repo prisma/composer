@@ -7,8 +7,9 @@ import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import type { PointerUpdatedAt } from '../control/pointer-timestamps.ts';
+import { fromLegacyId, legacyNodeResourceId } from '../legacy-resource-ids.ts';
+import { resourceId } from '../resource-ids.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
-import { resourceName } from '../service-app.ts';
 
 /**
  * The provider-side reserved param for one brand's minted values (ADR-0031:
@@ -92,20 +93,36 @@ export interface ResolvedCloudOptions {
   readonly pointerUpdatedAt: PointerUpdatedAt;
 }
 
-// Prisma's Connection create constrains `name` to 3–65 chars (Management API:
-// POST /v1/connections); applied here to every id-derived resource name as the
-// tightest of the API's name-length rules.
-const PRISMA_NAME_MIN = 3;
-const PRISMA_NAME_MAX = 65;
+/**
+ * The shortest and longest address each kind of row can be named by, from the Management API's
+ * create schemas. The platform allows 3–65 characters in a Connection name, but upstream appends
+ * `-` and a 12-character token to every one and cuts what does not fit, so 52 keeps the whole
+ * address. An access key name and a local Database name have no maximum.
+ */
+const PLATFORM_NAME_LIMITS = {
+  App: { min: 1, max: 256 },
+  Connection: { min: 3, max: 52 },
+  Bucket: { min: 1, max: 100 },
+} as const;
 
-export function validateName(value: string, source: string): void {
-  if (value.length < PRISMA_NAME_MIN || value.length > PRISMA_NAME_MAX) {
-    throw new Error(
-      `prisma-cloud: ${source} "${value}" (${value.length} characters) is not a valid Prisma ` +
-        `resource name — Prisma requires ${PRISMA_NAME_MIN}–${PRISMA_NAME_MAX} characters. ` +
-        'Rename the provision id (or the deploy --name) to fit.',
-    );
-  }
+/**
+ * Checks that the platform can hold the node's address as the name of its `kind` row (ADR-0057).
+ * Fails naming the address and the limit; a name is never shortened or padded.
+ */
+export function validatePlatformName(
+  kind: keyof typeof PLATFORM_NAME_LIMITS,
+  address: string,
+): void {
+  const { min, max } = PLATFORM_NAME_LIMITS[kind];
+  if (address.length >= min && address.length <= max) return;
+  const fix =
+    address.length < min ? 'Lengthen a provision id.' : 'Shorten the app name or a provision id.';
+  throw new Error(
+    `prisma-cloud: the node "${address}" is ${address.length} characters long, but ${kind} ` +
+      `names on Prisma Cloud take ${min} to ${max} characters, and every platform name is the ` +
+      `node's address. ${fix} Changing the address makes the node a different entity: a database's or ` +
+      "bucket's data is not carried over.",
+  );
 }
 
 /** What prisma-cloud's application hook produces; its own descriptors are the only consumers. */
@@ -150,7 +167,7 @@ export function projectIdOf(application: unknown): string {
   return cloudApplicationOf(application).projectId;
 }
 
-/** The `logicalId` prop of a node's App, Database or Bucket: its address on every platform deploy, none in branchless dev (ADR-0051). */
+/** The `logicalId` prop of a node's App, Database or Bucket: its full address on every platform deploy, none in branchless dev (ADR-0057). */
 export function logicalIdProp(
   application: unknown,
   address: string,
@@ -161,7 +178,7 @@ export function logicalIdProp(
 /**
  * Declares one of the app's own App, Database, Bucket or `COMPOSER_` variable rows. On the app's
  * Project and branch, the row holding a node's logicalId (or a variable's key) is that node's row,
- * so a deploy resuming an interrupted create uses it instead of refusing it (ADR-0051). Only for
+ * so a deploy resuming an interrupted create uses it instead of refusing it (ADR-0057). Only for
  * resources declared with their identity: `logicalIdProp` on App, Database and Bucket, a
  * `COMPOSER_` key on variables. Without one, upstream falls back to matching by display name.
  */
@@ -197,28 +214,33 @@ export function attachmentBranchIdOf(application: unknown, id: string): string |
 export const stageDatabase = ({
   id,
   address,
+  app,
   application,
   region,
 }: {
   readonly id: string;
   readonly address: string;
+  readonly app: string;
   readonly application: unknown;
   readonly region: ProjectRegion | undefined;
 }) =>
   Effect.gen(function* () {
     const branchId = attachmentBranchIdOf(application, id);
     // 'inherit' resolves to the project's default region on the platform.
-    const db = yield* Prisma.Database(`${id}-db`, {
+    const db = yield* Prisma.Database(resourceId(address), {
       project: projectIdOf(application),
       region: region ?? 'inherit',
-      ...(branchId !== undefined ? { branchId } : { name: resourceName(id) }),
+      ...(branchId !== undefined ? { branchId } : { name: address }),
       ...logicalIdProp(application, address),
-    }).pipe(asOwnRow);
-    const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id });
+    }).pipe(asOwnRow, fromLegacyId(legacyNodeResourceId(app, address, 'db')));
+    const conn = yield* Prisma.Connection(resourceId(address, 'connection'), {
+      database: db,
+      name: address,
+    }).pipe(fromLegacyId(legacyNodeResourceId(app, address, 'conn')));
     const url = Output.map(conn.directConnectionString, (value) => {
       if (value === undefined) {
         throw new Error(
-          `prisma-cloud: connection "${id}-conn" returned no direct connection string.`,
+          `prisma-cloud: connection "${resourceId(address, 'connection')}" returned no direct connection string.`,
         );
       }
       return Redacted.value(value);

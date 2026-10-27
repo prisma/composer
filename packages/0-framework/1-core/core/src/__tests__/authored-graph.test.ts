@@ -94,13 +94,13 @@ describe('explicit parents', () => {
 
     expect(graph.root.parent).toBeUndefined();
     expect(parentOf('shop')).toBeUndefined();
-    expect(parentOf('catalogDb')).toBe('shop');
-    expect(parentOf('auth')).toBe('shop');
-    expect(parentOf('auth.api')).toBe('auth');
-    expect(parentOf('web')).toBe('shop');
+    expect(parentOf('shop.catalogDb')).toBe('shop');
+    expect(parentOf('shop.auth')).toBe('shop');
+    expect(parentOf('shop.auth.api')).toBe('shop.auth');
+    expect(parentOf('shop.web')).toBe('shop');
     // Flat-view dependency slot nodes hang off their service.
-    expect(parentOf('web.db')).toBe('web');
-    expect(parentOf('auth.api.db')).toBe('auth.api');
+    expect(parentOf('shop.web.db')).toBe('shop.web');
+    expect(parentOf('shop.auth.api.db')).toBe('shop.auth.api');
   });
 });
 
@@ -109,49 +109,49 @@ describe('boundary ports', () => {
     const graph = shopGraph();
 
     expect(graph.ports).toContainEqual({
-      node: 'catalogDb',
+      node: 'shop.catalogDb',
       direction: 'out',
       name: '$out',
       contractKind: 'fake/db',
       style: undefined,
     });
     expect(graph.ports).toContainEqual({
-      node: 'auth',
+      node: 'shop.auth',
       direction: 'in',
       name: 'db',
       contractKind: 'fake/db',
       style: undefined,
     });
     expect(graph.ports).toContainEqual({
-      node: 'auth',
+      node: 'shop.auth',
       direction: 'out',
       name: 'verify',
       contractKind: 'rpc',
       style: 'request-response',
     });
     expect(graph.ports).toContainEqual({
-      node: 'auth.api',
+      node: 'shop.auth.api',
       direction: 'in',
       name: 'db',
       contractKind: 'fake/db',
       style: undefined,
     });
     expect(graph.ports).toContainEqual({
-      node: 'auth.api',
+      node: 'shop.auth.api',
       direction: 'out',
       name: 'verify',
       contractKind: 'rpc',
       style: 'request-response',
     });
     expect(graph.ports).toContainEqual({
-      node: 'web',
+      node: 'shop.web',
       direction: 'in',
       name: 'db',
       contractKind: 'fake/db',
       style: undefined,
     });
     expect(graph.ports).toContainEqual({
-      node: 'web',
+      node: 'shop.web',
       direction: 'in',
       name: 'verify',
       contractKind: 'fake/rpc',
@@ -168,41 +168,41 @@ describe('authored (pre-dereference) edges', () => {
 
     // Wiring at the root scope.
     expect(graph.authoredEdges).toContainEqual({
-      from: { node: 'catalogDb', direction: 'out', name: '$out' },
-      to: { node: 'auth', direction: 'in', name: 'db' },
+      from: { node: 'shop.catalogDb', direction: 'out', name: '$out' },
+      to: { node: 'shop.auth', direction: 'in', name: 'db' },
     });
     expect(graph.authoredEdges).toContainEqual({
-      from: { node: 'catalogDb', direction: 'out', name: '$out' },
-      to: { node: 'web', direction: 'in', name: 'db' },
+      from: { node: 'shop.catalogDb', direction: 'out', name: '$out' },
+      to: { node: 'shop.web', direction: 'in', name: 'db' },
     });
     // A consumer wired to a module's exposed port sees the MODULE boundary,
     // not the inner producer the flat view resolves to.
     expect(graph.authoredEdges).toContainEqual({
-      from: { node: 'auth', direction: 'out', name: 'verify' },
-      to: { node: 'web', direction: 'in', name: 'verify' },
+      from: { node: 'shop.auth', direction: 'out', name: 'verify' },
+      to: { node: 'shop.web', direction: 'in', name: 'verify' },
     });
     // Inside the module: input forwarded to a child (in → in) and a child's
     // output exposed at the boundary (out → out).
     expect(graph.authoredEdges).toContainEqual({
-      from: { node: 'auth', direction: 'in', name: 'db' },
-      to: { node: 'auth.api', direction: 'in', name: 'db' },
+      from: { node: 'shop.auth', direction: 'in', name: 'db' },
+      to: { node: 'shop.auth.api', direction: 'in', name: 'db' },
     });
     expect(graph.authoredEdges).toContainEqual({
-      from: { node: 'auth.api', direction: 'out', name: 'verify' },
-      to: { node: 'auth', direction: 'out', name: 'verify' },
+      from: { node: 'shop.auth.api', direction: 'out', name: 'verify' },
+      to: { node: 'shop.auth', direction: 'out', name: 'verify' },
     });
     expect(graph.authoredEdges).toHaveLength(5);
 
     // The flat view still dereferences every chain to the real producer.
     expect(graph.edges).toContainEqual({
-      from: 'catalogDb',
-      to: 'auth.api',
+      from: 'shop.catalogDb',
+      to: 'shop.auth.api',
       input: 'db',
       kind: 'dependency',
     });
     expect(graph.edges).toContainEqual({
-      from: 'auth.api',
-      to: 'web',
+      from: 'shop.auth.api',
+      to: 'shop.web',
       input: 'verify',
       kind: 'dependency',
     });
@@ -224,8 +224,8 @@ describe('authored (pre-dereference) edges', () => {
     const graph = Load(root);
 
     expect(graph.authoredEdges).toContainEqual({
-      from: { node: 'relay', direction: 'in', name: 'db' },
-      to: { node: 'relay', direction: 'out', name: 'db' },
+      from: { node: 'shop.relay', direction: 'in', name: 'db' },
+      to: { node: 'shop.relay', direction: 'out', name: 'db' },
     });
   });
 
@@ -261,8 +261,8 @@ describe('authored (pre-dereference) edges', () => {
 
     // The flat edge still resolves; the authored view has nothing to name.
     expect(graph.edges).toContainEqual({
-      from: 'producer',
-      to: 'consumer',
+      from: 'shop.producer',
+      to: 'shop.consumer',
       input: 'upstream',
       kind: 'dependency',
     });

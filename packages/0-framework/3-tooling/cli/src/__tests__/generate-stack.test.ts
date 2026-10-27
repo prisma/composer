@@ -196,8 +196,8 @@ describe('nested-module proof (H1: module-composition) — dotted addresses surv
     });
     const graph = Load(root);
 
-    // The full hierarchical address (H1) — not the bare provision id "api".
-    expect(graph.nodes.some((n) => n.id === 'auth.api')).toBe(true);
+    // The full address from the root's id, not the bare provision id "api".
+    expect(graph.nodes.some((n) => n.id === 'shop.auth.api')).toBe(true);
 
     const content = renderStackFile({
       entryPath: '/repo/app/module.ts',
@@ -206,12 +206,12 @@ describe('nested-module proof (H1: module-composition) — dotted addresses surv
       name: 'shop',
       assembled: {
         devServers: {},
-        bundles: { 'auth.api': { dir: '/bundles/auth-api', entry: 'server.js' } },
+        bundles: { 'shop.auth.api': { dir: '/bundles/auth-api', entry: 'server.js' } },
       },
     });
 
     // The dotted key survives intact into the generated stack source, quoted
     // as a plain string literal — a bare property key can't spell a ".".
-    expect(content).toContain('"auth.api": { dir: "/bundles/auth-api", entry: "server.js" }');
+    expect(content).toContain('"shop.auth.api": { dir: "/bundles/auth-api", entry: "server.js" }');
   });
 });
