@@ -346,7 +346,7 @@ describe('prismaStateLayer against the platform state API', () => {
     expect(rendered).toContain('<redacted>');
   });
 
-  test('a concurrent second deploy of the same stage fails immediately, naming the holder', async () => {
+  test('a concurrent second deploy of the same environment fails immediately, naming the holder', async () => {
     // A live deploy holds the lease, acquired as another operator.
     const holderResponse = await fetch(
       `${fake.origin}/v1/projects/${PROJECT_ID}/branches/${BRANCH_ID}/alchemy-state/lease`,
@@ -378,7 +378,7 @@ describe('prismaStateLayer against the platform state API', () => {
     expect(fake.liveLeaseIds()).toEqual([]);
   });
 
-  test('an empty scope with NO apps proceeds — a genuinely fresh stage deploys', async () => {
+  test('an empty scope with NO apps proceeds — a genuinely fresh environment deploys', async () => {
     await expect(runLayer(() => Effect.void)).resolves.toBeUndefined();
   });
 

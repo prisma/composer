@@ -10,6 +10,11 @@
 
 export { dataLine } from '../family/data-lines.ts';
 export type { ComposerOperations, CreateComposerFamilyOptions } from '../family/family.ts';
-export { createComposerFamily, realOperations } from '../family/family.ts';
+export {
+  createComposerFamily,
+  environmentFlagRedirect,
+  realOperations,
+} from '../family/family.ts';
 export { composerSection } from '../family/section.ts';
 export { toEngineError } from '../family/translate-error.ts';
+export { DEFAULT_DEPLOY_ENVIRONMENT } from '../operations/deploy.ts';

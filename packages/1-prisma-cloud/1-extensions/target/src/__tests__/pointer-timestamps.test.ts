@@ -68,8 +68,12 @@ async function cliProcess(updatedAt: string): Promise<Record<string, string>> {
   const timestamps = await runPreflight(
     {
       graph: graph(),
-      container: new PrismaCloudContainer({ appName: 'app', stage: undefined }, 'proj', undefined),
-      stage: undefined,
+      container: new PrismaCloudContainer(
+        { appName: 'app', environment: 'production' },
+        'proj',
+        undefined,
+      ),
+      environment: 'production',
     },
     { client: fakePlatform(updatedAt) },
   );

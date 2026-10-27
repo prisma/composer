@@ -6,15 +6,10 @@
  * fails to load comes back as a structured failure, never a throw out of
  * the host.
  */
-import type { CliStructuredError } from '@internal/foundation/errors';
+import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../composer-config.ts';
 import { executorLoadFailure, type OperationDeps } from './shared.ts';
-
-/** Destroy must name its target explicitly — no silent default to production. Encoded, not re-derived from flags. */
-export type DestroyTarget =
-  | { readonly kind: 'production' }
-  | { readonly kind: 'stage'; readonly stage: string };
 
 export type DestroyEvent =
   /** Emitted before the pipeline when `<cwd>/.alchemy` is missing/empty. */
@@ -28,7 +23,8 @@ export interface DestroyInput {
   /** The entry module, resolved against `cwd`. Overrides the `entry` in `config`; without either the operation fails with `CONFIG.ENTRY_MISSING`. */
   readonly entry?: string | undefined;
   readonly name?: string | undefined;
-  readonly target: DestroyTarget;
+  /** The environment to destroy. Required: destroy never defaults to production. */
+  readonly environment: string;
   readonly cwd?: string | undefined;
   /** Mid-operation notifications, in real time. Rendering is the host's. */
   readonly onEvent?: ((event: DestroyEvent) => void) | undefined;
@@ -45,6 +41,9 @@ export async function destroyWithDeps(
   input: DestroyInput,
   deps: OperationDeps,
 ): Promise<Result<void, CliStructuredError>> {
+  if (typeof input.environment !== 'string' || input.environment.length === 0) {
+    return notOk(environmentRequired());
+  }
   const cwd = input.cwd ?? process.cwd();
   let executor: typeof import('./execute-deploy-destroy.ts');
   try {
@@ -53,4 +52,15 @@ export async function destroyWithDeps(
     return notOk(executorLoadFailure('destroy', error));
   }
   return executor.executeDestroy(input, deps, cwd);
+}
+
+function environmentRequired(): CliStructuredError {
+  return new CliStructuredError(
+    'DEPLOY.ENVIRONMENT_REQUIRED',
+    'destroy needs the name of the environment to destroy.',
+    {
+      why: 'Destroy never defaults to production, so a call without a name has no target.',
+      fix: "Pass `environment`, for example `destroy({ environment: 'staging', config })`.",
+    },
+  );
 }

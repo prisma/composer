@@ -3,7 +3,7 @@
  * `smtp:`/`smtps:` for mode `smtp`, `http:`/`https:` for mode `resend`.
  * `deliveryUrl` is a factory option, not a param (spec's recorded
  * decision — it stays static per app), so nothing validates it against the
- * per-stage `deliveryMode` before the first send silently fails against the
+ * per-environment `deliveryMode` before the first send silently fails against the
  * wrong protocol. Pure so it's unit-testable without booting the service.
  */
 export function checkDeliveryUrl(

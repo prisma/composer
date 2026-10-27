@@ -4,6 +4,7 @@ import type { ManagementApiClient } from '../client.ts';
 import { ManagementClient } from '../client.ts';
 import {
   ContainerNotFoundError,
+  DefaultBranchUnderAnotherNameError,
   deleteBranch,
   deleteProject,
   type ProjectRegion,
@@ -217,13 +218,15 @@ const run = (
   opts: {
     workspaceId: string;
     appName: string;
-    stage?: string;
+    environment?: string;
     ensure?: boolean;
     region?: ProjectRegion;
   },
 ) =>
   Effect.runPromise(
-    resolveContainer(opts).pipe(Effect.provideService(ManagementClient, fakeClient(state))),
+    resolveContainer({ ...opts, environment: opts.environment ?? 'production' }).pipe(
+      Effect.provideService(ManagementClient, fakeClient(state)),
+    ),
   );
 
 describe('resolveContainer — Project resolution', () => {
@@ -527,7 +530,7 @@ describe('resolveContainer — Branch resolution', () => {
     });
   });
 
-  test('the default stage (no stage given) creates no Branch, resolving the existing default Branch id', async () => {
+  test('production (the default) creates no Branch, resolving the existing default Branch id', async () => {
     state.branches['proj-1'] = [
       { id: 'br-default', gitName: 'main', isDefault: true, createdAt: new Date(1).toISOString() },
     ];
@@ -540,7 +543,7 @@ describe('resolveContainer — Branch resolution', () => {
     expect(state.branchCreateCalls).toBe(0);
   });
 
-  test('the default stage on a project with no default Branch fails naming the broken platform invariant', async () => {
+  test('production on a project with no default Branch fails naming the broken platform invariant', async () => {
     state.branches['proj-1'] = [];
 
     const error: unknown = await run(state, { workspaceId: 'ws-1', appName: 'storefront' }).catch(
@@ -552,11 +555,53 @@ describe('resolveContainer — Branch resolution', () => {
     expect(state.branchCreateCalls).toBe(0);
   });
 
-  test('a named stage with no existing Branch creates one, and carries no defaultBranchId', async () => {
+  test('an explicit production resolves exactly like the default: the default Branch, no create', async () => {
+    state.branches['proj-1'] = [
+      { id: 'br-default', gitName: 'main', isDefault: true, createdAt: new Date(1).toISOString() },
+    ];
+
     const result = await run(state, {
       workspaceId: 'ws-1',
       appName: 'storefront',
-      stage: 'staging',
+      environment: 'production',
+    });
+
+    expect(result.branchId).toBeUndefined();
+    expect(result.defaultBranchId).toBe('br-default');
+    expect(state.branchCreateCalls).toBe(0);
+  });
+
+  test.each([true, false])(
+    'a name whose Branch is the default Branch is refused, telling the user to use production (ensure: %p)',
+    async (ensure) => {
+      state.branches['proj-1'] = [
+        {
+          id: 'br-default',
+          gitName: 'main',
+          isDefault: true,
+          createdAt: new Date(1).toISOString(),
+        },
+      ];
+
+      const error: unknown = await run(state, {
+        workspaceId: 'ws-1',
+        appName: 'storefront',
+        environment: 'main',
+        ensure,
+      }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(DefaultBranchUnderAnotherNameError);
+      expect((error as Error).message).toContain('"main" names the Branch br-default');
+      expect((error as Error).message).toContain('--environment production');
+      expect(state.branchCreateCalls).toBe(0);
+    },
+  );
+
+  test('a named environment with no existing Branch creates one, and carries no defaultBranchId', async () => {
+    const result = await run(state, {
+      workspaceId: 'ws-1',
+      appName: 'storefront',
+      environment: 'staging',
     });
 
     expect(result.projectId).toBe('proj-1');
@@ -566,7 +611,7 @@ describe('resolveContainer — Branch resolution', () => {
     expect(state.branches['proj-1']?.[0]?.gitName).toBe('staging');
   });
 
-  test('a named stage with an existing Branch adopts it — create-if-absent is idempotent', async () => {
+  test('a named environment with an existing Branch adopts it — create-if-absent is idempotent', async () => {
     state.branches['proj-1'] = [
       {
         id: 'br-existing',
@@ -579,7 +624,7 @@ describe('resolveContainer — Branch resolution', () => {
     const result = await run(state, {
       workspaceId: 'ws-1',
       appName: 'storefront',
-      stage: 'staging',
+      environment: 'staging',
     });
 
     expect(result.branchId).toBe('br-existing');
@@ -592,23 +637,23 @@ describe('resolveContainer — Branch resolution', () => {
     const result = await run(state, {
       workspaceId: 'ws-1',
       appName: 'storefront',
-      stage: 'staging',
+      environment: 'staging',
     });
 
     expect(result.branchId).toBe('br-race-staging');
     expect(state.branchCreateCalls).toBe(1);
   });
 
-  test('two different named stages resolve to two different Branches', async () => {
+  test('two different named environments resolve to two different Branches', async () => {
     const staging = await run(state, {
       workspaceId: 'ws-1',
       appName: 'storefront',
-      stage: 'staging',
+      environment: 'staging',
     });
     const preview = await run(state, {
       workspaceId: 'ws-1',
       appName: 'storefront',
-      stage: 'pr-42',
+      environment: 'pr-42',
     });
 
     expect(staging.branchId).not.toBe(preview.branchId);
@@ -632,11 +677,11 @@ describe('resolveContainer — ensure: false (find-only, used by destroy)', () =
 
     expect(error).toBeInstanceOf(ContainerNotFoundError);
     expect((error as ContainerNotFoundError).appName).toBe('storefront');
-    expect((error as ContainerNotFoundError).stage).toBeUndefined();
+    expect((error as ContainerNotFoundError).environment).toBeUndefined();
     expect(state.projectCreateCalls).toBe(0);
   });
 
-  test('a named stage with a missing Branch fails with ContainerNotFoundError and creates nothing', async () => {
+  test('a named environment with a missing Branch fails with ContainerNotFoundError and creates nothing', async () => {
     state.projects.push({
       id: 'proj-1',
       name: 'storefront',
@@ -647,13 +692,13 @@ describe('resolveContainer — ensure: false (find-only, used by destroy)', () =
     const error: unknown = await run(state, {
       workspaceId: 'ws-1',
       appName: 'storefront',
-      stage: 'staging',
+      environment: 'staging',
       ensure: false,
     }).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ContainerNotFoundError);
     expect((error as ContainerNotFoundError).appName).toBe('storefront');
-    expect((error as ContainerNotFoundError).stage).toBe('staging');
+    expect((error as ContainerNotFoundError).environment).toBe('staging');
     expect(state.branchCreateCalls).toBe(0);
   });
 
@@ -676,7 +721,7 @@ describe('resolveContainer — ensure: false (find-only, used by destroy)', () =
     const result = await run(state, {
       workspaceId: 'ws-1',
       appName: 'storefront',
-      stage: 'staging',
+      environment: 'staging',
       ensure: false,
     });
 
@@ -686,7 +731,7 @@ describe('resolveContainer — ensure: false (find-only, used by destroy)', () =
     expect(state.branchCreateCalls).toBe(0);
   });
 
-  test('a found Project alone (default stage) resolves normally under ensure: false, with zero create calls', async () => {
+  test('a found Project alone (production) resolves normally under ensure: false, with zero create calls', async () => {
     state.projects.push({
       id: 'proj-1',
       name: 'storefront',

@@ -21,17 +21,17 @@ describe('createOperationsDouble()', () => {
   test('deploy succeeds by default, with no summary, and records its input', async () => {
     const double = createOperationsDouble();
     const result = await double.operations.deploy(
-      { entry: ENTRY, config: CONFIG, stage: 'preview' },
+      { entry: ENTRY, config: CONFIG, environment: 'preview' },
       {},
     );
     expect(result.ok).toBe(true);
     expect(result.ok && result.value).toEqual({ summary: undefined, durationMs: 0 });
-    expect(double.calls.deploy).toEqual([{ entry: ENTRY, config: CONFIG, stage: 'preview' }]);
+    expect(double.calls.deploy).toEqual([{ entry: ENTRY, config: CONFIG, environment: 'preview' }]);
   });
 
   test('a fixture failure comes back exactly as given', async () => {
-    const failure = new CliStructuredError('DEPLOY.STAGE_INVALID', 'Bad stage.', {
-      fix: 'Pick a valid stage.',
+    const failure = new CliStructuredError('DEPLOY.ENVIRONMENT_INVALID', 'Bad environment.', {
+      fix: 'Pick a valid environment.',
     });
     const double = createOperationsDouble({ deploy: notOk(failure) });
     const result = await double.operations.deploy({ entry: ENTRY, config: CONFIG }, {});

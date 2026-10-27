@@ -1,7 +1,7 @@
 /**
  * Reports a deploy to Prisma Cloud as a `Build`, so the Console can show
  * deploy history for apps the platform never built — and, on `attach`,
- * replaces the stage Branch's application topology with what this deploy
+ * replaces the target Branch's application topology with what this deploy
  * declares, stamping the build with the topology's content hash so the
  * platform can link the run to the graph it deployed by value.
  *
@@ -57,10 +57,10 @@ const nonEmpty = (value: string | undefined): string | undefined =>
 /** The Build row's project and branch references, read out of the reporting extension's own container. */
 export interface BuildContainerRefs {
   readonly projectId: string;
-  /** The named stage's Branch — absent for the default stage, whose Build carries no branch reference. */
+  /** The environment's own Branch — absent for `production`, whose Build carries no branch reference. */
   readonly branchId: string | undefined;
-  /** The Branch the deploy actually targets — the named stage's own, or the default Branch. Where the application topology is submitted; absent means no submission. */
-  readonly stageBranchId: string | undefined;
+  /** The Branch the deploy actually targets — the environment's own, or the default Branch. Where the application topology is submitted; absent means no submission. */
+  readonly targetBranchId: string | undefined;
 }
 
 export interface BuildReporterOptions {
@@ -223,9 +223,9 @@ function deployedUrl(entities: readonly DeployedEntity[]): UpdateBuildBody {
 
 /**
  * The topology half of `attach`, shared with build-less sessions: replaces
- * the stage Branch's application topology, once per deploy, after the Branch
+ * the target Branch's application topology, once per deploy, after the Branch
  * exists and before any resource is created (attach's position in the
- * pipeline). A container that resolves no stage Branch has nowhere to submit
+ * pipeline). A container that resolves no target Branch has nowhere to submit
  * to, and the API's own failure handling already warned — nothing here
  * throws past it.
  */
@@ -234,8 +234,8 @@ async function submitTopology(
   submission: { readonly body: ApplicationTopologyBody; readonly contentHash: string } | undefined,
   refs: BuildContainerRefs,
 ): Promise<void> {
-  if (submission === undefined || refs.stageBranchId === undefined) return;
-  await topologyApi.replace(refs.projectId, refs.stageBranchId, {
+  if (submission === undefined || refs.targetBranchId === undefined) return;
+  await topologyApi.replace(refs.projectId, refs.targetBranchId, {
     contentHash: submission.contentHash,
     ...submission.body,
   });
@@ -279,7 +279,7 @@ function session(
     /**
      * Attaches the build to the Project and Branch this deploy resolved,
      * stamping the topology's content hash on the same update, then submits
-     * the declared topology to the stage Branch. The hash rides the attach
+     * the declared topology to the target Branch. The hash rides the attach
      * update rather than a call of its own because it must not travel alone
      * yet: until the platform accepts the field, its validator strips it and
      * then rejects the emptied body ("at least one field must be given") —

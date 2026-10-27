@@ -56,7 +56,7 @@ const holderDescription = (): string => {
 };
 
 /**
- * Acquires the (stack, stage) deploy lease. Contention (409) fails fast with
+ * Acquires the (stack, Alchemy stage) deploy lease. Contention (409) fails fast with
  * the server's message naming the current holder — no queueing, no retry.
  * The server's default TTL (60s) applies; no `ttlSeconds` is sent.
  */
@@ -125,7 +125,7 @@ export const heartbeatDeployLease = (
       );
       if (status === 404) {
         yield* Effect.logWarning(
-          `the deploy lease for stage "${scope.stage}" was lost (heartbeat returned 404) — ` +
+          `the deploy lease on Branch ${scope.branchId} was lost (heartbeat returned 404) — ` +
             'another deploy may have taken over; the next state operation of this run will fail.',
         );
         return;
@@ -155,19 +155,19 @@ export const releaseDeployLease = (
       const status = r.response.status;
       if (status === 404) {
         return Effect.logWarning(
-          `releasing the deploy lease for stage "${scope.stage}" returned 404 — ` +
+          `releasing the deploy lease on Branch ${scope.branchId} returned 404 — ` +
             'it had already expired or been replaced.',
         );
       }
       if (status >= 200 && status < 300) return Effect.void;
       return Effect.logWarning(
-        `releasing the deploy lease for stage "${scope.stage}" returned HTTP ${String(status)} — ` +
+        `releasing the deploy lease on Branch ${scope.branchId} returned HTTP ${String(status)} — ` +
           'the lease stays live until its TTL expires.',
       );
     }),
     Effect.catch((cause) =>
       Effect.logWarning(
-        `releasing the deploy lease for stage "${scope.stage}" failed: ${String(cause)}`,
+        `releasing the deploy lease on Branch ${scope.branchId} failed: ${String(cause)}`,
       ),
     ),
   );

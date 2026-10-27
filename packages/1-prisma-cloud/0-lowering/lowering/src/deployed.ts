@@ -8,8 +8,8 @@ import { collectPages } from './pagination.ts';
 export interface ReadDeployedInput {
   readonly workspaceId: string;
   readonly appName: string;
-  /** A named stage; omit for production. */
-  readonly stage?: string | undefined;
+  /** The environment to read. */
+  readonly environment: string;
 }
 
 export interface DeployedRow {
@@ -21,8 +21,8 @@ export interface DeployedServiceRow extends DeployedRow {
   readonly appEndpointDomain: string;
 }
 
-/** What one stage has on Prisma Cloud: its application topology and the platform rows on its Branch. With no topology (none written, or no nodes) every list is empty. */
-export interface DeployedStage {
+/** What one environment has on Prisma Cloud: its application topology and the platform rows on its Branch. With no topology (none written, or no nodes) every list is empty. */
+export interface DeployedEnvironment {
   readonly projectId: string;
   readonly branchId: string;
   readonly nodes: readonly Pick<
@@ -40,12 +40,12 @@ const program = (input: ReadDeployedInput) =>
       workspaceId: input.workspaceId,
       appName: input.appName,
       ensure: false,
-      ...(input.stage === undefined ? {} : { stage: input.stage }),
+      environment: input.environment,
     });
     const { projectId } = container;
     const branchId = container.branchId ?? container.defaultBranchId;
     if (branchId === undefined) {
-      return yield* Effect.die(new Error(`project ${projectId} resolved no stage Branch`));
+      return yield* Effect.die(new Error(`project ${projectId} resolved no Branch`));
     }
     const client = yield* ManagementClient;
 
@@ -55,7 +55,7 @@ const program = (input: ReadDeployedInput) =>
       }),
     );
     if (topology === undefined || topology.data.nodes.length === 0) {
-      const empty: DeployedStage = {
+      const empty: DeployedEnvironment = {
         projectId,
         branchId,
         nodes: [],
@@ -78,7 +78,7 @@ const program = (input: ReadDeployedInput) =>
       call(() => client.GET('/v1/buckets', { params: { query: query(cursor) } })),
     );
 
-    const stage: DeployedStage = {
+    const deployed: DeployedEnvironment = {
       projectId,
       branchId,
       nodes: topology.data.nodes.map(({ logicalId, parentLogicalId, kind, type }) => ({
@@ -95,23 +95,26 @@ const program = (input: ReadDeployedInput) =>
       databases: databases.map(({ id, logicalId }) => ({ id, logicalId })),
       buckets: buckets.map(({ id, logicalId }) => ({ id, logicalId })),
     };
-    return stage;
+    return deployed;
   });
 
 /**
- * Reads what a stage has deployed: its Project and Branch by the same
+ * Reads what an environment has deployed: its Project and Branch by the same
  * find-only lookup `destroy` uses, the application topology the last deploy
  * wrote, and the Branch's services, databases and buckets. `undefined` when
  * there is no Project or no Branch. Rejects on any other Management API
  * failure.
  */
-export async function readDeployedStage(
+export async function readDeployedEnvironment(
   client: ManagementApiClient,
   input: ReadDeployedInput,
-): Promise<DeployedStage | undefined> {
+): Promise<DeployedEnvironment | undefined> {
   return Effect.runPromise(
     program(input).pipe(
       Effect.catchTag('ContainerNotFoundError', () => Effect.succeed(undefined)),
+      Effect.catchTag('DefaultBranchUnderAnotherNameError', (error) =>
+        Effect.fail(new Error(error.message)),
+      ),
       Effect.catchTag('PrismaApiError', (error) =>
         Effect.fail(new Error(`Prisma Management API error: ${error.message}.`)),
       ),

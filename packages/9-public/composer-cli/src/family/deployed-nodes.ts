@@ -1,4 +1,4 @@
-import { type DeployedStage, RESOURCE_ROW_KINDS } from '@internal/lowering/deployed';
+import { type DeployedEnvironment, RESOURCE_ROW_KINDS } from '@internal/lowering/deployed';
 
 /** One row of `deploy list`: a topology node and the platform row it deployed to. */
 export interface DeployedNode {
@@ -8,7 +8,7 @@ export interface DeployedNode {
   readonly url: string | null;
 }
 
-type TopologyNode = DeployedStage['nodes'][number];
+type TopologyNode = DeployedEnvironment['nodes'][number];
 
 function kindOf(node: TopologyNode): string {
   if (node.parentLogicalId === null) return 'project';
@@ -25,14 +25,14 @@ function rowId(rows: readonly { id: string; logicalId: string | null }[], logica
   return rows.find((row) => row.logicalId === logicalId)?.id ?? null;
 }
 
-function deployedNode(stage: DeployedStage, node: TopologyNode): DeployedNode {
+function deployedNode(deployed: DeployedEnvironment, node: TopologyNode): DeployedNode {
   const kind = kindOf(node);
   const address = node.logicalId;
   switch (kind) {
     case 'project':
-      return { address, kind, platformId: stage.projectId, url: null };
+      return { address, kind, platformId: deployed.projectId, url: null };
     case 'service': {
-      const row = stage.services.find((service) => service.logicalId === address);
+      const row = deployed.services.find((service) => service.logicalId === address);
       return {
         address,
         kind,
@@ -41,15 +41,15 @@ function deployedNode(stage: DeployedStage, node: TopologyNode): DeployedNode {
       };
     }
     case 'postgres':
-      return { address, kind, platformId: rowId(stage.databases, address), url: null };
+      return { address, kind, platformId: rowId(deployed.databases, address), url: null };
     case 'bucket':
-      return { address, kind, platformId: rowId(stage.buckets, address), url: null };
+      return { address, kind, platformId: rowId(deployed.buckets, address), url: null };
     default:
       return { address, kind, platformId: null, url: null };
   }
 }
 
-/** Every node of the stage's topology, in topology order, joined by `logicalId` to the platform row it deployed to. The root's row is the Project. */
-export function deployedNodes(stage: DeployedStage): DeployedNode[] {
-  return stage.nodes.map((node) => deployedNode(stage, node));
+/** Every node of the environment's topology, in topology order, joined by `logicalId` to the platform row it deployed to. The root's row is the Project. */
+export function deployedNodes(deployed: DeployedEnvironment): DeployedNode[] {
+  return deployed.nodes.map((node) => deployedNode(deployed, node));
 }

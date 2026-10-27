@@ -1,7 +1,7 @@
 /**
- * Checks that a deployed stage's App, Database and Bucket rows carry the same
- * `logicalId`s as the service and resource nodes of the application topology
- * submitted to that stage's Branch (ADR-0051). Pure, so it is unit-tested;
+ * Checks that a deployed environment's App, Database and Bucket rows carry the
+ * same `logicalId`s as the service and resource nodes of the application
+ * topology submitted to that environment's Branch (ADR-0051). Pure, so it is unit-tested;
  * `e2e-verify-identity.ts` feeds it from the Management API.
  */
 

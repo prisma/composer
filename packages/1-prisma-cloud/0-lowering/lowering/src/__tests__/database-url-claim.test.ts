@@ -83,7 +83,7 @@ describe('claimDatabaseUrlKeys', () => {
       { projectId: 'proj_1', class: 'preview', key: 'DATABASE_URL_POOLED', value: '-' },
     ]);
     // Project-level rows only: a branch id would scope the claim to one branch
-    // and leave every other stage's preview unclaimed.
+    // and leave every other environment's preview unclaimed.
     for (const post of state.posts) expect(post.body['branchId']).toBeUndefined();
   });
 

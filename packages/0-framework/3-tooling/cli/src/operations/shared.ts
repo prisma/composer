@@ -14,6 +14,9 @@ import type { RunAlchemy } from '../run-alchemy.ts';
 /** The `id` of an ExtensionDescriptor — what keys the executors' per-extension maps. */
 export type ExtensionId = string;
 
+/** The environment name local development runs as. */
+export const DEV_ENVIRONMENT = 'dev';
+
 /** A running service's dotted address plus its local URL — what `dev` reports
  * as the front door and `log` reports as the tailable services. */
 export interface ServiceEndpoint {

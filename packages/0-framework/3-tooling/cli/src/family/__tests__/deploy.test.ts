@@ -145,10 +145,36 @@ describe('argument validation', () => {
     expect(plain(result.stderr)).toContain('--production');
   });
 
-  test('deploy passes entry, --name and --stage through to the operation verbatim', async () => {
+  test('without --environment, deploy targets production', async () => {
+    const { cli, double } = composerCli();
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
+
+    expect(result.exitCode).toBe(0);
+    expect(double.calls.deploy[0]?.environment).toBe('production');
+  });
+
+  test('--stage is retired: the run fails with CLI.COMMAND_MOVED naming --environment', async () => {
     const { cli, double } = composerCli();
     const result = await cli.run(
-      ['deploy', '--entry', 'src/service.ts', '--name', 'shop', '--stage', 'feat-auth'],
+      ['deploy', '--entry', 'src/service.ts', '--stage', 'staging', '--json'],
+      AS_TTY,
+    );
+
+    expect(result.exitCode).toBe(2);
+    const last = result.json.at(-1);
+    if (last?.kind !== 'result' || last.envelope.ok) throw new Error('expected an errored result');
+    expect(last.envelope.error.code).toBe('CLI.COMMAND_MOVED');
+    expect(last.envelope.error.summary).toBe('`--stage` on `deploy` has been replaced');
+    expect(last.envelope.nextActions).toEqual([
+      expect.objectContaining({ command: expect.stringContaining('deploy --environment <name>') }),
+    ]);
+    expect(double.calls.deploy).toEqual([]);
+  });
+
+  test('deploy passes entry, --name and --environment through to the operation verbatim', async () => {
+    const { cli, double } = composerCli();
+    const result = await cli.run(
+      ['deploy', '--entry', 'src/service.ts', '--name', 'shop', '--environment', 'feat-auth'],
       AS_TTY,
     );
 
@@ -164,7 +190,7 @@ describe('argument validation', () => {
           file: path.join(CWD, 'prisma.config.ts'),
         },
         name: 'shop',
-        stage: 'feat-auth',
+        environment: 'feat-auth',
         cwd: CWD,
         onEvent: expect.any(Function),
       },
@@ -443,7 +469,7 @@ describe('step events', () => {
   test('a person sees each step start and finish with its duration, then the URLs and the total', async () => {
     const { cli } = composerCli({ fixtures: { deploy, deployEvents } });
     const result = await cli.run(
-      ['deploy', '--entry', 'src/service.ts', '--stage', 'pr-7'],
+      ['deploy', '--entry', 'src/service.ts', '--environment', 'pr-7'],
       AS_TTY,
     );
 

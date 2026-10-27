@@ -66,7 +66,7 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
     const entry = fileURLToPath(import.meta.resolve('@internal/dev-emulators/postgres-main'));
     await ensureDaemon('postgres', entry, { registryRoot });
     const container: ContainerInstance = {
-      input: { appName: APP, stage: undefined },
+      input: { appName: APP, environment: 'dev' },
       serialize: () => 'x',
     };
     input = { container, devDir: path.join(root, 'project', '.prisma-composer', 'dev') };

@@ -33,8 +33,8 @@ import { migrateLegacyResourceState } from './legacy-resources.ts';
  * The hosted Alchemy state store: alchemy's stock HTTP state client pointed
  * at the platform state API
  * (`/v1/projects/{projectId}/branches/{branchId}/alchemy-state`). On layer
- * init (scoped, once per stack run): resolve the stage's Branch, acquire the
- * (stack, stage) deploy lease, fork its heartbeat, run the migration guard,
+ * init (scoped, once per stack run): resolve the environment's Branch, acquire the
+ * (stack, Alchemy stage) deploy lease, fork its heartbeat, run the migration guard,
  * and build the stock store. Finalizers (reverse order): interrupt the
  * heartbeat, release the lease. The Management API plumbing
  * (`ManagementClient`, `PrismaCredentials`) and the store's `HttpClient` are
@@ -53,7 +53,7 @@ import { migrateLegacyResourceState } from './legacy-resources.ts';
 export const prismaStateLayer = (ids: {
   readonly projectId: string;
   readonly branchId?: string;
-  /** The project's default Branch id, when the deploy targets the default stage — skips re-resolving it. */
+  /** The project's default Branch id, when the deploy targets `production` — skips re-resolving it. */
   readonly defaultBranchId?: string;
 }): Layer.Layer<State, never, StackServices> =>
   // The origin comes from the same resolver upstream's providers use
@@ -113,13 +113,13 @@ export const stateLayerAgainst = (
       const mgmt = yield* client.ManagementClient;
       const { token } = yield* credentials.PrismaCredentials;
 
-      // A named stage carries its branchId; production carries defaultBranchId —
+      // A non-production environment carries its branchId; production carries defaultBranchId —
       // re-resolved via the Management API only when neither is present.
       const stateBranchId =
         branchId ??
         defaultBranchId ??
         (yield* resolveDefaultBranchId(mgmt, projectId).pipe(
-          Effect.mapError(bootstrapError('resolving the stage branch')),
+          Effect.mapError(bootstrapError('resolving the default branch')),
         ));
 
       const scope = { projectId, branchId: stateBranchId, stack: stack.name, stage: stack.stage };
@@ -132,18 +132,13 @@ export const stateLayerAgainst = (
 
       // Before the store exists — so the check precedes Alchemy's first state
       // read. An empty scope with live resources (apps, databases, buckets)
-      // on the Branch means the stage's state is elsewhere (an older Composer
+      // on the Branch means the environment's state is elsewhere (an older Composer
       // version) or the resources are foreign: refuse before Alchemy mutates any.
       const occupied = yield* scopeOccupied(mgmt, scope, lease).pipe(
         Effect.mapError(bootstrapError('probing the deploy state scope')),
       );
       if (!occupied) {
-        yield* failOnEmptyScopeWithLiveResources(
-          projectId,
-          stateBranchId,
-          stack.name,
-          stack.stage,
-        ).pipe(
+        yield* failOnEmptyScopeWithLiveResources(projectId, stateBranchId, stack.name).pipe(
           Effect.provideService(client.ManagementClient, mgmt),
           Effect.mapError(bootstrapError('checking the empty deploy state scope')),
         );
@@ -180,7 +175,7 @@ export const stateLayerAgainst = (
         }),
         buildId,
       );
-      // Before the lease is released, so the run is still the stage's owner
+      // Before the lease is released, so the run still holds the Branch's lease
       // while its last reports land. Never fails: a report that did not
       // arrive must not become a deploy that did not finish.
       yield* Effect.addFinalizer(() => Effect.promise(() => reporter.drain()));

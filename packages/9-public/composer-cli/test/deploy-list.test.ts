@@ -86,10 +86,11 @@ const COMPOSER_CONFIG = {
 function cliWith(api: FakeApi, requests: Request[] = []) {
   const family = createComposerFamily();
   const command = family.commands['deploy list'];
-  if (command === undefined) throw new Error('no deploy list command');
+  const deploy = family.commands['deploy'];
+  if (command === undefined || deploy === undefined) throw new Error('no deploy list command');
   return createTestCli({
     commandFamilies: [family],
-    commands: { 'deploy list': command },
+    commands: { deploy, 'deploy list': command },
     groups: { deploy: { brief: 'Deploy the app.' } },
     config: { composer: COMPOSER_CONFIG },
     credential: {
@@ -168,11 +169,13 @@ describe('deploy list', () => {
     });
   });
 
-  test('finds a named stage by its Branch', async () => {
+  test('finds a named environment by its Branch', async () => {
     const requests: Request[] = [];
     const cli = cliWith({ ...deployed, branches: [{ id: 'br_pr42' }] }, requests);
 
-    const result = await cli.run(['deploy', 'list', '--stage', 'pr-42', '--json'], { cwd: CWD });
+    const result = await cli.run(['deploy', 'list', '--environment', 'pr-42', '--json'], {
+      cwd: CWD,
+    });
 
     expect(result.exitCode).toBe(0);
     expect(
@@ -183,17 +186,46 @@ describe('deploy list', () => {
     });
   });
 
-  test('rejects an invalid --stage with DEPLOY.STAGE_INVALID before any lookup', async () => {
+  test('rejects --stage', async () => {
     const requests: Request[] = [];
     const cli = cliWith(deployed, requests);
 
-    const result = await cli.run(['deploy', 'list', '--stage', 'foo..bar', '--json'], {
+    const result = await cli.run(['deploy', 'list', '--stage', 'pr-42', '--json'], { cwd: CWD });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(requests).toEqual([]);
+  });
+
+  test('refuses a name whose Branch is the default Branch, telling the user to use production', async () => {
+    const cli = cliWith({ ...deployed, branches: [{ id: 'br_default', isDefault: true }] });
+
+    const result = await cli.run(['deploy', 'list', '--environment', 'main', '--json'], {
       cwd: CWD,
     });
 
     expect(result.exitCode).not.toBe(0);
     expect(result.json.at(-1)).toMatchObject({
-      envelope: { ok: false, error: { code: 'DEPLOY.STAGE_INVALID' } },
+      envelope: {
+        ok: false,
+        error: {
+          code: 'DEPLOY.CONTAINER_FAILED',
+          summary: expect.stringContaining('--environment production'),
+        },
+      },
+    });
+  });
+
+  test('rejects an invalid --environment with DEPLOY.ENVIRONMENT_INVALID before any lookup', async () => {
+    const requests: Request[] = [];
+    const cli = cliWith(deployed, requests);
+
+    const result = await cli.run(['deploy', 'list', '--environment', 'foo..bar', '--json'], {
+      cwd: CWD,
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.json.at(-1)).toMatchObject({
+      envelope: { ok: false, error: { code: 'DEPLOY.ENVIRONMENT_INVALID' } },
     });
     expect(requests).toEqual([]);
   });
@@ -264,7 +296,7 @@ describe('deploy list', () => {
       config: { value: COMPOSER_CONFIG, file: path.join(CWD, 'prisma.config.ts') },
       entry: undefined,
       name: undefined,
-      stage: undefined,
+      environment: 'production',
       cwd: CWD,
       workspaceId: undefined,
       client: fakeClient(deployed, requests),
@@ -278,19 +310,29 @@ describe('deploy list', () => {
   });
 
   test.each([
-    ['no Project', { ...deployed, projects: [] }, [], 'Nothing deployed for shop.'],
+    [
+      'no Project',
+      { ...deployed, projects: [] },
+      [],
+      'Nothing deployed for shop in the environment production.',
+    ],
     [
       'no Branch',
       { ...deployed, branches: [] },
-      ['--stage', 'pr-42'],
-      'Nothing deployed for shop/pr-42.',
+      ['--environment', 'pr-42'],
+      'Nothing deployed for shop in the environment pr-42.',
     ],
-    ['no topology', { ...deployed, topology: undefined }, [], 'Nothing deployed for shop.'],
+    [
+      'no topology',
+      { ...deployed, topology: undefined },
+      [],
+      'Nothing deployed for shop in the environment production.',
+    ],
     [
       'a topology with no nodes',
       { ...deployed, topology: { nodes: [] } },
       [],
-      'Nothing deployed for shop.',
+      'Nothing deployed for shop in the environment production.',
     ],
   ] as const)(
     'fails with DEPLOY.TARGET_NOT_FOUND when there is %s',

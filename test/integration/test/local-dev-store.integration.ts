@@ -524,7 +524,7 @@ async function rebuildCatalogAndReconverge(
   const descriptor = prismaCloud();
   if (descriptor.localTarget === undefined) throw new Error('no localTarget descriptor');
   const dev = await descriptor.localTarget();
-  const container = await dev.container.ensure({ appName: APP_NAME, stage: undefined });
+  const container = await dev.container.ensure({ appName: APP_NAME, environment: 'dev' });
   const envVars = containerEnv(new Map([[descriptor.id, container]]));
 
   const result = spawnSync(
@@ -749,9 +749,9 @@ async function main(): Promise<void> {
       if (dev?.teardown !== undefined) {
         const container = await dev.container.ensure({
           appName: APP_NAME,
-          stage: undefined,
+          environment: 'dev',
         });
-        await dev.teardown({ container, stage: undefined });
+        await dev.teardown({ container, environment: 'dev' });
       }
     } catch (error) {
       console.error(

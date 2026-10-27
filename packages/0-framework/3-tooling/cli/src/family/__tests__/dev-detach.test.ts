@@ -13,7 +13,7 @@ function cliOver(double: ReturnType<typeof createOperationsDouble>) {
   const family = createComposerFamily({ operations: double.operations });
   return createTestCli({
     commandFamilies: [family],
-    commands: { dev: commandAt(family, 'dev') },
+    commands: { deploy: commandAt(family, 'deploy'), dev: commandAt(family, 'dev') },
     config: { composer: validComposerSection() },
   });
 }

@@ -15,8 +15,8 @@ export interface ResolveContainerOptions {
   readonly workspaceId: string;
   /** The app's name — the root `module("<name>", …)` name, or `--name`. */
   readonly appName: string;
-  /** A named stage (e.g. `staging`); omit for the default (production) stage. */
-  readonly stage?: string;
+  /** The Composer environment. `production` is the Project's default Branch; any other name is the Branch with that `gitName`. */
+  readonly environment: string;
   /** Create the Project/Branch if absent (default `true`). `false` finds only — used by `destroy`. */
   readonly ensure?: boolean;
   /**
@@ -27,17 +27,41 @@ export interface ResolveContainerOptions {
   readonly region?: ProjectRegion;
 }
 
-/** Raised with `ensure: false` when the app's Project (or a named stage's Branch) doesn't exist. */
+/** Raised with `ensure: false` when the app's Project (or a named environment's Branch) doesn't exist. */
 export class ContainerNotFoundError extends Data.TaggedError('ContainerNotFoundError')<{
   readonly appName: string;
-  readonly stage?: string;
+  readonly environment?: string;
 }> {}
+
+/** The environment that maps to the Project's default Branch. */
+export const PRODUCTION_ENVIRONMENT = 'production';
+
+/** Whether `environment` maps to the Project's default Branch rather than a Branch of its own. */
+export function isProductionEnvironment(environment: string): boolean {
+  return environment === PRODUCTION_ENVIRONMENT;
+}
+
+/** Raised when a name other than `production` resolves to the Project's default Branch, which would make it production under a second name. */
+export class DefaultBranchUnderAnotherNameError extends Data.TaggedError(
+  'DefaultBranchUnderAnotherNameError',
+)<{
+  readonly environment: string;
+  readonly branchId: string;
+}> {
+  override get message(): string {
+    return (
+      `the environment "${this.environment}" names the Branch ${this.branchId}, which is this ` +
+      "Project's default Branch: that Branch is production. Deploy it with " +
+      `--environment ${PRODUCTION_ENVIRONMENT} (or no --environment), and pick another name for a separate environment.`
+    );
+  }
+}
 
 export interface ResolvedContainer {
   readonly projectId: string;
-  /** Set only when `stage` was given — the default stage has no Branch. */
+  /** Set only for an environment other than `production`. */
   readonly branchId?: string;
-  /** Set only when `stage` was omitted — the project's default Branch's id (a read; the Branch is never created here). */
+  /** Set only for `production`: the project's default Branch's id (a read; the Branch is never created here). */
   readonly defaultBranchId?: string;
 }
 
@@ -176,21 +200,32 @@ export const resolveDefaultBranchId = (
     );
   });
 
-const findBranchId = (
+interface FoundBranch {
+  readonly id: string;
+  readonly isDefault: boolean;
+}
+
+const findBranch = (
   client: ManagementApiClient,
   projectId: string,
   gitName: string,
-): Effect.Effect<string | undefined, PrismaApiError> =>
+): Effect.Effect<FoundBranch | undefined, PrismaApiError> =>
   call(() =>
     client.GET('/v1/projects/{projectId}/branches', {
       params: { path: { projectId }, query: { gitName } },
     }),
-  ).pipe(Effect.map((page) => page.data[0]?.id));
+  ).pipe(
+    Effect.map((page) => {
+      const branch = page.data[0];
+      return branch === undefined ? undefined : { id: branch.id, isDefault: branch.isDefault };
+    }),
+  );
 
 /**
- * Finds the stage's Branch by its exact `gitName`, creating it if absent
+ * Finds the environment's Branch by its exact `gitName`, creating it if absent
  * unless `ensure` is `false` (find-only — `destroy`), in which case an
- * absent Branch fails with `ContainerNotFoundError`. The Management API has
+ * absent Branch fails with `ContainerNotFoundError`. A `gitName` that finds
+ * the default Branch fails with `DefaultBranchUnderAnotherNameError`. The Management API has
  * no server-side "create-or-return" idempotency (`POST
  * /v1/projects/:id/branches` 409s on a duplicate `gitName`, with no request
  * field to make that a no-op), so idempotency is client-side: observe
@@ -202,13 +237,21 @@ const resolveBranch = (
   gitName: string,
   appName: string,
   ensure: boolean,
-): Effect.Effect<string, PrismaApiError | ContainerNotFoundError> =>
+): Effect.Effect<
+  string,
+  PrismaApiError | ContainerNotFoundError | DefaultBranchUnderAnotherNameError
+> =>
   Effect.gen(function* () {
-    const existing = yield* findBranchId(client, projectId, gitName);
-    if (existing !== undefined) return existing;
+    const existing = yield* findBranch(client, projectId, gitName);
+    if (existing?.isDefault === true) {
+      return yield* Effect.fail(
+        new DefaultBranchUnderAnotherNameError({ environment: gitName, branchId: existing.id }),
+      );
+    }
+    if (existing !== undefined) return existing.id;
 
     if (!ensure) {
-      return yield* Effect.fail(new ContainerNotFoundError({ appName, stage: gitName }));
+      return yield* Effect.fail(new ContainerNotFoundError({ appName, environment: gitName }));
     }
 
     return yield* call(() =>
@@ -220,8 +263,10 @@ const resolveBranch = (
       Effect.map((r) => r.data.id),
       Effect.catch((err) =>
         err.status === 409
-          ? findBranchId(client, projectId, gitName).pipe(
-              Effect.flatMap((id) => (id === undefined ? Effect.fail(err) : Effect.succeed(id))),
+          ? findBranch(client, projectId, gitName).pipe(
+              Effect.flatMap((found) =>
+                found === undefined ? Effect.fail(err) : Effect.succeed(found.id),
+              ),
             )
           : Effect.fail(err),
       ),
@@ -229,17 +274,21 @@ const resolveBranch = (
   });
 
 /**
- * Resolves the two containers a stage's deploy runs into (ADR-0019): the
- * app's **Project**, found-or-created by name, and — for a named stage
- * only — its **Branch**, found-or-created by `gitName`. The default stage
- * (no `stage`) creates no Branch; `branchId` is omitted, and the project's
- * default Branch's id is read into `defaultBranchId` instead. With `ensure:
- * false` (`destroy`), nothing is created — an absent Project or Branch
- * fails with `ContainerNotFoundError` instead.
+ * Resolves the two containers an environment's deploy runs into (ADR-0019):
+ * the app's **Project**, found-or-created by name, and its **Branch**. The
+ * environment `production` is the Project's default Branch, read into
+ * `defaultBranchId` and never created; `branchId` is omitted. Any other name
+ * is the Branch with that `gitName`, found-or-created into `branchId`. With
+ * `ensure: false` (`destroy`), nothing is created — an absent Project or
+ * Branch fails with `ContainerNotFoundError` instead.
  */
 export const resolveContainer = (
   opts: ResolveContainerOptions,
-): Effect.Effect<ResolvedContainer, PrismaApiError | ContainerNotFoundError, ManagementClient> =>
+): Effect.Effect<
+  ResolvedContainer,
+  PrismaApiError | ContainerNotFoundError | DefaultBranchUnderAnotherNameError,
+  ManagementClient
+> =>
   Effect.gen(function* () {
     const client = yield* ManagementClient;
     const ensure = opts.ensure ?? true;
@@ -250,12 +299,18 @@ export const resolveContainer = (
       ensure,
       opts.region,
     );
-    if (opts.stage === undefined) {
+    if (isProductionEnvironment(opts.environment)) {
       const defaultBranchId = yield* resolveDefaultBranchId(client, projectId);
       return { projectId, defaultBranchId };
     }
 
-    const branchId = yield* resolveBranch(client, projectId, opts.stage, opts.appName, ensure);
+    const branchId = yield* resolveBranch(
+      client,
+      projectId,
+      opts.environment,
+      opts.appName,
+      ensure,
+    );
     return { projectId, branchId };
   });
 
@@ -276,7 +331,7 @@ export const deleteBranch = (
 
 /**
  * Deletes a Project. Tolerates a 404 (already gone). The API refuses with a
- * 400 if the Project still has live dependencies (e.g. another stage's
+ * 400 if the Project still has live dependencies (e.g. another environment's
  * Branch/resources) — that surfaces as a `PrismaApiError`.
  */
 export const deleteProject = (

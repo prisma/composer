@@ -22,7 +22,7 @@
  * code. `destroy` and `log` are programmatic operations in
  * `@prisma/composer/control`, not commands.
  */
-import { type CommandFamily, defineCommandFamily } from '@prisma/cli-engine';
+import { type CommandFamily, defineCommandFamily, type RedirectSpec } from '@prisma/cli-engine';
 import { deployWithDeps } from '../operations/deploy.ts';
 import { devWithDeps } from '../operations/dev.ts';
 import { devStop, devUrl } from '../operations/dev-current.ts';
@@ -59,10 +59,22 @@ export interface CreateComposerFamilyOptions {
   readonly operations?: ComposerOperations | undefined;
   /** More commands to ship in the family, keyed by the path they are meant to mount at. */
   readonly commands?: CommandFamily['commands'] | undefined;
+  /** More retired invocations to redirect, for the commands in `commands`. */
+  readonly redirects?: readonly RedirectSpec[] | undefined;
 }
 
 /** The `prisma` CLI's error reference; the engine appends `/<CODE>` to it for every error envelope. */
 const CLI_DOCS_BASE = 'https://www.prisma.io/docs/cli/error-reference/';
+
+/** Retires `--stage` on `command` in favour of `--environment`, so typing it fails with `CLI.COMMAND_MOVED`. */
+export function environmentFlagRedirect(command: string): RedirectSpec {
+  return {
+    from: command,
+    flag: 'stage',
+    replacement: `${command} --environment <name>`,
+    reason: 'A place the app runs is now called an environment.',
+  };
+}
 
 export function createComposerFamily(options: CreateComposerFamilyOptions = {}): CommandFamily {
   const operations = options.operations ?? realOperations;
@@ -76,5 +88,6 @@ export function createComposerFamily(options: CreateComposerFamilyOptions = {}):
       ...options.commands,
     },
     docsBaseUrl: CLI_DOCS_BASE,
+    redirects: [environmentFlagRedirect('deploy'), ...(options.redirects ?? [])],
   });
 }

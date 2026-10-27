@@ -5,7 +5,7 @@
  * least-privilege split (a consumer that can send must not
  * automatically read every email ever sent). `deliveryMode` and `from` are
  * module-boundary param slots: the enclosing app must bind a source
- * (`envParam(...)`), so both vary per stage. The db is invisible to
+ * (`envParam(...)`), so both vary per environment. The db is invisible to
  * consumers, exactly like storage's.
  */
 import type { ModuleNode, ParamNeed, SecretNeed } from '@internal/core';
