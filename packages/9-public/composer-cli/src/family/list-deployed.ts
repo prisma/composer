@@ -1,4 +1,4 @@
-import { resolveAppIdentity } from '@internal/cli/app-identity';
+import { resolveAppIdentity, validateStageName } from '@internal/cli/app-identity';
 import type { ComposerConfigSource } from '@internal/cli/control';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
@@ -38,6 +38,7 @@ export async function listDeployed(
 ): Promise<Result<readonly DeployedNode[], CliStructuredError>> {
   let app: string;
   try {
+    if (input.stage !== undefined) validateStageName(input.stage);
     app = (await resolveAppIdentity(input.entry, input.name, input.cwd, input.config)).name;
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);

@@ -177,6 +177,21 @@ describe('deploy list', () => {
     });
   });
 
+  test('rejects an invalid --stage with DEPLOY.STAGE_INVALID before any lookup', async () => {
+    const requests: Request[] = [];
+    const cli = cliWith(deployed, requests);
+
+    const result = await cli.run(['deploy', 'list', '--stage', 'foo..bar', '--json'], {
+      cwd: CWD,
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.json.at(-1)).toMatchObject({
+      envelope: { ok: false, error: { code: 'DEPLOY.STAGE_INVALID' } },
+    });
+    expect(requests).toEqual([]);
+  });
+
   test('loads the app from --entry', async () => {
     const cli = cliWith({
       ...deployed,
