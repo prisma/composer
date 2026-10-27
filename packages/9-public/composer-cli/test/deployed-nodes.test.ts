@@ -27,8 +27,8 @@ describe('deployedNodes', () => {
         ...empty,
         nodes: [{ logicalId: 'shop.api', parentLogicalId: 'shop', kind: 'service' }],
         services: [
-          { id: 'svc_other', logicalId: 'shop.web', appEndpointDomain: 'web.prisma.app' },
-          { id: 'svc_1', logicalId: 'shop.api', appEndpointDomain: 'api.prisma.app' },
+          { id: 'svc_other', logicalId: 'shop.web', appEndpointDomain: 'https://web.prisma.app' },
+          { id: 'svc_1', logicalId: 'shop.api', appEndpointDomain: 'https://api.prisma.app' },
         ],
       }),
     ).toEqual([
@@ -103,7 +103,9 @@ describe('deployedNodes', () => {
           { logicalId: 'shop.api', parentLogicalId: 'shop', kind: 'service' },
           { logicalId: 'shop.db', parentLogicalId: 'shop', kind: 'resource', type: 'postgres' },
         ],
-        services: [{ id: 'svc_1', logicalId: 'shop.web', appEndpointDomain: 'web.prisma.app' }],
+        services: [
+          { id: 'svc_1', logicalId: 'shop.web', appEndpointDomain: 'https://web.prisma.app' },
+        ],
       }),
     ).toEqual([
       { address: 'shop.api', kind: 'service', platformId: null, url: null },

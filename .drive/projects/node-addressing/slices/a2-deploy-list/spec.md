@@ -22,7 +22,7 @@ From design note 8, grounded in the code at `origin/main` `87d001de`:
 - **What it reads.** The stage's application topology (`GET /v1/projects/{projectId}/branches/{branchId}/application-topology`), which every deploy writes. Not the Alchemy state: reading that needs the deploy lease and would collide with a running deploy.
 - **The join.** Each topology node is one row of output, in topology order. Its platform row is found by `logicalId` in the Branch's services, databases and buckets lists (filtered by `projectId` and `branchId`). The root node's row is the Project.
 - **Kind.** `project` for the root, `service`, `postgres` for both Postgres types, `bucket`, `module` for other modules. Any other resource shows its topology `type`. A node with no platform row has an empty platform ID.
-- **URL.** Services only: `https://` plus the row's `appEndpointDomain`, the same URL a deploy prints.
+- **URL.** Services only: the row's `appEndpointDomain`, which is already a full `https://` URL and is the same URL a deploy prints.
 - **Finding the stage.** The same find-only lookup deploy uses: the Project by `logicalId` (the app name), the Branch by `gitName`, production when no `--stage` is given. The app name comes from the entry, as `deploy` resolves it (`resolveAppIdentity`), with `--name` and `--entry` working as on `deploy`.
 - **Nothing deployed.** No Project, no Branch, or no topology (404 or no nodes) fails with `DEPLOY.TARGET_NOT_FOUND`, naming the app and stage.
 - **Output.** Human: a table. `stdout`: one tab-separated line per node. `--json`: an array of `{ address, kind, platformId, url }`, with `null` for missing values.

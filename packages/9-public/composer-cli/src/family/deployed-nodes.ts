@@ -41,7 +41,7 @@ function deployedNode(stage: DeployedStage, node: TopologyNode): DeployedNode {
         address,
         kind,
         platformId: row?.id ?? null,
-        url: row === undefined ? null : `https://${row.appEndpointDomain}`,
+        url: row?.appEndpointDomain ?? null,
       };
     }
     case 'postgres':

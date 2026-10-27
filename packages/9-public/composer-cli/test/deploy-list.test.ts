@@ -128,7 +128,7 @@ const deployed: FakeApi = {
     {
       id: 'svc_1',
       logicalId: 'shop.api',
-      appEndpointDomain: 'api.prisma.app',
+      appEndpointDomain: 'https://api.prisma.app',
       branchId: 'br_default',
     },
   ],
