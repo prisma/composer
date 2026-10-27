@@ -8,7 +8,7 @@
     "dev": "pnpm turbo run build --filter @store/catalog && bun ../../node_modules/.bin/prisma dev",
     "typecheck": "tsc --noEmit",
     "deploy": "pnpm turbo run build --filter @prisma/example-store... && ( set -a; . ../../.env; set +a; bun ../../node_modules/.bin/prisma deploy ${STORE_STACK_NAME:+--name \"$STORE_STACK_NAME\"} )",
-    "destroy": "( set -a; . ../../.env; set +a; bun ../../scripts/composer-destroy.ts --production ${STORE_STACK_NAME:+--name \"$STORE_STACK_NAME\"} )"
+    "destroy": "( set -a; . ../../.env; set +a; bun ../../scripts/composer-destroy.ts --environment production ${STORE_STACK_NAME:+--name \"$STORE_STACK_NAME\"} )"
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.3",

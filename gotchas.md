@@ -31,7 +31,7 @@ The capture workflow is the Ignite `product-record-gotcha` skill.
 - [Service-to-service HTTP gets ECONNRESET while the target cold-starts from scale-to-zero](#service-to-service-http-gets-econnreset-while-the-target-cold-starts-from-scale-to-zero)
 - [Compute ingress buffers streaming responses until completion — an open SSE tail delivers nothing and 504s at 60s](#compute-ingress-buffers-streaming-responses-until-completion--an-open-sse-tail-delivers-nothing-and-504s-at-60s)
 - [planLimitReached is masked by the cold-start "not configured correctly yet" message](#planlimitreached-is-masked-by-the-cold-start-not-configured-correctly-yet-message)
-- [Composer's secret model has no optional/conditional secrets — every "off" stage still needs a junk credential](#composers-secret-model-has-no-optionalconditional-secrets--every-off-stage-still-needs-a-junk-credential)
+- [Composer's secret model has no optional/conditional secrets — every "off" environment still needs a junk credential](#composers-secret-model-has-no-optionalconditional-secrets--every-off-environment-still-needs-a-junk-credential)
 - [Module-boundary param slots admit only sources, never a literal — a static-per-app value forces a platform env var or a factory option](#module-boundary-param-slots-admit-only-sources-never-a-literal--a-static-per-app-value-forces-a-platform-env-var-or-a-factory-option)
 - [prisma dev fetches its implementation at run time — a broken @prisma/cli-dev publish fails every cold-cache invocation, regardless of the pinned CLI version](#prisma-dev-fetches-its-implementation-at-run-time--a-broken-prismacli-dev-publish-fails-every-cold-cache-invocation-regardless-of-the-pinned-cli-version)
 - [prisma dev shares one Postgres session across all connections — a restarted Bun.SQL client crash-loops on 42P05](#prisma-dev-shares-one-postgres-session-across-all-connections--a-restarted-bunsql-client-crash-loops-on-42p05)
@@ -269,7 +269,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 **Filed upstream:** [PRO-214](https://linear.app/prisma-company/issue/PRO-214/management-api-branch-create-has-no-idempotency-ifexists-409-on) — _"Management API: branch create has no idempotency (`ifExists`) — 409 on duplicate gitName"_
 **Product:** Prisma Postgres / Compute (Management API, branches)
 **Version:** `@prisma/management-api-sdk` 1.47.0
-**First hit:** the Prisma Cloud extension's container resolution (`resolveBranch`), building stage-as-branch
+**First hit:** the Prisma Cloud extension's container resolution (`resolveBranch`), building the mapping of an environment to a Branch
 **Cost:** low — caught at implementation; the client-side dance is boilerplate every caller repeats.
 
 **Symptom.** `POST /v1/projects/{projectId}/branches` with a `gitName` that already exists returns `409`, full stop. Any "ensure this branch exists" step that runs on every deploy cannot just create.
@@ -290,7 +290,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 **Filed upstream:** [PRO-215](https://linear.app/prisma-company/issue/PRO-215/management-api-project-scoped-compute-service-create-collides-with) — _"Management API: project-scoped compute-service create collides with production on `main`; branchId-on-create differs from databases"_
 **Product:** Prisma Compute (Management API)
 **Version:** `@prisma/management-api-sdk` 1.47.0
-**First hit:** `prisma-composer deploy --stage staging` on `examples/storefront-auth` — the stage-as-branch live proof
+**First hit:** `prisma-composer deploy` of a staging environment on `examples/storefront-auth` — the first live proof that an environment becomes a Branch
 **Cost:** ~1 hour — one failed live deploy, diagnosis, and a provider rework.
 
 **Symptom.** Deploying a same-named compute service into a preview Branch fails outright: `compute_service:already_exists: An app named "auth" already exists on branch "main"`.
@@ -500,7 +500,7 @@ The Management API is no help: the project and database both read `status: "read
 
 ---
 
-## Composer's secret model has no optional/conditional secrets — every "off" stage still needs a junk credential
+## Composer's secret model has no optional/conditional secrets — every "off" environment still needs a junk credential
 
 **Filed upstream:** not filed — a recorded framework design tradeoff ([ADR-0029](docs/design/90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md): "every wired secret is required"), not a product bug.
 **Product:** Prisma Compute (deploy preflight / secret provisioning)
@@ -508,22 +508,22 @@ The Management API is no help: the project and database both read `status: "read
 **First hit:** the email module (`packages/1-prisma-cloud/2-shared-modules/email`) — its `deliveryCredential` secret is only ever read when `deliveryMode` is `resend`/`smtp`; mode `none` (the local-dev/preview story) never reads it
 **Cost:** no time lost — anticipated at design time (spec D8) — but it is real friction every app author hits, so it is recorded here rather than only in the spec
 
-**Symptom.** A stage that will never deliver email (preview, `EMAIL_DELIVERY_MODE=none`) still must set a non-empty `EMAIL_DELIVERY_CREDENTIAL`, or the deploy preflight rejects the app before it ever boots — even though the running service provably never calls `.expose()` on that secret in `none` mode (`delivery.ts`'s `noneDelivery` placeholder throws if it is ever invoked, and it never is).
+**Symptom.** An environment that will never deliver email (preview, `EMAIL_DELIVERY_MODE=none`) still must set a non-empty `EMAIL_DELIVERY_CREDENTIAL`, or the deploy preflight rejects the app before it ever boots — even though the running service provably never calls `.expose()` on that secret in `none` mode (`delivery.ts`'s `noneDelivery` placeholder throws if it is ever invoked, and it never is).
 
 **Cause.** Prisma Composer's secret model has no "optional" or "conditional on another param's value" secret: every secret slot a service or module declares is required, unconditionally, the same way every declared dependency is required. There is no way to say "this secret is required only when `deliveryMode !== 'none'`" — the framework has no notion of one param's value gating whether another slot must be bound.
 
-**Workaround.** Set any non-empty junk value for `EMAIL_DELIVERY_CREDENTIAL` on stages where `deliveryMode` is `none` (documented in the module's README's env-var-per-stage table). The value is never read in that mode.
+**Workaround.** Set any non-empty junk value for `EMAIL_DELIVERY_CREDENTIAL` in environments where `deliveryMode` is `none` (documented in the module README's table of env vars per environment). The value is never read in that mode.
 
 **Reproduction.**
 
-1. Provision `email()` with `params: { deliveryMode: envParam('EMAIL_DELIVERY_MODE') }` and leave `EMAIL_DELIVERY_CREDENTIAL` unset on a stage where `EMAIL_DELIVERY_MODE=none`.
+1. Provision `email()` with `params: { deliveryMode: envParam('EMAIL_DELIVERY_MODE') }` and leave `EMAIL_DELIVERY_CREDENTIAL` unset in an environment where `EMAIL_DELIVERY_MODE=none`.
 2. Deploy → preflight fails before the service ever boots: the secret slot is unbound.
 3. Set `EMAIL_DELIVERY_CREDENTIAL` to any non-empty string → deploy succeeds; the value is never read (verified: `none` mode never constructs a `Delivery` backing).
 
 **References.**
 
 - Design record: [`docs/design/10-domains/email-module.md`](docs/design/10-domains/email-module.md) — "The delivery credential is always required"
-- Module README: [`packages/1-prisma-cloud/2-shared-modules/email/README.md`](packages/1-prisma-cloud/2-shared-modules/email/README.md) — "Platform env vars (per stage)"
+- Module README: [`packages/1-prisma-cloud/2-shared-modules/email/README.md`](packages/1-prisma-cloud/2-shared-modules/email/README.md) — its platform env vars, per environment
 
 ---
 
@@ -532,12 +532,12 @@ The Management API is no help: the project and database both read `status: "read
 **Filed upstream:** not filed — a design property of `ParamNeedBindings` (core's module boundary), not a product bug.
 **Product:** Prisma Compute (module boundary wiring)
 **Version:** Prisma Composer framework, observed 2026-07-21
-**First hit:** the email module's `deliveryUrl` — a value that is almost always static per app (it follows `deliveryMode`, which already varies per stage) but has nowhere to be bound as a plain literal at the module boundary
+**First hit:** the email module's `deliveryUrl` — a value that is almost always static per app (it follows `deliveryMode`, which already varies per environment) but has nowhere to be bound as a plain literal at the module boundary
 **Cost:** no time lost — designed around at spec time — recorded per spec's friction-finding requirement
 
 **Symptom.** A module boundary's `params` (`ParamNeedBindings<PN>`) accepts only a `ParamSource` (e.g. `envParam(...)`) for each declared `paramNeed()` slot — never a plain literal value — even for a param whose value is genuinely constant across every deploy of every app that provisions the module. The only way to make a value vary per app while staying literal (not a platform env var) is to keep it OUT of the module boundary entirely and pass it as a plain factory option instead.
 
-**Cause.** `paramNeed()` slots exist specifically so an app can bind a per-stage-varying platform value through the boundary; the type only models that one case (a forwardable source), not "a literal the wiring layer should just pass through."
+**Cause.** `paramNeed()` slots exist specifically so an app can bind a platform value that varies per environment through the boundary; the type only models that one case (a forwardable source), not "a literal the wiring layer should just pass through."
 
 **Workaround.** The email module put `deliveryUrl` outside the `params`/boundary system entirely: `email(opts?: { deliveryUrl?: string })` is a factory option, resolved once at module-construction time in application code, not a wired param. This avoids forcing every app to mint a platform env var for a value that is almost always `https://api.resend.com`.
 

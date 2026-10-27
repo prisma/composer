@@ -12,7 +12,7 @@ ours: Composer registers their providers and binds their props. What
 `@internal/lowering` still owns is the artifact packager, `ServiceKey`, and the
 hosted state store.
 
-## Placement: one Project per application, one Branch per stage
+## Placement: one Project per application, one Branch per environment
 
 A PDP Project is a **shared config namespace** (every App on a branch snapshots
 the same variable set into its versions) and a **shared lifecycle** (deletion
@@ -32,18 +32,20 @@ Consequences, stated plainly:
 Every deploy environment — production, staging, a per-PR preview — is a
 **Branch** of that one Project
 ([ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)).
-The default stage (no `--stage`) is production, at the Project level:
-resources carry no `branchId` and no Branch is created for it — the CLI only
-*reads* the Project's existing default Branch's id, which becomes the
-Alchemy stage (the deploy-state scope, TML-3157). A **named stage**
-(`--stage <name>`) is a Branch whose `gitName` is the stage name; every
-resource the target provisions for that stage carries the Branch's id.
+The environment `production` (the default of `--environment`) is the
+Project's default Branch, found by `isDefault`: resources carry no `branchId`
+and no Branch is created for it — the CLI only *reads* the default Branch's
+id, which becomes the Alchemy stage (the deploy-state scope, TML-3157). Any
+other environment is the Branch whose `gitName` is the environment's name;
+every resource the target provisions for it carries the Branch's id. A name
+other than `production` that resolves to the default Branch (such as `main`)
+is refused, since it would be production under a second name.
 Resolving and creating the Branch — like the Project — happens **before**
 Alchemy runs
 ([ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md));
 Alchemy only diffs and provisions the resources *inside* a (Project, Branch),
 never the container itself (see
-[§ Stages and container resolution](#stages-and-container-resolution)).
+[§ Environments and container resolution](#environments-and-container-resolution)).
 
 ## `DATABASE_URL` is forbidden — and left to the platform
 
@@ -89,8 +91,8 @@ behind them.
 | `Prisma.Project` | Project | name | projectId | **one per Prisma Composer application**; resolved by the CLI before Alchemy runs, so no lowering yields one |
 | `Prisma.Database` | Database | project, name?, region, branchId?, logicalId? | databaseId, connection strings | one per Module-provisioned postgres resource; never the project default; a branch-attached database is created with `branchId` and no display name (upstream refuses the combination — see [deploying.md](../../guides/deploying.md)) |
 | `Prisma.Connection` | database connection info | database, name | connectionId, directConnectionString | Composer binds the DIRECT string explicitly; upstream's `databaseUrl` is pooled-first |
-| `Prisma.App` | App | project, displayName, regionId, branchId?, logicalId? | appId, appEndpointDomain | `branchId` targets a named stage's Branch; omitted, upstream attaches the App to the project's default (production) Branch. `appEndpointDomain` is available at provision — that is what a service's own origin is read from |
-| `Prisma.EnvironmentVariable` | ConfigVariable | project, class, key, value (Redacted), branchId? | environmentVariableId | production-class with no `branchId` on the default stage; preview-class with `branchId` on a named stage. Values are write-only, so upstream re-applies the desired one on every deploy |
+| `Prisma.App` | App | project, displayName, regionId, branchId?, logicalId? | appId, appEndpointDomain | `branchId` targets the Branch of an environment other than `production`; omitted, upstream attaches the App to the project's default (production) Branch. `appEndpointDomain` is available at provision — that is what a service's own origin is read from |
+| `Prisma.EnvironmentVariable` | ConfigVariable | project, class, key, value (Redacted), branchId? | environmentVariableId | production-class with no `branchId` for `production`; preview-class with `branchId` for any other environment. Values are write-only, so upstream re-applies the desired one on every deploy |
 | `Prisma.Deployment` | Deployment (ComputeVersion) + Promotion | app, artifactPath, artifactContentType, portMapping, triggers, start, promote | deploymentId, appEndpointDomain | provider reconcile: create → upload tar.gz → start → poll until running → promote; `appEndpointDomain` read **post-promote** (create-time domain is a placeholder — PRO-200). It is replaced, not updated, when its artifact fingerprint or its `triggers` fingerprint moves |
 | `Prisma.Bucket` | Bucket | project, name, branchId?, logicalId? | bucketId, name | one per bucket resource; `Prisma.BucketAccessKey` mints its read-write S3 credentials, which become the node's outputs |
 
@@ -100,7 +102,7 @@ What we deliberately do **not** model yet, and where it will bite:
 **Promotion** as a standalone resource (the Deployment provider
 auto-promotes; rollback is unexpressed), and non-default **Databases** with
 contracts. **Branch** is now resolved and threaded (see
-[§ Stages and container resolution](#stages-and-container-resolution)) — but
+[§ Environments and container resolution](#environments-and-container-resolution)) — but
 only as a container id carried in providers' `branchId` props; it is never an
 Alchemy resource itself, since its lifecycle lives outside Alchemy
 (ADR-0024).
@@ -117,7 +119,7 @@ upstream adoption, retried for up to 5 minutes.
 Alchemy does delete a tracked `Prisma.Deployment` before the App that owns it,
 because the resource graph orders them. A deployment still winding down can
 still make the App delete 409 past that budget. The case to watch is
-destroying a stage that served traffic seconds earlier. The upstream ask is in
+destroying an environment that served traffic seconds earlier. The upstream ask is in
 [`.drive/deferred.md`](../../../.drive/deferred.md).
 
 ## Platform identity: `logicalId`
@@ -142,7 +144,7 @@ Rules:
 
 ### Resource IDs
 
-Every Alchemy resource ID is built from the address. A node's main resource uses the address itself; every other piece adds `.` and a role. A module has no resources and a service or resource has no children, so `<address>.<role>` is never another node's address. Every resource also declares the ID the previous format gave it, with `renamedFrom` from `alchemy/Rename`, so an existing stage's first deploy with this format moves each state entry and updates the resource in place instead of recreating it. On a stage that never had the old ID, the declaration does nothing.
+Every Alchemy resource ID is built from the address. A node's main resource uses the address itself; every other piece adds `.` and a role. A module has no resources and a service or resource has no children, so `<address>.<role>` is never another node's address. Every resource also declares the ID the previous format gave it, with `renamedFrom` from `alchemy/Rename`, so an existing environment's first deploy with this format moves each state entry and updates the resource in place instead of recreating it. On a stage that never had the old ID, the declaration does nothing.
 
 For the app `shop`:
 
@@ -179,19 +181,19 @@ So the upgrade updates every App, Database and Bucket in place, along with every
 Status:
 
 - The Project carries its `logicalId` when Composer created it. Projects created before that are found by display name and have none.
-- App, Database and Bucket rows carry the address as `logicalId` on every stage, through the prop upstream alchemy added in [alchemy-run/alchemy#1849](https://github.com/alchemy-run/alchemy/pull/1849) (first in `2.0.0-beta.83`). Rows created before that, or with the shorter address, gain the new value on their next deploy, as an in-place update. The `deploy-verify-destroy` CI action checks after each real deploy that every service, database and bucket node matches exactly one row on the stage's Branch (`scripts/e2e-verify-identity.ts`).
+- App, Database and Bucket rows carry the address as `logicalId` in every environment, through the prop upstream alchemy added in [alchemy-run/alchemy#1849](https://github.com/alchemy-run/alchemy/pull/1849) (first in `2.0.0-beta.83`). Rows created before that, or with the shorter address, gain the new value on their next deploy, as an in-place update. The `deploy-verify-destroy` CI action checks after each real deploy that every service, database and bucket node matches exactly one row on the stage's Branch (`scripts/e2e-verify-identity.ts`).
 - With `prisma deploy --name`, the deployed name is the root's address everywhere: the Project's `logicalId`, the topology's root node, and the first segment of every other address.
 
-## Stages and container resolution
+## Environments and container resolution
 
-`@internal/lowering` also hosts the **container-resolution client** (`resolveContainer` / `deleteBranch`) the deploy CLI runs *before* the generated stack, not through an Alchemy resource: `resolveContainer` finds-or-creates the app's Project (by `logicalId`, the app name; when no Project has it, by display name, oldest first) and, for a named stage, its Branch (found by `gitName`, created if absent); `ensure: false` makes it find-only, for `destroy`. It reuses the same Management API client and the same adopt-oldest / tolerate-a-racing-409 idiom the state store's own bootstrap uses ([ADR-0034](../90-decisions/ADR-0034-deploy-state-lives-in-the-stage-branch.md)) — the two resolve different things (deploy containers vs. the stage's state database) through the same client and idiom. Once `destroy` has removed a stage's members, the CLI removes the stage's state database (ownership-verified) and `deleteBranch` then soft-deletes its Branch.
+`@internal/lowering` also hosts the **container-resolution client** (`resolveContainer` / `deleteBranch`) the deploy CLI runs *before* the generated stack, not through an Alchemy resource: `resolveContainer` finds-or-creates the app's Project (by `logicalId`, the app name; when no Project has it, by display name, oldest first) and the environment's Branch (the default Branch for `production`; otherwise found by `gitName`, created if absent); `ensure: false` makes it find-only, for `destroy`. It reuses the same Management API client and the same adopt-oldest / tolerate-a-racing-409 idiom the state store's own bootstrap uses ([ADR-0034](../90-decisions/ADR-0034-deploy-state-lives-in-the-stage-branch.md)) — the two resolve different things (deploy containers vs. the environment's state database) through the same client and idiom. Once `destroy` has removed an environment's members, the CLI removes the environment's state database (ownership-verified) and `deleteBranch` then soft-deletes its Branch, except for `production`, whose default Branch is never deleted.
 
 Deploy state keeps its existing shape — keyed per Alchemy `--stage`
-(ADR-0034) — unchanged by this: under stage-as-branch, **the Project is the
-stack and the Branch is the stage**
+(ADR-0034) — unchanged by this: in Alchemy's terms, **the Project is the
+stack and the environment's Branch is the stage**
 ([ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)),
-so a stage's effective identity is the pair (Project, Branch), and the
-stage's state database lives inside that same Branch. The store's internal
+so an environment's effective identity is the pair (Project, Branch), and the
+environment's state database lives inside that same Branch. The store's internal
 logic is untouched.
 
 ## The mapping, both directions
@@ -205,7 +207,7 @@ logic is untouched.
   behavior or unmodeled. **Branch** likewise has no Alchemy resource — it is
   resolved and its lifecycle managed by the CLI's container-resolution
   client, outside the Alchemy graph entirely (see
-  [§ Stages and container resolution](#stages-and-container-resolution)).
+  [§ Environments and container resolution](#environments-and-container-resolution)).
   `serviceEndpointDomain` surfaces as `App.appEndpointDomain` (before the first
   deploy) and `Deployment.appEndpointDomain` (post-promote).
 
@@ -295,8 +297,8 @@ author and no app author ever hand-wires them.
 - [`build-reporting.md`](build-reporting.md) — how a deploy reports itself and the resources it touched as a Build.
 - [`../10-domains/core-model.md`](../10-domains/core-model.md) — the SPI that
   drives this lowering (three execution paths, phased service SPI).
-- [`../10-domains/deploy-cli.md`](../10-domains/deploy-cli.md) § Stages and
-  containers — the CLI pipeline step that drives the container resolution
+- [`../10-domains/deploy-cli.md`](../10-domains/deploy-cli.md) § Environments
+  and containers — the CLI pipeline step that drives the container resolution
   described here.
 - [`../03-domain-model/glossary.md`](../03-domain-model/glossary.md) § compile
   target — the Alchemy substrate itself.

@@ -38,9 +38,9 @@ The CLI calls the hook three times:
    failure it most needs to describe. `begin` creates or joins the Build and
    marks it `phase: deploy, state: running`.
 2. **`attach`** — once the Project and Branch exist. It fills the Build's
-   `projectId` and, for a named stage, `branchId`, and submits the declared
-   application topology to the stage's Branch (the default Branch for the
-   default stage). The topology's content hash rides the same update.
+   `projectId` and, for an environment other than `production`, `branchId`,
+   and submits the declared application topology to the environment's Branch
+   (the default Branch for `production`). The topology's content hash rides the same update.
 3. **`finish`** — on every exit path: success, structured failure, a thrown
    defect (`DEPLOY.UNEXPECTED`), and an interrupt. It sets the terminal
    `state` (`succeeded`, `failed` or `cancelled`), `failingStep` (Composer's
@@ -169,7 +169,7 @@ has no resource row; the Build's `projectId` carries the association.
 ## The run report
 
 `--report <path>` or `PRISMA_COMPOSER_REPORT_FILE` writes a versioned JSON file
-with the app, its stage, its nodes and entities (including preview URLs), and
+with the app, its environment, its nodes and entities (including preview URLs), and
 the failure cause. It is written on failure too. It is separate from the
 internal summary the alchemy child hands the CLI, which is deleted after every
 run so resource ids and URLs do not accumulate on disk. The Prisma GitHub
@@ -203,8 +203,8 @@ from the platform.
   failure inside the alchemy child shares that code. The `errorMessage`
   carries the exit status and, when the child recorded one on its way out, the
   underlying cause.
-- **`branchId` stays empty on a default-stage deploy.** Only a named stage's
-  Branch is attached to the Build.
+- **`branchId` stays empty on a `production` deploy.** Only the Branch of
+  another environment is attached to the Build.
 
 ## Related
 

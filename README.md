@@ -44,7 +44,7 @@ Your agent now knows the entire API and arrives
 prepped with the **building blocks** it can snap together — ready-made
 Modules for scheduled jobs, blob storage, and event streams, alongside the
 ones you write. Ask it for what you want ("a Next.js storefront calling an
-orders API with its own Postgres, deployed to a staging stage") and let it
+orders API with its own Postgres, deployed to a staging environment") and let it
 compose.
 
 Three properties are why this works, rather than producing a plausible app
@@ -154,7 +154,7 @@ have.
 | [Getting started](docs/guides/getting-started.md) | Your first app end to end; porting an existing Node or Next.js app |
 | [Building an app](docs/guides/building-an-app.md) | Contracts, databases (plain + Prisma-ORM-typed with migrations), reusable Modules, cron/storage/streams, config, secrets |
 | [Testing](docs/guides/testing.md) | Unit tests with `mockService`, integration tests with `bootstrapService` |
-| [Deploying and operating](docs/guides/deploying.md) | Stages, removing an app, CI, how apps behave in production |
+| [Deploying and operating](docs/guides/deploying.md) | Environments, removing an app, CI, how apps behave in production |
 
 ## Examples
 

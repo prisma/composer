@@ -31,7 +31,7 @@ is data — plain values and credentials together, declared as one schema
 ([below](#service-input)), where a field typed as the redacting
 `SecretString` box can never end up as an ordinary string. Your code contains
 no configuration `process.env` reads and no URLs; that is what makes every
-environment — production, a stage, a test — just a different set of injected
+environment — production, staging, a test — just a different set of injected
 values.
 
 ## Contracts
@@ -161,7 +161,7 @@ against that `url`. The client never leaves its provider's origin by itself:
 `//other.example/x` or an absolute URL, and it returns a redirect to you
 instead of following it. Pass `redirect: 'follow'` in `init` to follow
 redirects. The framework fills in the right origin locally and in each
-deployed stage.
+deployed environment.
 
 The framework checks only that the provider declared an HTTP port: TypeScript
 and Load both reject a bare service reference or a port of another kind.
@@ -576,23 +576,24 @@ misclassify a credential.
 
 **`envParam('NAME')`** is for plain values the code *can't* know. An app
 origin is the canonical case: it's different on production and on every
-preview stage, and a stage's public URL doesn't exist until that stage first
-deploys. Each stage keeps its own copy of the variable, so one topology
-serves them all. How the value travels: **the stage's platform variable is
-the store; the deploying shell only seeds it.** At deploy, preflight checks
-the name exists for the target stage — a name the stage is missing is copied
-up from the deploying shell's environment. Once the stage has it, your shell
+preview environment, and an environment's public URL doesn't exist until that
+environment first deploys. Each environment keeps its own copy of the
+variable, so one topology serves them all. How the value travels: **the
+environment's platform variable is the store; the deploying shell only seeds
+it.** At deploy, preflight checks the name exists for the target environment
+— a name the environment is missing is copied up from the deploying shell's
+environment. Once the environment has it, your shell
 no longer matters. The variable's value arrives as a raw string, so bind
 `envParam` to string fields. To change the value later, set it on the
 platform and redeploy; a running instance's environment is frozen when the
 instance is created.
 [`examples/env-param`](../../examples/env-param/) is the minimal working
-version, including a smoke script that proves the per-stage split.
+version, including a smoke script that proves the per-environment split.
 
 **`envSecret('NAME')`** is for credentials, with one rule: **the value never
 enters framework config**. The platform variable is seeded exactly the way
 an `envParam` one is — preflight copies it from the deploying shell when the
-stage doesn't have it yet, so CI (or you) exports `STRIPE_SECRET_KEY` for a
+environment doesn't have it yet, so CI (or you) exports `STRIPE_SECRET_KEY` for a
 first deploy. The framework carries only the variable's *name*; the platform
 injects the value straight into the running instance. What your code gets is
 a `SecretString` box that redacts on logging, rendering, and

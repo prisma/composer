@@ -4,16 +4,16 @@
  * the Management API (state is hosted, not local files), polls it until it
  * responds, and asserts two things about what arrived:
  *
- * - the greeting it serves is exactly the value the target stage's platform
+ * - the greeting it serves is exactly the value the target environment's platform
  *   var carries (the param round trip), and
  * - GET /logo.svg serves the asset that sits beside the entry in the built
  *   directory (the build adapter's directory form — proving assemble copied
  *   the whole tree, not just the entry).
  *
- *   EXPECTED_GREETING=… [ENV_PARAM_STAGE=…] [ENV_PARAM_STACK_NAME=…] bun scripts/smoke.ts
+ *   EXPECTED_GREETING=… [ENV_PARAM_ENVIRONMENT=…] [ENV_PARAM_STACK_NAME=…] bun scripts/smoke.ts
  *
- * With ENV_PARAM_STAGE set, resolves that stage's Branch and its
- * branch-scoped app; without it, the production app.
+ * ENV_PARAM_ENVIRONMENT defaults to production, the Project's default Branch;
+ * any other name resolves the Branch with that gitName and its app.
  * Requires PRISMA_SERVICE_TOKEN (run via `pnpm smoke:deployed`, which
  * sources the deploy env file).
  */
@@ -27,10 +27,12 @@ if (token === undefined || token === '') {
 }
 const expected = process.env['EXPECTED_GREETING'];
 if (expected === undefined || expected === '') {
-  throw new Error('EXPECTED_GREETING must carry the greeting the deployed stage should serve');
+  throw new Error(
+    'EXPECTED_GREETING must carry the greeting the deployed environment should serve',
+  );
 }
 const stack = process.env['ENV_PARAM_STACK_NAME'] ?? 'env-param-example';
-const stage = process.env['ENV_PARAM_STAGE'];
+const environment = process.env['ENV_PARAM_ENVIRONMENT'] || 'production';
 
 async function get(path: string): Promise<unknown> {
   const res = await fetch(`${api}${path}`, { headers: { authorization: `Bearer ${token}` } });
@@ -54,24 +56,22 @@ const project = rows(await get('/projects?limit=100')).find((p) => p['name'] ===
 if (project === undefined) throw new Error(`no project named "${stack}" in the workspace`);
 const projectId = asId(project['id'], 'project.id');
 
-// Resolve the target Branch id: the named stage's by gitName, or the
-// project's default (production) Branch when no stage is given.
 const branches = rows(await get(`/projects/${projectId}/branches?limit=100`));
 const branch =
-  stage !== undefined && stage !== ''
-    ? branches.find((b) => b['gitName'] === stage)
-    : branches.find((b) => b['isDefault'] === true);
+  environment === 'production'
+    ? branches.find((b) => b['isDefault'] === true)
+    : branches.find((b) => b['gitName'] === environment);
 if (branch === undefined) {
   throw new Error(
-    stage !== undefined && stage !== ''
-      ? `project has no branch with gitName "${stage}"`
-      : 'project has no default branch',
+    environment === 'production'
+      ? 'project has no default branch'
+      : `project has no branch with gitName "${environment}"`,
   );
 }
 const branchId = asId(branch['id'], 'branch.id');
 
-// App names are unique per Branch, so both stages hold an "echo" app in the
-// same project-level list — each row carries its branchId, which picks the
+// App names are unique per Branch, so the project-level list holds an "echo" app for
+// every environment — each row carries its branchId, which picks the
 // right one.
 const candidates = rows(await get(`/apps?projectId=${projectId}&limit=100`)).filter(
   (s) => s['name'] === 'echo',
@@ -79,14 +79,14 @@ const candidates = rows(await get(`/apps?projectId=${projectId}&limit=100`)).fil
 const service = candidates.find((s) => s['branchId'] === branchId);
 if (service === undefined) {
   throw new Error(
-    `no "echo" app on branch "${stage ?? 'production'}" ` + `(candidates: ${candidates.length})`,
+    `no "echo" app in the environment "${environment}" ` + `(candidates: ${candidates.length})`,
   );
 }
 const domain = service['appEndpointDomain'];
 if (typeof domain !== 'string' || domain === '')
   throw new Error('service has no endpoint domain yet');
 const url = domain.startsWith('http') ? domain : `https://${domain}/`;
-console.log(`echo URL (${stage ?? 'production'}): ${url}`);
+console.log(`echo URL (${environment}): ${url}`);
 
 /** The marker inside src/assets/logo.svg — served only if the asset shipped beside the entry. */
 const assetMarker = 'prisma-composer-env-param-asset';
@@ -103,7 +103,7 @@ while (Date.now() < deadline) {
       JSON.parse(last),
     );
     if (res.ok && body.greeting === expected) {
-      console.log(`ok - ${stage ?? 'production'} serves greeting ${JSON.stringify(expected)}`);
+      console.log(`ok - ${environment} serves greeting ${JSON.stringify(expected)}`);
 
       // The tree, not just the entry: fetch the entry's sibling asset. Only
       // checked once the service is up, so a cold start can't read as a

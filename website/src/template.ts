@@ -167,7 +167,7 @@ const CARD_BLURB: Record<string, string> = {
   'building-an-app':
     'Contracts, databases, reusable Modules, cron and storage, config, and secrets.',
   testing: 'Unit tests with mockService; integration tests with bootstrapService.',
-  deploying: 'Stages, destroy, CI, and how your app behaves in production.',
+  deploying: 'Environments, destroy, CI, and how your app behaves in production.',
 };
 
 export function landingPage(guides: readonly Guide[]): string {

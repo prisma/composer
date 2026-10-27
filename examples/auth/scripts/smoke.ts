@@ -13,8 +13,8 @@
  *   (also cleans up the smoke's own account) → admin removeUser via the ops
  *   service is idempotent on it.
  *
- * The email module runs `deliveryMode: none` on this stage (a junk
- * delivery credential, no real provider account — the same preview-stage
+ * The email module runs `deliveryMode: none` in this environment (a junk
+ * delivery credential, no real provider account — the same preview-environment
  * story as the email example) — the outbox readback is what proves a real
  * send happened, not just that Better Auth called the callback.
  *

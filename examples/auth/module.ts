@@ -20,9 +20,9 @@ import opsService from './src/ops/service.ts';
  *   - `ops` — the back office: holds the `admin` port (plus the smoke's
  *     read-only outbox dep).
  *
- * `baseUrl` is the PUBLIC origin browsers would see (the api service's, per stage).
+ * `baseUrl` is the PUBLIC origin browsers would see (the api service's, per environment).
  * `deliveryMode`/`from` are the email module's own boundary params, bound to
- * env vars like the email example, so a stage changes delivery without
+ * env vars like the email example, so an environment changes delivery without
  * changing the topology;
  * `deliveryCredential` is a boundary secret, unconditionally required even
  * in `none` mode (the junk-credential wart shared with the email example —

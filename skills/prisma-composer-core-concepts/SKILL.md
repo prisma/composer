@@ -18,7 +18,7 @@ description: >-
 A **Prisma App** is a tree of typed declarations composed in TypeScript and
 handed to the `prisma` CLI, whose two main Composer commands are `prisma deploy`
 and `prisma dev`. Removing a whole app is `prisma project delete`. Removing
-one stage and reading logs are not commands; they are the `destroy` and `log`
+one environment and reading logs are not commands; they are the `destroy` and `log`
 operations of `@prisma/composer/control`, called from a script.
 This file covers structures, hierarchies, relationships, and workflows: the
 concepts you cannot observe from the code or the CLI's help output. It is not
@@ -145,7 +145,7 @@ Rules that bite:
    expects `SecretString` fails the deploy; `envSecret` bound to a plain
    string field fails the same way.
 2. **`envParam` values arrive as raw strings**; bind them to string fields.
-   The stage's platform variable is the store; the deploying shell only seeds
+   The environment's platform variable is the store; the deploying shell only seeds
    a missing name (and the deploy fails early, naming the variable, when both
    lack it). Changing the platform value needs a redeploy.
 3. **Absence is the schema's call.** An env-bound field whose variable is
@@ -382,7 +382,7 @@ deletes the old rows, and a database's or bucket's data with them.
 
 **Progress.** `prisma deploy` prints each step as it starts and finishes, with
 its duration (`✔ assemble web (3m 42s)`), and ends with the real total
-(`Deployed <app> to <stage> in 5m 25s.`). Steps: load config and app, one
+(`Deployed <app> to <environment> in 5m 25s.`). Steps: load config and app, one
 assemble per service, connect to project and branch, check environment
 variables, plan and apply (one step: alchemy does both in one process), record
 result. A slow assemble is usually a Node service with
@@ -392,41 +392,48 @@ those extra fields vary, so don't parse them as a stable format. The
 `deploy` operation's `onEvent` receives the same steps, and its result's
 `durationMs` is the total.
 
-**Stages.** A stage is an environment name chosen on the command line at
-deploy time, never written in the topology. The identical graph deploys
-everywhere. On the Prisma Cloud target, a Prisma App is one Project and a
-stage is a Branch of it, with its own running services, its own empty
-database, its own configuration. A stage name must be a valid git ref name;
-an invalid name is a hard error.
+**Environments.** An environment is a named place the app runs, chosen with
+`--environment` at deploy time, never written in the topology. The identical
+graph deploys everywhere. `prisma deploy` without the flag deploys
+`production`; `prisma dev` runs as `dev` and takes no flag. On the Prisma Cloud
+target, a Prisma App is one Project and an environment is a Branch of it, with
+its own running services, its own empty database, its own configuration:
+`production` is the Project's default Branch, any other name is the Branch
+with that `gitName`, created if absent. The default Branch's own name (such as
+`main`) is refused, since it would be production under a second name. A name
+must be a valid git ref name, or the deploy fails with
+`DEPLOY.ENVIRONMENT_INVALID`.
 
-**Seeing what is deployed.** `prisma deploy list [--stage <name>]` lists every
+**Seeing what is deployed.** `prisma deploy list [--environment <name>]` lists every
 node of the topology the last deploy recorded, with its kind, platform ID and,
 for a service, its URL; the root's ID is the Project's, and a module has none.
 It finds the app as `deploy` does (`--name`, `--entry`) and fails with
-`DEPLOY.TARGET_NOT_FOUND` when the stage has nothing deployed. Piped:
+`DEPLOY.TARGET_NOT_FOUND` when the environment has nothing deployed. Piped:
 address, kind, platform ID, URL per line; `--json`: `[{ address, kind, platformId, url }]`. It needs
 a `prisma` CLI release that includes it; 8.0.0-rc.26 does not.
 
-**Removing an app** with every stage is a platform command: find the Project
+**Removing an app** with every environment is a platform command: find the Project
 id with `prisma project list`, then `prisma project delete <id> --confirm <id>`,
 and check `prisma project list` again to confirm it is gone. It works while the
 app's services are running. Don't write a script for this.
 
-**Destroying one stage** is the `destroy` operation, and its `target` is required:
-`{ kind: 'stage', stage }` or `{ kind: 'production' }`, never a default:
+**Destroying one environment** is the `destroy` operation, and its
+`environment` is required, even for production; it has no default and a call
+without it fails with `DEPLOY.ENVIRONMENT_REQUIRED`:
 
 ```ts
-await destroy({ entry: 'module.ts', target: { kind: 'stage', stage: 'pr-42' }, config });
+await destroy({ entry: 'module.ts', environment: 'pr-42', config });
+await destroy({ entry: 'module.ts', environment: 'production', config });
 ```
 
-Destroying a stage
+Destroying any environment other than production
 deletes its Branch after removing its resources. Destroying production
 removes only the resources inside the production Branch, never the Branch
 itself directly; once the Project is empty it is deleted too, and that
 deletion takes the production Branch with it. A Project still holding
-another stage's resources is kept. Destroy never creates anything:
+another environment's resources is kept. Destroy never creates anything:
 destroying a
-never-deployed stage fails rather than standing one up.
+never-deployed environment fails rather than standing one up.
 
 **The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.83 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
@@ -446,7 +453,8 @@ needed.
 2. Failures are bisectable through that file. A failing deploy names its
    path and prints a reproduce command: Node running the bin of the `alchemy`
    Composer depends on, with `deploy .prisma-composer/alchemy.run.ts --yes
-   --stage <stage>`. Running it directly separates "the framework computed the wrong thing" from "the engine or
+   --stage <stage>` (Alchemy's own flag; on Prisma Cloud its value is the
+   environment's Branch id). Running it directly separates "the framework computed the wrong thing" from "the engine or
    platform rejected the right thing". An engine failure surfaces as
    `DEPLOY.ENGINE_FAILED` carrying the exit code, the engine's own error
    lines (credentials redacted, capped at 1000 characters) and that reproduce
@@ -721,8 +729,8 @@ today the blocks above plus your own Modules are the whole set, so verify a
 
 Name the gap instead of inventing an API:
 
-1. **No `prisma` command for removing one stage, or for logs.** Remove a whole
-   app with `prisma project delete <id> --confirm <id>`. For one stage and for
+1. **No `prisma` command for removing one environment, or for logs.** Remove a whole
+   app with `prisma project delete <id> --confirm <id>`. For one environment and for
    logs, use the `destroy` and `log` operations of `@prisma/composer/control`
    from a script. A destroy script
    cannot use the `prisma auth login` session; it needs `PRISMA_SERVICE_TOKEN`
