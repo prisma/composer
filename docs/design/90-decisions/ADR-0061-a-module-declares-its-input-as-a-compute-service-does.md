@@ -40,7 +40,7 @@ The root module may declare `input` too. Nothing provisions the root, so the dep
 
 - types each reference from the schema's output, including nested keys;
 - lets Load record which input key flows into which child input;
-- produces a clear error when the body passes a reference somewhere other than an input;
+- produces a clear error when the body reads a reference or branches on it, rather than passing it where a value is accepted (a child's input, a node parameter, a `resolve()` dependency);
 - lets the deploy validate the resolved binding against the module's schema, and report keys a parent binds that the schema rejects.
 
 The decision stands on the shape above; the mechanism is settled by the spike.
