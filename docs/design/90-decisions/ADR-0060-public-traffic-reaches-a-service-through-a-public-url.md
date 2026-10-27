@@ -34,7 +34,7 @@ export default module('shop', ({ provision }) => {
 shop.site (public URL)  ──is wired to──▶  shop.web.http  ──exposed by──▶  shop.web (compute service)
 ```
 
-`publicUrl({ name, url, target })` takes plain parameters. `target` is a reference to the HTTP connection a service exposes. `url` is one of two explicit strategies: `publicUrl.hostname('shop.com')` names the hostname to serve, and `publicUrl.generated()` asks the platform for a hostname under its own domain. It usually differs per environment, so it is written as a `resolve()` value ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). Every other service in the graph is reached only by other services.
+`publicUrl({ name, url, target })` takes plain parameters. `target` is a reference to the HTTP connection a service exposes. `url` is one of two strategies: `publicUrl.hostname('shop.com')` names the hostname to serve, and `publicUrl.generated()` asks the platform for a hostname under its own domain. A bare string is shorthand for `publicUrl.hostname(...)`, since a string can only mean a named hostname. Leaving `url` out is an error. It usually differs per environment, so it is written as a `resolve()` value ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). Every other service in the graph is reached only by other services.
 
 ## Reasoning
 
@@ -53,7 +53,7 @@ provision(publicUrl({ name: 'authUrl', url, target: identity.api }));
 
 **`publicUrl()`'s parameters say nothing about the graph's structure.** The function builds an ordinary node whose edge to `target` sits where every edge sits, and Load reads it like any other. Today a node's edges are filled in at `provision()`, so a node that arrives with its edge already set is a small, general addition to core, not something specific to public URLs.
 
-**Two explicit strategies, no implicit default.** `publicUrl.hostname(…)` and `publicUrl.generated()` are both requests the author makes. There is no "leave it out and see what happens". A new preview environment whose `resolve()` returns `publicUrl.generated()` is reachable with no configuration and no ownership proof.
+**Two strategies, no implicit default.** `publicUrl.hostname(…)` and `publicUrl.generated()` are both requests the author makes, and a bare string is the first of them. What is ruled out is omission: there is no "leave it out and see what happens". A new preview environment whose `resolve()` returns `publicUrl.generated()` is reachable with no configuration and no ownership proof.
 
 **One hostname per public URL.** Each hostname has its own ownership proof, setup state and certificate on the platform, so `www.shop.com` and `shop.com` are two public URLs wired to the same connection.
 
@@ -71,10 +71,11 @@ provision(publicUrl({ name: 'authUrl', url, target: identity.api }));
 - **Changing a hostname replaces it.** The record keeps its identity and takes the new hostname; the old one stops being served, and the new one serves once proven and set up.
 - **A hostname belongs to one public URL only**, across every environment of a project and every project sharing the Domain. The platform refuses a second record naming it. A preview whose code names production's hostname is refused, and production is unaffected.
 - **Removing a public URL removes its record**, like removing any other node. Protecting a deploy against unintended removals is the general concern of asking before losing data, not something specific to public URLs.
-- **`prisma dev` runs the same topology.** The local target gives the public URL a stand-in that binds nothing, through the existing local-target mechanism ([ADR-0041](ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md)), and ignores a named hostname.
+- **`prisma dev` runs the same topology.** The local target gives the public URL a stand-in that binds nothing, through the existing local-target mechanism ([ADR-0041](ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md)). A named hostname is ignored locally, with one warning per public URL saying so.
 - **Routing by path is not part of this.** A public URL takes a hostname. If paths come later, an author declares more public URLs sharing a hostname; a router is never something users declare, and nothing about routing is decided here.
 - **Core gains the ability to build a node with its edge already set.** It is general, and `publicUrl()` is its first user.
-- **The strategy method names are open.** `hostname` and `generated` are placeholders; both are methods on `publicUrl`, not free-standing functions.
+- **The strategy methods are `publicUrl.hostname()` and `publicUrl.generated()`**, methods on `publicUrl` itself, not free-standing functions.
+- **Building a hostname from the environment's name is the author's job.** `resolve()` is a general mechanism and knows nothing about URLs. An environment name is not always a valid DNS label (it may contain `_` or exceed 63 characters), so an author deriving `<environment>.preview.shop.com` writes or imports a plain helper that makes a label of it; such a helper, if Composer ships one, is independent of `resolve()`.
 
 ## Alternatives considered
 

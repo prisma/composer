@@ -72,7 +72,6 @@ Adapters are not how per-environment choice is expressed. That is `resolve()`, i
 - **`--environment` replaces `--stage`** on `prisma deploy`, and `prisma dev` gains it ([ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md)). `prisma deploy` without it deploys `production`, the same Branch as before on Prisma Cloud.
 - **`destroy` targets an environment by name**, `production` included. The separate `{ kind: 'production' }` target is retired.
 - **Local dev no longer says "stages do not apply".** How local state and emulator instances are keyed by environment is settled with that change; this decision fixes only what `resolve()` and adapters receive.
-- **A DNS-safe form of the environment name** is something Composer should hand to `resolve()` functions, since names may contain `_` and exceed 63 characters; its shape is open.
 - **Values in `.env` files are plain.** A secret belongs with `envSecret`, or with a secrets adapter once they exist. The root's schema refuses a plain value where it expects `secretString()`.
 
 ## Alternatives considered

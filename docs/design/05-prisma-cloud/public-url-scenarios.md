@@ -1,6 +1,6 @@
 # Public URL scenarios
 
-Working draft. For each scenario: what the user wants, the Composer code they write, the topology that produces, and what exists on PDP and Foundry for each environment. Vocabulary is the current design: environments (not stages), `publicUrl({ name, url, target })`, two URL strategies, both constructors on `publicUrl` itself (`publicUrl.hostname('host')` names the hostname; `publicUrl.generated()` asks the platform for one; the exact method names are open), and `resolve(dependencies, fn)` to compute a value from inputs and the environment's name. Nothing about public URLs depends on config adapters; they appear only in scenario 9, as an option for teams that keep hostnames outside the code.
+Working draft. For each scenario: what the user wants, the Composer code they write, the topology that produces, and what exists on PDP and Foundry for each environment. Vocabulary is the current design: environments (not stages), `publicUrl({ name, url, target })`, two URL strategies, both methods on `publicUrl` itself (`publicUrl.hostname('host')` names the hostname, and a bare string is shorthand for it; `publicUrl.generated()` asks the platform for one), and `resolve(dependencies, fn)` to compute a value from inputs and the environment's name. Nothing about public URLs depends on config adapters; they appear only in scenario 9, as an option for teams that keep hostnames outside the code.
 
 Shared setup for every scenario:
 
@@ -82,7 +82,7 @@ url: resolve([], (environment) =>
 
 A preview whose code names `shop.com` is refused, because production holds it, and production is unaffected.
 
-**Open:** an environment name isn't always a valid DNS label (Composer allows `_`; labels are capped at 63 characters). Composer should hand `resolve()` functions a DNS-safe form of the name rather than leave every author to write one.
+An environment name isn't always a valid DNS label (Composer allows `_`; labels are capped at 63 characters), so a real version of this function passes the name through a label helper first, the author's own or one Composer ships. `resolve()` itself knows nothing about URLs.
 
 ## 5. Two hostnames, one service
 
@@ -147,13 +147,11 @@ composer({ extensions: [...], state: prismaState(), config: [dotenv()] })
 // module.ts
 export default module('shop', { input: type({ 'SITE_HOSTNAME?': 'string' }) }, ({ input, provision }) => {
   const web = provision(webService, { deps: { auth: auth.rpc } });
-  const url = resolve([input.SITE_HOSTNAME], (hostname) =>
-    hostname === undefined ? publicUrl.generated() : publicUrl.hostname(hostname));
-  provision(publicUrl({ name: 'site', url, target: web.http }));
+  provision(publicUrl({ name: 'site', url: input.SITE_HOSTNAME, target: web.http }));
 });
 ```
 
-`dotenv()` receives the environment's name, reads `.env` and `.env.production`, and the result fills the root's input. The `resolve()` turns the string into a strategy. The key is optional in the schema, so an environment with no `SITE_HOSTNAME` reaches the function as `undefined` and gets a generated URL; making the key required would fail that deploy instead.
+`dotenv()` receives the environment's name, reads `.env` and `.env.production`, and the result fills the root's input. A string is shorthand for `publicUrl.hostname(...)`, so the input is passed straight through. An environment with no `SITE_HOSTNAME` has no value for `url` and fails the deploy; to fall back to a generated URL instead, wrap it in a `resolve()` that returns `publicUrl.generated()` when the value is absent.
 
 ## 10. Changing a hostname
 
@@ -171,7 +169,7 @@ The `publicUrl` line is deleted. The deploy plan deletes `shop.site`, which remo
 
 **User:** runs `prisma dev module.ts`.
 
-The environment is `dev`. Every `resolve()` function receives `'dev'`. The local target gives `shop.site` a stand-in that creates nothing: there is no Branch and no Foundry. `prisma dev url site` can print the local URL of the service it's wired to. If the resolved value names a hostname, local dev ignores it; whether it should warn is open. Nothing in local dev keys on the name `dev` itself: a function receives whatever environment name the user passed, and the local target ignores hostnames regardless.
+The environment is `dev`. Every `resolve()` function receives `'dev'`. The local target gives `shop.site` a stand-in that creates nothing: there is no Branch and no Foundry. `prisma dev url site` can print the local URL of the service it's wired to. If the resolved value names a hostname, local dev ignores it and prints one warning per public URL saying so. Nothing in local dev keys on the name `dev` itself: a function receives whatever environment name the user passed, and the local target ignores hostnames regardless.
 
 ## 13. A service with no public URL
 
