@@ -44,7 +44,9 @@ const program = (input: ReadDeployedInput) =>
     });
     const { projectId } = container;
     const branchId = container.branchId ?? container.defaultBranchId;
-    if (branchId === undefined) return undefined;
+    if (branchId === undefined) {
+      return yield* Effect.die(new Error(`project ${projectId} resolved no stage Branch`));
+    }
     const client = yield* ManagementClient;
 
     const topology = yield* callOptional(() =>
