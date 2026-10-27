@@ -12,11 +12,10 @@ export default compute({
   deps: {
     db: postgres(catalogData),
   },
-  // `prisma dev` runs the source under bun's watcher instead of the build (ADR-0056).
-  build: node({
-    module: import.meta.url,
-    entry: '../dist/server.mjs',
-    dev: ['bun', '--watch', 'server.ts'],
-  }),
+  // Deliberately no `dev` command, unlike orders and promotions: catalog runs
+  // its built artifact under `prisma dev`, so this example keeps one service on
+  // the rebuild-and-restart loop (the local-dev store integration proof
+  // touches `dist/server.mjs` and expects exactly this service to restart).
+  build: node({ module: import.meta.url, entry: '../dist/server.mjs' }),
   expose: { rpc: catalogContract },
 });

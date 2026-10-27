@@ -65,16 +65,17 @@ typed RPC contracts. The whole composition is [module.ts](module.ts).
 ## Run it locally (no cloud)
 
 ```sh
-pnpm dev   # from examples/store: prisma dev module.ts
+pnpm dev   # from examples/store: builds catalog, then prisma dev module.ts
 ```
 
 Runs the **whole real topology** on your machine — every service, its
-Postgres and buckets, wired as they deploy, credential-free — with nothing to
-build first. The storefront runs `next dev` (the Next.js adapter's dev
-server), and catalog, orders and promotions run their source under
-`bun --watch` (the `dev` command on their `node()` adapters), so an edit to
-any of them is picked up without a rebuild, and their output is in your
-terminal, prefixed with each service's address.
+Postgres and buckets, wired as they deploy, credential-free. The storefront
+runs `next dev` (the Next.js adapter's dev server), and orders and promotions
+run their source under `bun --watch` (the `dev` command on their `node()`
+adapters), so edits to them are picked up without a rebuild and their output
+is in your terminal, prefixed with each service's address. Catalog has no
+`dev` command, so it shows the other loop: `prisma dev` runs its build and
+restarts it when `modules/catalog/dist/` changes.
 
 For the UI alone, the storefront's unit test injects in-memory fakes of
 catalog and orders via `mockService`
