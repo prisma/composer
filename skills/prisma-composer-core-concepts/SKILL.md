@@ -404,8 +404,8 @@ node of the topology the last deploy recorded, with its kind, platform ID and,
 for a service, its URL; the root's ID is the Project's, and a module has none.
 It finds the app as `deploy` does (`--name`, `--entry`) and fails with
 `DEPLOY.TARGET_NOT_FOUND` when the stage has nothing deployed. Piped:
-address, kind, platform ID, URL per line; `--json`: `[{ address, kind, platformId, url }]`. It first
-ships in the `prisma` release after 8.0.0-rc.26.
+address, kind, platform ID, URL per line; `--json`: `[{ address, kind, platformId, url }]`. It needs
+a `prisma` CLI release that includes it; 8.0.0-rc.26 does not.
 
 **Removing an app** with every stage is a platform command: find the Project
 id with `prisma project list`, then `prisma project delete <id> --confirm <id>`,

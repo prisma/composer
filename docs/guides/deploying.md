@@ -318,8 +318,8 @@ and with `DEPLOY.STAGE_INVALID` when the stage name is not a valid git ref
 name. Piped, it writes one line per node: address, kind, platform ID and URL,
 with an empty field for a missing value. With `--json` the result is an
 array of `{ address, kind, platformId, url }`, with `null` for a missing
-value. `prisma deploy list` first ships in the `prisma` release after
-8.0.0-rc.26.
+value. `prisma deploy list` needs a `prisma` CLI release that includes it;
+8.0.0-rc.26 does not.
 
 ## Removing an app or a stage
 

@@ -67,7 +67,15 @@ Checked locally: `bun test` for `test/deploy-list.test.ts` and `test/deployed-no
 
 ## Already addressed
 
-None. This is the first review round.
+After this review, fixed on the branch:
+
+- F01: `aa414ec7`. The check compares `kind`.
+- F02: `90cf60cf`. The error says `PRISMA_WORKSPACE_ID` is required, as deploy does.
+- F03: `3ee8e3b9`. One map, `RESOURCE_ROW_KINDS`, in `lowering/src/resource-rows.ts`, used by the command, the scripts and the emulators.
+- F04: real named-stage QA in [qa.md](../qa.md).
+- F05: `5464a84d`. A missing Branch fails with an error.
+- F06: `90cf60cf`. The test checks the header and two full rows.
+- F07: the docs no longer name a release version.
 
 ## Acceptance-criteria verification
 
