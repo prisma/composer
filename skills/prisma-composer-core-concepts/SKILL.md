@@ -16,7 +16,7 @@ description: >-
 # Prisma Composer core concepts
 
 A **Prisma App** is a tree of typed declarations composed in TypeScript and
-handed to the `prisma` CLI, which has two Composer commands: `prisma deploy`
+handed to the `prisma` CLI, whose two main Composer commands are `prisma deploy`
 and `prisma dev`. Removing a whole app is `prisma project delete`. Removing
 one stage and reading logs are not commands; they are the `destroy` and `log`
 operations of `@prisma/composer/control`, called from a script.
@@ -398,6 +398,14 @@ everywhere. On the Prisma Cloud target, a Prisma App is one Project and a
 stage is a Branch of it, with its own running services, its own empty
 database, its own configuration. A stage name must be a valid git ref name;
 an invalid name is a hard error.
+
+**Seeing what is deployed.** `prisma deploy list [--stage <name>]` lists every
+node of the topology the last deploy recorded, with its kind, platform ID and,
+for a service, its URL; the root's ID is the Project's, and a module has none.
+It finds the app as `deploy` does (`--name`, `--entry`) and fails with
+`DEPLOY.TARGET_NOT_FOUND` when the stage has nothing deployed. Piped:
+address, kind, platform ID, URL per line; `--json`: `[{ address, kind, platformId, url }]`. It first
+ships in the `prisma` release after 8.0.0-rc.26.
 
 **Removing an app** with every stage is a platform command: find the Project
 id with `prisma project list`, then `prisma project delete <id> --confirm <id>`,
