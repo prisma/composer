@@ -53,7 +53,7 @@ A `Prisma.ServiceUrl` resource: create (no DNS needed), read conditions, update 
 
 ### P2. Pending hostnames
 
-`hostname()` lowers to `Prisma.PublicUrl`. A hostname without DNS deploys in a pending state, the deploy output names the outstanding step and prints the Console link, and finishing DNS needs no redeploy. The scenarios doc gains the slice that made each scenario true.
+`hostname()` lowers to `Prisma.ServiceUrl`. A hostname without DNS deploys in a pending state, the deploy output names the outstanding step and prints the Console link, and finishing DNS needs no redeploy. The scenarios doc gains the slice that made each scenario true.
 
 - **Builds on:** P1, U2.
 - **Done when:** the spec's "At a glance" app deploys production before `shop.com`'s DNS exists, succeeds, and the hostname goes active after DNS is added with no further deploy.
