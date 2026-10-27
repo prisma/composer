@@ -21,7 +21,7 @@ export interface DeployedServiceRow extends DeployedRow {
   readonly appEndpointDomain: string;
 }
 
-/** What one stage has on Prisma Cloud: its application topology and the platform rows on its Branch. */
+/** What one stage has on Prisma Cloud: its application topology and the platform rows on its Branch. With no topology (none written, or no nodes) every list is empty. */
 export interface DeployedStage {
   readonly projectId: string;
   readonly branchId: string;
@@ -52,7 +52,17 @@ const program = (input: ReadDeployedInput) =>
         params: { path: { projectId, branchId } },
       }),
     );
-    if (topology === undefined || topology.data.nodes.length === 0) return undefined;
+    if (topology === undefined || topology.data.nodes.length === 0) {
+      const empty: DeployedStage = {
+        projectId,
+        branchId,
+        nodes: [],
+        services: [],
+        databases: [],
+        buckets: [],
+      };
+      return empty;
+    }
 
     const query = (cursor: string | undefined) =>
       cursor === undefined ? { projectId, branchId } : { projectId, branchId, cursor };
@@ -90,8 +100,8 @@ const program = (input: ReadDeployedInput) =>
  * Reads what a stage has deployed: its Project and Branch by the same
  * find-only lookup `destroy` uses, the application topology the last deploy
  * wrote, and the Branch's services, databases and buckets. `undefined` when
- * there is no Project, no Branch, or no topology. Rejects on any other
- * Management API failure.
+ * there is no Project or no Branch. Rejects on any other Management API
+ * failure.
  */
 export async function readDeployedStage(
   client: ManagementApiClient,
