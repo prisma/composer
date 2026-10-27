@@ -9,14 +9,21 @@
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { ContainerInstance } from '@internal/core/config';
+import type { Graph, ServiceNode } from '@internal/core';
+import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
 import { containerEnv } from '@internal/core/config';
+import type { DevServer } from '@internal/core/deploy';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import { DEV_DIR, resolveLocalTargets } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import { DEV_STACK_RELATIVE_PATH, writeDevStackFile } from '../dev/generate-dev-stack.ts';
-import { startWatch, type WatchHandle, watchTargetsFrom } from '../dev/watch.ts';
+import {
+  authoringModuleTargets,
+  startWatch,
+  type WatchHandle,
+  watchTargetsFrom,
+} from '../dev/watch.ts';
 import { type PipelineDeps, runPipeline } from '../pipeline.ts';
 import {
   type AlchemyOutcome,
@@ -37,11 +44,78 @@ function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * How many lines of a dev server's log the session shows when it starts
+ * following it. The emulator clears the log on every fresh start, so these
+ * are the current process's own startup lines (the framework's banner, a
+ * compile error), written while `prisma dev` waited for it to listen.
+ */
+const DEV_SERVER_LOG_BACKLOG = 200;
+
 async function mergedEndpoints(
   attachments: readonly LocalTargetAttachment[],
+  devServers: Readonly<Record<string, DevServer>>,
 ): Promise<readonly ServiceEndpoint[]> {
   const lists = await Promise.all(attachments.map((a) => withEmulatorRetry(() => a.endpoints())));
-  return lists.flat();
+  return lists.flat().map((endpoint) => {
+    const server = devServers[endpoint.address];
+    return server === undefined ? endpoint : { ...endpoint, devServer: server.display };
+  });
+}
+
+/** Each service that runs a dev server, in graph order, with its node. */
+function devServerNodes(
+  graph: Graph,
+  devServers: Readonly<Record<string, DevServer>>,
+): readonly { readonly address: string; readonly node: ServiceNode; readonly server: DevServer }[] {
+  const found: { address: string; node: ServiceNode; server: DevServer }[] = [];
+  for (const { id, node } of graph.nodes) {
+    const server = devServers[id];
+    if (server !== undefined && node.kind === 'service') found.push({ address: id, node, server });
+  }
+  return found;
+}
+
+function devServerUnsupported(
+  address: string,
+  what: string,
+  extension: string,
+): CliStructuredError {
+  return new CliStructuredError(
+    'DEV.DEV_SERVER_UNSUPPORTED',
+    `service "${address}" runs a dev server but ${what} — update ${extension}`,
+    { meta: { address } },
+  );
+}
+
+/**
+ * ADR-0056's two capability checks, before anything converges: the service's
+ * descriptor must be able to lower it without an artifact (`reserve`), and its
+ * target's local attachment must be able to run the command (`serve`).
+ */
+function assertDevServersSupported(
+  graph: Graph,
+  devServers: Readonly<Record<string, DevServer>>,
+  config: PrismaAppConfig,
+  attachments: ReadonlyMap<ExtensionId, LocalTargetAttachment>,
+): void {
+  for (const { address, node } of devServerNodes(graph, devServers)) {
+    const descriptor = config.extensions.find((e) => e.id === node.extension)?.nodes[node.type];
+    if (descriptor?.kind === 'service' && descriptor.reserve === undefined) {
+      throw devServerUnsupported(
+        address,
+        `its descriptor (${node.extension}/${node.type}) has no \`reserve\` step`,
+        node.extension,
+      );
+    }
+    if (attachments.get(node.extension)?.serve === undefined) {
+      throw devServerUnsupported(
+        address,
+        "its target's local attachment has no `serve`",
+        node.extension,
+      );
+    }
+  }
 }
 
 /** Runs the full dev pipeline; resolves to a running session or a structured failure. */
@@ -74,11 +148,26 @@ export async function executeDev(
   let pipeline: Awaited<ReturnType<typeof runPipeline>>;
   let resolved: ReadonlyMap<string, LocalTargetDescriptor>;
   const containers = new Map<ExtensionId, ContainerInstance>();
+  // Each participating extension's view of the running app, made before the
+  // first converge so a target that cannot run a dev server fails first.
+  const attachmentsById = new Map<ExtensionId, LocalTargetAttachment>();
+
+  // A host onEvent that throws is the host's bug, but it must not kill the
+  // session's own control flow — above all it must never prevent `closed`
+  // from settling, and a throw inside the fire-and-forget watch callback
+  // would be an unhandled rejection killing the process.
+  const emit = (event: DevEvent): void => {
+    try {
+      onEvent?.(event);
+    } catch {
+      // Swallowed: rendering is the host's; its failures are not the session's.
+    }
+  };
 
   try {
     // The shared prefix (pipeline.ts): entry load, Load, registry coverage,
     // name resolution, assemble.
-    const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler };
+    const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler, devServers: true };
     pipeline = await runPipeline(input.entry, input.name, cwd, input.config, pipelineDeps);
     const { graph, name } = pipeline;
     const config = pipeline.configSource.value;
@@ -129,6 +218,22 @@ export async function executeDev(
       } catch (error) {
         throw toStructured('DEV.EMULATOR_FAILED', error);
       }
+    }
+
+    for (const [id, dev] of resolved) {
+      try {
+        attachmentsById.set(id, await dev.attach({ container: containers.get(id), devDir }));
+      } catch (error) {
+        throw toStructured('DEV.ATTACH_FAILED', error);
+      }
+    }
+
+    // ADR-0056: say which services run a dev server, and refuse one that
+    // cannot, before anything converges.
+    const { devServers } = pipeline.assembled;
+    assertDevServersSupported(graph, devServers, config, attachmentsById);
+    for (const { address, server } of devServerNodes(graph, devServers)) {
+      emit({ kind: 'dev-server', address, command: server.display, cwd: server.cwd });
     }
   } catch (error) {
     // Every user-surfaced failure above is structured at its origin or by a
@@ -181,13 +286,42 @@ export async function executeDev(
 
   // A failed first converge can leave some services started; the session never began, so stop them.
   const stopStartedServices = async (): Promise<void> => {
-    for (const [id, dev] of resolved) {
+    for (const attachment of attachmentsById.values()) {
       try {
-        const attachment = await dev.attach({ container: containers.get(id), devDir });
         await attachment.stopApp();
       } catch {
         // Best effort: the converge failure is the error to report.
       }
+    }
+  };
+
+  /**
+   * ADR-0056's serve step: run every dev server on its service's instance,
+   * in graph order. The emulator decides whether anything restarts; a
+   * restart is reported through `onRestarted`.
+   */
+  const serveDevServers = async (
+    graph: Graph,
+    devServers: Readonly<Record<string, DevServer>>,
+    onRestarted?: (address: string, server: DevServer) => void,
+  ): Promise<void> => {
+    for (const { address, node, server } of devServerNodes(graph, devServers)) {
+      const attachment = attachmentsById.get(node.extension);
+      if (attachment?.serve === undefined) {
+        throw devServerUnsupported(
+          address,
+          "its target's local attachment has no `serve`",
+          node.extension,
+        );
+      }
+      const serve = attachment.serve.bind(attachment);
+      let restarted: boolean;
+      try {
+        ({ restarted } = await withEmulatorRetry(() => serve({ address, node, server })));
+      } catch (error) {
+        throw toStructured('DEV.SERVICE_START_FAILED', error);
+      }
+      if (restarted) onRestarted?.(address, server);
     }
   };
 
@@ -229,18 +363,6 @@ export async function executeDev(
     );
   }
 
-  // A host onEvent that throws is the host's bug, but it must not kill the
-  // session's own control flow — above all it must never prevent `closed`
-  // from settling, and a throw inside the fire-and-forget watch callback
-  // would be an unhandled rejection killing the process.
-  const emit = (event: DevEvent): void => {
-    try {
-      onEvent?.(event);
-    } catch {
-      // Swallowed: rendering is the host's; its failures are not the session's.
-    }
-  };
-
   // Attach: start every stopped service (session resume — a no-op converge
   // cannot restart what a previous session's Ctrl-C stopped), then report the
   // front door. On ANY failure before the session is handed over — a partial
@@ -248,18 +370,13 @@ export async function executeDev(
   // way a previous Ctrl-C left it: stop the watcher (if it started) and every
   // service that started, THEN surface the failure. A session that never began
   // must not leave anything half-running.
-  const attachments: LocalTargetAttachment[] = [];
+  const attachments: LocalTargetAttachment[] = [...attachmentsById.values()];
   const started: LocalTargetAttachment[] = [];
   let watch: WatchHandle | undefined;
   let configWatch: WatchHandle | undefined;
+  // Ends the inline following of dev servers' output when the session stops.
+  const following = new AbortController();
   try {
-    for (const [id, dev] of resolved) {
-      try {
-        attachments.push(await dev.attach({ container: containers.get(id), devDir }));
-      } catch (error) {
-        throw toStructured('DEV.ATTACH_FAILED', error);
-      }
-    }
     for (const attachment of attachments) {
       // Recorded BEFORE the call: startServices can start some services and
       // then throw, and a partially-started attachment must be rolled back by
@@ -272,9 +389,12 @@ export async function executeDev(
         throw toStructured('DEV.SERVICE_START_FAILED', error);
       }
     }
+    // Dev servers run on their instances once the converge and the resume
+    // are done, so the environment they are given is the converged one.
+    await serveDevServers(pipeline.graph, pipeline.assembled.devServers);
     let endpoints: readonly ServiceEndpoint[];
     try {
-      endpoints = await mergedEndpoints(attachments);
+      endpoints = await mergedEndpoints(attachments, pipeline.assembled.devServers);
     } catch (error) {
       throw toStructured('DEV.ATTACH_FAILED', error);
     }
@@ -284,14 +404,41 @@ export async function executeDev(
       return ok({ endpoints, stop: () => closed, closed });
     }
 
+    // The foreground session shows what its dev servers write, prefixed with
+    // the address; services that run artifacts are not streamed (ADR-0056).
+    for (const [id, attachment] of attachmentsById) {
+      const addresses = devServerNodes(pipeline.graph, pipeline.assembled.devServers)
+        .filter(({ node }) => node.extension === id)
+        .map(({ address }) => address);
+      if (addresses.length === 0) continue;
+      void (async () => {
+        try {
+          for await (const { service, line } of attachment.logs(following.signal, {
+            tail: DEV_SERVER_LOG_BACKLOG,
+            addresses,
+          })) {
+            emit({ kind: 'dev-server-output', address: service, line });
+          }
+        } catch {
+          // Following is a view: losing it never ends the session.
+        }
+      })();
+    }
+
     // Watch loop until the session is stopped: rebuild → re-assemble →
     // re-converge; a converge failure keeps the running app and keeps watching.
-    const { targets, unwatchable } = watchTargetsFrom(pipeline.assembled.bundles);
-    for (const address of unwatchable) {
+    // Authoring modules are watched too, so an app whose services all run dev
+    // servers still reconverges on a topology edit (ADR-0056).
+    const bundleWatch = watchTargetsFrom(pipeline.assembled.bundles);
+    const targets = [
+      ...bundleWatch.targets,
+      ...authoringModuleTargets(pipeline.entryModule.path, pipeline.graph),
+    ];
+    for (const address of bundleWatch.unwatchable) {
       emit({ kind: 'unwatchable', address });
     }
 
-    const watchDeps: PipelineDeps = { runAssembler: deps.runAssembler };
+    const watchDeps: PipelineDeps = { runAssembler: deps.runAssembler, devServers: true };
     const watchFiles = deps.watch ?? startWatch;
     const onWatchError = (error: unknown): void =>
       emit({ kind: 'watch-error', message: failureMessage(error) });
@@ -335,7 +482,18 @@ export async function executeDev(
           });
           return;
         }
-        emit({ kind: 'ready', endpoints: await mergedEndpoints(attachments) });
+        // A converge can move what a dev server's environment holds (a
+        // dependency's port, a rotated key); the emulator restarts it then.
+        await serveDevServers(
+          rePipeline.graph,
+          rePipeline.assembled.devServers,
+          (address, server) =>
+            emit({ kind: 'dev-server-restarted', address, command: server.display }),
+        );
+        emit({
+          kind: 'ready',
+          endpoints: await mergedEndpoints(attachments, rePipeline.assembled.devServers),
+        });
       } catch (error) {
         emit({ kind: 'rebuild-failed', message: failureMessage(error) });
       }
@@ -381,6 +539,7 @@ export async function executeDev(
       if (!stopping) {
         stopping = true;
         emit({ kind: 'stopping' });
+        following.abort();
         startedWatch.stop();
         startedConfigWatch.stop();
         void (async () => {
@@ -405,6 +564,7 @@ export async function executeDev(
   } catch (error) {
     // Cleanup runs whatever the error's shape; only structured failures come
     // back as values — a non-structured escape is a bug and throws (rule 6).
+    following.abort();
     watch?.stop();
     configWatch?.stop();
     await Promise.all(started.map((a) => a.stopApp().catch(() => undefined)));

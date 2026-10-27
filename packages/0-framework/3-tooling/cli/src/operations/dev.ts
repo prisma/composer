@@ -28,6 +28,17 @@ export type DevEvent =
       readonly reproduceCommand: string;
       readonly cwd: string;
     }
+  /** Once per service that runs its build adapter's dev server, before the first converge (ADR-0056). `cwd` is absolute. */
+  | {
+      readonly kind: 'dev-server';
+      readonly address: string;
+      readonly command: string;
+      readonly cwd: string;
+    }
+  /** A reconverge changed a dev server's environment, so the emulator restarted it. */
+  | { readonly kind: 'dev-server-restarted'; readonly address: string; readonly command: string }
+  /** One line a dev server wrote, while the session runs. */
+  | { readonly kind: 'dev-server-output'; readonly address: string; readonly line: string }
   | { readonly kind: 'stopping' }
   /** One service refused to stop during stop(); teardown continues and `stopped` still follows. */
   | { readonly kind: 'stop-error'; readonly message: string }

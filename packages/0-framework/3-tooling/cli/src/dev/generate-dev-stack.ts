@@ -53,6 +53,13 @@ function renderOptions(input: DevStackFileInput): string {
   }
   lines.push('  },');
 
+  // ADR-0056: services that run their build adapter's dev server are lowered
+  // without an artifact.
+  const unassembled = Object.keys(input.assembled.devServers);
+  if (unassembled.length > 0) {
+    lines.push(`  unassembled: [${unassembled.map(quote).join(', ')}],`);
+  }
+
   lines.push('  providers: localTargetProviders(resolved, containers, devDir),');
   lines.push('  state: devState(),');
 

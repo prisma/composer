@@ -5,6 +5,7 @@ export { AssembleError } from '../assemble-error.ts';
 export type {
   AssembledServices,
   AssembleEvent,
+  AssembleOptions,
   RunAssembler,
 } from '../assemble-services.ts';
 export { assembleServices } from '../assemble-services.ts';

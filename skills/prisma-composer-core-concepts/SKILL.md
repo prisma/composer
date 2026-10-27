@@ -245,8 +245,13 @@ bite:
    `nextjs({ module, appDir })` names the app root. Any page or action that
    calls `load()` needs `export const dynamic = 'force-dynamic'`, because
    the runtime environment doesn't exist at build time and Next ignores
-   runtime env for prerendered routes.
-5. **Always build before `deploy` or `dev`.** Neither builds for you.
+   runtime env for prerendered routes. `prisma dev` needs no build for it: it
+   runs `next dev` instead (see Local development).
+5. **Always build before `deploy`, and before `dev` for a service without a
+   dev server.** Neither builds for you. `node({ ..., dev: ['bun', '--watch',
+   'server.ts'] })` gives a node service a dev server: `prisma dev` runs that
+   command (in the authoring module's directory, nothing appended; it must
+   listen on `PORT`) instead of the built `entry`.
 
 Deploy configuration is the `composer` section of `prisma.config.ts`, and
 nothing else. It names the entry module, the file whose default export is the
@@ -492,14 +497,37 @@ against local emulators. No cloud credentials are needed or read. Concepts
 that surprise:
 
 1. It runs the same pipeline as deploy, so **build first**, exactly like
-   deploy. It watches built output and restarts a service when its build
-   changes.
+   deploy, except for a service that runs a dev server (below). It watches
+   built output and restarts a service when its build changes.
+   **Dev servers.** A service whose build adapter declares one runs it in
+   place of its artifact, with no flag: every `nextjs()` service runs
+   `next dev` (the app's own `next`, resolved from `appDir`), and a `node()`
+   service runs its `dev` argv when it has one. It runs on the service's
+   instance and URL, with the deployment's environment: `service.load()`,
+   `service.input()` and `service.port()` work exactly as deployed, so never add a
+   `process.env` fallback for plain `next dev`. It also keeps the shell's
+   environment; Composer's values win. `dev` prints ``<address>: runs
+   `<command>` in <dir>`` before the app comes up and streams the dev
+   server's output prefixed `[<address>]` (other services' logs are not
+   streamed). Source edits are the dev server's own hot reload; `dev` watches
+   the entry and every service's authoring module, reconverges on a topology
+   edit, and restarts a dev server only when its environment changed
+   (``<address>: its environment changed; `<command>` restarted``). It has no
+   terminal (no colours or key shortcuts). The standalone build is not run
+   locally, so a standalone-only bug surfaces at `prisma deploy`. Next.js
+   refuses a second `next dev` for the same app: use the service URL.
+   `prisma dev url <address> --json` reports `runs: "dev-server"` or
+   `"artifact"`. Errors: a dev server that never listens on its `PORT` fails
+   with `DEV.SERVICE_START_FAILED` plus `A dev server must listen on the port
+   in its PORT variable.`; `DEV.DEV_SERVER_UNAVAILABLE` (e.g. `next` not
+   installed in `appDir`); `DEV.DEV_SERVER_UNSUPPORTED` (the service's package
+   is too old; the message names it).
    `ready` prints only once every service accepts connections on its port, except a service declared `compute({ ..., listens: false })` (one that never listens, like the cron scheduler), which counts as running once its process starts. A service that exits before it listens, or does not listen within 30 seconds, fails `dev` (and stops the app's other services) with a message naming the service, its port, and its log file: on a first start it is in the deploy engine's output, before the error that the deploy engine exited (`DEV.CONVERGE_FAILED` from the `dev` operation); on a warm start it is the `DEV.SERVICE_START_FAILED` message. `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` raises the 30-second limit (milliseconds); the compute emulator reads it when it starts, so a running emulator keeps its old value until its process ends. An emulator that does not accept connections fails `dev` and `log` with `DEV.EMULATOR_UNREACHABLE` after a few seconds of retries; nothing else is retried.
 2. Ctrl-C (or `dev` ending on SIGTERM or a failure) stops the app's service processes and its local Postgres servers and keeps their data and ports: the next `dev` is a warm start. Starting clean, wiping this app's local instances and data first, is an explicit opt-in flag. On a fresh start, each service gets the lowest free port from 3000 up, in dependency order: a service before the services that call it, otherwise provision order. A warm start keeps the ports services already have.
    Services, databases and buckets belong to the directory `dev` runs in: two checkouts of one app (two git worktrees) run separate processes on separate ports, with separate databases and buckets, and never restart or write into each other's. `.prisma-composer/dev/emulator-instances.json` records which local instance backs each node. A service or database keeps its port in its directory across runs, even while stopped. If a local instance is gone (a Composer upgrade discarded an emulator's state), the next `dev` re-creates it, empty, and asks for the old port, and a Prisma ORM database's (`postgres()`) committed migrations run again (a `rawPostgres()` database stays empty); when another directory has taken the port, the instance gets the lowest free one and `dev` prints `[dev] service "<address>" now uses port <new>: its previous port <old> is in use` (`database "<address>"` for a database). A directory keeps the local state of every app run from it: running a different app there (another entry, another `--name`) stops the previous app's services and databases, keeps their data and ports, and prints `[dev] stopped the local services of "<app>", the app run here before; its data is kept`; running it again resumes them. `--fresh` wipes only the app it starts. A stopped instance keeps its port reserved and a database its data, so a deleted checkout's instances keep theirs; there is no command to remove them yet.
-3. `dev` does not print service logs. The `log` operation follows the
-   already-running app's merged logs; it never builds, provisions, starts, or
-   stops anything:
+3. `dev` does not print the logs of services that run their artifact. The
+   `log` operation follows the already-running app's merged logs; it never
+   builds, provisions, starts, or stops anything:
 
    ```ts
    const attached = await log({ entry: 'module.ts', config, tail: 20, signal });
@@ -538,7 +566,11 @@ that surprise:
    edit it says so and pauses rebuilds until you restart `dev`.
 5. An unset secret doesn't block a local run: it becomes a placeholder plus a
    warning, and only the code path that spends it fails, at the external
-   service it calls.
+   service it calls. A secret's value comes from the shell `prisma` runs in.
+   A `.env` loaded only by the framework (Next.js) does **not** fill it:
+   Composer has already set the variable, to the placeholder, and Next never
+   overrides a set variable. Load `.env` at the top of `prisma.config.ts`
+   (`if (existsSync('.env')) process.loadEnvFile('.env');`) or export it.
 6. The emulators are machine-wide daemons shared by every `dev`, registered
    under `~/.prisma-composer/emulators`. Set `PRISMA_COMPOSER_EMULATORS_DIR`
    to an absolute directory to give a checkout or CI job its own compute,

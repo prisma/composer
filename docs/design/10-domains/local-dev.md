@@ -17,10 +17,14 @@ command:
 - **`prisma dev`** — bring up the application whose root node
   is the default export of the entry module (`entry` in the `composer` section,
   or `--entry <path>`), entirely on the local machine, and keep it up:
-  watch built output, restart changed services, until interrupted. It does
-  **not** stream service logs — once it is supervising several processes,
-  streaming them all inline drowns the front door and the rebuild notices. To
-  read them, call the `log` operation from a script (see
+  watch built output, restart changed services, until interrupted. A service
+  whose build adapter declares a dev server runs it instead of its artifact,
+  and the foreground session streams that dev server's output, prefixed with
+  its address
+  ([ADR-0056](../90-decisions/ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md)).
+  It does **not** stream the other services' logs — once it is supervising
+  several processes, streaming them all inline drowns the front door and the
+  rebuild notices. To read them, call the `log` operation from a script (see
   [docs/guides/running-locally.md](../../guides/running-locally.md)).
   With `--detach` (the `dev` operation's `detach`), it returns once every
   service answers and leaves the app running without watching; see
@@ -148,7 +152,8 @@ one, or list them all. Creating an instance is the one call the client never
 retries, because a retry after a lost response would create a second
 instance. The emulator never interprets Composer's data: an app name, a
 node address or a directory reaches it only as a label value or inside the
-deployment payload (the artifact directory and the env), which it stores
+deployment payload (the artifact directory, or a command's `cwd` and `argv`,
+and the env), which it stores
 verbatim and hands to the process. No route, state key, file name or field the
 emulator generates carries one, and a test fails if one does.
 
@@ -519,10 +524,13 @@ Deploy's rule holds: every failure names its fix.
 | `dev url` for a node that exists but is not running | `DEV.NOT_RUNNING`, naming its state; for a stopped node the fix is `prisma dev`, for a crash-looping service it is the service's log, for a node its emulator lost it is `prisma dev`, which creates it again |
 | the local target fails without a code (for example an emulator's error response) in `dev url` or `dev stop` | `DEV.EMULATOR_FAILED` |
 | service crash-loops | the address, exit code, and the last stderr lines, as a standing message |
+| a build descriptor's `serve` step throws (for Next.js: `next` cannot be resolved from `appDir`) | `DEV.DEV_SERVER_UNAVAILABLE`: `service "<address>" cannot run its dev server: <message>`, before anything starts |
+| a service runs a dev server but its service descriptor has no `reserve`, or its target's attachment has no `serve` | `DEV.DEV_SERVER_UNSUPPORTED`, naming the address and the package to update, before the first converge |
+| a dev server exits before it listens, never listens, or its executable is not on the deployment's `PATH` | `DEV.SERVICE_START_FAILED` with the emulator's message, the address in place of the instance id, plus `A dev server must listen on the port in its PORT variable.` when it did not listen |
 
 ## Out of scope (designed around)
 
-- **Hot reload / user-supplied dev commands.** Decided in [ADR-0056](../90-decisions/ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): a service runs the dev server its build adapter declares (`next dev`; a `dev` command written on `node()`) in place of its artifact, as a command deployment on the Compute emulator, with the environment its deployment would get, re-stashed address-free so `load()`/`input()` work without `run()`. A service whose adapter declares no dev server runs its artifact as described in this doc. This doc describes the dev-server mechanics once they ship.
+- **Hot reload / user-supplied dev commands.** Decided in [ADR-0056](../90-decisions/ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): a service runs the dev server its build adapter declares (`next dev`; a `dev` command written on `node()`) in place of its artifact, as a command deployment on the Compute emulator, with the environment its deployment would get, re-stashed address-free so `load()`/`input()` work without `run()`. A service whose adapter declares no dev server runs its artifact as described in this doc. The ADR is the full description of the dev-server mechanics: the `serve` build step, `unassembled` lowering with `reserve`, the emulator's command deployments, `stashRows`, and the serve step after every converge.
 - **Remote bindings** (a local service against real cloud resources,
   Wrangler-style). A possible future opt-in; contradicts credential-free dev
   as a default.
@@ -569,6 +577,13 @@ replaces.
   loop picks rebuilds up on its own. A build descriptor that still returns
   no `watch` entries reports `[dev] <address> has no watchable inputs` at
   startup and needs its rebuilds triggered manually.
+- **A topology edit reconverges, but the session's own view of the app is
+  the one it started with.** The entry module is imported once per process,
+  so after an edit to `module.ts` or a `service.ts` the Alchemy child (a fresh
+  process) converges the new topology while the session keeps the graph, the
+  bundles and the dev servers it loaded. Edits that keep the set of services
+  and their build adapters — wiring, inputs, bindings — apply fully; adding,
+  removing or re-adapting a service needs `prisma dev` restarted.
 - **App-owned migrations are not run by `dev`** (by design — ADR-0022, spec
   § 4's `OrmMigration` line is for framework-run migrations only). An app that
   runs its own migrations (e.g. via `prisma db init`, like the

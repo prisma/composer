@@ -13,6 +13,9 @@
  * inside `dir` and may be nested. Nothing is discovered: the author names the
  * directory and the entry, and the assembler copies exactly that.
  *
+ * `dev` names the command `prisma dev` runs in place of the built artifact,
+ * such as a watch-mode server; without it, `prisma dev` runs the build.
+ *
  * Both forms accept `dependencies`. The default, `'bundled'`, ships exactly
  * what was built. `'external'` says the build leaves packages external, so
  * deploy traces `entry` and stages the installed packages it imports.
@@ -30,6 +33,8 @@ export interface NodeBuildAdapter extends BuildAdapter {
   readonly dir?: string;
   /** Whether the build inlined its packages (`'bundled'`, the default) or left them for deploy to stage from `node_modules` (`'external'`). */
   readonly dependencies?: NodeDependencies;
+  /** The command that runs this service in development, in the authoring module's directory. Absent: the service runs its assembled artifact (ADR-0056). */
+  readonly dev?: readonly string[];
 }
 
 /**
@@ -48,15 +53,28 @@ type NodeBuildOptions = (
 ) & {
   /** `'bundled'` (default) ships exactly what was built. `'external'` also stages the installed packages `entry` imports. */
   dependencies?: NodeDependencies;
+  /**
+   * The command `prisma dev` runs for this service instead of its built
+   * artifact, e.g. `['bun', '--watch', 'server.ts']`, in the authoring
+   * module's directory. It gets the service's environment plus `PORT` and
+   * `HOST`, and must listen on `PORT`. Absent: `prisma dev` runs the build.
+   */
+  dev?: readonly string[];
 };
 
-const nodeBuild = (opts: NodeBuildOptions): NodeBuildAdapter => ({
-  extension: '@prisma/composer/node',
-  type: 'node',
-  module: opts.module,
-  entry: opts.entry,
-  ...(opts.dir === undefined ? {} : { dir: opts.dir }),
-  ...(opts.dependencies === undefined ? {} : { dependencies: opts.dependencies }),
-});
+const nodeBuild = (opts: NodeBuildOptions): NodeBuildAdapter => {
+  if (opts.dev !== undefined && opts.dev.length === 0) {
+    throw new Error('node(): `dev` must name a command');
+  }
+  return {
+    extension: '@prisma/composer/node',
+    type: 'node',
+    module: opts.module,
+    entry: opts.entry,
+    ...(opts.dir === undefined ? {} : { dir: opts.dir }),
+    ...(opts.dependencies === undefined ? {} : { dependencies: opts.dependencies }),
+    ...(opts.dev === undefined ? {} : { dev: [...opts.dev] }),
+  };
+};
 
 export default nodeBuild;

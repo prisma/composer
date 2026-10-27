@@ -87,7 +87,22 @@ async function locate(input: DevUrlInput, cwd: string): Promise<DevUrl> {
   if (location.url === undefined) {
     throw new InternalError(`the local target reports "${input.address}" running with no URL`);
   }
-  return { address: input.address, kind: location.kind, url: location.url, state: location.state };
+  // ADR-0056: what a service runs — the target reports the command of one
+  // that runs its build adapter's dev server. A database or bucket runs
+  // neither, so it carries no `runs`.
+  const runs =
+    location.command !== undefined
+      ? ('dev-server' as const)
+      : location.kind === 'service'
+        ? ('artifact' as const)
+        : undefined;
+  return {
+    address: input.address,
+    kind: location.kind,
+    url: location.url,
+    state: location.state,
+    ...(runs !== undefined ? { runs } : {}),
+  };
 }
 
 function notRunning(

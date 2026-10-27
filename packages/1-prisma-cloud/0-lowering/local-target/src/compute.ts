@@ -167,7 +167,13 @@ export function readComputeManifest(artifactDir: string): {
   return { address: parsed.address, listens: parsed.listens !== false };
 }
 
-async function materializeEnv(
+/**
+ * The environment a service's deployment runs with: its own rows from
+ * `env.json` (`scopedEnvRows`), `COMPOSER_<ADDRESS>_PORT`, every value in
+ * `secrets.json`, and `PATH` and `HOME` from the shell. The `Deployment`
+ * provider puts it with an artifact; a dev server is given it too (ADR-0056).
+ */
+export async function materializeEnv(
   devDir: string,
   address: string,
   port: number,
