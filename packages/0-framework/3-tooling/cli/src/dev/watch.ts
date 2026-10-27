@@ -1,7 +1,8 @@
 /**
  * Local-dev spec § 6 `watch.ts`: watches each assembled bundle's declared
- * `watch` paths (a directory watched recursively, a file watched through
- * its parent — see `startWatch`), debounced 300 ms and coalesced across
+ * `watch` paths and every authoring module (ADR-0056) — a directory watched
+ * recursively, a file watched through its parent (see `startWatch`) —
+ * debounced 300 ms and coalesced across
  * every service — one edit across several files/services still fires
  * exactly one rebuild.
  *
@@ -18,6 +19,8 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { Graph } from '@internal/core';
 import type { Bundle } from '@internal/core/deploy';
 import chokidar, { type FSWatcher } from 'chokidar';
 
@@ -44,6 +47,27 @@ export function watchTargetsFrom(bundles: Readonly<Record<string, Bundle>>): {
     targets.push({ address, paths });
   }
   return { targets, unwatchable };
+}
+
+/**
+ * One watch target per authoring module (ADR-0056): the entry file and the
+ * file each service's `build.module` names, deduplicated. A topology edit
+ * then reconverges even when every service runs a dev server and nothing
+ * else is watched. A `build.module` that is not a `file:` URL names no file
+ * and is skipped.
+ */
+export function authoringModuleTargets(entryPath: string, graph: Graph): readonly WatchTarget[] {
+  const targets = new Map<string, WatchTarget>();
+  const add = (address: string, file: string): void => {
+    const resolved = path.resolve(file);
+    if (!targets.has(resolved)) targets.set(resolved, { address, paths: [resolved] });
+  };
+  add(graph.root.id, entryPath);
+  for (const { id, node } of graph.nodes) {
+    if (node.kind !== 'service' || !node.build.module.startsWith('file:')) continue;
+    add(id, fileURLToPath(node.build.module));
+  }
+  return [...targets.values()];
 }
 
 export interface WatchHandle {

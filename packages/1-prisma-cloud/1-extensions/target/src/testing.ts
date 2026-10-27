@@ -2,7 +2,7 @@
  * Prisma Cloud's integration-test seam (testing.md § Integration).
  * `bootstrapService` boots a compute service's real entry in-process against a
  * caller-chosen Config, writing that Config to the environment with the exact
- * `stash` the deploy boot uses — so `load()` reads it identically to a
+ * `configRows` the deploy boot uses — so `load()` reads it identically to a
  * deployed process. Target-specific, and here rather than in core, because
  * writing the environment is this extension's serializer's job; nothing about
  * this reaches the production runtime (`compute()` ships only `run`/`load`).
@@ -16,7 +16,7 @@ import type {
   Params,
   RunnableServiceNode,
 } from '@internal/core';
-import { serializeInput, stash } from './serializer.ts';
+import { configRows, serializeInput } from './serializer.ts';
 
 /** What `bootstrapService` hands back: a live, driveable instance of the booted entry. */
 export interface BootstrappedService {
@@ -70,7 +70,7 @@ export async function bootstrapService<D extends Deps, P extends Params, E exten
       await import(new URL(service.build.entry, service.build.module).href);
     });
 
-  stash(service, config);
+  Object.assign(process.env, configRows(service, config));
   if (service.inputSchema !== undefined || config.input !== undefined) {
     const row = serializeInput(service, '', config.input);
     if (row !== undefined) process.env[row.key] = row.value;

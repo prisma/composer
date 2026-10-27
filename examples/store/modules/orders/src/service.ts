@@ -15,6 +15,11 @@ export default compute({
     db: postgres(ordersData),
     catalog: rpc(catalogContract),
   },
-  build: node({ module: import.meta.url, entry: '../dist/server.mjs' }),
+  // `prisma dev` runs the source under bun's watcher instead of the build (ADR-0056).
+  build: node({
+    module: import.meta.url,
+    entry: '../dist/server.mjs',
+    dev: ['bun', '--watch', 'server.ts'],
+  }),
   expose: { rpc: ordersContract },
 });

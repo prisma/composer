@@ -465,7 +465,7 @@ describe('log reset on a fresh start', () => {
     const client = computeClient({ registryRoot });
     const artifactDir = writeBootstrap(SERVING_BOOTSTRAP);
     const reserved = await client.createInstance({ labels: {} });
-    const deploy = (hash: string, body: string): Promise<void> =>
+    const deploy = (hash: string, body: string): Promise<unknown> =>
       client.putDeployment(reserved.id, {
         artifactDir,
         artifactHash: hash,
@@ -488,7 +488,7 @@ describe('log reset on a fresh start', () => {
     const client = computeClient({ registryRoot });
     const artifactDir = writeBootstrap(SERVING_BOOTSTRAP);
     const reserved = await client.createInstance({ labels: {} });
-    const deploy = (hash: string, body: string): Promise<void> =>
+    const deploy = (hash: string, body: string): Promise<unknown> =>
       client.putDeployment(reserved.id, {
         artifactDir,
         artifactHash: hash,

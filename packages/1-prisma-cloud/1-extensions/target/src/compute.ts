@@ -12,15 +12,7 @@ import type {
 import { hydrateSync, number, service } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
-import {
-  deserialize,
-  readInput,
-  readOrigin,
-  stash,
-  stashInput,
-  stashProviderParams,
-} from './serializer.ts';
+import { deserialize, readInput, readOrigin, stashRows } from './serializer.ts';
 
 const reservedParams = { port: number({ default: 3000 }) } as const;
 type ReservedParams = typeof reservedParams;
@@ -89,29 +81,9 @@ export class ComputeService<
   }
 
   async run(address: string, boot: () => Promise<unknown>) {
-    const config = deserialize(this, address);
-    stash(this, config);
-    // ADR-0031's provider-side sibling of the param re-stash above — the
-    // readers are serve()'s accepted keys, the streams entrypoint's API_KEY,
-    // and origin() (the framework-resolved ORIGIN row rides the same list).
-    // An absent row stays absent (never provisioned); a present one is
-    // schema-checked exactly like a declared param before it moves.
-    stashProviderParams(RESERVED_PROVIDER_PARAMS, address);
-    // Re-emit the input DOCUMENT address-free too, so input() reads the same
-    // row with no address (secret values stay only in their platform vars —
-    // the document carries pointers, ADR-0042).
-    stashInput(this, address);
-    // Expose the resolved service port under the near-universal PORT convention,
-    // so a framework-unaware server (Next.js's standalone server.js binds the
-    // PORT env var) listens on the port Compute routes to — not its own default.
-    // A server that reads input().port explicitly is free to ignore it. Read the
-    // reserved `port` param the same way serialize does (descriptors/compute.ts).
-    const port = config.service['port'];
-    if (typeof port === 'number') process.env['PORT'] = String(port);
-    // Compute routes to the workload over its network interface, not loopback.
-    // Astro's Node adapter defaults HOST to localhost; preserve an explicit
-    // author value, otherwise supply the framework-neutral listen-all address.
-    process.env['HOST'] ??= '0.0.0.0';
+    // The address-free stash, PORT and HOST — the same rows a dev server is
+    // started with under `prisma dev` (ADR-0056), so the two cannot drift.
+    Object.assign(process.env, stashRows(this, address, process.env));
     return boot();
   }
 

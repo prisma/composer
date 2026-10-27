@@ -123,7 +123,7 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
   async function redeployGateway(
     directory: string,
     source: string,
-  ): Promise<{ readonly id: string; readonly port: number; readonly deployed: Promise<void> }> {
+  ): Promise<{ readonly id: string; readonly port: number; readonly deployed: Promise<unknown> }> {
     const gateway = (await readEmulatorInstances(directory))?.apps[APP]?.nodes[
       'current-app.gateway'
     ];

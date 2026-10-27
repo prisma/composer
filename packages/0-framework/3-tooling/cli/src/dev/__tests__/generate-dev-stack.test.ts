@@ -9,6 +9,7 @@ describe('renderDevStackFile()', () => {
       configFile: '/repo/app/prisma.config.ts',
       name: 'app',
       assembled: {
+        devServers: {},
         bundles: {
           web: { dir: '/repo/app/modules/web/dist/bundle', entry: 'server.js' },
         },
@@ -54,11 +55,41 @@ describe('renderDevStackFile()', () => {
       cwd: '/repo/app',
       configFile: '/repo/app/prisma.config.ts',
       name: 'app',
-      assembled: { bundles: {} },
+      assembled: { devServers: {}, bundles: {} },
     });
 
     expect(content).toContain(
       '<node> <bin of the alchemy @prisma/composer depends on> deploy .prisma-composer/dev/alchemy.run.ts --yes --stage dev',
     );
+  });
+});
+
+describe('renderDevStackFile() — services with dev servers (ADR-0056)', () => {
+  const input = (devServers: Record<string, { cwd: string; display: string }>) => ({
+    entryPath: '/repo/app/module.ts',
+    cwd: '/repo/app',
+    configFile: '/repo/app/prisma.config.ts',
+    name: 'app',
+    assembled: {
+      bundles: { api: { dir: '/repo/app/api/dist/bundle', entry: 'server.js' } },
+      devServers: Object.fromEntries(
+        Object.entries(devServers).map(([address, s]) => [address, { ...s, argv: () => [] }]),
+      ),
+    },
+  });
+
+  test('lists them as unassembled, beside the bundles of the assembled services', () => {
+    const content = renderDevStackFile(
+      input({ web: { cwd: '/repo/app/web', display: 'next dev' } }),
+    );
+
+    expect(content).toContain(
+      '    "api": { dir: "/repo/app/api/dist/bundle", entry: "server.js" },',
+    );
+    expect(content).toContain('  unassembled: ["web"],');
+  });
+
+  test('renders no unassembled list when no service runs a dev server', () => {
+    expect(renderDevStackFile(input({}))).not.toContain('unassembled');
   });
 });

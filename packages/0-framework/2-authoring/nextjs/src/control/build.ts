@@ -26,6 +26,7 @@
  * `dirname(build.module)`.
  */
 import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -37,7 +38,7 @@ import {
 } from '@internal/bundle-paths';
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
-import type { AssembleInput, Bundle } from '@internal/core/deploy';
+import type { AssembleInput, Bundle, DevServer, ServeInput } from '@internal/core/deploy';
 import { build } from 'esbuild';
 import type { NextjsBuildAdapter } from '../nextjs.ts';
 
@@ -336,10 +337,70 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   };
 }
 
+/**
+ * The `next` CLI the app at `appDir` depends on: the file its own `next`
+ * package names in `bin.next`, resolved from `appDir` the way Node resolves
+ * the app's imports. Never the `next` on the developer's `PATH`.
+ *
+ * `createRequire` rather than `import.meta.resolve(…, parent)`: Node ignores
+ * the parent argument unless started with `--experimental-import-meta-resolve`,
+ * which would resolve from this package's install instead of the app's.
+ */
+function nextBinFrom(appDir: string): string {
+  const missing = new Error(
+    `cannot find the \`next\` package from ${appDir} — install it there to run this service's dev server`,
+  );
+  let packageJsonPath: string;
+  try {
+    packageJsonPath = createRequire(path.join(appDir, 'package.json')).resolve('next/package.json');
+  } catch (cause) {
+    throw new Error(missing.message, { cause });
+  }
+  const manifest: unknown = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+  const bin =
+    typeof manifest === 'object' && manifest !== null && 'bin' in manifest
+      ? manifest.bin
+      : undefined;
+  const nextBin =
+    typeof bin === 'object' && bin !== null && 'next' in bin && typeof bin.next === 'string'
+      ? bin.next
+      : undefined;
+  if (nextBin === undefined) {
+    throw new Error(
+      `the \`next\` package at ${path.dirname(packageJsonPath)} declares no \`next\` bin`,
+    );
+  }
+  return path.resolve(path.dirname(packageJsonPath), nextBin);
+}
+
+/**
+ * The documented dev step (ADR-0056): `next dev` in `appDir`, with the
+ * service's port and host as flags because `next dev` does not read `HOST`.
+ * Resolves the binary and returns data; spawns nothing.
+ */
+export async function serve(input: ServeInput): Promise<DevServer> {
+  const buildDescriptor = input.build;
+  if (!isNextjsBuild(buildDescriptor)) {
+    throw new Error(
+      `@prisma/composer/nextjs/control: expected a "nextjs" build adapter (with appDir), got "${input.build.type}".`,
+    );
+  }
+  const appDir = path.resolve(
+    path.dirname(fileURLToPath(buildDescriptor.module)),
+    buildDescriptor.appDir,
+  );
+  const nextBin = nextBinFrom(appDir);
+  return {
+    cwd: appDir,
+    argv: ({ port, host }) => [nextBin, 'dev', '-p', String(port), '-H', host],
+    display: 'next dev',
+  };
+}
+
 /** The nextjs build extension descriptor — the `composer` section of `prisma.config.ts` lists it under `extensions`. */
 export const nextjsBuild = (): ExtensionDescriptor => ({
   id: '@prisma/composer/nextjs',
   nodes: {
-    nextjs: { kind: 'build', assemble },
+    nextjs: { kind: 'build', assemble, serve },
   },
 });

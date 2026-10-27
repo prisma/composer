@@ -37,6 +37,8 @@ export interface PipelineDeps {
   readonly runAssembler?: RunAssembler | undefined;
   /** Progress, for a caller that reports each step. */
   readonly onEvent?: ((event: PipelineEvent) => void) | undefined;
+  /** `prisma dev`: a service whose build adapter declares a dev server is recorded instead of assembled (ADR-0056). */
+  readonly devServers?: boolean | undefined;
 }
 
 export interface PipelineResult {
@@ -151,7 +153,9 @@ export async function runPipeline(
   deps.onEvent?.({ kind: 'loaded' });
   let assembled: AssembledServices;
   try {
-    assembled = await assembleServices(graph, config, cwd, deps.runAssembler, deps.onEvent);
+    assembled = await assembleServices(graph, config, cwd, deps.runAssembler, deps.onEvent, {
+      devServers: deps.devServers === true,
+    });
   } catch (error) {
     if (onAssembleError !== undefined && error instanceof Error) {
       throw onAssembleError(error);
