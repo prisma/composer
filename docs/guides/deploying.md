@@ -519,6 +519,21 @@ When something misbehaves in ways these don't explain, check
 [`gotchas.md`](../../gotchas.md) at the repo root — the catalogue of platform
 footguns with diagnoses, kept current as we hit them.
 
+## Upgrading from stages to environments
+
+A place the app runs used to be called a stage. It is now an environment, and
+production has a name, `production`:
+
+- `prisma deploy --stage <name>` is now `prisma deploy --environment <name>`.
+  `--stage` fails with `CLI.COMMAND_MOVED`, naming the new flag.
+- `destroy({ target: ... })` is now `destroy({ environment })`. Production is
+  `environment: 'production'`.
+- The `--report` file's `stage` field is now `environment`, and its `version`
+  is `2`.
+- The Prisma Cloud extension (`@prisma/composer-prisma-cloud`) and the
+  `prisma` CLI must be on the same Composer version. A deploy or destroy with
+  an older extension fails with `DEPLOY.CONTAINER_MISMATCH`.
+
 ## Upgrading to addresses that start with the app name
 
 Earlier versions left the app name out of every address below the root

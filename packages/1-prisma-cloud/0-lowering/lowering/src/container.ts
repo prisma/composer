@@ -50,9 +50,9 @@ export class DefaultBranchUnderAnotherNameError extends Data.TaggedError(
 }> {
   override get message(): string {
     return (
-      `the environment "${this.environment}" names the Branch ${this.branchId}, which is this ` +
-      "Project's default Branch: that Branch is production. Deploy it with " +
-      `--environment ${PRODUCTION_ENVIRONMENT} (or no --environment), and pick another name for a separate environment.`
+      `The environment "${this.environment}" names the Branch ${this.branchId}, which is this ` +
+      "Project's default Branch, so that Branch is production. " +
+      `Use the environment ${PRODUCTION_ENVIRONMENT} for it, and another name for a separate environment.`
     );
   }
 }

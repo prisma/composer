@@ -60,7 +60,7 @@ export interface BuildContainerRefs {
   /** The environment's own Branch — absent for `production`, whose Build carries no branch reference. */
   readonly branchId: string | undefined;
   /** The Branch the deploy actually targets — the environment's own, or the default Branch. Where the application topology is submitted; absent means no submission. */
-  readonly targetBranchId: string | undefined;
+  readonly deployBranchId: string | undefined;
 }
 
 export interface BuildReporterOptions {
@@ -234,8 +234,8 @@ async function submitTopology(
   submission: { readonly body: ApplicationTopologyBody; readonly contentHash: string } | undefined,
   refs: BuildContainerRefs,
 ): Promise<void> {
-  if (submission === undefined || refs.targetBranchId === undefined) return;
-  await topologyApi.replace(refs.projectId, refs.targetBranchId, {
+  if (submission === undefined || refs.deployBranchId === undefined) return;
+  await topologyApi.replace(refs.projectId, refs.deployBranchId, {
     contentHash: submission.contentHash,
     ...submission.body,
   });

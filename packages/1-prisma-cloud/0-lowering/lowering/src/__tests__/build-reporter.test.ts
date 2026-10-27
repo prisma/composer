@@ -79,7 +79,7 @@ function fakeTopology(landed = true): {
 }
 
 /** Stands in for the extension's own container; the reporter only ever sees it through `refsOf`. */
-const CONTAINER = { projectId: 'proj_1', branchId: 'branch_1', targetBranchId: 'branch_1' };
+const CONTAINER = { projectId: 'proj_1', branchId: 'branch_1', deployBranchId: 'branch_1' };
 const refsOf = (container: ContainerInstance): BuildContainerRefs =>
   container as unknown as BuildContainerRefs;
 
@@ -492,7 +492,7 @@ describe('buildReporter', () => {
       container: {
         projectId: 'proj_1',
         branchId: undefined,
-        targetBranchId: 'branch_default',
+        deployBranchId: 'branch_default',
       } as unknown as ContainerInstance,
     });
 

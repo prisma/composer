@@ -15,7 +15,7 @@ export function prismaCloudReporter(): ReporterDescriptor {
       const { projectId, branchId, defaultBranchId } = prismaCloudContainerOf(container);
       // The Build references only a non-production environment's Branch; the topology lives
       // on whichever Branch the deploy targets — the default one included.
-      return { projectId, branchId, targetBranchId: branchId ?? defaultBranchId };
+      return { projectId, branchId, deployBranchId: branchId ?? defaultBranchId };
     },
   });
 }

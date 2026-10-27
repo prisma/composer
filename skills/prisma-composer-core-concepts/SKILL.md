@@ -31,7 +31,7 @@ prisma/composer repo.
 Two principles govern everything and are binding
 (`docs/design/01-principles/`):
 
-1. **Your code never reads its environment.** Dependencies, configuration,
+1. **Your code never reads environment variables.** Dependencies, configuration,
    credentials, and the port all arrive through the service node, typed.
    `process.env` is never the answer.
 2. **Composer never bundles or transforms your code.** You build with your own
@@ -244,7 +244,7 @@ bite:
 4. **Next.js**: `next build` with `output: 'standalone'` is the whole build;
    `nextjs({ module, appDir })` names the app root. Any page or action that
    calls `load()` needs `export const dynamic = 'force-dynamic'`, because
-   the runtime environment doesn't exist at build time and Next ignores
+   the runtime environment variables don't exist at build time and Next ignores
    runtime env for prerendered routes. `prisma dev` needs no build for it: it
    runs `next dev` instead (see Local development).
 5. **Always build before `deploy`, and before `dev` for a service without a
@@ -358,7 +358,7 @@ removing a node removes its deployed resource. `prisma deploy` needs a signed-in
 identity: `prisma auth login` stores a session on a developer machine, and
 `PRISMA_SERVICE_TOKEN` overrides it in CI. The `/control` operations, and so
 a destroy script, never use that session: `deploy` and `destroy` read
-`PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` from the environment (both
+`PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` from environment variables (both
 in the workspace's Console settings); `dev` and `log` read neither. The
 `prisma` bin starts under Node; use `pnpm prisma …` or `npx prisma …` by
 default. Composer starts Alchemy with Node, but Alchemy's launcher moves to
@@ -434,6 +434,12 @@ deletion takes the production Branch with it. A Project still holding
 another environment's resources is kept. Destroy never creates anything:
 destroying a
 never-deployed environment fails rather than standing one up.
+
+**Upgrading from stages.** `--stage <name>` is now `--environment <name>`;
+`destroy({ target })` is now `destroy({ environment })`, with production as
+`'production'`; the `--report` file's `stage` field is now `environment`, at
+`version` 2. Keep `@prisma/composer-prisma-cloud` and `prisma` on the same
+Composer version, or deploy and destroy fail with `DEPLOY.CONTAINER_MISMATCH`.
 
 **The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.83 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
@@ -519,15 +525,15 @@ that surprise:
    place of its artifact, with no flag: every `nextjs()` service runs
    `next dev` (the app's own `next`, resolved from `appDir`), and a `node()`
    service runs its `dev` argv when it has one. It runs on the service's
-   instance and URL, with the deployment's environment: `service.load()`,
+   instance and URL, with the deployment's environment variables: `service.load()`,
    `service.input()` and `service.port()` work exactly as deployed, so never add a
    `process.env` fallback for plain `next dev`. It also keeps the shell's
-   environment; Composer's values win. `dev` prints ``<address>: runs
+   environment variables; Composer's values win. `dev` prints ``<address>: runs
    `<command>` in <dir>`` before the app comes up and streams the dev
    server's output prefixed `[<address>]` (other services' logs are not
    streamed). Source edits are the dev server's own hot reload; `dev` watches
    the entry and every service's authoring module, reconverges on a topology
-   edit, and restarts a dev server only when its environment changed
+   edit, and restarts a dev server only when its environment variables changed
    (``<address>: its environment changed; `<command>` restarted``). It has no
    terminal (no colours or key shortcuts). The standalone build is not run
    locally, so a standalone-only bug surfaces at `prisma deploy`. Next.js
@@ -606,10 +612,10 @@ ignored. If the emulator reports that `@prisma/dev` did not resolve, the install
 is broken: reinstall dependencies rather than adding `@prisma/dev` or `prisma`.
 Cloud deployment and local apps without Postgres never load this runtime.
 
-## Testing is an environment seam
+## Testing is a dependency-injection seam
 
-A test is just another environment: one where you decide what `load()` and
-`input()` return, never by editing the code under test.
+A test decides what `load()` and `input()` return, never by editing the code
+under test.
 
 | You want to… | Use | From |
 | --- | --- | --- |
@@ -734,7 +740,7 @@ Name the gap instead of inventing an API:
    logs, use the `destroy` and `log` operations of `@prisma/composer/control`
    from a script. A destroy script
    cannot use the `prisma auth login` session; it needs `PRISMA_SERVICE_TOKEN`
-   and `PRISMA_WORKSPACE_ID` in the environment.
+   and `PRISMA_WORKSPACE_ID` as environment variables.
 2. **No in-memory contract bindings.** A dependency can't yet be wired to a
    co-located handler without HTTP; use `bootstrapService` with a loopback
    fake.

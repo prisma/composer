@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test';
+import type { LocateContainerInput } from '@internal/core/config';
 import type { ManagementApiClient } from '@internal/lowering';
 import {
   containerDescriptor,
@@ -313,6 +314,25 @@ describe('containerDescriptor().ensure()', () => {
   });
 });
 
+describe('a request from an older CLI, with no environment name', () => {
+  const olderInput = { appName: 'storefront', stage: 'staging' } as unknown as LocateContainerInput;
+
+  test.each(['ensure', 'locate'] as const)(
+    '%s refuses it before calling the platform',
+    async (op) => {
+      const state = newFakeState();
+      await withEnv(baseEnv, async () => {
+        const descriptor = containerDescriptor({ client: fakeClient(state) });
+        await expect(descriptor[op](olderInput)).rejects.toThrow(
+          /names no environment\. The prisma CLI is probably older than this extension\. Use the same Composer version for both\./,
+        );
+        expect(state.projectCreateCalls).toBe(0);
+        expect(state.branchCreateCalls).toBe(0);
+      });
+    },
+  );
+});
+
 describe('a name whose Branch is the default Branch', () => {
   const withDefaultBranchMain = () =>
     newFakeState({
@@ -342,7 +362,7 @@ describe('a name whose Branch is the default Branch', () => {
       const descriptor = containerDescriptor({ client: fakeClient(state) });
       await expect(
         descriptor.ensure({ appName: 'storefront', environment: 'main' }),
-      ).rejects.toThrow(/that Branch is production\. Deploy it with --environment production/);
+      ).rejects.toThrow(/that Branch is production\. Use the environment production for it/);
       expect(state.branchCreateCalls).toBe(0);
     });
   });
@@ -353,7 +373,7 @@ describe('a name whose Branch is the default Branch', () => {
       const descriptor = containerDescriptor({ client: fakeClient(state) });
       await expect(
         descriptor.locate({ appName: 'storefront', environment: 'main' }),
-      ).rejects.toThrow(/--environment production/);
+      ).rejects.toThrow(/Use the environment production for it/);
     });
   });
 });

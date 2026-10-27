@@ -67,7 +67,7 @@ export interface CreateComposerFamilyOptions {
 const CLI_DOCS_BASE = 'https://www.prisma.io/docs/cli/error-reference/';
 
 /** Retires `--stage` on `command` in favour of `--environment`, so typing it fails with `CLI.COMMAND_MOVED`. */
-export function environmentFlagRedirect(command: string): RedirectSpec {
+function retiredStageFlagRedirect(command: string): RedirectSpec {
   return {
     from: command,
     flag: 'stage',
@@ -88,6 +88,6 @@ export function createComposerFamily(options: CreateComposerFamilyOptions = {}):
       ...options.commands,
     },
     docsBaseUrl: CLI_DOCS_BASE,
-    redirects: [environmentFlagRedirect('deploy'), ...(options.redirects ?? [])],
+    redirects: [retiredStageFlagRedirect('deploy'), ...(options.redirects ?? [])],
   });
 }

@@ -592,7 +592,9 @@ describe('resolveContainer — Branch resolution', () => {
 
       expect(error).toBeInstanceOf(DefaultBranchUnderAnotherNameError);
       expect((error as Error).message).toContain('"main" names the Branch br-default');
-      expect((error as Error).message).toContain('--environment production');
+      expect((error as Error).message).toContain(
+        'Use the environment production for it, and another name for a separate environment.',
+      );
       expect(state.branchCreateCalls).toBe(0);
     },
   );

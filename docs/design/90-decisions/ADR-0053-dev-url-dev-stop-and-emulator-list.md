@@ -8,6 +8,8 @@ Amended by [ADR-0057](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-nam
 
 Amended 2026-10-27: the family also ships `deploy list`. It lists every node an app has deployed on a stage, with the platform ID each one deployed to and, for a service, its URL. It reads the stage's application topology and the Branch's services, databases and buckets on Prisma Cloud. Like `emulator list`, it needs Prisma Cloud code, so `@prisma/composer-cli` adds it to the family. It takes `--stage`, `--name` and `--entry` as `deploy` does, and fails with `DEPLOY.STAGE_INVALID` for an invalid stage name and `DEPLOY.TARGET_NOT_FOUND` when the stage has nothing deployed. Its data lines are address, kind, platform ID and URL. Its JSON result is an array of `{ address, kind, platformId, url }`, with `null` for a missing value.
 
+Amended by [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md): `deploy list` takes `--environment` instead of `--stage`, and an invalid name fails with `DEPLOY.ENVIRONMENT_INVALID`.
+
 ## Decision
 
 Composer's command family ships three more commands and a `--detach` flag on `prisma dev`, and `@prisma/composer/control` two more operations and a `detach` option behind them:

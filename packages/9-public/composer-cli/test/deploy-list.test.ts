@@ -209,7 +209,7 @@ describe('deploy list', () => {
         ok: false,
         error: {
           code: 'DEPLOY.CONTAINER_FAILED',
-          summary: expect.stringContaining('--environment production'),
+          summary: expect.stringContaining('Use the environment production for it'),
         },
       },
     });

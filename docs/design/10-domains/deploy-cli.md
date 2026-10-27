@@ -73,8 +73,12 @@ deploy, default `production`), `--report <path>` (write the deploy's
 outcome as JSON to that file, including its `environment`), `--build-id <id>` (join a deploy record that CI
 already created). The `destroy` operation takes the same
 `name` and a required `environment`, with no default. `--stage`, the flag's
-old name, is retired: on `deploy` and `deploy list` it fails with
-`CLI.COMMAND_MOVED`, naming `--environment <name>`. A build command
+old name, is retired on `deploy`: it fails with `CLI.COMMAND_MOVED`, naming
+`--environment <name>`. `deploy list` has no such redirect, and there
+`--stage` is an unknown flag. The engine refuses to start when a redirect
+names a command the host has not mounted, released hosts do not mount
+`deploy list` yet, and no released host ever offered `deploy list --stage`.
+A build command
 and topology emission are out of scope (see § Out of scope).
 
 **Runtime.** The command family is runtime-agnostic — no bun-only APIs
@@ -139,7 +143,9 @@ user can rerun it by hand (ADR-0007).
    is not detected) and produces a normalized bundle `{ dir, entry }`.
 6. **Validate the environment name, then resolve each extension's containers.**
    The environment name, including a default such as `production`, must pass
-   `git check-ref-format` (`DEPLOY.ENVIRONMENT_INVALID`); an invalid name fails outright,
+   `git check-ref-format` (`DEPLOY.ENVIRONMENT_INVALID`). A name made only of
+   letters, digits, `-` and `_`, starting with a letter or digit, is a valid
+   ref by construction and is accepted without running `git`. An invalid name fails outright,
    never silently normalized — the framework's own contract, platform-free
    and checked once, before any extension runs. Containers are resolved after
    assembly succeeds and before the stack is generated, so a deploy that
@@ -151,7 +157,13 @@ user can rerun it by hand (ADR-0007).
    `locate` that finds nothing fails with "nothing deployed for
    `<app>`/`<environment>`" rather than creating one. What resolving a container
    means is entirely the extension's own business — the CLI holds the result
-   as an opaque value. See § Environments and containers.
+   as an opaque value. See § Environments and containers. The one thing the
+   CLI checks is that each container's `input.environment` is the name it
+   asked for. An extension older than the CLI resolves its container without
+   that name and could read every name as production, so a mismatch fails
+   with `DEPLOY.CONTAINER_MISMATCH`, naming the extension and telling the user
+   to install the same Composer version of it. The check runs on `deploy` and
+   `destroy`, before preflight, Alchemy, teardown or removal.
 7. **Lower and drive.** Write the pipeline's results as a runnable stack
    module at `.prisma-composer/alchemy.run.ts` and drive the `alchemy` CLI against
    it (ADR-0007), started as § Runtime describes, carrying every resolved container across to the child as one
@@ -298,8 +310,7 @@ them:
   instead of Alchemy's `dev_$USER` default, so it never varies by machine.
   `alchemy` is ALWAYS invoked with an explicit `--stage`: the
   container-supplied `alchemyStage` when there is one, else the environment
-  name. Every environment has a name, so there is always a value, and the
-  error for a missing one, `DEPLOY.SCOPE_MISSING`, is gone. The generated
+  name. Every environment has a name, so there is always a value. The generated
   stack file carries neither the environment nor any resolved container
   (ADR-0007).
 

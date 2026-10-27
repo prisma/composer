@@ -3,12 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { DeploymentSummary } from '../deployment-summary.ts';
-import {
-  RUN_REPORT_VERSION,
-  resolveRunReportPath,
-  toRunReport,
-  writeRunReport,
-} from '../run-report.ts';
+import { resolveRunReportPath, toRunReport, writeRunReport } from '../run-report.ts';
 
 const summary = {
   app: 'storefront',
@@ -35,11 +30,11 @@ afterEach(() => {
 });
 
 describe('toRunReport', () => {
-  test('a successful run carries the app, its nodes, and no failure', () => {
+  test('a successful run carries the format version 2, the app, its nodes, and no failure', () => {
     const report = toRunReport({ summary, environment: 'preview', failure: undefined });
 
     expect(report).toEqual({
-      version: RUN_REPORT_VERSION,
+      version: 2,
       outcome: 'succeeded',
       app: 'storefront',
       environment: 'preview',

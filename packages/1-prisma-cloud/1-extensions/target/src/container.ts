@@ -52,11 +52,11 @@ export class PrismaCloudContainer implements ContainerInstance {
     /** Set only by the dev container, which resolves no Branches. */
     readonly branchless: boolean = false,
   ) {
-    const targetBranchId = branchId ?? defaultBranchId;
-    if (targetBranchId !== undefined && !ALCHEMY_STAGE_PATTERN.test(targetBranchId)) {
-      throw invalidAlchemyStageError(targetBranchId);
+    const deployBranchId = branchId ?? defaultBranchId;
+    if (deployBranchId !== undefined && !ALCHEMY_STAGE_PATTERN.test(deployBranchId)) {
+      throw invalidAlchemyStageError(deployBranchId);
     }
-    this.alchemyStage = targetBranchId;
+    this.alchemyStage = deployBranchId;
   }
 
   serialize(): string {
@@ -203,11 +203,22 @@ function runWithClient<A, E>(
   );
 }
 
+/** A CLI older than this extension sends no environment name; reading that as production could deploy or destroy the wrong place. */
+function requireEnvironmentName(input: LocateContainerInput): void {
+  const environment: unknown = input.environment;
+  if (typeof environment === 'string' && environment.length > 0) return;
+  throw new Error(
+    `${PRISMA_CLOUD_EXTENSION_ID}: the container request names no environment. ` +
+      'The prisma CLI is probably older than this extension. Use the same Composer version for both.',
+  );
+}
+
 async function ensureContainer(
   input: LocateContainerInput,
   credentials: PrismaCloudCredentials | undefined,
   deps: ContainerDeps | undefined,
 ): Promise<PrismaCloudContainer> {
+  requireEnvironmentName(input);
   const workspaceId = requireWorkspaceId(credentials);
   const client = clientFor(credentials, deps);
   requireTokenUnlessInjected(client);
@@ -249,6 +260,7 @@ async function locateContainer(
   credentials: PrismaCloudCredentials | undefined,
   deps: ContainerDeps | undefined,
 ): Promise<PrismaCloudContainer | undefined> {
+  requireEnvironmentName(input);
   const workspaceId = requireWorkspaceId(credentials);
   const client = clientFor(credentials, deps);
   requireTokenUnlessInjected(client);

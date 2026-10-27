@@ -211,7 +211,7 @@ export function attachmentBranchIdOf(application: unknown, id: string): string |
  * the `name` arm. The returned `url` is direct, not pooled — PgWarm and the
  * migration flows need a direct connection.
  */
-export const branchDatabase = ({
+export const nodeDatabase = ({
   id,
   address,
   app,

@@ -282,6 +282,26 @@ async function finishReporters(
 }
 
 /**
+ * An extension older than this CLI resolves its container from a key without
+ * `environment`, and may read every name as production. Refusing here keeps a
+ * mismatched install from deploying into, or destroying, the wrong place.
+ */
+function requireContainerForEnvironment(
+  extensionId: ExtensionId,
+  instance: ContainerInstance,
+  environment: string,
+): void {
+  if (instance.input.environment === environment) return;
+  throw new CliStructuredError(
+    'DEPLOY.CONTAINER_MISMATCH',
+    `The extension ${extensionId} resolved its container without the environment ${environment}, probably because it is older than the prisma CLI's Composer.`,
+    {
+      fix: `Install the same Composer version of ${extensionId} as the prisma CLI uses.`,
+    },
+  );
+}
+
+/**
  * Owns the reporting sessions around the pipeline: the inner run opens them
  * once it knows which extensions are configured, and this closes them on
  * every exit path — a returned failure, a success, or a thrown defect — as
@@ -441,13 +461,12 @@ async function runStackPipelineInner(
       if (extension.container === undefined) continue;
       try {
         if (action === 'deploy') {
-          containers.set(
-            extension.id,
-            await extension.container.ensure(
-              { appName: resolvedName, environment },
-              deps.credentials,
-            ),
+          const instance = await extension.container.ensure(
+            { appName: resolvedName, environment },
+            deps.credentials,
           );
+          requireContainerForEnvironment(extension.id, instance, environment);
+          containers.set(extension.id, instance);
         } else {
           const instance = await extension.container.locate(
             { appName: resolvedName, environment },
@@ -460,6 +479,7 @@ async function runStackPipelineInner(
               { fix: 'Deploy it first.' },
             );
           }
+          requireContainerForEnvironment(extension.id, instance, environment);
           containers.set(extension.id, instance);
         }
       } catch (error) {

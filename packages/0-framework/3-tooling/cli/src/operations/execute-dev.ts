@@ -250,7 +250,7 @@ export async function executeDev(
     command: 'deploy',
     stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
     cwd,
-    stage: 'dev',
+    stage: DEV_ENVIRONMENT,
     containerEnv: containerEnv(containers),
   });
 

@@ -1291,6 +1291,67 @@ describe('destroy()', () => {
     expect(result.failure.fix).toBe('Deploy it first.');
   });
 
+  test.each(['deploy', 'destroy'] as const)(
+    '%s refuses a container resolved without the environment, before Alchemy runs',
+    async (action) => {
+      const app = makeAppDir();
+      fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
+      fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
+      const olderExtensionInstance = (input: LocateContainerInput): ContainerInstance => ({
+        input: { appName: input.appName, stage: undefined } as unknown as LocateContainerInput,
+        serialize: () => '{}',
+      });
+      const config = fakeConfig();
+      const [extension, ...rest] = config.extensions;
+      if (extension === undefined) throw new Error('unreachable');
+      const olderConfig: PrismaAppConfig = {
+        ...config,
+        extensions: [
+          {
+            ...extension,
+            container: {
+              ensure: async (input) => olderExtensionInstance(input),
+              locate: async (input) => olderExtensionInstance(input),
+              remove: async () => {
+                throw new Error('remove must not run');
+              },
+              deserialize: unused,
+            },
+          },
+          ...rest,
+        ],
+      };
+      let alchemyRan = false;
+      const input = {
+        config: composerConfig(olderConfig),
+        entry: app.entryPath,
+        environment: 'staging',
+        cwd: app.dir,
+      };
+      const deps = {
+        runAssembler: fakeAssembler,
+        alchemy: async () => {
+          alchemyRan = true;
+          return { exitCode: 0, signal: null };
+        },
+      };
+
+      const result =
+        action === 'deploy'
+          ? await silently(() => deployWithDeps(input, deps))
+          : await silently(() => destroyWithDeps(input, deps));
+
+      if (result.ok) throw new Error('expected a failure');
+      expect(result.failure).toMatchObject({
+        code: 'DEPLOY.CONTAINER_MISMATCH',
+        message:
+          "The extension fixture-extension resolved its container without the environment staging, probably because it is older than the prisma CLI's Composer.",
+        fix: 'Install the same Composer version of fixture-extension as the prisma CLI uses.',
+      });
+      expect(alchemyRan).toBe(false);
+    },
+  );
+
   test('a failed destroy carries the cause the child recorded, like deploy', async () => {
     const app = makeAppDir();
     fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
