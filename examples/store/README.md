@@ -65,7 +65,7 @@ typed RPC contracts. The whole composition is [module.ts](module.ts).
 ## Run it locally (no cloud)
 
 ```sh
-pnpm dev   # from examples/store: builds catalog, then prisma dev module.ts
+pnpm dev   # from examples/store: builds catalog, then prisma dev
 ```
 
 Runs the **whole real topology** on your machine — every service, its
@@ -88,7 +88,7 @@ under Bun.
 ## Deploy
 
 ```sh
-pnpm prisma deploy module.ts
+pnpm prisma deploy
 ```
 
 To remove it, delete its Project: find the id with `prisma project list`, then

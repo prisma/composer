@@ -1,5 +1,5 @@
 /**
- * `dev <entry>` — a session command that runs the local dev loop until the
+ * `dev` — a session command that runs the local dev loop until the
  * user interrupts it.
  *
  * The watch loop, the emulators and the live attachments stay the operation's
@@ -15,7 +15,7 @@
  */
 import * as path from 'node:path';
 import type { ChildResult, EngineEvent } from '@prisma/cli-engine';
-import { defineSessionCommand, flag, positional } from '@prisma/cli-engine';
+import { defineSessionCommand, flag } from '@prisma/cli-engine';
 import { ok } from '@prisma/cli-engine/protocol';
 import type { DevEvent, DevInput } from '../../operations/dev.ts';
 import type { ServiceEndpoint } from '../../operations/shared.ts';
@@ -227,7 +227,7 @@ export const createDevCommand = (operations: ComposerOperations) =>
   defineSessionCommand({
     help: {
       summary:
-        "Bring up the application whose root node is <entry>'s default export, entirely on " +
+        "Bring up the application whose root node is the entry module's default export, entirely on " +
         'this machine.',
       description:
         'Runs credential-free and watches the app for changes, reconverging on every edit. ' +
@@ -236,28 +236,28 @@ export const createDevCommand = (operations: ComposerOperations) =>
         'shown here, prefixed with its address. ' +
         'A node is one service, database or bucket in the app. Each node runs on a local ' +
         'emulator: a program on this machine that stands in for Prisma Cloud and runs ' +
-        "services, databases or S3-compatible buckets. A node's address is its name in the " +
-        'app, with dots for a nested node (catalog.database). The app and where each node ' +
+        "services, databases or S3-compatible buckets. A node's address is its path from the app " +
+        'name, with dots between names (shop.catalog.database). The app and where each node ' +
         'runs are recorded in this directory: `prisma dev url` works from here while ' +
         '`prisma dev` runs, and `prisma dev stop` also works after `prisma dev` was killed. ' +
         'Ending `prisma dev` stops its services and database servers; data and ports are kept. ' +
         'With --detach it returns once every service answers and leaves the app running ' +
         'without watching for changes, until `prisma dev stop`.',
       examples: [
-        '{bin} dev module.ts',
-        '{bin} dev module.ts --fresh',
-        '{bin} dev module.ts --detach',
+        '{bin} dev',
+        '{bin} dev --fresh',
+        '{bin} dev --detach',
+        '{bin} dev --entry other-module.ts',
       ],
     },
     args: {
-      positionals: {
-        entry: positional.string({
-          brief:
-            'The file whose default export is the application root module, built with module(...).',
-          placeholder: 'entry',
-        }),
-      },
       flags: {
+        entry: flag.string({
+          brief:
+            'The file whose default export is the application root module, built with ' +
+            'module(...). Overrides `entry` in the `composer` section of prisma.config.ts.',
+          placeholder: 'path',
+        }),
         name: flag.string({
           brief:
             'Run the app under this name instead of the name its root module declares. A ' +
@@ -283,7 +283,7 @@ export const createDevCommand = (operations: ComposerOperations) =>
       const alchemy = convergeSpawn(ctx);
       const result = await operations.dev(
         {
-          entry: args.positionals.entry,
+          entry: args.flags.entry,
           config: ctx.config,
           name: args.flags.name,
           fresh: args.flags.fresh,

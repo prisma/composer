@@ -252,7 +252,7 @@ export default module('my-app', ({ provision }) => {
 ```
 
 Next to it goes `prisma.config.ts`, the one config file the Prisma CLI reads.
-Composer's configuration is its `composer` section: the extensions that deploy
+Composer's configuration is its `composer` section: the module your app starts from (`entry`), the extensions that deploy
 your app and the store that keeps deploy state. Composer's commands read the
 `composer` section; your app code never imports the file:
 
@@ -265,6 +265,7 @@ import { definePrismaConfig } from 'prisma/config';
 
 export default definePrismaConfig({
   composer: composer({
+    entry: './module.ts',
     extensions: [prismaCloud(), nodeBuild()],
     state: prismaState(),
   }),
@@ -283,7 +284,7 @@ build first (the build is §6, just below):
 
 ```sh
 pnpm build
-pnpm prisma dev module.ts
+pnpm prisma dev
 ```
 
 It runs the same pipeline a deploy runs, against local stand-ins for Prisma
@@ -347,7 +348,7 @@ stores a session for one workspace:
 
 ```sh
 pnpm prisma auth login
-pnpm prisma deploy module.ts
+pnpm prisma deploy
 ```
 
 In CI, set `PRISMA_SERVICE_TOKEN` to a service token from the
@@ -396,7 +397,7 @@ Re-deploying is idempotent — it updates the same Project. For an isolated
 copy of the whole app (own services, own config), deploy a **stage**:
 
 ```sh
-pnpm prisma deploy module.ts --stage demo
+pnpm prisma deploy --stage demo
 ```
 
 When you're done with the whole app, delete its Project. Find its id in
@@ -455,7 +456,7 @@ config's `extensions`. Any page or server action that calls `service.load()`
 needs `export const dynamic = 'force-dynamic'`, because the runtime
 environment doesn't exist at build time.
 
-Locally there is nothing to build: `prisma dev module.ts` runs `next dev` for
+Locally there is nothing to build: `prisma dev` runs `next dev` for
 the service, on its URL, with hot reload and its output in your terminal, and
 `service.load()` and `service.input()` return what they will in production.
 Drop any `process.env` fallback you kept for plain `next dev` — run the app

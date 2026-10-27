@@ -407,6 +407,8 @@ export type NodeDescriptor =
  * platform-agnostic, never defaulted by an extension.
  */
 export interface PrismaAppConfig {
+  /** The module whose default export is the app root, relative to `prisma.config.ts`. `--entry` overrides it. */
+  readonly entry?: string;
   readonly extensions: ExtensionDescriptor[];
   readonly state: StateDescriptor;
 }

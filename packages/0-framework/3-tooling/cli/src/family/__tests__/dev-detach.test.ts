@@ -24,7 +24,10 @@ describe('dev --detach', () => {
       devEndpoints: [{ address: 'gateway', url: 'http://localhost:3001' }],
     });
 
-    const result = await cliOver(double).run(['dev', 'src/service.ts', '--detach'], AS_TTY);
+    const result = await cliOver(double).run(
+      ['dev', '--entry', 'src/service.ts', '--detach'],
+      AS_TTY,
+    );
 
     expect(result.exitCode).toBe(0);
     expect(double.calls.dev[0]?.detach).toBe(true);
@@ -41,7 +44,7 @@ describe('dev --detach', () => {
     const double = createOperationsDouble({});
     const interrupt = new AbortController();
 
-    await cliOver(double).run(['dev', 'src/service.ts'], {
+    await cliOver(double).run(['dev', '--entry', 'src/service.ts'], {
       ...AS_TTY,
       abort: interrupt.signal,
       onEvent: (event: EngineEvent) => {
@@ -56,7 +59,7 @@ describe('dev --detach', () => {
     const double = createOperationsDouble({});
     const interrupt = new AbortController();
 
-    const result = await cliOver(double).run(['dev', 'src/service.ts', '--detach'], {
+    const result = await cliOver(double).run(['dev', '--entry', 'src/service.ts', '--detach'], {
       ...AS_TTY,
       abort: interrupt.signal,
       onEvent: (event: EngineEvent) => {

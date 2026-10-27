@@ -5,7 +5,9 @@
  * so this calls the programmatic `destroy` from `@prisma/composer/control`,
  * resolved from the app's own dependencies, with the `composer` section of
  * the app's `prisma.config.ts`: the one in the current directory, or the file
- * `--config` names. It does not look in parent directories.
+ * `--config` names. It does not look in parent directories. The entry is the
+ * section's `entry`, relative to the config file, or `--entry`, relative to the
+ * current directory.
  *
  * `--production` and `--stage <name>` are the operation's two targets,
  * `{ kind: 'production' }` and `{ kind: 'stage', stage }`, spelled as flags
@@ -29,10 +31,10 @@ import type {
 } from '@prisma/composer/control';
 
 const USAGE =
-  'Usage: composer-destroy.ts <entry> (--production | --stage <name>) [--name <name>] [--config <file>]';
+  'Usage: composer-destroy.ts (--production | --stage <name>) [--entry <path>] [--name <name>] [--config <file>]';
 
 interface DestroyRequest {
-  readonly entry: string;
+  readonly entry: string | undefined;
   readonly target: DestroyTarget;
   readonly name: string | undefined;
   readonly config: string;
@@ -62,9 +64,10 @@ function messageOf(error: unknown): string {
 function parseDestroyArgs(argv: readonly string[]) {
   return parseArgs({
     args: [...argv],
-    allowPositionals: true,
+    allowPositionals: false,
     strict: true,
     options: {
+      entry: { type: 'string' },
       stage: { type: 'string' },
       production: { type: 'boolean' },
       name: { type: 'string' },
@@ -80,11 +83,8 @@ function parseRequest(argv: readonly string[]): DestroyRequest | string {
   } catch (error) {
     return messageOf(error);
   }
-  const { positionals, values } = parsed;
-  const [entry, ...extra] = positionals;
-  if (entry === undefined || extra.length > 0) return 'Pass exactly one entry file.';
-  const { stage, production, name } = values;
-  const config = values.config ?? 'prisma.config.ts';
+  const { entry, stage, production, name } = parsed.values;
+  const config = parsed.values.config ?? 'prisma.config.ts';
   if (stage !== undefined && production === true) {
     return 'Pass either --stage <name> or --production, not both.';
   }

@@ -37,7 +37,7 @@ describe('dev — dev servers', () => {
     });
     const interrupt = new AbortController();
 
-    const result = await cli.run(['dev', 'src/service.ts'], {
+    const result = await cli.run(['dev', '--entry', 'src/service.ts'], {
       ...AS_TTY,
       cwd,
       abort: interrupt.signal,

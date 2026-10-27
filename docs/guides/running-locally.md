@@ -9,9 +9,9 @@ call from a short script; there is no `prisma` command for them.
 
 | You want to… | Run |
 | --- | --- |
-| Bring the app up locally | `prisma dev module.ts` |
+| Bring the app up locally | `prisma dev` |
 | Hot reload a Next.js service | nothing extra: `prisma dev` runs `next dev` for it (see [Dev servers](#dev-servers)) |
-| Start clean (wipe local data first) | `prisma dev module.ts --fresh` |
+| Start clean (wipe local data first) | `prisma dev --fresh` |
 | Watch the running app's logs | the `log` operation (see [Logs](#logs)) |
 
 `module.ts` is your entry file — the one whose default export is the root
@@ -29,7 +29,7 @@ owns the version. Nothing about the emulator is needed for cloud deployment or a
 local app without Postgres resources.
 
 ```sh
-prisma dev module.ts
+prisma dev
 ```
 
 It builds nothing for you (bring your own built output, same as deploy) —
@@ -94,7 +94,7 @@ own hot reload instead of a rebuild and a restart:
   listen on the port in its `PORT` variable (`HOST` is set too). Remove `dev`
   and the service runs its built `entry` again.
 
-There is no flag: `prisma dev module.ts` is the whole command. The output
+There is no flag: `prisma dev` is the whole command. The output
 names each dev server before the app comes up, and its lines are prefixed with
 the service's address:
 
@@ -171,7 +171,7 @@ the front door, and exits 0, leaving the app running. It does not watch for
 changes, and nothing stops the app until you run `prisma dev stop`:
 
 ```sh
-prisma dev module.ts --detach
+prisma dev --detach
 curl "$(prisma dev url my-app.gateway)"
 prisma dev stop
 ```
@@ -283,7 +283,7 @@ Use it when the local data is disposable, which in a dev loop it usually is.
 
 ## Piped output
 
-When stdout is a pipe or a file, Composer's commands write data lines to it, one record per line. Everything else, such as progress, tables and warnings, goes to stderr, so `prisma deploy module.ts > out.txt` leaves only data lines in `out.txt`. `--json` gives each command's full result instead.
+When stdout is a pipe or a file, Composer's commands write data lines to it, one record per line. Everything else, such as progress, tables and warnings, goes to stderr, so `prisma deploy > out.txt` leaves only data lines in `out.txt`. `--json` gives each command's full result instead.
 
 The rules for every line:
 
@@ -319,7 +319,6 @@ const stop = new AbortController();
 process.on('SIGINT', () => stop.abort());
 
 const result = await log({
-  entry: 'module.ts',
   config: {
     value: prismaConfig.composer,
     file: fileURLToPath(new URL('./prisma.config.ts', import.meta.url)),

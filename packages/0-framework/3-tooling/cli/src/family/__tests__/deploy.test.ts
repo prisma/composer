@@ -100,19 +100,31 @@ const childKilledBy = (signal: 'SIGINT' | 'SIGTERM'): ScriptedChildProgram =>
   };
 
 describe('argument validation', () => {
-  test('deploy without an entry fails on the grammar and never reaches the handler', async () => {
+  test('a leftover positional entry is refused by the grammar and never reaches the handler', async () => {
+    for (const command of ['deploy', 'dev']) {
+      const { cli, double } = composerCli();
+      const result = await cli.run([command, 'module.ts'], AS_TTY);
+
+      expect(result.exitCode).toBe(2);
+      expect(plain(result.stderr)).toContain(
+        '[CLI.INVALID_ARGUMENTS] Too many arguments, expected 0 but encountered "module.ts"',
+      );
+      expect(double.calls.deploy).toEqual([]);
+      expect(double.calls.dev).toEqual([]);
+    }
+  });
+
+  test('deploy without --entry leaves the entry to the config', async () => {
     const { cli, double } = composerCli();
     const result = await cli.run(['deploy'], AS_TTY);
 
-    expect(result.exitCode).toBe(2);
-    expect(plain(result.stderr)).toContain('CLI.INVALID_ARGUMENTS');
-    expect(plain(result.stderr)).toContain('Expected argument for entry');
-    expect(double.calls.deploy).toEqual([]);
+    expect(result.exitCode).toBe(0);
+    expect(double.calls.deploy[0]?.entry).toBeUndefined();
   });
 
   test('an unknown flag is refused, naming the flag', async () => {
     const { cli, double } = composerCli();
-    const result = await cli.run(['deploy', 'src/service.ts', '--nope'], AS_TTY);
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts', '--nope'], AS_TTY);
 
     expect(result.exitCode).toBe(2);
     expect(plain(result.stderr)).toContain('CLI.INVALID_ARGUMENTS');
@@ -127,7 +139,7 @@ describe('argument validation', () => {
    */
   test('deploy has no --production flag at all', async () => {
     const { cli } = composerCli();
-    const result = await cli.run(['deploy', 'src/service.ts', '--production'], AS_TTY);
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts', '--production'], AS_TTY);
 
     expect(result.exitCode).toBe(2);
     expect(plain(result.stderr)).toContain('--production');
@@ -136,7 +148,7 @@ describe('argument validation', () => {
   test('deploy passes entry, --name and --stage through to the operation verbatim', async () => {
     const { cli, double } = composerCli();
     const result = await cli.run(
-      ['deploy', 'src/service.ts', '--name', 'shop', '--stage', 'feat-auth'],
+      ['deploy', '--entry', 'src/service.ts', '--name', 'shop', '--stage', 'feat-auth'],
       AS_TTY,
     );
 
@@ -167,7 +179,7 @@ describe('argument validation', () => {
  * diagnostics — instead of being refused up front as it was on engine 0.1.1.
  */
 describe('--json on a spawning command', () => {
-  for (const argv of [['deploy', 'src/service.ts']]) {
+  for (const argv of [['deploy', '--entry', 'src/service.ts']]) {
     test(`\`${argv[0]} --json\` runs and emits one result frame`, async () => {
       const { cli, double } = composerCli();
       const result = await cli.run([...argv, '--json'], AS_TTY);
@@ -192,7 +204,7 @@ describe('--json on a spawning command', () => {
 describe('credentials', () => {
   test('a signed-out deploy is refused before the handler runs — nothing is created anywhere', async () => {
     const { cli, double } = composerCli({ signedIn: false });
-    const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(2);
     expect(plain(result.stderr)).toContain('CLI.CREDENTIALS_REQUIRED');
@@ -208,7 +220,7 @@ describe('credentials', () => {
    */
   test('the converge child is given the credential by the engine', async () => {
     const { cli } = composerCli({ spawnScript: childExiting(0) });
-    const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(0);
     expect(result.spawns[0]?.envKeys).toContain('PRISMA_SERVICE_TOKEN');
@@ -222,14 +234,14 @@ describe('credentials', () => {
 describe('settlement', () => {
   test("a converge that exits non-zero settles with the child's own status, not a collapsed one", async () => {
     const { cli } = composerCli({ spawnScript: childExiting(7) });
-    const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(7);
   });
 
   test('a failed converge renders the reproduce hint and no failure envelope', async () => {
     const { cli } = composerCli({ spawnScript: childExiting(1) });
-    const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(1);
     expect(plain(result.stderr)).toContain(
@@ -261,7 +273,7 @@ describe('settlement', () => {
   ] as const) {
     test(`a deploy whose converge is killed by ${signal} settles ${String(code)} in silence`, async () => {
       const { cli } = composerCli({ spawnScript: childKilledBy(signal) });
-      const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
+      const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
       expect(result.exitCode).toBe(code);
       expect(plain(result.stderr)).toBe('');
@@ -287,7 +299,7 @@ describe('settlement', () => {
         ),
       },
     });
-    const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(2);
     expect(plain(result.stderr)).toContain('DEPLOY.NO_BUILT_ENTRY');
@@ -312,7 +324,7 @@ describe('what a successful run presents', () => {
         }),
       },
     });
-    const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(0);
     expect(plain(result.stderr)).toContain('Deployed shop to production in 9m 35s.');
@@ -358,7 +370,7 @@ describe('what a successful run presents', () => {
         }),
       },
     });
-    const result = await cli.run(['deploy', 'src/service.ts'], { cwd: CWD });
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], { cwd: CWD });
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe(
@@ -371,7 +383,7 @@ describe('what a successful run presents', () => {
     const { cli } = composerCli({
       fixtures: { deploy: ok({ summary: undefined, durationMs: 850 }) },
     });
-    const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(0);
     expect(plain(result.stderr)).toContain('Deployed to production in 850ms.');
@@ -382,7 +394,7 @@ describe('what a successful run presents', () => {
     const { cli } = composerCli({
       fixtures: { deploy: ok({ summary: undefined, durationMs: 850 }) },
     });
-    const result = await cli.run(['deploy', 'src/service.ts'], { cwd: CWD });
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], { cwd: CWD });
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe('');
@@ -430,7 +442,10 @@ describe('step events', () => {
 
   test('a person sees each step start and finish with its duration, then the URLs and the total', async () => {
     const { cli } = composerCli({ fixtures: { deploy, deployEvents } });
-    const result = await cli.run(['deploy', 'src/service.ts', '--stage', 'pr-7'], AS_TTY);
+    const result = await cli.run(
+      ['deploy', '--entry', 'src/service.ts', '--stage', 'pr-7'],
+      AS_TTY,
+    );
 
     expect(result.exitCode).toBe(0);
     const lines = plain(result.stderr).split('\n');
@@ -465,14 +480,14 @@ describe('step events', () => {
         ],
       },
     });
-    const result = await cli.run(['deploy', 'src/service.ts', '--json'], AS_TTY);
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts', '--json'], AS_TTY);
 
     expect(result.json[1]).toMatchObject({ data: { durationMs: 500, filesTraced: 3 } });
   });
 
   test('json mode streams each step with its id, parent and data, then the endpoints and the result', async () => {
     const { cli } = composerCli({ fixtures: { deploy, deployEvents } });
-    const result = await cli.run(['deploy', 'src/service.ts', '--json'], AS_TTY);
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts', '--json'], AS_TTY);
 
     expect(result.exitCode).toBe(0);
     expect(result.json.map((frame) => frame.kind)).toEqual([
