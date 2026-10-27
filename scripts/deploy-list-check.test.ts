@@ -69,6 +69,18 @@ describe('deployListMismatches', () => {
     ]);
   });
 
+  it('reports a kind that is not the one its topology node implies', () => {
+    const wrong = listed.map((entry) => {
+      if (entry.address === 'shop.db') return { ...entry, kind: 'raw-postgres' };
+      if (entry.address === 'shop.files') return { ...entry, kind: 'module' };
+      return entry;
+    });
+    assert.deepEqual(deployListMismatches(wrong, platform), [
+      'shop.db lists kind raw-postgres, but its topology node is a postgres',
+      'shop.files lists kind module, but its topology node is a bucket',
+    ]);
+  });
+
   it('reports a root whose ID is not the Project', () => {
     const wrong = listed.map((entry) =>
       entry.address === 'shop' ? { ...entry, platformId: null } : entry,

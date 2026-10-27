@@ -1,7 +1,7 @@
 /**
  * Checks `deploy list --json` output against what the platform holds for the
- * stage: one entry per topology node, in topology order; the root's ID is the
- * Project's; each service, database and bucket has the ID of the row with its
+ * stage: one entry per topology node, in topology order, with the kind its
+ * topology node implies; the root's ID is the Project's; each service, database and bucket has the ID of the row with its
  * `logicalId`; and a service's URL is its App row's endpoint, over https.
  * Pure, so it is unit-tested; `e2e-verify-deploy-list.ts` feeds it.
  */
@@ -46,6 +46,17 @@ export function parseListed(event: unknown): ListedNode[] {
   return result;
 }
 
+type ListedTopologyNode = ListedPlatform['nodes'][number];
+
+/** The kind `deploy list` should show for a topology node. */
+export function expectedKind(node: ListedTopologyNode): string {
+  if (node.parentLogicalId === null) return 'project';
+  if (node.kind !== 'resource') return node.kind;
+  const rowKind = rowKindOf(node);
+  if (rowKind === 'database') return 'postgres';
+  return rowKind ?? node.type ?? 'resource';
+}
+
 /** Every way the listing disagrees with the platform; empty when it agrees. */
 export function deployListMismatches(
   listed: readonly ListedNode[],
@@ -63,11 +74,17 @@ export function deployListMismatches(
   for (const node of platform.nodes) {
     const entry = listed.find((candidate) => candidate.address === node.logicalId);
     if (entry === undefined) continue;
-    const kind = rowKindOf(node);
+    const kind = expectedKind(node);
+    if (entry.kind !== kind) {
+      problems.push(
+        `${entry.address} lists kind ${entry.kind}, but its topology node is a ${kind}`,
+      );
+    }
+    const rowKind = rowKindOf(node);
     const row = platform.rows.find(
       (candidate) =>
         candidate.branchId === platform.branchId &&
-        candidate.kind === kind &&
+        candidate.kind === rowKind &&
         candidate.logicalId === node.logicalId,
     );
     const platformId = node.parentLogicalId === null ? platform.projectId : (row?.id ?? null);
@@ -76,7 +93,7 @@ export function deployListMismatches(
         `${entry.address} lists platform ID ${String(entry.platformId)}, but the platform has ${String(platformId)}`,
       );
     }
-    const url = kind === 'app' ? (row?.appEndpointDomain ?? null) : null;
+    const url = rowKind === 'app' ? (row?.appEndpointDomain ?? null) : null;
     if (entry.url !== url) {
       problems.push(`${entry.address} lists URL ${String(entry.url)}, but expected ${String(url)}`);
     }
