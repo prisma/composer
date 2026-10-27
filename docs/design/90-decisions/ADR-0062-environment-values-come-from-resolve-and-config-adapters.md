@@ -69,7 +69,7 @@ Adapters are not how per-environment choice is expressed. That is `resolve()`, i
 
 - **`resolve()` ships in `@prisma/composer`**, target-neutral, returning `ResolvedValue<T>`; every node parameter and input binding accepts a `ResolvedValue` of its type.
 - **The `composer` section gains `config`, and later `secrets`.** Its validator rejects unknown keys today ([ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md)), so both become known fields, each an array of adapters. `dotenv()` ships with Composer.
-- **`--environment` replaces `--stage`** on `prisma deploy`, and `prisma dev` gains it ([ADR-0059](ADR-0059-a-deployment-environment-is-a-stage.md)). `prisma deploy` without it deploys `production`, the same Branch as before on Prisma Cloud.
+- **`--environment` replaces `--stage`** on `prisma deploy`, and `prisma dev` gains it ([ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md)). `prisma deploy` without it deploys `production`, the same Branch as before on Prisma Cloud.
 - **`destroy` targets an environment by name**, `production` included. The separate `{ kind: 'production' }` target is retired.
 - **Local dev no longer says "stages do not apply".** How local state and emulator instances are keyed by environment is settled with that change; this decision fixes only what `resolve()` and adapters receive.
 - **A DNS-safe form of the environment name** is something Composer should hand to `resolve()` functions, since names may contain `_` and exceed 63 characters; its shape is open.
@@ -90,7 +90,7 @@ Adapters are not how per-environment choice is expressed. That is `resolve()`, i
 
 - [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): module and root `input`, which adapters fill and `resolve()` derives from.
 - [ADR-0060](ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md): the public URL, the first consumer of a `resolve()` value.
-- [ADR-0059](ADR-0059-a-deployment-environment-is-a-stage.md): what an environment is.
+- [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md): what an environment is.
 - [ADR-0024](ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md) and [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): environment resolution and the `deploy`/`destroy` surfaces this amends.
 - [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md): the config section this extends.
 - [local-dev.md](../10-domains/local-dev.md) and [config-params.md](../10-domains/config-params.md).
