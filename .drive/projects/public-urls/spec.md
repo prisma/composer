@@ -6,13 +6,13 @@ Let an author say, in code, which services receive traffic from the internet and
 
 ```ts
 // module.ts
-export default module('shop', ({ provision }) => {
+export default module('shop', ({ environment, provision }) => {
   const auth = provision(authModule, { secrets: { signingKey: envSecret('AUTH_SIGNING_SECRET') } });
   const web = provision(webService, { deps: { auth: auth.rpc } });
 
-  const url = resolve([], (environment) =>
-    environment === 'production' ? 'shop.com'
-    : environment === 'staging' ? 'staging.shop.com'
+  const url = resolve([environment.name], ([name]) =>
+    name === 'production' ? 'shop.com'
+    : name === 'staging' ? 'staging.shop.com'
     : publicUrl.generated());
 
   provision(publicUrl({ name: 'site', url, target: web.http }));
@@ -33,7 +33,7 @@ The decisions and their reasons are recorded in ADR-0059 to ADR-0062, `docs/desi
 
 - Routing by path. Subpaths are several public URLs, each with its own hostname, not a router primitive.
 - Private addressing between services. Every service stays reachable on its generated endpoint until the platform can address services privately; the Console shows that.
-- Modules declaring `input` (ADR-0061), `resolve()` over module inputs, and config adapters with `dotenv()` (the second half of ADR-0062). They are a follow-on project, `module-input`, recorded in `.drive/deferred.md`. This project ships `resolve()` with an empty dependency list only.
+- Modules declaring `input` (ADR-0061), `resolve()` over module inputs, and config adapters with `dotenv()` (the second half of ADR-0062). They are a follow-on project, `module-input`, recorded in `.drive/deferred.md`. This project ships `resolve()` over `environment.name` and other resolved values only.
 - Secrets adapters, and the reference-based `serviceOrigin`.
 - Any change to Foundry. Whether a hostname can route to a service's endpoint instead of a compute version is ADR 015's open question for the Foundry team.
 - A Public URL record for every service's generated endpoint. Only declared public URLs get a record.

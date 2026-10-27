@@ -17,13 +17,13 @@ export default compute({
 import { module, resolve } from '@prisma/composer';
 import { publicUrl } from '@prisma/composer-prisma-cloud';
 
-export default module('shop', ({ provision }) => {
+export default module('shop', ({ environment, provision }) => {
   const auth = provision(authModule, { input: { signingKey: envSecret('AUTH_SIGNING_SECRET') } });
   const web = provision(webService, { deps: { auth: auth.rpc } });
 
-  const url = resolve([], (environment) =>
-    environment === 'production' ? publicUrl.hostname('shop.com')
-    : environment === 'staging' ? publicUrl.hostname('staging.shop.com')
+  const url = resolve([environment.name], ([name]) =>
+    name === 'production' ? publicUrl.hostname('shop.com')
+    : name === 'staging' ? publicUrl.hostname('staging.shop.com')
     : publicUrl.generated());
 
   provision(publicUrl({ name: 'site', url, target: web.http }));

@@ -24,7 +24,7 @@ Until the PDP Public URL record and the Alchemy resource over it exist, `publicU
 
 ## 4. Module `input` and config adapters are a follow-on project
 
-The spike on typed per-key input references, `module()` taking `input`, `resolve()` over inputs and the `config` adapters with `dotenv()` are recorded in ADR-0061 and ADR-0062 but are not part of this project. This project ships `resolve()` with an empty dependency list and the environment's name only.
+The spike on typed per-key input references, `module()` taking `input`, `resolve()` over inputs and the `config` adapters with `dotenv()` are recorded in ADR-0061 and ADR-0062 but are not part of this project. This project ships `resolve()` over `environment.name` and other resolved values only; input references come with that project.
 
 **Why.** They serve a different purpose (how a module is configured), none of the public-URL scenarios needs them, and Will put config adapters off the critical path. Keeping them here would make eleven slices of a project whose own purpose needs eight.
 

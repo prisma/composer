@@ -28,7 +28,7 @@ A `Prisma.PublicUrl` resource: create (no DNS needed), read state, update hostna
 
 ### C1. `resolve()` and the second evaluation pass
 
-`resolve(deps, fn)` returning `ResolvedValue<T>`, accepted wherever a value of type `T` is. This version takes an empty `deps` list and passes `fn` the environment's name. After Load, `provision` is disabled and every `ResolvedValue` is run and validated; only the resolved graph reaches lowering. Also: a node may be constructed with its edge already set, which `publicUrl`'s `target` needs.
+`resolve(deps, fn)` returning `ResolvedValue<T>`, accepted wherever a value of type `T` is; `fn` receives the dependencies' values as one tuple. This version accepts two kinds of dependency: the `environment` references handed to the module body (`environment.name` only) and other `ResolvedValue`s; module input references arrive with the follow-on project. Resolved values are ordered before they run and a cycle is an error. After Load, `provision` is disabled and every `ResolvedValue` is run and validated; only the resolved graph reaches lowering. Also: a node may be constructed with its edge already set, which `publicUrl`'s `target` needs.
 
 - **Builds on:** nothing. Starts immediately.
 - **Hands to:** P1 (per-environment `url`).

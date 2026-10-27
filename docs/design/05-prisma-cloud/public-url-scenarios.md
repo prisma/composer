@@ -1,6 +1,6 @@
 # Public URL scenarios
 
-Working draft. For each scenario: what the user wants, the Composer code they write, the topology that produces, and what exists on PDP and Foundry for each environment. Vocabulary is the current design: environments (not stages), `publicUrl({ name, url, target })`, two URL strategies, both methods on `publicUrl` itself (`publicUrl.hostname('host')` names the hostname, and a bare string is shorthand for it; `publicUrl.generated()` asks the platform for one), and `resolve(dependencies, fn)` to compute a value from inputs and the environment's name. Nothing about public URLs depends on config adapters; they appear only in scenario 9, as an option for teams that keep hostnames outside the code.
+Working draft. For each scenario: what the user wants, the Composer code they write, the topology that produces, and what exists on PDP and Foundry for each environment. Vocabulary is the current design: environments (not stages), `publicUrl({ name, url, target })`, two URL strategies, both methods on `publicUrl` itself (`publicUrl.hostname('host')` names the hostname, and a bare string is shorthand for it; `publicUrl.generated()` asks the platform for one), and `resolve(dependencies, fn)` to compute a value from inputs, deploy-time references such as `environment.name`, and other resolved values, which `fn` receives as one tuple. Nothing about public URLs depends on config adapters; they appear only in scenario 9, as an option for teams that keep hostnames outside the code.
 
 Shared setup for every scenario:
 
@@ -21,7 +21,7 @@ On PDP, every compute service already has an Endpoint and a `*.prisma.build` hos
 **User:** "Only `web` is meant to be reachable from outside. I don't care what the hostname is." (Søren's Web project: only the Gateway should be public.)
 
 ```ts
-export default module('shop', ({ provision }) => {
+export default module('shop', ({ environment, provision }) => {
   const auth = provision(authModule, { input: { signingKey: envSecret('AUTH_SIGNING_SECRET') } });
   const web = provision(webService, { deps: { auth: auth.rpc } });
   provision(publicUrl({ name: 'site', url: publicUrl.generated(), target: web.http }));
@@ -41,7 +41,7 @@ export default module('shop', ({ provision }) => {
 ```ts
 provision(publicUrl({
   name: 'site',
-  url: resolve([], (environment) => environment === 'production' ? publicUrl.hostname('shop.com') : publicUrl.generated()),
+  url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('shop.com') : publicUrl.generated()),
   target: web.http,
 }));
 ```
@@ -57,9 +57,9 @@ provision(publicUrl({
 **User:** "`shop.com` for production, `staging.shop.com` for staging, generated for previews."
 
 ```ts
-url: resolve([], (environment) =>
-  environment === 'production' ? publicUrl.hostname('shop.com')
-  : environment === 'staging' ? publicUrl.hostname('staging.shop.com')
+url: resolve([environment.name], ([name]) =>
+  name === 'production' ? publicUrl.hostname('shop.com')
+  : name === 'staging' ? publicUrl.hostname('staging.shop.com')
   : publicUrl.generated()),
 ```
 
@@ -70,13 +70,13 @@ url: resolve([], (environment) =>
 **User (Søren):** "`shop.com` for production, `staging.shop.com` for staging, and every preview at `<environment>.preview.shop.com`."
 
 ```ts
-url: resolve([], (environment) =>
-  environment === 'production' ? publicUrl.hostname('shop.com')
-  : environment === 'staging' ? publicUrl.hostname('staging.shop.com')
+url: resolve([environment.name], ([name]) =>
+  name === 'production' ? publicUrl.hostname('shop.com')
+  : name === 'staging' ? publicUrl.hostname('staging.shop.com')
   : publicUrl.hostname(`${environment}.preview.shop.com`)),
 ```
 
-**How it runs:** Composer builds the graph with the `resolve()` function unexecuted, disables `provision`, then calls it once for the environment being deployed and validates the result. The graph is the same shape everywhere.
+**How it runs:** Composer builds the graph with the `resolve()` function unexecuted, disables `provision`, then calls it once with the environment's name and validates the result. The graph is the same shape everywhere.
 
 **PDP, `pr-42` Branch:** named Public URL `shop.site` = `pr-42.preview.shop.com` → `shop.web`. For this to work without a person doing DNS per preview, the workspace must have proven `preview.shop.com` once, with proof covering the names under it, and one wildcard DNS record must send `*.preview.shop.com` to Foundry. Certificates need no extra work: Foundry issues one certificate per hostname (ACME HTTP-01), so each new preview hostname gets its own once the wildcard record resolves to Foundry. A preview's hostname must stay one label under the namespace, and a hostname under the wildcard that no Public URL holds must not reach anything.
 
@@ -89,8 +89,8 @@ An environment name isn't always a valid DNS label (Composer allows `_`; labels 
 **User:** "`www.shop.com` and `shop.com` both serve `web`."
 
 ```ts
-provision(publicUrl({ name: 'site', url: resolve([], (environment) => environment === 'production' ? publicUrl.hostname('shop.com') : publicUrl.generated()), target: web.http }));
-provision(publicUrl({ name: 'www', url: resolve([], (environment) => environment === 'production' ? publicUrl.hostname('www.shop.com') : publicUrl.generated()), target: web.http }));
+provision(publicUrl({ name: 'site', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('shop.com') : publicUrl.generated()), target: web.http }));
+provision(publicUrl({ name: 'www', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('www.shop.com') : publicUrl.generated()), target: web.http }));
 ```
 
 **Topology:** two nodes, `shop.site` and `shop.www`, both wired to `shop.web.http`.
@@ -104,8 +104,8 @@ provision(publicUrl({ name: 'www', url: resolve([], (environment) => environment
 ```ts
 const api = provision(apiService, { deps: { db } });
 const web = provision(webService, { deps: { api: api.rpc } });
-provision(publicUrl({ name: 'site', url: resolve([], (environment) => environment === 'production' ? publicUrl.hostname('shop.com') : publicUrl.generated()), target: web.http }));
-provision(publicUrl({ name: 'apiUrl', url: resolve([], (environment) => environment === 'production' ? publicUrl.hostname('api.shop.com') : publicUrl.generated()), target: api.http }));
+provision(publicUrl({ name: 'site', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('shop.com') : publicUrl.generated()), target: web.http }));
+provision(publicUrl({ name: 'apiUrl', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('api.shop.com') : publicUrl.generated()), target: api.http }));
 ```
 
 `web` calls `api` over `api.rpc`, a service-to-service connection, not over `api.shop.com`. The public URL on `api` is for outside callers.
@@ -118,7 +118,7 @@ provision(publicUrl({ name: 'apiUrl', url: resolve([], (environment) => environm
 
 ```ts
 const identity = provision(auth(), { deps: { db, email: mail.send }, input: { baseUrl: ... } });
-provision(publicUrl({ name: 'authUrl', url: resolve([], (environment) => environment === 'production' ? publicUrl.hostname('auth.shop.com') : publicUrl.generated()), target: identity.api }));
+provision(publicUrl({ name: 'authUrl', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('auth.shop.com') : publicUrl.generated()), target: identity.api }));
 ```
 
 The `auth()` module exposes `api` as a raw HTTP connection. At Load, `identity.api` resolves to the service inside the module (`shop.auth.service`), so the Public URL points at that service's Compute Service. The module decided its `api` could be made public by exposing it; the app decided it is. `identity.admin` is a service RPC connection, so wiring a `publicUrl` to it is a type error.
@@ -128,8 +128,8 @@ The `auth()` module exposes `api` as a raw HTTP connection. At Load, `identity.a
 **User:** "`auth` builds links and redirects, so it needs to know it's served at `auth.shop.com`."
 
 ```ts
-const authUrl = resolve([], (environment) => environment === 'production' ? publicUrl.hostname('auth.shop.com') : publicUrl.generated());
-const baseUrl = resolve([authUrl], (url) => `https://${url.hostname}`);
+const authUrl = resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('auth.shop.com') : publicUrl.generated());
+const baseUrl = resolve([authUrl], ([url]) => `https://${url.hostname}`);
 const identity = provision(auth(), { deps: { db, email: mail.send }, input: { baseUrl } });
 provision(publicUrl({ name: 'authUrl', url: authUrl, target: identity.api }));
 ```
@@ -145,7 +145,7 @@ The Public URL's value feeds the service's input through a second `resolve()`, s
 composer({ extensions: [...], state: prismaState(), config: [dotenv()] })
 // .env.production: SITE_HOSTNAME=shop.com
 // module.ts
-export default module('shop', { input: type({ 'SITE_HOSTNAME?': 'string' }) }, ({ input, provision }) => {
+export default module('shop', { input: type({ 'SITE_HOSTNAME?': 'string' }) }, ({ input, environment, provision }) => {
   const web = provision(webService, { deps: { auth: auth.rpc } });
   provision(publicUrl({ name: 'site', url: input.SITE_HOSTNAME, target: web.http }));
 });
@@ -169,7 +169,7 @@ The `publicUrl` line is deleted. The deploy plan deletes `shop.site`, which remo
 
 **User:** runs `prisma dev module.ts`.
 
-The environment is `dev`. Every `resolve()` function receives `'dev'`. The local target gives `shop.site` a stand-in that creates nothing: there is no Branch and no Foundry. `prisma dev url site` can print the local URL of the service it's wired to. If the resolved value names a hostname, local dev ignores it and prints one warning per public URL saying so. Nothing in local dev keys on the name `dev` itself: a function receives whatever environment name the user passed, and the local target ignores hostnames regardless.
+The environment is `dev`. `environment.name` resolves to `'dev'`. The local target gives `shop.site` a stand-in that creates nothing: there is no Branch and no Foundry. `prisma dev url site` can print the local URL of the service it's wired to. If the resolved value names a hostname, local dev ignores it and prints one warning per public URL saying so. Nothing in local dev keys on the name `dev` itself: `environment.name` is whatever the user passed, and the local target ignores hostnames regardless.
 
 ## 13. A service with no public URL
 
@@ -181,7 +181,7 @@ No `publicUrl` is declared for it. Today it still has an Endpoint and a `*.prism
 
 | Need | Where |
 | --- | --- |
-| `publicUrl` node with its two strategy constructors; `resolve(deps, fn)` producing a `ResolvedValue`, run after the graph is built with `provision` disabled | Composer core |
+| `publicUrl` node with its two strategy constructors; `resolve(deps, fn)` producing a `ResolvedValue`, run after the graph is built with `provision` disabled; the `environment` references handed to the module body | Composer core |
 | Module and root `input` as one schema; config adapters (separate work; only scenario 9 uses them) | Composer core |
 | Public URL record on a Branch, found by `logicalId`, created before DNS and before the service's deployment, pointing at a service, surviving promotes; a hostname change replaces the old hostname | PDP |
 | Deploy output and Console distinguish: deployed, generated URL ready, awaiting ownership proof, awaiting DNS, certificate pending; Console shows each service's actual exposure | PDP and Composer |
