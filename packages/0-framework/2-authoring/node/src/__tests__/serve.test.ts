@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { nodeBuild, serve } from '../exports/control.ts';
 import node from '../exports/index.ts';
 
-const module = 'file:///app/api/src/service.ts';
+// Built from a path so it carries a drive letter on Windows, where a bare
+// `file:///app/...` URL is not a valid file path.
+const module = pathToFileURL(path.resolve('/app/api/src/service.ts')).href;
 
 describe('node({ dev }) (ADR-0056)', () => {
   test('carries dev through as given', () => {
