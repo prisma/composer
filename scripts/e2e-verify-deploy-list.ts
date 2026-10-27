@@ -6,14 +6,21 @@
  *
  * The installed `prisma` does not mount `deploy list` yet, so this mounts
  * Composer's command family itself, the way the `prisma` host does, with a
- * service-token credential and no OAuth login.
+ * service-token credential and no OAuth login. It also declares the ORM's config
+ * section, so a config with an `orm` section loads.
  *
  * Env: STACK_NAME (the `prisma deploy --name` value), PRISMA_SERVICE_TOKEN,
  * PRISMA_WORKSPACE_ID, and STAGE for a named stage (omit for production).
  */
 
-import { createCli, EnvironmentCredentialManager, loadConfig } from '@prisma/cli-engine';
+import {
+  createCli,
+  defineCommandFamily,
+  EnvironmentCredentialManager,
+  loadConfig,
+} from '@prisma/cli-engine';
 import { createComposerFamily } from '@prisma/composer-cli/family';
+import { ormConfigSection } from '@prisma/orm-toolchain/cli';
 import { deployListMismatches, parseListed } from './deploy-list-check.ts';
 import { logPlatformState, readPlatformState } from './platform-state.ts';
 
@@ -34,7 +41,10 @@ async function runDeployList(args: readonly string[]): Promise<string> {
   const cli = createCli({
     name: 'prisma',
     version: '0.0.0',
-    commandFamilies: [family],
+    commandFamilies: [
+      family,
+      defineCommandFamily({ configSection: ormConfigSection, commands: {} }),
+    ],
     groups: { deploy: { brief: 'Deploy the app.' } },
     commands: { 'deploy list': command },
   });
