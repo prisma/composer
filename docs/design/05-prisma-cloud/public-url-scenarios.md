@@ -73,7 +73,7 @@ url: resolve([environment.name], ([name]) =>
 url: resolve([environment.name], ([name]) =>
   name === 'production' ? publicUrl.hostname('shop.com')
   : name === 'staging' ? publicUrl.hostname('staging.shop.com')
-  : publicUrl.hostname(`${environment}.preview.shop.com`)),
+  : publicUrl.hostname(`${name}.preview.shop.com`)),
 ```
 
 **How it runs:** Composer builds the graph with the `resolve()` function unexecuted, disables `provision`, then calls it once with the environment's name and validates the result. The graph is the same shape everywhere.
