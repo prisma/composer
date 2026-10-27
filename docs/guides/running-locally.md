@@ -99,13 +99,13 @@ names each dev server before the app comes up, and its lines are prefixed with
 the service's address:
 
 ```
-app: runs `next dev` in .
+shop.web: runs `next dev` in apps/web
 dev: ready
-app: http://localhost:3001
-[app] ▲ Next.js 16.4.0 (Turbopack)
-[app] - Local:         http://localhost:3001
-[app] ✓ Ready in 319ms
-[app]  GET /api/users 200 in 371ms
+shop.web: http://localhost:3001
+[shop.web] ▲ Next.js 16.4.0 (Turbopack)
+[shop.web] - Local:         http://localhost:3001
+[shop.web] ✓ Ready in 319ms
+[shop.web]  GET /api/users 200 in 371ms
 ```
 
 A dev server runs exactly where the artifact would have: on the service's
@@ -145,7 +145,7 @@ What else changes for such a service:
   authoring module, so a change to `module.ts` or a `service.ts` reconverges
   the app. When that changes what a dev server's environment holds, such as a
   dependency's URL or a new input, the dev server is restarted:
-  `` app: its environment changed; `next dev` restarted ``.
+  `` shop.web: its environment changed; `next dev` restarted ``.
 - **It has no terminal.** Its output goes through the service's log, so a dev
   server that checks for a terminal drops its colours and keyboard shortcuts,
   and a line reaches your screen a moment after it is written.
@@ -156,7 +156,7 @@ What else changes for such a service:
   same app, so a `next dev` you start yourself beside `prisma dev` points you at
   the service's URL instead. Use that URL.
 - `--detach`, `prisma dev stop` and `prisma dev url` work as for any service.
-  `prisma dev url app --json` reports `"runs": "dev-server"` for a service that
+  `prisma dev url shop.web --json` reports `"runs": "dev-server"` for a service that
   runs one and `"runs": "artifact"` for one that runs its build.
 
 Two errors are specific to dev servers: `DEV.DEV_SERVER_UNAVAILABLE` when the
