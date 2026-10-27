@@ -45,7 +45,7 @@ export async function listDeployed(
     throw error;
   }
   if (input.workspaceId === undefined) {
-    return notOk(lookupFailed(new Error('The active credential names no workspace.')));
+    return notOk(lookupFailed(new Error('environment variable PRISMA_WORKSPACE_ID is required.')));
   }
 
   let stage: Awaited<ReturnType<typeof readDeployedStage>>;

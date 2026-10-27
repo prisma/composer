@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import type { ManagementApiClient } from '@prisma/cli-engine';
 import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
 import { createComposerFamily } from '../src/exports/family.ts';
+import { listDeployed } from '../src/family/list-deployed.ts';
 
 /** The app directory: the engine's config file must exist there, though the test seeds its sections. */
 const CWD = (() => {
@@ -71,6 +72,17 @@ function fakeClient(api: FakeApi, requests: Request[]): ManagementApiClient {
   } as unknown as ManagementApiClient;
 }
 
+const COMPOSER_CONFIG = {
+  entry: ENTRY,
+  extensions: [{ id: 'ext-a', nodes: {} }],
+  state: {
+    extension: 'ext-a',
+    create: (): never => {
+      throw new Error('deploy list reads no state');
+    },
+  },
+};
+
 function cliWith(api: FakeApi, requests: Request[] = []) {
   const family = createComposerFamily();
   const command = family.commands['deploy list'];
@@ -79,13 +91,7 @@ function cliWith(api: FakeApi, requests: Request[] = []) {
     commandFamilies: [family],
     commands: { 'deploy list': command },
     groups: { deploy: { brief: 'Deploy the app.' } },
-    config: {
-      composer: {
-        entry: ENTRY,
-        extensions: [{ id: 'ext-a', nodes: {} }],
-        state: { extension: 'ext-a', create: () => undefined },
-      },
-    },
+    config: { composer: COMPOSER_CONFIG },
     credential: {
       token: mintTestJwt({
         sub: 'user_1',
@@ -243,8 +249,32 @@ describe('deploy list', () => {
     const result = await cli.run(['deploy', 'list', '--format', 'human'], { cwd: CWD });
 
     expect(result.exitCode).toBe(0);
-    expect(result.stderr).toContain('shop.catalog.db');
-    expect(result.stderr).toContain('https://api.prisma.app');
+    const lines = result.stderr.split('\n');
+    expect(lines[0]).toMatch(/^Address +Kind +Platform ID +URL$/);
+    expect(lines).toContainEqual(expect.stringMatching(/^shop\.catalog\.db +postgres +db_1 +—$/));
+    expect(lines).toContainEqual(
+      expect.stringMatching(/^shop\.api +service +svc_1 +https:\/\/api\.prisma\.app$/),
+    );
+  });
+
+  test('fails like deploy when the credential names no workspace', async () => {
+    const requests: Request[] = [];
+
+    const result = await listDeployed({
+      config: { value: COMPOSER_CONFIG, file: path.join(CWD, 'prisma.config.ts') },
+      entry: undefined,
+      name: undefined,
+      stage: undefined,
+      cwd: CWD,
+      workspaceId: undefined,
+      client: fakeClient(deployed, requests),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure.code).toBe('DEPLOY.CONTAINER_FAILED');
+    expect(result.failure.message).toBe('environment variable PRISMA_WORKSPACE_ID is required.');
+    expect(requests).toEqual([]);
   });
 
   test.each([
