@@ -199,6 +199,12 @@
       "plane": "control"
     },
     {
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/config-key.ts",
+      "domain": "prisma-cloud",
+      "layer": "extensions",
+      "plane": "shared"
+    },
+    {
       "glob": "packages/1-prisma-cloud/1-extensions/target/src/serializer.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",

@@ -125,7 +125,7 @@ describe('invariant 2: authoring imports stay lean (core + pack)', () => {
 });
 
 describe('invariant 4: environment touches are confined to the config serializer, the control factory, and the container lifecycle', () => {
-  test("the process-env token appears only in serializer.ts (param read+stash, reserved-provider-param read+stash — the origin row rides that generic pair — the input document's deploy-shell default + boot read/secret lookup/generated-pointer lookup/stash pair, env-sourced param double-lookup, readOrigin's stash read), control/extension.ts's prismaCloud() (ADR-0017 — optional PRISMA_WORKSPACE_ID + optional PRISMA_REGION, neither required — local-dev spec § 5's lazy restructure; the CLI-fed deploy identity now arrives via ctx.container, never env; plus the env the preflight transport is read from, which pointer-timestamps.ts takes as an argument rather than reaching for), container.ts (PRISMA_WORKSPACE_ID + PRISMA_SERVICE_TOKEN, ADR-0038's container lifecycle), preflight.ts (shell token + fill-missing lookup), local-target/preflight.ts (dev's own shell-token read — the local-dev value-sourcing policy, ADR-0041), compute.ts (exposes the resolved port as PORT), and testing.ts (bootstrapService's input-row + PORT writes, mirroring a deployed boot)", () => {
+  test("the process-env token appears only in serializer.ts (param read, reserved-provider-param read — the origin row rides that generic pair — the input document's deploy-shell default + boot read/secret lookup/generated-pointer lookup/stash pair, env-sourced param double-lookup, readOrigin's stash read), control/extension.ts's prismaCloud() (ADR-0017 — optional PRISMA_WORKSPACE_ID + optional PRISMA_REGION, neither required — local-dev spec § 5's lazy restructure; the CLI-fed deploy identity now arrives via ctx.container, never env; plus the env the preflight transport is read from, which pointer-timestamps.ts takes as an argument rather than reaching for), container.ts (PRISMA_WORKSPACE_ID + PRISMA_SERVICE_TOKEN, ADR-0038's container lifecycle), preflight.ts (shell token + fill-missing lookup), local-target/preflight.ts (dev's own shell-token read — the local-dev value-sourcing policy, ADR-0041), local-target/attach.ts (the shell environment a dev server keeps under its Composer rows, ADR-0056), compute.ts (run() applies stashRows to the environment), and testing.ts (bootstrapService's config-row, input-row + PORT writes, mirroring a deployed boot)", () => {
     const sources = shippedSources();
     expect(sources.length).toBeGreaterThan(0);
 
@@ -139,10 +139,11 @@ describe('invariant 4: environment touches are confined to the config serializer
       { file: 'compute.ts', count: 2 },
       { file: 'container.ts', count: 3 },
       { file: 'control/extension.ts', count: 3 },
+      { file: 'local-target/attach.ts', count: 1 },
       { file: 'local-target/preflight.ts', count: 2 },
       { file: 'preflight.ts', count: 2 },
-      { file: 'serializer.ts', count: 12 },
-      { file: 'testing.ts', count: 4 },
+      { file: 'serializer.ts', count: 9 },
+      { file: 'testing.ts', count: 5 },
     ]);
   });
 });

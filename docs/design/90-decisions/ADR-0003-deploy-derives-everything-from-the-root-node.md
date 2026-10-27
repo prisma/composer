@@ -2,6 +2,8 @@
 
 Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the command is `prisma deploy <entry>`; the `prisma-composer` binary is retired. Amended by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md): the extensions and state store live in the `composer` section of `prisma.config.ts`, not in `prisma-composer.config.ts`. The derivation from the root node below is unchanged.
 
+Amended 2026-10-23: the entry path is the `entry` field of the `composer` section of `prisma.config.ts`, which `--entry <path>` overrides for one run; `prisma deploy` and `prisma dev` take no positional entry. The entry is an input to the tool, like the ORM section's schema path: it says where to find the root module. It is not an application fact. Application facts (`app`, `target`, `name`) stay in code, and the rejected "config that names the application" below still holds for them.
+
 ## Decision
 
 The deploy entrypoint is `prisma-composer deploy <entry>`, where `entry` is a module
@@ -12,6 +14,8 @@ its name comes from the root node (overridable with `--name`). The one thing
 that is not derivable — which control-plane extensions exist, and the deploy's
 state store — lives in `prisma-composer.config.ts` (ADR-0017). The config carries
 no application settings: no app reference, no name, no per-service options.
+*(Amended 2026-10-23: it carries one input to the tool, the `entry` path, which
+says where the root module is and names nothing about the application.)*
 
 Here is what an app author writes: a service module declaring a service and its
 dependencies, and a root module provisioning what those dependencies need and
@@ -149,7 +153,9 @@ follow:
   rejected: those fields are derivable. `app` is the entry module; `name`
   belongs on the root node (ADR-0006). The config carries only the
   control-plane extension list and the state store (ADR-0017); application
-  facts stay in code, against "your code is the source of truth".
+  facts stay in code, against "your code is the source of truth". *(Amended
+  2026-10-23: the config does carry the entry path, as an input to the tool;
+  it is where to look for the application, not a fact about it.)*
 - **Selecting a platform with a CLI flag** (`--target @prisma/composer-prisma-cloud`) —
   redundant and too coarse: the nodes already carry their extension, a flag
   can disagree with them, and one flag cannot express a mixed-platform graph.

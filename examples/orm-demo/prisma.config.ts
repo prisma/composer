@@ -14,6 +14,7 @@ export default definePrismaConfig({
   // Composer's control-plane config (ADR-0017), read only by the deploy
   // tooling and never imported by app code.
   composer: composer({
+    entry: './module.ts',
     extensions: [prismaCloud(), nodeBuild()],
     // ONE state store per deploy — the workspace-hosted ledger (reads
     // PRISMA_WORKSPACE_ID), shared by every deployer of this app.

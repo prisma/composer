@@ -9,8 +9,9 @@ call from a short script; there is no `prisma` command for them.
 
 | You want to… | Run |
 | --- | --- |
-| Bring the app up locally | `prisma dev module.ts` |
-| Start clean (wipe local data first) | `prisma dev module.ts --fresh` |
+| Bring the app up locally | `prisma dev` |
+| Hot reload a Next.js service | nothing extra: `prisma dev` runs `next dev` for it (see [Dev servers](#dev-servers)) |
+| Start clean (wipe local data first) | `prisma dev --fresh` |
 | Watch the running app's logs | the `log` operation (see [Logs](#logs)) |
 
 `module.ts` is your entry file — the one whose default export is the root
@@ -28,11 +29,14 @@ owns the version. Nothing about the emulator is needed for cloud deployment or a
 local app without Postgres resources.
 
 ```sh
-prisma dev module.ts
+prisma dev
 ```
 
-It builds nothing for you (bring your own built output, same as deploy), then
-stands the app up and prints the **front door** — every service's local URL:
+It builds nothing for you (bring your own built output, same as deploy) —
+except that a service whose build adapter declares a **dev server**, such as
+every Next.js service, runs that dev server instead and needs no build at all
+(see [Dev servers](#dev-servers)). It then stands the app up and prints the
+**front door** — every service's local URL:
 
 ```
 dev: ready
@@ -50,10 +54,10 @@ A service that needs longer to start, for example one that runs migrations first
 `dev` and the `log` operation retry a call to a local emulator only when they cannot connect to it. If that lasts a few seconds, they fail with `DEV.EMULATOR_UNREACHABLE`, which takes the place of `DEV.SERVICE_START_FAILED`, `DEV.ATTACH_FAILED` and `LOG.ATTACH_FAILED` for this case. An error the emulator returns, such as a service that failed to start, is not retried.
 
 From here `dev` keeps running: it watches your built output and, when a
-service's build changes, restarts just that service. It does **not** print
-service logs — with several services running, streaming them all inline would
-bury the front door and the restart notices. Logs are their own operation
-(below).
+service's build changes, restarts just that service. It prints the output of
+the services that run a dev server, and **not** that of the others — with
+several services running, streaming them all inline would bury the front door
+and the restart notices. Their logs are their own operation (below).
 
 `dev` reads the `composer` section of `prisma.config.ts` once, when it starts,
 and watches the file. When the file changes, `dev` prints that it changed and
@@ -66,6 +70,100 @@ so do the ports, so the next `prisma dev` is a warm start — same ports, same
 data. `--fresh` is what wipes this app's local instances and data before
 starting.
 
+### Dev servers
+
+A service whose build adapter declares a dev server runs it under `prisma dev`
+in place of its built artifact, so your edits are picked up by the framework's
+own hot reload instead of a rebuild and a restart:
+
+- **Next.js** (`nextjs({ module, appDir })`): `prisma dev` runs `next dev` in
+  `appDir`, using the `next` your app has installed (resolved from `appDir`,
+  never one on your `PATH`). No `next build` is needed to run it locally.
+- **Node/Bun** (`node({ module, entry })`): none by default — the service runs
+  its built `entry`, as before. Write the command on the adapter to get one:
+
+  ```ts
+  build: node({
+    module: import.meta.url,
+    entry: '../dist/server.mjs',
+    dev: ['bun', '--watch', 'server.ts'],
+  }),
+  ```
+
+  It runs in the authoring module's directory with nothing appended, and must
+  listen on the port in its `PORT` variable (`HOST` is set too). Remove `dev`
+  and the service runs its built `entry` again.
+
+There is no flag: `prisma dev` is the whole command. The output
+names each dev server before the app comes up, and its lines are prefixed with
+the service's address:
+
+```
+shop.web: runs `next dev` in apps/web
+dev: ready
+shop.web: http://localhost:3001
+[shop.web] ▲ Next.js 16.4.0 (Turbopack)
+[shop.web] - Local:         http://localhost:3001
+[shop.web] ✓ Ready in 319ms
+[shop.web]  GET /api/users 200 in 371ms
+```
+
+A dev server runs exactly where the artifact would have: on the service's
+instance, at its URL, with the environment a deployment gives it. Inside it,
+`service.load()` returns the same bindings (a local database is the local
+Postgres), `service.input()` the same input document, and `service.port()`
+the same port; you never set a `COMPOSER_*` variable yourself. On top of that
+it keeps your shell's environment (`NODE_OPTIONS`, proxy settings), which a
+deployed artifact does not; Composer's values win over the shell's.
+
+**Secrets come from the shell `prisma` runs in, not from the dev server's own
+`.env` loading.** Next.js loads `.env` itself, but never over a variable that
+is already set, and Composer has already set every secret: to your shell's
+value, or to a `local-placeholder-…` value when your shell has none. A secret
+that is only in `.env` therefore reaches the app as the placeholder, and the
+`[dev] STRIPE_SECRET_KEY is not set in this shell` warning says so. Load `.env`
+where `prisma` reads it, at the top of `prisma.config.ts`:
+
+```ts
+import { existsSync } from 'node:fs';
+
+if (existsSync('.env')) process.loadEnvFile('.env');
+```
+
+(or `export` the variables in your shell). The next `prisma dev` replaces the
+placeholder with the real value.
+
+What else changes for such a service:
+
+- **It is supervised like any service.** `dev` prints `ready` once the dev
+  server accepts connections. If it exits before it listens, or never listens
+  on its `PORT`, `dev` fails with `DEV.SERVICE_START_FAILED`, and the message
+  adds `A dev server must listen on the port in its PORT variable.` A dev
+  server that crashes later is restarted with backoff, as an artifact is.
+- **Edits to your source are the dev server's business.** `dev` does not
+  rebuild for them. It does watch your entry file and every service's
+  authoring module, so a change to `module.ts` or a `service.ts` reconverges
+  the app. When that changes what a dev server's environment holds, such as a
+  dependency's URL or a new input, the dev server is restarted:
+  `` shop.web: its environment changed; `next dev` restarted ``.
+- **It has no terminal.** Its output goes through the service's log, so a dev
+  server that checks for a terminal drops its colours and keyboard shortcuts,
+  and a line reaches your screen a moment after it is written.
+- **The standalone build is not run locally.** A bug that only exists in the
+  `next build` output, such as a file Next's output trace left out, shows up
+  at `prisma deploy`, which still assembles the build.
+- **One `next dev` per directory.** Next.js refuses a second dev server for the
+  same app, so a `next dev` you start yourself beside `prisma dev` points you at
+  the service's URL instead. Use that URL.
+- `--detach`, `prisma dev stop` and `prisma dev url` work as for any service.
+  `prisma dev url shop.web --json` reports `"runs": "dev-server"` for a service that
+  runs one and `"runs": "artifact"` for one that runs its build.
+
+Two errors are specific to dev servers: `DEV.DEV_SERVER_UNAVAILABLE` when the
+dev server cannot be found (for Next.js, `next` is not installed in `appDir`),
+and `DEV.DEV_SERVER_UNSUPPORTED` when the service's package is too old to run
+one — the message names the package to update.
+
 ### Run it in the background
 
 `prisma dev --detach` does everything `prisma dev` does up to `ready`, prints
@@ -73,7 +171,7 @@ the front door, and exits 0, leaving the app running. It does not watch for
 changes, and nothing stops the app until you run `prisma dev stop`:
 
 ```sh
-prisma dev module.ts --detach
+prisma dev --detach
 curl "$(prisma dev url my-app.gateway)"
 prisma dev stop
 ```
@@ -185,7 +283,7 @@ Use it when the local data is disposable, which in a dev loop it usually is.
 
 ## Piped output
 
-When stdout is a pipe or a file, Composer's commands write data lines to it, one record per line. Everything else, such as progress, tables and warnings, goes to stderr, so `prisma deploy module.ts > out.txt` leaves only data lines in `out.txt`. `--json` gives each command's full result instead.
+When stdout is a pipe or a file, Composer's commands write data lines to it, one record per line. Everything else, such as progress, tables and warnings, goes to stderr, so `prisma deploy > out.txt` leaves only data lines in `out.txt`. `--json` gives each command's full result instead.
 
 The rules for every line:
 
@@ -221,7 +319,6 @@ const stop = new AbortController();
 process.on('SIGINT', () => stop.abort());
 
 const result = await log({
-  entry: 'module.ts',
   config: {
     value: prismaConfig.composer,
     file: fileURLToPath(new URL('./prisma.config.ts', import.meta.url)),
@@ -263,8 +360,9 @@ token, workspace, or network is involved. Three consequences worth knowing:
 - **Unset secrets don't stop the app.** A secret you haven't set in your shell
   gets a local placeholder and a one-line warning; the app boots and serves,
   and only the code path that actually spends that secret fails — at the real
-  external service it calls. Set the secret in your shell to exercise that
-  path.
+  external service it calls. Set the secret in your shell, or load your `.env`
+  in `prisma.config.ts`, to exercise that path; a `.env` that only your
+  framework loads does not count (see [Dev servers](#dev-servers)).
 - **The emulators outlive a session.** They're shared, machine-wide daemons,
   so your data survives `Ctrl-C` and even a reboot until you `--fresh`. That's
   what makes restarts warm.

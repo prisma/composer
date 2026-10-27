@@ -12,6 +12,10 @@ export default compute({
   deps: {
     db: postgres(catalogData),
   },
+  // Deliberately no `dev` command, unlike orders and promotions: catalog runs
+  // its built artifact under `prisma dev`, so this example keeps one service on
+  // the rebuild-and-restart loop (the local-dev store integration proof
+  // touches `dist/server.mjs` and expects exactly this service to restart).
   build: node({ module: import.meta.url, entry: '../dist/server.mjs' }),
   expose: { rpc: catalogContract },
 });

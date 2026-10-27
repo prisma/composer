@@ -25,6 +25,7 @@ import {
   type ConfigFinding,
   checkComposerConfig,
   configFileMissing,
+  entryMissing,
 } from './composer-config.ts';
 import { type LoadedEntry, loadEntry } from './load-entry.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
@@ -37,6 +38,8 @@ export interface PipelineDeps {
   readonly runAssembler?: RunAssembler | undefined;
   /** Progress, for a caller that reports each step. */
   readonly onEvent?: ((event: PipelineEvent) => void) | undefined;
+  /** `prisma dev`: a service whose build adapter declares a dev server is recorded instead of assembled (ADR-0056). */
+  readonly devServers?: boolean | undefined;
 }
 
 export interface PipelineResult {
@@ -81,6 +84,38 @@ export function checkConfigSource(source: ComposerConfigSource, cwd: string): Co
   return { value: checked.value, file };
 }
 
+/** The entry module's absolute path, and what to check when it cannot be loaded. */
+export interface ResolvedEntry {
+  readonly path: string;
+  readonly fix: string;
+}
+
+/**
+ * Resolves the entry module. An override (`--entry`, or an operation's `entry` input) resolves
+ * against `cwd`; the section's `entry` resolves against the directory of the file that declares it,
+ * as the CLI engine resolves path fields in prisma.config.ts.
+ */
+export function resolveEntryPath(
+  override: string | undefined,
+  source: ComposerConfigSource,
+  cwd: string,
+): ResolvedEntry {
+  if (override !== undefined) {
+    return {
+      path: path.resolve(cwd, override),
+      fix:
+        `Check the \`--entry\` path (the \`entry\` input when calling @prisma/composer/control) "${override}". ` +
+        `It is relative to the current directory, ${cwd}.`,
+    };
+  }
+  const configured = source.value.entry;
+  if (configured === undefined) throw configError([entryMissing], source.file);
+  return {
+    path: path.resolve(path.dirname(source.file), configured),
+    fix: `Check \`entry: "${configured}"\` in ${source.file}. It is relative to that file's directory.`,
+  };
+}
+
 /**
  * The pipeline's front — entry load and name resolution —
  * WITHOUT Load, coverage, or assemble. `log` needs only who the app is (its
@@ -89,13 +124,15 @@ export function checkConfigSource(source: ComposerConfigSource, cwd: string): Co
  * output the way the full pipeline does.
  */
 export async function resolveAppIdentity(
-  entry: string,
+  entry: string | undefined,
   overrideName: string | undefined,
   cwd: string,
   config: ComposerConfigSource,
 ): Promise<AppIdentity> {
-  const { value } = checkConfigSource(config, cwd);
-  const entryModule = await loadEntry(entry, cwd);
+  const checked = checkConfigSource(config, cwd);
+  const { value } = checked;
+  const resolved = resolveEntryPath(entry, checked, cwd);
+  const entryModule = await loadEntry(resolved.path, cwd, resolved.fix);
   const name = overrideName ?? entryModule.root.name;
   if (name.length === 0) {
     throw new CliStructuredError('COMPOSE.NAME_MISSING', 'The root node has no name.', {
@@ -113,7 +150,7 @@ export async function resolveAppIdentity(
  * about any one command.
  */
 export async function runPipeline(
-  entry: string,
+  entry: string | undefined,
   overrideName: string | undefined,
   cwd: string,
   source: ComposerConfigSource,
@@ -124,7 +161,8 @@ export async function runPipeline(
   const config = configSource.value;
 
   // 1. Import the entry module; its default export must be a node.
-  const entryModule = await loadEntry(entry, cwd);
+  const resolved = resolveEntryPath(entry, configSource, cwd);
+  const entryModule = await loadEntry(resolved.path, cwd, resolved.fix);
 
   // 2. Resolve the name. It is the root's address, so Load needs it (ADR-0057).
   const name = overrideName ?? entryModule.root.name;
@@ -151,7 +189,9 @@ export async function runPipeline(
   deps.onEvent?.({ kind: 'loaded' });
   let assembled: AssembledServices;
   try {
-    assembled = await assembleServices(graph, config, cwd, deps.runAssembler, deps.onEvent);
+    assembled = await assembleServices(graph, config, cwd, deps.runAssembler, deps.onEvent, {
+      devServers: deps.devServers === true,
+    });
   } catch (error) {
     if (onAssembleError !== undefined && error instanceof Error) {
       throw onAssembleError(error);

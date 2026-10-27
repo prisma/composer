@@ -1,4 +1,4 @@
-/** The `compute` node kind's descriptor: the four service hooks — provision, serialize, package, deploy. */
+/** The `compute` node kind's descriptor: the four service hooks — provision, serialize, package, deploy — plus `reserve`, which stands in for the last two when the service runs a dev server (ADR-0056). */
 
 import { isParamSource } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
@@ -144,6 +144,25 @@ interface EnvRow {
   readonly key: string;
   readonly value: Redacted.Redacted<string> | Output.Output<Redacted.Redacted<string>>;
   readonly pointers?: readonly string[];
+}
+
+/**
+ * The report's two lines of honesty (ADR-0042): the serialized input
+ * document (secret-free by construction — every secret leaf is a `$secret`
+ * pointer) and every binding key that resolved absent in the deploy shell (a
+ * possible typo'd variable name). Newlines in a detail value render as one
+ * line per entry.
+ */
+function inputDetails(serialized: ComputeSerialized): {
+  readonly details?: Readonly<Record<string, string>>;
+} {
+  if (serialized.input === undefined) return {};
+  return {
+    details: {
+      input: serialized.input.value,
+      ...(serialized.input.absent.length > 0 ? { absent: serialized.input.absent.join('\n') } : {}),
+    },
+  };
 }
 
 /**
@@ -440,22 +459,6 @@ export function computeDescriptor(
         // that. Both fields are still unresolved Output references at this
         // point — apply resolves them before the report's runner sees them.
         //
-        // The report's two lines of honesty (ADR-0042): the serialized input
-        // document (secret-free by construction — every secret leaf is a
-        // `$secret` pointer) and every binding key that resolved absent in
-        // the deploy shell (a possible typo'd variable name). Newlines in a
-        // detail value render as one line per entry.
-        const inputDetails =
-          serialized.input !== undefined
-            ? {
-                details: {
-                  input: serialized.input.value,
-                  ...(serialized.input.absent.length > 0
-                    ? { absent: serialized.input.absent.join('\n') }
-                    : {}),
-                },
-              }
-            : {};
         return {
           outputs: { url: deployment.appEndpointDomain, projectId: provisioned.projectId },
           entities: [
@@ -463,7 +466,35 @@ export function computeDescriptor(
               kind: 'compute-service',
               id: provisioned.serviceId,
               url: deployment.appEndpointDomain,
-              ...inputDetails,
+              ...inputDetails(serialized),
+            },
+          ],
+        };
+      }),
+
+    // ADR-0056: a service that runs its build adapter's dev server under
+    // `prisma dev` has no artifact. What `deploy` returns, with the
+    // `Deployment` removed: the URL comes from the App, which locally is the
+    // same `http://localhost:<port>` the Deployment would report, so
+    // dependents' rows do not change between a served and an assembled run.
+    reserve: (_ctx, provisioned, serialized) =>
+      Effect.sync(() => {
+        const url = Output.map(provisioned.endpointDomain, (domain) => {
+          if (domain === undefined) {
+            throw new Error(
+              'the App reported no endpoint domain for a service without a deployment.',
+            );
+          }
+          return domain;
+        });
+        return {
+          outputs: { url, projectId: provisioned.projectId },
+          entities: [
+            {
+              kind: 'compute-service',
+              id: provisioned.serviceId,
+              url,
+              ...inputDetails(serialized),
             },
           ],
         };

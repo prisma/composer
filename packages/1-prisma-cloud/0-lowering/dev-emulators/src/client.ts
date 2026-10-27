@@ -122,6 +122,8 @@ export interface ServiceInstanceInfo {
   readonly pid?: number;
   readonly lastExitCode?: number;
   readonly artifactHash?: string;
+  /** Present when the instance runs a command deployment instead of an artifact (ADR-0056). */
+  readonly command?: DeploymentCommand;
   readonly logPath: string;
 }
 
@@ -131,12 +133,32 @@ export interface CreateServiceRequest {
   readonly port?: number;
 }
 
-export interface DeploymentRequest {
-  readonly artifactDir: string;
-  readonly artifactHash: string;
-  readonly env: Readonly<Record<string, string>>;
-  /** `false` when the service does not listen on its port: it is `running` once spawned. Defaults to `true`. */
-  readonly listens?: boolean;
+/** What a command deployment runs (ADR-0056). `argv[0]` is an absolute path, or a name the emulator resolves on the deployment env's `PATH`. */
+export interface DeploymentCommand {
+  /** Absolute. The command's working directory. */
+  readonly cwd: string;
+  readonly argv: readonly string[];
+}
+
+/** A deployment is an artifact (`bun bootstrap.js` in `artifactDir`) or a command. */
+export type DeploymentRequest =
+  | {
+      readonly artifactDir: string;
+      readonly artifactHash: string;
+      readonly env: Readonly<Record<string, string>>;
+      /** `false` when the service does not listen on its port: it is `running` once spawned. Defaults to `true`. */
+      readonly listens?: boolean;
+    }
+  | {
+      readonly command: DeploymentCommand;
+      readonly env: Readonly<Record<string, string>>;
+      /** `false` when the service does not listen on its port: it is `running` once spawned. Defaults to `true`. */
+      readonly listens?: boolean;
+    };
+
+/** What a deployment put did: `started` is true for a fresh start, false for a no-op or a joined start. */
+export interface DeploymentOutcome {
+  readonly started: boolean;
 }
 
 const INSTANCE_STATUSES = new Set(['running', 'backoff', 'held', 'stopped']);
@@ -146,6 +168,18 @@ function isStringRecord(value: unknown): value is Record<string, string> {
     typeof value === 'object' &&
     value !== null &&
     Object.values(value).every((v) => typeof v === 'string')
+  );
+}
+
+function isDeploymentCommand(value: unknown): value is DeploymentCommand {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'cwd' in value &&
+    typeof value.cwd === 'string' &&
+    'argv' in value &&
+    Array.isArray(value.argv) &&
+    value.argv.every((arg) => typeof arg === 'string')
   );
 }
 
@@ -165,7 +199,8 @@ function isServiceInstanceInfo(value: unknown): value is ServiceInstanceInfo {
     typeof value.status === 'string' &&
     INSTANCE_STATUSES.has(value.status) &&
     'logPath' in value &&
-    typeof value.logPath === 'string'
+    typeof value.logPath === 'string' &&
+    (!('command' in value) || value.command === undefined || isDeploymentCommand(value.command))
   );
 }
 
@@ -196,8 +231,8 @@ export interface ComputeClient {
   listInstances(): Promise<ServiceInstanceInfo[]>;
   /** `GET /instances/<id>`; undefined when the emulator has no such instance. */
   getInstance(id: string): Promise<ServiceInstanceInfo | undefined>;
-  /** `PUT /instances/<id>/deployment` — returns once the instance accepts connections on its port. */
-  putDeployment(id: string, deployment: DeploymentRequest): Promise<void>;
+  /** `PUT /instances/<id>/deployment` — returns once the instance accepts connections on its port, saying whether a process was started. */
+  putDeployment(id: string, deployment: DeploymentRequest): Promise<DeploymentOutcome>;
   /** `GET /instances/<id>/logs?follow=1` — yields decoded text chunks; ends when `signal` aborts or the daemon closes the stream. */
   followLogs(
     id: string,
@@ -270,13 +305,20 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
     },
 
     async putDeployment(id, deployment) {
-      await expectOk(
+      const res = await expectOk(
         await adminFetch(`${instancePath(baseUrl, id)}/deployment`, {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(deployment),
         }),
       );
+      // A daemon from before ADR-0056 answers 204 with no body; it started
+      // nothing this caller can know about.
+      if (res.status === 204) return { started: false };
+      const body: unknown = await res.json();
+      const started =
+        typeof body === 'object' && body !== null && 'started' in body && body.started === true;
+      return { started };
     },
 
     async *followLogs(id, signal, opts) {

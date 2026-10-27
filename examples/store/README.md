@@ -65,20 +65,21 @@ typed RPC contracts. The whole composition is [module.ts](module.ts).
 ## Run it locally (no cloud)
 
 ```sh
-pnpm dev   # from examples/store
+pnpm dev   # from examples/store: builds catalog, then prisma dev
 ```
 
-Serves in-memory fakes of catalog and orders on loopback ports and runs
-`next dev` against them — the same fakes the unit test injects via
-`mockService` ([page.test.tsx](modules/storefront/app/page.test.tsx)). This is
-the fast UI loop.
+Runs the **whole real topology** on your machine — every service, its
+Postgres and buckets, wired as they deploy, credential-free. The storefront
+runs `next dev` (the Next.js adapter's dev server), and orders and promotions
+run their source under `bun --watch` (the `dev` command on their `node()`
+adapters), so edits to them are picked up without a rebuild and their output
+is in your terminal, prefixed with each service's address. Catalog has no
+`dev` command, so it shows the other loop: `prisma dev` runs its build and
+restarts it when `modules/catalog/dist/` changes.
 
-To run the **whole real topology** locally instead — every service, its
-Postgres and buckets, wired as they deploy, credential-free:
-
-```sh
-pnpm build && pnpm prisma dev module.ts
-```
+For the UI alone, the storefront's unit test injects in-memory fakes of
+catalog and orders via `mockService`
+([page.test.tsx](modules/storefront/app/page.test.tsx)).
 
 See [Running locally](../../docs/guides/running-locally.md), and
 [Runtime](../../docs/guides/deploying.md#runtime) for when to run `prisma`
@@ -87,7 +88,7 @@ under Bun.
 ## Deploy
 
 ```sh
-pnpm prisma deploy module.ts
+pnpm prisma deploy
 ```
 
 To remove it, delete its Project: find the id with `prisma project list`, then

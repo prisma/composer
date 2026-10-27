@@ -24,8 +24,8 @@
 import type { ProvisionNeed } from '@internal/core';
 import { provisionNeed } from '@internal/core';
 import { type } from 'arktype';
+import { configKey } from './config-key.ts';
 import type { ProviderParamEntry } from './serializer.ts';
-import { configKey } from './serializer.ts';
 
 /** ADR-0031's need brand for the streams module's bearer key — control.ts registers the provisioner under this. */
 export const STREAMS_API_KEY: unique symbol = Symbol.for('prisma:streams/api-key');

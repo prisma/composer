@@ -32,20 +32,25 @@ command family, plus one operation with no command. The family also carries
 local emulators; [local-dev.md](local-dev.md) covers them
 ([ADR-0053](../90-decisions/ADR-0053-dev-url-dev-stop-and-emulator-list.md)).
 
-- **`prisma deploy <entry>`** — deploy the application whose root node is
-  `entry`'s default export, to a stage (default: production).
+- **`prisma deploy`** — deploy the application whose root node is the default
+  export of the entry module, to a stage (default: production). The entry is
+  `entry` in the `composer` section of `prisma.config.ts`, resolved against
+  that file's directory; `--entry <path>` overrides it, resolved against the
+  working directory. With neither, the command fails with `CONFIG.ENTRY_MISSING`.
+  The entry is an input to the tool, not an application fact ([ADR-0003](../90-decisions/ADR-0003-deploy-derives-everything-from-the-root-node.md)).
+  The generated stack file gets the entry as an absolute path.
 - **`destroy`**, an operation on `@prisma/composer/control` with no command —
   tear a stage down (same derivation, Alchemy destroy); the target is always
   explicit (see § Stages and containers). Users call it from a script.
-- **`prisma dev <entry>`** — bring up the application whose root node
-  is `entry`'s default export, entirely on this machine, credential-free —
+- **`prisma dev`** — bring up the application whose root node
+  is the entry module's default export (found as for deploy), entirely on this machine, credential-free —
   local counterparts of every provisioned resource, real service processes,
   no platform account. See [local-dev.md](local-dev.md) (ADR-0041) for the
-  design; flags: `--name` (same override semantics as deploy), `--fresh`
+  design; flags: `--entry` and `--name` (same override semantics as deploy), `--fresh`
   (before starting, delete the current app's local services, databases and
   buckets and their data; other apps run from the directory keep theirs).
 
-`deploy` flags: `--name` (override the root's name — per-run ephemeral
+`deploy` flags: `--entry <path>` (override the config's entry for one run), `--name` (override the root's name — per-run ephemeral
 deploys in shared workspaces), `--stage <name>` (target a named, isolated
 environment instead of production), `--report <path>` (write the deploy's
 outcome as JSON to that file), `--build-id <id>` (join a deploy record that CI
@@ -248,9 +253,9 @@ them:
 - **Topology emission** — the serialized-topology artifact for agents/tooling;
   when it lands it must strip the machine-specific `build.module` (ADR-0004).
 - **Freshness checks** — detecting stale (not just missing) built output.
-- **Entry discovery** — the entry path is required; bare invocation errors
-  with usage. A discovery convention (e.g. a `package.json` field) would be
-  additive.
+- **Entry discovery** — the entry comes from the config's `entry` or `--entry`;
+  with neither, the command fails with `CONFIG.ENTRY_MISSING`. Nothing searches
+  the directory for an entry module.
 
 ## CLI behavior notes
 

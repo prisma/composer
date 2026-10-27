@@ -6,6 +6,7 @@ import type {
   ContainerInstance,
 } from '../container-transport.ts';
 import type { Graph } from '../graph.ts';
+import type { ServiceNode } from '../node.ts';
 import type { PreflightPayload } from '../preflight-transport.ts';
 import type {
   AlchemyStateLayer,
@@ -13,8 +14,10 @@ import type {
   AssembleInput,
   Bundle,
   DeployedEntity,
+  DevServer,
   Lowering,
   ProvisionerDescriptor,
+  ServeInput,
   ServiceLowering,
 } from './deploy.ts';
 
@@ -291,6 +294,8 @@ export type LocalNodeLocation =
       readonly condition: LocalNodeCondition;
       /** Where the node's own output is written, when the target keeps it in a file. */
       readonly logPath?: string;
+      /** The argv the node runs in place of an artifact, when it runs its build adapter's dev server (ADR-0056). */
+      readonly command?: readonly string[];
     }
   | {
       readonly address: string;
@@ -337,11 +342,22 @@ export interface LocalTargetAttachment {
   startServices(): Promise<void>;
   /** Every service's local endpoint, for the front door. */
   endpoints(): Promise<readonly { readonly address: string; readonly url: string }[]>;
-  /** Merged, line-oriented log stream across the app's services (including services that appear after later converges). `opts.tail` is how many trailing lines of existing history to emit before live output (default 0 — live only). Ends when `signal` aborts. */
+  /** Merged, line-oriented log stream across the app's services (including services that appear after later converges). `opts.tail` is how many trailing lines of existing history to emit before live output (default 0 — live only). `opts.addresses`, when given, follows only those services. Ends when `signal` aborts. */
   logs(
     signal: AbortSignal,
-    opts?: { readonly tail?: number },
+    opts?: { readonly tail?: number; readonly addresses?: readonly string[] },
   ): AsyncIterable<{ readonly service: string; readonly line: string }>;
+  /**
+   * Runs a command on the service's instance in place of its artifact, with the environment the
+   * service's deployment would get. Returns once the command accepts connections on the instance's
+   * port. `restarted` is whether a process was started; an unchanged command already running is
+   * left alone (ADR-0056). Optional: a target without it cannot run a dev server.
+   */
+  serve?(input: {
+    readonly address: string;
+    readonly node: ServiceNode;
+    readonly server: DevServer;
+  }): Promise<{ readonly restarted: boolean }>;
   /** Stop everything the target runs for the app, so nothing of it keeps running after the session (emulators and data persist). */
   stopApp(): Promise<void>;
 }
@@ -375,7 +391,15 @@ export function isBuildOnlyExtension(extension: ExtensionDescriptor): boolean {
 export type NodeDescriptor =
   | ({ readonly kind: 'resource' } & Lowering)
   | ({ readonly kind: 'service' } & ServiceLowering)
-  | { readonly kind: 'build'; assemble(input: AssembleInput): Promise<Bundle> };
+  | {
+      readonly kind: 'build';
+      assemble(input: AssembleInput): Promise<Bundle>;
+      /**
+       * How this app runs in development, or `undefined` when it has no dev server and is assembled instead.
+       * Never spawns anything: it resolves paths and binaries and returns data (ADR-0056).
+       */
+      serve?(input: ServeInput): Promise<DevServer | undefined>;
+    };
 
 /**
  * The config file's default export. `extensions` lists every extension the
@@ -383,6 +407,8 @@ export type NodeDescriptor =
  * platform-agnostic, never defaulted by an extension.
  */
 export interface PrismaAppConfig {
+  /** The module whose default export is the app root, relative to `prisma.config.ts`. `--entry` overrides it. */
+  readonly entry?: string;
   readonly extensions: ExtensionDescriptor[];
   readonly state: StateDescriptor;
 }

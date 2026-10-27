@@ -1,5 +1,7 @@
 # ADR-0053: `prisma dev url`, `prisma dev stop`, `prisma dev --detach` and `prisma emulator list`
 
+Amended 2026-10-23: `prisma dev` takes no positional entry; the entry is `entry` in the `composer` section of `prisma.config.ts`, or `--entry <path>` ([ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)).
+
 Amended by [ADR-0056](ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): `devUrl`'s result gains `runs`, `"artifact"` or `"dev-server"`, for a service. `dev stop`, `--detach` and `emulator list` need nothing new, because the emulator runs a dev server as a deployment.
 
 Amended by [ADR-0057](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md): `dev url` takes the full address, starting with the app name (`prisma dev url shop.gateway`).

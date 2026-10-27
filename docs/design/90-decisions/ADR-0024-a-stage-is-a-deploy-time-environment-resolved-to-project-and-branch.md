@@ -1,5 +1,7 @@
 # ADR-0024: A stage is a deploy-time environment; the CLI resolves its Project and Branch before Alchemy
 
+Amended 2026-10-23: `prisma deploy` takes no positional entry; the entry is `entry` in the `composer` section of `prisma.config.ts`, or `--entry <path>` ([ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)).
+
 Amended by [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): the rule below that the stage "never appears in the authored topology" is restated as what it protects: **the graph's structure is the same whatever inputs Composer is given.** Branching on the stage is the most common way to break that, which is why the stage gets special attention. Code may compute a *value* per environment with `resolve()` (for example a URL), run after the graph is built, but never select structure. Also: the term becomes "environment", every environment has a name, `prisma deploy` without `--environment` deploys `production`, which on Prisma Cloud still resolves to the Project's default Branch, and `destroy` targets an environment by name; `{ kind: 'production' }` is retired.
 
 Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): deploys run as `prisma deploy <entry> [--stage <name>]`. Teardown is the `destroy` operation on `@prisma/composer/control`, whose required `target` is `{ kind: 'stage', stage }` or `{ kind: 'production' }`; there is no destroy command. The `prisma-composer` binary is retired. Stage resolution below is unchanged.

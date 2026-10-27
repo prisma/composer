@@ -193,7 +193,7 @@ function renderStack(bundles: Record<string, FixtureBundle>): string {
     cwd: fixtureDir,
     configFile,
     name: APP_NAME,
-    assembled: { bundles },
+    assembled: { bundles, devServers: {} },
   });
 }
 

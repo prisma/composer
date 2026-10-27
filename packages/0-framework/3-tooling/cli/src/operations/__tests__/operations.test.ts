@@ -235,6 +235,103 @@ describe('deploy()', () => {
     expect(fs.existsSync(resultFile ?? '')).toBe(false);
   });
 
+  test("the config's entry resolves against the config file's directory, not cwd", async () => {
+    const app = makeAppDir('hello-ops');
+    const elsewhere = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'composer-elsewhere-')),
+    );
+    tmpDirs.push(elsewhere);
+    let ran = false;
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: {
+            value: { ...fakeConfig(), entry: './service.ts' },
+            file: path.join(app.dir, 'prisma.config.ts'),
+          },
+          stage: 'ci-7',
+          cwd: elsewhere,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => {
+            ran = true;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    if (!result.ok) throw result.failure;
+    expect(ran).toBe(true);
+  });
+
+  test('an entry that cannot be loaded names where its path came from', async () => {
+    const app = makeAppDir('hello-ops');
+    const configFile = path.join(app.dir, 'prisma.config.ts');
+    const deployFrom = (input: { entry?: string; configEntry?: string }) =>
+      silently(() =>
+        deployWithDeps(
+          {
+            config: {
+              value: {
+                ...fakeConfig(),
+                ...(input.configEntry === undefined ? {} : { entry: input.configEntry }),
+              },
+              file: configFile,
+            },
+            ...(input.entry === undefined ? {} : { entry: input.entry }),
+            cwd: app.dir,
+          },
+          { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+        ),
+      );
+
+    const fromConfig = await deployFrom({ configEntry: './missing.ts' });
+    if (fromConfig.ok) throw new Error('expected a failure');
+    expect(fromConfig.failure).toMatchObject({
+      code: 'COMPOSE.ENTRY_UNLOADABLE',
+      fix: `Check \`entry: "./missing.ts"\` in ${configFile}. It is relative to that file's directory.`,
+      where: { path: path.join(app.dir, 'missing.ts') },
+    });
+
+    const fromOverride = await deployFrom({ entry: 'gone.ts', configEntry: './service.ts' });
+    if (fromOverride.ok) throw new Error('expected a failure');
+    expect(fromOverride.failure).toMatchObject({
+      code: 'COMPOSE.ENTRY_UNLOADABLE',
+      fix:
+        'Check the `--entry` path (the `entry` input when calling @prisma/composer/control) "gone.ts". ' +
+        `It is relative to the current directory, ${app.dir}.`,
+      where: { path: path.join(app.dir, 'gone.ts') },
+    });
+  });
+
+  test('without an entry in the config or the input, deploy fails with CONFIG.ENTRY_MISSING before any work', async () => {
+    const app = makeAppDir('hello-ops');
+    let ran = false;
+
+    const result = await silently(() =>
+      deployWithDeps(
+        { config: composerConfig(fakeConfig()), cwd: app.dir },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => {
+            ran = true;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure).toMatchObject({
+      code: 'CONFIG.ENTRY_MISSING',
+      fix: "Set `entry: './module.ts'` in the `composer` section of prisma.config.ts, or pass `--entry <path>` (the `entry` input when calling @prisma/composer/control).",
+    });
+    expect(ran).toBe(false);
+  });
+
   test('a deploy whose child wrote no result file still succeeds, with an undefined summary', async () => {
     const app = makeAppDir('hello-ops');
 
@@ -477,7 +574,7 @@ describe('deploy()', () => {
 
       expect(failure).toMatchObject({
         code: 'CONFIG.FIELD_UNKNOWN',
-        fix: 'Pass the `composer` property of the prisma.config.ts export, not the whole export. The section takes only `extensions` and `state`.',
+        fix: 'Pass the `composer` property of the prisma.config.ts export, not the whole export. The section takes only `entry`, `extensions` and `state`.',
         where: { path: path.join(app.dir, 'prisma.config.ts') },
       });
       expect(containerCalls).toEqual([]);
@@ -2566,4 +2663,284 @@ describe('deploy-run reporting', () => {
       failure: { code: 'DEPLOY.PREFLIGHT_FAILED' },
     });
   });
+});
+
+/** `devConfigWith`, with the fixture build adapter declaring a dev server and the service descriptor able (or not) to reserve. */
+function devServerConfigWith(
+  attachment: LocalTargetAttachment,
+  opts: { readonly reserve?: boolean } = {},
+): PrismaAppConfig {
+  const base = devConfigWith(attachment);
+  const [target] = base.extensions;
+  if (target === undefined) throw new Error('unreachable');
+  return {
+    ...base,
+    extensions: [
+      {
+        ...target,
+        nodes: {
+          'fixture/compute': {
+            kind: 'service',
+            provision: unused,
+            serialize: unused,
+            package: unused,
+            deploy: unused,
+            ...(opts.reserve === false ? {} : { reserve: unused }),
+          },
+        },
+      },
+      {
+        id: 'fixture-build',
+        nodes: {
+          node: {
+            kind: 'build',
+            assemble: unused,
+            serve: async () => ({
+              cwd: '/app/web',
+              argv: ({ port, host }) => ['next', 'dev', '-p', String(port), '-H', host],
+              display: 'next dev',
+            }),
+          },
+        },
+      },
+    ],
+  };
+}
+
+describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)', () => {
+  const until = async (done: () => boolean) => {
+    for (let waited = 0; !done() && waited < 5_000; waited += 50) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  };
+
+  test('a service with a dev server is announced before the converge, not assembled, lowered unassembled, served after resume, and its output streamed', async () => {
+    const app = makeAppDir('hello-dev');
+    const order: string[] = [];
+    const served: { address: string; display: string; argv: readonly string[] }[] = [];
+    const followed: (readonly string[] | undefined)[] = [];
+    const attachment: LocalTargetAttachment = {
+      startServices: async () => void order.push('startServices'),
+      stopApp: () => Promise.resolve(),
+      endpoints: async () => {
+        order.push('endpoints');
+        return [{ address: 'hello-dev.app', url: 'http://localhost:3001' }];
+      },
+      logs: async function* (_signal, opts) {
+        followed.push(opts?.addresses);
+        yield { service: 'hello-dev.app', line: '✓ Ready in 1.2s' };
+      },
+      serve: async ({ address, server }) => {
+        order.push('serve');
+        served.push({
+          address,
+          display: server.display,
+          argv: server.argv({ port: 3001, host: '0.0.0.0' }),
+        });
+        return { restarted: true };
+      },
+    };
+    const events: DevEvent[] = [];
+    let stackFile = '';
+
+    await silently(async () => {
+      const start = await devWithDeps(
+        {
+          config: composerConfig(devServerConfigWith(attachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+          onEvent: (event) => void events.push(event),
+        },
+        {
+          runAssembler: () =>
+            Promise.reject(new Error('a service with a dev server is not assembled')),
+          alchemy: async () => {
+            order.push('converge');
+            stackFile = fs.readFileSync(
+              path.join(app.dir, '.prisma-composer', 'dev', 'alchemy.run.ts'),
+              'utf8',
+            );
+            return { exitCode: 0, signal: null };
+          },
+        },
+      );
+      if (!start.ok) throw new Error(`expected a started session: ${start.failure.message}`);
+      await until(() => events.some((event) => event.kind === 'dev-server-output'));
+      expect(start.value.endpoints).toEqual([
+        { address: 'hello-dev.app', url: 'http://localhost:3001', devServer: 'next dev' },
+      ]);
+      await start.value.stop();
+    });
+
+    expect(events[0]).toEqual({
+      kind: 'dev-server',
+      address: 'hello-dev.app',
+      command: 'next dev',
+      cwd: '/app/web',
+    });
+    expect(order).toEqual(['converge', 'startServices', 'serve', 'endpoints']);
+    expect(stackFile).toContain('unassembled: ["hello-dev.app"],');
+    expect(served).toEqual([
+      {
+        address: 'hello-dev.app',
+        display: 'next dev',
+        argv: ['next', 'dev', '-p', '3001', '-H', '0.0.0.0'],
+      },
+    ]);
+    expect(followed).toEqual([['hello-dev.app']]);
+    expect(events).toContainEqual({
+      kind: 'dev-server-output',
+      address: 'hello-dev.app',
+      line: '✓ Ready in 1.2s',
+    });
+  }, 15_000);
+
+  test('an edit to the entry module reconverges and serves again; a restart is reported', async () => {
+    const app = makeAppDir('hello-dev');
+    let serves = 0;
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+      serve: async () => {
+        serves += 1;
+        return { restarted: serves > 1 };
+      },
+    };
+    const events: DevEvent[] = [];
+    let converges = 0;
+
+    await silently(async () => {
+      const start = await devWithDeps(
+        {
+          config: composerConfig(devServerConfigWith(attachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+          onEvent: (event) => void events.push(event),
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => {
+            converges += 1;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      );
+      if (!start.ok) throw new Error(`expected a started session: ${start.failure.message}`);
+
+      fs.appendFileSync(app.entryPath, '// a topology edit\n');
+      await until(() => events.some((event) => event.kind === 'dev-server-restarted'));
+      await start.value.stop();
+    });
+
+    expect(converges).toBe(2);
+    expect(serves).toBe(2);
+    expect(events).toContainEqual({
+      kind: 'dev-server-restarted',
+      address: 'hello-dev.app',
+      command: 'next dev',
+    });
+  }, 20_000);
+
+  test('a service descriptor without reserve is DEV.DEV_SERVER_UNSUPPORTED before anything converges', async () => {
+    const app = makeAppDir('hello-dev');
+    let converges = 0;
+    const attachment = fakeAttachment([], async function* () {});
+
+    const result = await silently(() =>
+      devWithDeps(
+        {
+          config: composerConfig(
+            devServerConfigWith({ ...attachment, serve: unused }, { reserve: false }),
+          ),
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => {
+            converges += 1;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEV.DEV_SERVER_UNSUPPORTED');
+    expect(result.failure.message).toBe(
+      'service "hello-dev.app" runs a dev server but its descriptor (fixture-extension/fixture/compute) has no `reserve` step — update fixture-extension',
+    );
+    expect(converges).toBe(0);
+  }, 15_000);
+
+  test('a target whose attachment has no serve is DEV.DEV_SERVER_UNSUPPORTED before anything converges', async () => {
+    const app = makeAppDir('hello-dev');
+    let converges = 0;
+
+    const result = await silently(() =>
+      devWithDeps(
+        {
+          config: composerConfig(devServerConfigWith(fakeAttachment([], async function* () {}))),
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => {
+            converges += 1;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEV.DEV_SERVER_UNSUPPORTED');
+    expect(result.failure.message).toBe(
+      'service "hello-dev.app" runs a dev server but its target\'s local attachment has no `serve` — update fixture-extension',
+    );
+    expect(converges).toBe(0);
+  }, 15_000);
+
+  test('a dev server that fails to start is DEV.SERVICE_START_FAILED, and the started services are stopped again', async () => {
+    const app = makeAppDir('hello-dev');
+    let stops = 0;
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopApp: async () => {
+        stops += 1;
+      },
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+      serve: () =>
+        Promise.reject(
+          new Error(
+            'service "app" exited (code 1) before it accepted connections on its port 3001. A dev server must listen on the port in its PORT variable.',
+          ),
+        ),
+    };
+
+    const result = await silently(() =>
+      devWithDeps(
+        {
+          config: composerConfig(devServerConfigWith(attachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEV.SERVICE_START_FAILED');
+    expect(result.failure.message).toContain(
+      'A dev server must listen on the port in its PORT variable.',
+    );
+    expect(stops).toBe(1);
+  }, 15_000);
 });

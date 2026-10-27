@@ -386,8 +386,8 @@ is in `layering.md`; this is the term-by-term catalogue.
 
 - **Stack** — the root of an Alchemy program; a set of Resources deployed as a
   unit. `Alchemy.Stack(name, { providers, state }, Effect.gen(…))`. `lower()`
-  emits one Stack for the whole app; `prisma deploy <entry>` drives it over the
-  app module directly (no hand-written stack file, no config file — ADR-0003).
+  emits one Stack for the whole app; `prisma deploy` drives it over the
+  app module the config's `entry` names (no hand-written stack file — ADR-0003).
   `→` **Topology / implicit root Module**.
 - **Resource\<Type, Props, Attributes>** — a managed entity with a string type
   tag, desired-input **Props**, and cloud-returned **Attributes**. Declared, then
