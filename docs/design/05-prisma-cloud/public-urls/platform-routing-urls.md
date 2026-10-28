@@ -82,7 +82,7 @@ A RoutingUrl serves traffic only when all six of these are true. Each can become
 | service present | `appId` points at a service that exists | the App table |
 | live deployment | that service has a live deployment | the Deployment table |
 | DNS points at the switchboard | the hostname's first CNAME target is the regional switchboard, or its address records resolve to it (Cloudflare-flattened apex domains) | looked up; `dnsCheckedAt` |
-| custom domain bound | a Foundry custom domain exists for the hostname, this row holds its id, and it was last observed bound to the live deployment's compute version, with the observation not stale | `foundryCustomDomainId`, `foundryObservedComputeVersionId`, `foundryObservedAt` |
+| custom domain bound | a Foundry custom domain exists for the hostname, this row holds its id, and it was last observed bound to the live deployment's compute version, with `foundryObservedAt` not empty | `foundryCustomDomainId`, `foundryObservedComputeVersionId`, `foundryObservedAt` |
 | certificate active | Foundry reports the custom domain's status as `active` | `foundryCustomDomainStatus` |
 
 The row reports every condition and the first unmet one as the next thing the user has to do, with the exact DNS record to publish. When the unmet condition is that another row holds the hostname's custom domain, the report names that row's workspace, project and service to a caller who can access that workspace, and says "held by another workspace" to one who cannot.
