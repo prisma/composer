@@ -4,7 +4,7 @@
  * Deletes the app's emulator instances of every kind through the
  * environment's record (a database's delete removes its data) and the app's
  * entry in it, the app's part of the environment's folder, and the
- * environment's Alchemy stage `localState()` directory. Other apps and other
+ * environment's Alchemy stage `localState()` files. Other apps and other
  * environments keep their entries and their buckets' objects. The daemons are never stopped —
  * other directories may be using them. The local directories are removed
  * even when a delete fails, and the failure is then reported.
@@ -23,8 +23,8 @@ import {
   movePreEnvironmentDevState,
   type NodeKind,
   recordedKinds,
+  removeAlchemyStage,
   removeAppDevState,
-  removeLocalPaths,
 } from '@internal/local-target';
 import { prismaCloudContainerOf } from '../container.ts';
 import { daemonEntry } from './daemon-entry.ts';
@@ -53,6 +53,6 @@ export async function runDevTeardown(input: TeardownInput): Promise<void> {
     await deleteAppInstances(scope);
   } finally {
     removeAppDevState(devDir, app);
-    removeLocalPaths([`${cwd}/.alchemy/state/${app}/${environment}`]);
+    removeAlchemyStage(`${cwd}/.alchemy/state/${app}/${environment}`);
   }
 }

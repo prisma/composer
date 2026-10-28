@@ -17,6 +17,24 @@ export function removeLocalPaths(paths: readonly string[]): void {
 }
 
 /**
+ * Removes one Alchemy stage's local state: the files directly in its folder,
+ * then the folder once it is empty. Alchemy keeps the stage `feature/x` in
+ * `feature/`'s folder, so a subfolder is another stage's and stays.
+ */
+export function removeAlchemyStage(stageDir: string): void {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(stageDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) fs.rmSync(path.join(stageDir, entry.name), { force: true });
+  }
+  if (entries.every((entry) => !entry.isDirectory())) fs.rmdirSync(stageDir);
+}
+
+/**
  * Removes an environment folder's contents for `--fresh`, except what other
  * apps run in the environment still use: the record of their emulator
  * instances and their buckets' objects. This app's objects go.

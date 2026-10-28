@@ -36,9 +36,9 @@ mock.module('@internal/local-target', () => ({
     events.push(`remove dev state of ${app}`);
     removed.push(devDir);
   }),
-  removeLocalPaths: fake(RealLocalTarget.removeLocalPaths, (paths: readonly string[]) => {
-    events.push('remove local paths');
-    removed.push(...paths);
+  removeAlchemyStage: fake(RealLocalTarget.removeAlchemyStage, (stageDir: string) => {
+    events.push('remove alchemy stage');
+    removed.push(stageDir);
   }),
 }));
 
@@ -58,7 +58,7 @@ beforeEach(() => {
   deleteFails = false;
 });
 
-const removalEvents = ['remove dev state of my-app', 'remove local paths'];
+const removalEvents = ['remove dev state of my-app', 'remove alchemy stage'];
 
 test("starts the emulators holding the app's instances before deleting them, so a stopped emulator still forgets them", async () => {
   await runDevTeardown({ container, environment: 'dev' });
