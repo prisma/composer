@@ -183,7 +183,7 @@ No `publicUrl` is declared for it, so the topology shows it as not public and Co
 | --- | --- |
 | `publicUrl` node with its two strategy constructors; `resolve(deps, fn)` producing a `ResolvedValue`, run after the graph is built with `provision` disabled; the `environment` references handed to the module body | Composer core |
 | Module and root `input` as one schema; config adapters (separate work; only scenario 9 uses them) | Composer core |
-| RoutingUrl record on a Branch for a custom hostname, found by `logicalId`, created before DNS and before the service's deployment, pointing at a service, kept bound to the live version by a reconciler; a hostname change replaces the old hostname | PDP |
+| RoutingUrl record on a Branch for a custom hostname, found by `logicalId`, created before DNS and before the service's deployment, pointing at a service, with its Foundry custom domain kept bound to the live deployment by the RoutingUrl repository; a hostname change replaces the old hostname | PDP |
 | Deploy output and Console distinguish: deployed, prisma.build URL ready, awaiting ownership claim, awaiting DNS, certificate pending | PDP and Composer |
 | Workspace domain ownership claim for an exact hostname or wildcard, verified with today's TXT value and re-verified on conflict; both Console-first and code-first setup | PDP |
 | Registering one RoutingUrl per hostname platform-wide, with the others reporting the hostname as in use | PDP |

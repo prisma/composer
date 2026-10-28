@@ -75,7 +75,7 @@ New:
 
 | Entity | What it is |
 | --- | --- |
-| **RoutingUrl** | A custom hostname mapped to a service, whichever of the service's deployments is live. It exists as soon as it's declared and calls no Foundry API on creation. It receives traffic once all of its conditions hold (ownership verified, service present, live version, DNS pointing at the region, certificate issued, routing bound); until then the deploy still succeeds and the record shows the first unmet condition. A reconciler keeps Foundry's registration bound to the live version. It survives its service being deleted. Composer finds it by its `logicalId`. A hostname serves one RoutingUrl on the whole platform. Nothing is created unless something asked for it. |
+| **RoutingUrl** | A custom hostname mapped to a service, whichever of the service's deployments is live. It exists as soon as it's declared and calls no Foundry API on creation. It receives traffic once all of its conditions hold (ownership verified, service present, live version, DNS pointing at the region, certificate issued, routing bound); until then the deploy still succeeds and the record shows the first unmet condition. The RoutingUrl repository keeps its Foundry custom domain bound to the live deployment. It survives its service being deleted. Composer finds it by its `logicalId`. A hostname serves one RoutingUrl on the whole platform. Nothing is created unless something asked for it. |
 | **Domain ownership claim** | A workspace's claim to a domain, verified or not: an exact hostname or an exact wildcard covering one label. Verification is today's check, unchanged: the user publishes a TXT record at `_prisma-verification.<domain>` carrying a value specific to their workspace (prisma/pdp-control-plane#5785), so the claim belongs to the workspace and is shared by every project in it. The user verifies on the platform; Composer has no part in it. A RoutingUrl starts receiving traffic once its hostname is covered by a verified claim. |
 
 ## Composer: how authors describe the app
@@ -104,17 +104,17 @@ New:
 | `publicUrl` with a named hostname | a RoutingUrl that needs a verified domain ownership claim | a Custom domain |
 | Root module input and config adapters | nothing; Composer works out their values before deploying | nothing |
 
-Each time a deployment goes live, PDP points the Foundry registration behind every RoutingUrl at that deployment's compute version, and its reconciler repairs any that promote missed.
+Each time a deployment goes live, PDP reassigns the Foundry custom domain behind every RoutingUrl to that deployment's compute version, and a Worker cron repairs any that promote missed.
 
 ## A hostname is served by only one RoutingUrl
 
 If two RoutingUrls for the same hostname were both registered, traffic would go to whichever one Foundry's records happened to match. So at most one RoutingUrl is registered for a hostname on the whole platform, across every workspace, project and environment. This rule is unrelated to ownership.
 
-Any number of records may name the hostname; PDP enforces the rule at registration, when a record's conditions are met and the reconciler would hand it to Foundry. A record that loses reports "hostname in use" in its routing-bound condition, without saying who holds it. Today Foundry refuses a hostname that's already registered, but only at the moment the hostname is attached to routing, and only within one region. Composer can only spot a duplicate inside one deploy of one app; only the platform can check across environments and projects.
+Any number of records may name the hostname; PDP enforces the rule when a record's conditions are met and the repository would create its Foundry custom domain, with a unique index and a lock on the hostname. A record that cannot get the custom domain reports the hostname as in use, and names the holder to a caller allowed to see that workspace. Today Foundry refuses a hostname that's already registered, but only at the moment the hostname is attached to routing, and only within one region. Composer can only spot a duplicate inside one deploy of one app; only the platform can check across environments and projects.
 
 ## Settled on 2026-10-27
 
 - The ownership claim belongs to the workspace, because the verification does. It claims an exact hostname or an exact wildcard covering one label; verifying `example.com` does not cover `preview.example.com`.
-- Foundry is not changed; the control plane reconciles over its existing APIs.
+- Foundry is not changed; the control plane keeps it consistent over its existing APIs.
 - A deploy whose public URL names a hostname another RoutingUrl serves succeeds, and its record reports the hostname as in use until the other record releases it.
 - Settled on 2026-10-28: the first step covers custom hostnames only. The platform's own hostname stays as it is, and making it an opt-in RoutingUrl is a later step.

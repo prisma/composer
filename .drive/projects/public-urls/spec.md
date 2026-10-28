@@ -35,7 +35,7 @@ The decisions and their reasons are recorded in ADR-0059 to ADR-0062, `docs/desi
 - Private addressing between services. Making the platform's own hostname opt-in is step two of this project (P3 and the platform's fifth slice), with its scenarios in [step-two-migration-scenarios.md](../../../docs/design/05-prisma-cloud/public-urls/step-two-migration-scenarios.md).
 - Modules declaring `input` (ADR-0061), `resolve()` over module inputs, and config adapters with `dotenv()` (the second half of ADR-0062). They are a follow-on project, `module-input`, recorded in `.drive/deferred.md`. This project ships `resolve()` over `environment.name` and other resolved values only.
 - Secrets adapters, and the reference-based `serviceOrigin`.
-- Any change to Foundry. The control plane reconciles over Foundry's existing APIs.
+- Any change to Foundry. The control plane keeps it consistent over Foundry's existing APIs.
 - A RoutingUrl for every service. A record exists only because something asked for it: Composer declares one per `publicUrl()` with a named hostname.
 
 # Place in the larger world
@@ -44,8 +44,8 @@ The work spans four repositories:
 
 - **prisma/composer**: `resolve()` and the second evaluation pass in core; `publicUrl()` and its two strategies in the Prisma Cloud extension; the rename from stage to environment on every public surface; guides, the agent skill and the examples.
 - **alchemy-run/alchemy**, `packages/prisma`: the Prisma provider is ours to change. First lifting `Prisma.CustomDomain`'s rule that a domain attaches only to an app on the default Branch; later a `Prisma.RoutingUrl` resource over the new routes.
-- **prisma/pdp-control-plane**: the RoutingUrl records and domain ownership claims, their Management API routes, the reconciler, the backfill of existing custom domains, and the Console's custom hostnames on the service page and its Domains page of ownership claims. Its own project is `projects/routing-urls/` in that repository, with pdp-control-plane's ADR 015.
-- **Foundry**: unchanged. The control plane reconciles over its existing endpoint and domain APIs.
+- **prisma/pdp-control-plane**: the RoutingUrl records and domain ownership claims, their Management API routes and interactors, the repository operation that keeps Foundry consistent and the Worker cron that re-runs it, the backfill of existing custom domains, and the Console's custom hostnames on the service page and its Domains page of ownership claims. Its own project is `projects/routing-urls/` in that repository, with pdp-control-plane's ADR 015.
+- **Foundry**: unchanged. The control plane keeps it consistent over its existing endpoint and custom domain APIs.
 
 Existing custom domains keep working: PDP backfills them into RoutingUrl records with no `logicalId`. A hostname added in Console that the code later declares is adopted: the Alchemy resource writes the node's `logicalId` on the existing row, so nothing in Foundry changes.
 
@@ -64,7 +64,7 @@ Existing custom domains keep working: PDP backfills them into RoutingUrl records
 - **In step one, `publicUrl.prismaBuild()` lowers to nothing on the platform** and reports the service's existing `*.prisma.build` URL. In step two (P3) it lowers to the platform's `prisma.build` RoutingUrl, adopting the row the backfill made.
 - **The upstream default-Branch rule is lifted before `publicUrl()` ships.** Composer's `publicUrl` waits for the Alchemy release that carries the change; the check is patched out under `patches/` only if that release stalls.
 - **The rename to environment ships as one Composer release**, so authors change `--stage` to `--environment` once.
-- **Promote re-pointing moves from best-effort to the reconciler** when the RoutingUrl record lands; until then today's `reassignDomains` behaviour stands.
+- **Promote's reassign stops being best-effort** when the RoutingUrl record lands: failures are written to the row and the Worker cron repairs them. Until then today's `reassignDomains` behaviour stands.
 
 # Project DoD
 

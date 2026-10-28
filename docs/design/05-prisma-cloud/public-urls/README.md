@@ -58,7 +58,7 @@ flowchart LR
     Ver["Deployment = one version"]
     RU["RoutingUrl"]
     DO["DomainOwnership"]
-    Rec["reconciler"]
+    Repo["RoutingUrl repository"]
   end
   subgraph Metal["Metal: the bare-metal runtime (pdp-metal)"]
     CV["compute version (a VM)"]
@@ -75,7 +75,7 @@ flowchart LR
   Ver -- "runs as" --> CV
   RU -- "points at" --> App
   DO -- "authorises" --> RU
-  Rec -- "registers, re-points, deletes<br/>(Foundry HTTP API)" --> CD
+  Repo -- "creates, reassigns, deletes custom domains<br/>(Foundry HTTP API)" --> CD
   PDP -- "upserts at promote" --> EP
   Conduit -- "reads" --> EP
   Conduit -- "reads" --> CD
@@ -85,11 +85,11 @@ flowchart LR
 
 **Composer** is where the author describes the application as a graph of nodes: services, databases, and now public URLs. Every node has an address, such as `shop.site`, and the deploy writes that address onto the platform record that represents the node, as its `logicalId`. Composer talks to the control plane through its Management API, using the upstream Alchemy provider as the deploy engine.
 
-**The control plane** is Prisma Cloud's product model: a Workspace owns Projects, a Project has Branches, a Branch is one environment of one application and holds its services. A service (still called `App` in the code) has Deployments, and one of them is live. This proposal adds two records here, RoutingUrl and DomainOwnership, and one process, the reconciler. The control plane talks to Metal through Foundry's HTTP API.
+**The control plane** is Prisma Cloud's product model: a Workspace owns Projects, a Project has Branches, a Branch is one environment of one application and holds its services. A service (still called `App` in the code) has Deployments, and one of them is live. This proposal adds two records here, RoutingUrl and DomainOwnership, with interactors to write them, and gives the RoutingUrl repository the job of keeping Foundry consistent with each row. The control plane talks to Metal through Foundry's HTTP API.
 
 **Metal** is the bare-metal runtime in the pdp-metal repository. **Foundry** runs each deployment as a compute version, a VM, and owns two registries in a shared database: the endpoint registry, which maps a `prisma.build` prefix to a compute version, and the custom-domain registry, which maps a customer hostname to a compute version and holds its certificate state. **Conduit** is the regional edge, reached at `switchboard.<region>.prisma.build`. It terminates TLS and routes every request by its Host header, reading both registries. Foundry is the only writer of the registries and Conduit only reads them. Nothing in Metal changes in this proposal.
 
-The lines that matter: Composer never talks to Metal. The control plane is the only thing that writes to Foundry, and in this proposal one component does it, the reconciler, plus the existing promote step for endpoints. Metal knows nothing about workspaces, services or ownership; it knows hostnames, compute versions and certificates.
+The lines that matter: Composer never talks to Metal. The control plane is the only thing that writes to Foundry: the RoutingUrl repository for custom domains, and the existing promote step for endpoints. Metal knows nothing about workspaces, services or ownership; it knows hostnames, compute versions and certificates.
 
 ## The concepts, one at a time
 
@@ -97,11 +97,11 @@ The lines that matter: Composer never talks to Metal. The control plane is the o
 
 Every service already has one hostname: its endpoint, `<service id>.<region>.prisma.build`. The control plane creates it in Foundry's endpoint registry when the first version is promoted, and re-points it at each new live version. The author never asks for it. This proposal leaves it exactly as it is.
 
-A **custom hostname** such as `shop.com` is what this proposal is about. Today it exists only as a row in Foundry's custom-domain registry, bound to one compute version, and the control plane keeps no record of it.
+A **custom hostname** such as `shop.com` is what this proposal is about. Today it exists only as a custom domain in Foundry's registry, bound to one compute version, and the control plane keeps no record of it.
 
 ### The RoutingUrl
 
-A RoutingUrl is the control plane's record that a custom hostname should reach a service. It has the hostname, the service it reaches, the Branch that owns it, and a `logicalId` that a deploy tool can write so it can find the record again. It exists from the moment it is created, before DNS, before any certificate, before Foundry has heard of the hostname. The Branch owns its lifetime: deleting the Branch deletes it, but deleting the service only detaches it.
+A RoutingUrl is the control plane's record that a custom hostname should reach a service. It has the hostname, the service it reaches, the Branch that owns it, a `logicalId` that a deploy tool can write so it can find the record again, and, once the control plane has created one, the id of its Foundry custom domain. It exists from the moment it is created, before DNS, before any certificate, before Foundry has heard of the hostname. The Branch owns its lifetime: deleting the Branch deletes it, but deleting the service only detaches it.
 
 ### The domain ownership claim and its verification
 
@@ -117,18 +117,20 @@ A RoutingUrl serves traffic only when all six of these are true:
 2. The service exists.
 3. The service has a live version.
 4. The hostname's DNS points at the regional switchboard.
-5. The certificate is issued.
-6. This RoutingUrl holds the hostname's registration in Foundry, and Foundry routes it to the live version.
+5. A Foundry custom domain exists for the hostname, this RoutingUrl holds its id, and it is bound to the live deployment's compute version.
+6. Foundry reports the custom domain's certificate as active.
 
 There is deliberately no single status field. Each condition changes on its own: a certificate can be issuing while the service is deleted; a CNAME can be removed years later. The record reports all six, and reports the first unmet one as the next thing to do, with the exact DNS record to publish.
 
-### The registration
+### One custom domain per hostname
 
-Any number of RoutingUrls may name the same hostname, in any workspaces. Only one of them at a time may be registered in Foundry's custom-domain registry, otherwise two services would receive the same traffic. The one that is registered **holds the registration**. The control plane enforces this with a database index, so it holds across every workspace. A RoutingUrl that cannot take the registration reports which workspace, project and service hold it, to a caller allowed to see that workspace, and otherwise says only that another workspace holds it.
+Any number of RoutingUrls may name the same hostname, in any workspaces. Only one of them at a time may have a Foundry custom domain, otherwise two services would receive the same traffic. The control plane enforces this with a unique index over the rows that have one, and takes a database lock on the hostname while it creates one, so the rule holds across every workspace and region. A RoutingUrl that cannot get the custom domain reports which workspace, project and service have it, to a caller allowed to see that workspace, and otherwise says only that another workspace holds the hostname.
 
-### The reconciler
+### How the control plane keeps Foundry consistent
 
-The reconciler is one function in the control plane that looks at a RoutingUrl, evaluates its six conditions, and makes Foundry match. It registers the hostname when the first four conditions hold and nobody else holds the registration. It re-points the registration when the live version changes. It re-registers when Foundry's row is lost. It hands a registration from one RoutingUrl to another when a row is replaced by one for the same hostname and service, so that a certificate is never reissued for a change that leaves the routing table the same. It runs every minute, and immediately after any event that can change a condition, and never twice at once for the same project.
+The RoutingUrl repository has one operation that looks at a row, evaluates its six conditions, and makes the Foundry call the row needs. It creates the custom domain when the first four conditions hold and no other row has one for the hostname. It reassigns the custom domain to the new compute version when the live deployment changes. It creates the custom domain again when Foundry has deleted it with its compute version. It moves a custom domain from one RoutingUrl to another when a row is replaced by one for the same hostname and service, so that a certificate is never reissued for a change that leaves the routing table the same. When Foundry reports the custom domain failed for a DNS reason and DNS is now right, it asks Foundry to retry.
+
+Every interactor that writes a RoutingUrl, and every lifecycle interactor that changes a service's live deployment or deletes a service or Branch, calls that operation for the rows it affects, in the request. A cron in the Worker calls it every minute for every row that is not yet serving, because the two facts that complete a row, the user's DNS and Foundry's certificate, change without telling the control plane. The cron has no logic of its own.
 
 ## The key operations and what reaches Metal
 
@@ -144,7 +146,7 @@ sequenceDiagram
   Console->>CP: POST /v1/workspaces/ws_42/domains { domain: shop.com }
   CP-->>Console: claim unverified; publish TXT _prisma-verification.shop.com = prisma-verification=<hash>
   User->>DNS: adds the TXT record
-  Note over CP: re-check route, or the reconciler for unverified claims
+  Note over CP: the verify route, or the Worker cron for unverified claims
   CP->>DNS: look up TXT _prisma-verification.shop.com
   CP->>CP: set verifiedAt on the claim
 ```
@@ -156,47 +158,49 @@ Nothing reaches Metal. Verification is entirely a control-plane matter. If anoth
 ```mermaid
 sequenceDiagram
   participant Deploy as Composer deploy (Alchemy)
-  participant CP as Control plane
-  participant Rec as reconciler
+  participant CP as Control plane (interactors)
+  participant Repo as RoutingUrl repository
   participant F as Foundry (Metal)
   participant C as Conduit (Metal)
   Deploy->>CP: create service web
   Deploy->>CP: POST /v1/services/svc_123/urls { hostname: shop.com, logicalId: shop.site }
-  CP-->>Deploy: row url_789; conditions: DNS not ready
-  Note over CP,F: no Foundry call yet
+  CP->>Repo: create row url_789, then bring its custom domain in line
+  Repo-->>CP: DNS does not point at the switchboard: no Foundry call
+  CP-->>Deploy: row url_789; next step: add the CNAME
   Deploy->>CP: deployment, promote
   CP->>F: PUT /v1/endpoints/svc_123 { computeVersionId: cv_1 }  (today's step, unchanged)
-  Note over Rec: user adds CNAME shop.com → switchboard.cdg.prisma.build
-  Rec->>Rec: DNS points at region; claim verified; live version; nobody holds the registration
-  Rec->>CP: set registeredAt on url_789
-  Rec->>F: POST /v1/domains { domain: shop.com, computeVersionId: cv_1 }
-  F-->>Rec: dom_55, status provisioning
-  F->>F: ACME certificate issuance
-  Rec->>F: GET /v1/domains/dom_55 → active
-  Rec->>CP: certificate issued; routing bound
+  Note over Repo: user adds CNAME shop.com → switchboard.cdg.prisma.build
+  Note over Repo: the Worker cron calls the repository for url_789, not yet serving
+  Repo->>Repo: claim verified; service present; live deployment; DNS now points at the switchboard; no other row has a custom domain for shop.com
+  Repo->>F: POST /v1/domains { domain: shop.com, computeVersionId: cv_1 }  (under a lock on the hostname)
+  F-->>Repo: custom domain dom_55, status provisioning
+  Repo->>Repo: store foundryCustomDomainId = dom_55
+  F->>F: certificate issuance
+  Repo->>F: GET /v1/domains/dom_55 → active (next cron run)
   C->>C: reads the custom-domain registry; https://shop.com now routes to cv_1
 ```
 
-What crosses into Metal is exactly one call to register the hostname against a compute version id, and reads of the resulting row. The hostname, the compute version id and nothing else: Metal never learns about the service, the Branch, the workspace or the claim.
+What crosses into Metal is one call to create a custom domain for the hostname against a compute version id, and reads of that custom domain's status. The hostname, the compute version id and nothing else: Metal never learns about the service, the Branch, the workspace or the claim.
 
 ### A new version goes live
 
 ```mermaid
 sequenceDiagram
   participant Deploy as Composer deploy
-  participant CP as Control plane (promote)
-  participant Rec as reconciler
+  participant CP as Control plane (promoteApp)
+  participant Repo as RoutingUrl repository
   participant F as Foundry (Metal)
   Deploy->>CP: promote deployment dep_2 (compute version cv_2)
   CP->>F: PUT /v1/endpoints/svc_123 { computeVersionId: cv_2 }
-  CP->>F: PATCH /v1/domains/dom_55 { computeVersionId: cv_2 }
+  CP->>Repo: bring url_789's custom domain in line
+  Repo->>F: PATCH /v1/domains/dom_55 { computeVersionId: cv_2 }
   alt the PATCH fails
-    CP->>CP: write the failure on url_789
-    Rec->>F: PATCH /v1/domains/dom_55 { computeVersionId: cv_2 } on its next run
+    Repo->>Repo: write lastFoundryError on url_789; the promote still succeeds
+    Note over Repo: the Worker cron calls the repository again for url_789 on its next run
   end
 ```
 
-The lifecycle events that matter are: a version promoted or rolled back (the live version changes), the live deployment stopped (there is no live version; the registration is kept and routing bound is reported as unmet), the live deployment deleted (Foundry deletes the custom-domain row with the compute version; the control plane keeps the registration and re-registers when a version is live again), the service deleted (the RoutingUrl is detached and its registration released), and the Branch deleted (the RoutingUrl is deleted and its registration released). Each of them does what it can at that moment, writes any failure on the RoutingUrl, and triggers the reconciler.
+The lifecycle events that matter are: a deployment promoted or a service rolled back (the live deployment changes), the live deployment stopped (no deployment is live; the custom domain stays bound to the stopped compute version and the row reports it as unmet), the live deployment deleted (Foundry deletes the custom domain with the compute version; the control plane clears the id and creates the custom domain again when a deployment is live), the service deleted (the RoutingUrl is detached and its custom domain deleted), and the Branch deleted (the RoutingUrl is deleted with its custom domain). Each of those interactors calls the repository operation for the rows it affects, and any failure is written on the row.
 
 ### A deploy tool taking over a row it did not create
 
@@ -206,21 +210,21 @@ When a deploy declares a RoutingUrl and no row on the Branch carries the node's 
 
 **Deploying an app for the first time, with a custom hostname.** The deploy creates the service and the RoutingUrl and succeeds. The output says `shop.com` is waiting for DNS and gives the CNAME to add and the Console link. The user adds the CNAME, and within a minute the hostname serves. If the workspace has never claimed `shop.com`, the output instead says ownership is not verified and links to the workspace's Domains page, where the user claims it and gets the TXT record. Either order works.
 
-**Deploying a code change, with no downtime.** The deploy creates a new deployment and promotes it. Promote re-points the endpoint and the custom-domain registration to the new compute version. If the re-point fails, the failure is written on the RoutingUrl and the reconciler repairs it on its next run. The hostname, the certificate and the DNS are untouched throughout.
+**Deploying a code change, with no downtime.** The deploy creates a new deployment and promotes it. Promote re-points the endpoint and reassigns the custom domain to the new compute version. If the reassign fails, the failure is written on the RoutingUrl and the cron's next run repairs it. The hostname, the certificate and the DNS are untouched throughout.
 
-**A preview environment.** `prisma deploy --environment pr-42` deploys into a new Branch. The code's `resolve()` returns `publicUrl.prismaBuild()` for it, so no RoutingUrl is created and the service is reached at its `prisma.build` endpoint. If the code instead names `pr-42.preview.shop.com`, one claim for `*.preview.shop.com` and one wildcard CNAME at the user's DNS provider cover every preview, and each preview hostname gets its own certificate on first registration.
+**A preview environment.** `prisma deploy --environment pr-42` deploys into a new Branch. The code's `resolve()` returns `publicUrl.prismaBuild()` for it, so no RoutingUrl is created and the service is reached at its `prisma.build` endpoint. If the code instead names `pr-42.preview.shop.com`, one claim for `*.preview.shop.com` and one wildcard CNAME at the user's DNS provider cover every preview, and each preview hostname gets its own certificate when its custom domain is created.
 
 **Adding a custom hostname to a running app.** The author adds a `publicUrl()` node and deploys. The RoutingUrl is created, the service keeps serving at its endpoint, and the new hostname goes live once its conditions are met.
 
-**Changing a hostname.** The author changes `'shop.com'` to `'theshop.com'`. The node keeps its address, so the same RoutingUrl is updated. The old hostname's registration is released and the new hostname goes through the six conditions.
+**Changing a hostname.** The author changes `'shop.com'` to `'theshop.com'`. The node keeps its address, so the same RoutingUrl is updated. The old hostname's custom domain is deleted and the new hostname goes through the six conditions.
 
-**Deleting and recreating a service.** The RoutingUrl stays with `appId` null and its registration released. The next deploy that declares the hostname on a service points the row at it, and the hostname serves again without any DNS change.
+**Deleting and recreating a service.** The RoutingUrl stays with `appId` null and its custom domain deleted. The next deploy that declares the hostname on a service points the row at it, and the hostname serves again without any DNS change.
 
-**Removing a public URL.** The author deletes the `publicUrl()` line. The deploy deletes the RoutingUrl and its Foundry registration. The service keeps its endpoint, and the ownership claim is untouched.
+**Removing a public URL.** The author deletes the `publicUrl()` line. The deploy deletes the RoutingUrl and its Foundry custom domain. The service keeps its endpoint, and the ownership claim is untouched.
 
 **A hostname set up in the Console last year, now declared in code.** The migrated RoutingUrl has the hostname, the service, and no `logicalId`. The deploy adopts it. Nothing in Foundry changes.
 
-**Two workspaces name the same hostname.** Both RoutingUrls exist. Whichever meets its conditions first holds the registration. The other reports the hostname as held, and names the holder if the caller may see that workspace. When the holder is deleted, the other takes the registration within a minute.
+**Two workspaces name the same hostname.** Both RoutingUrls exist. Whichever meets its conditions first gets the custom domain. The other reports the hostname as held, and names the holder if the caller may see that workspace. When the holder is deleted, the other gets a custom domain within a minute.
 
 ## The second step
 
@@ -243,7 +247,7 @@ Composer:
 Prisma Cloud (the platform team maintains these in prisma/pdp-control-plane under `docs/compute/`, on the branch of prisma/pdp-control-plane#5795):
 
 - [platform-routing-urls.md](platform-routing-urls.md): the two records column by column, the conditions, the rules, the routes, the Console and the migration of existing domains.
-- [platform-routing-url-lifecycle.md](platform-routing-url-lifecycle.md): every operation and lifecycle event, what each changes, what reaches Foundry, and the reconciler's steps.
+- [platform-routing-url-lifecycle.md](platform-routing-url-lifecycle.md): every operation and lifecycle event, what each changes, what reaches Foundry, and the repository operation's steps.
 - [ADR 015](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/architecture/adrs/ADR-015-routing-urls-and-domain-ownership.md): the decision, why, and the alternatives.
 - [projects/routing-urls](https://github.com/prisma/pdp-control-plane/tree/chore/adr-ingress-entity/projects/routing-urls): the spec, the acceptance criteria and the five-slice plan.
 

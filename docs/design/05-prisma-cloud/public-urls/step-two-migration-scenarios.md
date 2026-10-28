@@ -25,7 +25,7 @@ Background: old Composer versions wrote deploy state that knows only an App with
 - **Start:** last year the user attached `shop.com` to `web` in the Console.
 - **Action:** they write `publicUrl({ name: 'site', url: 'shop.com', target: web.http })`.
 - **Must hold:** `shop.com` never stops serving, and after the deploy Composer owns the row.
-- **Resolved by the adoption rule:** the backfilled Console row is a live row on the same service with the same hostname and no `logicalId`, so the resource writes `shop.site` on it and records it. The hostname never stops serving and no certificate is reissued, because the row and its Foundry registration never change.
+- **Resolved by the adoption rule:** the backfilled Console row is a live row on the same service with the same hostname and no `logicalId`, so the resource writes `shop.site` on it and records it. The hostname never stops serving and no certificate is reissued, because the row and its Foundry custom domain never change.
 
 ## 4. Existing app, a Console domain the code does not declare
 
@@ -62,7 +62,7 @@ Background: old Composer versions wrote deploy state that knows only an App with
 
 - **Start:** the new version, `shop.com` declared on `web`.
 - **Action:** the user renames `web` to `storefront`. Its address changes, so by the recorded rule it is a new entity: a new service row and a new assigned URL row, and the old ones are deleted. `shop.com` is now declared on a node with a new address.
-- **Must hold:** the deploy deletes the old row's registration before the new row registers, or `shop.com` is stuck behind the uniqueness rule and the site is down for the gap.
+- **Must hold:** the old row's custom domain moves to the new row, or is deleted before the new row's is created, or `shop.com` is stuck behind the uniqueness rule and the site is down for the gap.
 - **Stress:** ordering inside one deploy.
 
 ## 10. Destroying an environment
@@ -85,5 +85,5 @@ Background: old Composer versions wrote deploy state that knows only an App with
 ## What falls out
 
 - Two decisions: scenario 1 (what an upgrade without code changes does) and scenario 4 (what happens to a row the code does not declare). The second also answers scenario 11.
-- Scenario 3 is the adoption rule's plain case; the reconciler's handover of a registration between rows is for a hostname that moves between nodes, not for this.
+- Scenario 3 is the adoption rule's plain case; moving a custom domain between rows is for a hostname that moves between nodes, not for this.
 - No `logicalId` derivation is needed anywhere: adoption matches by service and hostname.
