@@ -174,7 +174,7 @@ sequenceDiagram
   Repo->>Repo: claim verified; service present; live deployment; DNS now points at the switchboard; no other row has a custom domain for shop.com
   Repo->>F: POST /v1/domains { domain: shop.com, computeVersionId: cv_1 }  (under a lock on the hostname)
   F-->>Repo: custom domain dom_55, status provisioning
-  Repo->>Repo: store foundryCustomDomainId = dom_55
+  Repo->>Repo: store foundryCustomDomainId = dom_55 and when it was created
   F->>F: certificate issuance
   Repo->>Repo: status is provisioning: enqueue a delayed follow-up on a Worker queue
   Repo->>F: GET /v1/domains/dom_55 → active (the queued follow-up)
