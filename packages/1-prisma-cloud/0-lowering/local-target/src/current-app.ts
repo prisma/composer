@@ -3,6 +3,7 @@
  * record alone: where each of its nodes runs, and stopping it. Behind
  * `prisma dev url` and `prisma dev stop`.
  */
+import * as path from 'node:path';
 import type {
   LocalNodeCondition,
   LocalNodeLocation,
@@ -10,6 +11,7 @@ import type {
   LocalTargetCurrentApp,
   LocalTargetCurrentInput,
 } from '@internal/core/config';
+import { devEnvironmentDir } from '@internal/core/config';
 import {
   bucketsClient,
   computeClient,
@@ -23,6 +25,7 @@ import {
   readEmulatorInstances,
   stopAppInstances,
 } from './emulator-instances.ts';
+import { movePreEnvironmentDevState } from './pre-environment-dev-state.ts';
 
 const CONDITION_OF: Record<ServiceInstanceStatus, LocalNodeCondition> = {
   running: 'running',
@@ -77,11 +80,17 @@ async function locate(address: string, node: NodeInstance): Promise<LocalNodeLoc
   };
 }
 
+/** The directory `prisma dev` ran in, from the environment's folder in it. */
+function directoryOf(devDir: string, environment: string): string {
+  return path.resolve(devDir, path.relative(devEnvironmentDir(environment), '.'));
+}
+
 /** The app's local copy in the environment; undefined when `prisma dev` never ran it there. */
 export async function currentApp(
   input: LocalTargetCurrentInput,
 ): Promise<LocalTargetCurrentApp | undefined> {
   const { devDir, app, environment } = input;
+  movePreEnvironmentDevState(directoryOf(devDir, environment));
   const nodes = (await readEmulatorInstances(devDir))?.apps[app]?.nodes;
   if (nodes === undefined) return undefined;
   return {

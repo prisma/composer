@@ -19,6 +19,7 @@ import {
 } from '@internal/dev-emulators';
 import { Client as PgClient } from 'pg';
 import { ensureAppInstances } from '../app-instances.ts';
+import { currentApp } from '../current-app.ts';
 import { envStore, secretsStore } from '../dev-store.ts';
 import {
   type AppScope,
@@ -84,6 +85,14 @@ describe('moving the folder', () => {
     expect(await secretsStore(dev).read()).toEqual({
       OPENROUTER_API_KEY: 'local-placeholder-0123456789abcdef',
     });
+  });
+
+  test('dev url and dev stop find the app in dev before prisma dev runs after the upgrade', async () => {
+    fs.cpSync(FIXTURE, root, { recursive: true });
+
+    const current = await currentApp({ devDir: dev, app: 'shop', environment: 'dev' });
+
+    expect(current?.addresses).toEqual(['shop.api', 'shop.catalog', 'shop.uploads']);
   });
 
   test('a second run changes nothing', () => {

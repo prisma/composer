@@ -242,8 +242,10 @@ file, the unpacked artifacts and the bucket objects. The deploy engine keeps
 each copy's state in `.alchemy/state/<app>/<environment>`.
 
 **Upgrading from a version with one local copy per directory.** The first
-`prisma dev` after the upgrade moves the directory's existing local state into
-the environment `dev`, so your databases, bucket objects and ports are kept.
+`prisma dev`, `prisma dev url` or `prisma dev stop` after the upgrade moves
+the directory's existing local state into the environment `dev`, so your
+databases, bucket objects and ports are kept, and an app started with
+`--detach` before the upgrade can still be stopped.
 Keep `@prisma/composer-prisma-cloud` on the same Composer version as the
 `prisma` CLI: an older one would put every environment in one copy, so
 `prisma dev` refuses it with `DEPS.EXTENSION_INCOMPATIBLE`.

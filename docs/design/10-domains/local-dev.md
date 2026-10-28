@@ -355,8 +355,8 @@ are reused. A bucket's objects live in the environment's
 **Moving earlier local state into `dev`.** Releases before environments had
 their own local copies kept one record, one set of environment variable
 values, one set of placeholder secrets and one bucket folder for the whole
-directory, directly in `.prisma-composer/dev/`. The first `prisma dev` after
-the upgrade moves them into `.prisma-composer/dev/dev/`, so they become the
+directory, directly in `.prisma-composer/dev/`. The first `prisma dev`,
+`dev url` or `dev stop` after the upgrade moves them into `.prisma-composer/dev/dev/`, so they become the
 environment `dev` and its instances, ports, databases and bucket objects are
 kept. Alchemy's local state needs no move: those releases already ran as the
 stage `dev`. This reverses the earlier rule that local dev state is never
