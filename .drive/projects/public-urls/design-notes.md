@@ -16,11 +16,11 @@ Until the PDP RoutingUrl record and the Alchemy resource over it exist, `publicU
 
 **Why.** The provider is ours to change, the change is a deletion, and a pin bump is cleaner than carrying a patch.
 
-## 3. A prisma.build URL creates nothing on the platform yet
+## 3. A prisma.build URL creates nothing on the platform in step one
 
-`publicUrl.prismaBuild()` reports the service's existing `*.prisma.build` endpoint and creates no record. This is its final form for this project.
+In step one, `publicUrl.prismaBuild()` reports the service's existing `*.prisma.build` endpoint and creates no record. In step two (P3) it lowers to the platform's `prisma.build` RoutingUrl.
 
-**Why.** Every service already has that hostname. Settled on 2026-10-28: the first platform step covers custom hostnames only; making the platform's hostname an opt-in RoutingUrl is a later step, with its scenarios in [migration-scenarios.md](migration-scenarios.md). Old Composer versions cannot describe routing records in their deploy state, so that step needs a way for a deploy to take ownership of rows it never created, which custom hostnames do not.
+**Why.** Every service already has that hostname. Settled on 2026-10-28: the first platform step covers custom hostnames only; making the platform's hostname an opt-in RoutingUrl is step two, with its scenarios in [migration-scenarios.md](migration-scenarios.md). Old Composer versions cannot describe routing records in their deploy state, so that step needs a way for a deploy to take ownership of rows it never created, which custom hostnames do not.
 
 ## 4. Module `input` and config adapters are a follow-on project
 

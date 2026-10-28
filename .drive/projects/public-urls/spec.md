@@ -47,7 +47,7 @@ The work spans four repositories:
 - **prisma/pdp-control-plane**: the RoutingUrl records and domain ownership claims, their Management API routes, the reconciler, the backfill of existing custom domains, and the Console's custom hostnames on the service page and its Domains page of ownership claims. Its own project is `projects/routing-urls/` in that repository, with pdp-control-plane's ADR 015.
 - **Foundry**: unchanged. The control plane reconciles over its existing endpoint and domain APIs.
 
-Existing custom domains keep working: PDP backfills them into RoutingUrl records with no `logicalId`. A hostname added in Console that the code later declares gets a record of Composer's own, and the platform hands the registration over without reissuing the certificate.
+Existing custom domains keep working: PDP backfills them into RoutingUrl records with no `logicalId`. A hostname added in Console that the code later declares is adopted: the Alchemy resource writes the node's `logicalId` on the existing row, so nothing in Foundry changes.
 
 # Cross-cutting requirements
 
@@ -61,7 +61,7 @@ Existing custom domains keep working: PDP backfills them into RoutingUrl records
 # Transitional-shape constraints
 
 - **Day one, a named hostname lowers to `Prisma.CustomDomain`.** DNS must be in place or the deploy fails, as a custom domain does today. The pending state arrives when the PDP record and the Alchemy resource over it ship, and `publicUrl.hostname()` switches to the new resource with no change to the authored code.
-- **`publicUrl.prismaBuild()` lowers to nothing on the platform** and reports the service's existing `*.prisma.build` URL. That is its final form for this project; the platform's later step makes the hostname opt-in.
+- **In step one, `publicUrl.prismaBuild()` lowers to nothing on the platform** and reports the service's existing `*.prisma.build` URL. In step two (P3) it lowers to the platform's `prisma.build` RoutingUrl, adopting the row the backfill made.
 - **The upstream default-Branch rule is lifted before `publicUrl()` ships.** Composer's `publicUrl` waits for the Alchemy release that carries the change; the check is patched out under `patches/` only if that release stalls.
 - **The rename to environment ships as one Composer release**, so authors change `--stage` to `--environment` once.
 - **Promote re-pointing moves from best-effort to the reconciler** when the RoutingUrl record lands; until then today's `reassignDomains` behaviour stands.

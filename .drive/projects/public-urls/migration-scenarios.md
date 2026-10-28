@@ -25,7 +25,7 @@ Background: old Composer versions wrote deploy state that knows only an App with
 - **Start:** last year the user attached `shop.com` to `web` in the Console.
 - **Action:** they write `publicUrl({ name: 'site', url: 'shop.com', target: web.http })`.
 - **Must hold:** `shop.com` never stops serving, and after the deploy Composer owns the row.
-- **Resolved:** no matching is needed. Composer creates its own row for `shop.com`; the Console row is undeclared and goes away under scenario 4's rule; the routing table ends up the same. The reconciler hands the existing Foundry registration to the new row instead of deleting and re-registering it, so the certificate is not issued again and the site stays up.
+- **Resolved by the adoption rule:** the backfilled Console row is a live row on the same service with the same hostname and no `logicalId`, so the resource writes `shop.site` on it and records it. The hostname never stops serving and no certificate is reissued, because the row and its Foundry registration never change.
 
 ## 4. Existing app, a Console domain the code does not declare
 
@@ -85,5 +85,5 @@ Background: old Composer versions wrote deploy state that knows only an App with
 ## What falls out
 
 - Two decisions: scenario 1 (what an upgrade without code changes does) and scenario 4 (what happens to a row the code does not declare). The second also answers scenario 11.
-- Scenario 3 needs no `logicalId` derivation; it needs the reconciler to hand over a Foundry registration between rows for the same hostname.
+- Scenario 3 is the adoption rule's plain case; the reconciler's handover of a registration between rows is for a hostname that moves between nodes, not for this.
 - No `logicalId` derivation is needed anywhere: adoption matches by service and hostname.
