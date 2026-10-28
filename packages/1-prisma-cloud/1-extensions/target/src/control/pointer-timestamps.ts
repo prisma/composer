@@ -45,7 +45,8 @@ export function deserializePointerUpdatedAt(
     throw payloadError(error instanceof Error ? error.message : String(error));
   }
   if (!isRecord(parsed)) throw payloadError('it is not a JSON object');
-  for (const [name, updatedAt] of Object.entries(parsed)) {
+  const entries = isRecord(parsed['timestamps']) ? parsed['timestamps'] : parsed;
+  for (const [name, updatedAt] of Object.entries(entries)) {
     if (typeof updatedAt !== 'string') throw payloadError(`"${name}" is not a string timestamp`);
     timestamps.set(name, updatedAt);
   }

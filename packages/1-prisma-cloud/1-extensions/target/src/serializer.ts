@@ -300,9 +300,10 @@ export const generatedParamVarName = (address: string, path: string): string => 
 // round-trip under which only the framework can put a literal single-"$" marker
 // in the document.
 const SECRET_MARKER = '$secret';
+const PARAM_MARKER = '$param';
 const GENERATED_MARKER = '$generated';
-const ESCAPABLE_KEY = /^\$+(?:secret|generated)$/;
-const ESCAPED_KEY = /^\$\$+(?:secret|generated)$/;
+const ESCAPABLE_KEY = /^\$+(?:secret|generated|param)$/;
+const ESCAPED_KEY = /^\$\$+(?:secret|generated|param)$/;
 
 /** True for the framework's secret pointer: `{ "$secret": "<PLATFORM_VAR>" }` and nothing else. */
 function isSecretPointer(value: unknown): value is { readonly $secret: string } {
@@ -365,6 +366,7 @@ export interface ResolvedInputBinding {
   readonly resolved: unknown;
   /** Each secret leaf's sentinel box, mapped to the platform var it points to — identity is the lever `serializeInput` substitutes by. */
   readonly sentinels: ReadonlyMap<SecretString, string>;
+  readonly paramSentinels: ReadonlyMap<object, string>;
   /** Every generated leaf — provisioned by the descriptor, substituted to a `$generated` pointer by path. */
   readonly generated: readonly GeneratedLeaf[];
   /** Dot-joined binding paths whose env-bound leaf resolved absent (unset/empty deploy-shell var) — deploy-report fodder. */
@@ -411,8 +413,10 @@ export function resolveInputBinding(
   binding: unknown,
   env: Record<string, string | undefined>,
   address = '',
+  runtimeParams = false,
 ): ResolvedInputBinding {
   const sentinels = new Map<SecretString, string>();
+  const paramSentinels = new Map<object, string>();
   const generated: GeneratedLeaf[] = [];
   const pointers: PointerName[] = [];
   const absent: string[] = [];
@@ -455,6 +459,12 @@ export function resolveInputBinding(
             "created by envParam() — bind env-sourced input values with envParam('NAME') from " +
             '@prisma/composer-prisma-cloud.',
         );
+      }
+      if (runtimeParams) {
+        const sentinel = {};
+        paramSentinels.set(sentinel, value.payload.name);
+        pointers.push({ path, varName: value.payload.name });
+        return sentinel;
       }
       const raw = env[value.payload.name];
       if (raw === undefined || raw === '') {
@@ -504,7 +514,13 @@ export function resolveInputBinding(
 
   const resolved = walk(binding, '');
   assertDistinctPointerNames(pointers, address);
-  return { resolved: resolved === ABSENT ? undefined : resolved, sentinels, generated, absent };
+  return {
+    resolved: resolved === ABSENT ? undefined : resolved,
+    sentinels,
+    paramSentinels,
+    generated,
+    absent,
+  };
 }
 
 /** One serialized input document, ready to write as an env row. */
@@ -540,6 +556,7 @@ export function serializeInput(
   address: string,
   binding: unknown,
   env: Record<string, string | undefined> = process.env,
+  runtimeParams = false,
 ): InputDocumentRow | undefined {
   const schema = node.inputSchema;
   if (schema === undefined) {
@@ -555,10 +572,15 @@ export function serializeInput(
       `service "${address}" declares an input schema but has no recorded input binding — Load should have required it (ADR-0042).`,
     );
   }
-  const { resolved, sentinels, generated, absent } = resolveInputBinding(binding, env, address);
+  const { resolved, sentinels, paramSentinels, generated, absent } = resolveInputBinding(
+    binding,
+    env,
+    address,
+    runtimeParams,
+  );
   let validated: unknown;
   try {
-    validated = standardValidateSync(schema, resolved);
+    validated = paramSentinels.size > 0 ? resolved : standardValidateSync(schema, resolved);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     throw new Error(
@@ -569,7 +591,14 @@ export function serializeInput(
     );
   }
   const emittedSecrets = new Set<string>();
-  const document = substitutePointers(validated, sentinels, generated, address, emittedSecrets);
+  const document = substitutePointers(
+    validated,
+    sentinels,
+    paramSentinels,
+    generated,
+    address,
+    emittedSecrets,
+  );
   return {
     key: inputKey(address),
     value: JSON.stringify(document),
@@ -598,12 +627,18 @@ export function serializeInput(
 function substitutePointers(
   value: unknown,
   sentinels: ReadonlyMap<SecretString, string>,
+  paramSentinels: ReadonlyMap<object, string>,
   generated: readonly GeneratedLeaf[],
   address: string,
   emittedSecrets: Set<string>,
 ): unknown {
   const generatedByPath = new Map(generated.map((leaf) => [leaf.path, leaf]));
   const walk = (v: unknown, path: string): unknown => {
+    const paramName = typeof v === 'object' && v !== null ? paramSentinels.get(v) : undefined;
+    if (paramName !== undefined) {
+      emittedSecrets.add(paramName);
+      return { [PARAM_MARKER]: paramName };
+    }
     const leaf = generatedByPath.get(path);
     if (leaf !== undefined) return { [GENERATED_MARKER]: leaf.varName, redacted: leaf.redacted };
     if (v instanceof SecretBox) {
@@ -692,12 +727,19 @@ export function readInput(node: ServiceNode, address: string): unknown {
 
 /** Reverses the document encoding: `$secret` pointers become redacting boxes; a `$generated` pointer becomes a box iff its `redacted` facet is true, a plain string otherwise; escaped reserved keys drop one "$". */
 function hydrateInputDocument(value: unknown, key: string): unknown {
+  if (
+    isPlainObject(value) &&
+    Object.keys(value).length === 1 &&
+    typeof value[PARAM_MARKER] === 'string'
+  ) {
+    return process.env[value[PARAM_MARKER]];
+  }
   if (isSecretPointer(value)) {
     const name = value[SECRET_MARKER];
     const secret = process.env[name];
-    if (secret === undefined || secret === '') {
+    if (secret === undefined) {
       throw new Error(
-        `secret input is not provisioned (env ${key} → ${name}): the platform var "${name}" is unset or empty.`,
+        `secret input is not provisioned (env ${key} → ${name}): the platform var "${name}" is unset.`,
       );
     }
     return new SecretBox(secret);

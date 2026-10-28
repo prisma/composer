@@ -1,3 +1,4 @@
+import type { RuntimeEnvironmentSet } from '../environment-set-state.ts';
 /** Helpers shared by the per-node-kind descriptors under `src/descriptors/` and the extension factory in `control.ts`. */
 
 import type { ProjectRegion } from '@internal/lowering';
@@ -71,6 +72,7 @@ export interface ServiceProviderParam extends ProviderParamEntry {
  */
 export interface ResolvedCloudOptions {
   readonly workspaceId: string;
+  readonly environmentSet?: () => RuntimeEnvironmentSet | undefined;
   readonly region?: ProjectRegion;
   /**
    * This extension's reserved provider params, keyed by need brand —

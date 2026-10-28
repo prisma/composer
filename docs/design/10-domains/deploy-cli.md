@@ -359,3 +359,16 @@ them:
 - [ADR-0038](../90-decisions/ADR-0038-containers-are-an-extension-descriptor.md)
   — the container descriptor and the opaque parent→child transport
   (pipeline steps 6-7, § Environments and containers).
+
+## Named environment sets and retained deployments
+
+The Prisma Cloud target accepts `environmentSet: "staging"` or a selector
+`environmentSet: ({ environment }) => environment === "production" ? "production" : "previews"`.
+New projects share `default`; existing legacy user values require explicit
+selection before adopting a set. Ensuring a set declares unset keys without
+overwriting saved values. Missing values leave the project and uploaded bundle
+in place and return a structured configuration failure with a Console link.
+Save the values in Console and click **Redeploy** to fork the retained bundle
+with fresh user values and its original framework wiring. No rebuild is needed.
+Named-set `envParam` inputs remain runtime references and validate at boot.
+See [ADR-0060](../90-decisions/ADR-0060-environments-select-named-sets-and-retain-incomplete-deployments.md).

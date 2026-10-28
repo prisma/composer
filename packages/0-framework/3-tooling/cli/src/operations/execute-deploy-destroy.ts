@@ -381,6 +381,7 @@ async function runStackPipelineInner(
   // runs here, in the parent, and the child re-imports the config from scratch,
   // so anything it learned reaches the lowering only through this transport.
   const preflightPayloads = new Map<string, string>();
+  const deferredFailures: CliStructuredError[] = [];
   let preflightTransportEnv: Record<string, string> = {};
 
   try {
@@ -517,6 +518,9 @@ async function runStackPipelineInner(
             environment,
             credentials: deps.credentials,
             report,
+            deferFailure: (failure) => {
+              deferredFailures.push(failure);
+            },
           });
           if (payload !== undefined) preflightPayloads.set(extension.id, payload);
         } catch (error) {
@@ -714,6 +718,10 @@ async function runStackPipelineInner(
     }
 
     if (action === 'deploy') {
+      const deferredFailure = deferredFailures[0];
+      if (deferredFailure !== undefined) {
+        return notOk(deferredFailure);
+      }
       return ok(readDeploymentSummary(resultFilePath));
     }
     return ok(undefined);

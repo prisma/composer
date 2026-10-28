@@ -1,4 +1,6 @@
 /** The `composer` section of `prisma.config.ts` (ADR-0017): statically imports each extension's node-descriptor registry plus the state store; core defines only the types. */
+
+import type { CliStructuredError } from '@internal/foundation/errors';
 import type * as Layer from 'effect/Layer';
 import type {
   ContainerCredentials,
@@ -138,6 +140,8 @@ export interface PreflightInput<C = unknown> {
   readonly credentials?: ContainerCredentials<C> | undefined;
   /** Hands the deploy's progress output what the check covered, as counts (e.g. `{ checked: 53, filled: 0, missing: 0 }`). Counts only: never a name or a value. */
   readonly report?: ((counts: Readonly<Record<string, number>>) => void) | undefined;
+  /** Reports a recoverable prerequisite failure after apply, allowing the target to retain resources needed to finish setup. */
+  readonly deferFailure?: ((failure: CliStructuredError) => void) | undefined;
 }
 
 /** The resolved destroy context handed to an extension's `teardown` hook. */

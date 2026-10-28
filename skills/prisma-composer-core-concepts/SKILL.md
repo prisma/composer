@@ -141,18 +141,19 @@ platform variable and never carries the value.
 
 Rules that bite:
 
-1. **Secretness is enforced by validation.** A literal bound where the schema
-   expects `SecretString` fails the deploy; `envSecret` bound to a plain
-   string field fails the same way.
+1. **The service schema validates inputs.** Literal-only bindings and secret
+   sentinels are checked at deploy. A named-set binding with external plain
+   values is checked at boot, before the application receives input.
 2. **`envParam` values arrive as raw strings**; bind them to string fields.
-   The environment's platform variable is the store; the deploying shell only seeds
-   a missing name (and the deploy fails early, naming the variable, when both
-   lack it). Changing the platform value needs a redeploy.
-3. **Absence is the schema's call.** An env-bound field whose variable is
-   unset or empty resolves to *key omitted*, which is legal only if the
-   schema allows it (optional field, union arm). The deploy report prints the
-   serialized input document (secrets ride as `{"$secret":"VAR"}` pointers)
-   and every key that resolved absent.
+   In named-set deploys, both `envParam` and `envSecret` remain runtime
+   references. The deploying shell seeds only unset values and never replaces
+   saved values. An explicitly saved empty string counts as configured.
+3. **Missing configuration is recoverable.** Composer creates the project,
+   branch, named set, and unset keys, then retains each uploaded bundle. It
+   returns `DEPLOY.CONFIGURATION_REQUIRED` with missing names and a Console
+   link. Enter values, save, and click **Redeploy** to reuse that exact bundle
+   with fresh values. No new push or build is needed. Optional inputs can be
+   left unbound; explicitly bound names are required.
 4. **The reserved `port` is outside the schema.** Read it through
    `service.port()`, never `process.env`. The framework also exports `PORT`
    for Next.js standalone, which binds it itself.
@@ -762,3 +763,15 @@ Name the gap instead of inventing an API:
 For anything else missing, check `examples/`, `docs/design/10-domains/`, and
 `docs/design/90-decisions/` in the prisma/composer repo, then file an issue
 there rather than guessing.
+
+### Named environment sets
+
+The Prisma Cloud deploy target accepts `prismaCloud({ environmentSet: "staging" })`
+or a selector such as
+`prismaCloud({ environmentSet: ({ environment }) => environment === "production" ? "production" : "previews" })`.
+New projects use one `default` set shared by branches. Set names do not change
+branch roles. Additional sets separate user values; generated credentials and
+Composer wiring stay branch-specific. Existing legacy user values remain on
+their current path until a set is explicitly selected. Values are never copied
+from production into a shared default automatically. Saving a shared set affects
+future deployments; running apps keep their snapshots until redeployed.

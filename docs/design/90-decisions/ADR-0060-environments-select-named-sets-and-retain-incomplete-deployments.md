@@ -8,6 +8,17 @@ A new project starts with one set, `default`, shared by all its branches.
 Authors can create more sets and select them through the Prisma Cloud target's
 deploy configuration, without changing the application graph.
 
+```ts
+prismaCloud({ environmentSet: "staging" })
+prismaCloud({
+  environmentSet: ({ environment }) =>
+    environment === "production" ? "production" : "previews",
+})
+```
+
+With no option, Composer keeps a branch's named selection. A branch with legacy
+user values stays on the legacy path until a set is explicitly selected.
+
 ```text
 Project: shop
   Environment sets                  Branches selected by Composer environments
@@ -137,3 +148,32 @@ input; missing values do not permit schema introspection or invented defaults.
   — Composer composes upstream providers and preserves environment-write ordering.
 - [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md) — an
   environment is the place the app runs; its selected set holds user values.
+
+## Upload and release
+
+For named sets, the target uses the upstream Alchemy Deployment with start and
+promotion disabled. A `PrismaComposer.DeploymentArtifact` resource depends on
+that whole upload resource, records its SHA-256 hash and declared names, and
+then asks the platform to release it. This registration resource owns no VM or
+bundle. Its deletion leaves those to the upstream Deployment provider. This
+keeps upload ownership upstream while preserving the successful upload if
+startup or promotion fails. Local and legacy deploys keep their current path.
+
+If any declared user value is unset, all compute bundles are uploaded and
+recorded, and release is deferred. The CLI returns
+`DEPLOY.CONFIGURATION_REQUIRED` after apply. An upload-recording failure uses
+`DEPLOY.ARTIFACT_RECORD_FAILED`; a failed release uses `DEPLOY.RELEASE_FAILED`
+and links to the retained attempt. The previous healthy endpoint keeps serving.
+
+In named-set mode, an input `envParam` becomes a `$param` reference in the input
+document, just as `envSecret` becomes a `$secret` reference. User keys with these
+names are escaped. Plain external values are write-only on the platform, so a
+binding containing them is validated with the service schema at boot. Optional
+inputs can remain unbound; an explicitly bound environment source declares a
+required name. Literal-only and secret-sentinel validation still runs at deploy.
+
+A Console retry forks the pinned attempt's bundle, port, input document, and
+framework/resource wiring. It refreshes user values from the branch's current
+set. It must not combine an older bundle with a newer deploy's `COMPOSER_*`
+document. The artifact registration endpoint returns the exact Console link;
+Composer does not construct links from prefixed Management API IDs.
