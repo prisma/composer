@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import * as path from 'node:path';
 import { renderDevStackFile } from '../generate-dev-stack.ts';
 
 describe('renderDevStackFile()', () => {
@@ -61,7 +62,7 @@ describe('renderDevStackFile()', () => {
     });
 
     expect(content).toContain(
-      '<node> <bin of the alchemy @prisma/composer depends on> deploy .prisma-composer/dev/feature%2Fx/alchemy.run.ts --yes --stage feature/x',
+      `<node> <bin of the alchemy @prisma/composer depends on> deploy ${path.join('.prisma-composer', 'dev', 'feature%2Fx', 'alchemy.run.ts')} --yes --stage feature/x`,
     );
     expect(content).toContain(
       'const devDir = path.join(process.cwd(), devEnvironmentDir("feature/x"));',
