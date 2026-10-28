@@ -364,14 +364,13 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     providers: () =>
       asProvidersLayer(
         Layer.mergeAll(
-          Prisma.providers(),
           PgWarmProvider(),
           OrmMigrationProvider(),
           S3CredentialsProvider(),
           GeneratedParamProvider(),
           DeploymentArtifactProvider(),
           Prisma.ServiceKeyProvider(),
-        ),
+        ).pipe(Layer.provideMerge(Prisma.providers())),
       ),
 
     // Deploy-time prerequisite check (ADR-0029): verify every pointer secret in

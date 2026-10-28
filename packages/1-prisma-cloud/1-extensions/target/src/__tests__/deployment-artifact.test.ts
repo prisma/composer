@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test';
+import * as Provider from 'alchemy/Provider';
+import * as ConfigProvider from 'effect/ConfigProvider';
 import * as Effect from 'effect/Effect';
+import * as Layer from 'effect/Layer';
+import * as Option from 'effect/Option';
+import { prismaCloud } from '../control/extension.ts';
 import { deploymentArtifactProviderService } from '../deployment-artifact.ts';
 import type { EnvironmentSetApi } from '../environment-set-api.ts';
 
@@ -56,4 +61,25 @@ test('a failed release keeps the receipt and links directly to the retained atte
   expect(calls).toEqual(['record', 'release']);
   expect(await Effect.runPromise(service.delete({} as never))).toBeUndefined();
   expect(calls).toEqual(['record', 'release']);
+});
+
+test('the cloud provider bundle resolves the artifact provider before any deployment exists', async () => {
+  const providers = prismaCloud().providers!();
+  const resolved = await Effect.runPromise(
+    Effect.scoped(
+      Layer.build(providers).pipe(
+        Effect.flatMap((context) =>
+          Effect.provideContext(
+            Provider.tryFindProviderByType('PrismaComposer.DeploymentArtifact'),
+            context,
+          ),
+        ),
+      ),
+    ).pipe(
+      Effect.provide(
+        ConfigProvider.layer(ConfigProvider.fromUnknown({ PRISMA_SERVICE_TOKEN: 'test-token' })),
+      ),
+    ),
+  );
+  expect(Option.isSome(resolved)).toBe(true);
 });
