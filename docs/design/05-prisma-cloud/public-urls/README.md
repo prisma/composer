@@ -144,7 +144,7 @@ sequenceDiagram
   participant DNS as the user's DNS provider
   User->>Console: claim shop.com
   Console->>CP: POST /v1/workspaces/ws_42/domains { domain: shop.com }
-  CP-->>Console: claim unverified; publish TXT _prisma-verification.shop.com = prisma-verification=<hash>
+  CP-->>Console: claim unverified, publish TXT _prisma-verification.shop.com = prisma-verification=hash
   User->>DNS: adds the TXT record
   Note over CP: the verify route, pressed in the Console
   CP->>DNS: look up TXT _prisma-verification.shop.com
@@ -166,19 +166,19 @@ sequenceDiagram
   Deploy->>CP: POST /v1/services/svc_123/urls { hostname: shop.com, logicalId: shop.site }
   CP->>Repo: create row url_789, then bring its custom domain in line
   Repo-->>CP: DNS does not point at the switchboard: no Foundry call
-  CP-->>Deploy: row url_789; next step: add the CNAME
+  CP-->>Deploy: row url_789, next step: add the CNAME
   Deploy->>CP: deployment, promote
   CP->>F: PUT /v1/endpoints/svc_123 { computeVersionId: cv_1 }  (today's step, unchanged)
   Note over Repo: user adds CNAME shop.com → switchboard.cdg.prisma.build
-  Note over Repo: the user presses the check button; an update with no changes runs the repository operation
-  Repo->>Repo: claim verified; service present; live deployment; DNS now points at the switchboard; no other row has a custom domain for shop.com
+  Note over Repo: the user presses the check button, an update with no changes runs the repository operation
+  Repo->>Repo: claim verified, service present, live deployment, DNS now points at the switchboard, no other row has a custom domain for shop.com
   Repo->>F: POST /v1/domains { domain: shop.com, computeVersionId: cv_1 }  (under a lock on the hostname)
   F-->>Repo: custom domain dom_55, status provisioning
   Repo->>Repo: store foundryCustomDomainId = dom_55 and when issuance began
   F->>F: certificate issuance
   Repo->>Repo: status is provisioning: enqueue a delayed follow-up on a Worker queue
   Repo->>F: GET /v1/domains/dom_55 → active (the queued follow-up)
-  C->>C: reads the custom-domain registry; https://shop.com now routes to cv_1
+  C->>C: reads the custom-domain registry, https://shop.com now routes to cv_1
 ```
 
 What crosses into Metal is one call to create a custom domain for the hostname against a compute version id, and reads of that custom domain's status. The hostname, the compute version id and nothing else: Metal never learns about the service, the Branch, the workspace or the claim.
@@ -196,7 +196,7 @@ sequenceDiagram
   CP->>Repo: bring url_789's custom domain in line
   Repo->>F: PATCH /v1/domains/dom_55 { computeVersionId: cv_2 }
   alt the PATCH fails
-    Repo->>Repo: write lastFoundryError on url_789; the promote still succeeds
+    Repo->>Repo: write lastFoundryError on url_789, the promote still succeeds
     Repo->>Repo: enqueue a delayed retry for url_789 on a Worker queue
     Note over Repo: the queue consumer runs the repository operation again, with backoff and a bounded number of attempts
   end
