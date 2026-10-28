@@ -32,7 +32,7 @@ The decisions and their reasons are recorded in ADR-0059 to ADR-0062, `docs/desi
 # Non-goals
 
 - Routing by path. Subpaths are several public URLs, each with its own hostname, not a router primitive.
-- Private addressing between services. Making the platform's own hostname opt-in is step two of this project (P3 and the platform's fifth slice), with its scenarios in [step-two-migration-scenarios.md](../../docs/design/05-prisma-cloud/public-urls/step-two-migration-scenarios.md).
+- Private addressing between services. Making the platform's own hostname opt-in is step two of this project (P3 and the platform's fifth slice), with its scenarios in [step-two-migration-scenarios.md](../../../docs/design/05-prisma-cloud/public-urls/step-two-migration-scenarios.md).
 - Modules declaring `input` (ADR-0061), `resolve()` over module inputs, and config adapters with `dotenv()` (the second half of ADR-0062). They are a follow-on project, `module-input`, recorded in `.drive/deferred.md`. This project ships `resolve()` over `environment.name` and other resolved values only.
 - Secrets adapters, and the reference-based `serviceOrigin`.
 - Any change to Foundry. The control plane reconciles over Foundry's existing APIs.
@@ -86,7 +86,7 @@ None blocking. The platform questions (Foundry's routing target, where ownership
 - [design-notes.md](design-notes.md): execution decisions not carried by the ADRs.
 - [plan.md](plan.md).
 - `docs/design/90-decisions/ADR-0059-a-deployment-environment-is-called-an-environment.md` (prisma/composer#385).
-- `docs/design/90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md`, `ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md`, `ADR-0062-environment-values-come-from-resolve-and-config-adapters.md`, and `docs/design/05-prisma-cloud/public-urls/composer-to-platform.md`, `public-url-domain-map.md`, `public-url-scenarios.md` (prisma/composer#386).
+- `docs/design/90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md`, `ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md`, `ADR-0062-environment-values-come-from-resolve-and-config-adapters.md`, and `docs/design/05-prisma-cloud/public-urls/composer-to-platform.md`, `public-urls/domain-map.md`, `public-urls/scenarios.md` (prisma/composer#386).
 - pdp-control-plane `docs/architecture/adrs/ADR-015-routing-urls-and-domain-ownership.md` and `projects/routing-urls/` (prisma/pdp-control-plane#5795).
 - Composer core: `packages/0-framework/1-core/core/src/node.ts`, `load-module.ts`; Prisma Cloud extension: `packages/1-prisma-cloud/1-extensions/target/src/descriptors/compute.ts`, `param.ts`; CLI: `packages/0-framework/3-tooling/cli/src/validate-stage.ts`, `run-alchemy.ts`.
 - PDP: `packages/interactors/src/compute/domains.ts` (`createCustomDomain`), `service.ts` (`reassignDomains`, `upsertEndpoint`).

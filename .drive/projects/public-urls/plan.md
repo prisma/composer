@@ -60,7 +60,7 @@ A `Prisma.RoutingUrl` resource: create (no DNS needed), read conditions, update 
 
 ### P3. The endpoint as a routing URL (step two)
 
-`publicUrl.prismaBuild()` lowers to the platform's `prisma.build` RoutingUrl once the platform offers it, and U2's adoption takes over the row the backfill made for an existing service. Specified when D1's step one has landed, against [step-two-migration-scenarios.md](../../docs/design/05-prisma-cloud/public-urls/step-two-migration-scenarios.md).
+`publicUrl.prismaBuild()` lowers to the platform's `prisma.build` RoutingUrl once the platform offers it, and U2's adoption takes over the row the backfill made for an existing service. Specified when D1's step one has landed, against [step-two-migration-scenarios.md](../../../docs/design/05-prisma-cloud/public-urls/step-two-migration-scenarios.md).
 
 - **Builds on:** P2, D1's slice 5.
 - **Done when:** every scenario in migration-scenarios.md holds against a real Branch.
