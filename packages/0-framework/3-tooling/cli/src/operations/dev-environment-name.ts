@@ -35,7 +35,9 @@ export function requireDevEnvironmentName(devDir: string, environment: string): 
 
 /** Records the environment's name in its folder on first use; fails when the folder records another name. */
 export function claimDevEnvironmentName(devDir: string, environment: string): void {
-  requireDevEnvironmentName(devDir, environment);
+  const recorded = recordedName(devDir);
+  if (recorded === environment) return;
+  if (recorded !== undefined) throw nameMismatch(devDir, recorded, environment);
   fs.mkdirSync(devDir, { recursive: true });
   fs.writeFileSync(path.join(devDir, DEV_ENVIRONMENT_NAME_FILE), `${environment}\n`);
 }

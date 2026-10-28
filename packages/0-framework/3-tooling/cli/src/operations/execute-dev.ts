@@ -33,7 +33,7 @@ import {
 } from '../run-alchemy.ts';
 import { validateEnvironmentName } from '../validate-environment.ts';
 import type { DevEvent, DevInput, DevSession } from './dev.ts';
-import { claimDevEnvironmentName } from './dev-environment-name.ts';
+import { claimDevEnvironmentName, requireDevEnvironmentName } from './dev-environment-name.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import {
   DEV_ENVIRONMENT,
@@ -197,7 +197,7 @@ export async function executeDev(
       containers.set(id, container);
     }
 
-    claimDevEnvironmentName(devDir, environment);
+    requireDevEnvironmentName(devDir, environment);
 
     // `--fresh`: teardown every participant's dev instance, then continue cold.
     if (input.fresh === true) {
@@ -264,6 +264,7 @@ export async function executeDev(
   const converge = async (): Promise<{ outcome: AlchemyOutcome; stackPath: string }> => {
     let stackPath: string;
     try {
+      claimDevEnvironmentName(devDir, environment);
       stackPath = writeDevStackFile({
         entryPath: pipeline.entryModule.path,
         cwd,
