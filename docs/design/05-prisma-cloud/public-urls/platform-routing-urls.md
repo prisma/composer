@@ -25,7 +25,7 @@ erDiagram
     string hostname
     string logicalId "nullable"
     string foundryCustomDomainId "nullable"
-    datetime foundryCustomDomainCreatedAt "nullable"
+    datetime foundryIssuanceStartedAt "nullable"
     string foundryCustomDomainStatus "nullable"
     string foundryCustomDomainFailureReason "nullable"
     datetime dnsCheckedAt "nullable"
@@ -49,7 +49,7 @@ A row is one custom hostname and the service it reaches.
 | `hostname` | the hostname in canonical form: lowercase, no trailing dot, international labels in punycode |
 | `logicalId` | an identifier a deploy tool writes so it can find the row again. Composer writes the node's address. Null for rows made in the Console or by the backfill |
 | `foundryCustomDomainId` | the id of the Foundry custom domain for this hostname, once the control plane has created it. Null before that, and null again when the deployment it was bound to is deleted, because Foundry deletes the custom domain with the compute version |
-| `foundryCustomDomainCreatedAt` | when the control plane created that custom domain; the clock for how long a certificate may take to issue |
+| `foundryIssuanceStartedAt` | when the current certificate issuance began: the custom domain's creation, or the most recent retry; the clock for how long issuance may take |
 | `foundryCustomDomainStatus`, `foundryCustomDomainFailureReason` | Foundry's status and failure reason for the custom domain, as last read |
 | `dnsCheckedAt` | when the hostname's DNS was last seen pointing at the regional switchboard; null if it was not |
 | `lastFoundryError` | the error from the last Foundry call that failed, cleared by the next success |
