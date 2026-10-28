@@ -4,7 +4,7 @@ The design itself is in the ADRs (0059 to 0062, pdp-control-plane ADR 015) and `
 
 ## 1. Day one, a named hostname may fail the deploy
 
-Until the PDP ServiceUrl record and the Alchemy resource over it exist, `publicUrl.hostname()` lowers to `Prisma.CustomDomain`, which calls Foundry's `registerDomain` at once and is refused when the hostname's CNAME isn't in place. So on day one a hostname without DNS fails the deploy, naming the hostname and the DNS step.
+Until the PDP RoutingUrl record and the Alchemy resource over it exist, `publicUrl.hostname()` lowers to `Prisma.CustomDomain`, which calls Foundry's `registerDomain` at once and is refused when the hostname's CNAME isn't in place. So on day one a hostname without DNS fails the deploy, naming the hostname and the DNS step.
 
 **Why.** It lets `publicUrl()` ship on Composer's timeline and gives authors the model (which service is public, at which URL per environment) now. The failure is the same one a custom domain gives today, so nothing gets worse. When the record lands, `hostname()` switches resource with no change to authored code.
 
@@ -30,7 +30,7 @@ The spike on typed per-key input references, `module()` taking `input`, `resolve
 
 ## 5. Who does what
 
-Will and the orchestrating agent designed the platform records (D1) together on 2026-10-27; their implementation goes to the control-plane team under another agent, with `projects/service-urls/` in pdp-control-plane as the brief. U1 and C2 run in sessions this one started. The remaining slices are dispatched, each in its own session, following the Drive process. Will tracks the work outside Linear.
+Will and the orchestrating agent designed the platform records (D1) together on 2026-10-27; their implementation goes to the control-plane team under another agent, with `projects/routing-urls/` in pdp-control-plane as the brief. U1 and C2 run in sessions this one started. The remaining slices are dispatched, each in its own session, following the Drive process. Will tracks the work outside Linear.
 
 ## 6. Prisma now requires an ownership TXT record before registering a hostname
 

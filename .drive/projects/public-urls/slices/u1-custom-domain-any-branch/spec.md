@@ -25,7 +25,7 @@ In:
 
 Deliberately out:
 - `App`, `Compute`, `Branch` and other resources' default-branch behaviour (attaching an App to the default Branch when none is given). Unrelated.
-- Any `Prisma.ServiceUrl` work (slice U2).
+- Any `Prisma.RoutingUrl` work (slice U2).
 - Any file outside `packages/prisma`, `packages/integration-tests/test/Prisma`, and the Prisma docs pages.
 
 ## Pre-investigated edge cases

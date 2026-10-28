@@ -19,7 +19,7 @@ flowchart LR
     Br[Branch]
     PApp[Compute Service]
     Dep[Deployment]
-    PPU[ServiceUrl]
+    PPU[RoutingUrl]
     Dom[Domain ownership record]
   end
   subgraph Foundry
@@ -75,8 +75,8 @@ New:
 
 | Entity | What it is |
 | --- | --- |
-| **ServiceUrl** | A URL at which a service answers, whichever of the service's deployments is live. One entity for internal and external reach: its hostname is either named by the user or assigned by the platform, and its visibility is public or private. It exists as soon as it's declared and calls no Foundry API on creation. A named hostname receives traffic once all of its conditions hold (ownership proven, service present, live version, DNS pointing at the region, certificate issued, routing bound); until then the deploy still succeeds and the record shows the first unmet condition. A reconciler keeps Foundry's records bound to the live version. It survives its service being deleted. Composer finds it by its `logicalId`. A hostname belongs to one ServiceUrl on the whole platform. Nothing is created unless something asked for it. |
-| **Domain ownership record** | A name the workspace has proven it may use: an exact hostname or an exact wildcard string covering one label. Today's proof, unchanged: the user publishes a TXT record at `_prisma-verification.<name>` carrying a value specific to their workspace (prisma/pdp-control-plane#5785), so the record belongs to the workspace and is shared by every project in it. The user proves ownership on the platform; Composer has no part in it. A named public ServiceUrl starts receiving traffic once its hostname is covered by a proven record. The platform owns `prisma.build` itself, so assigned hostnames need no proof. |
+| **RoutingUrl** | A URL at which a service answers, whichever of the service's deployments is live. One entity for internal and external reach: its hostname is either named by the user or assigned by the platform, and its visibility is public or private. It exists as soon as it's declared and calls no Foundry API on creation. A named hostname receives traffic once all of its conditions hold (ownership proven, service present, live version, DNS pointing at the region, certificate issued, routing bound); until then the deploy still succeeds and the record shows the first unmet condition. A reconciler keeps Foundry's records bound to the live version. It survives its service being deleted. Composer finds it by its `logicalId`. A hostname belongs to one RoutingUrl on the whole platform. Nothing is created unless something asked for it. |
+| **Domain ownership record** | A name the workspace has proven it may use: an exact hostname or an exact wildcard string covering one label. Today's proof, unchanged: the user publishes a TXT record at `_prisma-verification.<name>` carrying a value specific to their workspace (prisma/pdp-control-plane#5785), so the record belongs to the workspace and is shared by every project in it. The user proves ownership on the platform; Composer has no part in it. A named public RoutingUrl starts receiving traffic once its hostname is covered by a proven record. The platform owns `prisma.build` itself, so assigned hostnames need no proof. |
 
 ## Composer: how authors describe the app
 
@@ -100,18 +100,18 @@ New:
 | A deploy to any other environment, such as `staging` | goes into the Branch named `staging`, which is created if it doesn't exist | — |
 | A run of `prisma dev` | nothing; it runs on your machine | nothing |
 | Compute service | a Compute Service, created with its default URL turned off, with a new Deployment whenever its code or configuration changed | one compute version per Deployment |
-| A service that another part of the app calls | a private assigned ServiceUrl on that service | the service's Endpoint |
-| `publicUrl` with a generated URL | a public assigned ServiceUrl, which today is given the service's existing `*.prisma.build` hostname | the service's Endpoint |
-| `publicUrl` with a named hostname | a public named ServiceUrl that needs a proven domain ownership record | a Custom domain |
+| A service that another part of the app calls | a private assigned RoutingUrl on that service | the service's Endpoint |
+| `publicUrl` with a generated URL | a public assigned RoutingUrl, which today is given the service's existing `*.prisma.build` hostname | the service's Endpoint |
+| `publicUrl` with a named hostname | a public named RoutingUrl that needs a proven domain ownership record | a Custom domain |
 | Root module input and config adapters | nothing; Composer works out their values before deploying | nothing |
 
-Each time a deployment goes live, PDP points the Foundry records behind every ServiceUrl at that deployment's compute version, and its reconciler repairs any that promote missed.
+Each time a deployment goes live, PDP points the Foundry records behind every RoutingUrl at that deployment's compute version, and its reconciler repairs any that promote missed.
 
-## A hostname can belong to only one ServiceUrl
+## A hostname can belong to only one RoutingUrl
 
-If two ServiceUrls named the same hostname, traffic would go to whichever one Foundry's records happened to match. So a hostname belongs to one ServiceUrl on the whole platform, across every workspace, project and environment. This rule is unrelated to ownership.
+If two RoutingUrls named the same hostname, traffic would go to whichever one Foundry's records happened to match. So a hostname belongs to one RoutingUrl on the whole platform, across every workspace, project and environment. This rule is unrelated to ownership.
 
-PDP refuses the second claim when the ServiceUrl is created. Today Foundry refuses a hostname that's already registered, but only at the moment the hostname is attached to routing, and only within one region. Once ServiceUrls exist before their DNS is set up, two of them could both wait for DNS, and whichever connected first would win.
+PDP refuses the second claim when the RoutingUrl is created. Today Foundry refuses a hostname that's already registered, but only at the moment the hostname is attached to routing, and only within one region. Once RoutingUrls exist before their DNS is set up, two of them could both wait for DNS, and whichever connected first would win.
 
 Assigned hostnames can't clash, because the platform makes each one unique. Composer can only spot a duplicate inside one deploy of one app; only the platform can check across environments and projects.
 
@@ -119,4 +119,4 @@ Assigned hostnames can't clash, because the platform makes each one unique. Comp
 
 - The ownership record belongs to the workspace, because the proof does. It claims an exact name or an exact wildcard covering one label; proving `example.com` does not cover `preview.example.com`.
 - Foundry is not changed; the control plane reconciles over its existing APIs.
-- A deploy whose public URL names a hostname another ServiceUrl holds is refused with a conflict.
+- A deploy whose public URL names a hostname another RoutingUrl holds is refused with a conflict.
