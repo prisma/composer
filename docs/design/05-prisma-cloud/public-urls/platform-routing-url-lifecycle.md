@@ -35,7 +35,7 @@ flowchart LR
 | Event | Today's interactor | What changes for a row | What the repository operation does |
 | --- | --- | --- | --- |
 | Service created | `createApp` | nothing; no row exists yet | nothing |
-| Deployment promoted | `promoteApp` → `upsertEndpoint`, `reassignDomains` | the live deployment changes; `foundryObservedAt` is emptied on every RoutingUrl of the service in the same transaction | `PATCH /v1/domains/{id}` to the new compute version for each row of the service; a failure is written to `lastFoundryError` and the promote still succeeds |
+| Deployment promoted | `promoteApp` → `upsertEndpoint`, `reassignDomains` | the live deployment changes; the rows' observed columns are left as they are, and now differ from it | `PATCH /v1/domains/{id}` to the new compute version for each row of the service; a failure is written to `lastFoundryError` and the promote still succeeds |
 | Service rolled back | `rollbackApp` | same as promote | same |
 | Live deployment stopped | `stopDeployment` → `moveDomainsToLiveDeployment`, `unbindEndpointIfBound` | no deployment is live, or another is | if another is live, reassign; otherwise leave the custom domain bound to the stopped compute version and report "custom domain bound" as unmet |
 | Deployment deleted | `deleteDeployment` | Foundry deletes the compute version's custom domains | clear `foundryCustomDomainId`, `foundryIssuanceStartedAt` and the status columns on rows bound to it; create the custom domain again once a deployment is live |
