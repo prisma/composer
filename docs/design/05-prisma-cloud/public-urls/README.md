@@ -250,6 +250,7 @@ Prisma Cloud (the platform team maintains these in prisma/pdp-control-plane unde
 
 - [platform-routing-urls.md](platform-routing-urls.md): the two records column by column, the conditions, the rules, the routes, the Console and the migration of existing domains.
 - [platform-routing-url-lifecycle.md](platform-routing-url-lifecycle.md): every operation and lifecycle event, what each changes, what reaches Foundry, and the repository operation's steps.
+- [MetalConsistency.md](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/compute/MetalConsistency.md): the general rule for keeping Metal in step with the control plane, with the RoutingUrl as its worked example, and [the prior art behind it](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/compute/MetalConsistencyPriorArt.md).
 - [ADR 015](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/architecture/adrs/ADR-015-routing-urls-and-domain-ownership.md): the decision, why, and the alternatives.
 - [projects/routing-urls](https://github.com/prisma/pdp-control-plane/tree/chore/adr-ingress-entity/projects/routing-urls): the spec, the acceptance criteria and the five-slice plan.
 

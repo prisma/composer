@@ -4,7 +4,7 @@ What changes a RoutingUrl's conditions, who notices, and what reaches Foundry. C
 
 ## One operation behind the repository
 
-The RoutingUrl repository has one operation that takes a row, computes its six conditions, and makes the Foundry call the row needs, if any. Every path that can change a condition ends by calling it: the interactors that write RoutingUrls, the lifecycle interactors that change a service's live deployment or delete a service or Branch, the Management API's verify route, the Console's check button, and the Worker queue consumer that retries a failed Foundry call. None of the callers knows what it does. It is the only code that creates, reassigns or deletes a Foundry custom domain.
+The RoutingUrl repository has one operation that takes a row, computes its six conditions, and makes the Foundry call the row needs, if any. It is the first instance of the rule in [MetalConsistency.md](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/compute/MetalConsistency.md), which also works the RoutingUrl through as its example. Every path that can change a condition ends by calling it: the interactors that write RoutingUrls, the lifecycle interactors that change a service's live deployment or delete a service or Branch, the Management API's verify route, the Console's check button, and the Worker queue consumer that retries a failed Foundry call. None of the callers knows what it does. It is the only code that creates, reassigns or deletes a Foundry custom domain.
 
 ```mermaid
 flowchart LR
