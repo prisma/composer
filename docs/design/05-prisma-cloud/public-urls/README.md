@@ -198,7 +198,7 @@ sequenceDiagram
   alt the PATCH fails
     Repo->>Repo: write lastFoundryError on url_789; the promote still succeeds
     Repo->>Repo: enqueue a delayed retry for url_789 on a Worker queue
-    Note over Repo: the queue consumer runs the repository operation again, with backoff, until it succeeds
+    Note over Repo: the queue consumer runs the repository operation again, with backoff and a bounded number of attempts
   end
 ```
 
