@@ -11,7 +11,6 @@ import * as path from 'node:path';
 import type { Graph } from '@internal/core';
 import type {
   ContainerCredentials,
-  ContainerDescriptor,
   ContainerInstance,
   ReporterDescriptor,
   RunReporter,
@@ -50,7 +49,12 @@ import {
   type DeploySuccess,
 } from './deploy.ts';
 import type { DestroyEvent, DestroyInput } from './destroy.ts';
-import { type ExtensionId, type OperationDeps, toStructured } from './shared.ts';
+import {
+  type ExtensionId,
+  type OperationDeps,
+  requireContainerForEnvironment,
+  toStructured,
+} from './shared.ts';
 
 const ALCHEMY_STATE_DIR = '.alchemy';
 
@@ -279,37 +283,6 @@ async function finishReporters(
         console.warn(`\nCould not report this deploy's outcome: ${detail}`);
       }
     }),
-  );
-}
-
-/**
- * An extension older than this Composer stores the input it is given but
- * resolves from a key without `environment`, so it may read every name as
- * production. Its `deserialize` rebuilds only the fields it knows, so the
- * container the Alchemy child rebuilds shows which environment it really
- * resolved. Refusing here keeps a mismatched install from deploying into, or
- * destroying, the wrong place.
- */
-function requireContainerForEnvironment(
-  action: 'deploy' | 'destroy',
-  extensionId: ExtensionId,
-  descriptor: ContainerDescriptor,
-  instance: ContainerInstance,
-  environment: string,
-): void {
-  let rebuiltEnvironment: string | undefined;
-  try {
-    rebuiltEnvironment = descriptor.deserialize(instance.serialize()).input.environment;
-  } catch {
-    rebuiltEnvironment = undefined;
-  }
-  if (rebuiltEnvironment === environment) return;
-  throw new CliStructuredError(
-    'DEPS.EXTENSION_INCOMPATIBLE',
-    `The extension ${extensionId} is older than the Composer running this ${action}, so it would not resolve the environment ${environment}.`,
-    {
-      fix: `Install the same Composer version of ${extensionId} as the Composer that runs the ${action}.`,
-    },
   );
 }
 

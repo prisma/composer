@@ -1,0 +1,13 @@
+{
+  "formatVersion": 2,
+  "current": "shop",
+  "apps": {
+    "shop": {
+      "nodes": {
+        "shop.api": { "kind": "service", "id": "svc_0b6e2f4a91c3d758", "port": 3000 },
+        "shop.catalog": { "kind": "database", "id": "db_02c4e81f6a9b3d70", "port": 51300 },
+        "shop.uploads": { "kind": "bucket", "id": "bkt-77e1a4c90b2d5f36" }
+      }
+    }
+  }
+}

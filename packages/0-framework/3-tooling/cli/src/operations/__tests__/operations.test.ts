@@ -1525,8 +1525,8 @@ interface Endpoint {
   readonly url: string;
 }
 
-function localContainer(): ContainerInstance {
-  return { input: { appName: 'app', environment: 'dev' }, serialize: () => 'x' };
+function localContainer(environment = 'dev'): ContainerInstance {
+  return { input: { appName: 'app', environment }, serialize: () => environment };
 }
 
 function fakeAttachment(
@@ -1595,23 +1595,35 @@ async function collect(lines: AsyncIterable<LogLine>): Promise<LogLine[]> {
 function devConfigWith(
   attachment: LocalTargetAttachment,
   environments: string[] = [],
+  deserialize: (serialized: string) => ContainerInstance = localContainer,
 ): PrismaAppConfig {
   const descriptor: LocalTargetDescriptor = {
     providers: () => Layer.empty,
+    teardown: (input) => {
+      environments.push(`teardown:${input.environment}`);
+      return Promise.resolve();
+    },
     preflight: (input) => {
       environments.push(`preflight:${input.environment}`);
+      return Promise.resolve();
+    },
+    emulators: (input) => {
+      environments.push(`emulators:${input.devDir}`);
       return Promise.resolve();
     },
     container: {
       ensure: (input) => {
         environments.push(`ensure:${input.environment}`);
-        return Promise.resolve(localContainer());
+        return Promise.resolve(localContainer(input.environment));
       },
       locate: () => Promise.resolve(undefined),
       remove: () => Promise.resolve(),
-      deserialize: () => localContainer(),
+      deserialize,
     },
-    attach: () => Promise.resolve(attachment),
+    attach: (input) => {
+      environments.push(`attach:${input.devDir}`);
+      return Promise.resolve(attachment);
+    },
   };
   return {
     extensions: [
@@ -1710,9 +1722,136 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       ),
     );
 
-    expect(environments).toEqual(['ensure:dev', 'preflight:dev']);
+    const devDir = path.join(app.dir, '.prisma-composer', 'dev', 'dev');
+    expect(environments).toEqual([
+      'ensure:dev',
+      'preflight:dev',
+      `emulators:${devDir}`,
+      `attach:${devDir}`,
+    ]);
     expect(stages).toEqual(['dev']);
+    expect(fs.readFileSync(path.join(devDir, 'environment-name'), 'utf8')).toBe('dev\n');
   }, 15_000);
+
+  test('an environment whose folder records another name, as Dev and dev share one on macOS, fails with DEV.ENVIRONMENT_NAME_MISMATCH before teardown', async () => {
+    const app = makeAppDir('hello-dev');
+    const environments: string[] = [];
+    const devDir = path.join(app.dir, '.prisma-composer', 'dev', 'Dev');
+    fs.mkdirSync(devDir, { recursive: true });
+    fs.writeFileSync(path.join(devDir, 'environment-name'), 'dev\n');
+
+    const result = await silently(() =>
+      devWithDeps(
+        {
+          config: composerConfig(devConfigWith(linesAttachment([], []), environments)),
+          entry: app.entryPath,
+          environment: 'Dev',
+          fresh: true,
+          cwd: app.dir,
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      ),
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      failure: {
+        code: 'DEV.ENVIRONMENT_NAME_MISMATCH',
+        meta: { recorded: 'dev', environment: 'Dev' },
+      },
+    });
+    expect(environments).toEqual(['ensure:Dev']);
+  }, 15_000);
+
+  test("--environment runs that environment's copy: its own folder, stack file and Alchemy stage, and --fresh tears down only it", async () => {
+    const app = makeAppDir('hello-dev');
+    const environments: string[] = [];
+    const runs: { stage: string; stack: string }[] = [];
+
+    await silently(() =>
+      devWithDeps(
+        {
+          config: composerConfig(devConfigWith(linesAttachment([], []), environments)),
+          entry: app.entryPath,
+          environment: 'feature/x',
+          fresh: true,
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async (input) => {
+            runs.push({ stage: input.stage, stack: input.stackFileRelativePath });
+            return { exitCode: 1, signal: null };
+          },
+        },
+      ),
+    );
+
+    const devDir = path.join(app.dir, '.prisma-composer', 'dev', 'feature%2Fx');
+    expect(environments).toEqual([
+      'ensure:feature/x',
+      'teardown:feature/x',
+      'preflight:feature/x',
+      `emulators:${devDir}`,
+      `attach:${devDir}`,
+    ]);
+    expect(runs).toEqual([
+      {
+        stage: 'feature/x',
+        stack: path.join('.prisma-composer', 'dev', 'feature%2Fx', 'alchemy.run.ts'),
+      },
+    ]);
+    expect(fs.existsSync(path.join(devDir, 'alchemy.run.ts'))).toBe(true);
+  }, 15_000);
+
+  test.each([
+    ['resolves another environment', () => localContainer('production')],
+    [
+      'cannot read its own container',
+      () => {
+        throw new Error('unknown payload');
+      },
+    ],
+  ])(
+    'refuses a local target extension that %s with DEPS.EXTENSION_INCOMPATIBLE, before teardown, preflight, emulators or Alchemy',
+    async (_case, deserialize) => {
+      const app = makeAppDir('hello-dev');
+      const environments: string[] = [];
+      let converged = false;
+
+      const result = await silently(() =>
+        devWithDeps(
+          {
+            config: composerConfig(
+              devConfigWith(linesAttachment([], []), environments, deserialize),
+            ),
+            entry: app.entryPath,
+            environment: 'test',
+            fresh: true,
+            cwd: app.dir,
+          },
+          {
+            runAssembler: fakeAssembler,
+            alchemy: async () => {
+              converged = true;
+              return { exitCode: 0, signal: null };
+            },
+          },
+        ),
+      );
+
+      if (result.ok) throw new Error('expected a failure');
+      expect(result.failure).toMatchObject({
+        code: 'DEPS.EXTENSION_INCOMPATIBLE',
+        message:
+          'The extension fixture-extension is older than the Composer running `prisma dev`, so it would not resolve the environment test.',
+        fix: 'Install the same Composer version of fixture-extension as the Composer that runs `prisma dev`.',
+      });
+      expect(environments).toEqual(['ensure:test']);
+      expect(converged).toBe(false);
+    },
+    15_000,
+  );
 
   test('a failed first converge stops the services it started before returning DEV.CONVERGE_FAILED', async () => {
     const app = makeAppDir('hello-dev');
@@ -3002,7 +3141,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
           alchemy: async () => {
             order.push('converge');
             stackFile = fs.readFileSync(
-              path.join(app.dir, '.prisma-composer', 'dev', 'alchemy.run.ts'),
+              path.join(app.dir, '.prisma-composer', 'dev', 'dev', 'alchemy.run.ts'),
               'utf8',
             );
             return { exitCode: 0, signal: null };

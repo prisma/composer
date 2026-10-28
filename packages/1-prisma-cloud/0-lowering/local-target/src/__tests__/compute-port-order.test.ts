@@ -17,7 +17,7 @@ function ensureServiceInstances(
   addresses: readonly string[],
 ) {
   return ensureAppInstances(
-    { devDir, app: forContainer.input.appName },
+    { devDir, app: forContainer.input.appName, environment: 'dev' },
     addresses.map((address) => ({ address, kind: 'service' as const })),
   );
 }
@@ -28,7 +28,7 @@ let devDir: string;
 
 beforeEach(async () => {
   registryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-target-port-order-'));
-  devDir = path.join(registryRoot, 'project', '.prisma-composer', 'dev');
+  devDir = path.join(registryRoot, 'project', '.prisma-composer', 'dev', 'dev');
   process.env[EMULATORS_DIR_ENV] = registryRoot;
   const entry = fileURLToPath(import.meta.resolve('@internal/dev-emulators/compute-main'));
   await ensureDaemon('compute', entry, { registryRoot });
@@ -73,7 +73,7 @@ async function reconcileApp(container: ContainerInstance, address: string): Prom
 }
 
 async function reservedPorts(app: string): Promise<Record<string, number>> {
-  const nodes = await nodeInstancesOf({ devDir, app }, 'service');
+  const nodes = await nodeInstancesOf({ devDir, app, environment: 'dev' }, 'service');
   return Object.fromEntries(nodes.map(({ address, instance }) => [address, instance.port]));
 }
 
@@ -108,7 +108,7 @@ test('a failed reservation names the service', async () => {
 
 test('reserving the services of an app that already has ports keeps those ports', async () => {
   const container = fakeContainer('port-order-warm');
-  const scope = { devDir, app: 'port-order-warm' };
+  const scope = { devDir, app: 'port-order-warm', environment: 'dev' };
   const { instance: gateway } = await ensureServiceInstance(scope, 'port-order-warm.gateway');
   const { instance: quotes } = await ensureServiceInstance(scope, 'port-order-warm.quotes');
 
@@ -125,9 +125,9 @@ test('a dotted service address reserves the same emulator instance the App provi
   const container = fakeContainer('port-order-nested');
   await ensureServiceInstances(container, devDir, ['port-order-nested.shop.quotes']);
 
-  const listed = (await nodeInstancesOf({ devDir, app: 'port-order-nested' }, 'service')).map(
-    (node) => node.instance,
-  );
+  const listed = (
+    await nodeInstancesOf({ devDir, app: 'port-order-nested', environment: 'dev' }, 'service')
+  ).map((node) => node.instance);
   expect(await reconcileApp(container, 'port-order-nested.shop.quotes')).toBe(
     listed[0]?.port ?? -1,
   );

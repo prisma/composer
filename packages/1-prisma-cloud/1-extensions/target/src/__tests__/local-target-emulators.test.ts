@@ -14,7 +14,6 @@ let portChanges: {
   previous: number;
   given: number;
 }[] = [];
-let previousApp: string | undefined;
 let ensureFails = false;
 
 const fake = scopedFakes();
@@ -30,14 +29,15 @@ mock.module('@internal/dev-emulators', () => ({
 mock.module('@internal/local-target', () => ({
   ...RealLocalTarget,
   resolvePackageEntry: fake(RealLocalTarget.resolvePackageEntry, (specifier: string) => specifier),
-  selectApp: fake(RealLocalTarget.selectApp, async ({ app }: { app: string }) => {
-    events.push(`select ${app}`);
-    return previousApp;
-  }),
   ensureAppInstances: fake(
     RealLocalTarget.ensureAppInstances,
-    async ({ app }: { app: string }, nodes: readonly { address: string; kind: string }[]) => {
-      events.push(`ensure ${app}: ${nodes.map((n) => `${n.kind} ${n.address}`).join(', ')}`);
+    async (
+      { app, environment, devDir }: { app: string; environment: string; devDir: string },
+      nodes: readonly { address: string; kind: string }[],
+    ) => {
+      events.push(
+        `ensure ${app} in ${environment} at ${devDir}: ${nodes.map((n) => `${n.kind} ${n.address}`).join(', ')}`,
+      );
       if (ensureFails) throw new Error('the second database could not start');
       return portChanges;
     },
@@ -83,7 +83,6 @@ beforeEach(() => {
   events.length = 0;
   logged.length = 0;
   portChanges = [];
-  previousApp = undefined;
   ensureFails = false;
 });
 
@@ -107,8 +106,7 @@ test('ensures the getting-started services in dependency order once the compute 
 
   expect(events).toEqual([
     'daemon compute',
-    'select my-app',
-    'ensure my-app: service my-app.quotes, service my-app.gateway',
+    'ensure my-app in dev at /dev/null/unused: service my-app.quotes, service my-app.gateway',
   ]);
 });
 
@@ -126,8 +124,7 @@ test('ensures services and databases in declaration order when nothing orders th
   expect(events).toEqual([
     'daemon compute',
     'daemon postgres',
-    'select my-app',
-    'ensure my-app: service my-app.web, database my-app.db, service my-app.admin',
+    'ensure my-app in dev at /dev/null/unused: service my-app.web, database my-app.db, service my-app.admin',
   ]);
 });
 
@@ -150,19 +147,24 @@ test('prints one line for each service that could not get its remembered port ba
   ]);
 });
 
-test("prints one line when the directory's previous app's local services were stopped", async () => {
-  previousApp = 'old-app';
+test("ensures the instances in the container's environment and stops nothing else", async () => {
   const graph = Load(
     module('my-app', ({ provision }) => {
       provision(compute({ name: 'web', deps: {}, build }));
     }),
   );
+  const inTest: ContainerInstance = {
+    input: { appName: 'my-app', environment: 'test' },
+    serialize: () => 'x',
+  };
 
-  await runDevEmulators({ graph, container, devDir: '/dev/null/unused' });
+  await runDevEmulators({ graph, container: inTest, devDir: '/project/.prisma-composer/dev/test' });
 
-  expect(logged.filter((line) => line.includes('stopped'))).toEqual([
-    '[dev] stopped the local services of "old-app", the app run here before; its data is kept',
+  expect(events).toEqual([
+    'daemon compute',
+    'ensure my-app in test at /project/.prisma-composer/dev/test: service my-app.web',
   ]);
+  expect(logged.filter((line) => line.includes('stopped'))).toEqual([]);
 });
 
 test('a failure ensuring the instances stops what the run started, then reports the failure', async () => {
@@ -178,7 +180,7 @@ test('a failure ensuring the instances stops what the run started, then reports 
     'the second database could not start',
   );
   expect(events.slice(-2)).toEqual([
-    'ensure my-app: database my-app.one, database my-app.two',
+    'ensure my-app in dev at /dev/null/unused: database my-app.one, database my-app.two',
     'stop my-app',
   ]);
 });

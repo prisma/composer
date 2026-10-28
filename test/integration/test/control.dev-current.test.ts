@@ -13,7 +13,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { Load, module } from '@prisma/composer';
 import type { ContainerInstance, LocalTargetDescriptor } from '@prisma/composer/config';
-import { DEV_DIR } from '@prisma/composer/config';
+import { DEV_DIR, devEnvironmentDir } from '@prisma/composer/config';
 import { devStop, devUrl } from '@prisma/composer/control';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import { EMULATORS_DIR_ENV } from '@prisma/composer-prisma-cloud/local-target';
@@ -22,6 +22,7 @@ import appModule from './fixtures/local-dev/module.ts';
 
 const APP = 'devcurrentfixture';
 const integrationDir = path.resolve(import.meta.dir, '..');
+const ENTRY = path.join(import.meta.dir, 'fixtures', 'local-dev', 'module.ts');
 const config = {
   value: prismaConfig.composer,
   file: path.join(integrationDir, 'prisma.config.ts'),
@@ -81,7 +82,7 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
     if (localTarget === undefined) throw new Error('prismaCloud() has no local target');
     target = await localTarget();
     container = await target.container.ensure({ appName: APP, environment: 'dev' });
-    const devDir = path.join(cwd, DEV_DIR);
+    const devDir = path.join(cwd, devEnvironmentDir('dev'));
 
     // An app with no nodes starts the Compute emulator, so the placeholders can
     // take the ports below FIRST_SERVICE_PORT before the fixture's services are created.
@@ -165,7 +166,7 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
     const appdb = nodes[`${APP}.appdb`];
     if (web?.port === undefined || appdb?.port === undefined) throw new Error('not recorded');
 
-    const result = await devStop({ config, cwd });
+    const result = await devStop({ config, entry: ENTRY, name: APP, cwd });
 
     if (!result.ok) throw new Error(result.failure.message);
     expect(result.value.app).toBe(APP);
@@ -180,6 +181,9 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
       ok: false,
       failure: { code: 'DEV.NOT_RUNNING' },
     });
-    expect(await devStop({ config, cwd })).toMatchObject({ ok: true, value: { stopped: [] } });
+    expect(await devStop({ config, entry: ENTRY, name: APP, cwd })).toMatchObject({
+      ok: true,
+      value: { stopped: [] },
+    });
   }, 60_000);
 });

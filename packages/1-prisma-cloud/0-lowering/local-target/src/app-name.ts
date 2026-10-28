@@ -1,4 +1,5 @@
-import type { ContainerInstance } from '@internal/core/config';
+import type { ContainerInstance, LocalTargetProvidersInput } from '@internal/core/config';
+import type { AppScope } from './emulator-instances.ts';
 
 function containerNotResolvedError(): Error {
   return new Error(
@@ -19,4 +20,14 @@ function containerNotResolvedError(): Error {
 export function appNameOf(container: ContainerInstance | undefined): string {
   if (container === undefined) throw containerNotResolvedError();
   return container.input.appName;
+}
+
+/** The app and environment local dev runs, from the extension's resolved container. */
+export function appScopeOf(input: LocalTargetProvidersInput): AppScope {
+  if (input.container === undefined) throw containerNotResolvedError();
+  return {
+    devDir: input.devDir,
+    app: input.container.input.appName,
+    environment: input.container.input.environment,
+  };
 }

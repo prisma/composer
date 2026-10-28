@@ -69,11 +69,13 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
       input: { appName: APP, environment: 'dev' },
       serialize: () => 'x',
     };
-    input = { container, devDir: path.join(root, 'project', '.prisma-composer', 'dev') };
+    input = { container, devDir: path.join(root, 'project', '.prisma-composer', 'dev', 'dev') };
   });
 
   afterEach(async () => {
-    await deleteAppInstances({ devDir: input.devDir, app: APP }).catch(() => undefined);
+    await deleteAppInstances({ devDir: input.devDir, app: APP, environment: 'dev' }).catch(
+      () => undefined,
+    );
     await stopDaemon('postgres', { registryRoot }).catch(() => undefined);
     fs.rmSync(root, { recursive: true, force: true });
     if (savedEmulatorsDir === undefined) delete process.env[EMULATORS_DIR_ENV];
@@ -126,7 +128,7 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
 
     expect(again.databaseId).not.toBe(database.databaseId);
     expect(await databaseDiff(database)).toEqual({ action: 'update' });
-    const recorded = (await readEmulatorInstances(path.join(root, 'project')))?.apps[APP];
+    const recorded = (await readEmulatorInstances(input.devDir))?.apps[APP];
     expect(recorded?.nodes[ORDERS]).toMatchObject({
       kind: 'database',
       id: again.databaseId,

@@ -5,7 +5,11 @@
  * because this is all they pull in statically.
  */
 import type { RunAssembler } from '@internal/assemble';
-import type { ContainerCredentials } from '@internal/core/config';
+import type {
+  ContainerCredentials,
+  ContainerDescriptor,
+  ContainerInstance,
+} from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
 import type { startWatch } from '../dev/watch.ts';
@@ -14,7 +18,7 @@ import type { RunAlchemy } from '../run-alchemy.ts';
 /** The `id` of an ExtensionDescriptor — what keys the executors' per-extension maps. */
 export type ExtensionId = string;
 
-/** The environment name local development runs as. */
+/** The environment name local development runs as when none is given. */
 export const DEV_ENVIRONMENT = 'dev';
 
 /** A running service's dotted address plus its local URL — what `dev` reports
@@ -134,6 +138,45 @@ export function executorLoadFailure(operation: OperationName, error: unknown): C
         "your app's installed dependencies, and that import failed.",
       fix: 'Reinstall your dependencies, and check that `alchemy` is installed and loadable from your app.',
       cause: error,
+    },
+  );
+}
+
+const RUN_OF = {
+  deploy: { running: 'this deploy', runs: 'the deploy' },
+  destroy: { running: 'this destroy', runs: 'the destroy' },
+  dev: { running: '`prisma dev`', runs: '`prisma dev`' },
+} as const;
+
+/**
+ * An extension older than this Composer stores the input it is given but
+ * resolves from a key without `environment`, so it may read every name as
+ * production, or, locally, put every environment in one copy. Its
+ * `deserialize` rebuilds only the fields it knows, so the container the
+ * Alchemy child rebuilds shows which environment it really resolved.
+ * Refusing here keeps a mismatched install from deploying into, destroying
+ * or running the wrong place.
+ */
+export function requireContainerForEnvironment(
+  action: keyof typeof RUN_OF,
+  extensionId: ExtensionId,
+  descriptor: ContainerDescriptor,
+  instance: ContainerInstance,
+  environment: string,
+): void {
+  let rebuiltEnvironment: string | undefined;
+  try {
+    rebuiltEnvironment = descriptor.deserialize(instance.serialize()).input.environment;
+  } catch {
+    rebuiltEnvironment = undefined;
+  }
+  if (rebuiltEnvironment === environment) return;
+  const { running, runs } = RUN_OF[action];
+  throw new CliStructuredError(
+    'DEPS.EXTENSION_INCOMPATIBLE',
+    `The extension ${extensionId} is older than the Composer running ${running}, so it would not resolve the environment ${environment}.`,
+    {
+      fix: `Install the same Composer version of ${extensionId} as the Composer that runs ${runs}.`,
     },
   );
 }

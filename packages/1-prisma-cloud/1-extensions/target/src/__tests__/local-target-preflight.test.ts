@@ -18,14 +18,8 @@ const build = {
   entry: 'server.js',
 };
 
-const fakeContainer = () =>
-  new PrismaCloudContainer(
-    { appName: 'app', environment: 'dev' },
-    'local',
-    undefined,
-    undefined,
-    true,
-  );
+const fakeContainer = (environment = 'dev') =>
+  new PrismaCloudContainer({ appName: 'app', environment }, 'local', undefined, undefined, true);
 
 /** Load never validates a binding, so a pass-anything schema is enough here (ADR-0042). */
 const anySchema: StandardSchemaV1<unknown, unknown> = {
@@ -85,7 +79,7 @@ describe('runDevPreflight (local-dev spec S5, ADR-0041 D7)', () => {
   test('a missing secret mints a placeholder, persists it, and warns exactly once', async () => {
     await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), environment: 'dev' });
 
-    const stored = await secretsStore(path.join(cwd, '.prisma-composer', 'dev')).read();
+    const stored = await secretsStore(path.join(cwd, '.prisma-composer', 'dev', 'dev')).read();
     expect(stored['STRIPE_SECRET_KEY']).toMatch(/^local-placeholder-[0-9a-f]{16}$/);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toBe(
@@ -96,12 +90,12 @@ describe('runDevPreflight (local-dev spec S5, ADR-0041 D7)', () => {
 
   test('the minted placeholder is stable across two preflight runs', async () => {
     await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), environment: 'dev' });
-    const first = (await secretsStore(path.join(cwd, '.prisma-composer', 'dev')).read())[
+    const first = (await secretsStore(path.join(cwd, '.prisma-composer', 'dev', 'dev')).read())[
       'STRIPE_SECRET_KEY'
     ];
 
     await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), environment: 'dev' });
-    const second = (await secretsStore(path.join(cwd, '.prisma-composer', 'dev')).read())[
+    const second = (await secretsStore(path.join(cwd, '.prisma-composer', 'dev', 'dev')).read())[
       'STRIPE_SECRET_KEY'
     ];
 
@@ -116,7 +110,7 @@ describe('runDevPreflight (local-dev spec S5, ADR-0041 D7)', () => {
 
     await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), environment: 'dev' });
 
-    const stored = await secretsStore(path.join(cwd, '.prisma-composer', 'dev')).read();
+    const stored = await secretsStore(path.join(cwd, '.prisma-composer', 'dev', 'dev')).read();
     expect(stored['STRIPE_SECRET_KEY']).toBe('sk_live_from_shell');
     expect(warnings).toEqual([]);
   });
@@ -135,12 +129,57 @@ describe('runDevPreflight (local-dev spec S5, ADR-0041 D7)', () => {
     expect(message).toContain('Set each in the shell you run `prisma dev` from.');
   });
 
+  test('each environment keeps its own placeholders, in its own folder; a / in the name stays one folder', async () => {
+    for (const environment of ['dev', 'test', 'feature/x']) {
+      await runDevPreflight({
+        graph: secretGraph(),
+        container: fakeContainer(environment),
+        environment,
+      });
+    }
+
+    const folders = ['dev', 'test', 'feature%2Fx'].map((f) =>
+      path.join(cwd, '.prisma-composer', 'dev', f),
+    );
+    const placeholders = await Promise.all(
+      folders.map(async (folder) => (await secretsStore(folder).read())['STRIPE_SECRET_KEY']),
+    );
+    expect(new Set(placeholders).size).toBe(3);
+    expect(fs.readdirSync(path.join(cwd, '.prisma-composer', 'dev')).sort()).toEqual(
+      ['dev', 'feature%2Fx', 'test'].sort(),
+    );
+  });
+
+  test("a folder written before environments had folders has its secrets moved into dev's, and reused", async () => {
+    const root = path.join(cwd, '.prisma-composer', 'dev');
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(
+      path.join(root, 'emulator-instances.json'),
+      '{"formatVersion":2,"current":"app","apps":{}}',
+    );
+    fs.writeFileSync(
+      path.join(root, 'secrets.json'),
+      '{"STRIPE_SECRET_KEY":"local-placeholder-0123456789abcdef"}',
+    );
+
+    await runDevPreflight({
+      graph: secretGraph(),
+      container: fakeContainer('test'),
+      environment: 'test',
+    });
+
+    expect(fs.existsSync(path.join(root, 'secrets.json'))).toBe(false);
+    expect((await secretsStore(path.join(root, 'dev')).read())['STRIPE_SECRET_KEY']).toBe(
+      'local-placeholder-0123456789abcdef',
+    );
+  });
+
   test('an env-sourced param present in the shell is written to secrets.json with no error', async () => {
     process.env['APP_ORIGIN'] = 'https://localhost:3000';
 
     await runDevPreflight({ graph: paramGraph(), container: fakeContainer(), environment: 'dev' });
 
-    const stored = await secretsStore(path.join(cwd, '.prisma-composer', 'dev')).read();
+    const stored = await secretsStore(path.join(cwd, '.prisma-composer', 'dev', 'dev')).read();
     expect(stored['APP_ORIGIN']).toBe('https://localhost:3000');
   });
 });

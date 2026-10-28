@@ -23,6 +23,7 @@ const stackInput = {
   cwd: fixtureDir,
   configFile: path.join(fixtureDir, 'prisma.config.ts'),
   name: 'fixture-module',
+  environment: 'dev',
   assembled: { devServers: {}, bundles: {} },
 };
 

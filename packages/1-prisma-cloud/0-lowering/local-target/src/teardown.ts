@@ -8,6 +8,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { DEV_ENVIRONMENT_NAME_FILE } from '@internal/core/config';
 import { BUCKETS_DIR } from './bucket.ts';
 import { EMULATOR_INSTANCES_FILE } from './emulator-instances.ts';
 
@@ -17,9 +18,28 @@ export function removeLocalPaths(paths: readonly string[]): void {
 }
 
 /**
- * Removes the dev state directory's contents for `--fresh`, except what
- * other apps run from the directory still use: the record of their emulator
- * instances and their buckets' objects. This app's objects go.
+ * Removes one Alchemy stage's local state: the files directly in its folder,
+ * then the folder once it is empty. Alchemy keeps the stage `feature/x` in
+ * `feature/`'s folder, so a subfolder is another stage's and stays.
+ */
+export function removeAlchemyStage(stageDir: string): void {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(stageDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) fs.rmSync(path.join(stageDir, entry.name), { force: true });
+  }
+  if (entries.every((entry) => !entry.isDirectory())) fs.rmdirSync(stageDir);
+}
+
+/**
+ * Removes an environment folder's contents for `--fresh`, except the
+ * environment's recorded name and what other apps run in the environment
+ * still use: the record of their emulator instances and their buckets'
+ * objects. This app's objects go.
  */
 export function removeAppDevState(devDir: string, app: string): void {
   let entries: string[];
@@ -28,7 +48,7 @@ export function removeAppDevState(devDir: string, app: string): void {
   } catch {
     return;
   }
-  const kept = new Set([EMULATOR_INSTANCES_FILE, BUCKETS_DIR]);
+  const kept = new Set([DEV_ENVIRONMENT_NAME_FILE, EMULATOR_INSTANCES_FILE, BUCKETS_DIR]);
   removeLocalPaths([
     ...entries.filter((entry) => !kept.has(entry)).map((entry) => path.join(devDir, entry)),
     path.join(devDir, BUCKETS_DIR, app),

@@ -21,6 +21,7 @@ const listing: EmulatorList = {
           labels: {
             'composer.directory': '/work/shop',
             'composer.app': 'shop',
+            'composer.environment': 'dev',
             'composer.address': 'gateway',
           },
         },
@@ -75,7 +76,7 @@ describe('emulator list', () => {
     expect(result.json.at(-1)).toMatchObject({ envelope: { ok: true, result: listing } });
   });
 
-  test('shows each emulator and, under it, its instances with the node and directory that started them', async () => {
+  test('shows each emulator and, under it, its instances with the node, directory and environment that started them', async () => {
     const cli = cliWith({ listEmulators: async () => ok(listing) });
 
     const result = await cli.run(['emulator', 'list', '--format', 'human']);
@@ -83,7 +84,7 @@ describe('emulator list', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toContain('Service emulator at http://127.0.0.1:4300');
     expect(result.stderr).toContain('svc_0123456789abcdef');
-    expect(result.stderr).toContain('gateway in /work/shop');
+    expect(result.stderr).toContain('gateway in /work/shop (dev)');
     expect(result.stderr).toContain('Database emulator');
     expect(result.stderr).toContain('not running');
     expect(result.stderr).toContain(
@@ -91,7 +92,7 @@ describe('emulator list', () => {
     );
   });
 
-  test('writes one tab-separated line per instance to stdout: emulator kind, id, URL, state, node address and directory, a tab inside a field escaped', async () => {
+  test('writes one tab-separated line per instance to stdout: emulator kind, id, URL, state, node address, directory and environment, a tab inside a field escaped', async () => {
     const cli = cliWith({
       listEmulators: async () =>
         ok({
@@ -110,6 +111,7 @@ describe('emulator list', () => {
                   labels: {
                     'composer.directory': '/work/shop\tlab',
                     'composer.app': 'shop',
+                    'composer.environment': 'feature/x',
                     'composer.address': 'catalog',
                   },
                 },
@@ -139,9 +141,9 @@ describe('emulator list', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe(
-      'service\tsvc_0123456789abcdef\thttp://localhost:3000\trunning\tgateway\t/work/shop\n' +
-        'database\tdb_0123456789abcdef\tpostgres://postgres:postgres@localhost:51300/template1?sslmode=disable\tstopped\tcatalog\t/work/shop\\tlab\n' +
-        'bucket\tbkt-0123456789abcdef\thttp://127.0.0.1:4301/bkt-0123456789abcdef\trunning\t\t\n',
+      'service\tsvc_0123456789abcdef\thttp://localhost:3000\trunning\tgateway\t/work/shop\tdev\n' +
+        'database\tdb_0123456789abcdef\tpostgres://postgres:postgres@localhost:51300/template1?sslmode=disable\tstopped\tcatalog\t/work/shop\\tlab\tfeature/x\n' +
+        'bucket\tbkt-0123456789abcdef\thttp://127.0.0.1:4301/bkt-0123456789abcdef\trunning\t\t\t\n',
     );
   });
 
