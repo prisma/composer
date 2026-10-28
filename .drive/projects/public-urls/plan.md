@@ -18,11 +18,11 @@ Remove `ensureDefaultBranchApp` from `src/Prisma/CustomDomain.ts` and the test t
 
 ### U2. A RoutingUrl resource over PDP's new routes
 
-A `Prisma.RoutingUrl` resource: create (no DNS needed), read conditions, update hostname or service, delete; found by `logicalId`; public or private, named or assigned. `Prisma.App` gains the parameter that turns the platform's default URL off. Replaces `Prisma.CustomDomain` for Composer.
+A `Prisma.RoutingUrl` resource: create (no DNS needed), read conditions, update hostname or service, delete; found by `logicalId`. Replaces `Prisma.CustomDomain` for Composer.
 
 - **Builds on:** D1 deployed.
 - **Hands to:** P2.
-- **Done when:** a hostname with no DNS creates a record whose conditions the resource reports on later reads, an app can be created without a default URL, and the change is in an Alchemy release.
+- **Done when:** a hostname with no DNS creates a record whose conditions the resource reports on later reads, written to Alchemy's own testing conventions with live credentials confirmed before dispatch, and the change is in an Alchemy release.
 
 ## Track C — Composer core (prisma/composer)
 
@@ -49,14 +49,14 @@ A `Prisma.RoutingUrl` resource: create (no DNS needed), read conditions, update 
 
 - **Builds on:** C1, U1.
 - **Hands to:** P2.
-- **Done when:** a test app with one public service shows that service alone as public in the topology; a named hostname with DNS in place serves on production and on a preview; a named hostname without DNS fails the deploy naming the hostname and the DNS step; `prisma dev` warns once and runs.
+- **Done when:** a test app with one public service shows that service alone as public in the topology; a named hostname with its ownership TXT record and DNS in place serves on production and on a preview; a named hostname without either fails the deploy naming the hostname and the missing record; `prisma dev` warns once and runs.
 
 ### P2. Pending hostnames
 
-`hostname()` lowers to `Prisma.RoutingUrl`, and `generated()` to an assigned public one. Lowering declares a private `Prisma.RoutingUrl` for every service that another node in the app calls and creates services with the platform's default URL turned off. A hostname without DNS deploys with its unmet conditions reported, the deploy output names the first one and prints the Console link, and finishing DNS needs no redeploy. The scenarios doc gains the slice that made each scenario true.
+`hostname()` lowers to `Prisma.RoutingUrl`; `generated()` still lowers to nothing. A hostname without DNS deploys with its unmet conditions reported, the deploy output names the first one and prints the Console link, and finishing DNS needs no redeploy. `origin()` is unchanged. The scenarios doc gains the slice that made each scenario true.
 
 - **Builds on:** P1, U2.
-- **Done when:** the spec's "At a glance" app deploys production before `shop.com`'s DNS exists, succeeds, and the hostname goes active after DNS is added with no further deploy; a service nothing calls has no hostname on the platform; a service another service calls has a private RoutingUrl and no default URL.
+- **Done when:** the spec's "At a glance" app deploys production before `shop.com`'s DNS exists, succeeds, and the hostname goes active after DNS is added with no further deploy.
 
 ## Track D — PDP (prisma/pdp-control-plane)
 
@@ -68,12 +68,12 @@ The control plane's own project, `projects/routing-urls/` in pdp-control-plane, 
 - **Hands to:** U2 after its first slice is deployed; P2 after its second.
 - **Done when:** its own project's acceptance criteria pass.
 
-### D2. Console: URLs on the service page, Domains in workspace settings
+### D2. Console: custom hostnames on the service page, Domains in workspace settings
 
 The fourth slice of the control plane's project, listed here because the Composer project's DoD depends on it.
 
 - **Builds on:** D1's second slice.
-- **Done when:** the Console page for a service in the test project shows its URLs with visibility and conditions, and the workspace's Domains page shows the ownership records, verified with screenshots in the PR.
+- **Done when:** the Console page for a service in the test project shows its custom hostnames with conditions, and the workspace's Domains page shows the ownership claims, verified with screenshots in the PR.
 
 ## Order
 

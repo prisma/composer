@@ -58,7 +58,7 @@ prisma dev                             # the environment dev, on this machine
 
 **One rule governs everything here: the graph's structure is the same whatever inputs Composer is given.** Values may differ per environment; nodes and edges may not. Branching on the environment is the most common way to break the rule, which is why the environment gets special attention below.
 
-**`resolve()` is the one way a module body computes a value.** `resolve(dependencies, fn)` returns a `ResolvedValue<T>`, a value the graph records as "computed later from these dependencies". It can be passed anywhere a value of type `T` can: a public URL's `url`, a service's input, a resource's name.
+**`resolve()` is the one way a module body computes a value.** `resolve(dependencies, fn)` returns a `ResolvedValue<T>`, a value the graph records as "computed later from these dependencies". It can be passed anywhere a value of type `T` can: a public URL's `url`, a service's input, a bucket's configuration. It cannot be a node's `name` or `id`, a `deps` binding or a `target`, because those decide the graph's structure and a node's address, and the structure may not differ per environment.
 
 - **Dependencies are explicit, and `fn` receives their values as one tuple**: `resolve([input.a, environment.name], ([a, name]) => …)`, the shape of Vue's `watch(sources, fn)` and Solid's `on(deps, fn)`. A dependency is a module input reference, a reference to a deploy-time fact, or another `ResolvedValue`. The list is the only way one resolved value can be computed from another, since a `ResolvedValue` is opaque until it is run, and it gives Composer a graph of resolved values it orders before running them and checks for cycles. `fn` is typed from the list. Composer never inspects the function, which keeps the service-input decision's rule that the framework introspects nothing ([ADR-0042](ADR-0042-service-input-is-one-standard-schema.md)).
 - **Deploy-time facts are dependencies like any other.** The module body receives an `environment` object beside `input` and `provision`, holding one opaque reference per fact: `environment.name`, and others as they are needed. A body can only list them as dependencies, so it cannot branch on the environment. A new fact is a new reference, never a new argument to `fn`.
@@ -87,7 +87,7 @@ Adapters are not how per-environment choice is expressed. That is `resolve()`, i
 
 ## Consequences
 
-- **`resolve()` ships in `@prisma/composer`**, target-neutral, returning `ResolvedValue<T>`; every node parameter and input binding accepts a `ResolvedValue` of its type. The module body receives `environment` beside `input` and `provision`.
+- **`resolve()` ships in `@prisma/composer`**, target-neutral, returning `ResolvedValue<T>`; every node parameter and input binding that carries a value accepts a `ResolvedValue` of its type. `name`, `id`, `deps` and `target` do not. The module body receives `environment` beside `input` and `provision`.
 - **The `composer` section has `config`, and later `secrets`.** Its validator rejects unknown keys ([ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md)), so both are known fields, each an array of adapters. `dotenv()` ships with Composer.
 - **`prisma deploy` and `prisma dev` take `--environment`**, defaulting to `production` and `dev` ([ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md)); `destroy` takes an environment name with no default.
 - **Values in `.env` files are plain.** A secret belongs with `envSecret`, or with a secrets adapter. The root's schema refuses a plain value where it expects `secretString()`.
@@ -101,6 +101,7 @@ Adapters are not how per-environment choice is expressed. That is `resolve()`, i
 - **The environment's name as an extra argument to `fn`** (`resolve([input.a], (a, environment) => …)`). Rejected: the name is one deploy-time fact of several, and each would add a positional argument. As a dependency it is listed like everything else.
 - **`fn` receiving its values as positional arguments.** Rejected in favour of one tuple, so the parameters and the dependency list have the same shape, as in `Promise.all`.
 - **Reading the environment's name in the module body.** Rejected: a module could vary its structure by environment.
+- **A `resolve()` value that reads a deploy result**, such as a hostname the platform assigns. Rejected for now: every `resolve()` runs before the deploy, so it sees inputs and environment facts only. A value that exists only after the deploy is a separate mechanism, not needed yet.
 - **Per-environment hostnames through `.env` files as the primary story.** Rejected: a rule over an open-ended set of previews belongs in reviewed code, not in one file per environment. Adapters remain for values that live outside the code.
 - **A nameless default environment that adapters map themselves** (`dotenv({ defaultEnvironment: 'production' })`). Rejected: it keeps one environment special.
 - **Deep-merging adapter values.** Rejected: harder to predict; a `resolve()` can combine values where needed.

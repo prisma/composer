@@ -250,3 +250,7 @@ ADR-0053 (the commands). What we deliberately didn't do:
 # Public URLs — deferred at project planning (2026-10-27)
 
 - **Follow-on project `module-input`.** The second half of ADR-0061 and ADR-0062, left out of the public-URLs project because none of its scenarios need it: a spike proving a module body can hold `input.someKey` as an opaque typed reference, pass it where a value is accepted, and get a clear error on reading or branching on it; `module()` taking `input` in place of `params` and `secrets`, the root declaring it, `paramNeed()` and the module form of `secret()` going, the shipped `auth()` and `email()` modules and the examples migrating; `resolve([input.a, environment.name], ([a, name]) => …)` with `a` typed from the schema; the `config` field on the `composer` section with adapters merged by top-level key, later wins, and `dotenv()` first. Builds on the public-URLs project's `resolve()`. Origin: public-URLs design discussion; Will put config adapters off the critical path.
+
+## Public URLs — deferred, 2026-10-28
+
+- **An environment named `main` resolves to the production Branch.** `production` finds the Project's default Branch by its flag; any other name finds a Branch by git name, and the default Branch's git name is `main`. So `--environment main` and `production` share one Branch and one deploy state. This predates the public-URL work (it exists today with `--stage main`) and is left as it is; a fix would refuse an environment name whose Branch is the default Branch and point at `production`.

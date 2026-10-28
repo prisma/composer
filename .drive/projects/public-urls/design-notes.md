@@ -18,9 +18,9 @@ Until the PDP RoutingUrl record and the Alchemy resource over it exist, `publicU
 
 ## 3. A generated public URL creates nothing on the platform yet
 
-`publicUrl.generated()` reports the service's existing `*.prisma.build` endpoint. It gets a hostname of its own only when private addressing makes a service's own endpoint private.
+`publicUrl.generated()` reports the service's existing `*.prisma.build` endpoint and creates no record. This is its final form for this project.
 
-**Why.** Creating a second generated hostname per service now would be a hostname that behaves no differently from the one every service already has.
+**Why.** Every service already has that hostname. Settled on 2026-10-28: the first platform step covers custom hostnames only; making the platform's hostname an opt-in RoutingUrl is a later step, with its scenarios in [migration-scenarios.md](migration-scenarios.md). Old Composer versions cannot describe routing records in their deploy state, so that step needs a way for a deploy to take ownership of rows it never created, which custom hostnames do not.
 
 ## 4. Module `input` and config adapters are a follow-on project
 
