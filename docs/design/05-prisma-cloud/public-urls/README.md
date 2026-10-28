@@ -60,7 +60,7 @@ flowchart LR
     DO["DomainOwnership"]
     Repo["RoutingUrl repository"]
   end
-  subgraph Metal["Metal: the bare-metal runtime (pdp-metal)"]
+  subgraph Metal["Metal: the systems below the control plane (pdp-metal)"]
     CV["compute version (a VM)"]
     EP["Endpoint registry<br/>prefix → compute version"]
     CD["Custom-domain registry<br/>hostname → compute version, certificate"]
@@ -83,11 +83,11 @@ flowchart LR
   Conduit -- "routes to" --> CV
 ```
 
-**Composer** is where the author describes the application as a graph of nodes: services, databases, and now public URLs. Every node has an address, such as `shop.site`, and the deploy writes that address onto the platform record that represents the node, as its `logicalId`. Composer talks to the control plane through its Management API, using the upstream Alchemy provider as the deploy engine.
+**Composer**, owned by the Terminal team with the ORM, is where the author describes the application as a graph of nodes: services, databases, and now public URLs. Every node has an address, such as `shop.site`, and the deploy writes that address onto the platform record that represents the node, as its `logicalId`. Composer talks to the control plane through its Management API, using the upstream Alchemy provider as the deploy engine.
 
-**The control plane** is Prisma Cloud's product model: a Workspace owns Projects, a Project has Branches, a Branch is one environment of one application and holds its services. A service (still called `App` in the code) has Deployments, and one of them is live. This proposal adds two records here, RoutingUrl and DomainOwnership, with interactors to write them, and gives the RoutingUrl repository the job of keeping Foundry consistent with each row. The control plane talks to Metal through Foundry's HTTP API.
+**The control plane**, owned by the Portal team, is Prisma Cloud's product model: a Workspace owns Projects, a Project has Branches, a Branch is one environment of one application and holds its services. A service (still called `App` in the code) has Deployments, and one of them is live. This proposal adds two records here, RoutingUrl and DomainOwnership, with interactors to write them, and gives the RoutingUrl repository the job of keeping Foundry consistent with each row. The control plane talks to Metal through Foundry's HTTP API.
 
-**Metal** is the bare-metal runtime in the pdp-metal repository. **Foundry** runs each deployment as a compute version, a VM, and owns two registries in a shared database: the endpoint registry, which maps a `prisma.build` prefix to a compute version, and the custom-domain registry, which maps a customer hostname to a compute version and holds its certificate state. **Conduit** is the regional edge, reached at `switchboard.<region>.prisma.build`. It terminates TLS and routes every request by its Host header, reading both registries. Foundry is the only writer of the registries and Conduit only reads them. Nothing in Metal changes in this proposal.
+**Metal** is the team that owns every system below the control plane, and the name for those systems: Foundry, Conduit, the Prisma Postgres infrastructure and the rest of the pdp-metal repository. For public URLs two of them matter. **Foundry** runs each deployment as a compute version, a VM, and owns two registries in a shared database: the endpoint registry, which maps a `prisma.build` prefix to a compute version, and the custom-domain registry, which maps a customer hostname to a compute version and holds its certificate state. **Conduit** is the regional edge, reached at `switchboard.<region>.prisma.build`. It terminates TLS and routes every request by its Host header, reading both registries. Foundry is the only writer of the registries and Conduit only reads them. Nothing in Metal changes in this proposal.
 
 The lines that matter: Composer never talks to Metal. The control plane is the only thing that writes to Foundry: the RoutingUrl repository for custom domains, and the existing promote step for endpoints. Metal knows nothing about workspaces, services or ownership; it knows hostnames, compute versions and certificates.
 
