@@ -65,7 +65,7 @@ export function deploymentArtifactProviderService(
           if (released.data === undefined) {
             throw new CliStructuredError(
               'DEPLOY.RELEASE_FAILED',
-              `The uploaded bundle could not start (HTTP ${released.response.status}).`,
+              `The uploaded bundle could not start (HTTP ${released.response.status}). Logs and retained bundle: ${consoleUrl}`,
               {
                 why: 'The bundle is retained and the previous healthy deployment keeps serving.',
                 fix: `Check the logs and environment values at ${consoleUrl}, then click Redeploy.`,

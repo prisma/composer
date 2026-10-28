@@ -50,9 +50,9 @@ test('records the completed upload before releasing it', async () => {
 
 test('a failed release keeps the receipt and links directly to the retained attempt', async () => {
   const { calls, service } = harness(409);
-  await expect(Effect.runPromise(service.reconcile({ news } as never))).rejects.toThrow(
-    'could not start',
-  );
+  const released = Effect.runPromise(service.reconcile({ news } as never));
+  await expect(released).rejects.toThrow('could not start');
+  await expect(released).rejects.toThrow('https://console.prisma.io/retained-attempt');
   expect(calls).toEqual(['record', 'release']);
   expect(await Effect.runPromise(service.delete({} as never))).toBeUndefined();
   expect(calls).toEqual(['record', 'release']);
