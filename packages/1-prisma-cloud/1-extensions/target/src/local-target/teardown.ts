@@ -2,10 +2,10 @@
  * `--fresh` teardown (local-dev spec § 5, ADR-0041 D12, REVISED — operator
  * review of #162): wholesale LOCAL deletion — never an `alchemy destroy`.
  * Deletes the app's emulator instances of every kind through the
- * directory's record (a database's delete removes its data) and the app's
- * entry in it, the app's part of the dev state directory, and the
- * `dev` Alchemy stage's `localState()` directory. Other apps run from the directory keep
- * their entries and their buckets' objects. The daemons are never stopped —
+ * environment's record (a database's delete removes its data) and the app's
+ * entry in it, the app's part of the environment's folder, and the
+ * environment's Alchemy stage `localState()` directory. Other apps and other
+ * environments keep their entries and their buckets' objects. The daemons are never stopped —
  * other directories may be using them. The local directories are removed
  * even when a delete fails, and the failure is then reported.
  *
@@ -16,10 +16,11 @@
  */
 
 import type { TeardownInput } from '@internal/core/config';
-import { DEV_DIR } from '@internal/core/config';
+import { devEnvironmentDir } from '@internal/core/config';
 import { type DaemonName, ensureDaemon } from '@internal/dev-emulators';
 import {
   deleteAppInstances,
+  movePreEnvironmentDevState,
   type NodeKind,
   recordedKinds,
   removeAppDevState,
@@ -36,9 +37,11 @@ const DAEMON_OF: Record<NodeKind, DaemonName> = {
 
 export async function runDevTeardown(input: TeardownInput): Promise<void> {
   const app = prismaCloudContainerOf(input.container).input.appName;
+  const { environment } = input;
   const cwd = process.cwd();
-  const devDir = `${cwd}/${DEV_DIR}`;
-  const scope = { devDir, app };
+  movePreEnvironmentDevState(cwd);
+  const devDir = `${cwd}/${devEnvironmentDir(environment)}`;
+  const scope = { devDir, app, environment };
 
   try {
     // Every emulator holding one of the app's instances is started so the
@@ -50,6 +53,6 @@ export async function runDevTeardown(input: TeardownInput): Promise<void> {
     await deleteAppInstances(scope);
   } finally {
     removeAppDevState(devDir, app);
-    removeLocalPaths([`${cwd}/.alchemy/state/${app}/dev`]);
+    removeLocalPaths([`${cwd}/.alchemy/state/${app}/${environment}`]);
   }
 }

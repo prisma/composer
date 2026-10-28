@@ -128,10 +128,8 @@ async function* mergedLogs(
 }
 
 export async function devAttach(input: LocalTargetAttachInput): Promise<LocalTargetAttachment> {
-  const scope = {
-    devDir: input.devDir,
-    app: prismaCloudContainerOf(input.container).input.appName,
-  };
+  const { appName: app, environment } = prismaCloudContainerOf(input.container).input;
+  const scope: AppScope = { devDir: input.devDir, app, environment };
   const client = computeClient();
 
   return {

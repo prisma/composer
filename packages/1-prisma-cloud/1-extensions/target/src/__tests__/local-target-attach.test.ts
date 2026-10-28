@@ -55,11 +55,11 @@ describe.skipIf(process.platform === 'win32')("the dev session's stop", () => {
       await ensureDaemon(name, entry, { registryRoot });
     }
     directory = path.join(root, 'project');
-    devDir = path.join(directory, '.prisma-composer', 'dev');
+    devDir = path.join(directory, '.prisma-composer', 'dev', 'dev');
   });
 
   afterEach(async () => {
-    await deleteAppInstances({ devDir, app: APP }).catch(() => undefined);
+    await deleteAppInstances({ devDir, app: APP, environment: 'dev' }).catch(() => undefined);
     for (const name of DAEMONS) await stopDaemon(name, { registryRoot }).catch(() => undefined);
     fs.rmSync(root, { recursive: true, force: true });
     if (savedEmulatorsDir === undefined) delete process.env[EMULATORS_DIR_ENV];
@@ -67,12 +67,10 @@ describe.skipIf(process.platform === 'win32')("the dev session's stop", () => {
   });
 
   test("stops the app's database servers and keeps their ports", async () => {
-    await ensureAppInstances({ devDir, app: APP }, [
+    await ensureAppInstances({ devDir, app: APP, environment: 'dev' }, [
       { address: 'attach-app.catalog', kind: 'database' },
     ]);
-    const recorded = (await readEmulatorInstances(directory))?.apps[APP]?.nodes[
-      'attach-app.catalog'
-    ];
+    const recorded = (await readEmulatorInstances(devDir))?.apps[APP]?.nodes['attach-app.catalog'];
     if (recorded?.kind !== 'database') throw new Error('no database recorded');
     expect(await acceptsConnection(recorded.port)).toBe(true);
     const container = new PrismaCloudContainer(

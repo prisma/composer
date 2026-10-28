@@ -54,7 +54,7 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
     process.env[EMULATORS_DIR_ENV] = path.join(root, 'emulators');
     const entry = fileURLToPath(import.meta.resolve('@internal/dev-emulators/compute-main'));
     await ensureDaemon('compute', entry, { registryRoot: path.join(root, 'emulators') });
-    devDir = path.join(root, 'app', '.prisma-composer', 'dev');
+    devDir = path.join(root, 'app', '.prisma-composer', 'dev', 'dev');
     fs.mkdirSync(devDir, { recursive: true });
     fs.writeFileSync(
       path.join(devDir, 'env.json'),
@@ -72,7 +72,7 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
 
   afterEach(async () => {
     delete process.env[SHELL_MARKER];
-    await deleteAppInstances({ devDir, app: APP }).catch(() => undefined);
+    await deleteAppInstances({ devDir, app: APP, environment: 'dev' }).catch(() => undefined);
     await stopDaemon('compute', { registryRoot: path.join(root, 'emulators') }).catch(
       () => undefined,
     );
@@ -95,7 +95,10 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
 
   test("the dev server gets the deployment's rows stashed address-free, PORT and HOST, over the shell's environment", async () => {
     const attachment = await attach();
-    const { instance } = await ensureServiceInstance({ devDir, app: APP }, 'gateway');
+    const { instance } = await ensureServiceInstance(
+      { devDir, app: APP, environment: 'dev' },
+      'gateway',
+    );
 
     const { restarted } = (await attachment.serve?.({
       address: 'gateway',

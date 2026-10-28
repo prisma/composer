@@ -56,6 +56,6 @@ export function localTargetDescriptor(): LocalTargetDescriptor {
     emulators: (input) => runDevEmulators(input),
     attach: (input) => devAttach(input),
     teardown: (input) => runDevTeardown(input),
-    current: (input) => currentApp(input.devDir),
+    current: (input) => currentApp(input),
   };
 }

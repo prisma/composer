@@ -298,7 +298,6 @@ mock.module('@internal/dev-emulators', () => ({
 mock.module('@internal/local-target', () => ({
   ...RealLocalTarget,
   resolvePackageEntry: fake(RealLocalTarget.resolvePackageEntry, (specifier: string) => specifier),
-  selectApp: fake(RealLocalTarget.selectApp, async () => undefined),
   ensureAppInstances: fake(
     RealLocalTarget.ensureAppInstances,
     async (_scope: unknown, nodes: readonly { address: string; kind: string }[]) => {
