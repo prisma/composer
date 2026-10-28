@@ -62,10 +62,10 @@ covers those three
   is the entry module's default export (found as for deploy), entirely on this machine, credential-free —
   local counterparts of every provisioned resource, real service processes,
   no platform account. See [local-dev.md](local-dev.md) (ADR-0041) for the
-  design; flags: `--entry` and `--name` (same override semantics as deploy), `--fresh`
+  design; flags: `--entry` and `--name` (same override semantics as deploy), `--environment`
+  (the environment it runs as, `dev` by default; ADR-0059), `--fresh`
   (before starting, delete the current app's local services, databases and
   buckets and their data; other apps run from the directory keep theirs).
-  It runs as the environment `dev` and takes no `--environment` flag.
 
 `deploy` flags: `--entry <path>` (override the config's entry for one run), `--name` (override the root's name — per-run ephemeral
 deploys in shared workspaces), `--environment <name>` (the environment to
