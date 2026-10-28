@@ -351,7 +351,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
       ),
 
     // Deploy-time prerequisite check (ADR-0029): verify every pointer secret in
-    // the provision manifest exists for the resolved stage, filling absent-but-
+    // the provision manifest exists for the resolved environment, filling absent-but-
     // in-shell names via a direct API POST — before any stack file or Alchemy.
     // Timestamps are kept for this process AND serialized onto the preflight
     // transport for the alchemy process. The parameter annotation is what
@@ -369,7 +369,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     reporter: prismaCloudReporter(),
 
     // No teardown: deploy state lives behind the platform state API, scoped
-    // to the stage's Branch — deleting the Branch/Project deletes it
+    // to the environment's Branch — deleting the Branch/Project deletes it
     // platform-side.
 
     // Runs once per lowering, before any service: resolves the CLI-ensured

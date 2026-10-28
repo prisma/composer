@@ -69,13 +69,20 @@ afterEach(() => {
 });
 
 describe('composer-destroy', () => {
-  it("passes the app's composer section, its file, the entry, the target and the name to destroy", () => {
-    const result = run(['--entry', 'module.ts', '--production', '--name', 'orm-demo-ci-1']);
+  it("passes the app's composer section, its file, the entry, the environment and the name to destroy", () => {
+    const result = run([
+      '--entry',
+      'module.ts',
+      '--environment',
+      'production',
+      '--name',
+      'orm-demo-ci-1',
+    ]);
 
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(recorded(), {
       entry: 'module.ts',
-      target: { kind: 'production' },
+      environment: 'production',
       name: 'orm-demo-ci-1',
       cwd: app,
       file: join(app, 'prisma.config.ts'),
@@ -84,13 +91,13 @@ describe('composer-destroy', () => {
     assert.match(result.stdout, /Destroyed\./);
   });
 
-  it('tears down a stage when --stage names one', () => {
-    const result = run(['--entry', 'module.ts', '--stage', 'pr-12']);
+  it('tears down the environment --environment names', () => {
+    const result = run(['--entry', 'module.ts', '--environment', 'pr-12']);
 
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(recorded(), {
       entry: 'module.ts',
-      target: { kind: 'stage', stage: 'pr-12' },
+      environment: 'pr-12',
       cwd: app,
       file: join(app, 'prisma.config.ts'),
       section: { marker: 'section' },
@@ -98,7 +105,7 @@ describe('composer-destroy', () => {
   });
 
   it('prints the structured failure and exits 1 when destroy fails', () => {
-    const result = run(['--entry', 'module.ts', '--production'], { FAKE_FAIL: '1' });
+    const result = run(['--entry', 'module.ts', '--environment', 'production'], { FAKE_FAIL: '1' });
 
     assert.equal(result.status, 1);
     assert.match(result.stderr, /"code": "DEPLOY\.ENGINE_FAILED"/);
@@ -107,7 +114,9 @@ describe('composer-destroy', () => {
   });
 
   it('warns when there is no local deploy state', () => {
-    const result = run(['--entry', 'module.ts', '--production'], { FAKE_EVENT: '1' });
+    const result = run(['--entry', 'module.ts', '--environment', 'production'], {
+      FAKE_EVENT: '1',
+    });
 
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stderr, new RegExp(`No prior deploy state under ${app}`));
@@ -119,7 +128,8 @@ describe('composer-destroy', () => {
     const result = run([
       '--entry',
       'module.ts',
-      '--production',
+      '--environment',
+      'production',
       '--config',
       'config/prisma.config.ts',
     ]);
@@ -127,7 +137,7 @@ describe('composer-destroy', () => {
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(recorded(), {
       entry: 'module.ts',
-      target: { kind: 'production' },
+      environment: 'production',
       cwd: app,
       file: join(app, 'config', 'prisma.config.ts'),
       section: { marker: 'named' },
@@ -137,7 +147,7 @@ describe('composer-destroy', () => {
   it('exits 1 with one line when the config file cannot be imported', () => {
     write('prisma.config.ts', "throw new Error('broken config');\n");
 
-    const result = run(['--entry', 'module.ts', '--production']);
+    const result = run(['--entry', 'module.ts', '--environment', 'production']);
 
     assert.equal(result.status, 1);
     assert.equal(
@@ -149,7 +159,7 @@ describe('composer-destroy', () => {
   it('exits 1 with one line when the config file declares no composer section', () => {
     write('prisma.config.ts', 'export default { orm: {} };\n');
 
-    const result = run(['--entry', 'module.ts', '--production']);
+    const result = run(['--entry', 'module.ts', '--environment', 'production']);
 
     assert.equal(result.status, 1);
     assert.equal(
@@ -161,37 +171,41 @@ describe('composer-destroy', () => {
   it('exits 1 with one line when @prisma/composer/control is not installed', () => {
     rmSync(join(app, 'node_modules'), { recursive: true, force: true });
 
-    const result = run(['--entry', 'module.ts', '--production']);
+    const result = run(['--entry', 'module.ts', '--environment', 'production']);
 
     assert.equal(result.status, 1);
     assert.match(result.stderr.trim(), /^Could not load @prisma\/composer\/control from [^\n]+$/);
   });
 
   it('exits 1 with one line when destroy throws instead of returning a failure', () => {
-    const result = run(['--entry', 'module.ts', '--production'], { FAKE_THROW: '1' });
+    const result = run(['--entry', 'module.ts', '--environment', 'production'], {
+      FAKE_THROW: '1',
+    });
 
     assert.equal(result.status, 1);
     assert.equal(result.stderr.trim(), 'destroy threw: entry did not load');
   });
 
   it("without --entry, passes no entry, so destroy uses the section's", () => {
-    const result = run(['--production']);
+    const result = run(['--environment', 'production']);
 
     assert.equal(result.status, 0, result.stderr);
     assert.equal((recorded() as { entry?: string }).entry, undefined);
   });
 
   for (const [label, args] of [
-    ['no target', ['--entry', 'module.ts']],
-    ['both targets', ['--entry', 'module.ts', '--production', '--stage', 'pr-12']],
-    ['a positional entry', ['module.ts', '--production']],
-    ['an unknown flag', ['--entry', 'module.ts', '--production', '--force']],
+    ['no environment', ['--entry', 'module.ts']],
+    ['an empty environment', ['--entry', 'module.ts', '--environment', '']],
+    ['the retired --stage flag', ['--entry', 'module.ts', '--stage', 'pr-12']],
+    ['the retired --production flag', ['--entry', 'module.ts', '--production']],
+    ['a positional entry', ['module.ts', '--environment', 'production']],
+    ['an unknown flag', ['--entry', 'module.ts', '--environment', 'production', '--force']],
   ] as const) {
     it(`refuses ${label} without calling destroy`, () => {
       const result = run(args);
 
       assert.equal(result.status, 2);
-      assert.match(result.stderr, /Usage: composer-destroy\.ts \(--production \| --stage <name>\)/);
+      assert.match(result.stderr, /Usage: composer-destroy\.ts --environment <name>/);
       assert.throws(() => readFileSync(record));
     });
   }

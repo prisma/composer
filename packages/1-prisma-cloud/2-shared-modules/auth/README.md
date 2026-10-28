@@ -101,7 +101,7 @@ const proxy = authProxy(authApi);
 The database is a BOUNDARY dependency: the root decides dedicated vs shared.
 `baseUrl` is the public origin browsers see (scheme+host, no trailing slash,
 no path) — bind it with `serviceOrigin('<app>.<service>')`, the service's
-full address, so each stage trusts its own URL, or `envParam('AUTH_BASE_URL')` for a custom domain. The
+full address, so each environment trusts its own URL, or `envParam('AUTH_BASE_URL')` for a custom domain. The
 instance secret is platform-minted inside the module; rotation is unsupported
 in v1 (rotating would invalidate every session and the encrypted jwks rows).
 
@@ -243,8 +243,8 @@ Composer 0.34.0 moves to Prisma ORM 8.0.0-rc.20. The auth pack's contract no lon
 
    It renames `migrations/snapshots/0df0ef…/` to `migrations/snapshots/24a0762…/` and rewrites `migrations/auth/0001_init/migration.json` and `migrations/auth/refs/head.json`. It prints `0df0ef… -> 24a0762…`.
 4. Run `prisma contract emit`. For an app whose own contract has no type aliases, this only moves the version stamps in `contract.json` and `contract.d.ts`.
-5. Run `prisma db sign --db <url>` against every database of the app: production, each stage and the local dev database. The database does not change; only its marker moves to the new hash. It prints `auth: signed 24a0762… (was 0df0ef…)`.
-   - **Deployed environments.** A deploy never prints a connection string. Copy each database's connection string from the Prisma Console: the app's Project for production, and the Branch named after the stage for a stage.
+5. Run `prisma db sign --db <url>` against every database of the app: production, each other environment and the local dev database. The database does not change; only its marker moves to the new hash. It prints `auth: signed 24a0762… (was 0df0ef…)`.
+   - **Deployed environments.** A deploy never prints a connection string. Copy each database's connection string from the Prisma Console: the app's Project for production, and the Branch named after the environment for any other environment.
    - **The local dev database.** It must be running: `prisma db sign --db "$(prisma dev url database)"`, where `database` is your auth database's node address. A `prisma dev` that fails stops the app, and `prisma dev url` reports only a running database, so sign before you run `prisma dev` on the new version. A `prisma dev --detach` started before the upgrade keeps the database running. If the database is already stopped, start over with `prisma dev --fresh`, which deletes the local data.
 6. Deploy and run `prisma dev` as usual.
 

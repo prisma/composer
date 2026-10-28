@@ -39,7 +39,7 @@ mock.module('@internal/local-target', () => ({
 const { runDevTeardown } = await import('../local-target/teardown.ts');
 
 const container = new PrismaCloudContainer(
-  { appName: 'my-app', stage: undefined },
+  { appName: 'my-app', environment: 'dev' },
   'local',
   undefined,
   undefined,
@@ -54,7 +54,7 @@ beforeEach(() => {
 const removalEvents = ['remove dev state of my-app', 'remove local paths'];
 
 test("starts the emulators holding the app's instances before deleting them, so a stopped emulator still forgets them", async () => {
-  await runDevTeardown({ container, stage: undefined });
+  await runDevTeardown({ container, environment: 'dev' });
 
   expect(events).toEqual([
     'daemon compute',
@@ -67,7 +67,7 @@ test("starts the emulators holding the app's instances before deleting them, so 
 test('a failed delete still removes the local state, then fails the teardown', async () => {
   deleteFails = true;
 
-  await expect(runDevTeardown({ container, stage: undefined })).rejects.toThrow('delete failed');
+  await expect(runDevTeardown({ container, environment: 'dev' })).rejects.toThrow('delete failed');
   expect(events).toEqual([
     'daemon compute',
     'daemon postgres',

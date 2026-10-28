@@ -7,8 +7,8 @@
  * carried are left absent — upstream recomputes them from observed API state.
  * Legacy `DATABASE_URL` claim rows are retired ({@link retireDatabaseUrlClaimRow}).
  *
- * Operator-visible one-time effects of the first migrated deploy (branch-stage
- * database rename + default-connection rotation, one fresh deployment per
+ * Operator-visible one-time effects of the first migrated deploy (non-production
+ * environment database rename + default-connection rotation, one fresh deployment per
  * service) are documented in docs/guides/deploying.md. Hosted state only:
  * local dev state is cleared with `prisma dev --fresh` instead.
  */
@@ -172,7 +172,7 @@ const migrateProps = (family: Family, props: unknown): unknown => {
  * variable's, and upstream's delete refuses — loudly, mid-deploy — on a scope
  * mismatch. Whether the live variable is the platform's own system-managed
  * template or the `"-"` placeholder Composer wrote over it depends on the
- * stage, and neither is Composer's to remove.
+ * environment, and neither is Composer's to remove.
  *
  * Two halves, doing different jobs:
  *
@@ -255,7 +255,7 @@ const migrateAttr = (family: Family, attr: unknown, props: unknown): unknown => 
         regionId: oldProps['region'] ?? DEFAULT_REGION,
         // A production row recorded no branch: null makes upstream's diff plan
         // an update, whose reconcile re-reads the App and records the real
-        // default-branch id. A branch stage recorded its own and converges.
+        // default-branch id. A non-production environment recorded its own and converges.
         branchId: oldProps['branchId'] ?? null,
         latestDeploymentId: null,
         // Absent only on a row written before the platform returned a domain.

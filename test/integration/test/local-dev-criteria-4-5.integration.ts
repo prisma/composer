@@ -379,9 +379,9 @@ async function main(): Promise<void> {
       if (dev?.teardown !== undefined) {
         const container = await dev.container.ensure({
           appName: 'localdevs4fixture',
-          stage: undefined,
+          environment: 'dev',
         });
-        await dev.teardown({ container, stage: undefined });
+        await dev.teardown({ container, environment: 'dev' });
       }
     } catch (error) {
       console.error(

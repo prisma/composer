@@ -1279,7 +1279,7 @@ describe('container threading through lowering() (the parent→child transport r
   // A minimal ContainerInstance the fake extension's own deserialize
   // produces — core's claim on it is only `input` + `serialize()`.
   class FakeContainerInstance {
-    constructor(readonly input: { appName: string; stage: string | undefined }) {}
+    constructor(readonly input: { appName: string; environment: string }) {}
     serialize(): string {
       return JSON.stringify(this.input);
     }
@@ -1355,7 +1355,7 @@ describe('container threading through lowering() (the parent→child transport r
 
   test("a stub extension's application and resource contexts observe ctx.container as the deserialized instance", () => {
     const { descriptor, config, seen } = fakeExtensionWithContainer();
-    const instanceInput = { appName: 'shop', stage: undefined };
+    const instanceInput = { appName: 'shop', environment: 'production' };
 
     withEnv({ [containerEnvVarName(descriptor.id)]: JSON.stringify(instanceInput) }, () => {
       run(lowering(dbModule(), config, opts()));
@@ -1432,7 +1432,10 @@ describe('resolveStateLayer', () => {
   test("the config's state.create receives its own extension's resolved container", () => {
     const { descriptor } = fakeExtension();
     const seen: Array<unknown> = [];
-    const sentinelContainer = { input: { appName: 'a', stage: undefined }, serialize: () => 'x' };
+    const sentinelContainer = {
+      input: { appName: 'a', environment: 'production' },
+      serialize: () => 'x',
+    };
     const config: PrismaAppConfig = {
       extensions: [descriptor],
       state: {

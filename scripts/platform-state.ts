@@ -1,7 +1,7 @@
 /**
- * Reads what a deployed stage has on Prisma Cloud straight from the
- * Management API, for the e2e checks: the application topology on the stage's
- * Branch, and every App, Database and Bucket row of its Project.
+ * Reads what a deployed environment has on Prisma Cloud straight from the
+ * Management API, for the e2e checks: the application topology on the
+ * environment's Branch, and every App, Database and Bucket row of its Project.
  *
  * Env: PRISMA_SERVICE_TOKEN, and PRISMA_MANAGEMENT_API_URL to point elsewhere.
  */
@@ -29,8 +29,7 @@ export interface PlatformState {
 export interface PlatformStateInput {
   readonly workspaceId: string;
   readonly appName: string;
-  /** A named stage; omit for production. */
-  readonly stage?: string | undefined;
+  readonly environment: string;
 }
 
 const program = (input: PlatformStateInput) =>
@@ -39,12 +38,16 @@ const program = (input: PlatformStateInput) =>
       workspaceId: input.workspaceId,
       appName: input.appName,
       ensure: false,
-      ...(input.stage === undefined ? {} : { stage: input.stage }),
+      environment: input.environment,
     });
     const { projectId } = container;
     const branchId = container.branchId ?? container.defaultBranchId;
     if (branchId === undefined) {
-      return yield* Effect.fail(new Error(`project ${projectId} resolved no stage Branch`));
+      return yield* Effect.fail(
+        new Error(
+          `project ${projectId} resolved no Branch for the environment ${input.environment}`,
+        ),
+      );
     }
     const client = yield* ManagementClient;
 
@@ -92,7 +95,7 @@ const program = (input: PlatformStateInput) =>
     return state;
   });
 
-/** The stage's topology and rows; rejects when the stage has no Branch or no topology. */
+/** The environment's topology and rows; rejects when it has no Branch or no topology. */
 export function readPlatformState(input: PlatformStateInput): Promise<PlatformState> {
   return Effect.runPromise(
     program(input).pipe(Effect.provide(layer().pipe(Layer.provideMerge(fromEnv())))),

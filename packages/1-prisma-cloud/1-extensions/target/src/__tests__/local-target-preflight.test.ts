@@ -20,7 +20,7 @@ const build = {
 
 const fakeContainer = () =>
   new PrismaCloudContainer(
-    { appName: 'app', stage: undefined },
+    { appName: 'app', environment: 'dev' },
     'local',
     undefined,
     undefined,
@@ -83,7 +83,7 @@ describe('runDevPreflight (local-dev spec S5, ADR-0041 D7)', () => {
   });
 
   test('a missing secret mints a placeholder, persists it, and warns exactly once', async () => {
-    await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), stage: undefined });
+    await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), environment: 'dev' });
 
     const stored = await secretsStore(path.join(cwd, '.prisma-composer', 'dev')).read();
     expect(stored['STRIPE_SECRET_KEY']).toMatch(/^local-placeholder-[0-9a-f]{16}$/);
@@ -95,12 +95,12 @@ describe('runDevPreflight (local-dev spec S5, ADR-0041 D7)', () => {
   });
 
   test('the minted placeholder is stable across two preflight runs', async () => {
-    await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), stage: undefined });
+    await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), environment: 'dev' });
     const first = (await secretsStore(path.join(cwd, '.prisma-composer', 'dev')).read())[
       'STRIPE_SECRET_KEY'
     ];
 
-    await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), stage: undefined });
+    await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), environment: 'dev' });
     const second = (await secretsStore(path.join(cwd, '.prisma-composer', 'dev')).read())[
       'STRIPE_SECRET_KEY'
     ];
@@ -114,7 +114,7 @@ describe('runDevPreflight (local-dev spec S5, ADR-0041 D7)', () => {
   test('a secret set in the shell is used directly, with no placeholder and no warning', async () => {
     process.env['STRIPE_SECRET_KEY'] = 'sk_live_from_shell';
 
-    await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), stage: undefined });
+    await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), environment: 'dev' });
 
     const stored = await secretsStore(path.join(cwd, '.prisma-composer', 'dev')).read();
     expect(stored['STRIPE_SECRET_KEY']).toBe('sk_live_from_shell');
@@ -125,7 +125,7 @@ describe('runDevPreflight (local-dev spec S5, ADR-0041 D7)', () => {
     const error: unknown = await runDevPreflight({
       graph: paramGraph(),
       container: fakeContainer(),
-      stage: undefined,
+      environment: 'dev',
     }).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(Error);
@@ -138,7 +138,7 @@ describe('runDevPreflight (local-dev spec S5, ADR-0041 D7)', () => {
   test('an env-sourced param present in the shell is written to secrets.json with no error', async () => {
     process.env['APP_ORIGIN'] = 'https://localhost:3000';
 
-    await runDevPreflight({ graph: paramGraph(), container: fakeContainer(), stage: undefined });
+    await runDevPreflight({ graph: paramGraph(), container: fakeContainer(), environment: 'dev' });
 
     const stored = await secretsStore(path.join(cwd, '.prisma-composer', 'dev')).read();
     expect(stored['APP_ORIGIN']).toBe('https://localhost:3000');

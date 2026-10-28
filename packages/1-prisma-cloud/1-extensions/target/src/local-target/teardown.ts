@@ -3,8 +3,8 @@
  * review of #162): wholesale LOCAL deletion — never an `alchemy destroy`.
  * Deletes the app's emulator instances of every kind through the
  * directory's record (a database's delete removes its data) and the app's
- * entry in it, the app's part of the dev state directory, and the dev
- * stage's `localState()` directory. Other apps run from the directory keep
+ * entry in it, the app's part of the dev state directory, and the
+ * `dev` Alchemy stage's `localState()` directory. Other apps run from the directory keep
  * their entries and their buckets' objects. The daemons are never stopped —
  * other directories may be using them. The local directories are removed
  * even when a delete fails, and the failure is then reported.

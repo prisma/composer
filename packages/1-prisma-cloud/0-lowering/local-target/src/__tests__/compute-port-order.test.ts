@@ -42,7 +42,7 @@ afterEach(async () => {
 });
 
 function fakeContainer(appName: string): ContainerInstance {
-  return { input: { appName, stage: undefined }, serialize: () => 'x' };
+  return { input: { appName, environment: 'dev' }, serialize: () => 'x' };
 }
 
 const reconcileInput = (id: string, news: Record<string, unknown>) =>

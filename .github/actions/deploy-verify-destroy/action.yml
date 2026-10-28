@@ -14,6 +14,10 @@ inputs:
   stack-name:
     description: Per-run stack name passed to `prisma deploy --name` and to the destroy script
     required: true
+  environment:
+    description: Environment passed as `--environment` to `prisma deploy`, `deploy list` and the destroy script
+    required: false
+    default: production
   verify-command:
     description: Command that verifies the deployed round trip
     required: true
@@ -50,7 +54,8 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         STACK_NAME: ${{ inputs.stack-name }}
-      run: bun "$GITHUB_WORKSPACE/node_modules/.bin/prisma" deploy --name "$STACK_NAME"
+        ENVIRONMENT: ${{ inputs.environment }}
+      run: bun "$GITHUB_WORKSPACE/node_modules/.bin/prisma" deploy --name "$STACK_NAME" --environment "$ENVIRONMENT"
 
     - name: Verify the round trip
       shell: bash
@@ -63,6 +68,7 @@ runs:
       shell: bash
       env:
         STACK_NAME: ${{ inputs.stack-name }}
+        ENVIRONMENT: ${{ inputs.environment }}
       run: bun "${{ github.workspace }}/scripts/e2e-verify-identity.ts"
 
     - name: Verify deploy list
@@ -71,6 +77,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         STACK_NAME: ${{ inputs.stack-name }}
+        ENVIRONMENT: ${{ inputs.environment }}
       run: bun "$GITHUB_WORKSPACE/scripts/e2e-verify-deploy-list.ts"
 
     - name: Destroy
@@ -82,7 +89,8 @@ runs:
       env:
         DESTROY_LABEL: ${{ inputs.destroy-label }}
         STACK_NAME: ${{ inputs.stack-name }}
-      run: bash "$GITHUB_WORKSPACE/scripts/destroy-guard.sh" "$DESTROY_LABEL" "$STACK_NAME"
+        ENVIRONMENT: ${{ inputs.environment }}
+      run: bash "$GITHUB_WORKSPACE/scripts/destroy-guard.sh" "$DESTROY_LABEL" "$STACK_NAME" "$ENVIRONMENT"
 
     - name: Sweep leaked per-run projects
       # Must run under always(): the CLI creates the per-run project outside

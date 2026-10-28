@@ -64,7 +64,7 @@ const unused = () => {
 };
 
 function localContainer(): ContainerInstance {
-  return { input: { appName: 'fixture-app', stage: undefined }, serialize: () => 'x' };
+  return { input: { appName: 'fixture-app', environment: 'dev' }, serialize: () => 'x' };
 }
 
 const emulatorsDirInvalid = new CliStructuredError(
@@ -128,7 +128,7 @@ describe.skipIf(process.platform === 'win32')(
       });
       const cli = createTestCli({
         commandFamilies: [family],
-        commands: { dev: commandAt(family, 'dev') },
+        commands: { deploy: commandAt(family, 'deploy'), dev: commandAt(family, 'dev') },
         config: { composer: configWhoseEmulatorsThrow() },
       });
 

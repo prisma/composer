@@ -66,8 +66,8 @@ if (matches.length === 0) {
   fail(`Project '${app.name}' has no '${siteService.name}' app.`);
 }
 if (matches.length > 1) {
-  // Same-named apps on other Branches are stage deploys; production is the
-  // one on the project's default Branch.
+  // Same-named apps on other Branches belong to other environments;
+  // production is the one on the project's default Branch.
   const { data: branches, error: branchesError } = await client.GET(
     '/v1/projects/{projectId}/branches',
     { params: { path: { projectId } } },
@@ -80,8 +80,8 @@ if (matches.length > 1) {
   if (matches.length !== 1) {
     fail(
       `Project '${app.name}' has ${matches.length} '${siteService.name}' apps on its default ` +
-        'Branch, so production cannot be identified. Tear down the stray stage(s) ' +
-        '(`DOCS_STAGE=<name> pnpm run destroy` in website/) and re-run.\n' +
+        'Branch, so production cannot be identified. Tear down the other environments ' +
+        '(`DOCS_ENVIRONMENT=<name> pnpm run destroy` in website/) and re-run.\n' +
         matches.map((s) => `  - ${s.id} ${s.appEndpointDomain}`).join('\n'),
     );
   }

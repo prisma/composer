@@ -74,7 +74,7 @@ the composition decision is made — the `provision()` call — as either a
 // A literal — per-application configuration without touching the service:
 provision(web, { params: { appOrigin: 'https://example.com' } });
 
-// An env source — the value lives in a platform env var, per stage
+// An env source — the value lives in a platform env var, per environment
 // (envParam is the TARGET's, from @prisma/composer-prisma-cloud):
 provision(web, { params: { appOrigin: envParam('APP_ORIGIN') } });
 ```
@@ -91,7 +91,7 @@ loudly, naming the param and the service.
 An **env-sourced** param mirrors the secrets rail (§ Secrets): the stored row is
 a pointer to the platform variable's NAME (discriminated from a JSON-encoded
 literal by the `@composer-param-pointer:` value prefix, which no JSON output
-can start with), deploy preflight verifies the name exists per stage (filling
+can start with), deploy preflight verifies the name exists per environment (filling
 it from the deploy shell when absent, failing early otherwise), and boot does
 the double-lookup — pointer, then platform variable. The differences from a
 secret are deliberate: the value reads back through `config()`, **unredacted**;
@@ -106,7 +106,7 @@ rotation.
 sources* is the canonical statement). Four sources, by where the value comes
 from: a **literal** (in the binding); an **`envParam`**
 ([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md),
-operator-supplied per stage, read at boot, **never in deploy state**); an
+operator-supplied per environment, read at boot, **never in deploy state**); an
 **`envSecret`**
 ([ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md), the
 platform secret store, redacted, **never in deploy state** — the only secret);
@@ -252,7 +252,7 @@ The round trip carries only the name, never the value:
    down the module topology (the same rail dependency inputs use). Load records
    one binding per resolved service secret slot: `{ serviceAddress, slot, name }`.
 2. **Preflight.** Before Alchemy runs, the deploy verifies every bound name
-   exists on the platform for the target stage's class/branch, filling a name
+   exists on the platform for the target environment's class/branch, filling a name
    from the deploy shell when the platform lacks it (a direct write-only POST,
    never an Alchemy resource, never overwriting an existing value). A name
    missing from both fails the deploy, listing exactly what's absent.

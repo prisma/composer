@@ -3,7 +3,7 @@
  * Deletes ONE project, by exact name, from the workspace the token belongs
  * to — live compute torn down first. This is the destroy-then-redeploy
  * cutover step for a deployment whose state predates ADR-0034 (deploy state
- * in the stage's Branch): the old workspace-level state is unreadable to the
+ * in the environment's Branch): the old workspace-level state is unreadable to the
  * current CLI, so the leftover resources are removed wholesale and the next
  * deploy recreates them under fresh state.
  *

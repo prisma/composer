@@ -33,8 +33,15 @@ describe('createComposerFamily()', () => {
     ).toEqual(['deploy', 'dev', 'dev stop', 'dev url', 'emulator list']);
   });
 
-  test('the family ships no redirects for the retired spellings', () => {
-    expect(createComposerFamily().redirects).toEqual([]);
+  test('the family redirects only the retired --stage on deploy', () => {
+    expect(createComposerFamily().redirects).toEqual([
+      {
+        from: 'deploy',
+        flag: 'stage',
+        replacement: 'deploy --environment <name>',
+        reason: 'A place the app runs is now called an environment.',
+      },
+    ]);
   });
 
   test('the operations seam defaults to the real control operations', () => {

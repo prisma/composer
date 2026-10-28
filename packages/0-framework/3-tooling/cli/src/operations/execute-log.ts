@@ -14,7 +14,7 @@ import { notOk, ok, type Result } from '@internal/foundation/result';
 import { resolveAppIdentity } from '../pipeline.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import type { LogAttached, LogDeps, LogEvent, LogInput, LogLine } from './log.ts';
-import { toStructured } from './shared.ts';
+import { DEV_ENVIRONMENT, toStructured } from './shared.ts';
 
 function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -160,7 +160,10 @@ export async function executeLog(
 
     for (const target of resolved.values()) {
       try {
-        const container = await target.container.ensure({ appName: name, stage: undefined });
+        const container = await target.container.ensure({
+          appName: name,
+          environment: DEV_ENVIRONMENT,
+        });
         attachments.push(await withEmulatorRetry(() => target.attach({ container, devDir })));
       } catch (error) {
         throw toStructured('LOG.ATTACH_FAILED', error);

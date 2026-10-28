@@ -83,7 +83,7 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
 
   async function attach() {
     const descriptor = localTargetDescriptor();
-    const container = await descriptor.container.ensure({ appName: APP, stage: undefined });
+    const container = await descriptor.container.ensure({ appName: APP, environment: 'dev' });
     return descriptor.attach({ container, devDir });
   }
 

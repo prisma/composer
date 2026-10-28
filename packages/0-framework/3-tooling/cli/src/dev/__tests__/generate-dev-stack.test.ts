@@ -49,7 +49,7 @@ describe('renderDevStackFile()', () => {
     expect(content).not.toContain('deploymentReport');
   });
 
-  test('the header comment names the command Composer starts, at stage dev', () => {
+  test('the header comment names the command Composer starts, at the Alchemy stage dev', () => {
     const content = renderDevStackFile({
       entryPath: '/repo/app/module.ts',
       cwd: '/repo/app',

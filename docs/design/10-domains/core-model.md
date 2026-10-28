@@ -492,7 +492,7 @@ interface ExtensionDescriptor {
   readonly teardown?: (input: TeardownInput) => Promise<void>        // destroy-time cleanup of infrastructure the
                                                                      // extension owns OUTSIDE the stack (e.g. the deploy
                                                                      // state store `alchemy destroy` was still reading).
-                                                                     // Runs after destroy succeeds, before the stage's
+                                                                     // Runs after destroy succeeds, before the environment's
                                                                      // Project/Branch go; throwing aborts (ADR-0034)
 }
 

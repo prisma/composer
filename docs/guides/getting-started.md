@@ -15,7 +15,7 @@ Your agent then knows the entire API and arrives prepped with the building
 blocks it can compose — the ready-made Modules for scheduled jobs, blob
 storage, and event streams, plus the ones you write. From there you describe
 what you want ("a Next.js storefront calling an orders API with its own
-Postgres, deployed to a staging stage") and it composes the app; you review
+Postgres, deployed to a staging environment") and it composes the app; you review
 TypeScript, not YAML.
 
 Do this even if you intend to write every line yourself. It costs one command,
@@ -394,10 +394,11 @@ works — it just isn't deduplicated.)
 [Building an app](building-an-app.md#calls-retry-safely-for-you) has these too.
 
 Re-deploying is idempotent — it updates the same Project. For an isolated
-copy of the whole app (own services, own config), deploy a **stage**:
+copy of the whole app (own services, own config), deploy another
+**environment**:
 
 ```sh
-pnpm prisma deploy --stage demo
+pnpm prisma deploy --environment demo
 ```
 
 When you're done with the whole app, delete its Project. Find its id in
@@ -407,9 +408,9 @@ When you're done with the whole app, delete its Project. Find its id in
 pnpm prisma project delete <id> --confirm <id>
 ```
 
-That removes production and every stage. To remove only the `demo` stage, use
-the `destroy` operation from `@prisma/composer/control`;
-[Removing an app or a stage](deploying.md#removing-an-app-or-a-stage) has the
+That removes production and every other environment. To remove only the
+`demo` environment, use the `destroy` operation from `@prisma/composer/control`;
+[Removing an app or an environment](deploying.md#removing-an-app-or-an-environment) has the
 script. The script runs outside the `prisma` CLI, so it does not use your
 `prisma auth login` session: it needs `PRISMA_SERVICE_TOKEN` and
 `PRISMA_WORKSPACE_ID` in the environment, and
@@ -428,7 +429,7 @@ your built server file, then make three changes to the server itself:
    `0.0.0.0`.
 2. Replace every other `process.env` read with what it really is: a field of
    the service's input schema for config and credentials, or a dependency
-   for anything another service provides. If a value differs per stage — an
+   for anything another service provides. If a value differs per environment — an
    app origin, an external URL — bind it with `envParam`; a credential, with
    `envSecret`. [Building an app § Service
    input](building-an-app.md#service-input) has the how-to-choose table and
@@ -471,7 +472,7 @@ Postgres.
 
 **More than one service.** Port them into one `module.ts` and replace the
 URLs they used to reach each other with contracts — that's the payoff: the
-edges become typed, and every environment (production, stages, tests) gets
+edges become typed, and every environment (production, staging, tests) gets
 the wiring for free.
 
 ## Where to go next
@@ -483,7 +484,7 @@ the wiring for free.
   with `bootstrapService`.
 - [Running locally](running-locally.md) — `prisma dev` and the `log`
   operation in full: one service, history, `--fresh`, warm restarts.
-- [Deploying and operating](deploying.md) — stages, removing an app, CI, how the app
+- [Deploying and operating](deploying.md) — environments, removing an app, CI, how the app
   behaves in production.
 - [`examples/`](../../examples/) — complete apps: start with
   [orm-demo](../../examples/orm-demo/) (one service + one Prisma

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import type { DeployedStage } from '@internal/lowering/deployed';
+import type { DeployedEnvironment } from '@internal/lowering/deployed';
 import { deployedNodes } from '../src/family/deployed-nodes.ts';
 
-const empty: DeployedStage = {
+const empty: DeployedEnvironment = {
   projectId: 'proj_1',
   branchId: 'br_1',
   nodes: [],

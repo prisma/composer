@@ -9,12 +9,12 @@
  * descriptor. The framework owns the vars; it never reads their contents.
  */
 
-/** The key an extension resolves a container from: which app, which stage. */
+/** The key an extension resolves a container from: which app, which environment. */
 export interface LocateContainerInput {
   /** The application name (root node's name, or `--name`). */
   readonly appName: string;
-  /** The USER-FACING stage name — `--stage <name>` as the user typed it (git-ref validated), or `undefined` for the default (production) stage. Alchemy's stage is the container's `alchemyStage` when supplied, with this value as the explicit-user-stage fallback; when neither exists, the CLI fails before Alchemy runs. */
-  readonly stage: string | undefined;
+  /** The environment name, git-ref validated. Core never interprets it; the extension maps it onto its platform. */
+  readonly environment: string;
 }
 
 /**
@@ -24,7 +24,7 @@ export interface LocateContainerInput {
  */
 export interface ContainerInstance {
   readonly input: LocateContainerInput;
-  /** The exact string the CLI hands `alchemy` as its stage — the deploy-state scope. Distinct from `input.stage`, the user-facing name: for Prisma Cloud this is the resolved Branch id (stable across renames, machine-independent). Framework-visible like `input` — NOT part of the `serialize()` payload, which stays extension-owned. */
+  /** The exact string the CLI hands `alchemy` as its stage — the deploy-state scope. Distinct from `input.environment`: for Prisma Cloud this is the resolved Branch id (stable across renames, machine-independent). Framework-visible like `input` — NOT part of the `serialize()` payload, which stays extension-owned. */
   readonly alchemyStage?: string | undefined;
   /** Serialize to a non-empty string for the process transport above. The format is the extension's own; only its `deserialize` reads it. */
   serialize(): string;
@@ -61,9 +61,9 @@ export interface ContainerCredentials<C = unknown> {
  * fails (same rule as ServiceLowering<P, S> — ADR-0033).
  */
 export interface ContainerDescriptor<I extends ContainerInstance = ContainerInstance, C = unknown> {
-  /** Resolve the container for (appName, stage), creating anything absent. Called by `deploy`. */
+  /** Resolve the container for (appName, environment), creating anything absent. Called by `deploy`. */
   ensure(input: LocateContainerInput, credentials?: ContainerCredentials<C>): Promise<I>;
-  /** Find the container for (appName, stage); `undefined` when nothing exists. Called by `destroy` — never creates. */
+  /** Find the container for (appName, environment); `undefined` when nothing exists. Called by `destroy` — never creates. */
   locate(
     input: LocateContainerInput,
     credentials?: ContainerCredentials<C>,

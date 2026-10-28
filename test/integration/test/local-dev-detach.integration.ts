@@ -177,7 +177,7 @@ async function reserveServicePortsBelow(port: number): Promise<void> {
       module('portskip', () => {}),
       { id: 'portskip' },
     ),
-    container: await target.container.ensure({ appName: 'portskip', stage: undefined }),
+    container: await target.container.ensure({ appName: 'portskip', environment: 'dev' }),
     devDir: path.join(tempRoot, 'placeholders', DEV_DIR),
   });
   const { port: adminPort } = JSON.parse(
@@ -271,8 +271,8 @@ async function cleanUp(): Promise<void> {
   const localTarget = prismaCloud().localTarget;
   if (localTarget !== undefined) {
     const target = await localTarget();
-    const container = await target.container.ensure({ appName: APP, stage: undefined });
-    await target.teardown?.({ container, stage: undefined }).catch((error: unknown) => {
+    const container = await target.container.ensure({ appName: APP, environment: 'dev' });
+    await target.teardown?.({ container, environment: 'dev' }).catch((error: unknown) => {
       console.error(`teardown failed: ${String(error)}`);
     });
   }

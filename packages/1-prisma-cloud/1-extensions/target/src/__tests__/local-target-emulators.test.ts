@@ -70,7 +70,7 @@ const rpcDep = () =>
   });
 
 const container: ContainerInstance = {
-  input: { appName: 'my-app', stage: undefined },
+  input: { appName: 'my-app', environment: 'dev' },
   serialize: () => 'x',
 };
 

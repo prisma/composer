@@ -119,7 +119,9 @@ try {
 
   const layers = layer().pipe(Layer.provideMerge(fromEnv()));
   const resolved = await Effect.runPromise(
-    resolveContainer({ workspaceId, appName: logicalId }).pipe(Effect.provide(layers)),
+    resolveContainer({ workspaceId, appName: logicalId, environment: 'production' }).pipe(
+      Effect.provide(layers),
+    ),
   );
 
   if (resolved.projectId !== projectId) {

@@ -31,8 +31,9 @@ import {
 } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
 import { type AlchemyInvocation, alchemyCommandLine } from '../../run-alchemy.ts';
+import { RUN_REPORT_VERSION } from '../../run-report.ts';
 import { type DeployEvent, deployWithDeps } from '../deploy.ts';
-import { destroyWithDeps } from '../destroy.ts';
+import { type DestroyInput, destroyWithDeps } from '../destroy.ts';
 import { type DevEvent, devWithDeps } from '../dev.ts';
 import { LOG_QUEUE_LIMIT } from '../execute-log.ts';
 import { type LogLine, logWithDeps } from '../log.ts';
@@ -209,7 +210,7 @@ describe('deploy()', () => {
         {
           config: composerConfig(fakeConfig()),
           entry: app.entryPath,
-          stage: 'ci-7',
+          environment: 'ci-7',
           cwd: app.dir,
         },
         {
@@ -250,7 +251,7 @@ describe('deploy()', () => {
             value: { ...fakeConfig(), entry: './service.ts' },
             file: path.join(app.dir, 'prisma.config.ts'),
           },
-          stage: 'ci-7',
+          environment: 'ci-7',
           cwd: elsewhere,
         },
         {
@@ -340,7 +341,7 @@ describe('deploy()', () => {
         {
           config: composerConfig(fakeConfig()),
           entry: app.entryPath,
-          stage: 'ci-7',
+          environment: 'ci-7',
           cwd: app.dir,
         },
         {
@@ -363,7 +364,7 @@ describe('deploy()', () => {
         {
           config: composerConfig(fakeConfig()),
           entry: app.entryPath,
-          stage: 'ci-7',
+          environment: 'ci-7',
           cwd: app.dir,
         },
         {
@@ -400,13 +401,23 @@ describe('deploy()', () => {
 
     const first = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
+        {
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+          config: composerConfig(fakeConfig()),
+        },
         deps,
       ),
     );
     const second = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
+        {
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+          config: composerConfig(fakeConfig()),
+        },
         deps,
       ),
     );
@@ -423,7 +434,12 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
+        {
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+          config: composerConfig(fakeConfig()),
+        },
         {
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
@@ -458,7 +474,12 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
+        {
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+          config: composerConfig(fakeConfig()),
+        },
         {
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
@@ -479,7 +500,37 @@ describe('deploy()', () => {
     expect(result.value.summary).toEqual(summaryFixture);
   }, 15_000);
 
-  test('an invalid stage ref is an invalid-input failure, before any container call', async () => {
+  test('without an environment, deploy targets production and runs Alchemy under that name when the container pins no stage', async () => {
+    const app = makeAppDir();
+    const containerCalls: ContainerCall[] = [];
+    const invocations: AlchemyInvocation[] = [];
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(fakeConfig({}, { calls: containerCalls })),
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async (input) => {
+            invocations.push(input);
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(containerCalls[0]).toEqual({
+      op: 'ensure',
+      input: { appName: 'fixture-app', environment: 'production' },
+    });
+    expect(invocations[0]?.stage).toBe('production');
+  });
+
+  test('an invalid environment name is an invalid-input failure, before any container call', async () => {
     const app = makeAppDir();
     const containerCalls: ContainerCall[] = [];
 
@@ -488,7 +539,7 @@ describe('deploy()', () => {
         {
           config: composerConfig(fakeConfig({}, { calls: containerCalls })),
           entry: app.entryPath,
-          stage: 'bad..ref',
+          environment: 'bad..ref',
           cwd: app.dir,
         },
         {
@@ -500,8 +551,8 @@ describe('deploy()', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
-    expect(result.failure.code).toBe('DEPLOY.STAGE_INVALID');
-    expect(result.failure.message).toContain('Invalid --stage');
+    expect(result.failure.code).toBe('DEPLOY.ENVIRONMENT_INVALID');
+    expect(result.failure.message).toContain('Invalid --environment');
     expect(containerCalls).toEqual([]);
   });
 
@@ -665,7 +716,7 @@ describe('deploy()', () => {
             }),
           ),
           entry: app.entryPath,
-          stage: 'ci-7',
+          environment: 'ci-7',
           cwd: app.dir,
         },
         {
@@ -694,7 +745,7 @@ describe('deploy()', () => {
         {
           config: composerConfig(fakeConfig()),
           entry: app.entryPath,
-          stage: 'ci-7',
+          environment: 'ci-7',
           cwd: app.dir,
         },
         {
@@ -724,7 +775,7 @@ describe('deploy()', () => {
         {
           config: composerConfig(fakeConfig()),
           entry: app.entryPath,
-          stage: 'ci-7',
+          environment: 'ci-7',
           cwd: app.dir,
         },
         {
@@ -755,7 +806,12 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
+        {
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+          config: composerConfig(fakeConfig()),
+        },
         {
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
@@ -786,7 +842,12 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
+        {
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+          config: composerConfig(fakeConfig()),
+        },
         {
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 1, signal: null }),
@@ -805,7 +866,12 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
+        {
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+          config: composerConfig(fakeConfig()),
+        },
         {
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
@@ -835,7 +901,7 @@ describe('deploy()', () => {
         {
           config: composerConfig(fakeConfig()),
           entry: app.entryPath,
-          stage: 'ci-7',
+          environment: 'ci-7',
           cwd: app.dir,
         },
         {
@@ -947,7 +1013,7 @@ describe('deploy() step events', () => {
             }),
           ),
           entry: app.entryPath,
-          stage: 'ci-7',
+          environment: 'ci-7',
           cwd: app.dir,
           onEvent: (event) => events.push(event),
         },
@@ -1002,7 +1068,7 @@ describe('deploy() step events', () => {
         get alchemyStage(): string {
           throw new Error('container bug');
         },
-        serialize: () => '{}',
+        serialize: () => JSON.stringify({ input }),
       }),
     };
     const config = fakeConfig();
@@ -1020,7 +1086,7 @@ describe('deploy() step events', () => {
             ],
           }),
           entry: app.entryPath,
-          stage: 'ci-7',
+          environment: 'ci-7',
           cwd: app.dir,
           onEvent: (event) => events.push(event),
         },
@@ -1052,7 +1118,7 @@ describe('deploy() step events', () => {
         {
           config: composerConfig(fakeConfig()),
           entry: app.entryPath,
-          stage: 'ci-7',
+          environment: 'ci-7',
           cwd: app.dir,
           onEvent: (event) => events.push(event),
         },
@@ -1087,7 +1153,7 @@ describe('deploy() step events', () => {
         {
           config: composerConfig(fakeConfig()),
           entry: app.entryPath,
-          stage: 'ci-7',
+          environment: 'ci-7',
           cwd: app.dir,
           // A path under a regular file can never be created.
           reportPath: path.join(app.dir, 'package.json', 'report.json'),
@@ -1111,7 +1177,7 @@ describe('deploy() step events', () => {
         {
           config: composerConfig(fakeConfig()),
           entry: app.entryPath,
-          stage: 'ci-7',
+          environment: 'ci-7',
           cwd: app.dir,
           onEvent: () => {
             throw new Error('renderer bug');
@@ -1137,11 +1203,8 @@ describe('executorLoadFailure()', () => {
 });
 
 describe('destroy()', () => {
-  test('a stage target locates the container with that stage; production locates with stage undefined', async () => {
-    for (const [target, expectedStage] of [
-      [{ kind: 'stage', stage: 'staging' }, 'staging'],
-      [{ kind: 'production' }, undefined],
-    ] as const) {
+  test('destroy locates the container for the environment it names', async () => {
+    for (const environment of ['staging', 'production']) {
       const app = makeAppDir();
       fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
       fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
@@ -1152,7 +1215,7 @@ describe('destroy()', () => {
           {
             config: composerConfig(fakeConfig({}, { calls: containerCalls, alchemyStage: 'br_x' })),
             entry: app.entryPath,
-            target,
+            environment,
             cwd: app.dir,
           },
           {
@@ -1165,12 +1228,41 @@ describe('destroy()', () => {
       expect(result.ok).toBe(true);
       expect(containerCalls[0]).toEqual({
         op: 'locate',
-        input: { appName: 'fixture-app', stage: expectedStage },
+        input: { appName: 'fixture-app', environment },
       });
     }
   });
 
-  test('locate returning undefined is a structured failure naming the app and stage', async () => {
+  test.each([
+    ['missing', undefined],
+    ['empty', ''],
+  ])(
+    'a %s environment fails with DEPLOY.ENVIRONMENT_REQUIRED before any work',
+    async (_label, environment) => {
+      const app = makeAppDir();
+      const containerCalls: ContainerCall[] = [];
+      const input = {
+        config: composerConfig(fakeConfig({}, { calls: containerCalls })),
+        entry: app.entryPath,
+        environment,
+        cwd: app.dir,
+      };
+
+      const result = await silently(() =>
+        destroyWithDeps(input as DestroyInput, {
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        }),
+      );
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('unreachable');
+      expect(result.failure.code).toBe('DEPLOY.ENVIRONMENT_REQUIRED');
+      expect(containerCalls).toEqual([]);
+    },
+  );
+
+  test('locate returning undefined is a structured failure naming the app and environment', async () => {
     const app = makeAppDir();
     fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
     fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
@@ -1180,7 +1272,7 @@ describe('destroy()', () => {
         {
           config: composerConfig(fakeConfig({}, { notFound: true })),
           entry: app.entryPath,
-          target: { kind: 'stage', stage: 'staging' },
+          environment: 'staging',
           cwd: app.dir,
         },
         {
@@ -1193,9 +1285,121 @@ describe('destroy()', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
     expect(result.failure.code).toBe('DEPLOY.TARGET_NOT_FOUND');
-    expect(result.failure.message).toBe('Nothing deployed for fixture-app/staging.');
+    expect(result.failure.message).toBe(
+      'Nothing deployed for fixture-app in the environment staging.',
+    );
     expect(result.failure.fix).toBe('Deploy it first.');
   });
+
+  /** Behaves like the released 0.35.0 extension: it keeps the input it is given, but its `deserialize` rebuilds only `{ appName, stage }`. */
+  function releasedExtensionContainer(): ContainerDescriptor {
+    const instance = (input: LocateContainerInput): ContainerInstance => ({
+      input,
+      serialize: () => JSON.stringify({ input }),
+    });
+    return {
+      ensure: async (input) => instance(input),
+      locate: async (input) => instance(input),
+      remove: async () => {
+        throw new Error('remove must not run');
+      },
+      deserialize: (serialized) => {
+        const parsed = JSON.parse(serialized) as { input: { appName: string; stage?: string } };
+        const { appName, stage } = parsed.input;
+        return instance({ appName, stage } as unknown as LocateContainerInput);
+      },
+    };
+  }
+
+  function withContainer(config: PrismaAppConfig, container: ContainerDescriptor): PrismaAppConfig {
+    const [extension, ...rest] = config.extensions;
+    if (extension === undefined) throw new Error('unreachable');
+    return { ...config, extensions: [{ ...extension, container }, ...rest] };
+  }
+
+  async function runAgainst(action: 'deploy' | 'destroy', config: PrismaAppConfig) {
+    const app = makeAppDir();
+    fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
+    fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
+    const ran: string[] = [];
+    const input = {
+      config: composerConfig(config),
+      entry: app.entryPath,
+      environment: 'staging',
+      cwd: app.dir,
+    };
+    const deps = {
+      runAssembler: fakeAssembler,
+      alchemy: async () => {
+        ran.push('alchemy');
+        return { exitCode: 0, signal: null };
+      },
+    };
+    const result =
+      action === 'deploy'
+        ? await silently(() => deployWithDeps(input, deps))
+        : await silently(() => destroyWithDeps(input, deps));
+    return { result, ran };
+  }
+
+  const recordingHooks = (ran: string[]) => ({
+    preflight: async () => {
+      ran.push('preflight');
+      return undefined;
+    },
+    teardown: async () => void ran.push('teardown'),
+  });
+
+  test.each(['deploy', 'destroy'] as const)(
+    '%s refuses an extension older than this Composer, before preflight, Alchemy, teardown or removal',
+    async (action) => {
+      const hookRuns: string[] = [];
+      const config = withContainer(
+        fakeConfig(recordingHooks(hookRuns)),
+        releasedExtensionContainer(),
+      );
+
+      const { result, ran } = await runAgainst(action, config);
+
+      if (result.ok) throw new Error('expected a failure');
+      expect(result.failure).toMatchObject({
+        code: 'DEPS.EXTENSION_INCOMPATIBLE',
+        message: `The extension fixture-extension is older than the Composer running this ${action}, so it would not resolve the environment staging.`,
+        fix: `Install the same Composer version of fixture-extension as the Composer that runs the ${action}.`,
+      });
+      expect([...ran, ...hookRuns]).toEqual([]);
+    },
+  );
+
+  test.each(['deploy', 'destroy'] as const)(
+    '%s refuses an extension whose deserialize throws on its own container',
+    async (action) => {
+      const config = withContainer(fakeConfig(), {
+        ...releasedExtensionContainer(),
+        deserialize: () => {
+          throw new Error('unknown payload');
+        },
+      });
+
+      const { result, ran } = await runAgainst(action, config);
+
+      if (result.ok) throw new Error('expected a failure');
+      expect(result.failure.code).toBe('DEPS.EXTENSION_INCOMPATIBLE');
+      expect(ran).toEqual([]);
+    },
+  );
+
+  test.each(['deploy', 'destroy'] as const)(
+    '%s accepts an extension of the same Composer version',
+    async (action) => {
+      const hookRuns: string[] = [];
+
+      const { result, ran } = await runAgainst(action, fakeConfig(recordingHooks(hookRuns)));
+
+      expect(result.ok).toBe(true);
+      expect(ran).toEqual(['alchemy']);
+    },
+  );
 
   test('a failed destroy carries the cause the child recorded, like deploy', async () => {
     const app = makeAppDir();
@@ -1206,7 +1410,7 @@ describe('destroy()', () => {
       destroyWithDeps(
         {
           entry: app.entryPath,
-          target: { kind: 'stage', stage: 'staging' },
+          environment: 'staging',
           cwd: app.dir,
           config: composerConfig(fakeConfig({}, { alchemyStage: 'br_x' })),
         },
@@ -1246,7 +1450,7 @@ describe('destroy()', () => {
             ),
           ),
           entry: app.entryPath,
-          target: { kind: 'stage', stage: 'staging' },
+          environment: 'staging',
           cwd: app.dir,
         },
         {
@@ -1272,7 +1476,7 @@ describe('destroy()', () => {
         {
           config: composerConfig(fakeConfig()),
           entry: app.entryPath,
-          target: { kind: 'stage', stage: 'staging' },
+          environment: 'staging',
           cwd: app.dir,
           onEvent: (event) => void order.push(event.kind),
         },
@@ -1301,7 +1505,7 @@ describe('destroy()', () => {
         {
           config: composerConfig(fakeConfig()),
           entry: app.entryPath,
-          target: { kind: 'stage', stage: 'staging' },
+          environment: 'staging',
           cwd: app.dir,
           onEvent: (event) => void events.push(event.kind),
         },
@@ -1322,7 +1526,7 @@ interface Endpoint {
 }
 
 function localContainer(): ContainerInstance {
-  return { input: { appName: 'app', stage: undefined }, serialize: () => 'x' };
+  return { input: { appName: 'app', environment: 'dev' }, serialize: () => 'x' };
 }
 
 function fakeAttachment(
@@ -1388,11 +1592,21 @@ async function collect(lines: AsyncIterable<LogLine>): Promise<LogLine[]> {
 }
 
 /** A config whose one extension both deploys the fixture nodes and offers a local target — what dev() needs end to end. */
-function devConfigWith(attachment: LocalTargetAttachment): PrismaAppConfig {
+function devConfigWith(
+  attachment: LocalTargetAttachment,
+  environments: string[] = [],
+): PrismaAppConfig {
   const descriptor: LocalTargetDescriptor = {
     providers: () => Layer.empty,
+    preflight: (input) => {
+      environments.push(`preflight:${input.environment}`);
+      return Promise.resolve();
+    },
     container: {
-      ensure: () => Promise.resolve(localContainer()),
+      ensure: (input) => {
+        environments.push(`ensure:${input.environment}`);
+        return Promise.resolve(localContainer());
+      },
       locate: () => Promise.resolve(undefined),
       remove: () => Promise.resolve(),
       deserialize: () => localContainer(),
@@ -1472,6 +1686,32 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(result.failure.code).toBe('DEV.ATTACH_FAILED');
     expect(result.failure.message).toBe('emulator admin refused the connection');
     expect(stops).toBe(1);
+  }, 15_000);
+
+  test('dev hands the local target the environment dev, and runs Alchemy under the stage dev', async () => {
+    const app = makeAppDir('hello-dev');
+    const environments: string[] = [];
+    const stages: string[] = [];
+
+    await silently(() =>
+      devWithDeps(
+        {
+          config: composerConfig(devConfigWith(linesAttachment([], []), environments)),
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async (input) => {
+            stages.push(input.stage);
+            return { exitCode: 1, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(environments).toEqual(['ensure:dev', 'preflight:dev']);
+    expect(stages).toEqual(['dev']);
   }, 15_000);
 
   test('a failed first converge stops the services it started before returning DEV.CONVERGE_FAILED', async () => {
@@ -2373,7 +2613,7 @@ describe('deploy-run reporting', () => {
       reporter: {
         begin: async (input) => {
           events.push(
-            `begin:${input.appName}:${input.stage ?? 'default'}:${input.reportId ?? 'no-id'}:` +
+            `begin:${input.appName}:${input.environment}:${input.reportId ?? 'no-id'}:` +
               `${input.credentials === undefined ? 'no-credentials' : 'credentials'}`,
           );
           fail('begin');
@@ -2419,7 +2659,7 @@ describe('deploy-run reporting', () => {
       deployWithDeps(
         {
           entry: app.entryPath,
-          stage: 'ci-1',
+          environment: 'ci-1',
           cwd: app.dir,
           config: composerConfig(fakeConfig({ reporter: log.reporter })),
         },
@@ -2450,7 +2690,7 @@ describe('deploy-run reporting', () => {
       deployWithDeps(
         {
           entry: app.entryPath,
-          stage: 'ci-2',
+          environment: 'ci-2',
           cwd: app.dir,
           reportId: 'bld_from_ci',
           config: composerConfig(fakeConfig({ reporter: log.reporter })),
@@ -2488,7 +2728,12 @@ describe('deploy-run reporting', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-3', cwd: app.dir, config: composerConfig(refusing) },
+        {
+          entry: app.entryPath,
+          environment: 'ci-3',
+          cwd: app.dir,
+          config: composerConfig(refusing),
+        },
         {
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
@@ -2511,7 +2756,7 @@ describe('deploy-run reporting', () => {
       deployWithDeps(
         {
           entry: app.entryPath,
-          stage: 'ci-4',
+          environment: 'ci-4',
           cwd: app.dir,
           config: composerConfig(fakeConfig({ reporter: log.reporter })),
         },
@@ -2543,7 +2788,7 @@ describe('deploy-run reporting', () => {
 
     await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-6', cwd: app.dir, config: composerConfig(config) },
+        { entry: app.entryPath, environment: 'ci-6', cwd: app.dir, config: composerConfig(config) },
         {
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
@@ -2572,7 +2817,7 @@ describe('deploy-run reporting', () => {
         deployWithDeps(
           {
             entry: app.entryPath,
-            stage: 'ci-5',
+            environment: 'ci-5',
             cwd: app.dir,
             config: composerConfig(fakeConfig({ reporter: log.reporter })),
           },
@@ -2596,7 +2841,7 @@ describe('deploy-run reporting', () => {
         {
           config: composerConfig(fakeConfig({ reporter: log.reporter })),
           entry: app.entryPath,
-          target: { kind: 'stage', stage: 'staging' },
+          environment: 'staging',
           onEvent: undefined,
           cwd: app.dir,
         },
@@ -2618,7 +2863,7 @@ describe('deploy-run reporting', () => {
       deployWithDeps(
         {
           entry: app.entryPath,
-          stage: 'ci-6',
+          environment: 'ci-6',
           cwd: app.dir,
           reportPath: target,
           config: composerConfig(fakeConfig()),
@@ -2631,9 +2876,9 @@ describe('deploy-run reporting', () => {
     );
     expect(ok.ok).toBe(true);
     expect(JSON.parse(fs.readFileSync(target, 'utf8'))).toMatchObject({
-      version: 1,
+      version: RUN_REPORT_VERSION,
       outcome: 'succeeded',
-      stage: 'ci-6',
+      environment: 'ci-6',
       failure: null,
     });
 
@@ -2642,7 +2887,7 @@ describe('deploy-run reporting', () => {
       deployWithDeps(
         {
           entry: app.entryPath,
-          stage: 'ci-7',
+          environment: 'ci-7',
           cwd: app.dir,
           reportPath: failedTarget,
           config: composerConfig(

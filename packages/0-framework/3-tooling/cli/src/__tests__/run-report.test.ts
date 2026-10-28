@@ -3,12 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { DeploymentSummary } from '../deployment-summary.ts';
-import {
-  RUN_REPORT_VERSION,
-  resolveRunReportPath,
-  toRunReport,
-  writeRunReport,
-} from '../run-report.ts';
+import { resolveRunReportPath, toRunReport, writeRunReport } from '../run-report.ts';
 
 const summary = {
   app: 'storefront',
@@ -35,14 +30,14 @@ afterEach(() => {
 });
 
 describe('toRunReport', () => {
-  test('a successful run carries the app, its nodes, and no failure', () => {
-    const report = toRunReport({ summary, stage: 'preview', failure: undefined });
+  test('a successful run carries the format version 2, the app, its nodes, and no failure', () => {
+    const report = toRunReport({ summary, environment: 'preview', failure: undefined });
 
     expect(report).toEqual({
-      version: RUN_REPORT_VERSION,
+      version: 2,
       outcome: 'succeeded',
       app: 'storefront',
-      stage: 'preview',
+      environment: 'preview',
       nodes: summary.nodes,
       failure: null,
     });
@@ -51,7 +46,7 @@ describe('toRunReport', () => {
   test('a failed run before any summary still names its cause', () => {
     const report = toRunReport({
       summary: undefined,
-      stage: undefined,
+      environment: 'production',
       failure: { code: 'DEPLOY.PREFLIGHT_FAILED', message: 'STRIPE_KEY is not set for preview.' },
     });
 
@@ -63,18 +58,22 @@ describe('toRunReport', () => {
   });
 
   test('absent scalars are null rather than missing, so a consumer can read them unguarded', () => {
-    const report = toRunReport({ summary: undefined, stage: undefined, failure: undefined });
+    const report = toRunReport({
+      summary: undefined,
+      environment: 'production',
+      failure: undefined,
+    });
 
     expect(Object.keys(report).sort()).toEqual([
       'app',
+      'environment',
       'failure',
       'nodes',
       'outcome',
-      'stage',
       'version',
     ]);
     expect(report.app).toBeNull();
-    expect(report.stage).toBeNull();
+    expect(report.environment).toBe('production');
     expect(report.nodes).toEqual([]);
   });
 });
@@ -104,7 +103,7 @@ describe('resolveRunReportPath', () => {
 describe('writeRunReport', () => {
   test('writes parseable JSON, creating the parent directory', () => {
     const target = path.join(tempDir(), 'nested', 'run.json');
-    const report = toRunReport({ summary, stage: undefined, failure: undefined });
+    const report = toRunReport({ summary, environment: 'production', failure: undefined });
 
     expect(writeRunReport(target, report)).toBe(true);
     expect(JSON.parse(fs.readFileSync(target, 'utf8'))).toEqual(report);
@@ -118,7 +117,7 @@ describe('writeRunReport', () => {
     expect(
       writeRunReport(
         path.join(dir, 'blocked', 'run.json'),
-        toRunReport({ summary, stage: undefined, failure: undefined }),
+        toRunReport({ summary, environment: 'production', failure: undefined }),
       ),
     ).toBe(false);
   });

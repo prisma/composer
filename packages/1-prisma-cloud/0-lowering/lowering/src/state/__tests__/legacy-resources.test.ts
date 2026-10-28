@@ -310,8 +310,8 @@ describe('upstream provider acceptance of migrated rows (fake Management API)', 
   });
 });
 
-describe('branch-stage migrated rows against upstream Database provider', () => {
-  // A branch-stage row: the legacy descriptor passed an explicit name AND a
+describe('non-production environment migrated rows against upstream Database provider', () => {
+  // A non-production environment's row: the legacy descriptor passed an explicit name AND a
   // branchId; the replacement descriptor omits the name when branchId is set.
   const legacyBranchRow = (): CreatedResourceState => ({
     ...legacyDatabaseRow(),
@@ -337,7 +337,7 @@ describe('branch-stage migrated rows against upstream Database provider', () => 
           fqn: 'data-db',
           instanceId: 'inst-db',
           olds: migrated.props,
-          // Branch-stage news shape from descriptors/postgres.ts: NO name.
+          // Non-production news shape from descriptors/postgres.ts: NO name.
           news: { project: 'proj-1', region: 'us-east-1', branchId: 'branch_1' },
           output: migrated.attr,
           session: undefined,
@@ -531,7 +531,7 @@ describe('legacy compute-family rows against upstream providers', () => {
     expect(migrateLegacyResourceState(migrated)).toEqual(migrated);
   });
 
-  test('App on a branch stage: diff updates its identity in place, and read finds the app', async () => {
+  test('App on a non-production environment: diff updates its identity in place, and read finds the app', async () => {
     const migrated = migrateLegacyResourceState(legacyAppRow('branch_1')) as MigratedRow;
     const service = await appService();
     if (service.diff === undefined || service.read === undefined) {

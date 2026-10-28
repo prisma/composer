@@ -443,7 +443,7 @@ async function main(): Promise<void> {
     const localTargetThunk = descriptor.localTarget;
     if (localTargetThunk === undefined) throw new Error('expected a localTarget descriptor');
     const dev = await localTargetThunk();
-    devContainer = await dev.container.ensure({ appName: APP_NAME, stage: undefined });
+    devContainer = await dev.container.ensure({ appName: APP_NAME, environment: 'dev' });
 
     // 3. Load the graph (mirrors the CLI pipeline's own Load step).
     const graph = Load(appModule, { id: APP_NAME });
@@ -458,7 +458,7 @@ async function main(): Promise<void> {
     process.env['LOCALDEV_FIXTURE_API_KEY'] = 'test-api-key';
     process.env['LOCALDEV_FIXTURE_GREETING'] = 'hello';
     if (dev.preflight !== undefined) {
-      await dev.preflight({ graph, container: devContainer, stage: undefined });
+      await dev.preflight({ graph, container: devContainer, environment: 'dev' });
     }
     process.chdir(originalCwd);
 
@@ -663,7 +663,7 @@ async function main(): Promise<void> {
       const resolvedLocalTarget = await descriptor.localTarget().catch(() => undefined);
       if (resolvedLocalTarget?.teardown !== undefined) {
         await resolvedLocalTarget
-          .teardown({ container: devContainer, stage: undefined })
+          .teardown({ container: devContainer, environment: 'dev' })
           .catch(() => undefined);
       }
     }

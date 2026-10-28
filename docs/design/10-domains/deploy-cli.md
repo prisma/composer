@@ -34,29 +34,30 @@ covers those three
 ([ADR-0053](../90-decisions/ADR-0053-dev-url-dev-stop-and-emulator-list.md)).
 
 - **`prisma deploy`** — deploy the application whose root node is the default
-  export of the entry module, to a stage (default: production). The entry is
+  export of the entry module, to an environment (default: `production`). The entry is
   `entry` in the `composer` section of `prisma.config.ts`, resolved against
   that file's directory; `--entry <path>` overrides it, resolved against the
   working directory. With neither, the command fails with `CONFIG.ENTRY_MISSING`.
   The entry is an input to the tool, not an application fact ([ADR-0003](../90-decisions/ADR-0003-deploy-derives-everything-from-the-root-node.md)).
   The generated stack file gets the entry as an absolute path.
-- **`prisma deploy list`** — list every node the app has deployed on a stage
-  (default: production), one row per node of the application topology the
+- **`prisma deploy list`** — list every node the app has deployed in an
+  environment (default: `production`), one row per node of the application topology the
   last deploy wrote, in topology order. Each row has the node's address, its
   kind (`project` for the root, `service`, `postgres`, `bucket`, `module`, or
   another resource's type), its platform ID and, for a service, its URL. The
   root's ID is the Project's; every other ID is the Branch's service, database
   or bucket row with the node's `logicalId`. A node with no row has no ID. It
-  finds the stage with the find-only lookup `destroy` uses and creates
+  finds the environment with the find-only lookup `destroy` uses and creates
   nothing. It reads the topology, not the deploy state, so it never contends
-  for the deploy lease. Flags: `--stage`, `--name` and `--entry`, as on
-  `deploy`. An invalid stage name fails with `DEPLOY.STAGE_INVALID`; no
+  for the deploy lease. Flags: `--environment`, `--name` and `--entry`, as on
+  `deploy`. An invalid environment name fails with
+  `DEPLOY.ENVIRONMENT_INVALID`; no
   Project, no Branch or no topology fails with `DEPLOY.TARGET_NOT_FOUND`.
   `@prisma/composer-cli` adds it to the family, because it reads Prisma Cloud
   ([ADR-0053](../90-decisions/ADR-0053-dev-url-dev-stop-and-emulator-list.md)).
 - **`destroy`**, an operation on `@prisma/composer/control` with no command —
-  tear a stage down (same derivation, Alchemy destroy); the target is always
-  explicit (see § Stages and containers). Users call it from a script.
+  tear an environment down (same derivation, Alchemy destroy); the
+  environment is always named explicitly (see § Environments and containers). Users call it from a script.
 - **`prisma dev`** — bring up the application whose root node
   is the entry module's default export (found as for deploy), entirely on this machine, credential-free —
   local counterparts of every provisioned resource, real service processes,
@@ -64,14 +65,23 @@ covers those three
   design; flags: `--entry` and `--name` (same override semantics as deploy), `--fresh`
   (before starting, delete the current app's local services, databases and
   buckets and their data; other apps run from the directory keep theirs).
+  It runs as the environment `dev` and takes no `--environment` flag.
 
 `deploy` flags: `--entry <path>` (override the config's entry for one run), `--name` (override the root's name — per-run ephemeral
-deploys in shared workspaces), `--stage <name>` (target a named, isolated
-environment instead of production), `--report <path>` (write the deploy's
-outcome as JSON to that file), `--build-id <id>` (join a deploy record that CI
+deploys in shared workspaces), `--environment <name>` (the environment to
+deploy, default `production`), `--report <path>` (write the deploy's
+outcome as JSON to that file, including its `environment`), `--build-id <id>` (join a deploy record that CI
 already created). The `destroy` operation takes the same
-`name` and a required `target`, `{ kind: 'stage', stage }` or
-`{ kind: 'production' }`. `--stage` does not exist on `dev`. A build command
+`name` and a required `environment`, with no default. `--stage`, the flag's
+old name, is retired on `deploy`: it fails with `CLI.COMMAND_MOVED`, naming
+`--environment <name>`. `deploy list` has no such redirect, and there
+`--stage` is an unknown flag (`CLI.INVALID_ARGUMENTS`). The engine refuses
+to start when a redirect names a command the host has not mounted. This
+repository's examples and CI run the released `prisma` CLI with the workspace
+Composer, and that release does not mount `deploy list`. The redirect can be
+added once this repository's `prisma` devDependency is a release that mounts
+`deploy list`.
+A build command
 and topology emission are out of scope (see § Out of scope).
 
 **Runtime.** The command family is runtime-agnostic — no bun-only APIs
@@ -134,20 +144,37 @@ user can rerun it by hand (ADR-0007).
    carries (ADR-0004) — no directory discovery of any kind. Assembly validates
    the user's built output exists (missing → "run your build" error; staleness
    is not detected) and produces a normalized bundle `{ dir, entry }`.
-6. **Validate the stage name, then resolve each extension's containers.**
-   `--stage` must pass `git check-ref-format`; an invalid name fails outright,
+6. **Validate the environment name, then resolve each extension's containers.**
+   The environment name, including a default such as `production`, must pass
+   `git check-ref-format` (`DEPLOY.ENVIRONMENT_INVALID`). A name made only of
+   letters, digits, `-` and `_`, starting with a letter or digit, is a valid
+   ref by construction and is accepted without running `git`. An invalid name fails outright,
    never silently normalized — the framework's own contract, platform-free
    and checked once, before any extension runs. Containers are resolved after
    assembly succeeds and before the stack is generated, so a deploy that
    cannot assemble never creates anything on any platform: for every
    extension in the config that declares a `container` descriptor
    ([ADR-0038](../90-decisions/ADR-0038-containers-are-an-extension-descriptor.md)),
-   the CLI calls `ensure({ appName, stage })` (`deploy`, creates if absent) or
-   `locate({ appName, stage })` (`destroy`, finds only). `destroy` against a
+   the CLI calls `ensure({ appName, environment })` (`deploy`, creates if
+   absent) or `locate({ appName, environment })` (`destroy`, finds only). `destroy` against a
    `locate` that finds nothing fails with "nothing deployed for
-   `<app>`[`/<stage>`]" rather than creating one. What resolving a container
+   `<app>`/`<environment>`" rather than creating one. What resolving a container
    means is entirely the extension's own business — the CLI holds the result
-   as an opaque value. See § Stages and containers.
+   as an opaque value. See § Environments and containers. The one thing the
+   CLI checks is that each container, rebuilt the way the Alchemy child will
+   rebuild it, names the environment it asked for. The CLI passes the
+   container's `serialize()` output to the same extension's `deserialize` and
+   compares the result's `input.environment` with the name. An extension older
+   than the running Composer keeps the input it is given, but resolves from a
+   key without `environment`, and its `deserialize` rebuilds only the fields
+   it knows. So it could read every name as production, and its rebuilt
+   container has no environment. A mismatch, or a `deserialize` that throws,
+   fails with `DEPS.EXTENSION_INCOMPATIBLE`, naming the extension and telling
+   the user to install the same Composer version of it as the Composer that
+   runs the deploy. The check runs on `deploy` and `destroy`, after each
+   `ensure` or `locate` and before preflight, Alchemy, teardown or removal.
+   On `deploy`, an older extension's `ensure` may already have created the
+   app's Project by then; the check stops everything after that.
 7. **Lower and drive.** Write the pipeline's results as a runnable stack
    module at `.prisma-composer/alchemy.run.ts` and drive the `alchemy` CLI against
    it (ADR-0007), started as § Runtime describes, carrying every resolved container across to the child as one
@@ -163,11 +190,17 @@ correlation between services and their built bundles never exists as
 user-facing configuration — it is computed, written into the generated stack
 file, and consumed in one motion.
 
-## Stages and containers
+## Environments and containers
 
-An app deploys to a named **stage** — a deploy-time environment, never
-authored in the topology (ADR-0024). `prisma deploy` with no `--stage`
-targets **production**; `--stage <name>` targets a **named stage**.
+An app deploys to a named **environment**, chosen at deploy time and never
+authored in the topology
+([ADR-0059](../90-decisions/ADR-0059-a-deployment-environment-is-called-an-environment.md),
+ADR-0024). Every environment has a name, and core treats every name alike: it
+never compares one with `production` or `dev`. The names a user doesn't type
+are command defaults: `prisma deploy` and `prisma deploy list` default
+`--environment` to `production`, and `prisma dev` runs as `dev`. The container
+key is `{ appName, environment }`, and the extension preflight and teardown
+inputs carry the same `environment`.
 
 - **Containers.** Any extension whose platform has platform-side containers —
   infrastructure a service deploys *into*, which must exist before Alchemy
@@ -186,9 +219,9 @@ targets **production**; `--stage <name>` targets a **named stage**.
   extension; core hands that extension's own resolved container to
   `state.create()`, so the state layer is built from it rather than from the
   environment.
-- **Destroy is explicit.** The `destroy` operation requires a `target`, `{ kind: 'stage', stage }` or `{ kind: 'production' }`; a call without one is an error, so an omitted or mistyped stage can never silently tear down production. `destroy` resolves find-only (no container is ever created); after `alchemy destroy` succeeds and after every extension's `teardown` has run, the CLI removes each resolved container. That two-loop order — every teardown, then every removal — is what guarantees every extension's teardown runs against a still-live container.
+- **Destroy is explicit.** The `destroy` operation requires an `environment`, and production is `environment: 'production'`; a call without a non-empty name fails with `DEPLOY.ENVIRONMENT_REQUIRED`, so an omitted name can never silently tear down production. `destroy` resolves find-only (no container is ever created); after `alchemy destroy` succeeds and after every extension's `teardown` has run, the CLI removes each resolved container. That two-loop order — every teardown, then every removal — is what guarantees every extension's teardown runs against a still-live container.
 
-**Prisma Cloud's own containers** are its app's **Project** and, for a named stage, that stage's **Branch** — the Project found by its `logicalId`, the app name, and the Branch by its name; created if absent on deploy, never created on destroy; each stage's deploy state lives behind the platform state API, scoped to its Branch (production's to the Project's implicit default Branch). See [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md) (App = one Project, Stage = Branch), [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md) (stage resolution mechanics), and [ADR-0045](../90-decisions/ADR-0045-deploy-state-lives-behind-the-platform-state-api.md) (deploy state behind the platform state API, per Branch).
+**Prisma Cloud's own containers** are its app's **Project** and the environment's **Branch**. The Project is found by its `logicalId`, the app name. The environment `production` is the Project's default Branch, found by `isDefault` (never by `role`): its resources carry no `branchId`, its Build carries no branch reference, and destroy never deletes that Branch. Any other name is the Branch whose `gitName` is that name. Project and Branch are created if absent on deploy and never created on destroy. A name other than `production` whose `gitName` lookup returns the default Branch (such as `main`) is refused: it would be production under a second name, and destroying it would tear production down. Each environment's deploy state lives behind the platform state API, scoped to its Branch. See [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md) (an app is one Project, an environment is a Branch), [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md) (how an environment resolves to its Project and Branch), and [ADR-0045](../90-decisions/ADR-0045-deploy-state-lives-behind-the-platform-state-api.md) (deploy state behind the platform state API, per Branch).
 
 ## Build ownership
 
@@ -278,19 +311,19 @@ them:
   alchemy — the likely causes (wrong directory, nothing ever deployed) mean
   "nothing to do here", not an error; the warning makes the wrong-directory
   case visible instead of silently succeeding (see ADR-0004's state rule).
-- The Alchemy stage is the resolved **PDP branch id** (TML-3157): after
-  container resolution, the CLI reads `alchemyStage` from the state-owning
-  extension's container (the extension named by `config.state.extension`) and
-  always passes it as `--stage` — the flagged stage's Branch id, or the
-  project's default Branch id when no `--stage` was given. This pins the
-  deploy-state scope to the branch instead of Alchemy's `dev_$USER` default,
-  so it no longer varies by machine. The user-facing `--stage` still selects
-  which Branch the containers/preflight/teardown target. `alchemy` is ALWAYS
-  invoked with an explicit `--stage`: the container-supplied `alchemyStage`
-  when there is one, else the user's `--stage`; when neither exists the CLI
-  fails before invoking `alchemy` rather than let its machine-dependent
-  `dev_$USER` default scope the deploy state. The generated stack file
-  carries neither the stage nor any resolved container (ADR-0007).
+- Alchemy has its own word, **stage**, for the scope of its deploy state,
+  and its own `--stage` flag. On Prisma Cloud the Alchemy stage is the
+  resolved **PDP branch id** (TML-3157): after container resolution, the CLI
+  reads `alchemyStage` from the state-owning extension's container (the
+  extension named by `config.state.extension`) and passes it as Alchemy's
+  `--stage` — the environment's Branch id, which for `production` is the
+  project's default Branch id. This pins the deploy-state scope to the Branch
+  instead of Alchemy's `dev_$USER` default, so it never varies by machine.
+  `alchemy` is ALWAYS invoked with an explicit `--stage`: the
+  container-supplied `alchemyStage` when there is one, else the environment
+  name. Every environment has a name, so there is always a value. The generated
+  stack file carries neither the environment nor any resolved container
+  (ADR-0007).
 
 ## Known limitations
 
@@ -316,7 +349,10 @@ them:
 - [`../90-decisions/`](../90-decisions/) — ADR-0003 … ADR-0006.
 - [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)
   / [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)
-  — stage, Project, and Branch semantics (§ Stages and containers).
+  — environment, Project, and Branch semantics, under the old word "stage"
+  (§ Environments and containers).
+- [ADR-0059](../90-decisions/ADR-0059-a-deployment-environment-is-called-an-environment.md)
+  — the term is environment.
 - [ADR-0038](../90-decisions/ADR-0038-containers-are-an-extension-descriptor.md)
   — the container descriptor and the opaque parent→child transport
-  (pipeline steps 6-7, § Stages and containers).
+  (pipeline steps 6-7, § Environments and containers).

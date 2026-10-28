@@ -72,12 +72,12 @@ jobs:
       - name: Reset the production project (destroy-then-redeploy cutover)
         if: github.event_name == 'workflow_dispatch' && inputs.reset
         run: bun scripts/delete-project.ts composer-docs
-      # No --stage: this targets production. The CLI is invoked directly rather
-      # than through the package's `deploy` script, which sources a local .env
-      # that does not exist on a runner (the credentials are already in env).
+      # The CLI is invoked directly rather than through the package's `deploy`
+      # script, which sources a local .env that does not exist on a runner (the
+      # credentials are already in env).
       - name: Deploy to production
         working-directory: website
-        run: bun ../node_modules/.bin/prisma deploy
+        run: bun ../node_modules/.bin/prisma deploy --environment production
       # A green deploy is not a serving site (PRO-200), and the URL is a
       # generated service id — so resolve it, print it, and prove it answers.
       - name: Print the URL and smoke-check the site

@@ -4,6 +4,8 @@ Amended by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-o
 
 Amended by [ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md): two more operations, `devUrl` and `devStop`, act on the app `prisma dev` last ran from a directory.
 
+Amended by [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md): `deploy` and `destroy` take `environment` instead of `stage` and `target`, `destroy` requires it, and `DEPLOY.STAGE_INVALID` is `DEPLOY.ENVIRONMENT_INVALID`.
+
 ## Decision
 
 Composer's deploy pipeline is drivable in-process through one published subpath, **`@prisma/composer/control`**. It exposes four typed operations — `deploy`, `destroy`, `dev`, `log` — that take structured inputs and return structured results. They never parse argv and never call `process.exit`; the operations print nothing — the spawned alchemy child streams its own output to the terminal. The `prisma-composer` CLI is a thin renderer over these same operations, so the command-line surface and the programmatic surface cannot drift apart. *(Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the `prisma-composer` binary is retired. The `prisma` CLI renders two of the operations, as `prisma deploy` and `prisma dev`; `destroy` and `log` have no command and are called from scripts.)*

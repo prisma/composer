@@ -3,11 +3,15 @@
  *
  * `--production` is gone. It was accepted and then always errored ("only
  * valid with destroy"), so no invocation using it could ever have succeeded;
- * deploy targets production by default when no `--stage` is given.
+ * deploy targets the environment production when no `--environment` is given.
  */
 import type { EngineEvent } from '@prisma/cli-engine';
 import { defineCommand, flag } from '@prisma/cli-engine';
-import type { DeployEvent, DeployStep } from '../../operations/deploy.ts';
+import {
+  DEFAULT_DEPLOY_ENVIRONMENT,
+  type DeployEvent,
+  type DeployStep,
+} from '../../operations/deploy.ts';
 import { convergeSpawn, operationDeps, settleConverge } from '../converge.ts';
 import { dataLine } from '../data-lines.ts';
 import type { ComposerOperations } from '../family.ts';
@@ -67,7 +71,7 @@ export const createDeployCommand = (operations: ComposerOperations) =>
       summary: "Deploy the application whose root node is the entry module's default export.",
       examples: [
         '{bin} deploy',
-        '{bin} deploy --stage feat-auth',
+        '{bin} deploy --environment staging',
         '{bin} deploy --entry other-module.ts',
       ],
     },
@@ -86,11 +90,12 @@ export const createDeployCommand = (operations: ComposerOperations) =>
             "and buckets (default: the root module's name).",
           placeholder: 'name',
         }),
-        stage: flag.string({
+        environment: flag.string({
           brief:
-            'Deploy a complete, isolated copy of the app under this name instead of production, ' +
-            'such as staging or one per pull request (default: production).',
-          placeholder: 'stage',
+            'The environment to deploy to. Any name other than production is a complete, ' +
+            'isolated copy of the app, such as staging or one per pull request.',
+          placeholder: 'name',
+          default: DEFAULT_DEPLOY_ENVIRONMENT,
         }),
         report: flag.string({
           brief:
@@ -119,7 +124,7 @@ export const createDeployCommand = (operations: ComposerOperations) =>
           entry: args.flags.entry,
           config: ctx.config,
           name: args.flags.name,
-          stage: args.flags.stage,
+          environment: args.flags.environment,
           cwd: ctx.cwd,
           reportPath: args.flags.report,
           reportId: args.flags.buildId,
@@ -133,7 +138,7 @@ export const createDeployCommand = (operations: ComposerOperations) =>
       );
 
       return settleConverge(result, ctx, ({ summary, durationMs }) => {
-        const target = `to ${args.flags.stage ?? 'production'} in ${formatDuration(durationMs)}`;
+        const target = `to ${args.flags.environment ?? DEFAULT_DEPLOY_ENVIRONMENT} in ${formatDuration(durationMs)}`;
         for (const node of summary?.nodes ?? []) {
           for (const entity of node.entities) {
             if (entity.url !== undefined) {

@@ -6,7 +6,7 @@ import { collectPages } from '../pagination.ts';
 import type { DeployLease, LeaseScope } from './lease.ts';
 
 /**
- * Whether the platform state API holds any resources for (stack, stage).
+ * Whether the platform state API holds any resources for (stack, Alchemy stage).
  * Requires the live deploy lease — the listing runs under it, like every
  * state operation.
  */
@@ -40,7 +40,7 @@ interface NamedResource {
 // Bounded (collectPages): these checks run under the deploy lease, so broken
 // pagination must fail loudly, never hang or pass on a partial listing.
 // Connections are deliberately not listed — they are children of databases,
-// so the database listing already covers every stage that has one.
+// so the database listing already covers every Branch that has one.
 const listBranchResources = (
   client: ManagementApiClient,
   projectId: string,
@@ -73,8 +73,8 @@ const listBranchResources = (
 
 /**
  * The empty-scope-with-live-resources case: the platform state API holds no
- * resources for (stack, stage) while the platform already has Compute apps,
- * databases, or buckets on the target Branch — the stage was deployed by an
+ * resources for (stack, Alchemy stage) while the platform already has Compute apps,
+ * databases, or buckets on the target Branch — the environment was deployed by an
  * older Composer version whose state store is never read, or the resources
  * belong to something other than this app. The rows could be identified by
  * logicalId, but the rest of the state could not be rebuilt from them
@@ -87,7 +87,6 @@ export const failOnEmptyScopeWithLiveResources = (
   projectId: string,
   branchId: string,
   stack: string,
-  stage: string,
 ): Effect.Effect<void, PrismaApiError, ManagementClient> =>
   Effect.gen(function* () {
     const client = yield* ManagementClient;
@@ -98,12 +97,12 @@ export const failOnEmptyScopeWithLiveResources = (
       new PrismaApiError({
         status: 0,
         message:
-          `stage "${stage}" (stack "${stack}") has no deploy state, but its branch ${branchId} already ` +
+          `the Branch ${branchId} (stack "${stack}") has no deploy state, but already ` +
           `holds ${String(resources.length)} resource(s): ${names}. Without state, a deploy would try to ` +
-          'recreate them and a destroy would remove nothing. This happens when the stage was deployed ' +
+          'recreate them and a destroy would remove nothing. This happens when the environment was deployed ' +
           'by a Composer version that kept deploy state elsewhere, or when the resources belong to ' +
-          'something other than this app. Delete the stage (its branch, or the project for production) ' +
-          'in the Prisma Console or via the Management API, then deploy again; a stage from an older ' +
+          'something other than this app. Delete the environment (its branch, or the project for production) ' +
+          'in the Prisma Console or via the Management API, then deploy again; an environment from an older ' +
           'version can instead be destroyed with that version first. If the resources belong to ' +
           'something else, remove them or deploy into a different project.',
       }),

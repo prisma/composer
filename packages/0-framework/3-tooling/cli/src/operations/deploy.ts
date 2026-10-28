@@ -28,6 +28,9 @@ export type DeployEvent =
       readonly data?: Readonly<Record<string, string | number>> | undefined;
     };
 
+/** The environment `deploy` targets when none is named. */
+export const DEFAULT_DEPLOY_ENVIRONMENT = 'production';
+
 export interface DeployInput {
   /**
    * Composer's configuration: the `composer` section of `prisma.config.ts` and that file. The operation does not look for a config file; it refuses a section the CLI would refuse, before any work starts.
@@ -37,8 +40,8 @@ export interface DeployInput {
   readonly entry?: string | undefined;
   /** Override the root node's name (the `--name` flag's slot). */
   readonly name?: string | undefined;
-  /** Target stage. ABSENT = production — bare deploy targets production (main.ts effectiveStage). */
-  readonly stage?: string | undefined;
+  /** The environment to deploy to. Defaults to `production`. */
+  readonly environment?: string | undefined;
   /** Defaults to process.cwd(); the directory `.prisma-composer/` and `.alchemy` state live under. */
   readonly cwd?: string | undefined;
   /**
@@ -52,7 +55,7 @@ export interface DeployInput {
    * An existing report record this deploy belongs to — the `--build-id` flag's
    * slot. A CI job that opens the record before invoking Composer passes the
    * id here, and the target's reporter joins that record instead of creating
-   * one. Absent falls back to whatever the target reads from the environment.
+   * one. Absent falls back to whatever the target reads from environment variables.
    */
   readonly reportId?: string | undefined;
   /** Each step as it starts and finishes, in real time. Rendering is the host's. */

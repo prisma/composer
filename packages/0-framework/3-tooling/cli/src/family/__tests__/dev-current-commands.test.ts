@@ -27,6 +27,7 @@ function cliWith(fixtures: OperationsDoubleFixtures = {}) {
   const cli = createTestCli({
     commandFamilies: [family],
     commands: {
+      deploy: commandAt(family, 'deploy'),
       'dev url': commandAt(family, 'dev url'),
       'dev stop': commandAt(family, 'dev stop'),
     },

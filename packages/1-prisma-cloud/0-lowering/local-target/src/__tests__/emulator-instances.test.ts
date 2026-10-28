@@ -39,7 +39,7 @@ let root: string;
 let registryRoot: string;
 
 const container: ContainerInstance = {
-  input: { appName: APP, stage: undefined },
+  input: { appName: APP, environment: 'dev' },
   serialize: () => 'x',
 };
 
@@ -364,7 +364,7 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
 
   const WEB = 'other-app.web';
   const otherApp: ContainerInstance = {
-    input: { appName: 'other-app', stage: undefined },
+    input: { appName: 'other-app', environment: 'dev' },
     serialize: () => 'x',
   };
 
