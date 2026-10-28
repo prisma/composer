@@ -14,7 +14,7 @@ Remove `ensureDefaultBranchApp` from `src/Prisma/CustomDomain.ts` and the test t
 
 - **Builds on:** nothing. Starts immediately. Will and the orchestrating agent.
 - **Hands to:** P1 can attach a hostname on any environment.
-- **Done when:** a provider test against a fake Management API creates a domain on an App whose Branch is not the default, the change is in an Alchemy release, and Composer's pin moves to it. No live test: after the change the request carries no Branch, so a live run would only test PDP, whose own tests cover branch domains (prisma/pdp-control-plane#5746).
+- **Done when:** a live test, written to Alchemy's own conventions (AGENTS.md "Resource and runtime testing conventions"), deploys a site with a custom domain on a Branch that is not the default; the change is in an Alchemy release; and Composer's pin moves to it. Live credentials are confirmed before dispatch.
 
 ### U2. A ServiceUrl resource over PDP's new routes
 
@@ -79,7 +79,8 @@ The fourth slice of the control plane's project, listed here because the Compose
 
 | Slice | Starts when |
 | --- | --- |
-| U1, C1, D1, C2 | at once |
+| U1, C1, D1 | at once |
+| C2 | prisma/composer#385 is merged |
 | P1 | C1 has merged and the Alchemy release carrying U1 is pinned |
 | U2, D2 | D1 is deployed |
 | P2 | U2 and P1 have merged |
