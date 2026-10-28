@@ -213,9 +213,7 @@ async function hasLegacyUserValues(
         (row) =>
           (row.branchId === null || row.branchId === branchId) &&
           !row.isManagedBySystem &&
-          !row.key.startsWith('COMPOSER_') &&
-          row.key !== 'DATABASE_URL' &&
-          row.key !== 'DATABASE_URL_POOLED',
+          !row.key.startsWith('COMPOSER_'),
       );
       return found;
     },

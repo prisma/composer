@@ -139,3 +139,45 @@ describe('named environment set preflight', () => {
     }
   });
 });
+
+test('an unmanaged legacy DATABASE_URL requires explicit named-set adoption', async () => {
+  const noBindings = Load(
+    module('app', ({ provision }) => {
+      provision(
+        compute({
+          name: 'web',
+          deps: {},
+          build: {
+            extension: '@prisma/composer/node',
+            type: 'node',
+            module: 'file:///test/service.ts',
+            entry: 'server.js',
+          },
+        }),
+        { id: 'web' },
+      );
+    }),
+  );
+  const calls: string[] = [];
+  const client = {
+    GET: async (path: string) => {
+      calls.push(path);
+      return {
+        data: {
+          data: path.endsWith('/environment-sets')
+            ? []
+            : [{ key: 'DATABASE_URL', isManagedBySystem: false, branchId: null }],
+          pagination: { hasMore: false, nextCursor: null },
+        },
+        response: new Response(null, { status: 200 }),
+      };
+    },
+  } as unknown as ManagementApiClient;
+  const result = await runEnvironmentSetPreflight(
+    { graph: noBindings, container, environment: 'pr-42' },
+    undefined,
+    client,
+  );
+  expect(result.environmentSet).toBeUndefined();
+  expect(calls).toEqual(['/v1/projects/{projectId}/environment-sets', '/v1/environment-variables']);
+});
