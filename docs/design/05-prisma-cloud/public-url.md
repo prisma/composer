@@ -1,6 +1,6 @@
 # Public URLs on Prisma Cloud
 
-How a `publicUrl()` node ([ADR-0060](../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md)) becomes platform state, and what the platform provides for it. The platform side is decided in pdp-control-plane's decision record "a custom hostname is a RoutingUrl record the control plane owns" ([prisma/pdp-control-plane#5795](https://github.com/prisma/pdp-control-plane/pull/5795)), and its project folder `projects/routing-urls/` holds the spec and plan.
+How a `publicUrl()` node ([ADR-0060](../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md)) becomes platform state, and what the platform provides for it. The platform side is decided in pdp-control-plane's decision record "a custom hostname is a RoutingUrl record the control plane owns" ([prisma/pdp-control-plane#5795](https://github.com/prisma/pdp-control-plane/pull/5795)); its design is `docs/compute/RoutingUrls.md` and `RoutingUrlLifecycle.md` there, and `projects/routing-urls/` holds the spec and plan.
 
 ## The two sides
 
@@ -51,9 +51,12 @@ The `<id>.<region>.prisma.build` hostname every service gets is a separate Found
 - **Console** shows each service's custom hostnames with their conditions on the service's page, and the workspace's ownership claims in workspace settings.
 - **`prisma dev`.** The local target's stand-in creates nothing and ignores a named hostname.
 
+## Step two, on both sides
+
+- The platform's endpoint becomes an opt-in RoutingUrl, so a service nothing should reach from outside has no public hostname, and `publicUrl.generated()` lowers to that row. Until then every service is reachable at its platform hostname, and the node records that it is meant to be. The scenarios that step has to satisfy are in `.drive/projects/public-urls/migration-scenarios.md` while the project is open; how Composer takes ownership of the rows that exist is being settled there.
+
 ## Later, on the platform side
 
-- The platform's endpoint as an opt-in RoutingUrl, so a service nothing should reach from outside has no public hostname. Until then every service is reachable at its platform hostname, and `publicUrl.generated()` records that it is meant to be. The scenarios that step has to satisfy are in `.drive/projects/public-urls/migration-scenarios.md` while the project is open.
 - Re-checking DNS after a hostname is active, so a removed CNAME shows on the record, and re-verifying ownership claims on a schedule.
 - The rule that automatic Branch cleanup retains a Branch with a custom domain; unnecessary once the binding is a record, to be removed later.
 - Any change to Foundry, including private routing.

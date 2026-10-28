@@ -58,11 +58,18 @@ A `Prisma.RoutingUrl` resource: create (no DNS needed), read conditions, update 
 - **Builds on:** P1, U2.
 - **Done when:** the spec's "At a glance" app deploys production before `shop.com`'s DNS exists, succeeds, and the hostname goes active after DNS is added with no further deploy.
 
+### P3. The endpoint as a routing URL (step two)
+
+`publicUrl.generated()` lowers to the platform's endpoint RoutingUrl once the platform offers it, and the `Prisma.RoutingUrl` resource adopts the row the backfill made for an existing service. Specified when D1's step one has landed and the adoption rule is settled against [migration-scenarios.md](migration-scenarios.md).
+
+- **Builds on:** P2, D1's slice 5.
+- **Done when:** every scenario in migration-scenarios.md holds against a real Branch.
+
 ## Track D — PDP (prisma/pdp-control-plane)
 
 ### D1. RoutingUrl and domain ownership records, routes, reconciler
 
-The control plane's own project, `projects/routing-urls/` in pdp-control-plane, with its own spec and a four-slice plan: the two tables, routes and backfill; the reconciler and lifecycle hooks; retiring the old domain paths; the Console. Its first two slices are what U2 and P2 build on. No Foundry change.
+The control plane's own project, `projects/routing-urls/` in pdp-control-plane, with its own spec and plan: step one in four slices (the two tables, routes and backfill; the reconciler and lifecycle hooks; retiring the old domain paths; the Console) and step two as a fifth (the endpoint as a RoutingUrl). Its first two slices are what U2 and P2 build on; its fifth is what P3 builds on. No Foundry change.
 
 - **Builds on:** pdp-control-plane's ADR 015 agreed. Designed with Will on 2026-10-27; implementation is handed to the control-plane team, managed by another agent.
 - **Hands to:** U2 after its first slice is deployed; P2 after its second.

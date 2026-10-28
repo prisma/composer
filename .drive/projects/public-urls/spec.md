@@ -32,7 +32,7 @@ The decisions and their reasons are recorded in ADR-0059 to ADR-0062, `docs/desi
 # Non-goals
 
 - Routing by path. Subpaths are several public URLs, each with its own hostname, not a router primitive.
-- Private addressing between services, and making the platform's own hostname opt-in. Every service stays reachable at its `*.prisma.build` hostname; that step's scenarios are in [migration-scenarios.md](migration-scenarios.md).
+- Private addressing between services. Making the platform's own hostname opt-in is step two of this project (P3 and the platform's fifth slice), with its scenarios in [migration-scenarios.md](migration-scenarios.md).
 - Modules declaring `input` (ADR-0061), `resolve()` over module inputs, and config adapters with `dotenv()` (the second half of ADR-0062). They are a follow-on project, `module-input`, recorded in `.drive/deferred.md`. This project ships `resolve()` over `environment.name` and other resolved values only.
 - Secrets adapters, and the reference-based `serviceOrigin`.
 - Any change to Foundry. The control plane reconciles over Foundry's existing APIs.
