@@ -265,7 +265,8 @@ A place the app runs: `production`, `staging`, a preview such as `pr-42`, or
 `dev` on a developer's machine. Chosen with `--environment`, never authored in
 the topology — the same graph deploys to any environment. Every environment has
 a name and none is special: `prisma deploy` defaults to `production` and
-`prisma dev` to `dev`. On Prisma Cloud, `production` resolves to the Project's
+`prisma dev` to `dev`. Under `prisma dev`, each environment is a separate local
+copy of the app, with its own services, databases, buckets and ports. On Prisma Cloud, `production` resolves to the Project's
 default **Branch** and any other environment to the Branch whose `gitName` is
 its name. "Stage" is the old word for the same concept, and "branch" is Prisma
 Cloud's; Composer uses neither

@@ -535,6 +535,8 @@ production has a name, `production`:
   CLI's, or your own `@prisma/composer` in a script). An older extension would
   read every environment as production, so a deploy or destroy with one fails
   with `DEPS.EXTENSION_INCOMPATIBLE` before anything is deployed or destroyed.
+  `prisma dev` refuses it the same way, because it would run every local
+  environment as one copy.
 
 ## Upgrading to addresses that start with the app name
 
@@ -637,7 +639,7 @@ Deleting the variables by hand is not useful: the next deploy's claim (or the pl
 
 That same reconcile can also **rotate the database's default connection credentials**, exactly as the bullet above describes: rotation happens when the deploy state carries no stored connection secrets for the database — always the case for state migrated from the legacy store. The framework's own named connection — the one your services actually use — is NOT rotated and keeps working. Only credentials minted outside the framework from the database's *default* connection (Console-copied URLs, BI tools, backup jobs) stop working and must be re-issued.
 
-Local dev state is not migrated: if `prisma dev` fails at plan time with `No provider is registered for resource type 'PrismaComposer.…'`, run it once with `--fresh` to clear the stale local state.
+Local dev state written with retired resource types is not converted: if `prisma dev` fails at plan time with `No provider is registered for resource type 'PrismaComposer.…'`, run it once with `--fresh` to clear the stale local state.
 
 ## Updating a database whose schema an older version synthesized
 

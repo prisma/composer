@@ -10,6 +10,8 @@ Amended 2026-10-27: the family also ships `deploy list`. It lists every node an 
 
 Amended by [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md): `deploy list` takes `--environment` instead of `--stage`, and an invalid name fails with `DEPLOY.ENVIRONMENT_INVALID`.
 
+Amended 2026-10-28: `dev url` and `dev stop` act on the app and environment you name, never on the app last run in the directory. Both take `--environment`, default `dev`. `dev url <address>` takes the app from the address: `shop.api` names the app `shop`. It does not import the entry module. `dev stop` takes the app from the config's `entry`, or from `--entry` or `--name`, as `prisma dev` and `deploy list` do. Each fails with `DEV.NOT_STARTED_HERE` when that app has never run in that environment in the directory. The local-target seam's `current({ devDir })` becomes a lookup that takes the app and the environment, since the record no longer names a current app ([ADR-0052](ADR-0052-composer-maps-its-nodes-to-emulator-instances-per-directory.md), amended the same day). A detached app keeps running until `prisma dev stop` or the next `prisma dev` of that app in that environment. `emulator list` adds the instance's environment, from its `composer.environment` label, as the last field of each data line.
+
 ## Decision
 
 Composer's command family ships three more commands and a `--detach` flag on `prisma dev`, and `@prisma/composer/control` two more operations and a `detach` option behind them:

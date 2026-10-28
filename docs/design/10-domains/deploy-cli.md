@@ -62,10 +62,11 @@ covers those three
   is the entry module's default export (found as for deploy), entirely on this machine, credential-free —
   local counterparts of every provisioned resource, real service processes,
   no platform account. See [local-dev.md](local-dev.md) (ADR-0041) for the
-  design; flags: `--entry` and `--name` (same override semantics as deploy), `--fresh`
-  (before starting, delete the current app's local services, databases and
-  buckets and their data; other apps run from the directory keep theirs).
-  It runs as the environment `dev` and takes no `--environment` flag.
+  design; flags: `--entry` and `--name` (same override semantics as deploy),
+  `--environment` (the environment to run, default `dev`; each environment is
+  a separate local copy) and `--fresh` (before starting, delete the app's
+  local services, databases and buckets in that environment, and their data;
+  other environments and other apps keep theirs).
 
 `deploy` flags: `--entry <path>` (override the config's entry for one run), `--name` (override the root's name — per-run ephemeral
 deploys in shared workspaces), `--environment <name>` (the environment to
@@ -172,7 +173,9 @@ user can rerun it by hand (ADR-0007).
    fails with `DEPS.EXTENSION_INCOMPATIBLE`, naming the extension and telling
    the user to install the same Composer version of it as the Composer that
    runs the deploy. The check runs on `deploy` and `destroy`, after each
-   `ensure` or `locate` and before preflight, Alchemy, teardown or removal.
+   `ensure` or `locate` and before preflight, Alchemy, teardown or removal,
+   and on `dev`, after the local container is resolved and before any
+   emulator instance is touched.
    On `deploy`, an older extension's `ensure` may already have created the
    app's Project by then; the check stops everything after that.
 7. **Lower and drive.** Write the pipeline's results as a runnable stack
@@ -198,7 +201,7 @@ authored in the topology
 ADR-0024). Every environment has a name, and core treats every name alike: it
 never compares one with `production` or `dev`. The names a user doesn't type
 are command defaults: `prisma deploy` and `prisma deploy list` default
-`--environment` to `production`, and `prisma dev` runs as `dev`. The container
+`--environment` to `production`, and `prisma dev` defaults it to `dev`. The container
 key is `{ appName, environment }`, and the extension preflight and teardown
 inputs carry the same `environment`.
 
