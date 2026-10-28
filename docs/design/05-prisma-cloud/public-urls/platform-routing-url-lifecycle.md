@@ -38,7 +38,7 @@ flowchart LR
 | Deployment promoted | `promoteApp` → `upsertEndpoint`, `reassignDomains` | the live deployment changes | `PATCH /v1/domains/{id}` to the new compute version for each row of the service; a failure is written to `lastFoundryError` and the promote still succeeds |
 | Service rolled back | `rollbackApp` | same as promote | same |
 | Live deployment stopped | `stopDeployment` → `moveDomainsToLiveDeployment`, `unbindEndpointIfBound` | no deployment is live, or another is | if another is live, reassign; otherwise leave the custom domain bound to the stopped compute version and report "custom domain bound" as unmet |
-| Deployment deleted | `deleteDeployment` | Foundry deletes the compute version's custom domains | clear `foundryCustomDomainId` and the status columns on rows bound to it; create the custom domain again once a deployment is live |
+| Deployment deleted | `deleteDeployment` | Foundry deletes the compute version's custom domains | clear `foundryCustomDomainId`, `foundryIssuanceStartedAt` and the status columns on rows bound to it; create the custom domain again once a deployment is live |
 | Service region changed | `updateApp` | the switchboard the DNS must point at changes | delete the custom domain in the old region; the row goes through DNS and creation again in the new one |
 | Service deleted | `deleteApp` | `appId` null on its rows | delete each row's custom domain |
 | Branch deleted | `deleteBranch`, `tearDownBranchByGitName` | rows soft-deleted | delete their custom domains |
@@ -51,7 +51,7 @@ flowchart LR
 | --- | --- | --- |
 | The hostname's CNAME or address records point at the switchboard, or stopped doing so | DNS lookup, today's `resolveCnameTarget` logic | `dnsCheckedAt`; the custom domain can be created |
 | The custom domain's status | `GET /v1/domains/{id}` | `foundryCustomDomainStatus` and the failure reason; `active` means the certificate is issued |
-| The custom domain is gone | `GET /v1/domains/{id}` returns 404 | `foundryCustomDomainId` cleared; created again once a deployment is live |
+| The custom domain is gone | `GET /v1/domains/{id}` returns 404 | `foundryCustomDomainId`, `foundryIssuanceStartedAt` and the status columns cleared; created again once a deployment is live |
 
 Both are looked up when the repository operation runs: on every write to the row, on every lifecycle event that reaches it, and when the user presses the check button in the Console, which issues an update of the row with no changes and so runs the operation like every write. A cron that runs the operation for every row not yet serving, so the button is never needed, is a stretch goal at the end of the project.
 
