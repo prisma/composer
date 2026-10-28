@@ -38,7 +38,7 @@ flowchart LR
 | Deployment promoted | `promoteApp` → `upsertEndpoint`, `reassignDomains` | the live deployment changes; the rows' observed columns are left as they are, and now differ from it | `PATCH /v1/domains/{id}` to the new compute version for each row of the service; a failure is written to `lastFoundryError` and the promote still succeeds |
 | Service rolled back | `rollbackApp` | same as promote | same |
 | Live deployment stopped | `stopDeployment` → `moveDomainsToLiveDeployment`, `unbindEndpointIfBound` | no deployment is live, or another is | if another is live, reassign; otherwise leave the custom domain bound to the stopped compute version and report "custom domain bound" as unmet |
-| Deployment deleted | `deleteDeployment` | Foundry deletes the compute version's custom domains | clear `foundryCustomDomainId`, `foundryIssuanceStartedAt` and the status columns on rows bound to it; create the custom domain again once a deployment is live |
+| Deployment deleted | `deleteDeployment` | Foundry deletes the compute version's custom domains | clear `foundryCustomDomainId`, `foundryIssuanceStartedAt`, the status columns and the observed columns including `foundryObservedAt` on rows bound to it; create the custom domain again once a deployment is live |
 | Service region changed | `updateApp` | the switchboard the DNS must point at changes | delete the custom domain in the old region; the row goes through DNS and creation again in the new one |
 | Service deleted | `deleteApp` | `appId` null on its rows | delete each row's custom domain |
 | Branch deleted | `deleteBranch`, `tearDownBranchByGitName` | rows soft-deleted | delete their custom domains |
