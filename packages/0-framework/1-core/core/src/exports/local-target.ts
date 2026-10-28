@@ -9,6 +9,7 @@
 
 export {
   DEV_DIR,
+  devEnvironmentDir,
   type LocalNodeCondition,
   type LocalNodeLocation,
   type LocalNodeStopped,

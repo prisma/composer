@@ -257,20 +257,22 @@ export interface LocalTargetDescriptor {
   /** `--fresh`: remove every local trace of the dev instance — emulator instances, state, data. */
   teardown?(input: TeardownInput): Promise<void>;
   /**
-   * The app `prisma dev` last ran from a directory, read from its dev state
-   * directory alone — no entry, no graph, no container — so a command can
-   * find or stop a running app without running the pipeline. Undefined when
-   * this extension recorded nothing there.
+   * The local copy of an app in one environment, read from the environment's
+   * dev state directory alone — no entry, no graph, no container — so a
+   * command can find or stop a running app without running the pipeline.
+   * Undefined when this extension recorded nothing for the app there.
    */
   current?(input: LocalTargetCurrentInput): Promise<LocalTargetCurrentApp | undefined>;
 }
 
 export interface LocalTargetCurrentInput {
-  /** Absolute path of the dev state directory (`<cwd>/.prisma-composer/dev`). */
+  /** Absolute path of the environment's dev state directory (`devEnvironmentDir`, under the cwd). */
   readonly devDir: string;
+  readonly app: string;
+  readonly environment: string;
 }
 
-/** The app `prisma dev` last ran from a directory, as one extension recorded it. */
+/** The local copy of an app in one environment, as one extension recorded it. */
 export interface LocalTargetCurrentApp {
   readonly app: string;
   /** Every node address recorded for the app. */
@@ -320,7 +322,7 @@ export interface LocalNodeStopped {
 export interface LocalTargetProvidersInput {
   /** This extension's resolved local-target container (its `input.appName` is the emulator app namespace). */
   readonly container: ContainerInstance | undefined;
-  /** Absolute path of the dev state directory (`<cwd>/.prisma-composer/dev`). */
+  /** Absolute path of the environment's dev state directory (`devEnvironmentDir`, under the cwd). */
   readonly devDir: string;
 }
 
@@ -328,12 +330,13 @@ export interface LocalTargetEmulatorsInput {
   /** The loaded application graph — inspected for which node kinds need an emulator. */
   readonly graph: Graph;
   readonly container: ContainerInstance | undefined;
-  /** Absolute path of the dev state directory (`<cwd>/.prisma-composer/dev`). */
+  /** Absolute path of the environment's dev state directory (`devEnvironmentDir`, under the cwd). */
   readonly devDir: string;
 }
 
 export interface LocalTargetAttachInput {
   readonly container: ContainerInstance | undefined;
+  /** Absolute path of the environment's dev state directory (`devEnvironmentDir`, under the cwd). */
   readonly devDir: string;
 }
 
@@ -362,8 +365,17 @@ export interface LocalTargetAttachment {
   stopApp(): Promise<void>;
 }
 
-/** `<cwd>/.prisma-composer/dev` — the dev instance's app-scoped state directory (ADR-0041, ADR-0004's tool-state rule). "dev" names the user-facing feature/dir (naming, operator 2026-07-23) — this constant's name and value are unchanged by the localTarget rename. */
+/** `<cwd>/.prisma-composer/dev` — local dev's state directory (ADR-0041, ADR-0004's tool-state rule), holding one folder per environment. */
 export const DEV_DIR = '.prisma-composer/dev';
+
+/**
+ * The folder, relative to the cwd, that holds one environment's local copy.
+ * The environment name is percent-encoded (`encodeURIComponent`), so a name
+ * with `/` stays one folder and `decodeURIComponent` gives the name back.
+ */
+export function devEnvironmentDir(environment: string): string {
+  return `${DEV_DIR}/${encodeURIComponent(environment)}`;
+}
 
 /**
  * True when an extension only participates in assembly (every `nodes` entry
