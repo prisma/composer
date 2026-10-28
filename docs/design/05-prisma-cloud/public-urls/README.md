@@ -1,14 +1,8 @@
 # Public URLs
 
-## What we are deciding
+## An example
 
-Today every Compute service is reachable from the internet at an address the platform gives it, and a custom domain such as `shop.com` can only be attached by hand, in the Console, after the service is deployed, and only once its DNS already works. Nothing in an application's code says which services are meant to be public or at which hostname.
-
-This proposal changes both sides. In Composer, the author writes in the module code which services receive traffic from the internet and at which hostname, and the hostname can differ per environment. On Prisma Cloud, every custom hostname becomes a record the control plane owns. Because the record exists independently of DNS and of the service, a hostname can be declared before its DNS is set up, it stays when its service is deleted and recreated, and the platform keeps it routed to whichever version of the service is live without anyone redeploying.
-
-## The author's side
-
-This is what the code looks like. The service `web` is public. In production it answers at `shop.com`, in staging at `staging.shop.com`, and in every other environment at the address the platform gives it.
+An author has a shop with a web service. They want it at `shop.com` in production, at `staging.shop.com` in staging, and at whatever address the platform gives it in every preview. They write this:
 
 ```ts
 import { module, resolve } from '@prisma/composer';
@@ -26,115 +20,225 @@ export default module('shop', ({ environment, provision }) => {
 });
 ```
 
-```sh
-prisma deploy                        # deploys the environment "production": shop.com
-prisma deploy --environment pr-42    # deploys a preview: web's prisma.build URL
-prisma dev                           # runs the environment "dev" on this machine
+They run `prisma deploy`. The deploy creates the service, and it creates a record on the platform saying that `shop.com` should reach it. Nobody has set up DNS for `shop.com` yet, and the deploy does not fail. Its output says:
+
+```
+shop.site   shop.com   waiting for DNS
+            Add a CNAME record from shop.com to switchboard.cdg.prisma.build
+            https://console.prisma.io/…/compute/svc_123/domains?setup=shop.com
 ```
 
-### The public URL node
+The author adds the CNAME at their DNS provider. Within a minute the platform notices, registers `shop.com` with the routing layer, obtains a certificate, and `shop.com` serves the shop. Nobody ran another command.
 
-`publicUrl({ name, url, target })` is a node in the module graph, like a service or a database. `target` is the HTTP connection that a service exposes, written `web.http`. The service itself knows nothing about the URLs that point at it. `name` gives the node its address in the graph, `shop.site`, in the same way every node gets one.
+A month later the author deletes the `web` service and deploys a new one under the same name. The record for `shop.com` is still there, its DNS still points at the platform, and the new deploy points it at the new service. `shop.com` keeps working.
 
-`url` says which hostname the node serves. It is one of two things. It can be a hostname the author names, such as `'shop.com'`. Or it can be `publicUrl.prismaBuild()`, which means the service is public at the `prisma.build` URL the platform gives every service. Leaving `url` out is an error. One node serves one hostname, so `www.shop.com` is a second node pointed at the same connection.
+That is the whole proposal. The rest of this document explains the parts that make it work.
 
-### Values that differ per environment
+## The three domains
 
-The hostname differs per environment, but the shape of the application must not. Composer enforces that with `resolve()`.
+Three systems take part, and each has its own vocabulary.
 
-`resolve(dependencies, fn)` names what a value depends on and returns a placeholder for it. In the example, the value depends on the environment's name. The function receives the dependencies' values and returns the value. The module body receives `environment`, which is a set of opaque references such as `environment.name`. The body can list such a reference as a dependency, but it cannot read it, so it cannot branch on the environment.
+```mermaid
+flowchart LR
+  subgraph Composer["Composer (the author's code and the deploy)"]
+    Node["publicUrl node<br/>address shop.site"]
+    Svc["compute service<br/>address shop.web"]
+    Env["environment<br/>production, staging, pr-42"]
+  end
+  subgraph PDP["Prisma Cloud control plane (pdp-control-plane)"]
+    WS["Workspace"]
+    Branch["Branch (one environment of a Project)"]
+    App["Service (App)"]
+    Ver["Deployment = one version"]
+    RU["RoutingUrl"]
+    DO["DomainOwnership"]
+    Rec["reconciler"]
+  end
+  subgraph Metal["Metal: the bare-metal runtime (pdp-metal)"]
+    CV["compute version (a VM)"]
+    EP["Endpoint registry<br/>prefix → compute version"]
+    CD["Custom-domain registry<br/>hostname → compute version, certificate"]
+    Conduit["Conduit, the switchboard<br/>TLS termination, routing by Host"]
+  end
+  Internet((internet))
 
-Composer runs the module code and builds the graph with every `resolve()` function still unexecuted. It then disables `provision`, runs each function for the environment being deployed, and validates each result. So the graph has the same nodes and edges in every environment, and only values differ. A resolved value can be used anywhere a value is accepted, such as a hostname or a service's configuration. It cannot be used for a node's `name` or `id`, for its dependencies, or for a public URL's `target`, because those decide the shape of the graph. A `resolve()` function sees inputs and environment facts; it never sees a result of the deploy, such as a hostname the platform assigns.
+  Env -- "names" --> Branch
+  Svc -- "becomes" --> App
+  Node -- "becomes, via the Management API" --> RU
+  App -- "has" --> Ver
+  Ver -- "runs as" --> CV
+  RU -- "points at" --> App
+  DO -- "authorises" --> RU
+  Rec -- "registers, re-points, deletes<br/>(Foundry HTTP API)" --> CD
+  PDP -- "upserts at promote" --> EP
+  Conduit -- "reads" --> EP
+  Conduit -- "reads" --> CD
+  Internet -- "https://shop.com" --> Conduit
+  Conduit -- "routes to" --> CV
+```
 
-### Environments
+**Composer** is where the author describes the application as a graph of nodes: services, databases, and now public URLs. Every node has an address, such as `shop.site`, and the deploy writes that address onto the platform record that represents the node, as its `logicalId`. Composer talks to the control plane through its Management API, using the upstream Alchemy provider as the deploy engine.
 
-Every environment has a name, and none is special. `prisma deploy` deploys the environment `production` unless `--environment` says otherwise. `prisma dev` runs the environment `dev` unless told otherwise. `destroy` has no default and must be given an environment. On Prisma Cloud, `production` is the Project's default Branch. Every other environment name is the Branch with that git name, created if it does not exist.
+**The control plane** is Prisma Cloud's product model: a Workspace owns Projects, a Project has Branches, a Branch is one environment of one application and holds its services. A service (still called `App` in the code) has Deployments, and one of them is live. This proposal adds two records here, RoutingUrl and DomainOwnership, and one process, the reconciler. The control plane talks to Metal through Foundry's HTTP API.
 
-### Module input
+**Metal** is the bare-metal runtime in the pdp-metal repository. **Foundry** runs each deployment as a compute version, a VM, and owns two registries in a shared database: the endpoint registry, which maps a `prisma.build` prefix to a compute version, and the custom-domain registry, which maps a customer hostname to a compute version and holds its certificate state. **Conduit** is the regional edge, reached at `switchboard.<region>.prisma.build`. It terminates TLS and routes every request by its Host header, reading both registries. Foundry is the only writer of the registries and Conduit only reads them. Nothing in Metal changes in this proposal.
 
-A module can declare the configuration it needs as one schema called `input`, in the same way a service does. For the root module, the values come from config adapters listed in `prisma.config.ts`. This is recorded as a decision, but it is a follow-on project. The public-URL work only needs `resolve()` over the environment's name.
+The lines that matter: Composer never talks to Metal. The control plane is the only thing that writes to Foundry, and in this proposal one component does it, the reconciler, plus the existing promote step for endpoints. Metal knows nothing about workspaces, services or ownership; it knows hostnames, compute versions and certificates.
 
-## The platform's side
+## The concepts, one at a time
 
-The control plane gains two tables. Foundry, the routing layer that terminates TLS and routes a hostname to a running version, is not changed.
+### A hostname a service answers at
 
-### The RoutingUrl table
+Every service already has one hostname: its endpoint, `<service id>.<region>.prisma.build`. The control plane creates it in Foundry's endpoint registry when the first version is promoted, and re-points it at each new live version. The author never asks for it. This proposal leaves it exactly as it is.
 
-A row is one custom hostname and the service it reaches.
+A **custom hostname** such as `shop.com` is what this proposal is about. Today it exists only as a row in Foundry's custom-domain registry, bound to one compute version, and the control plane keeps no record of it.
 
-| Column | What it holds |
-| --- | --- |
-| `branchId` | the Branch that owns the row. The row lives as long as the Branch does |
-| `appId` | the service the hostname reaches. It becomes null when the service is deleted, and the row stays |
-| `hostname` | the hostname, in canonical form: lowercase, no trailing dot, international labels in punycode |
-| `logicalId` | an identifier a deploy tool writes so it can find the row again. Composer writes the node's address, `shop.site` |
-| `foundryDomainId` | the id Foundry gave the hostname's registration, once the platform has registered it |
-| `registeredAt` | set while this row is the one that holds the hostname's registration |
-| `dnsCheckedAt`, `certificateIssuedAt`, `routingBoundAt` | when the platform last saw each of three things to be true: the hostname's DNS points at the platform, the certificate is issued, and routing is bound to the live version |
+### The RoutingUrl
 
-### The DomainOwnership table
+A RoutingUrl is the control plane's record that a custom hostname should reach a service. It has the hostname, the service it reaches, the Branch that owns it, and a `logicalId` that a deploy tool can write so it can find the record again. It exists from the moment it is created, before DNS, before any certificate, before Foundry has heard of the hostname. The Branch owns its lifetime: deleting the Branch deletes it, but deleting the service only detaches it.
 
-A row is a workspace's claim that it owns a domain. `domain` is either an exact hostname, such as `shop.com`, or a wildcard one label deep, such as `*.preview.shop.com`. `verifiedAt` is set once the platform has seen the workspace's TXT record under that domain, and is null until then.
+### The domain ownership claim and its verification
+
+A DomainOwnership record is a workspace's claim that it controls a domain: either an exact hostname such as `shop.com`, or a wildcard one label deep such as `*.preview.shop.com`. The claim starts unverified. It becomes verified when the platform sees a TXT record at `_prisma-verification.shop.com` carrying a value derived from the workspace's id. This is the same TXT record the platform asks for today; a workspace that has published it once needs nothing new.
+
+Ownership and routing are separate questions. Ownership asks whether this workspace may use this domain. Routing asks which service a hostname reaches. A RoutingUrl can exist without a verified claim; it just cannot serve traffic until one exists.
 
 ### The six conditions
 
-A hostname serves traffic only when all six of these are true:
+A RoutingUrl serves traffic only when all six of these are true:
 
-1. The workspace has a verified claim that covers the hostname.
+1. The workspace has a verified claim covering the hostname.
 2. The service exists.
 3. The service has a live version.
-4. The hostname's DNS points at the platform's regional entry point.
+4. The hostname's DNS points at the regional switchboard.
 5. The certificate is issued.
-6. This row holds the hostname's registration, and Foundry routes it to the live version.
+6. This RoutingUrl holds the hostname's registration in Foundry, and Foundry routes it to the live version.
 
-There is no single status field, because each of these can become true or false on its own and in any order. A service can be deleted while a certificate is being issued. A CNAME can be removed years after setup. The row reports all six, and it reports the first one that is not met as the next thing the user has to do, together with the exact DNS record to publish.
+There is deliberately no single status field. Each condition changes on its own: a certificate can be issuing while the service is deleted; a CNAME can be removed years later. The record reports all six, and reports the first unmet one as the next thing to do, with the exact DNS record to publish.
 
-### The rules
+### The registration
 
-1. **The platform creates no rows on its own.** A deploy creates one row for each hostname the code declares. A Console user creates one on the service's page.
-2. **A row exists before its DNS does.** Creating a row stores it and calls nothing in Foundry.
-3. **One row serves a hostname.** Any number of rows may name the same hostname. Only one of them holds the hostname's registration at a time, anywhere on the platform. A database index enforces that. A row that cannot take the registration reports which workspace, project and service hold it, if the caller can access that workspace, and otherwise reports only that another workspace holds it.
-4. **Ownership is a claim, and the workspace's existing TXT record verifies it.** When a workspace claims a domain that another workspace already holds a verified claim for, the platform re-verifies the existing claims first. Claims are not re-verified on a schedule.
-5. **The control plane keeps Foundry in step with the rows.** When a version is promoted or rolled back, or a service is stopped or deleted, the platform does what it can at that moment and writes any failure to the row. One reconciler runs every minute, and after each of those events, and repairs whatever is left. It never runs twice at once for the same project.
-6. **A change that leaves the routing table the same never touches a certificate.** When one row replaces another for the same hostname and service, the registration is handed from one to the other.
-7. **A row outlives its service.** Deleting the service detaches the row and releases the registration. Stopping the service keeps the registration. Deleting the Branch deletes the row.
-8. **Existing custom domains are migrated as rows.** Each one holds its registration and has a verified claim, and none has a `logicalId`, because no code declared it.
+Any number of RoutingUrls may name the same hostname, in any workspaces. Only one of them at a time may be registered in Foundry's custom-domain registry, otherwise two services would receive the same traffic. The one that is registered **holds the registration**. The control plane enforces this with a database index, so it holds across every workspace. A RoutingUrl that cannot take the registration reports which workspace, project and service hold it, to a caller allowed to see that workspace, and otherwise says only that another workspace holds it.
 
-### The Console
+### The reconciler
 
-The service page lists the service's rows with their six conditions and the next step for each. Workspace settings gains a Domains page where the user can claim a domain, see its TXT record, and re-check it.
+The reconciler is one function in the control plane that looks at a RoutingUrl, evaluates its six conditions, and makes Foundry match. It registers the hostname when the first four conditions hold and nobody else holds the registration. It re-points the registration when the live version changes. It re-registers when Foundry's row is lost. It hands a registration from one RoutingUrl to another when a row is replaced by one for the same hostname and service, so that a certificate is never reissued for a change that leaves the routing table the same. It runs every minute, and immediately after any event that can change a condition, and never twice at once for the same project.
 
-## How the two sides meet
+## The key operations and what reaches Metal
 
-A `publicUrl()` node with a named hostname becomes one RoutingUrl row, with the node's address written as the row's `logicalId`. On the next deploy, Composer finds the row by that `logicalId`.
+### Claiming and verifying a domain
 
-A `publicUrl()` node with `publicUrl.prismaBuild()` creates no row in the first step of this work. The service's `prisma.build` hostname exists whether or not the code mentions it. The node records that the service is meant to be public at that hostname.
+```mermaid
+sequenceDiagram
+  actor User
+  participant Console
+  participant CP as Control plane
+  participant DNS as the user's DNS provider
+  User->>Console: claim shop.com
+  Console->>CP: POST /v1/workspaces/ws_42/domains { domain: shop.com }
+  CP-->>Console: claim unverified; publish TXT _prisma-verification.shop.com = prisma-verification=<hash>
+  User->>DNS: adds the TXT record
+  Note over CP: re-check route, or the reconciler for unverified claims
+  CP->>DNS: look up TXT _prisma-verification.shop.com
+  CP->>CP: set verifiedAt on the claim
+```
 
-When Composer declares a row and no row on the Branch carries the node's `logicalId`, it looks for an existing row on the same service with the same hostname and no `logicalId`. If it finds one, it writes the node's `logicalId` on that row and treats it as its own from then on. This is called adoption, and it is how a domain a user set up in the Console before this work becomes the node's row without any interruption. The platform plays no part in adoption other than allowing the `logicalId` to be set.
+Nothing reaches Metal. Verification is entirely a control-plane matter. If another workspace later claims a domain that this verified claim covers, the control plane re-verifies this claim first, so a workspace that no longer controls a domain loses its standing at the moment it matters.
 
-A deploy never waits for DNS. If a hostname's conditions are not all met, the deploy still succeeds, and its output names the first unmet condition and gives a link to the Console page where the user can finish setup.
+### Creating a RoutingUrl from a deploy, and getting it to serve
+
+```mermaid
+sequenceDiagram
+  participant Deploy as Composer deploy (Alchemy)
+  participant CP as Control plane
+  participant Rec as reconciler
+  participant F as Foundry (Metal)
+  participant C as Conduit (Metal)
+  Deploy->>CP: create service web
+  Deploy->>CP: POST /v1/services/svc_123/urls { hostname: shop.com, logicalId: shop.site }
+  CP-->>Deploy: row url_789; conditions: DNS not ready
+  Note over CP,F: no Foundry call yet
+  Deploy->>CP: deployment, promote
+  CP->>F: PUT /v1/endpoints/svc_123 { computeVersionId: cv_1 }  (today's step, unchanged)
+  Note over Rec: user adds CNAME shop.com → switchboard.cdg.prisma.build
+  Rec->>Rec: DNS points at region; claim verified; live version; nobody holds the registration
+  Rec->>CP: set registeredAt on url_789
+  Rec->>F: POST /v1/domains { domain: shop.com, computeVersionId: cv_1 }
+  F-->>Rec: dom_55, status provisioning
+  F->>F: ACME certificate issuance
+  Rec->>F: GET /v1/domains/dom_55 → active
+  Rec->>CP: certificate issued; routing bound
+  C->>C: reads the custom-domain registry; https://shop.com now routes to cv_1
+```
+
+What crosses into Metal is exactly one call to register the hostname against a compute version id, and reads of the resulting row. The hostname, the compute version id and nothing else: Metal never learns about the service, the Branch, the workspace or the claim.
+
+### A new version goes live
+
+```mermaid
+sequenceDiagram
+  participant Deploy as Composer deploy
+  participant CP as Control plane (promote)
+  participant Rec as reconciler
+  participant F as Foundry (Metal)
+  Deploy->>CP: promote deployment dep_2 (compute version cv_2)
+  CP->>F: PUT /v1/endpoints/svc_123 { computeVersionId: cv_2 }
+  CP->>F: PATCH /v1/domains/dom_55 { computeVersionId: cv_2 }
+  alt the PATCH fails
+    CP->>CP: write the failure on url_789
+    Rec->>F: PATCH /v1/domains/dom_55 { computeVersionId: cv_2 } on its next run
+  end
+```
+
+The lifecycle events that matter are: a version promoted or rolled back (the live version changes), the live deployment stopped (there is no live version; the registration is kept and routing bound is reported as unmet), the live deployment deleted (Foundry deletes the custom-domain row with the compute version; the control plane keeps the registration and re-registers when a version is live again), the service deleted (the RoutingUrl is detached and its registration released), and the Branch deleted (the RoutingUrl is deleted and its registration released). Each of them does what it can at that moment, writes any failure on the RoutingUrl, and triggers the reconciler.
+
+### A deploy tool taking over a row it did not create
+
+When a deploy declares a RoutingUrl and no row on the Branch carries the node's `logicalId`, the Alchemy resource looks for a live row on the same service with the same hostname and no `logicalId`. If there is one, it writes the `logicalId` on that row and treats the row as its own from then on. This is called adoption. It is how a hostname the user attached in the Console before this work, which the platform migrates into a RoutingUrl with no `logicalId`, becomes the node's row with no interruption and no new certificate. The control plane does nothing special for it; it only allows the `logicalId` to be set on an update.
+
+## Scenarios
+
+**Deploying an app for the first time, with a custom hostname.** The deploy creates the service and the RoutingUrl and succeeds. The output says `shop.com` is waiting for DNS and gives the CNAME to add and the Console link. The user adds the CNAME, and within a minute the hostname serves. If the workspace has never claimed `shop.com`, the output instead says ownership is not verified and links to the workspace's Domains page, where the user claims it and gets the TXT record. Either order works.
+
+**Deploying a code change, with no downtime.** The deploy creates a new deployment and promotes it. Promote re-points the endpoint and the custom-domain registration to the new compute version. If the re-point fails, the failure is written on the RoutingUrl and the reconciler repairs it on its next run. The hostname, the certificate and the DNS are untouched throughout.
+
+**A preview environment.** `prisma deploy --environment pr-42` deploys into a new Branch. The code's `resolve()` returns `publicUrl.prismaBuild()` for it, so no RoutingUrl is created and the service is reached at its `prisma.build` endpoint. If the code instead names `pr-42.preview.shop.com`, one claim for `*.preview.shop.com` and one wildcard CNAME at the user's DNS provider cover every preview, and each preview hostname gets its own certificate on first registration.
+
+**Adding a custom hostname to a running app.** The author adds a `publicUrl()` node and deploys. The RoutingUrl is created, the service keeps serving at its endpoint, and the new hostname goes live once its conditions are met.
+
+**Changing a hostname.** The author changes `'shop.com'` to `'theshop.com'`. The node keeps its address, so the same RoutingUrl is updated. The old hostname's registration is released and the new hostname goes through the six conditions.
+
+**Deleting and recreating a service.** The RoutingUrl stays with `appId` null and its registration released. The next deploy that declares the hostname on a service points the row at it, and the hostname serves again without any DNS change.
+
+**Removing a public URL.** The author deletes the `publicUrl()` line. The deploy deletes the RoutingUrl and its Foundry registration. The service keeps its endpoint, and the ownership claim is untouched.
+
+**A hostname set up in the Console last year, now declared in code.** The migrated RoutingUrl has the hostname, the service, and no `logicalId`. The deploy adopts it. Nothing in Foundry changes.
+
+**Two workspaces name the same hostname.** Both RoutingUrls exist. Whichever meets its conditions first holds the registration. The other reports the hostname as held, and names the holder if the caller may see that workspace. When the holder is deleted, the other takes the registration within a minute.
 
 ## The second step
 
-In the first step, every service stays reachable at its `prisma.build` hostname, whether or not the code says so. The second step makes that hostname a RoutingUrl row too, created only when something asks for it, so that a service nothing should reach from outside has no public hostname at all. `publicUrl.prismaBuild()` then creates that row, and adoption takes over the rows the platform migrates for services that already exist. The scenarios the second step has to satisfy are written. Its detailed requirements are written once the first step's records and reconciler have landed.
+In this first step every service is still reachable at its `prisma.build` endpoint whether or not the code says so, and `publicUrl.prismaBuild()` creates no record. The second step makes the endpoint a RoutingUrl too, created only when something asks for it, so that a service nothing should reach from outside has no public hostname at all. `publicUrl.prismaBuild()` then creates that record, and adoption takes over the records the platform migrates for existing services. The twelve scenarios that step must satisfy are in [step-two-migration-scenarios.md](step-two-migration-scenarios.md).
 
-## What this proposal does not cover
+## Not in this proposal
 
-Private routing between services. Routing by path. Any change to Foundry. Re-checking DNS or ownership on a schedule.
+Private routing between services. Routing by path. Any change to Foundry or Conduit. Re-checking DNS or ownership on a schedule.
 
-## The detail
+## Where the detail is
 
 Composer:
 
-1. [ADR-0060](../../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md): the public URL node, and the alternatives considered.
-2. [ADR-0062](../../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): `resolve()`, environments and config adapters.
-3. [ADR-0061](../../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): module input.
-4. [composer-to-platform.md](composer-to-platform.md): how a node becomes platform state. [scenarios.md](scenarios.md): thirteen worked scenarios. [domain-map.md](domain-map.md): which concept lives in which system.
-5. [step-two-migration-scenarios.md](step-two-migration-scenarios.md): the twelve scenarios the second step must satisfy. The project's spec and plan are in [`.drive/projects/public-urls/`](../../../../.drive/projects/public-urls/).
+- [ADR-0060](../../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md): the public URL node, and the alternatives considered.
+- [ADR-0062](../../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): `resolve()`, environments and config adapters.
+- [ADR-0061](../../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): module input, a follow-on project.
+- [composer-to-platform.md](composer-to-platform.md): how a node becomes a platform record. [scenarios.md](scenarios.md): thirteen worked scenarios with code and records. [domain-map.md](domain-map.md): every entity in each system.
+- The project's spec and plan: [`.drive/projects/public-urls/`](../../../../.drive/projects/public-urls/).
 
 Prisma Cloud (the platform team maintains these in prisma/pdp-control-plane under `docs/compute/`, on the branch of prisma/pdp-control-plane#5795):
 
-1. [platform-routing-urls.md](platform-routing-urls.md): the records, conditions, rules, routes and Console.
-2. [platform-routing-url-lifecycle.md](platform-routing-url-lifecycle.md): every operation and lifecycle event, and the reconciler.
-3. [ADR 015](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/architecture/adrs/ADR-015-routing-urls-and-domain-ownership.md): the decision, why, and the alternatives.
-4. [projects/routing-urls](https://github.com/prisma/pdp-control-plane/tree/chore/adr-ingress-entity/projects/routing-urls): the spec, acceptance criteria and the five-slice plan.
+- [platform-routing-urls.md](platform-routing-urls.md): the two records column by column, the conditions, the rules, the routes, the Console and the migration of existing domains.
+- [platform-routing-url-lifecycle.md](platform-routing-url-lifecycle.md): every operation and lifecycle event, what each changes, what reaches Foundry, and the reconciler's steps.
+- [ADR 015](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/architecture/adrs/ADR-015-routing-urls-and-domain-ownership.md): the decision, why, and the alternatives.
+- [projects/routing-urls](https://github.com/prisma/pdp-control-plane/tree/chore/adr-ingress-entity/projects/routing-urls): the spec, the acceptance criteria and the five-slice plan.
+
+Metal, for reference: [Foundry's API](https://github.com/prisma/pdp-metal/blob/main/apps/foundry/docs/API_SPEC.md) and the [custom-domain contract between Foundry and Conduit](https://github.com/prisma/pdp-metal/blob/main/docs/custom-domains.md).
