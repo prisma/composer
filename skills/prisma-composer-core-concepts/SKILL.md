@@ -412,6 +412,13 @@ It finds the app as `deploy` does (`--name`, `--entry`) and fails with
 address, kind, platform ID, URL per line; `--json`: `[{ address, kind, platformId, url }]`. It needs
 a `prisma` CLI release that includes it; 8.0.0-rc.26 does not.
 
+**Using an address with platform commands.** A `prisma project|service|postgres|bucket`
+command takes `@<environment>:<address>` in place of the platform ID
+(`prisma service logs @pr-42:shop.api`); no environment means production. It
+acts on that one row and never changes the deploy state, so the next deploy
+recreates anything deleted this way. It needs a `prisma` CLI release newer than
+8.0.0-rc.28.
+
 **Removing an app** with every environment is a platform command: find the Project
 id with `prisma project list`, then `prisma project delete <id> --confirm <id>`,
 and check `prisma project list` again to confirm it is gone. It works while the

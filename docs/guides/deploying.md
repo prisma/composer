@@ -328,6 +328,22 @@ array of `{ address, kind, platformId, url }`, with `null` for a missing
 value. `prisma deploy list` needs a `prisma` CLI release that includes it;
 8.0.0-rc.26 does not.
 
+### Using an address with platform commands
+
+A platform command whose subject is a project, service, database or bucket
+takes `@<environment>:<address>` in place of the platform ID. Without an
+environment, the address means production:
+
+```bash
+prisma service logs @pr-42:storefront-auth.auth.service
+prisma postgres delete @storefront-auth.auth.database --confirm @storefront-auth.auth.database
+```
+
+The command finds the row whose `logicalId` is the address, then acts exactly
+as it does when given the ID. It never changes the deploy state, so the next
+deploy recreates anything deleted this way. This needs a `prisma` CLI release
+newer than 8.0.0-rc.28.
+
 ## Removing an app or an environment
 
 To remove an app with every environment, delete its Project. Its id is in the
