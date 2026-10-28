@@ -60,7 +60,7 @@ flowchart LR
     DO["DomainOwnership"]
     Repo["RoutingUrl repository"]
   end
-  subgraph Metal["Metal: the systems below the control plane (pdp-metal)"]
+  subgraph Metal["The data plane, owned by the Metal team (pdp-metal)"]
     CV["compute version (a VM)"]
     EP["Endpoint registry<br/>prefix → compute version"]
     CD["Custom-domain registry<br/>hostname → compute version, certificate"]
@@ -87,7 +87,7 @@ flowchart LR
 
 **The control plane**, owned by the Portal team, is Prisma Cloud's product model: a Workspace owns Projects, a Project has Branches, a Branch is one environment of one application and holds its services. A service (still called `App` in the code) has Deployments, and one of them is live. This proposal adds two records here, RoutingUrl and DomainOwnership, with interactors to write them, and gives the RoutingUrl repository the job of keeping Foundry consistent with each row. The control plane talks to Metal through Foundry's HTTP API.
 
-**Metal** is the team that owns every system below the control plane, and the name for those systems: Foundry, Conduit, the Prisma Postgres infrastructure and the rest of the pdp-metal repository. For public URLs two of them matter. **Foundry** runs each deployment as a compute version, a VM, and owns two registries in a shared database: the endpoint registry, which maps a `prisma.build` prefix to a compute version, and the custom-domain registry, which maps a customer hostname to a compute version and holds its certificate state. **Conduit** is the regional edge, reached at `switchboard.<region>.prisma.build`. It terminates TLS and routes every request by its Host header, reading both registries. Foundry is the only writer of the registries and Conduit only reads them. Nothing in Metal changes in this proposal.
+**The data plane** is the set of systems below the control plane that run the users' workloads and carry their traffic: Foundry, Conduit, the Prisma Postgres infrastructure and the rest of the pdp-metal repository. The Metal team owns it. For public URLs two of its systems matter. **Foundry** runs each deployment as a compute version, a VM, and owns two registries in a shared database: the endpoint registry, which maps a `prisma.build` prefix to a compute version, and the custom-domain registry, which maps a customer hostname to a compute version and holds its certificate state. **Conduit** is the regional edge, reached at `switchboard.<region>.prisma.build`. It terminates TLS and routes every request by its Host header, reading both registries. Foundry is the only writer of the registries and Conduit only reads them. Nothing in Metal changes in this proposal.
 
 The lines that matter: Composer never talks to Metal. The control plane is the only thing that writes to Foundry: the RoutingUrl repository for custom domains, and the existing promote step for endpoints. Metal knows nothing about workspaces, services or ownership; it knows hostnames, compute versions and certificates.
 
@@ -250,7 +250,7 @@ Prisma Cloud (the platform team maintains these in prisma/pdp-control-plane unde
 
 - [platform-routing-urls.md](platform-routing-urls.md): the two records column by column, the conditions, the rules, the routes, the Console and the migration of existing domains.
 - [platform-routing-url-lifecycle.md](platform-routing-url-lifecycle.md): every operation and lifecycle event, what each changes, what reaches Foundry, and the repository operation's steps.
-- [The design for keeping the systems below the control plane consistent with its database](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/metal-consistency/README.md): the overview, with the RoutingUrl worked through as its example, the prior art, and the surveys of every place the control plane writes to Foundry, Tenant Manager and Tigris today.
+- [The proposal for keeping the data plane consistent with the control plane](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/data-plane-consistency/README.md): the overview, with the RoutingUrl worked through as its example, the prior art, and the surveys of every place the control plane writes to Foundry, Tenant Manager and Tigris today.
 - [ADR 015](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/architecture/adrs/ADR-015-routing-urls-and-domain-ownership.md): the decision, why, and the alternatives.
 - [projects/routing-urls](https://github.com/prisma/pdp-control-plane/tree/chore/adr-ingress-entity/projects/routing-urls): the spec, the acceptance criteria and the five-slice plan.
 
