@@ -20,7 +20,7 @@ When `url` names a hostname, the Composer node `shop.site` becomes one RoutingUr
 
 One public URL node is one platform record. Its address is its `logicalId`, as for every node with a platform row ([ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md)). The hostname and the service it points at are properties of the record, so changing either updates the same record.
 
-When `url` is `publicUrl.generated()`, the node becomes no record. Every service already has the platform's `<id>.<region>.prisma.build` hostname, and the node says the service is public at it. The deploy output reports that hostname for the node.
+When `url` is `publicUrl.prismaBuild()`, the node becomes no record in the first step. Every service already has its `<id>.<region>.prisma.build` hostname, and the node says the service is public at it. The deploy output reports that hostname for the node. In the second step the node becomes the platform's RoutingUrl for that hostname.
 
 ## What the platform provides
 
@@ -46,14 +46,15 @@ The `<id>.<region>.prisma.build` hostname every service gets is a separate Found
 
 ## How Composer uses it
 
-- **Lowering.** For a named hostname, the Prisma Cloud public URL descriptor declares the upstream RoutingUrl resource with `logicalId` set to the node's address, the resolved hostname, and the service that exposes `target`. A forwarded connection resolves at Load to that service. For `publicUrl.generated()` it declares nothing.
+- **Lowering.** For a named hostname, the Prisma Cloud public URL descriptor declares the upstream RoutingUrl resource with `logicalId` set to the node's address, the resolved hostname, and the service that exposes `target`. A forwarded connection resolves at Load to that service. For `publicUrl.prismaBuild()` it declares nothing in the first step.
+- **Adoption.** When no row on the Branch holds the node's `logicalId`, the resource looks for a live row on the same service with the same hostname and no `logicalId`, writes the `logicalId` on it through the update route, and records it in state. A row with a different `logicalId` is never adopted. This is how a backfilled row, made for a domain the user set up before Composer knew about routing records, becomes the node's row with no interruption, and how the second step takes over the `prisma.build` rows.
 - **Deploy output.** One `DeployedEntity` per public URL: the hostname, the first unmet condition (ownership claim, DNS, certificate), and the Console link while any is unmet, or the live address. Core learns nothing about the platform.
 - **Console** shows each service's custom hostnames with their conditions on the service's page, and the workspace's ownership claims in workspace settings.
 - **`prisma dev`.** The local target's stand-in creates nothing and ignores a named hostname.
 
 ## Step two, on both sides
 
-- The platform's endpoint becomes an opt-in RoutingUrl, so a service nothing should reach from outside has no public hostname, and `publicUrl.generated()` lowers to that row. Until then every service is reachable at its platform hostname, and the node records that it is meant to be. The scenarios that step has to satisfy are in `.drive/projects/public-urls/migration-scenarios.md` while the project is open; how Composer takes ownership of the rows that exist is being settled there.
+- The platform's endpoint becomes an opt-in RoutingUrl, so a service nothing should reach from outside has no public hostname, and `publicUrl.prismaBuild()` lowers to that row. Until then every service is reachable at its platform hostname, and the node records that it is meant to be. The scenarios that step has to satisfy are in `.drive/projects/public-urls/migration-scenarios.md` while the project is open. Composer takes ownership of the rows that exist by the adoption rule above.
 
 ## Later, on the platform side
 

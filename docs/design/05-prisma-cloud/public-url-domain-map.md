@@ -100,7 +100,7 @@ New:
 | A deploy to any other environment, such as `staging` | goes into the Branch named `staging`, which is created if it doesn't exist | — |
 | A run of `prisma dev` | nothing; it runs on your machine | nothing |
 | Compute service | a Compute Service with its `*.prisma.build` hostname, with a new Deployment whenever its code or configuration changed | one compute version per Deployment, and the service's Endpoint |
-| `publicUrl` with a generated URL | nothing; the service's existing `*.prisma.build` hostname is reported | the service's Endpoint |
+| `publicUrl` with a prisma.build URL | nothing; the service's existing `*.prisma.build` hostname is reported | the service's Endpoint |
 | `publicUrl` with a named hostname | a RoutingUrl that needs a verified domain ownership claim | a Custom domain |
 | Root module input and config adapters | nothing; Composer works out their values before deploying | nothing |
 

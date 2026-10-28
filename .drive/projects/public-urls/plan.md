@@ -18,7 +18,7 @@ Remove `ensureDefaultBranchApp` from `src/Prisma/CustomDomain.ts` and the test t
 
 ### U2. A RoutingUrl resource over PDP's new routes
 
-A `Prisma.RoutingUrl` resource: create (no DNS needed), read conditions, update hostname or service, delete; found by `logicalId`. Replaces `Prisma.CustomDomain` for Composer.
+A `Prisma.RoutingUrl` resource: create (no DNS needed), read conditions, update hostname or service, delete; found by `logicalId`; adopts a live row on the same service with the same hostname and no `logicalId` by writing the `logicalId` on it. Replaces `Prisma.CustomDomain` for Composer.
 
 - **Builds on:** D1 deployed.
 - **Hands to:** P2.
@@ -45,7 +45,7 @@ A `Prisma.RoutingUrl` resource: create (no DNS needed), read conditions, update 
 
 ### P1. `publicUrl()` with both strategies
 
-`publicUrl({ name, url, target })` with `publicUrl.hostname()` and `publicUrl.generated()`, a bare string as shorthand for a named hostname, and an error when `url` is omitted. `generated()` lowers to nothing on the platform and reports the service's existing `*.prisma.build` URL. `hostname()` lowers to `Prisma.CustomDomain`; a hostname whose DNS isn't ready fails the deploy naming the hostname and the DNS step. One `DeployedEntity` per public URL, with the node's address as its `logicalId` in the topology. The local target's stand-in creates nothing and warns once that a named hostname is ignored.
+`publicUrl({ name, url, target })` with `publicUrl.hostname()` and `publicUrl.prismaBuild()`, a bare string as shorthand for a named hostname, and an error when `url` is omitted. `prismaBuild()` lowers to nothing on the platform and reports the service's existing `*.prisma.build` URL. `hostname()` lowers to `Prisma.CustomDomain`; a hostname whose DNS isn't ready fails the deploy naming the hostname and the DNS step. One `DeployedEntity` per public URL, with the node's address as its `logicalId` in the topology. The local target's stand-in creates nothing and warns once that a named hostname is ignored.
 
 - **Builds on:** C1, U1.
 - **Hands to:** P2.
@@ -53,14 +53,14 @@ A `Prisma.RoutingUrl` resource: create (no DNS needed), read conditions, update 
 
 ### P2. Pending hostnames
 
-`hostname()` lowers to `Prisma.RoutingUrl`; `generated()` still lowers to nothing. A hostname without DNS deploys with its unmet conditions reported, the deploy output names the first one and prints the Console link, and finishing DNS needs no redeploy. `origin()` is unchanged. The scenarios doc gains the slice that made each scenario true.
+`hostname()` lowers to `Prisma.RoutingUrl`; `prismaBuild()` still lowers to nothing. A hostname without DNS deploys with its unmet conditions reported, the deploy output names the first one and prints the Console link, and finishing DNS needs no redeploy. `origin()` is unchanged. The scenarios doc gains the slice that made each scenario true.
 
 - **Builds on:** P1, U2.
 - **Done when:** the spec's "At a glance" app deploys production before `shop.com`'s DNS exists, succeeds, and the hostname goes active after DNS is added with no further deploy.
 
 ### P3. The endpoint as a routing URL (step two)
 
-`publicUrl.generated()` lowers to the platform's endpoint RoutingUrl once the platform offers it, and the `Prisma.RoutingUrl` resource adopts the row the backfill made for an existing service. Specified when D1's step one has landed and the adoption rule is settled against [migration-scenarios.md](migration-scenarios.md).
+`publicUrl.prismaBuild()` lowers to the platform's `prisma.build` RoutingUrl once the platform offers it, and U2's adoption takes over the row the backfill made for an existing service. Specified when D1's step one has landed, against [migration-scenarios.md](migration-scenarios.md).
 
 - **Builds on:** P2, D1's slice 5.
 - **Done when:** every scenario in migration-scenarios.md holds against a real Branch.

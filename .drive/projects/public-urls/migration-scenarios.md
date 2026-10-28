@@ -4,6 +4,8 @@ Scenarios for how Composer takes ownership of routing URL rows that exist before
 
 Background: old Composer versions wrote deploy state that knows only an App with an `endpointDomain`. Nothing in that state can say "this service has a routing URL", so every RoutingUrl the new version declares is a new resource to Alchemy. The only thing that can connect it to the row already serving traffic is the row itself, through the recorded rule that on the app's own Branch the row holding a node's `logicalId` is that node's row. Composer owns every piece of its topology that matters to the app's functioning.
 
+**Settled 2026-10-28 with Søren:** Composer owns the adoption. When the upstream `Prisma.RoutingUrl` resource declares a row and none on the Branch holds the node's `logicalId`, it looks for a live row on the same service with the same hostname and no `logicalId`, writes the `logicalId` on it through the ordinary update route, and records it in Alchemy state. The platform writes no `logicalId` itself and needs no derivation rule; the backfill creates rows with none. The scenarios below are read against that rule.
+
 ## 1. Existing app, upgrade Composer, no code change
 
 - **Start:** `shop` has `web` and `worker`, deployed by old Composer. Both have endpoints and both are public.
@@ -14,9 +16,9 @@ Background: old Composer versions wrote deploy state that knows only an App with
 ## 2. Existing app, upgrade and declare the assigned hostname
 
 - **Start:** as scenario 1.
-- **Action:** the user adds `publicUrl({ name: 'site', url: publicUrl.generated(), target: web.http })`.
+- **Action:** the user adds `publicUrl({ name: 'site', url: publicUrl.prismaBuild(), target: web.http })`.
 - **Must hold:** `web` keeps the same hostname with no interruption; the row that serves it is now owned by Composer; `worker`'s endpoint row is also owned and marked private.
-- **Stress:** the backfilled row carries a `logicalId` derived from `web`'s, while the `publicUrl()` node's own address is `shop.site`. Whichever `logicalId` the lowering declares has to be the one the backfill wrote.
+- **How:** the backfilled row has no `logicalId`. The resource finds it by service and hostname, writes `shop.site` on it, and records it. `worker`'s row is adopted the same way by whatever node the second step declares for a service's own `prisma.build` URL.
 
 ## 3. Existing app, a domain added in the Console, now declared in code
 
@@ -48,8 +50,7 @@ Background: old Composer versions wrote deploy state that knows only an App with
 
 - **Start:** the platform change has shipped.
 - **Action:** a user on old Composer keeps deploying. Old Composer creates services without the default-URL parameter.
-- **Must hold:** every new service gets its default public row exactly as before, with the derived `logicalId` written by the platform at creation, so that when this user upgrades later they are in scenario 1 and not in a worse state.
-- **Consequence:** the derivation rule lives in the platform, not only in the backfill.
+- **Must hold:** every new service gets its default public row exactly as before, with no `logicalId`, so that when this user upgrades later they are in scenario 1 and the adoption rule picks the row up.
 
 ## 8. An interrupted first deploy on the new version
 
@@ -85,4 +86,4 @@ Background: old Composer versions wrote deploy state that knows only an App with
 
 - Two decisions: scenario 1 (what an upgrade without code changes does) and scenario 4 (what happens to a row the code does not declare). The second also answers scenario 11.
 - Scenario 3 needs no `logicalId` derivation; it needs the reconciler to hand over a Foundry registration between rows for the same hostname.
-- Scenario 7 puts the `logicalId` derivation rule in the platform's service-create path, not only in the backfill.
+- No `logicalId` derivation is needed anywhere: adoption matches by service and hostname.

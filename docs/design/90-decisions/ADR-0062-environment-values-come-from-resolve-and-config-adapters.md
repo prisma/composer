@@ -14,7 +14,7 @@ export default module('shop', ({ environment, provision }) => {
   const web = provision(webService);
 
   const url = resolve([environment.name], ([name]) =>
-    name === 'production' ? 'shop.com' : publicUrl.generated());
+    name === 'production' ? 'shop.com' : publicUrl.prismaBuild());
 
   provision(publicUrl({ name: 'site', url, target: web.http }));
 });
@@ -31,7 +31,7 @@ export default module('shop', { input: type({ 'SITE_HOSTNAME?': 'string' }) }, (
   const url = resolve([input.SITE_HOSTNAME, environment.name], ([hostname, name]) =>
     hostname !== undefined ? publicUrl.hostname(hostname)
     : name === 'production' ? publicUrl.hostname('shop.com')
-    : publicUrl.generated());
+    : publicUrl.prismaBuild());
 
   provision(publicUrl({ name: 'site', url, target: web.http }));
 });
@@ -64,7 +64,7 @@ prisma dev                             # the environment dev, on this machine
 - **Deploy-time facts are dependencies like any other.** The module body receives an `environment` object beside `input` and `provision`, holding one opaque reference per fact: `environment.name`, and others as they are needed. A body can only list them as dependencies, so it cannot branch on the environment. A new fact is a new reference, never a new argument to `fn`.
 - **`fn` receives values and returns a value.** Secret inputs arrive as opaque `SecretString` boxes.
 - **Order of evaluation enforces the rule.** Composer runs the module code and builds the graph with every `resolve()` function unexecuted. It then disables `provision`. It then runs each function for the environment being deployed and validates the result like any other value, so a function that returns nothing for some environment fails the deploy rather than silently picking a default. Only the fully resolved graph is handed to Alchemy, the deploy engine.
-- **It is how an opaque input becomes a value.** Module inputs are opaque references, which can otherwise only be passed through unchanged. `resolve()` is how `https://` is put in front of a hostname, or how one environment gets a named hostname and another a generated one. The lowering layer already does this with Alchemy's `Output.map`; `resolve()` is the authoring-level form.
+- **It is how an opaque input becomes a value.** Module inputs are opaque references, which can otherwise only be passed through unchanged. `resolve()` is how `https://` is put in front of a hostname, or how one environment gets a named hostname and another its prisma.build URL. The lowering layer already does this with Alchemy's `Output.map`; `resolve()` is the authoring-level form.
 
 **Config adapters bring in values that live outside the code.** Some values belong to a file an ops team owns, or a secrets manager, not to `module.ts`. The `composer` section of `prisma.config.ts` names adapters; each receives the environment's name and returns a value; the results merge by top-level key in list order, a later adapter winning; and the merged value is the root module's input, validated by its schema. An adapter is a mechanism, not a value: the config file still carries no application settings ([ADR-0003](ADR-0003-deploy-derives-everything-from-the-root-node.md)); the values stay wherever the adapter reads them. `dotenv()` follows dotenv's own convention: `.env` for every environment, `.env.<environment>` for the one being deployed, plus the `.local` variants. A `secrets` list beside `config` is the home for a secrets manager; its adapters are a separate decision.
 
@@ -77,7 +77,7 @@ Adapters are not how per-environment choice is expressed. That is `resolve()`, i
 | **known at deploy time** | `config` adapters, and `resolve()` over them | `secrets` adapters |
 | **held by the platform** | — | `envSecret` |
 
-**A key no adapter supplies is absent, and the schema decides.** An optional key left out is simply absent in `fn`, which may return a generated URL for it. A required key left out fails the deploy before anything is created, with the schema's error, as an unset `envParam` does.
+**A key no adapter supplies is absent, and the schema decides.** An optional key left out is simply absent in `fn`, which may return a prisma.build URL for it. A required key left out fails the deploy before anything is created, with the schema's error, as an unset `envParam` does.
 
 **Every environment has a name; none is special.** A nameless "default" environment is a footgun: forgetting a flag lands a deploy, or a teardown, on production. So each command has a default value for its `--environment` parameter, an adapter always receives a name, and so does a `resolve()` that lists `environment.name`. `destroy` has no default: its target names an environment explicitly, so an omitted value can never tear down production ([ADR-0024](ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)).
 

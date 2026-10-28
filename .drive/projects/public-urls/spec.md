@@ -1,6 +1,6 @@
 # Purpose
 
-Let an author say, in code, which services receive traffic from the internet and at which URL, with the URL differing per environment, and never have a deploy fail because a hostname's DNS isn't ready yet. Today every compute service is public on a generated address, a custom domain can only be added by hand after the deploy, and nothing in the code records which services are meant to be public.
+Let an author say, in code, which services receive traffic from the internet and at which URL, with the URL differing per environment, and never have a deploy fail because a hostname's DNS isn't ready yet. Today every compute service is public on its prisma.build address, a custom domain can only be added by hand after the deploy, and nothing in the code records which services are meant to be public.
 
 # At a glance
 
@@ -13,7 +13,7 @@ export default module('shop', ({ environment, provision }) => {
   const url = resolve([environment.name], ([name]) =>
     name === 'production' ? 'shop.com'
     : name === 'staging' ? 'staging.shop.com'
-    : publicUrl.generated());
+    : publicUrl.prismaBuild());
 
   provision(publicUrl({ name: 'site', url, target: web.http }));
 });
@@ -25,7 +25,7 @@ prisma deploy --environment pr-42      # a preview: a hostname the platform gene
 prisma dev                             # the environment dev, on this machine
 ```
 
-Under the hood, `publicUrl` is a node that is wired to the HTTP connection a service exposes. `resolve()` computes a value after the graph is built, with `provision` disabled, so the graph's structure is the same in every environment. On Prisma Cloud a named hostname becomes a RoutingUrl record on the environment's Branch that exists before DNS does and answers once its conditions hold, among them a domain ownership claim the workspace has verified. A generated URL creates nothing: every service already has the platform's hostname.
+Under the hood, `publicUrl` is a node that is wired to the HTTP connection a service exposes. `resolve()` computes a value after the graph is built, with `provision` disabled, so the graph's structure is the same in every environment. On Prisma Cloud a named hostname becomes a RoutingUrl record on the environment's Branch that exists before DNS does and answers once its conditions hold, among them a domain ownership claim the workspace has verified. A prisma.build URL creates nothing: every service already has that hostname.
 
 The decisions and their reasons are recorded in ADR-0059 to ADR-0062, `docs/design/05-prisma-cloud/public-url.md` (with its domain map and scenarios) and pdp-control-plane ADR 015. Execution decisions that the ADRs don't carry are in [design-notes.md](design-notes.md).
 
@@ -61,14 +61,14 @@ Existing custom domains keep working: PDP backfills them into RoutingUrl records
 # Transitional-shape constraints
 
 - **Day one, a named hostname lowers to `Prisma.CustomDomain`.** DNS must be in place or the deploy fails, as a custom domain does today. The pending state arrives when the PDP record and the Alchemy resource over it ship, and `publicUrl.hostname()` switches to the new resource with no change to the authored code.
-- **`publicUrl.generated()` lowers to nothing on the platform** and reports the service's existing `*.prisma.build` URL. That is its final form for this project; the platform's later step makes the hostname opt-in.
+- **`publicUrl.prismaBuild()` lowers to nothing on the platform** and reports the service's existing `*.prisma.build` URL. That is its final form for this project; the platform's later step makes the hostname opt-in.
 - **The upstream default-Branch rule is lifted before `publicUrl()` ships.** Composer's `publicUrl` waits for the Alchemy release that carries the change; the check is patched out under `patches/` only if that release stalls.
 - **The rename to environment ships as one Composer release**, so authors change `--stage` to `--environment` once.
 - **Promote re-pointing moves from best-effort to the reconciler** when the RoutingUrl record lands; until then today's `reassignDomains` behaviour stands.
 
 # Project DoD
 
-- A test app with one public service, deployed to production and to a preview environment with the same code, shows that service alone as public in the topology; production serves on the named hostname, the preview on a generated one.
+- A test app with one public service, deployed to production and to a preview environment with the same code, shows that service alone as public in the topology; production serves on the named hostname, the preview on its prisma.build URL.
 - The same app deployed to production before `shop.com`'s DNS exists succeeds, the deploy output names the outstanding step and prints the Console link, and the hostname goes active after DNS is added with no further deploy.
 - A service input bound to a `resolve()` value differs between two environments of the test app; `provision` inside the callback fails with an error naming the structure rule; a callback returning an invalid value fails the deploy before anything is created.
 - A RoutingUrl created without DNS shows its unmet conditions, becomes active once the records are published with no further API call, survives a promote and the deletion of its service, and a second record naming its hostname reports it as in use until the first is deleted.
