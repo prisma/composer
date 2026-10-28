@@ -44,7 +44,7 @@ The work spans four repositories:
 
 - **prisma/composer**: `resolve()` and the second evaluation pass in core; `publicUrl()` and its two strategies in the Prisma Cloud extension; the rename from stage to environment on every public surface; guides, the agent skill and the examples.
 - **alchemy-run/alchemy**, `packages/prisma`: the Prisma provider is ours to change. First lifting `Prisma.CustomDomain`'s rule that a domain attaches only to an app on the default Branch; later a `Prisma.RoutingUrl` resource over the new routes.
-- **prisma/pdp-control-plane**: the RoutingUrl and domain ownership records, their Management API routes, the reconciler, the backfill of existing custom domains, and the Console's Domains section and Domains page. Its own project is `projects/routing-urls/` in that repository, with pdp-control-plane's ADR 015.
+- **prisma/pdp-control-plane**: the RoutingUrl records and domain ownership claims, their Management API routes, the reconciler, the backfill of existing custom domains, and the Console's custom hostnames on the service page and its Domains page of ownership claims. Its own project is `projects/routing-urls/` in that repository, with pdp-control-plane's ADR 015.
 - **Foundry**: unchanged. The control plane reconciles over its existing endpoint and domain APIs.
 
 Existing custom domains keep working: PDP backfills them into RoutingUrl records with no `logicalId`. A hostname added in Console that the code later declares gets a record of Composer's own, and the platform hands the registration over without reissuing the certificate.

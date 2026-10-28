@@ -80,7 +80,7 @@ url: resolve([environment.name], ([name]) =>
 
 **PDP, `pr-42` Branch:** named RoutingUrl `shop.site` = `pr-42.preview.shop.com` → `shop.web`. For this to work without a person doing DNS per preview, the workspace must hold a verified domain ownership claim for the wildcard `*.preview.shop.com` (TXT at `_prisma-verification.preview.shop.com`), which covers exactly one label below it, and one wildcard DNS record must send `*.preview.shop.com` to Foundry. Certificates need no extra work: Foundry issues one certificate per hostname (ACME HTTP-01), so each new preview hostname gets its own once the wildcard record resolves to Foundry. A preview's hostname must stay one label under the namespace, and a hostname under the wildcard that no RoutingUrl holds reaches nothing.
 
-A preview whose code names `shop.com` is refused, because production holds it, and production is unaffected.
+A preview whose code names `shop.com` deploys, and its record reports the hostname as in use because production's record serves it; production is unaffected.
 
 An environment name isn't always a valid DNS label (Composer allows `_`; labels are capped at 63 characters), so a real version of this function passes the name through a label helper first, the author's own or one Composer ships. `resolve()` itself knows nothing about URLs.
 

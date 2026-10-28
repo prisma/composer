@@ -14,7 +14,7 @@ Background: old Composer versions wrote deploy state that knows only an App with
 ## 2. Existing app, upgrade and declare the assigned hostname
 
 - **Start:** as scenario 1.
-- **Action:** the user adds `publicUrl({ name: 'site', url: publicUrl.assigned(), target: web.http })`.
+- **Action:** the user adds `publicUrl({ name: 'site', url: publicUrl.generated(), target: web.http })`.
 - **Must hold:** `web` keeps the same hostname with no interruption; the row that serves it is now owned by Composer; `worker`'s endpoint row is also owned and marked private.
 - **Stress:** the backfilled row carries a `logicalId` derived from `web`'s, while the `publicUrl()` node's own address is `shop.site`. Whichever `logicalId` the lowering declares has to be the one the backfill wrote.
 
