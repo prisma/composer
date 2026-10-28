@@ -1,5 +1,11 @@
 # Public URLs
 
+## The problem
+
+A Composer application is a topology: the services, databases and buckets an author declares in code, and the connections between them. The one thing an author cannot declare today is how the application is reached from the internet. Every service gets an address the platform chooses, whether the author wants it reachable or not. A hostname of the author's own, such as `shop.com`, can only be attached afterwards, by hand in the Console, and only once its DNS already points at the platform. Nothing in the code says which services are public or at which hostname, so the topology is incomplete, the hostname is not reproduced when the app is deployed to another environment, and a deploy cannot set it up.
+
+Authors need to declare their ingress URLs as part of the application topology, per environment, and have the deploy make them real.
+
 ## An example
 
 An author has a shop with a web service. They want it at `shop.com` in production, at `staging.shop.com` in staging, and at whatever address the platform gives it in every preview. They write this:
