@@ -82,8 +82,8 @@ Flags: `dev` takes `--name` (override the root's name, as on deploy),
 `--fresh` (before starting, delete the current app's local services,
 databases and buckets, their data, and the app's entry in the directory's
 record; other apps run from the directory keep theirs) and `--detach` (return once every service answers and leave the app
-running; see § Process lifetimes). Dev takes no `--environment` flag: it runs
-as the environment `dev`, the name it hands the local target's container and
+running; see § Process lifetimes). Dev takes `--environment`, `dev` by default
+([ADR-0059](../90-decisions/ADR-0059-a-deployment-environment-is-called-an-environment.md)); the name is what it hands the local target's container and
 hooks. A working directory still has exactly one local copy of each app;
 parallel copies are parallel checkouts. Giving each environment its own local
 copy is planned work.
@@ -548,7 +548,7 @@ Deploy's rule holds: every failure names its fix.
 (none outstanding from the design phase — see Known limitations below for
 gaps found during implementation.)
 
-(Settled since the first draft: Postgres runs one named `@prisma/dev` server per `Database` resource; the front door prints every routing URL ordered by address depth then name, shallowest first; on a fresh start, services get their ports in dependency order, ties in declaration order — the emulators hook creates their instances one at a time from `graph.nodes` before Alchemy applies the resources concurrently — and a warm start keeps each service's and database's port, because an instance holds its port until it is deleted (ADR-0052); port allocation and the remaining mechanics are described in this document and [ADR-0041](../90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md). Restart latency is measured — see Known limitations.)
+(Settled since the first draft: Postgres runs one named `@prisma/dev` server per `Database` resource; the front door prints every service URL ordered by address depth then name, shallowest first; on a fresh start, services get their ports in dependency order, ties in declaration order — the emulators hook creates their instances one at a time from `graph.nodes` before Alchemy applies the resources concurrently — and a warm start keeps each service's and database's port, because an instance holds its port until it is deleted (ADR-0052); port allocation and the remaining mechanics are described in this document and [ADR-0041](../90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md). Restart latency is measured — see Known limitations.)
 
 ## Proven against a real app
 
