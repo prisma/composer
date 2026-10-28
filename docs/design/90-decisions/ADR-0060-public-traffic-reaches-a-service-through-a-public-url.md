@@ -88,7 +88,7 @@ provision(publicUrl({ name: 'authUrl', url, target: identity.api }));
 - **A hostname option on `compute()`.** Rejected: a reusable service would carry one environment's hostname, and every copy would claim it.
 - **Exposing the public URL from its module.** Rejected: exposed connections are for consumers inside the graph, and a public URL has none.
 - **`origin()` returns the custom hostname.** Rejected: it reverses the service-origin decision and needs a rule for several URLs on one service.
-- **One public URL with several hostnames.** Rejected: each hostname has its own proof, state and certificate; two nodes say so plainly.
+- **One public URL with several hostnames.** Rejected: each hostname has its own ownership claim, state and certificate; two nodes say so plainly.
 - **A Composer-owned domain resource.** Rejected: Prisma Cloud resources come from the upstream Alchemy provider, which we extend.
 - **Other names.** "Ingress" (Kubernetes vocabulary; no hosting platform uses it), "endpoint" (AWS vocabulary, and what an API offers), "hostname" (wrong once paths exist), "public address" (collides with a node's address), "custom domain" (names only one of the two cases). Users see "domain" and "URL" everywhere; "public URL" fits both cases.
 
