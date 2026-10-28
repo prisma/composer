@@ -32,7 +32,7 @@ describe('containerEnvVarName()', () => {
 
 class FakeInstance implements ContainerInstance {
   constructor(
-    readonly input: { appName: string; stage: string | undefined },
+    readonly input: { appName: string; environment: string },
     private readonly payload: string,
   ) {}
   serialize(): string {
@@ -43,8 +43,8 @@ class FakeInstance implements ContainerInstance {
 describe('containerEnv()', () => {
   test('one env var per extension, keyed by its env-var-safe id', () => {
     const instances = new Map<string, ContainerInstance>([
-      ['ext-a', new FakeInstance({ appName: 'shop', stage: undefined }, 'serialized-a')],
-      ['ext-b', new FakeInstance({ appName: 'shop', stage: 'staging' }, 'serialized-b')],
+      ['ext-a', new FakeInstance({ appName: 'shop', environment: 'production' }, 'serialized-a')],
+      ['ext-b', new FakeInstance({ appName: 'shop', environment: 'staging' }, 'serialized-b')],
     ]);
 
     expect(containerEnv(instances)).toEqual({
@@ -60,8 +60,8 @@ describe('containerEnv()', () => {
   test('two extension ids mangling to the same var name throws, naming both', () => {
     // '@a/b' and '@a.b' both map to 'PRISMA_COMPOSER_CONTAINER_A_B'.
     const instances = new Map<string, ContainerInstance>([
-      ['@a/b', new FakeInstance({ appName: 'shop', stage: undefined }, 'x')],
-      ['@a.b', new FakeInstance({ appName: 'shop', stage: undefined }, 'y')],
+      ['@a/b', new FakeInstance({ appName: 'shop', environment: 'production' }, 'x')],
+      ['@a.b', new FakeInstance({ appName: 'shop', environment: 'production' }, 'y')],
     ]);
 
     expect(() => containerEnv(instances)).toThrow(/@a\/b/);
@@ -70,7 +70,7 @@ describe('containerEnv()', () => {
 
   test('an instance whose serialize() returns an empty string throws, naming the extension', () => {
     const instances = new Map<string, ContainerInstance>([
-      ['ext-a', new FakeInstance({ appName: 'shop', stage: undefined }, '')],
+      ['ext-a', new FakeInstance({ appName: 'shop', environment: 'production' }, '')],
     ]);
 
     expect(() => containerEnv(instances)).toThrow(/ext-a/);
@@ -92,7 +92,7 @@ function configWithContainerExtension(id: string): PrismaAppConfig {
         throw new Error('remove() must not run in deserializeContainers()');
       },
       deserialize: (serialized) => {
-        const input = JSON.parse(serialized) as { appName: string; stage: string | undefined };
+        const input = JSON.parse(serialized) as { appName: string; environment: string };
         return new FakeInstance(input, serialized);
       },
     },
@@ -111,7 +111,7 @@ function configWithContainerExtension(id: string): PrismaAppConfig {
 describe('deserializeContainers()', () => {
   test('a config extension with a container descriptor whose var is present deserializes it', () => {
     const config = configWithContainerExtension('ext-a');
-    const serialized = JSON.stringify({ appName: 'shop', stage: undefined });
+    const serialized = JSON.stringify({ appName: 'shop', environment: 'production' });
 
     const instances = deserializeContainers(config.extensions, {
       [containerEnvVarName('ext-a')]: serialized,
@@ -150,8 +150,8 @@ describe('deserializeContainers()', () => {
   test('round trip: containerEnv()  →  deserializeContainers() reconstructs the same serialized payload', () => {
     const config = configWithContainerExtension('ext-a');
     const original = new FakeInstance(
-      { appName: 'shop', stage: 'staging' },
-      JSON.stringify({ appName: 'shop', stage: 'staging' }),
+      { appName: 'shop', environment: 'staging' },
+      JSON.stringify({ appName: 'shop', environment: 'staging' }),
     );
     const env = containerEnv(new Map([['ext-a', original]]));
 

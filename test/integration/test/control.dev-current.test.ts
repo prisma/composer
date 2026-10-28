@@ -80,7 +80,7 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
     const localTarget = prismaCloud().localTarget;
     if (localTarget === undefined) throw new Error('prismaCloud() has no local target');
     target = await localTarget();
-    container = await target.container.ensure({ appName: APP, stage: undefined });
+    container = await target.container.ensure({ appName: APP, environment: 'dev' });
     const devDir = path.join(cwd, DEV_DIR);
 
     // An app with no nodes starts the Compute emulator, so the placeholders can
@@ -88,7 +88,7 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
     const placeholderApp = module('portskip', () => {});
     await target.emulators?.({
       graph: Load(placeholderApp, { id: 'portskip' }),
-      container: await target.container.ensure({ appName: 'portskip', stage: undefined }),
+      container: await target.container.ensure({ appName: 'portskip', environment: 'dev' }),
       devDir: path.join(root, 'placeholders', DEV_DIR),
     });
     const computeAdmin = `http://127.0.0.1:${readRegistryPort('compute')}`;
@@ -132,7 +132,7 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
 
   afterAll(async () => {
     process.chdir(cwd);
-    await target?.teardown?.({ container, stage: undefined }).catch(() => undefined);
+    await target?.teardown?.({ container, environment: 'dev' }).catch(() => undefined);
     process.chdir(originalCwd);
     for (const name of ['compute', 'buckets', 'postgres']) {
       const file = path.join(emulatorsDir, `${name}.json`);

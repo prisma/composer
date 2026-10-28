@@ -24,7 +24,7 @@ describe('the ./control entry', () => {
       destroy({
         config: refusedSection,
         entry: 'module.ts',
-        target: { kind: 'production' },
+        environment: 'production',
         cwd,
       }),
     );

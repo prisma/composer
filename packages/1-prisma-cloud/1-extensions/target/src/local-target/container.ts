@@ -18,7 +18,7 @@ const LOCAL_PROJECT_ID = 'local';
 
 function resolve(input: LocateContainerInput): PrismaCloudContainer {
   return new PrismaCloudContainer(
-    { appName: input.appName, stage: undefined },
+    { appName: input.appName, environment: input.environment },
     LOCAL_PROJECT_ID,
     undefined,
     undefined,

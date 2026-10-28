@@ -102,7 +102,7 @@ describe('prismaCloud() — region resolution is deferred to first lowering use,
       const container = prismaCloud().container;
       expect(container).toBeDefined();
       await container?.ensure(
-        { appName: 'storefront', stage: undefined },
+        { appName: 'storefront', environment: 'production' },
         { workspaceId: 'ws-123', client: fakeClient(projectCreateBodies) },
       );
       expect(projectCreateBodies[0]?.['region']).toBe('xx-test-1');

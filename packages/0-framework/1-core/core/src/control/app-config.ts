@@ -61,7 +61,7 @@ export interface ExtensionDescriptor {
    * Deploy-time prerequisite check — the CLI runs it once, after the app's
    * Project/Branch are resolved and BEFORE any stack file is written or Alchemy
    * runs. A target uses it to verify platform prerequisites (e.g. that every
-   * secret env var in the provision manifest exists for the resolved stage) and
+   * secret env var in the provision manifest exists for the resolved environment) and
    * throws to abort the deploy. Async: it talks to the platform (ADR-0029).
    *
    * What it returns is carried to the alchemy process for this same extension
@@ -79,7 +79,7 @@ export interface ExtensionDescriptor {
   preflight?(input: PreflightInput): Promise<PreflightPayload>;
   /**
    * Destroy-time cleanup — the CLI runs it once, after `alchemy destroy`
-   * succeeds and BEFORE the stage's Project/Branch are removed. A target uses
+   * succeeds and BEFORE the environment's containers are removed. A target uses
    * it to remove infrastructure it owns outside the stack (e.g. the deploy
    * state store, which the destroy above was still reading). Throwing aborts
    * the destroy before the containers go; a target that would rather warn than
@@ -132,8 +132,8 @@ export interface PreflightInput<C = unknown> {
   readonly graph: Graph;
   /** The calling extension's own resolved container; `undefined` when it declares no container descriptor. Narrow with the extension's guard. */
   readonly container: ContainerInstance | undefined;
-  /** The stage name (`--stage`), or `undefined` for the default stage — for diagnostics/scope. */
-  readonly stage: string | undefined;
+  /** The environment name. */
+  readonly environment: string;
   /** What the caller has already authenticated, for the platform calls preflight makes. Absent means the extension falls back to its own credential protocol. */
   readonly credentials?: ContainerCredentials<C> | undefined;
   /** Hands the deploy's progress output what the check covered, as counts (e.g. `{ checked: 53, filled: 0, missing: 0 }`). Counts only: never a name or a value. */
@@ -144,8 +144,8 @@ export interface PreflightInput<C = unknown> {
 export interface TeardownInput {
   /** The calling extension's own resolved container; `undefined` when it declares no container descriptor. Narrow with the extension's guard. */
   readonly container: ContainerInstance | undefined;
-  /** The stage name (`--stage`), or `undefined` for the default stage — for diagnostics/scope. */
-  readonly stage: string | undefined;
+  /** The environment name. */
+  readonly environment: string;
 }
 
 /** The deploy context handed to `ReporterDescriptor.begin`. `C` erases to `unknown` at the framework boundary, exactly as on `PreflightInput`. */
@@ -160,8 +160,8 @@ export interface ReportBeginInput<C = unknown> {
    * loaded (a breaking addition to this published type).
    */
   readonly graph: Graph;
-  /** The stage name (`--stage`), or `undefined` for the default stage. */
-  readonly stage: string | undefined;
+  /** The environment name. */
+  readonly environment: string;
   /** The directory the deploy command was run from — where a reporter reads repository metadata. */
   readonly cwd: string;
   /**

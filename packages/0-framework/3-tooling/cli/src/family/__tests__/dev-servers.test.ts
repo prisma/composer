@@ -32,7 +32,7 @@ describe('dev — dev servers', () => {
     const family = createComposerFamily({ operations: double.operations });
     const cli = createTestCli({
       commandFamilies: [family],
-      commands: { dev: commandAt(family, 'dev') },
+      commands: { deploy: commandAt(family, 'deploy'), dev: commandAt(family, 'dev') },
       config: { composer: validComposerSection() },
     });
     const interrupt = new AbortController();

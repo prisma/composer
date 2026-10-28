@@ -17,7 +17,8 @@ call from a short script; there is no `prisma` command for them.
 `module.ts` is your entry file — the one whose default export is the root
 module, the same file you pass to `prisma deploy`. No `PRISMA_*` variables
 and no `prisma auth login` are needed; local dev never talks to the
-platform.
+platform. It runs as the environment `dev`, and a working directory has one
+local copy of the app.
 
 ## Bring it up
 
@@ -300,7 +301,7 @@ The rules for every line:
 | `prisma dev url` | the node asked for | URL |
 | `prisma emulator list` | emulator instance | emulator kind (`service`, `database` or `bucket`), instance id, URL, state, node address, directory |
 
-A command with nothing to report writes no lines and still exits 0: `dev stop` when nothing was running, and `deploy` for a node that published no entities (such as S3 credentials) or when the deploy wrote no report. [Deploying](deploying.md#production-and-stages) says how to tell these apart.
+A command with nothing to report writes no lines and still exits 0: `dev stop` when nothing was running, and `deploy` for a node that published no entities (such as S3 credentials) or when the deploy wrote no report. [Deploying](deploying.md#environments) says how to tell these apart.
 
 The directory in `emulator list` is an absolute path, unlike the paths other `prisma` commands print, which are relative to the working directory. The list covers every app on the machine and runs from any directory, so a relative path would change with the directory you run it from and would not identify an app reliably.
 

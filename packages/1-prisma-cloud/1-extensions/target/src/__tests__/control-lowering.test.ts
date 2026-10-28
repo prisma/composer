@@ -397,7 +397,7 @@ async function withEnv<T>(values: Record<string, string | undefined>, fn: () => 
 const CONTAINER_VAR = containerEnvVarName(PRISMA_CLOUD_EXTENSION_ID);
 const containerEnv = (projectId: string, branchId?: string): Record<string, string> => ({
   [CONTAINER_VAR]: new PrismaCloudContainer(
-    { appName: 'shop', stage: branchId },
+    { appName: 'shop', environment: branchId ?? 'production' },
     projectId,
     branchId,
     branchId === undefined ? 'br_default' : undefined,
@@ -490,12 +490,12 @@ describe("projectIdOf — narrowing ctx.application to this extension's own prod
 });
 
 describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
-  test('default stage: references the resolved container project (no Project minted) and claims the DATABASE_URL keys', () => {
+  test('production: references the resolved container project (no Project minted) and claims the DATABASE_URL keys', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const beforeEnv = recorded.envVar.length;
     const beforeClaims = recorded.databaseUrlClaims.length;
     const container = new PrismaCloudContainer(
-      { appName: 'shop', stage: undefined },
+      { appName: 'shop', environment: 'production' },
       'shop-project-id',
       undefined,
       'br_default',
@@ -522,12 +522,12 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
     expect(recorded.envVar.slice(beforeEnv)).toEqual([]);
   });
 
-  test('named stage: claims the same project-level keys, and still declares no environment variable', () => {
+  test('named environment: claims the same project-level keys, and still declares no environment variable', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const beforeEnv = recorded.envVar.length;
     const beforeClaims = recorded.databaseUrlClaims.length;
     const container = new PrismaCloudContainer(
-      { appName: 'shop', stage: 'staging' },
+      { appName: 'shop', environment: 'staging' },
       'shop-project-id',
       'branch_1',
     );
@@ -546,7 +546,7 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
       branchless: false,
     });
     // The branch id never reaches the claim: the rows are project-level, so
-    // one claim covers every stage of the project.
+    // one claim covers every environment of the project.
     expect(recorded.databaseUrlClaims.slice(beforeClaims)).toEqual(['shop-project-id']);
     expect(recorded.envVar.slice(beforeEnv)).toEqual([]);
   });
@@ -612,7 +612,7 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
     });
   });
 
-  test('named stage: Database is created with branchId', async () => {
+  test('named environment: Database is created with branchId', async () => {
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
@@ -630,7 +630,7 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
 
       run<Outputs>(resourceDescriptorOf(target, 'raw-postgres')(ctx));
 
-      // A named stage attaches the branch at create, which upstream only
+      // A named environment attaches the branch at create, which upstream only
       // permits WITHOUT an explicit display name — so `name` is absent here.
       expect(recorded.db.slice(before)).toEqual([
         [
@@ -703,7 +703,7 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
     'prisma.config.ts',
   );
 
-  test('default stage: the Database attaches the default Branch; the migration persists compact contract attestation on its warmed url', async () => {
+  test('production: the Database attaches the default Branch; the migration persists compact contract attestation on its warmed url', async () => {
     await withEnv({}, async () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const node = postgres({
@@ -860,7 +860,7 @@ describe("prismaCloud().nodes['s3'] — the real-bucket resource descriptor", ()
     });
   });
 
-  test('named stage: Bucket is created with branchId', async () => {
+  test('named environment: Bucket is created with branchId', async () => {
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
@@ -925,7 +925,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     });
   });
 
-  test('named stage: provision creates a ComputeService with branchId', async () => {
+  test('named environment: provision creates a ComputeService with branchId', async () => {
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
@@ -1635,7 +1635,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     });
   });
 
-  test('named stage: serialize writes env vars with class "preview" and branchId', async () => {
+  test('named environment: serialize writes env vars with class "preview" and branchId', async () => {
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const node = compute({
@@ -2860,11 +2860,21 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
 describe('topology identities on platform resources', () => {
   test.each([
-    { stage: 'main', branchId: undefined, defaultBranchId: 'br_default', branchless: false },
-    { stage: 'preview', branchId: 'br_preview', defaultBranchId: undefined, branchless: false },
-    { stage: 'local dev', branchId: undefined, defaultBranchId: undefined, branchless: true },
+    {
+      environment: 'production',
+      branchId: undefined,
+      defaultBranchId: 'br_default',
+      branchless: false,
+    },
+    {
+      environment: 'preview',
+      branchId: 'br_preview',
+      defaultBranchId: undefined,
+      branchless: false,
+    },
+    { environment: 'local dev', branchId: undefined, defaultBranchId: undefined, branchless: true },
   ])(
-    '$stage preserves nested node addresses and skips identity binding in local dev',
+    '$environment preserves nested node addresses and skips identity binding in local dev',
     ({ branchId, defaultBranchId, branchless }) => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const application = {
@@ -3417,7 +3427,7 @@ describe('local dev: the emulators hook keys each node by its main resource ID',
       }),
     );
     const container: ContainerInstance = {
-      input: { appName: 'my-shop', stage: undefined },
+      input: { appName: 'my-shop', environment: 'production' },
       serialize: () => 'x',
     };
     ensuredNodes.length = 0;

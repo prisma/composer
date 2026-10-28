@@ -34,6 +34,7 @@ import {
 import type { DevEvent, DevInput, DevSession } from './dev.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import {
+  DEV_ENVIRONMENT,
   type ExtensionId,
   type OperationDeps,
   type ServiceEndpoint,
@@ -182,7 +183,10 @@ export async function executeDev(
     // Containers — purely local, resolved before anything else can fail.
     for (const [id, dev] of resolved) {
       try {
-        containers.set(id, await dev.container.ensure({ appName: name, stage: undefined }));
+        containers.set(
+          id,
+          await dev.container.ensure({ appName: name, environment: DEV_ENVIRONMENT }),
+        );
       } catch (error) {
         throw toStructured('DEV.CONTAINER_FAILED', error);
       }
@@ -193,7 +197,7 @@ export async function executeDev(
       for (const [id, dev] of resolved) {
         if (dev.teardown === undefined) continue;
         try {
-          await dev.teardown({ container: containers.get(id), stage: undefined });
+          await dev.teardown({ container: containers.get(id), environment: DEV_ENVIRONMENT });
         } catch (error) {
           throw toStructured('DEV.TEARDOWN_FAILED', error);
         }
@@ -204,7 +208,7 @@ export async function executeDev(
     for (const [id, dev] of resolved) {
       if (dev.preflight === undefined) continue;
       try {
-        await dev.preflight({ graph, container: containers.get(id), stage: undefined });
+        await dev.preflight({ graph, container: containers.get(id), environment: DEV_ENVIRONMENT });
       } catch (error) {
         throw toStructured('DEV.PREFLIGHT_FAILED', error);
       }
@@ -246,7 +250,7 @@ export async function executeDev(
     command: 'deploy',
     stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
     cwd,
-    stage: 'dev',
+    stage: DEV_ENVIRONMENT,
     containerEnv: containerEnv(containers),
   });
 

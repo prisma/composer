@@ -9,7 +9,7 @@
     "test": "bun test tests",
     "smoke:deployed": "bun scripts/smoke.ts",
     "deploy": "pnpm turbo run build --filter @prisma/example-streams... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../node_modules/.bin/prisma deploy ${STREAMS_STACK_NAME:+--name \"$STREAMS_STACK_NAME\"} )",
-    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts --production ${STREAMS_STACK_NAME:+--name \"$STREAMS_STACK_NAME\"} )"
+    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts --environment production ${STREAMS_STACK_NAME:+--name \"$STREAMS_STACK_NAME\"} )"
   },
   "dependencies": {
     "@prisma/composer": "workspace:0.35.0",

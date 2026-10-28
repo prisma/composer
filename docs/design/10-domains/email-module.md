@@ -4,7 +4,7 @@ The `email` module (`packages/1-prisma-cloud/2-shared-modules/email`) sends
 transactional email. A Compute service exposes two rpc ports: `send` delivers
 a rendered email, and `outbox` reads back every email the module has handled.
 Delivery goes to Resend, to an SMTP server, or nowhere (`none`), chosen per
-stage. Every email is stored in the module's own Postgres first.
+environment. Every email is stored in the module's own Postgres first.
 
 How to use it is in the package
 [README](../../../packages/1-prisma-cloud/2-shared-modules/email/README.md).
@@ -58,18 +58,18 @@ for the planned fix.
 
 The outbox is not a test hatch. It is meant to back an admin panel, so it gets
 the same care as `send`: keyset pagination, filters, and a stable record
-shape. The same property is what makes local dev and preview stages work:
+shape. The same property is what makes local dev and preview environments work:
 with delivery set to `none`, an end-to-end test or an agent reads the
 verification link out of the outbox instead of a mailbox.
 
 ## The delivery credential is always required
 
-The delivery credential is a required secret even on stages where delivery is
+The delivery credential is a required secret even in environments where delivery is
 `none` and the value is never read. The framework has no optional or
 conditional secrets: every wired secret is required
 ([ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md)). Such
-stages set a junk value. This was accepted as known friction, recorded in
-[`gotchas.md`](../../../gotchas.md#composers-secret-model-has-no-optionalconditional-secrets--every-off-stage-still-needs-a-junk-credential),
+environments set a junk value. This was accepted as known friction, recorded in
+[`gotchas.md`](../../../gotchas.md#composers-secret-model-has-no-optionalconditional-secrets--every-off-environment-still-needs-a-junk-credential),
 rather than solved in the framework.
 
 ## No custom contract kinds

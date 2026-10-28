@@ -76,7 +76,7 @@ describe.skipIf(process.platform === 'win32')("the dev session's stop", () => {
     if (recorded?.kind !== 'database') throw new Error('no database recorded');
     expect(await acceptsConnection(recorded.port)).toBe(true);
     const container = new PrismaCloudContainer(
-      { appName: APP, stage: undefined },
+      { appName: APP, environment: 'dev' },
       'local',
       undefined,
       undefined,

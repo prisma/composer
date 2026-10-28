@@ -7,7 +7,7 @@
     "build": "rm -rf dist && bun build src/server.ts --target=bun --outfile dist/server.mjs",
     "typecheck": "tsc --noEmit",
     "deploy": "pnpm turbo run build --filter @prisma/example-orm-demo... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../node_modules/.bin/prisma deploy ${ORM_DEMO_STACK_NAME:+--name \"$ORM_DEMO_STACK_NAME\"} )",
-    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts --production ${ORM_DEMO_STACK_NAME:+--name \"$ORM_DEMO_STACK_NAME\"} )"
+    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts --environment production ${ORM_DEMO_STACK_NAME:+--name \"$ORM_DEMO_STACK_NAME\"} )"
   },
   "dependencies": {
     "@prisma/composer": "workspace:0.35.0",

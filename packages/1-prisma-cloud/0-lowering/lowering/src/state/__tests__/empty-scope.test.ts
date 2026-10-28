@@ -8,11 +8,10 @@ import { fakeClient, newFakeState, PROJECT_ID } from './fake-management-api.ts';
 describe('failOnEmptyScopeWithLiveResources', () => {
   const branchId = 'br-default';
   const stack = 'demo-stack';
-  const stage = 'br_test123';
 
   const check = (state = newFakeState()) =>
     Effect.runPromise(
-      failOnEmptyScopeWithLiveResources(PROJECT_ID, branchId, stack, stage).pipe(
+      failOnEmptyScopeWithLiveResources(PROJECT_ID, branchId, stack).pipe(
         Effect.provideService(ManagementClient, fakeClient(state)),
       ),
     );
@@ -33,14 +32,14 @@ describe('failOnEmptyScopeWithLiveResources', () => {
 
     expect(error).toBeInstanceOf(PrismaApiError);
     const message = (error as PrismaApiError).message;
-    expect(message).toContain(`stage "${stage}" (stack "${stack}") has no deploy state`);
+    expect(message).toContain(`the Branch ${branchId} (stack "${stack}") has no deploy state`);
     expect(message).toContain(branchId);
     expect(message).toContain('app "storefront.web"');
     expect(message).toContain('app "storefront.worker"');
     expect(message).toContain('a deploy would try to recreate them');
   });
 
-  test('a database-only legacy stage fails too — a legacy prisma-composer-state database alone trips the guard', async () => {
+  test('a database-only legacy environment fails too — a legacy prisma-composer-state database alone trips the guard', async () => {
     const state = newFakeState({
       databases: [{ id: 'db-1', name: 'prisma-composer-state', projectId: PROJECT_ID, branchId }],
     });
@@ -92,7 +91,7 @@ describe('failOnEmptyScopeWithLiveResources', () => {
     expect(message).toContain('has no deploy state');
     expect(message).toContain('a Composer version that kept deploy state elsewhere');
     expect(message).toContain('something other than this app');
-    expect(message).toContain('Delete the stage');
+    expect(message).toContain('Delete the environment');
     expect(message).toContain('deploy again');
     expect(message).toContain('remove them or deploy into a different project');
     expect(message).not.toContain('predates');
@@ -144,7 +143,7 @@ describe('failOnEmptyScopeWithLiveResources', () => {
     expect((error as PrismaApiError).message).toContain('pagination appears broken');
   });
 
-  test("resources on a DIFFERENT branch don't count — another stage's resources never block this one", async () => {
+  test("resources on a DIFFERENT branch don't count — another environment's resources never block this one", async () => {
     const state = newFakeState({
       apps: [{ id: 'app-1', name: 'storefront.web', projectId: PROJECT_ID, branchId: 'br-other' }],
       databases: [{ id: 'db-1', name: 'database', projectId: PROJECT_ID, branchId: 'br-other' }],

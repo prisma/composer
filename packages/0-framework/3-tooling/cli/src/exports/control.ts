@@ -28,7 +28,6 @@ export { deploy } from '../operations/deploy.ts';
 export type {
   DestroyEvent,
   DestroyInput,
-  DestroyTarget,
 } from '../operations/destroy.ts';
 export { destroy } from '../operations/destroy.ts';
 export type { DevEvent, DevInput, DevSession } from '../operations/dev.ts';

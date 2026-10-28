@@ -7,7 +7,7 @@
  * the mailer's OWN `/emails/:id` endpoint, extracts the rendered link, and
  * follows it — proving the link a recipient would actually click works,
  * not just that a send happened — then reads the resulting welcome email
- * back the same way. Proves the `none`-mode preview-stage story: a real
+ * back the same way. Proves the `none`-mode preview-environment story: a real
  * deploy with a junk credential, no Resend account.
  *
  *   [EMAIL_STACK_NAME=…] bun scripts/smoke.ts

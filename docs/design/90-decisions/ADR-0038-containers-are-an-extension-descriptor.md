@@ -6,6 +6,9 @@
 > from the state-owning extension's container and passes it as `--stage`. The
 > `serialize()` payload stays extension-owned and unread by the framework.
 
+> Amended by [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md): the container key is `{ appName, environment }`, not
+> `{ appName, stage }`; production is the environment `production`.
+
 ## Decision
 
 The platform-side space a service deploys *into* — a container, in this

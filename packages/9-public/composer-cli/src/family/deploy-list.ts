@@ -1,11 +1,16 @@
 /**
- * `deploy list` — every node an app has deployed on a stage, with the
- * platform row each one deployed to. It reads the stage's application
+ * `deploy list` — every node an app has deployed in an environment, with the
+ * platform row each one deployed to. It reads the environment's application
  * topology and the Branch's rows on Prisma Cloud, so the command is
  * assembled into the family here, where both domains may be imported.
  */
 
-import { composerSection, dataLine, toEngineError } from '@internal/cli/family';
+import {
+  composerSection,
+  DEFAULT_DEPLOY_ENVIRONMENT,
+  dataLine,
+  toEngineError,
+} from '@internal/cli/family';
 import type { CliStructuredError as ComposerError } from '@internal/foundation/errors';
 import type { Result } from '@internal/foundation/result';
 import { defineCommand, flag } from '@prisma/cli-engine';
@@ -24,14 +29,15 @@ export const listDeployed: ListDeployed = async (input) =>
 export const createDeployListCommand = (list: ListDeployed) =>
   defineCommand({
     help: {
-      summary: 'List every node the app has deployed on a stage, with its platform ID and URL.',
+      summary:
+        'List every node the app has deployed in an environment, with its platform ID and URL.',
       description:
-        'Reads the application topology the last deploy recorded for the stage, and finds ' +
+        'Reads the application topology the last deploy recorded for the environment, and finds ' +
         'each node’s service, database or bucket on Prisma Cloud. The root node is the ' +
         'Project. A node with nothing on the platform, such as a module, has no platform ID.',
       examples: [
         '{bin} deploy list',
-        '{bin} deploy list --stage feat-auth',
+        '{bin} deploy list --environment staging',
         '{bin} deploy list --json',
       ],
     },
@@ -49,9 +55,10 @@ export const createDeployListCommand = (list: ListDeployed) =>
             "declares (default: the root module's name).",
           placeholder: 'name',
         }),
-        stage: flag.string({
-          brief: 'List this stage instead of production (default: production).',
-          placeholder: 'stage',
+        environment: flag.string({
+          brief: 'The environment to list.',
+          placeholder: 'name',
+          default: DEFAULT_DEPLOY_ENVIRONMENT,
         }),
       },
     },
@@ -62,7 +69,7 @@ export const createDeployListCommand = (list: ListDeployed) =>
         config: ctx.config,
         entry: args.flags.entry,
         name: args.flags.name,
-        stage: args.flags.stage,
+        environment: args.flags.environment ?? DEFAULT_DEPLOY_ENVIRONMENT,
         cwd: ctx.cwd,
         workspaceId: credential?.workspaceId,
         client: ctx.api,

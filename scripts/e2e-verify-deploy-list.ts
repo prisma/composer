@@ -2,15 +2,16 @@
 /**
  * After a real deploy, runs `deploy list --json` for the app in the current
  * directory and checks its output against the topology and rows the platform
- * holds for the stage.
+ * holds for the environment.
  *
  * The installed `prisma` does not mount `deploy list` yet, so this mounts
  * Composer's command family itself, the way the `prisma` host does, with a
- * service-token credential and no OAuth login. It also declares the ORM's config
+ * service-token credential and no OAuth login. It mounts `deploy` too, because
+ * the family retires `--stage` on it and a redirect must name a mounted command. It also declares the ORM's config
  * section, so a config with an `orm` section loads.
  *
  * Env: STACK_NAME (the `prisma deploy --name` value), PRISMA_SERVICE_TOKEN,
- * PRISMA_WORKSPACE_ID, and STAGE for a named stage (omit for production).
+ * PRISMA_WORKSPACE_ID, and ENVIRONMENT (default production).
  */
 
 import {
@@ -26,7 +27,7 @@ import { logPlatformState, readPlatformState } from './platform-state.ts';
 
 const stackName = process.env['STACK_NAME'];
 const workspaceId = process.env['PRISMA_WORKSPACE_ID'];
-const stage = process.env['STAGE'] || undefined;
+const environment = process.env['ENVIRONMENT'] || 'production';
 if (!stackName || !workspaceId) {
   console.error('STACK_NAME and PRISMA_WORKSPACE_ID are required');
   process.exit(1);
@@ -37,7 +38,10 @@ const apiBaseUrl = process.env['PRISMA_MANAGEMENT_API_URL']?.trim() || 'https://
 async function runDeployList(args: readonly string[]): Promise<string> {
   const family = createComposerFamily();
   const command = family.commands['deploy list'];
-  if (command === undefined) throw new Error('the Composer command family has no deploy list');
+  const deploy = family.commands['deploy'];
+  if (command === undefined || deploy === undefined) {
+    throw new Error('the Composer command family has no deploy or deploy list');
+  }
   const cli = createCli({
     name: 'prisma',
     version: '0.0.0',
@@ -46,7 +50,7 @@ async function runDeployList(args: readonly string[]): Promise<string> {
       defineCommandFamily({ configSection: ormConfigSection, commands: {} }),
     ],
     groups: { deploy: { brief: 'Deploy the app.' } },
-    commands: { 'deploy list': command },
+    commands: { deploy, 'deploy list': command },
   });
 
   let stdout = '';
@@ -84,15 +88,10 @@ async function runDeployList(args: readonly string[]): Promise<string> {
   return stdout;
 }
 
-const stdout = await runDeployList([
-  '--name',
-  stackName,
-  ...(stage === undefined ? [] : ['--stage', stage]),
-  '--json',
-]);
+const stdout = await runDeployList(['--name', stackName, '--environment', environment, '--json']);
 const listed = parseListed(JSON.parse(stdout.trim().split('\n').at(-1) ?? ''));
 
-const state = await readPlatformState({ workspaceId, appName: stackName, stage });
+const state = await readPlatformState({ workspaceId, appName: stackName, environment });
 logPlatformState(state);
 
 const problems = deployListMismatches(listed, state);

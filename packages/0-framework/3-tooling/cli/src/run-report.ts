@@ -15,7 +15,7 @@ import * as path from 'node:path';
 import type { DeployedNodeSummary, DeploymentSummary } from './deployment-summary.ts';
 
 /** Bump when a change would break a consumer that reads the current shape. */
-export const RUN_REPORT_VERSION = 1;
+export const RUN_REPORT_VERSION = 2;
 
 /** Names the file to write the run report to, when `--report` is not passed. */
 export const RUN_REPORT_FILE_ENV = 'PRISMA_COMPOSER_REPORT_FILE';
@@ -36,15 +36,14 @@ export interface RunReport {
   readonly outcome: 'succeeded' | 'failed';
   /** Null when the run failed before it produced a deployment summary. */
   readonly app: string | null;
-  /** Null for the default stage. */
-  readonly stage: string | null;
+  readonly environment: string;
   readonly nodes: readonly DeployedNodeSummary[];
   readonly failure: RunReportFailure | null;
 }
 
 export interface RunReportInput {
   readonly summary: DeploymentSummary | undefined;
-  readonly stage: string | undefined;
+  readonly environment: string;
   readonly failure: RunReportFailure | undefined;
 }
 
@@ -53,7 +52,7 @@ export function toRunReport(input: RunReportInput): RunReport {
     version: RUN_REPORT_VERSION,
     outcome: input.failure === undefined ? 'succeeded' : 'failed',
     app: input.summary?.app ?? null,
-    stage: input.stage ?? null,
+    environment: input.environment,
     nodes: input.summary?.nodes ?? [],
     failure: input.failure ?? null,
   };

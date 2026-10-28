@@ -9,9 +9,8 @@
  * section's `entry`, relative to the config file, or `--entry`, relative to the
  * current directory.
  *
- * `--production` and `--stage <name>` are the operation's two targets,
- * `{ kind: 'production' }` and `{ kind: 'stage', stage }`, spelled as flags
- * for the examples' package scripts only; no `prisma` command takes them.
+ * `--environment <name>` is required, as the operation's `environment` is:
+ * production is `--environment production`.
  *
  * Credentials come from PRISMA_SERVICE_TOKEN and PRISMA_WORKSPACE_ID.
  * Exits 2 on bad arguments. Exits 1 with the structured failure on stderr
@@ -27,15 +26,14 @@ import type {
   ComposerConfigSource,
   destroy as Destroy,
   DestroyEvent,
-  DestroyTarget,
 } from '@prisma/composer/control';
 
 const USAGE =
-  'Usage: composer-destroy.ts (--production | --stage <name>) [--entry <path>] [--name <name>] [--config <file>]';
+  'Usage: composer-destroy.ts --environment <name> [--entry <path>] [--name <name>] [--config <file>]';
 
 interface DestroyRequest {
   readonly entry: string | undefined;
-  readonly target: DestroyTarget;
+  readonly environment: string;
   readonly name: string | undefined;
   readonly config: string;
 }
@@ -68,8 +66,7 @@ function parseDestroyArgs(argv: readonly string[]) {
     strict: true,
     options: {
       entry: { type: 'string' },
-      stage: { type: 'string' },
-      production: { type: 'boolean' },
+      environment: { type: 'string' },
       name: { type: 'string' },
       config: { type: 'string' },
     },
@@ -83,14 +80,12 @@ function parseRequest(argv: readonly string[]): DestroyRequest | string {
   } catch (error) {
     return messageOf(error);
   }
-  const { entry, stage, production, name } = parsed.values;
+  const { entry, environment, name } = parsed.values;
   const config = parsed.values.config ?? 'prisma.config.ts';
-  if (stage !== undefined && production === true) {
-    return 'Pass either --stage <name> or --production, not both.';
+  if (environment === undefined || environment === '') {
+    return 'destroy requires --environment <name>; production is --environment production.';
   }
-  if (stage !== undefined) return { entry, target: { kind: 'stage', stage }, name, config };
-  if (production === true) return { entry, target: { kind: 'production' }, name, config };
-  return 'destroy requires an explicit target: --stage <name> or --production.';
+  return { entry, environment, name, config };
 }
 
 async function loadDestroy(cwd: string): Promise<typeof Destroy> {
@@ -152,7 +147,7 @@ async function run(request: DestroyRequest, cwd: string): Promise<number> {
       config: { value, file },
       entry: request.entry,
       name: request.name,
-      target: request.target,
+      environment: request.environment,
       cwd,
       onEvent: warnOnEvent(cwd),
     });

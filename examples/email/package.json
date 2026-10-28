@@ -9,7 +9,7 @@
     "test": "bun test tests",
     "smoke:deployed": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun scripts/smoke.ts )",
     "deploy": "pnpm turbo run build --filter @prisma/example-email... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../node_modules/.bin/prisma deploy ${EMAIL_STACK_NAME:+--name \"$EMAIL_STACK_NAME\"} )",
-    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts --production ${EMAIL_STACK_NAME:+--name \"$EMAIL_STACK_NAME\"} )"
+    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts --environment production ${EMAIL_STACK_NAME:+--name \"$EMAIL_STACK_NAME\"} )"
   },
   "dependencies": {
     "@prisma/composer": "workspace:0.35.0",

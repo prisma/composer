@@ -80,8 +80,11 @@ Flags: `dev` takes `--name` (override the root's name, as on deploy),
 `--fresh` (before starting, delete the current app's local services,
 databases and buckets, their data, and the app's entry in the directory's
 record; other apps run from the directory keep theirs) and `--detach` (return once every service answers and leave the app
-running; see § Process lifetimes). Stages do not apply — a working directory has
-exactly one dev instance; parallel instances are parallel checkouts.
+running; see § Process lifetimes). Dev takes no `--environment` flag: it runs
+as the environment `dev`, the name it hands the local target's container and
+hooks. A working directory still has exactly one local copy of each app;
+parallel copies are parallel checkouts. Giving each environment its own local
+copy is planned work.
 
 **Naming.** The `prisma` CLI mounts this as `prisma dev`
 ([ADR-0050](../90-decisions/ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)).
