@@ -1730,6 +1730,37 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       `attach:${devDir}`,
     ]);
     expect(stages).toEqual(['dev']);
+    expect(fs.readFileSync(path.join(devDir, 'environment-name'), 'utf8')).toBe('dev\n');
+  }, 15_000);
+
+  test('an environment whose folder records another name, as Dev and dev share one on macOS, fails with DEV.ENVIRONMENT_NAME_MISMATCH before teardown', async () => {
+    const app = makeAppDir('hello-dev');
+    const environments: string[] = [];
+    const devDir = path.join(app.dir, '.prisma-composer', 'dev', 'Dev');
+    fs.mkdirSync(devDir, { recursive: true });
+    fs.writeFileSync(path.join(devDir, 'environment-name'), 'dev\n');
+
+    const result = await silently(() =>
+      devWithDeps(
+        {
+          config: composerConfig(devConfigWith(linesAttachment([], []), environments)),
+          entry: app.entryPath,
+          environment: 'Dev',
+          fresh: true,
+          cwd: app.dir,
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      ),
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      failure: {
+        code: 'DEV.ENVIRONMENT_NAME_MISMATCH',
+        meta: { recorded: 'dev', environment: 'Dev' },
+      },
+    });
+    expect(environments).toEqual(['ensure:Dev']);
   }, 15_000);
 
   test("--environment runs that environment's copy: its own folder, stack file and Alchemy stage, and --fresh tears down only it", async () => {

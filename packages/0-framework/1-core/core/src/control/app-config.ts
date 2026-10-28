@@ -378,6 +378,13 @@ export function devEnvironmentDir(environment: string): string {
 }
 
 /**
+ * The file in an environment's folder that holds the environment's exact
+ * name. On a case-insensitive filesystem `Dev` and `dev` share one folder;
+ * the recorded name tells them apart.
+ */
+export const DEV_ENVIRONMENT_NAME_FILE = 'environment-name';
+
+/**
  * True when an extension only participates in assembly (every `nodes` entry
  * is `kind: 'build'`, and it declares none of `providers`/`application`/
  * `provisions`/`container`) — it owns no resources or services, so it has

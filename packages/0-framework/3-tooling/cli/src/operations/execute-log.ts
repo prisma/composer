@@ -13,6 +13,7 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import { resolveAppIdentity } from '../pipeline.ts';
 import { validateEnvironmentName } from '../validate-environment.ts';
+import { requireDevEnvironmentName } from './dev-environment-name.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import type { LogAttached, LogDeps, LogEvent, LogInput, LogLine } from './log.ts';
 import { DEV_ENVIRONMENT, toStructured } from './shared.ts';
@@ -151,6 +152,7 @@ export async function executeLog(
 
   try {
     validateEnvironmentName(environment);
+    requireDevEnvironmentName(devDir, environment);
     const identity =
       deps.identity ?? (await resolveAppIdentity(input.entry, input.name, cwd, input.config));
     name = identity.name;

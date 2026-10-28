@@ -33,6 +33,7 @@ import {
 } from '../run-alchemy.ts';
 import { validateEnvironmentName } from '../validate-environment.ts';
 import type { DevEvent, DevInput, DevSession } from './dev.ts';
+import { claimDevEnvironmentName } from './dev-environment-name.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import {
   DEV_ENVIRONMENT,
@@ -195,6 +196,8 @@ export async function executeDev(
       requireContainerForEnvironment('dev', id, dev.container, container, environment);
       containers.set(id, container);
     }
+
+    claimDevEnvironmentName(devDir, environment);
 
     // `--fresh`: teardown every participant's dev instance, then continue cold.
     if (input.fresh === true) {

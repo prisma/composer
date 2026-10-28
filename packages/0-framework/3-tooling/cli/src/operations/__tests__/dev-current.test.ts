@@ -248,6 +248,36 @@ describe.skipIf(process.platform === 'win32')('devUrl', () => {
     }
   });
 
+  test('an environment whose folder records another name fails with DEV.ENVIRONMENT_NAME_MISMATCH before any target is asked', async () => {
+    const devDir = path.join(cwd, '.prisma-composer', 'dev', 'Dev');
+    fs.mkdirSync(devDir, { recursive: true });
+    fs.writeFileSync(path.join(devDir, 'environment-name'), 'dev\n');
+    const target = asked(recordedApp(running));
+
+    const url = await devUrl({
+      config: config(target.current),
+      address: 'shop.gateway',
+      environment: 'Dev',
+      cwd,
+    });
+    const stop = await devStop({
+      config: config(target.current, VALID_MODULE),
+      environment: 'Dev',
+      cwd,
+    });
+
+    for (const result of [url, stop]) {
+      expect(result).toMatchObject({
+        ok: false,
+        failure: {
+          code: 'DEV.ENVIRONMENT_NAME_MISMATCH',
+          meta: { recorded: 'dev', environment: 'Dev' },
+        },
+      });
+    }
+    expect(target.inputs).toEqual([]);
+  });
+
   test('an environment name git would refuse fails before any target is asked', async () => {
     const target = asked(recordedApp(running));
 

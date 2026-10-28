@@ -8,6 +8,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { DEV_ENVIRONMENT_NAME_FILE } from '@internal/core/config';
 import { BUCKETS_DIR } from './bucket.ts';
 import { EMULATOR_INSTANCES_FILE } from './emulator-instances.ts';
 
@@ -35,9 +36,10 @@ export function removeAlchemyStage(stageDir: string): void {
 }
 
 /**
- * Removes an environment folder's contents for `--fresh`, except what other
- * apps run in the environment still use: the record of their emulator
- * instances and their buckets' objects. This app's objects go.
+ * Removes an environment folder's contents for `--fresh`, except the
+ * environment's recorded name and what other apps run in the environment
+ * still use: the record of their emulator instances and their buckets'
+ * objects. This app's objects go.
  */
 export function removeAppDevState(devDir: string, app: string): void {
   let entries: string[];
@@ -46,7 +48,7 @@ export function removeAppDevState(devDir: string, app: string): void {
   } catch {
     return;
   }
-  const kept = new Set([EMULATOR_INSTANCES_FILE, BUCKETS_DIR]);
+  const kept = new Set([DEV_ENVIRONMENT_NAME_FILE, EMULATOR_INSTANCES_FILE, BUCKETS_DIR]);
   removeLocalPaths([
     ...entries.filter((entry) => !kept.has(entry)).map((entry) => path.join(devDir, entry)),
     path.join(devDir, BUCKETS_DIR, app),

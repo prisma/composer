@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { DEV_ENVIRONMENT_NAME_FILE } from '@internal/core/config';
 import { EMULATOR_INSTANCES_FILE } from '../emulator-instances.ts';
 import { removeAlchemyStage, removeAppDevState } from '../teardown.ts';
 
@@ -14,9 +15,10 @@ function filesUnder(dir: string): string[] {
     .sort();
 }
 
-test("keeps the record and other apps' bucket objects, and removes the rest", () => {
+test("keeps the environment's name, the record and other apps' bucket objects, and removes the rest", () => {
   const devDir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-target-teardown-'));
   const files = [
+    DEV_ENVIRONMENT_NAME_FILE,
     EMULATOR_INSTANCES_FILE,
     'env.json',
     'secrets.json',
@@ -33,7 +35,11 @@ test("keeps the record and other apps' bucket objects, and removes the rest", ()
   removeAppDevState(devDir, 'shop');
 
   expect(filesUnder(devDir)).toEqual(
-    [EMULATOR_INSTANCES_FILE, path.join('buckets', 'other', 'uploads', 'theirs.txt')].sort(),
+    [
+      DEV_ENVIRONMENT_NAME_FILE,
+      EMULATOR_INSTANCES_FILE,
+      path.join('buckets', 'other', 'uploads', 'theirs.txt'),
+    ].sort(),
   );
 });
 

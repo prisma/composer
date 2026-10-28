@@ -105,6 +105,17 @@ belongs to one copy lives in `.prisma-composer/dev/<environment>/`: the record
 of instances, the environment variable values, the placeholder secrets, the
 generated stack file, the artifacts and the bucket objects. The folder name is
 the environment name, encoded, because an environment name may contain `/`.
+Alchemy keeps the stage `feature/x` inside the folder of the stage `feature`,
+so `--fresh` removes only the files directly in its own stage's folder.
+
+On a case-insensitive filesystem, such as the default on macOS, `Dev` and
+`dev` would share one folder, and so one copy. So the first `prisma dev` in an
+environment writes the environment's exact name into its folder, in
+`environment-name`, and `--fresh` keeps that file. `prisma dev`, `dev url`,
+`dev stop` and the `log` operation refuse an environment whose folder records another name
+with `DEV.ENVIRONMENT_NAME_MISMATCH`, before anything is torn down, prepared
+or read. A folder with no name recorded is accepted, and `prisma dev` records
+it.
 
 `prisma dev` runs the extension version check `deploy` runs
 ([deploy-cli.md](deploy-cli.md)): each local container, rebuilt through the
@@ -563,6 +574,7 @@ Deploy's rule holds: every failure names its fix.
 | an emulator does not accept connections (retried briefly; an error response from the emulator is never retried) | `DEV.EMULATOR_UNREACHABLE`, with the emulator's URL, from `dev` and `log` alike |
 | `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` is not a positive whole number | `DEV.SERVICE_READY_TIMEOUT_INVALID`, with the value |
 | `dev url` or `dev stop` for an app that has never run in that environment in this directory | `DEV.NOT_STARTED_HERE`, naming the app and the environment: run `prisma dev` (with the same `--environment`) here first |
+| `dev`, `dev url`, `dev stop` or the `log` operation for an environment whose folder records another name, such as `Dev` where `dev` ran on a case-insensitive filesystem | `DEV.ENVIRONMENT_NAME_MISMATCH`, naming the folder, the recorded name and the requested one, before anything runs: use the recorded name, or a name that differs by more than case |
 | a local target extension older than the running Composer | `DEPS.EXTENSION_INCOMPATIBLE`, naming the extension, before anything starts |
 | `dev url` with an address the app does not have | `DEV.ADDRESS_UNKNOWN`, listing the addresses it has |
 | `dev url` for a node whose emulator is not running | `DEV.EMULATOR_UNREACHABLE` |

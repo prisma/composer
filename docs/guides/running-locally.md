@@ -241,6 +241,13 @@ its environment variable values and placeholder secrets, the generated stack
 file, the unpacked artifacts and the bucket objects. The deploy engine keeps
 each copy's state in `.alchemy/state/<app>/<environment>`.
 
+Environment names are case-sensitive, but on a case-insensitive filesystem,
+such as the default on macOS, `Dev` and `dev` would share one folder. So the
+first `prisma dev` in an environment records its exact name in its folder, and
+`prisma dev`, `prisma dev url`, `prisma dev stop` and the `log` operation
+refuse a name that differs from the recorded one with `DEV.ENVIRONMENT_NAME_MISMATCH`.
+Use the recorded name, or one that differs from it by more than case.
+
 **Upgrading from a version with one local copy per directory.** The first
 `prisma dev`, `prisma dev url` or `prisma dev stop` after the upgrade moves
 the directory's existing local state into the environment `dev`, so your
@@ -286,6 +293,9 @@ a code a script can branch on:
 
 - `DEV.NOT_STARTED_HERE`: `prisma dev` never ran that app in that
   environment in this directory.
+- `DEV.ENVIRONMENT_NAME_MISMATCH`: the environment's folder belongs to
+  another environment whose name differs only in case, such as `dev` for
+  `--environment Dev` on macOS.
 - `DEV.ADDRESS_UNKNOWN`: the app has no node at that address; the message
   lists the ones it has.
 - `DEV.EMULATOR_UNREACHABLE`: the emulator the node runs on is not running.

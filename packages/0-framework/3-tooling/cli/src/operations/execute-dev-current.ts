@@ -14,6 +14,7 @@ import type { ComposerConfigSource } from '../composer-config.ts';
 import { checkConfigSource, resolveAppIdentity } from '../pipeline.ts';
 import { validateEnvironmentName } from '../validate-environment.ts';
 import type { DevStopInput, DevStopped, DevUrl, DevUrlInput } from './dev-current.ts';
+import { requireDevEnvironmentName } from './dev-environment-name.ts';
 import { DEV_ENVIRONMENT, toStructured } from './shared.ts';
 
 function platformUnsupported(): CliStructuredError {
@@ -50,6 +51,7 @@ async function currentApps(copy: LocalCopy, cwd: string): Promise<LocalTargetCur
   const { app, environment } = copy;
   const { value } = checkConfigSource(copy.config, cwd);
   const devDir = path.join(cwd, devEnvironmentDir(environment));
+  requireDevEnvironmentName(devDir, environment);
   const apps: LocalTargetCurrentApp[] = [];
   for (const target of (await resolveLocalTargets(value)).values()) {
     const current = await fromTarget(async () => target.current?.({ devDir, app, environment }));
