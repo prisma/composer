@@ -17,8 +17,8 @@ export function removeLocalPaths(paths: readonly string[]): void {
 }
 
 /**
- * Removes the dev state directory's contents for `--fresh`, except what
- * other apps run from the directory still use: the record of their emulator
+ * Removes an environment folder's contents for `--fresh`, except what other
+ * apps run in the environment still use: the record of their emulator
  * instances and their buckets' objects. This app's objects go.
  */
 export function removeAppDevState(devDir: string, app: string): void {

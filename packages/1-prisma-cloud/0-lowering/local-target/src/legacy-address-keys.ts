@@ -23,5 +23,5 @@ export function withFullAddressKeys(record: EmulatorInstances): EmulatorInstance
       { nodes: withAppPrefix(app, nodes) },
     ]),
   );
-  return { current: record.current, apps };
+  return { apps };
 }

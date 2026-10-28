@@ -1,5 +1,5 @@
 /**
- * The app `prisma dev` last ran from a directory, read from the directory's
+ * An app's local copy in one environment, read from the environment's
  * record alone: where each of its nodes runs, and stopping it. Behind
  * `prisma dev url` and `prisma dev stop`.
  */
@@ -8,6 +8,7 @@ import type {
   LocalNodeLocation,
   LocalNodeStopped,
   LocalTargetCurrentApp,
+  LocalTargetCurrentInput,
 } from '@internal/core/config';
 import {
   bucketsClient,
@@ -18,7 +19,6 @@ import {
   type ServiceInstanceStatus,
 } from '@internal/dev-emulators';
 import {
-  directoryOf,
   type NodeInstance,
   readEmulatorInstances,
   stopAppInstances,
@@ -77,12 +77,13 @@ async function locate(address: string, node: NodeInstance): Promise<LocalNodeLoc
   };
 }
 
-/** The directory's current app; undefined when `prisma dev` never ran there. */
-export async function currentApp(devDir: string): Promise<LocalTargetCurrentApp | undefined> {
-  const record = await readEmulatorInstances(directoryOf(devDir));
-  if (record === undefined) return undefined;
-  const app = record.current;
-  const nodes = record.apps[app]?.nodes ?? {};
+/** The app's local copy in the environment; undefined when `prisma dev` never ran it there. */
+export async function currentApp(
+  input: LocalTargetCurrentInput,
+): Promise<LocalTargetCurrentApp | undefined> {
+  const { devDir, app, environment } = input;
+  const nodes = (await readEmulatorInstances(devDir))?.apps[app]?.nodes;
+  if (nodes === undefined) return undefined;
   return {
     app,
     addresses: Object.keys(nodes),
@@ -90,6 +91,7 @@ export async function currentApp(devDir: string): Promise<LocalTargetCurrentApp 
       const node = nodes[address];
       return node === undefined ? undefined : locate(address, node);
     },
-    stop: (): Promise<readonly LocalNodeStopped[]> => stopAppInstances({ devDir, app }),
+    stop: (): Promise<readonly LocalNodeStopped[]> =>
+      stopAppInstances({ devDir, app, environment }),
   };
 }

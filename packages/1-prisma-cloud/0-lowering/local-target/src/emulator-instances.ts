@@ -1,6 +1,7 @@
 /**
- * Which emulator instance backs each node of each app run from a directory.
- * `prisma dev` records it in `<directory>/.prisma-composer/dev/`, and every
+ * Which emulator instance backs each node of each app run in one environment
+ * from a directory. `prisma dev` records it in the environment's folder,
+ * `<directory>/.prisma-composer/dev/<environment>/`, and every
  * Composer operation on an emulator instance goes through it. The emulators
  * know nothing about Composer: the labels written on create are for people
  * reading an emulator listing, and nothing here reads them back.
@@ -22,8 +23,12 @@ import { resolvePrismaDevModulePath } from './prisma-dev-module.ts';
 
 export const EMULATOR_INSTANCES_FILE = 'emulator-instances.json';
 
-/** The record's format. A record without it was written before node keys were full addresses (ADR-0057). */
-export const EMULATOR_INSTANCES_FORMAT_VERSION = 2;
+/**
+ * The record's format. 3: one record per environment, with no current app. 2: one record per
+ * directory, naming the app run last as `current`. A record without it was written before node
+ * keys were full addresses (ADR-0057).
+ */
+export const EMULATOR_INSTANCES_FORMAT_VERSION = 3;
 
 export interface ServiceNodeInstance {
   readonly kind: 'service';
@@ -53,16 +58,16 @@ export interface AppInstances {
 }
 
 export interface EmulatorInstances {
-  /** The app `prisma dev` last ran from the directory. */
-  readonly current: string;
-  /** Every app run from the directory, keyed by app name. */
+  /** Every app run in the environment, keyed by app name. */
   readonly apps: Readonly<Record<string, AppInstances>>;
 }
 
-/** The app run from the directory that holds `devDir` (`<directory>/.prisma-composer/dev`). */
+/** An app run in one environment from a directory. */
 export interface AppScope {
+  /** The environment's folder: `<directory>/.prisma-composer/dev/<encoded environment>`. */
   readonly devDir: string;
   readonly app: string;
+  readonly environment: string;
 }
 
 /** A node whose remembered port another instance or process now holds. */
@@ -96,8 +101,6 @@ function isEmulatorInstances(value: unknown): value is EmulatorInstances {
   return (
     typeof value === 'object' &&
     value !== null &&
-    'current' in value &&
-    typeof value.current === 'string' &&
     'apps' in value &&
     typeof value.apps === 'object' &&
     value.apps !== null &&
@@ -146,6 +149,9 @@ function isStoredRecord(value: unknown): value is StoredRecord {
   return isEmulatorInstances(value) || isSingleAppRecord(value);
 }
 
+/** Format 2 differs from the current one only by its `current` app, which is dropped. */
+const FULL_ADDRESS_FORMAT_VERSIONS = new Set([2, EMULATOR_INSTANCES_FORMAT_VERSION]);
+
 /**
  * A record without `formatVersion` was written before node keys were full addresses, so each of
  * its keys reads with the app's name in front; a single-app record also reads as a record holding
@@ -154,10 +160,13 @@ function isStoredRecord(value: unknown): value is StoredRecord {
 function normalized(stored: StoredRecord | undefined): EmulatorInstances | undefined {
   if (stored === undefined) return undefined;
   if (isEmulatorInstances(stored)) {
-    if (stored.formatVersion === EMULATOR_INSTANCES_FORMAT_VERSION) {
-      return { current: stored.current, apps: stored.apps };
+    if (
+      stored.formatVersion !== undefined &&
+      FULL_ADDRESS_FORMAT_VERSIONS.has(stored.formatVersion)
+    ) {
+      return { apps: stored.apps };
     }
-    return withFullAddressKeys(stored);
+    return withFullAddressKeys({ apps: stored.apps });
   }
   const nodes = Object.fromEntries(
     Object.entries(stored.nodes).map(([address, { id, port }]) => [
@@ -165,15 +174,13 @@ function normalized(stored: StoredRecord | undefined): EmulatorInstances | undef
       { kind: 'service' as const, id, port },
     ]),
   );
-  return withFullAddressKeys({ current: stored.app, apps: { [stored.app]: { nodes } } });
+  return withFullAddressKeys({ apps: { [stored.app]: { nodes } } });
 }
 
-/** The project directory that holds `devDir` (`<directory>/.prisma-composer/dev`). */
+/** The project directory that holds an environment's folder (`<directory>/.prisma-composer/dev/<environment>`). */
 export function directoryOf(devDir: string): string {
-  const normalizedDir = path.normalize(devDir);
-  return normalizedDir.endsWith(DEV_DIR)
-    ? normalizedDir.slice(0, -DEV_DIR.length - 1)
-    : normalizedDir;
+  const devRoot = path.dirname(path.normalize(devDir));
+  return devRoot.endsWith(DEV_DIR) ? devRoot.slice(0, -DEV_DIR.length - 1) : devRoot;
 }
 
 function store(devDir: string): DevStore<StoredRecord | undefined> {
@@ -194,9 +201,9 @@ async function updateRecord(
   }));
 }
 
-/** The record `prisma dev` left in `directory`; undefined when it has not run there. */
-export function readEmulatorInstances(directory: string): Promise<EmulatorInstances | undefined> {
-  return readRecord(path.join(directory, DEV_DIR));
+/** The record `prisma dev` left in an environment's folder; undefined when it has not run there. */
+export function readEmulatorInstances(devDir: string): Promise<EmulatorInstances | undefined> {
+  return readRecord(devDir);
 }
 
 async function appNodes(scope: AppScope): Promise<Readonly<Record<string, NodeInstance>>> {
@@ -210,10 +217,7 @@ async function updateNodes(
   await updateRecord(scope.devDir, (record) => {
     const nodes = { ...(record?.apps[scope.app]?.nodes ?? {}) };
     mutate(nodes);
-    return {
-      current: record?.current ?? scope.app,
-      apps: { ...record?.apps, [scope.app]: { nodes } },
-    };
+    return { apps: { ...record?.apps, [scope.app]: { nodes } } };
   });
 }
 
@@ -221,6 +225,7 @@ function labelsFor(scope: AppScope, address: string): Record<string, string> {
   return {
     'composer.directory': directoryOf(scope.devDir),
     'composer.app': scope.app,
+    'composer.environment': scope.environment,
     'composer.address': address,
   };
 }
@@ -289,25 +294,6 @@ async function stopRunning(
   const listed = (await client.listInstances()).filter((i) => wanted.has(i.id));
   await client.stopInstances(ids);
   return listed.filter((i) => i.status === 'running').map((i) => i.id);
-}
-
-/**
- * Makes `scope.app` the directory's current app. When another app ran here
- * last, its service processes and database servers are stopped and its
- * instances stay recorded, so running it again resumes them with their data
- * and ports. Returns the previous app's name when it changed.
- */
-export async function selectApp(scope: AppScope): Promise<string | undefined> {
-  const record = await readRecord(scope.devDir);
-  const previous = record?.current;
-  if (previous !== undefined && previous !== scope.app) {
-    await stopNodes(record?.apps[previous]?.nodes ?? {});
-  }
-  await updateRecord(scope.devDir, (latest) => ({
-    current: scope.app,
-    apps: { ...latest?.apps, [scope.app]: latest?.apps[scope.app] ?? { nodes: {} } },
-  }));
-  return previous !== undefined && previous !== scope.app ? previous : undefined;
 }
 
 /** Each node of the app of `kind`, with the instance that backs it. */
@@ -404,8 +390,9 @@ export async function ensureDatabaseInstance(
 
 /**
  * The bucket for `address`. The recorded bucket is reused while the bucket
- * emulator still has it. Otherwise a new one is created over `dir` and
- * recorded; the objects already in `dir` are its objects.
+ * emulator still has it over `dir`. Otherwise a new one is created over `dir`
+ * and recorded, replacing a recorded one over another directory; the objects
+ * already in `dir` are its objects.
  */
 export async function ensureBucketInstance(
   scope: AppScope,
@@ -415,7 +402,8 @@ export async function ensureBucketInstance(
   const client = bucketsClient();
   const recorded = await recordedInstance(scope, address, 'bucket');
   const existing = recorded ? await client.getInstance(recorded.id) : undefined;
-  if (existing) return existing;
+  if (existing?.dir === dir) return existing;
+  if (existing) await client.deleteInstance(existing.id);
 
   const created = await client.createInstance({ labels: labelsFor(scope, address), dir });
   await updateNodes(scope, (nodes) => {
@@ -467,15 +455,16 @@ export async function recordedKinds(scope: AppScope): Promise<Set<NodeKind>> {
 
 /**
  * `--fresh`: deletes the app's recorded instances of every kind and its
- * entry. Other apps' entries are left alone. A bucket's objects live in the
- * dev directory, which `--fresh` removes separately.
+ * entry. Other apps' entries and other environments are left alone. A
+ * bucket's objects live in the environment's folder, which `--fresh` removes
+ * separately.
  */
 export async function deleteAppInstances(scope: AppScope): Promise<void> {
   for (const instance of Object.values(await appNodes(scope))) await deleteInstance(instance);
   await updateRecord(scope.devDir, (record) => {
     const apps = { ...record?.apps };
     delete apps[scope.app];
-    return { current: record?.current ?? scope.app, apps };
+    return { apps };
   });
 }
 
