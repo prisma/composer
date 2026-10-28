@@ -4,14 +4,16 @@ What changes a RoutingUrl's conditions, who notices, and what reaches Foundry. C
 
 ## One operation behind the repository
 
-The RoutingUrl repository has one operation that takes a row, computes its six conditions, and makes the Foundry call the row needs, if any. Every path that can change a condition ends by calling it: the interactors that write RoutingUrls, the lifecycle interactors that change a service's live deployment or delete a service or Branch, the Management API's verify route, and a cron in the Worker. None of the callers knows what it does. It is the only code that creates, reassigns or deletes a Foundry custom domain.
+The RoutingUrl repository has one operation that takes a row, computes its six conditions, and makes the Foundry call the row needs, if any. Every path that can change a condition ends by calling it: the interactors that write RoutingUrls, the lifecycle interactors that change a service's live deployment or delete a service or Branch, the Management API's verify route, the Console's check button, and the Worker queue consumer that retries a failed Foundry call. None of the callers knows what it does. It is the only code that creates, reassigns or deletes a Foundry custom domain.
 
 ```mermaid
 flowchart LR
   Ops["RoutingUrl interactors: create, update, delete"] --> Repo["RoutingUrl repository: bring the row's Foundry custom domain in line"]
   Hooks["lifecycle interactors: promote, rollback, stop, delete deployment, delete App, delete Branch"] --> Repo
   Verify["verify DomainOwnership"] --> Repo
-  Cron["Worker cron, for rows waiting on DNS or a certificate"] --> Repo
+  Check["Console check button"] --> Repo
+  Retry["Worker queue consumer: delayed retry after a failed Foundry call"] --> Repo
+  Repo -- "enqueues on failure" --> Retry
   Repo --> F["Foundry: POST, PATCH, DELETE, GET /v1/domains"]
   Repo --> Row[("RoutingUrl columns: foundryCustomDomainId, status, dnsCheckedAt, lastFoundryError")]
 ```
@@ -51,7 +53,7 @@ flowchart LR
 | The custom domain's status | `GET /v1/domains/{id}` | `foundryCustomDomainStatus` and the failure reason; `active` means the certificate is issued |
 | The custom domain is gone | `GET /v1/domains/{id}` returns 404 | `foundryCustomDomainId` cleared; created again once a deployment is live |
 
-A cron in the Worker, on the pattern of `deleteFoundryVersions`, calls the repository operation on every live RoutingUrl that is not yet serving, which covers rows waiting on either fact and rows whose last Foundry call failed.
+Both are looked up when the repository operation runs: on every write to the row, on every lifecycle event that reaches it, and when the user presses the check button in the Console, which issues an update of the row with no changes and so runs the operation like every write. A cron that runs the operation for every row not yet serving, so the button is never needed, is a stretch goal at the end of the project.
 
 ## What the repository operation does for one row
 
@@ -64,7 +66,9 @@ A cron in the Worker, on the pattern of `deleteFoundryVersions`, calls the repos
 7. `GET /v1/domains/{id}` and write the status and failure reason. A 404 means the custom domain is gone: clear the id and stop; the next run recreates it. If the status is `failed` with a DNS failure reason and step 4 passed, `POST /v1/domains/{id}/retry`; any other failure waits for the user's retry in the Console.
 8. Clear `lastFoundryError` on success.
 
-The cron, the verify route and the lifecycle interactors call these same steps. The cron can run in a report-only mode that writes the looked-up facts and logs the Foundry calls it would make without making them.
+9. If any Foundry call in these steps failed: enqueue a delayed retry message for the row on a Worker queue. The consumer runs these same steps and re-enqueues with backoff, up to a bounded number of attempts; after the last, the failure stays on the row and the alert in the spec fires.
+
+The verify route, the check button, the lifecycle interactors and the retry consumer all call these same steps. The retry consumer can run in a report-only mode that logs the Foundry calls it would make without making them.
 
 ## What stops being inline
 

@@ -104,7 +104,7 @@ New:
 | `publicUrl` with a named hostname | a RoutingUrl that needs a verified domain ownership claim | a Custom domain |
 | Root module input and config adapters | nothing; Composer works out their values before deploying | nothing |
 
-Each time a deployment goes live, PDP reassigns the Foundry custom domain behind every RoutingUrl to that deployment's compute version, and a Worker cron repairs any that promote missed.
+Each time a deployment goes live, PDP reassigns the Foundry custom domain behind every RoutingUrl to that deployment's compute version, and a queued retry repairs any that promote missed.
 
 ## A hostname is served by only one RoutingUrl
 

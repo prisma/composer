@@ -44,7 +44,7 @@ The work spans four repositories:
 
 - **prisma/composer**: `resolve()` and the second evaluation pass in core; `publicUrl()` and its two strategies in the Prisma Cloud extension; the rename from stage to environment on every public surface; guides, the agent skill and the examples.
 - **alchemy-run/alchemy**, `packages/prisma`: the Prisma provider is ours to change. First lifting `Prisma.CustomDomain`'s rule that a domain attaches only to an app on the default Branch; later a `Prisma.RoutingUrl` resource over the new routes.
-- **prisma/pdp-control-plane**: the RoutingUrl records and domain ownership claims, their Management API routes and interactors, the repository operation that keeps Foundry consistent and the Worker cron that re-runs it, the backfill of existing custom domains, and the Console's custom hostnames on the service page and its Domains page of ownership claims. Its own project is `projects/routing-urls/` in that repository, with pdp-control-plane's ADR 015.
+- **prisma/pdp-control-plane**: the RoutingUrl records and domain ownership claims, their Management API routes and interactors, the repository operation that keeps Foundry consistent and the Worker queue that retries its failures, the backfill of existing custom domains, and the Console's custom hostnames on the service page and its Domains page of ownership claims. Its own project is `projects/routing-urls/` in that repository, with pdp-control-plane's ADR 015.
 - **Foundry**: unchanged. The control plane keeps it consistent over its existing endpoint and custom domain APIs.
 
 Existing custom domains keep working: PDP backfills them into RoutingUrl records with no `logicalId`. A hostname added in Console that the code later declares is adopted: the Alchemy resource writes the node's `logicalId` on the existing row, so nothing in Foundry changes.
@@ -64,7 +64,7 @@ Existing custom domains keep working: PDP backfills them into RoutingUrl records
 - **In step one, `publicUrl.prismaBuild()` lowers to nothing on the platform** and reports the service's existing `*.prisma.build` URL. In step two (P3) it lowers to the platform's `prisma.build` RoutingUrl, adopting the row the backfill made.
 - **The upstream default-Branch rule is lifted before `publicUrl()` ships.** Composer's `publicUrl` waits for the Alchemy release that carries the change; the check is patched out under `patches/` only if that release stalls.
 - **The rename to environment ships as one Composer release**, so authors change `--stage` to `--environment` once.
-- **Promote's reassign stops being best-effort** when the RoutingUrl record lands: failures are written to the row and the Worker cron repairs them. Until then today's `reassignDomains` behaviour stands.
+- **Promote's reassign stops being best-effort** when the RoutingUrl record lands: failures are written to the row and a queued retry repairs them. Until then today's `reassignDomains` behaviour stands.
 
 # Project DoD
 

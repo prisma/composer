@@ -69,7 +69,7 @@ A `Prisma.RoutingUrl` resource: create (no DNS needed), read conditions, update 
 
 ### D1. RoutingUrl and domain ownership records, routes, repository
 
-The control plane's own project, `projects/routing-urls/` in pdp-control-plane, with its own spec and plan: step one in four slices (the two tables, routes and backfill; the repository operation, lifecycle interactors and cron; retiring the old domain paths; the Console) and step two as a fifth (the endpoint as a RoutingUrl). Its first two slices are what U2 and P2 build on; its fifth is what P3 builds on. No Foundry change.
+The control plane's own project, `projects/routing-urls/` in pdp-control-plane, with its own spec and plan: step one in four slices (the two tables, routes and backfill; the repository operation, lifecycle interactors and retry queue; retiring the old domain paths; the Console) and step two as a fifth (the endpoint as a RoutingUrl). Its first two slices are what U2 and P2 build on; its fifth is what P3 builds on. No Foundry change.
 
 - **Builds on:** pdp-control-plane's ADR 015 agreed. Designed with Will on 2026-10-27; implementation is handed to the control-plane team, managed by another agent.
 - **Hands to:** U2 after its first slice is deployed; P2 after its second.
