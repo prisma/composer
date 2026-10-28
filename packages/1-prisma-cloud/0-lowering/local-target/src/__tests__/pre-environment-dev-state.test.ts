@@ -8,6 +8,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DEV_ENVIRONMENT_NAME_FILE } from '@internal/core/config';
 import {
   bucketsClient,
   computeClient,
@@ -55,7 +56,7 @@ describe('moving the folder', () => {
     fs.rmSync(directory, { recursive: true, force: true });
   });
 
-  test("moves the record, environment variables, secrets and bucket objects into dev's folder, and drops what is regenerated", async () => {
+  test("moves the record, environment variables, secrets and bucket objects into dev's folder, records its name as dev, and drops what is regenerated", async () => {
     fs.cpSync(FIXTURE, root, { recursive: true });
 
     movePreEnvironmentDevState(directory);
@@ -65,6 +66,7 @@ describe('moving the folder', () => {
         path.join('dev', 'buckets', 'shop', 'uploads', 'kept.txt'),
         path.join('dev', EMULATOR_INSTANCES_FILE),
         path.join('dev', 'env.json'),
+        path.join('dev', DEV_ENVIRONMENT_NAME_FILE),
         path.join('dev', 'secrets.json'),
       ].sort(),
     );

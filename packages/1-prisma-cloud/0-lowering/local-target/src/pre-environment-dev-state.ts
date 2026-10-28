@@ -9,7 +9,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { DEV_DIR, devEnvironmentDir } from '@internal/core/config';
+import { DEV_DIR, DEV_ENVIRONMENT_NAME_FILE, devEnvironmentDir } from '@internal/core/config';
 import { BUCKETS_DIR } from './bucket.ts';
 import { EMULATOR_INSTANCES_FILE } from './emulator-instances.ts';
 
@@ -33,6 +33,10 @@ export function movePreEnvironmentDevState(directory: string): void {
       fs.renameSync(path.join(root, entry), path.join(target, entry));
     }
   }
+  fs.writeFileSync(
+    path.join(target, DEV_ENVIRONMENT_NAME_FILE),
+    `${PRE_ENVIRONMENT_ENVIRONMENT}\n`,
+  );
   for (const entry of REMOVED) {
     fs.rmSync(path.join(root, entry), { recursive: true, force: true });
   }
