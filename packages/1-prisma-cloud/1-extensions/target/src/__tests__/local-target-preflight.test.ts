@@ -316,7 +316,8 @@ describe('prisma dev preflight', () => {
     const key = fs.readFileSync(keyPath);
     const second = devPayload(transported(await preflight(paramGraph())));
 
-    expect(fs.statSync(keyPath).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX file modes, and local dev does not run there.
+    if (process.platform !== 'win32') expect(fs.statSync(keyPath).mode & 0o777).toBe(0o600);
     expect(fs.readFileSync(keyPath)).toEqual(key);
     expect(second.pointerVersions).toEqual(first.pointerVersions);
   });
