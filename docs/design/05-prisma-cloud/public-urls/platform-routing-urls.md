@@ -26,6 +26,8 @@ erDiagram
     string logicalId "nullable"
     string foundryCustomDomainId "nullable"
     datetime foundryIssuanceStartedAt "nullable"
+    string foundryObservedComputeVersionId "nullable"
+    datetime foundryObservedAt "nullable"
     string foundryCustomDomainStatus "nullable"
     string foundryCustomDomainFailureReason "nullable"
     datetime dnsCheckedAt "nullable"
@@ -50,11 +52,13 @@ A row is one custom hostname and the service it reaches.
 | `logicalId` | an identifier a deploy tool writes so it can find the row again. Composer writes the node's address. Null for rows made in the Console or by the backfill |
 | `foundryCustomDomainId` | the id of the Foundry custom domain for this hostname, once the control plane has created it. Null before that, and null again when the deployment it was bound to is deleted, because Foundry deletes the custom domain with the compute version |
 | `foundryIssuanceStartedAt` | when the current certificate issuance began: the custom domain's creation, the most recent retry, or, for a backfilled row that is still `provisioning`, the first time the control plane observed it; the clock for how long issuance may take |
+| `foundryObservedComputeVersionId` | the compute version the custom domain was bound to when Foundry was last read |
+| `foundryObservedAt` | when Foundry was last read for this row. Empty when the control plane cannot vouch for the observed columns: after a call whose outcome was unknown, or after the App's live deployment changed, which `promoteApp`, `rollbackApp`, `stopDeployment` and `deleteDeployment` record by emptying it on every RoutingUrl of the App in their own transaction |
 | `foundryCustomDomainStatus`, `foundryCustomDomainFailureReason` | Foundry's status and failure reason for the custom domain, as last read |
 | `dnsCheckedAt` | when the hostname's DNS was last seen pointing at the regional switchboard; null if it was not |
 | `lastFoundryError` | the error from the last Foundry call that failed, cleared by the next success |
 
-How the hostname was chosen is part of the operation that created the row, not a column. A service may have any number of rows. Rows are soft-deleted like the other models.
+How the hostname was chosen is part of the operation that created the row, not a column. The observed columns and `foundryObservedAt` are what let the database say, without calling Foundry, whether the row is in sync: it is not when the observed compute version is not the live deployment's, when the certificate is not active, or when `foundryObservedAt` is empty. A service may have any number of rows. Rows are soft-deleted like the other models.
 
 ### DomainOwnership
 
@@ -78,7 +82,7 @@ A RoutingUrl serves traffic only when all six of these are true. Each can become
 | service present | `appId` points at a service that exists | the App table |
 | live deployment | that service has a live deployment | the Deployment table |
 | DNS points at the switchboard | the hostname's first CNAME target is the regional switchboard, or its address records resolve to it (Cloudflare-flattened apex domains) | looked up; `dnsCheckedAt` |
-| custom domain bound | a Foundry custom domain exists for the hostname, this row holds its id, and it is bound to the live deployment's compute version | `foundryCustomDomainId`, and the row's last Foundry call |
+| custom domain bound | a Foundry custom domain exists for the hostname, this row holds its id, and it was last observed bound to the live deployment's compute version, with the observation not stale | `foundryCustomDomainId`, `foundryObservedComputeVersionId`, `foundryObservedAt` |
 | certificate active | Foundry reports the custom domain's status as `active` | `foundryCustomDomainStatus` |
 
 The row reports every condition and the first unmet one as the next thing the user has to do, with the exact DNS record to publish. When the unmet condition is that another row holds the hostname's custom domain, the report names that row's workspace, project and service to a caller who can access that workspace, and says "held by another workspace" to one who cannot.
