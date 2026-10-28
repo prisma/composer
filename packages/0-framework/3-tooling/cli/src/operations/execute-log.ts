@@ -8,10 +8,11 @@
  */
 import * as path from 'node:path';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
-import { DEV_DIR, resolveLocalTargets } from '@internal/core/local-target';
+import { devEnvironmentDir, resolveLocalTargets } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import { resolveAppIdentity } from '../pipeline.ts';
+import { validateEnvironmentName } from '../validate-environment.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import type { LogAttached, LogDeps, LogEvent, LogInput, LogLine } from './log.ts';
 import { DEV_ENVIRONMENT, toStructured } from './shared.ts';
@@ -141,13 +142,15 @@ export async function executeLog(
     );
   }
 
-  const devDir = path.join(cwd, DEV_DIR);
+  const environment = input.environment ?? DEV_ENVIRONMENT;
+  const devDir = path.join(cwd, devEnvironmentDir(environment));
 
   let name: string;
   const attachments: LocalTargetAttachment[] = [];
   let services: readonly { readonly address: string; readonly url: string }[];
 
   try {
+    validateEnvironmentName(environment);
     const identity =
       deps.identity ?? (await resolveAppIdentity(input.entry, input.name, cwd, input.config));
     name = identity.name;
@@ -162,7 +165,7 @@ export async function executeLog(
       try {
         const container = await target.container.ensure({
           appName: name,
-          environment: DEV_ENVIRONMENT,
+          environment,
         });
         attachments.push(await withEmulatorRetry(() => target.attach({ container, devDir })));
       } catch (error) {

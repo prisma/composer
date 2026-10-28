@@ -14,10 +14,10 @@ import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
 import { containerEnv } from '@internal/core/config';
 import type { DevServer } from '@internal/core/deploy';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
-import { DEV_DIR, resolveLocalTargets } from '@internal/core/local-target';
+import { devEnvironmentDir, resolveLocalTargets } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
-import { DEV_STACK_RELATIVE_PATH, writeDevStackFile } from '../dev/generate-dev-stack.ts';
+import { devStackRelativePath, writeDevStackFile } from '../dev/generate-dev-stack.ts';
 import {
   authoringModuleTargets,
   startWatch,
@@ -31,12 +31,14 @@ import {
   reproduceCommand,
   spawnAlchemy,
 } from '../run-alchemy.ts';
+import { validateEnvironmentName } from '../validate-environment.ts';
 import type { DevEvent, DevInput, DevSession } from './dev.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import {
   DEV_ENVIRONMENT,
   type ExtensionId,
   type OperationDeps,
+  requireContainerForEnvironment,
   type ServiceEndpoint,
   toStructured,
 } from './shared.ts';
@@ -144,7 +146,8 @@ export async function executeDev(
   }
 
   const { onEvent } = input;
-  const devDir = path.join(cwd, DEV_DIR);
+  const environment = input.environment ?? DEV_ENVIRONMENT;
+  const devDir = path.join(cwd, devEnvironmentDir(environment));
 
   let pipeline: Awaited<ReturnType<typeof runPipeline>>;
   let resolved: ReadonlyMap<string, LocalTargetDescriptor>;
@@ -166,6 +169,7 @@ export async function executeDev(
   };
 
   try {
+    validateEnvironmentName(environment);
     // The shared prefix (pipeline.ts): entry load, Load, registry coverage,
     // name resolution, assemble.
     const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler, devServers: true };
@@ -182,14 +186,14 @@ export async function executeDev(
 
     // Containers — purely local, resolved before anything else can fail.
     for (const [id, dev] of resolved) {
+      let container: ContainerInstance;
       try {
-        containers.set(
-          id,
-          await dev.container.ensure({ appName: name, environment: DEV_ENVIRONMENT }),
-        );
+        container = await dev.container.ensure({ appName: name, environment });
       } catch (error) {
         throw toStructured('DEV.CONTAINER_FAILED', error);
       }
+      requireContainerForEnvironment('dev', id, dev.container, container, environment);
+      containers.set(id, container);
     }
 
     // `--fresh`: teardown every participant's dev instance, then continue cold.
@@ -197,7 +201,7 @@ export async function executeDev(
       for (const [id, dev] of resolved) {
         if (dev.teardown === undefined) continue;
         try {
-          await dev.teardown({ container: containers.get(id), environment: DEV_ENVIRONMENT });
+          await dev.teardown({ container: containers.get(id), environment });
         } catch (error) {
           throw toStructured('DEV.TEARDOWN_FAILED', error);
         }
@@ -208,7 +212,7 @@ export async function executeDev(
     for (const [id, dev] of resolved) {
       if (dev.preflight === undefined) continue;
       try {
-        await dev.preflight({ graph, container: containers.get(id), environment: DEV_ENVIRONMENT });
+        await dev.preflight({ graph, container: containers.get(id), environment });
       } catch (error) {
         throw toStructured('DEV.PREFLIGHT_FAILED', error);
       }
@@ -248,9 +252,9 @@ export async function executeDev(
 
   const invocation = alchemyInvocation({
     command: 'deploy',
-    stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
+    stackFileRelativePath: devStackRelativePath(environment),
     cwd,
-    stage: DEV_ENVIRONMENT,
+    stage: environment,
     containerEnv: containerEnv(containers),
   });
 
@@ -260,6 +264,7 @@ export async function executeDev(
       stackPath = writeDevStackFile({
         entryPath: pipeline.entryModule.path,
         cwd,
+        environment,
         configFile: pipeline.configSource.file,
         name: pipeline.name,
         assembled: pipeline.assembled,
@@ -472,6 +477,7 @@ export async function executeDev(
         const stackPath = writeDevStackFile({
           entryPath: rePipeline.entryModule.path,
           cwd,
+          environment,
           configFile: rePipeline.configSource.file,
           name: rePipeline.name,
           assembled: rePipeline.assembled,
