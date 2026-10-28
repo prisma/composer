@@ -340,8 +340,9 @@ prisma postgres delete @storefront-auth.auth.database --confirm @storefront-auth
 ```
 
 The command finds the row whose `logicalId` is the address, then acts exactly
-as it does when given the ID. It never changes the deploy state, so the next
-deploy recreates anything deleted this way. This needs a `prisma` CLI release
+as it does when given the ID. Deleting a service, database or bucket this way
+leaves the deploy state alone, so the next deploy recreates it. Deleting the
+Project removes the deploy state with it, as described below. This needs a `prisma` CLI release
 newer than 8.0.0-rc.28.
 
 ## Removing an app or an environment
