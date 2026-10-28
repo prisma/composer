@@ -58,7 +58,7 @@ A row is one custom hostname and the service it reaches.
 | `dnsCheckedAt` | when the hostname's DNS was last seen pointing at the regional switchboard; null if it was not |
 | `lastFoundryError` | the error from the last Foundry call that failed, cleared by the next success |
 
-How the hostname was chosen is part of the operation that created the row, not a column. The observed columns and `foundryObservedAt` are what let the database say, without calling Foundry, whether the row is in sync: it is not when the observed compute version is not the live deployment's, when the certificate is not active, or when `foundryObservedAt` is empty. A service may have any number of rows. Rows are soft-deleted like the other models.
+How the hostname was chosen is part of the operation that created the row, not a column. The observed columns and `foundryObservedAt` are what let the database say, without calling Foundry, whether the row is in sync. It is in sync in two cases: no custom domain should exist and the row holds no custom domain id; or a custom domain should exist, the row holds its id, `foundryObservedAt` is not empty, the observed compute version is the live deployment's, and the certificate is active. In every other case it is out of sync. A service may have any number of rows. Rows are soft-deleted like the other models.
 
 ### DomainOwnership
 
