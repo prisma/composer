@@ -53,7 +53,7 @@ A row is one custom hostname and the service it reaches.
 | `foundryCustomDomainId` | the id of the Foundry custom domain for this hostname, once the control plane has created it. Null before that, and null again when the deployment it was bound to is deleted, because Foundry deletes the custom domain with the compute version |
 | `foundryIssuanceStartedAt` | when the current certificate issuance began: the custom domain's creation, the most recent retry, or, for a backfilled row that is still `provisioning`, the first time the control plane observed it; the clock for how long issuance may take |
 | `foundryObservedComputeVersionId` | the compute version the custom domain was bound to when Foundry was last read |
-| `foundryObservedAt` | when Foundry was last read for this row. Written only by a read of Foundry, and emptied only after a call whose outcome was unknown, when the control plane no longer knows what Foundry holds |
+| `foundryObservedAt` | when Foundry was last read for this row. Written only from Foundry's replies. Emptied after a call whose outcome was unknown, when the control plane no longer knows what Foundry holds, and cleared together with `foundryCustomDomainId` when the custom domain is gone: on a 404, and when `deleteDeployment` deletes the compute version it was bound to |
 | `foundryCustomDomainStatus`, `foundryCustomDomainFailureReason` | Foundry's status and failure reason for the custom domain, as last read |
 | `dnsCheckedAt` | when the hostname's DNS was last seen pointing at the regional switchboard; null if it was not |
 | `lastFoundryError` | the error from the last Foundry call that failed, cleared by the next success |
