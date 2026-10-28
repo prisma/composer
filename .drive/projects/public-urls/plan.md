@@ -77,15 +77,12 @@ The fourth slice of the control plane's project, listed here because the Compose
 
 ## Order
 
-```
-U1 ─────────────────┐
-C1 ─────────────────┼─▶ P1 ───────────┐
-D1 ──▶ U2 ──────────┴─────────────────┴─▶ P2
-  └──▶ D2
-C2 (after prisma/composer#385 merges)
-```
-
-U1, C1, D1 and C2 start at once. P1 starts when C1 has merged and the Alchemy release carrying U1 is pinned. U2 and D2 start when D1 is deployed. P2 is last.
+| Slice | Starts when |
+| --- | --- |
+| U1, C1, D1, C2 | at once |
+| P1 | C1 has merged and the Alchemy release carrying U1 is pinned |
+| U2, D2 | D1 is deployed |
+| P2 | U2 and P1 have merged |
 
 ## Close-out
 

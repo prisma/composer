@@ -22,9 +22,7 @@ export default module('shop', ({ provision }) => {
 });
 ```
 
-```
-shop.site (public URL)  ──is wired to──▶  shop.web.http  ──exposed by──▶  shop.web (compute service)
-```
+The public URL node `shop.site` is wired to the connection `shop.web.http`, which the compute service `shop.web` exposes.
 
 `publicUrl({ name, url, target })` takes three plain parameters:
 

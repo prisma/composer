@@ -9,16 +9,15 @@ How a `publicUrl()` node ([ADR-0060](../90-decisions/ADR-0060-public-traffic-rea
 provision(publicUrl({ name: 'site', url, target: web.http }));
 ```
 
-```
-Composer node            Prisma Cloud record (on the environment's Branch)
-───────────────────────  ──────────────────────────────────────────────────────────
-shop.site (public URL)   ServiceUrl  logicalId   "shop.site"
-                                     visibility  public
-                                     hostname    "shop.com" on production; assigned by the platform on pr-42
-                                     service     → the service for shop.web
-                                     conditions  ownership proven, service present, live version,
-                                                 DNS points at the region, certificate issued, routing bound
-```
+The Composer node `shop.site` becomes one ServiceUrl record on the environment's Branch:
+
+| ServiceUrl field | value |
+| --- | --- |
+| logicalId | `shop.site` |
+| visibility | public |
+| hostname | `shop.com` on production; assigned by the platform on pr-42 |
+| service | the service for `shop.web` |
+| conditions | ownership proven, service present, live version, DNS points at the region, certificate issued, routing bound |
 
 One public URL node is one platform record. Its address is its `logicalId`, as for every node with a platform row ([ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md)). The hostname and the service it points at are properties of the record, so changing either updates the same record.
 

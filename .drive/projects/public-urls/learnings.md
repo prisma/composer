@@ -1,0 +1,3 @@
+## U1: an upstream PR must meet the upstream repo's own test rules
+
+On alchemy-run/alchemy#2696 the slice was planned and reviewed against our spec only. The regression test used a fake client and a direct `reconcile` call, which Alchemy's AGENTS.md forbids, and the orchestrator told Will a live test was unnecessary. Sam Goodwin replaced it with a live test that deploys a site on a non-default Branch. For a slice in another repository, the slice spec must name that repository's testing and PR conventions (Alchemy: AGENTS.md "Resource and runtime testing conventions", `.claude/skills/audit/procedure.md`), and the plan must confirm live credentials before dispatch.
