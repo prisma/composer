@@ -59,7 +59,7 @@ import type {
   ExtensionDescriptor,
   LocalTargetAttachment,
 } from '@prisma/composer/config';
-import { containerEnv, DEV_DIR } from '@prisma/composer/config';
+import { containerEnv, devEnvironmentDir } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
 import { renderDevStackFile } from '@prisma/composer-cli/testing';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
@@ -90,7 +90,7 @@ const WEB = `${APP_NAME}.web`;
 const BKG = `${APP_NAME}.bkg`;
 const integrationDir = path.resolve(import.meta.dir, '..');
 const fixtureDir = path.join(integrationDir, 'test', 'fixtures', 'local-dev');
-const devDir = path.join(fixtureDir, DEV_DIR);
+const devDir = path.join(fixtureDir, devEnvironmentDir('dev'));
 const stackDir = devDir;
 const stackFile = path.join(stackDir, 'alchemy.run.ts');
 const stackFileRel = path.relative(fixtureDir, stackFile);
@@ -193,6 +193,7 @@ function renderStack(bundles: Record<string, FixtureBundle>): string {
     cwd: fixtureDir,
     configFile,
     name: APP_NAME,
+    environment: 'dev',
     assembled: { bundles, devServers: {} },
   });
 }
@@ -276,11 +277,9 @@ function readEmulatorEntry(
   return isRegistryEntry(parsed) ? parsed : undefined;
 }
 
-/** The nodes of `kind` that `prisma dev` recorded for `app` in fixtureDir's `.prisma-composer/dev/emulator-instances.json`. */
+/** The nodes of `kind` that `prisma dev` recorded for `app` in fixtureDir's `.prisma-composer/dev/dev/emulator-instances.json`. */
 function recordedNodes(app: string, kind: string): Record<string, { id: string }> {
-  const record = readJson(
-    path.join(fixtureDir, '.prisma-composer', 'dev', 'emulator-instances.json'),
-  ) as
+  const record = readJson(path.join(devDir, 'emulator-instances.json')) as
     | { apps: Record<string, { nodes: Record<string, { kind: string; id: string }> }> }
     | undefined;
   const nodes = record?.apps[app]?.nodes ?? {};

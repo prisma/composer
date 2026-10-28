@@ -9,8 +9,8 @@
  *
  * Criterion 4 (bucket round-trip): PUT an object through the app's own
  * `/blobs/:key` route, confirm it lands as a plain file under
- * `.prisma-composer/dev/buckets/<app>/files/<key>`, where `<app>` is the app
- * the directory's `emulator-instances.json` records as current; drop a file directly into
+ * `.prisma-composer/dev/dev/buckets/<app>/files/<key>`, where `<app>` is the app
+ * the environment's `emulator-instances.json` records; drop a file directly into
  * that directory and GET it back through the app.
  *
  * Criterion 5 (value sourcing): with `LOCALDEV_FIXTURE_API_KEY` unset, the
@@ -32,19 +32,18 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`assertion failed: ${message}`);
 }
 
-/** The app `dev` records as current in the directory's `emulator-instances.json`; its buckets' objects live under `buckets/<app>/`. */
-function currentApp(): string {
+/** The one app the environment `dev` records in its `emulator-instances.json`; its buckets' objects live under `buckets/<app>/`. */
+function recordedApp(): string {
   const record: unknown = JSON.parse(
     fs.readFileSync(path.join(devDir, 'emulator-instances.json'), 'utf8'),
   );
   assert(
-    typeof record === 'object' &&
-      record !== null &&
-      'current' in record &&
-      typeof record.current === 'string',
-    'emulator-instances.json names the current app',
+    typeof record === 'object' && record !== null && 'apps' in record,
+    'emulator-instances.json records apps',
   );
-  return record.current;
+  const apps = Object.keys(record.apps ?? {});
+  assert(apps.length === 1 && apps[0] !== undefined, 'emulator-instances.json records one app');
+  return apps[0];
 }
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {
@@ -58,7 +57,7 @@ function assertEqual<T>(actual: T, expected: T, message: string): void {
 
 const integrationDir = path.resolve(import.meta.dir, '..');
 const fixtureEntry = path.join('test', 'fixtures', 'local-dev', 'module.ts');
-const devDir = path.join(integrationDir, '.prisma-composer', 'dev');
+const devDir = path.join(integrationDir, '.prisma-composer', 'dev', 'dev');
 const logDir = path.join(integrationDir, '.local-dev-criteria-4-5-logs');
 const CLI_BIN = path.join(prismaBinDir(integrationDir), 'prisma');
 const READY_TIMEOUT_MS = 90_000;
@@ -291,7 +290,7 @@ async function main(): Promise<void> {
     );
     assertEqual(putRes.status, 201, 'PUT /blobs/proving-key.txt through the app');
 
-    const bucketDir = path.join(devDir, 'buckets', currentApp(), 'files');
+    const bucketDir = path.join(devDir, 'buckets', recordedApp(), 'files');
     const objectPath = path.join(bucketDir, 'proving-key.txt');
     const onDisk = await waitForAsync(
       async () => (fs.existsSync(objectPath) ? fs.readFileSync(objectPath, 'utf8') : undefined),

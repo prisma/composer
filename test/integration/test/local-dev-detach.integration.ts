@@ -26,7 +26,7 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { Load, module } from '@prisma/composer';
-import { DEV_DIR } from '@prisma/composer/config';
+import { DEV_DIR, devEnvironmentDir } from '@prisma/composer/config';
 import { devStop } from '@prisma/composer/control';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import prismaConfig from '../prisma.config.ts';
@@ -38,7 +38,7 @@ function assert(condition: unknown, message: string): asserts condition {
 
 const integrationDir = path.resolve(import.meta.dir, '..');
 const fixtureEntry = path.join('test', 'fixtures', 'local-dev', 'module.ts');
-const devDir = path.join(integrationDir, '.prisma-composer', 'dev');
+const devDir = path.join(integrationDir, devEnvironmentDir('dev'));
 const logDir = path.join(integrationDir, '.local-dev-detach-logs');
 const CLI_BIN = path.join(prismaBinDir(integrationDir), 'prisma');
 const EXIT_TIMEOUT_MS = 120_000;
@@ -133,15 +133,14 @@ function acceptsConnection(port: number): Promise<boolean> {
   });
 }
 
-/** The ports the directory's record holds for the current app's services and databases. */
+/** The ports the environment's record holds for the app's services and databases. */
 function recordedPorts(): readonly { readonly kind: string; readonly port: number }[] {
   const record = JSON.parse(
     fs.readFileSync(path.join(devDir, 'emulator-instances.json'), 'utf8'),
   ) as {
-    current: string;
     apps: Record<string, { nodes: Record<string, { kind: string; port?: number }> }>;
   };
-  const nodes = record.apps[record.current]?.nodes ?? {};
+  const nodes = record.apps[APP]?.nodes ?? {};
   return Object.values(nodes).flatMap(({ kind, port }) =>
     port === undefined ? [] : [{ kind, port }],
   );
@@ -224,7 +223,7 @@ async function main(): Promise<void> {
   console.log('[detach] PASS: exit 0 once ready, and every service answers after it exits');
 
   // ——— 2. Stopping the app stops them ———
-  const stopped = await devStop({ config, cwd: integrationDir });
+  const stopped = await devStop({ config, entry: fixtureEntry, cwd: integrationDir });
   assert(stopped.ok, `devStop succeeds (${stopped.ok ? '' : stopped.failure.message})`);
   await assertNothingListens('after stopping');
   console.log('[detach] PASS: stopping the app closes every service and database port');
