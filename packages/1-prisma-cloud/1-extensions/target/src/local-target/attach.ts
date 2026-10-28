@@ -9,8 +9,10 @@ import type { LocalTargetAttachInput, LocalTargetAttachment } from '@internal/co
 import { computeClient } from '@internal/dev-emulators';
 import {
   type AppScope,
+  directoryOf,
   ensureServiceInstance,
   materializeEnv,
+  movePreEnvironmentDevState,
   nodeInstancesOf,
   stopAppInstances,
   withServiceAddresses,
@@ -129,6 +131,7 @@ async function* mergedLogs(
 
 export async function devAttach(input: LocalTargetAttachInput): Promise<LocalTargetAttachment> {
   const { appName: app, environment } = prismaCloudContainerOf(input.container).input;
+  movePreEnvironmentDevState(directoryOf(input.devDir));
   const scope: AppScope = { devDir: input.devDir, app, environment };
   const client = computeClient();
 
