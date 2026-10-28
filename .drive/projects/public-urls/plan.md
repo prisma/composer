@@ -1,6 +1,6 @@
 # Public URLs — plan
 
-**Spec:** [spec.md](spec.md) · **Decisions:** ADR-0059 to ADR-0062, `docs/design/05-prisma-cloud/public-url.md`, pdp-control-plane ADR 015 · **Execution decisions:** [design-notes.md](design-notes.md)
+**Spec:** [spec.md](spec.md) · **Decisions:** ADR-0059 to ADR-0062, `docs/design/05-prisma-cloud/public-urls/composer-to-platform.md`, pdp-control-plane ADR 015 · **Execution decisions:** [design-notes.md](design-notes.md)
 
 Eight slices in four tracks across four repositories. Eight is above the usual limit of four. The tracks share no code; what they share is the design, which is already recorded, so they run in parallel with no coordination beyond the Management API routes ADR 015 defines. Splitting them into one project per repository would add bookkeeping without removing a dependency. The module-input work that would have made eleven is a follow-on project (`.drive/deferred.md`).
 
@@ -60,7 +60,7 @@ A `Prisma.RoutingUrl` resource: create (no DNS needed), read conditions, update 
 
 ### P3. The endpoint as a routing URL (step two)
 
-`publicUrl.prismaBuild()` lowers to the platform's `prisma.build` RoutingUrl once the platform offers it, and U2's adoption takes over the row the backfill made for an existing service. Specified when D1's step one has landed, against [migration-scenarios.md](migration-scenarios.md).
+`publicUrl.prismaBuild()` lowers to the platform's `prisma.build` RoutingUrl once the platform offers it, and U2's adoption takes over the row the backfill made for an existing service. Specified when D1's step one has landed, against [step-two-migration-scenarios.md](../../docs/design/05-prisma-cloud/public-urls/step-two-migration-scenarios.md).
 
 - **Builds on:** P2, D1's slice 5.
 - **Done when:** every scenario in migration-scenarios.md holds against a real Branch.

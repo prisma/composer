@@ -1,6 +1,4 @@
-# Public URLs: the proposal
-
-One document that states the whole proposal as it stands on 2026-10-28, across Composer and Prisma Cloud, so it can be evaluated without reading the decision records first. Every detail here is also in a decision record or design doc; the reading order at the end says which.
+# Public URLs
 
 ## What we are deciding
 
@@ -84,19 +82,19 @@ In step one every service is reachable at its `prisma.build` hostname whether or
 
 Private routing between services. Routing by path. Any change to Foundry. Re-checking DNS or ownership on a schedule.
 
-## Reading order for the detail
+## The detail
 
-Composer (this repository, PR prisma/composer#386):
+Composer:
 
-1. [ADR-0060](../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md): the public URL node, with alternatives.
-2. [ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): `resolve()`, environments and config adapters.
-3. [ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): module input.
-4. [public-url.md](public-url.md): how a node becomes platform state. [public-url-scenarios.md](public-url-scenarios.md): thirteen worked scenarios. [public-url-domain-map.md](public-url-domain-map.md): which concept lives in which system.
-5. [`.drive/projects/public-urls/`](../../../.drive/projects/public-urls/): the project's spec, plan, design notes and the step-two [migration scenarios](../../../.drive/projects/public-urls/migration-scenarios.md).
+1. [ADR-0060](../../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md): the public URL node, with alternatives.
+2. [ADR-0062](../../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): `resolve()`, environments and config adapters.
+3. [ADR-0061](../../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): module input.
+4. [composer-to-platform.md](composer-to-platform.md): how a node becomes platform state. [scenarios.md](scenarios.md): thirteen worked scenarios. [domain-map.md](domain-map.md): which concept lives in which system.
+5. [step-two-migration-scenarios.md](step-two-migration-scenarios.md): the twelve scenarios step two must satisfy. The project's spec and plan are in [`.drive/projects/public-urls/`](../../../../.drive/projects/public-urls/).
 
-Prisma Cloud (prisma/pdp-control-plane, PR #5795):
+Prisma Cloud (maintained in prisma/pdp-control-plane under `docs/compute/`, on the branch of prisma/pdp-control-plane#5795):
 
-1. [RoutingUrls.md](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/compute/RoutingUrls.md): the records, conditions, rules, routes and Console.
-2. [RoutingUrlLifecycle.md](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/compute/RoutingUrlLifecycle.md): every operation and lifecycle event, and the reconciler.
+1. [platform-routing-urls.md](platform-routing-urls.md): the records, conditions, rules, routes and Console.
+2. [platform-routing-url-lifecycle.md](platform-routing-url-lifecycle.md): every operation and lifecycle event, and the reconciler.
 3. [ADR 015](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/architecture/adrs/ADR-015-routing-urls-and-domain-ownership.md): the decision, why, and alternatives.
 4. [projects/routing-urls](https://github.com/prisma/pdp-control-plane/tree/chore/adr-ingress-entity/projects/routing-urls): spec, acceptance criteria and the five-slice plan.
