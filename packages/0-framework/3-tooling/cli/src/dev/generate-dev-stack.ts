@@ -1,6 +1,7 @@
 /**
- * Local-dev spec § 6 `generate-dev-stack.ts`: like generate-stack.ts but at
- * `.prisma-composer/dev/alchemy.run.ts`, always Alchemy stage `dev`, using
+ * Local-dev spec § 6 `generate-dev-stack.ts`: like generate-stack.ts but in
+ * the environment's folder, `.prisma-composer/dev/<environment>/alchemy.run.ts`,
+ * at the Alchemy stage named by the environment, using
  * Composer's `devState()` (Alchemy's file store) and no `report` — dev prints its own front
  * door (run-dev.ts), so core's presentation-free lower() gets nothing to
  * call back into. The generated module IS the one orchestration point where
@@ -13,6 +14,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AssembledServices } from '@internal/assemble';
+import { devEnvironmentDir } from '@internal/core/config';
 import { noComposerExportMessage } from '../composer-config.ts';
 
 export interface DevStackFileInput {
@@ -20,16 +22,22 @@ export interface DevStackFileInput {
   readonly entryPath: string;
   /** The process's cwd — where `.prisma-composer/dev/` is written. */
   readonly cwd: string;
+  /** The environment the app runs as locally; its folder holds the stack file. */
+  readonly environment: string;
   /** Absolute path to the `prisma.config.ts` that declared the `composer` section — imported by relative path. */
   readonly configFile: string;
   readonly name: string;
   readonly assembled: AssembledServices;
 }
 
-const DEV_GENERATED_DIR = '.prisma-composer/dev';
 const DEV_GENERATED_FILE = 'alchemy.run.ts';
 
-/** A relative import specifier from `.prisma-composer/dev/alchemy.run.ts` to `target` (posix separators). */
+/** The stack file's path relative to the cwd. */
+export function devStackRelativePath(environment: string): string {
+  return path.join(devEnvironmentDir(environment), DEV_GENERATED_FILE);
+}
+
+/** A relative import specifier from the stack file to `target` (posix separators). */
 function relativeImportSpecifier(generatedDir: string, target: string): string {
   const rel = path.relative(generatedDir, target).split(path.sep).join('/');
   return rel.startsWith('.') ? rel : `./${rel}`;
@@ -68,7 +76,7 @@ function renderOptions(input: DevStackFileInput): string {
 
 /** Renders the dev stack module's source (tests assert on it without touching disk). */
 export function renderDevStackFile(input: DevStackFileInput): string {
-  const generatedDir = path.join(input.cwd, DEV_GENERATED_DIR);
+  const generatedDir = path.join(input.cwd, devEnvironmentDir(input.environment));
   const appImport = relativeImportSpecifier(generatedDir, input.entryPath);
   const configImport = relativeImportSpecifier(generatedDir, input.configFile);
   // Kept out of the template so no line of this module's built output starts
@@ -78,7 +86,7 @@ export function renderDevStackFile(input: DevStackFileInput): string {
     "import * as path from 'node:path';",
     "import { deserializeContainers } from '@prisma/composer/config';",
     "import { lower } from '@prisma/composer/deploy';",
-    "import { DEV_DIR, devState, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
+    "import { devEnvironmentDir, devState, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
     `import prismaConfig from ${quote(configImport)};`,
     `import app from ${quote(appImport)};`,
   ].join('\n');
@@ -87,7 +95,7 @@ export function renderDevStackFile(input: DevStackFileInput): string {
 // edit by hand. Independently runnable from ${quote(input.cwd)} by the
 // command Composer starts, which a failed run prints:
 //
-//   <node> <bin of the alchemy @prisma/composer depends on> deploy ${DEV_GENERATED_DIR}/${DEV_GENERATED_FILE} --yes --stage dev
+//   <node> <bin of the alchemy @prisma/composer depends on> deploy ${devStackRelativePath(input.environment)} --yes --stage ${input.environment}
 //
 // bisects a CLI bug from an Alchemy bug (deploy-cli.md § Implementation decisions).
 ${imports}
@@ -99,7 +107,7 @@ if (config === undefined) {
 
 const containers = deserializeContainers(config.extensions, process.env);
 const resolved = await resolveLocalTargets(config);
-const devDir = path.join(process.cwd(), DEV_DIR);
+const devDir = path.join(process.cwd(), devEnvironmentDir(${quote(input.environment)}));
 
 export default lower(app, config, {
 ${renderOptions(input)}
@@ -109,11 +117,9 @@ ${renderOptions(input)}
 
 /** Writes the dev stack file, returning its absolute path. */
 export function writeDevStackFile(input: DevStackFileInput): string {
-  const generatedDir = path.join(input.cwd, DEV_GENERATED_DIR);
+  const generatedDir = path.join(input.cwd, devEnvironmentDir(input.environment));
   fs.mkdirSync(generatedDir, { recursive: true });
   const filePath = path.join(generatedDir, DEV_GENERATED_FILE);
   fs.writeFileSync(filePath, renderDevStackFile(input));
   return filePath;
 }
-
-export const DEV_STACK_RELATIVE_PATH = path.join(DEV_GENERATED_DIR, DEV_GENERATED_FILE);

@@ -38,16 +38,20 @@ command:
   return first (default 0, which returns live output only). It only reads the running
   app's logs — it neither builds, provisions, starts, nor stops anything.
 
-- **`prisma dev url <address>`** — where a node of the app `prisma dev` last
-  ran from this directory answers: a service's `http://localhost:<port>`, a
+- **`prisma dev url <address>`** — where a node runs in this directory, in
+  the environment `--environment` names (default `dev`). The app is the
+  address's first segment: `shop.api` is a node of the app `shop`. It answers
+  with a service's `http://localhost:<port>`, a
   database's connection string (local credentials included), or a bucket's S3
   endpoint plus `/<bucket>`. JSON result `{ address, kind, url, state }`
   with `--json`; otherwise the URL alone goes to stdout, a terminal or a
   pipe. It is the `devUrl` operation
   ([ADR-0053](../90-decisions/ADR-0053-dev-url-dev-stop-and-emulator-list.md)).
-- **`prisma dev stop`** — stop that app's service processes and database
-  servers, as ending `prisma dev` does, for a `dev` that was killed without the
-  chance. Data and ports stay. It is the `devStop` operation, returning
+- **`prisma dev stop`** — stop one app's service processes and database
+  servers in one environment, as ending `prisma dev` does, for a `dev` that was
+  killed without the chance or one started with `--detach`. The app is the
+  config's entry's, or `--name`'s, as for `prisma dev`; the environment is
+  `--environment`, default `dev`. Data and ports stay. It is the `devStop` operation, returning
   `{ app, stopped }`; `stopped` lists only the nodes that were running, so
   it is empty when nothing was, and the command then says so. Piped, it
   writes one tab-separated line per stopped node: node address and node
@@ -57,8 +61,9 @@ command:
   id, kind, URL, state and labels. An emulator that runs but cannot be listed
   is reported in its own entry with an `error` of `{ code, message }`, and the
   others are still listed. Piped, it writes one tab-separated line per
-  instance: emulator kind, instance id, URL, state, node address and
-  directory. The directory is an absolute path, because the list covers
+  instance: emulator kind, instance id, URL, state, node address, directory
+  and environment, the last from the instance's `composer.environment` label.
+  The directory is an absolute path, because the list covers
   every app on the machine and runs from any directory. Every data line
   escapes a backslash, tab, newline or carriage return inside a field, and
   fields are only added at the end; see the guide's
@@ -69,24 +74,57 @@ command:
   stay backward compatible. `prisma emulator start` and `prisma emulator stop`
   are planned.
 
-`dev url` and `dev stop` take no entry and build nothing. The configuration
-does not name the app, so they act on the app the directory's record names as
-current. Core reaches it through the local-target seam: a
-`LocalTargetDescriptor` may implement `current({ devDir })`, returning the
-recorded app's name, its addresses, `locate(address)` and `stop()`. The Prisma
-Cloud target implements it from `emulator-instances.json`; core never reads the
+Every local command acts on the app and environment it is given, never on
+what ran last. `dev url` and `dev stop` build nothing. `dev url` does not
+import the entry module: the address names the app. `dev stop` finds the app
+as `prisma dev` does. Core reaches the app's copy through the local-target
+seam: a `LocalTargetDescriptor` may implement `current`, which takes the dev
+state directory, the app and the environment, and returns that copy's
+addresses, `locate(address)` and `stop()`. The Prisma Cloud target implements
+it from the environment's `emulator-instances.json`; core never reads the
 record. `dev url` reports a node only while it is running, so every URL it
-prints answers.
+prints answers. When the app has never run in that environment in the
+directory, both fail with `DEV.NOT_STARTED_HERE`.
 
-Flags: `dev` takes `--name` (override the root's name, as on deploy),
-`--fresh` (before starting, delete the current app's local services,
-databases and buckets, their data, and the app's entry in the directory's
-record; other apps run from the directory keep theirs) and `--detach` (return once every service answers and leave the app
-running; see § Process lifetimes). Dev takes `--environment`, `dev` by default
-([ADR-0059](../90-decisions/ADR-0059-a-deployment-environment-is-called-an-environment.md)); the name is what it hands the local target's container and
-hooks. A working directory still has exactly one local copy of each app;
-parallel copies are parallel checkouts. Giving each environment its own local
-copy is planned work.
+Flags: `dev` takes `--environment` (the environment to run, default `dev`),
+`--name` (override the root's name, as on deploy), `--fresh` (before
+starting, delete this app's local services, databases and buckets in this
+environment, their data, its Alchemy state and its entry in the environment's
+record; other environments and other apps keep theirs) and `--detach` (return
+once every service answers and leave the app running; see § Process
+lifetimes). `dev url` and `dev stop` take `--environment` too.
+
+**Each environment is its own local copy.** `prisma dev --environment test`
+runs the whole topology as the environment `test`, with its own services,
+databases, buckets and ports, beside a running `prisma dev` of the same app in
+the same directory. The common reason is a clean copy for tests that leaves
+working data alone: `prisma dev --environment test --fresh` resets `test` and
+nothing else. Running another app or another environment stops nothing that is
+already running. The environment name is what the local target's container
+and hooks receive, and it is Alchemy's stage, so Alchemy keeps each copy's
+state at `.alchemy/state/<app>/<environment>`. Every other local file that
+belongs to one copy lives in `.prisma-composer/dev/<environment>/`: the record
+of instances, the environment variable values, the placeholder secrets, the
+generated stack file, the artifacts and the bucket objects. The folder name is
+the environment name, encoded, because an environment name may contain `/`.
+Alchemy keeps the stage `feature/x` inside the folder of the stage `feature`,
+so `--fresh` removes only the files directly in its own stage's folder.
+
+On a case-insensitive filesystem, such as the default on macOS, `Dev` and
+`dev` would share one folder, and so one copy. So the first `prisma dev` in an
+environment writes the environment's exact name into its folder, in
+`environment-name`, and `--fresh` keeps that file. `prisma dev`, `dev url`,
+`dev stop` and the `log` operation refuse an environment whose folder records another name
+with `DEV.ENVIRONMENT_NAME_MISMATCH`, before anything is torn down, prepared
+or read. A folder with no name recorded is accepted, and `prisma dev` records
+it.
+
+`prisma dev` runs the extension version check `deploy` runs
+([deploy-cli.md](deploy-cli.md)): each local container, rebuilt through the
+extension's `deserialize`, must name the environment it asked for, and an
+extension whose container does not, or whose `deserialize` throws, fails with
+`DEPS.EXTENSION_INCOMPATIBLE` before anything starts. An older local target
+that ignored the name would otherwise put every environment in one copy.
 
 **Naming.** The `prisma` CLI mounts this as `prisma dev`
 ([ADR-0050](../90-decisions/ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)).
@@ -116,17 +154,16 @@ Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
    `localTarget.emulators` hook inspects the loaded graph and ensures one emulator
    daemon per node kind the topology uses (Compute always; buckets when
    bucket resources exist; Postgres when `postgres` or `raw-postgres`
-   resources exist). Once they are up, the app becomes the directory's
-   current app, and the hook ensures each node's instance — service,
-   database or bucket — in `graph.nodes` order, through the directory's
-   record (see [Which instance backs a node](#which-instance-backs-a-node)).
+   resources exist). Once they are up, the hook ensures each node's
+   instance — service, database or bucket — in `graph.nodes` order, through
+   the environment's record (see [Which instance backs a node](#which-instance-backs-a-node)).
    A recorded database the last session stopped is started here: on a warm
    start the converge may change nothing and never call the Database
    provider.
 5. **Lower + converge** — a dev-generated stack file (ADR-0007's pattern, at
-   `.prisma-composer/dev/alchemy.run.ts`), driven with the extension's
-   `localTarget.providers()` layer and `devState()` (Alchemy's built-in file store, exported by `@prisma/composer/local-target`), always
-   at Alchemy stage `dev`. Providers provision emulator instances (a running
+   `.prisma-composer/dev/<environment>/alchemy.run.ts`), driven with the extension's
+   `localTarget.providers()` layer and `devState()` (Alchemy's built-in file store, exported by `@prisma/composer/local-target`),
+   with the environment name as Alchemy's stage. Providers provision emulator instances (a running
    service, a database, a bucket) by talking to the emulators; converge
    terminates as always, and the Compute emulator keeps serving.
 6. **Attach** — new, dev-only: through `localTarget.attach`, render the front
@@ -170,7 +207,7 @@ in its dependents' URLs, and a warm start does not redeploy, so a port that
 changed between sessions would leave services built for the old one.
 
 The local `Deployment` provider does not spawn processes; it
-unpacks the artifact into `.prisma-composer/dev/artifacts/<hash>/`,
+unpacks the artifact into `.prisma-composer/dev/<environment>/artifacts/<hash>/`,
 materializes the complete child env, and puts the deployment at the
 service's instance, and the emulator owns the processes:
 
@@ -192,14 +229,14 @@ service's instance, and the emulator owns the processes:
   the `log` operation's `tail` count maps straight onto it. A live follower is
   reset to the new start when the log is cleared under it (the daemon tracks a
   per-log clear generation, so a follower never reads stale bytes).
-- **Instance deleted** (service removed from the topology, `--fresh`, or
-  another app run from the same directory) → stop it, remove it and its log,
+- **Instance deleted** (service removed from the topology, or `--fresh`)
+  → stop it, remove it and its log,
   and free its port.
 - **Ctrl-C on the dev command** → the attachment stops the app's service
   instances and its database servers, and detaches. Every emulator —
   Compute, Postgres, buckets — stays up, and every instance keeps its data
   and its port; the next start reuses the same instances (same ports, same
-  data). `--fresh` is what removes instances and data. `prisma dev --detach` leaves the app running with no
+  data). `--fresh` is what removes an environment's instances and data. `prisma dev --detach` leaves the app running with no
   session; see § Process lifetimes.
 
   **Known gap (proving-pass finding, fixed in #164):** a service actually only restarts
@@ -281,13 +318,14 @@ reaches the user, so `prisma dev` says `service "shop.gateway" …`.
 
 ### Which instance backs a node
 
-Composer records, per working directory, which emulator instance backs each
-node of each app run there, in `.prisma-composer/dev/emulator-instances.json`:
+Composer records, per working directory and environment, which emulator
+instance backs each node of each app run there, in
+`.prisma-composer/dev/<environment>/emulator-instances.json`. The record of
+the environment `dev`:
 
 ```json
 {
-  "formatVersion": 2,
-  "current": "shop",
+  "formatVersion": 3,
   "apps": {
     "shop": {
       "nodes": {
@@ -301,8 +339,9 @@ node of each app run there, in `.prisma-composer/dev/emulator-instances.json`:
 }
 ```
 
-`formatVersion` is the record's format. `current` names the app `prisma dev` last ran from the directory. A record
-written by the previous version (`{ "app", "nodes" }`, one app, whose
+`formatVersion` is the record's format. The record names no current app:
+every command is told which app and environment to act on. A record
+written by the version before that (`{ "app", "nodes" }`, one app, whose
 services have kind `compute`) reads as that one app with `service` nodes and
 is rewritten on the next write. Every node's key is its address, which is
 also the resource ID of its main resource (a service's `App`, a database's
@@ -314,17 +353,27 @@ emulators hook, the local `App`, `Deployment`, `Database`, `Connection`,
 `Bucket` and `BucketAccessKey` providers, the attachment (endpoints, logs,
 start, stop) and `--fresh` all go through it; no Composer code finds an
 instance by its labels. The labels Composer writes on create —
-`composer.directory` (the absolute directory), `composer.app` and
-`composer.address` — are for people reading an emulator listing. The record
+`composer.directory` (the absolute directory), `composer.app`,
+`composer.address` and `composer.environment` — are for people reading an
+emulator listing. The record
 can be read from the directory alone, without running the pipeline. Its node
 keys are full addresses (`shop.catalog`). A record without `formatVersion` was
 written by an older release, whose keys left out the app name: every one of
 its keys reads with the app name in front, whatever it looks like, and the
 next write stores the current format, so existing instances, ports and data
-are reused. A bucket's objects live in
-`buckets/<app>/<address without the app name>`, the folder earlier releases
-used, so they need no move
+are reused. A bucket's objects live in the environment's
+`buckets/<app>/<address without the app name>`
 ([ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md)).
+
+**Moving earlier local state into `dev`.** Releases before environments had
+their own local copies kept one record, one set of environment variable
+values, one set of placeholder secrets and one bucket folder for the whole
+directory, directly in `.prisma-composer/dev/`. The first `prisma dev`,
+`dev url`, `dev stop` or `log` after the upgrade moves them into `.prisma-composer/dev/dev/`, so they become the
+environment `dev` and its instances, ports, databases and bucket objects are
+kept. Alchemy's local state needs no move: those releases already ran as the
+stage `dev`. This reverses the earlier rule that local dev state is never
+migrated, as the record's rewrite to full addresses did before it.
 
 - **Ensuring an instance.** The emulators hook goes through the app's nodes
   in `graph.nodes` order (dependencies first, ties in declaration order):
@@ -355,21 +404,24 @@ used, so they need no move
 - **When `prisma dev` ends** (Ctrl-C, SIGTERM, a failure), the attachment's
   `stopApp` stops the app's service processes and database servers.
   Their data and ports are kept, and the next start brings them back.
-- **Another app in the same directory.** Running a different app from the
-  directory (another entry, another `--name`) stops the previous app's
-  services and databases and keeps its entry, with their data and ports, and
-  prints `[dev] stopped the local services of "<app>", the app run here
-  before; its data is kept`. Running the previous app again resumes them.
-- **`--fresh`** deletes the current app's instances of every kind (a
-  database's data with it) and its entry, and removes the dev state directory
-  except the record and other apps' bucket objects. A bucket's objects live
-  under `.prisma-composer/dev/buckets/<app>/<bucket>/` for that reason.
+- **Another app or another environment in the same directory.** Running a
+  different app (another entry, another `--name`) or another environment
+  stops nothing. Each app's copy in each environment has its own instances
+  and keeps running until its own `prisma dev` ends or `prisma dev stop`
+  names it.
+- **`--fresh`** deletes the app's instances of every kind in that
+  environment (a database's data with it), its entry in that environment's
+  record, its Alchemy state at `.alchemy/state/<app>/<environment>` and its
+  files in the environment's folder. Other environments, and other apps in the
+  same environment, keep theirs. A bucket's objects live under
+  `.prisma-composer/dev/<environment>/buckets/<app>/<bucket>/` for that
+  reason.
 
 Two directories running the same app have separate records, so they get
 separate services on separate ports, separate databases and separate
-buckets, and neither restarts or writes into the other's. State an emulator
-wrote before instances had generated ids is discarded when it loads; local
-dev state is never migrated.
+buckets, and neither restarts or writes into the other's. Two environments in
+one directory are separate in the same way. State an emulator wrote before
+instances had generated ids is discarded when it loads.
 
 ### Process lifetimes
 
@@ -380,7 +432,7 @@ dev state is never migrated.
    multi-tenant, holding every long-lived process: the Compute emulator
    (service children), the Postgres emulator (one `@prisma/dev` server per
    `Database`, hosted in-process), and the bucket emulator. They survive dev
-   sessions; `--fresh` removes the current app's instances. The registry root is
+   sessions; `--fresh` removes the app's instances in one environment. The registry root is
    `~/.prisma-composer/emulators` unless `PRISMA_COMPOSER_EMULATORS_DIR`
    names another absolute directory, so by default one machine shares one
    set. Instances belong to a directory, so two checkouts of one app never
@@ -396,8 +448,8 @@ dev state is never migrated.
    it ends (Ctrl-C, SIGTERM or a failure). `prisma dev --detach` converges,
    waits until every service accepts connections, prints the front door and
    exits 0, starting no watch loop and no stop on exit, so they keep running
-   until `prisma dev stop` or the next `prisma dev` in the directory, which
-   reconverges as usual. A detached session handle is already closed and its
+   until `prisma dev stop` or the next `prisma dev` of that app in that
+   environment in the directory, which reconverges as usual. A detached session handle is already closed and its
    `stop()` stops nothing. A detached run that fails before ready stops the
    whole app, including one an earlier `--detach` left running, as the
    foreground run does: a failed redeploy has already replaced that service's
@@ -426,7 +478,7 @@ semantics):
 | `App` | finds the service's Compute instance through the directory's record, creating it when there is none; the instance holds the service's port; `appEndpointDomain = http://localhost:<port>` — which makes origin (ADR-0039) work unchanged. Deleting it deletes the instance |
 | `Deployment` | unpacks the artifact once per hash, materializes the env, and puts the deployment at the service's Compute instance, which (re)starts the child; updated when its instance does not run the recorded artifact |
 | `EnvironmentVariable` | a key→value row in the dev state store |
-| `Bucket` | the bucket instance the directory's record names for the resource, over a directory under `.prisma-composer/dev/buckets/<app>/<bucket>/`, served by the bucket emulator; `bucketId` is the instance id, also its S3 name |
+| `Bucket` | the bucket instance the directory's record names for the resource, over a directory under `.prisma-composer/dev/<environment>/buckets/<app>/<bucket>/`, served by the bucket emulator; `bucketId` is the instance id, also its S3 name |
 | `BucketKey` | credentials registered with the bucket emulator for its bucket |
 | `ServiceKey` | **unchanged** — mints locally, persists in state |
 | `S3Credentials` | **unchanged** — mints locally, persists in state |
@@ -466,7 +518,7 @@ bucket's data root is registered as an in-project path, which the emulator
 stores verbatim:
 
 - **Objects are plain files at their key paths** —
-  `.prisma-composer/dev/buckets/<app>/<bucket>/<key>`. Browse them, open them, drop a
+  `.prisma-composer/dev/<environment>/buckets/<app>/<bucket>/<key>`. Browse them, open them, drop a
   file in and it exists in the bucket. This is a feature, not an
   implementation detail: inspectable state is half the value of local dev.
 - Object metadata (content type, user metadata) lives in a sidecar tree, so
@@ -523,7 +575,9 @@ Deploy's rule holds: every failure names its fix.
 | a service exits before it listens, or does not listen within the readiness timeout | the address, the port, the exit code if it exited, and the log path; `dev` stops the app's services before it returns the failure |
 | an emulator does not accept connections (retried briefly; an error response from the emulator is never retried) | `DEV.EMULATOR_UNREACHABLE`, with the emulator's URL, from `dev` and `log` alike |
 | `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` is not a positive whole number | `DEV.SERVICE_READY_TIMEOUT_INVALID`, with the value |
-| `dev url` or `dev stop` in a directory where no extension recorded an app | `DEV.NOT_STARTED_HERE`: run `prisma dev` here first |
+| `dev url` or `dev stop` for an app that has never run in that environment in this directory | `DEV.NOT_STARTED_HERE`, naming the app and the environment: run `prisma dev` (with the same `--environment`) here first |
+| `dev`, `dev url`, `dev stop` or the `log` operation for an environment whose folder records another name, such as `Dev` where `dev` ran on a case-insensitive filesystem | `DEV.ENVIRONMENT_NAME_MISMATCH`, naming the folder, the recorded name and the requested one, before anything runs: use the recorded name, or a name that differs by more than case |
+| a local target extension older than the running Composer | `DEPS.EXTENSION_INCOMPATIBLE`, naming the extension, before anything starts |
 | `dev url` with an address the app does not have | `DEV.ADDRESS_UNKNOWN`, listing the addresses it has |
 | `dev url` for a node whose emulator is not running | `DEV.EMULATOR_UNREACHABLE` |
 | `dev url` for a node that exists but is not running | `DEV.NOT_RUNNING`, naming its state; for a stopped node the fix is `prisma dev`, for a crash-looping service it is the service's log, for a node its emulator lost it is `prisma dev`, which creates it again |

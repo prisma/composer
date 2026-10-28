@@ -16,8 +16,8 @@ import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
 import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
-import { appNameOf } from './app-name.ts';
-import { type AppScope, ensureDatabaseInstance, recordedInstanceId } from './emulator-instances.ts';
+import { appScopeOf } from './app-name.ts';
+import { ensureDatabaseInstance, recordedInstanceId } from './emulator-instances.ts';
 import { resolvePrismaDevModulePath } from './prisma-dev-module.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
 
@@ -85,10 +85,6 @@ export function LocalDatabaseProvider(
     delete: () => Effect.void,
   };
   return Provider.effect(Prisma.Database, Effect.succeed(service));
-}
-
-function appScopeOf(input: LocalTargetProvidersInput): AppScope {
-  return { devDir: input.devDir, app: appNameOf(input.container) };
 }
 
 function noRecordedInstanceError(databaseId: string): Error {

@@ -237,10 +237,10 @@ async function listComputeServices(app: string): Promise<readonly ServiceInfo[]>
   return services;
 }
 
-/** The nodes of `kind` that `prisma dev` recorded for `app` in storeDir's `.prisma-composer/dev/emulator-instances.json`. */
+/** The nodes of `kind` that `prisma dev` recorded for `app` in storeDir's `.prisma-composer/dev/dev/emulator-instances.json`. */
 function recordedNodes(app: string, kind: string): Record<string, { id: string }> {
   const record = readJson(
-    path.join(storeDir, '.prisma-composer', 'dev', 'emulator-instances.json'),
+    path.join(storeDir, '.prisma-composer', 'dev', 'dev', 'emulator-instances.json'),
   ) as
     | { apps: Record<string, { nodes: Record<string, { kind: string; id: string }> }> }
     | undefined;
@@ -415,7 +415,7 @@ async function withSql<T>(url: string, fn: (sql: Bun.SQL) => Promise<T>): Promis
 const PROVING_PRODUCT_ID = 'proving-row';
 const APP_NAME = 'store';
 const catalogDist = path.join(storeDir, 'modules', 'catalog', 'dist', 'server.mjs');
-const DEV_STACK_FILE = path.join(storeDir, '.prisma-composer', 'dev', 'alchemy.run.ts');
+const DEV_STACK_FILE = path.join(storeDir, '.prisma-composer', 'dev', 'dev', 'alchemy.run.ts');
 
 /** Walks up from `startDir` looking for `node_modules/.bin/alchemy` — same as local-dev.integration.ts's own helper. */
 function alchemyBin(startDir: string): string {

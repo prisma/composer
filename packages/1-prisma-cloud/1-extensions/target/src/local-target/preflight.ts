@@ -12,8 +12,8 @@
  */
 
 import type { PreflightInput } from '@internal/core/config';
-import { DEV_DIR } from '@internal/core/config';
-import { secretsStore } from '@internal/local-target';
+import { devEnvironmentDir } from '@internal/core/config';
+import { movePreEnvironmentDevState, secretsStore } from '@internal/local-target';
 import { collectPreflightNames, type PreflightName } from '../preflight-names.ts';
 
 /** `local-placeholder-<16 lowercase hex>` — Web Crypto only, matching the extension's other local mints (ServiceKey, S3Credentials). */
@@ -35,7 +35,8 @@ function missingEnvParamsError(missing: readonly PreflightName[]): Error {
 export async function runDevPreflight(input: PreflightInput): Promise<void> {
   // No `node:path` import (invariant 5) — local dev is POSIX-only (spec's
   // Windows note), so a plain `/`-join is exact, not an approximation.
-  const devDir = `${process.cwd()}/${DEV_DIR}`;
+  movePreEnvironmentDevState(process.cwd());
+  const devDir = `${process.cwd()}/${devEnvironmentDir(input.environment)}`;
   const store = secretsStore(devDir);
   const { secrets, envParams } = collectPreflightNames(input.graph);
 

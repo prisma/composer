@@ -18,6 +18,7 @@ import {
 } from '@internal/dev-emulators';
 import {
   deleteAppInstances,
+  EMULATOR_INSTANCES_FILE,
   ensureAppInstances,
   readEmulatorInstances,
 } from '@internal/local-target';
@@ -55,11 +56,11 @@ describe.skipIf(process.platform === 'win32')("the dev session's stop", () => {
       await ensureDaemon(name, entry, { registryRoot });
     }
     directory = path.join(root, 'project');
-    devDir = path.join(directory, '.prisma-composer', 'dev');
+    devDir = path.join(directory, '.prisma-composer', 'dev', 'dev');
   });
 
   afterEach(async () => {
-    await deleteAppInstances({ devDir, app: APP }).catch(() => undefined);
+    await deleteAppInstances({ devDir, app: APP, environment: 'dev' }).catch(() => undefined);
     for (const name of DAEMONS) await stopDaemon(name, { registryRoot }).catch(() => undefined);
     fs.rmSync(root, { recursive: true, force: true });
     if (savedEmulatorsDir === undefined) delete process.env[EMULATORS_DIR_ENV];
@@ -67,12 +68,10 @@ describe.skipIf(process.platform === 'win32')("the dev session's stop", () => {
   });
 
   test("stops the app's database servers and keeps their ports", async () => {
-    await ensureAppInstances({ devDir, app: APP }, [
+    await ensureAppInstances({ devDir, app: APP, environment: 'dev' }, [
       { address: 'attach-app.catalog', kind: 'database' },
     ]);
-    const recorded = (await readEmulatorInstances(directory))?.apps[APP]?.nodes[
-      'attach-app.catalog'
-    ];
+    const recorded = (await readEmulatorInstances(devDir))?.apps[APP]?.nodes['attach-app.catalog'];
     if (recorded?.kind !== 'database') throw new Error('no database recorded');
     expect(await acceptsConnection(recorded.port)).toBe(true);
     const container = new PrismaCloudContainer(
@@ -90,5 +89,30 @@ describe.skipIf(process.platform === 'win32')("the dev session's stop", () => {
       port: recorded.port,
     });
     expect(await acceptsConnection(recorded.port)).toBe(false);
+  }, 60_000);
+
+  test('finds the app in a folder written before environments had folders', async () => {
+    await ensureAppInstances({ devDir, app: APP, environment: 'dev' }, [
+      { address: 'attach-app.catalog', kind: 'database' },
+    ]);
+    const recorded = (await readEmulatorInstances(devDir))?.apps[APP]?.nodes['attach-app.catalog'];
+    if (recorded?.kind !== 'database') throw new Error('no database recorded');
+    const record = JSON.parse(fs.readFileSync(path.join(devDir, EMULATOR_INSTANCES_FILE), 'utf8'));
+    fs.rmSync(devDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(path.dirname(devDir), EMULATOR_INSTANCES_FILE),
+      JSON.stringify({ ...record, formatVersion: 2, current: APP }),
+    );
+    const container = new PrismaCloudContainer(
+      { appName: APP, environment: 'dev' },
+      'local',
+      undefined,
+      undefined,
+      true,
+    );
+
+    await (await devAttach({ container, devDir })).stopApp();
+
+    expect(await postgresClient().getInstance(recorded.id)).toMatchObject({ status: 'stopped' });
   }, 60_000);
 });

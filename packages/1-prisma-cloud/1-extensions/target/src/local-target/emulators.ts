@@ -6,10 +6,9 @@
  * `postgres` resource kind (REVISED — Postgres is a first-class daemon
  * since the programmatic `@prisma/dev` adoption, operator review of #162).
  *
- * Once the daemons are up, the app becomes the directory's current app (a
- * different app run here before has its services and databases stopped,
- * data kept), and every node's instance is ensured through the directory's
- * record in graph order: services, databases and buckets. A fresh start thus
+ * Once the daemons are up, every node's instance is ensured through the
+ * environment's record in graph order: services, databases and buckets.
+ * Other apps and environments run from the directory are left running. A fresh start thus
  * numbers ports dependencies first, which Alchemy's concurrent applies would
  * otherwise do in arrival order, and a recorded database stopped by the last
  * session is started before converge, which on a warm start may never call
@@ -31,9 +30,8 @@ import type { LocalTargetEmulatorsInput } from '@internal/core/config';
 import { ensureDaemon } from '@internal/dev-emulators';
 import {
   type AppNode,
-  appNameOf,
+  appScopeOf,
   ensureAppInstances,
-  selectApp,
   stopAppInstances,
 } from '@internal/local-target';
 import { RESOURCE_ROW_KINDS } from '@internal/lowering/deployed';
@@ -70,17 +68,11 @@ export async function runDevEmulators(input: LocalTargetEmulatorsInput): Promise
     console.log(`[dev] postgres emulator ready at ${postgresUrl}`);
   }
 
-  const scope = { devDir: input.devDir, app: appNameOf(input.container) };
-  const previous = await selectApp(scope);
-  if (previous !== undefined) {
-    console.log(
-      `[dev] stopped the local services of "${previous}", the app run here before; its data is kept`,
-    );
-  }
+  const scope = appScopeOf(input);
   const portChanges = await ensureAppInstances(scope, nodes).catch(async (error: unknown) => {
     // `dev` fails here without a session to end, so stop the app's whole
-    // recorded set, as Ctrl-C would, then report the failure. One directory
-    // runs one `dev` session at a time.
+    // recorded set, as Ctrl-C would, then report the failure. One environment
+    // of an app runs one `dev` session at a time.
     await stopAppInstances(scope).catch(() => undefined);
     throw error;
   });

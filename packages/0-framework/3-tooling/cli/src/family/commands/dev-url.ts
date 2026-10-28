@@ -1,10 +1,11 @@
 /**
- * `dev url <address>` — where a node of the app `prisma dev` runs from this
- * directory answers locally. A data command: the URL is its stdout line, so
- * `$(prisma dev url gateway)` is the URL alone.
+ * `dev url <address>` — where a node that `prisma dev` runs from this
+ * directory answers locally, in the environment named. A data command: the
+ * URL is its stdout line, so `$(prisma dev url shop.gateway)` is the URL alone.
  */
-import { defineCommand, positional } from '@prisma/cli-engine';
+import { defineCommand, flag, positional } from '@prisma/cli-engine';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
+import { DEV_ENVIRONMENT } from '../../operations/shared.ts';
 import { dataLine } from '../data-lines.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
@@ -18,19 +19,32 @@ export const createDevUrlCommand = (operations: ComposerOperations) =>
         "`prisma dev` runs from this directory: a service's HTTP URL, a database's connection " +
         "string, or a bucket's S3 address.",
       description:
-        'Reads what the last `prisma dev` in this directory recorded and starts nothing, so ' +
-        'run it while `prisma dev` is running; a node that is not running is an error. ' +
+        'The app is the first name of the address, and the environment is dev unless ' +
+        '--environment names another. Reads what `prisma dev` recorded for that app and ' +
+        'environment in this directory and starts nothing, so run it while `prisma dev` is ' +
+        'running; a node that is not running is an error. ' +
         'The URL alone goes to stdout, so a script can use it directly: ' +
-        'curl "$(prisma dev url gateway)". With --json, stdout carries the full result instead.',
-      examples: ['{bin} dev url gateway', '{bin} dev url catalog.database --json'],
+        'curl "$(prisma dev url shop.gateway)". With --json, stdout carries the full result instead.',
+      examples: [
+        '{bin} dev url shop.gateway',
+        '{bin} dev url shop.gateway --environment test',
+        '{bin} dev url shop.catalog.database --json',
+      ],
     },
     args: {
       positionals: {
         address: positional.string({
           brief:
-            "The node's address: its name in the app, with dots for a nested node, such as " +
-            'catalog.database.',
+            "The node's address: the app name, then the names down to the node, with dots " +
+            'between them, such as shop.catalog.database.',
           placeholder: 'address',
+        }),
+      },
+      flags: {
+        environment: flag.string({
+          brief: 'The environment whose local copy to read.',
+          placeholder: 'name',
+          default: DEV_ENVIRONMENT,
         }),
       },
     },
@@ -39,6 +53,7 @@ export const createDevUrlCommand = (operations: ComposerOperations) =>
       const result = await operations.devUrl({
         config: ctx.config,
         address: args.positionals.address,
+        environment: args.flags.environment,
         cwd: ctx.cwd,
       });
       if (!result.ok) return notOk(toEngineError(result.failure));

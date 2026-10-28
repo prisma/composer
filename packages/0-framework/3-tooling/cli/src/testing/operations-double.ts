@@ -216,7 +216,9 @@ export function createOperationsDouble(fixtures: OperationsDoubleFixtures = {}):
     },
     devStop: async (input) => {
       devStopCalls.push(input);
-      return fixtures.devStop ?? ok({ app: 'app', stopped: [] });
+      return (
+        fixtures.devStop ?? ok({ app: 'app', environment: input.environment ?? 'dev', stopped: [] })
+      );
     },
   };
 
