@@ -14,8 +14,8 @@ import { toEngineError } from '../translate-error.ts';
 
 describe('toEngineError()', () => {
   test("composer's error is accepted by the engine untranslated — which is why the fix would vanish", () => {
-    const composer = new ComposerError('DEPLOY.STAGE_INVALID', 'Bad stage.', {
-      fix: 'Pick a stage name git would accept as a branch name.',
+    const composer = new ComposerError('DEPLOY.ENVIRONMENT_INVALID', 'Bad environment.', {
+      fix: 'Pick an environment name git would accept as a branch name.',
     });
     // The engine would take this error as its own...
     expect(EngineError.is(composer)).toBe(true);
@@ -25,17 +25,19 @@ describe('toEngineError()', () => {
 
   test('the fix becomes a next action', () => {
     const translated = toEngineError(
-      new ComposerError('DEPLOY.STAGE_INVALID', 'Bad stage.', {
-        fix: 'Pick a stage name git would accept as a branch name.',
+      new ComposerError('DEPLOY.ENVIRONMENT_INVALID', 'Bad environment.', {
+        fix: 'Pick an environment name git would accept as a branch name.',
       }),
     );
     expect(translated.nextActions).toEqual([
-      { kind: 'user-choice', label: 'Pick a stage name git would accept as a branch name.' },
+      { kind: 'user-choice', label: 'Pick an environment name git would accept as a branch name.' },
     ]);
   });
 
   test('no fix means no next actions — nothing is invented', () => {
-    const translated = toEngineError(new ComposerError('DEPLOY.SCOPE_MISSING', 'No stage.'));
+    const translated = toEngineError(
+      new ComposerError('DEPLOY.TARGET_NOT_FOUND', 'Nothing deployed.'),
+    );
     expect(translated.nextActions).toEqual([]);
   });
 

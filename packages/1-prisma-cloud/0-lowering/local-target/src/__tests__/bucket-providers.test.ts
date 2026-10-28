@@ -49,10 +49,10 @@ describe.skipIf(process.platform === 'win32')('the local Bucket providers', () =
     const entry = fileURLToPath(import.meta.resolve('@internal/dev-emulators/buckets-main'));
     await ensureDaemon('buckets', entry, { registryRoot });
     const container: ContainerInstance = {
-      input: { appName: APP, stage: undefined },
+      input: { appName: APP, environment: 'dev' },
       serialize: () => 'x',
     };
-    input = { container, devDir: path.join(root, 'project', '.prisma-composer', 'dev') };
+    input = { container, devDir: path.join(root, 'project', '.prisma-composer', 'dev', 'dev') };
   });
 
   afterEach(async () => {

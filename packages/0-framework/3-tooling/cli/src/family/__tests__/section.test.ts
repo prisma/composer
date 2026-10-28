@@ -142,21 +142,22 @@ describe('composerSection.validate() on the retired configPath field', () => {
 
 describe('composerSection.validate() on unknown fields', () => {
   test('an unknown field is an error naming the fields the section takes', () => {
-    expect(validate({ ...validSection(), stage: 'prod' })).toEqual({
+    expect(validate({ ...validSection(), environment: 'prod' })).toEqual({
       ok: false,
       diagnostics: [
         {
           code: 'CONFIG.FIELD_UNKNOWN',
           severity: 'error',
-          summary: 'The `composer` section has no field `stage`.',
+          summary: 'The `composer` section has no field `environment`.',
           nextActions: [
             {
               kind: 'edit-file',
-              label: 'Remove `stage`. The section takes only `entry`, `extensions` and `state`.',
+              label:
+                'Remove `environment`. The section takes only `entry`, `extensions` and `state`.',
             },
           ],
           where: { path: DECLARING_FILE },
-          meta: { field: 'stage' },
+          meta: { field: 'environment' },
         },
       ],
     });

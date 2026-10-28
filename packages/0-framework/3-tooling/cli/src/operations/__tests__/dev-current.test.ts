@@ -10,6 +10,7 @@ import type { PrismaAppConfig } from '@internal/core/config';
 import type {
   LocalNodeLocation,
   LocalTargetCurrentApp,
+  LocalTargetCurrentInput,
   LocalTargetDescriptor,
 } from '@internal/core/local-target';
 import { CliStructuredError, InternalError } from '@internal/foundation/errors';
@@ -45,7 +46,16 @@ function recordedApp(locations: readonly LocalNodeLocation[]): LocalTargetCurren
   };
 }
 
-function configWith(current: LocalTargetDescriptor['current']): PrismaAppConfig {
+const VALID_MODULE = path.join(
+  import.meta.dir,
+  '..',
+  '..',
+  '__tests__',
+  'fixtures',
+  'valid-module.ts',
+);
+
+function configWith(current: LocalTargetDescriptor['current'], entry?: string): PrismaAppConfig {
   const descriptor: LocalTargetDescriptor = {
     providers: () => Layer.empty,
     container: {
@@ -74,11 +84,22 @@ function configWith(current: LocalTargetDescriptor['current']): PrismaAppConfig 
       },
     ],
     state: { extension: 'fixture', create: unused },
+    ...(entry !== undefined ? { entry } : {}),
   };
 }
 
-function config(current: LocalTargetDescriptor['current']) {
-  return { value: configWith(current), file: 'prisma.config.ts' };
+function config(current: LocalTargetDescriptor['current'], entry?: string) {
+  return { value: configWith(current, entry), file: 'prisma.config.ts' };
+}
+
+/** A target that records what it was asked for and answers with `app`. */
+function asked(app: LocalTargetCurrentApp | undefined) {
+  const inputs: LocalTargetCurrentInput[] = [];
+  const current = async (input: LocalTargetCurrentInput) => {
+    inputs.push(input);
+    return app;
+  };
+  return { inputs, current };
 }
 
 const running: LocalNodeLocation[] = [
@@ -171,10 +192,104 @@ describe.skipIf(process.platform === 'win32')('devUrl', () => {
     expect(await runs('pages')).toBeUndefined();
   });
 
-  test('a directory where `prisma dev` never ran fails with DEV.NOT_STARTED_HERE', async () => {
-    const result = await devUrl({ config: config(async () => undefined), address: 'gateway', cwd });
+  test("reads the app from the address and the environment's folder, dev unless another is named, without importing the entry", async () => {
+    const target = asked(
+      recordedApp([
+        {
+          address: 'shop.gateway',
+          kind: 'service',
+          emulator: 'running',
+          url: 'http://localhost:3001',
+          state: 'running',
+          condition: 'running',
+        },
+      ]),
+    );
+    const missingEntry = path.join(cwd, 'does-not-exist.ts');
 
-    expect(result).toMatchObject({ ok: false, failure: { code: 'DEV.NOT_STARTED_HERE' } });
+    const inDev = await devUrl({
+      config: config(target.current, missingEntry),
+      address: 'shop.gateway',
+      cwd,
+    });
+    await devUrl({
+      config: config(target.current, missingEntry),
+      address: 'shop.gateway',
+      environment: 'feature/x',
+      cwd,
+    });
+
+    expect(inDev.ok).toBe(true);
+    expect(target.inputs).toEqual([
+      { devDir: path.join(cwd, '.prisma-composer', 'dev', 'dev'), app: 'shop', environment: 'dev' },
+      {
+        devDir: path.join(cwd, '.prisma-composer', 'dev', 'feature%2Fx'),
+        app: 'shop',
+        environment: 'feature/x',
+      },
+    ]);
+  });
+
+  test('an app with nothing recorded in the environment fails with DEV.NOT_STARTED_HERE, naming both', async () => {
+    const result = await devUrl({
+      config: config(async () => undefined),
+      address: 'shop.gateway',
+      environment: 'test',
+      cwd,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      failure: { code: 'DEV.NOT_STARTED_HERE', meta: { app: 'shop', environment: 'test' } },
+    });
+    if (!result.ok) {
+      expect(result.failure.message).toContain('shop in the environment test');
+      expect(result.failure.fix).toContain('`prisma dev --environment test`');
+    }
+  });
+
+  test('an environment whose folder records another name fails with DEV.ENVIRONMENT_NAME_MISMATCH before any target is asked', async () => {
+    const devDir = path.join(cwd, '.prisma-composer', 'dev', 'Dev');
+    fs.mkdirSync(devDir, { recursive: true });
+    fs.writeFileSync(path.join(devDir, 'environment-name'), 'dev\n');
+    const target = asked(recordedApp(running));
+
+    const url = await devUrl({
+      config: config(target.current),
+      address: 'shop.gateway',
+      environment: 'Dev',
+      cwd,
+    });
+    const stop = await devStop({
+      config: config(target.current, VALID_MODULE),
+      environment: 'Dev',
+      cwd,
+    });
+
+    for (const result of [url, stop]) {
+      expect(result).toMatchObject({
+        ok: false,
+        failure: {
+          code: 'DEV.ENVIRONMENT_NAME_MISMATCH',
+          meta: { recorded: 'dev', environment: 'Dev' },
+        },
+      });
+    }
+    expect(target.inputs).toEqual([]);
+  });
+
+  test('an environment name git would refuse fails before any target is asked', async () => {
+    const target = asked(recordedApp(running));
+
+    const result = await devUrl({
+      config: config(target.current),
+      address: 'shop.gateway',
+      environment: 'bad..name',
+      cwd,
+    });
+
+    expect(result).toMatchObject({ ok: false, failure: { code: 'DEPLOY.ENVIRONMENT_INVALID' } });
+    expect(target.inputs).toEqual([]);
   });
 
   test('a target that records nothing counts as nothing recorded', async () => {
@@ -224,7 +339,7 @@ describe.skipIf(process.platform === 'win32')('devUrl', () => {
       expect(result.failure.message).toBe('The database "catalog" is stopped.');
       expect(result.failure.why).toContain('`prisma dev stop`');
       expect(result.failure.why).toContain('`prisma dev` ending');
-      expect(result.failure.why).toContain('running another app in this directory');
+      expect(result.failure.why).not.toContain('another app');
       expect(result.failure.fix).toContain('prisma dev');
     }
   });
@@ -316,22 +431,63 @@ describe.skipIf(process.platform === 'win32')('devUrl', () => {
 });
 
 describe.skipIf(process.platform === 'win32')('devStop', () => {
-  test('stops the recorded app and returns what it stopped', async () => {
-    const result = await devStop({ config: config(async () => recordedApp(running)), cwd });
+  test("stops the config entry's app in dev and returns what it stopped", async () => {
+    const target = asked(recordedApp(running));
+
+    const result = await devStop({ config: config(target.current, VALID_MODULE), cwd });
 
     expect(stopped).toEqual(['shop']);
+    expect(target.inputs).toEqual([
+      {
+        devDir: path.join(cwd, '.prisma-composer', 'dev', 'dev'),
+        app: 'fixture-module',
+        environment: 'dev',
+      },
+    ]);
     expect(result).toMatchObject({
       ok: true,
       value: {
-        app: 'shop',
+        app: 'fixture-module',
+        environment: 'dev',
         stopped: running.map(({ address, kind }) => ({ address, kind })),
       },
     });
   });
 
-  test('a directory where `prisma dev` never ran fails with DEV.NOT_STARTED_HERE', async () => {
-    const result = await devStop({ config: config(async () => undefined), cwd });
+  test('--name and --environment select another app and environment', async () => {
+    const target = asked(recordedApp(running));
 
-    expect(result).toMatchObject({ ok: false, failure: { code: 'DEV.NOT_STARTED_HERE' } });
+    const result = await devStop({
+      config: config(target.current, VALID_MODULE),
+      name: 'other',
+      environment: 'test',
+      cwd,
+    });
+
+    expect(target.inputs).toEqual([
+      {
+        devDir: path.join(cwd, '.prisma-composer', 'dev', 'test'),
+        app: 'other',
+        environment: 'test',
+      },
+    ]);
+    expect(result).toMatchObject({ ok: true, value: { app: 'other', environment: 'test' } });
+  });
+
+  test('an app and environment with nothing recorded fails with DEV.NOT_STARTED_HERE, naming both', async () => {
+    const result = await devStop({
+      config: config(async () => undefined, VALID_MODULE),
+      environment: 'test',
+      cwd,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      failure: {
+        code: 'DEV.NOT_STARTED_HERE',
+        meta: { app: 'fixture-module', environment: 'test' },
+      },
+    });
+    expect(stopped).toEqual([]);
   });
 });

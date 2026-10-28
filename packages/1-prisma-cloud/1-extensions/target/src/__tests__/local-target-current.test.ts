@@ -1,5 +1,5 @@
 /**
- * The directory's current app, read from its record alone — what
+ * An app's local copy in one environment, read from its record alone — what
  * `prisma dev url` and `prisma dev stop` act on — and the emulator listing,
  * against real Compute, Postgres and bucket emulators in a temporary
  * emulators directory.
@@ -69,10 +69,10 @@ function acceptsConnection(port: number): Promise<boolean> {
 }
 
 // Local dev is not supported on Windows, where the emulators cannot run.
-describe.skipIf(process.platform === 'win32')("the directory's current app", () => {
+describe.skipIf(process.platform === 'win32')("an app's local copy in an environment", () => {
   let root: string;
   let registryRoot: string;
-  let directories: string[];
+  let copies: { devDir: string; environment: string }[];
 
   beforeEach(async () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'target-current-'));
@@ -83,13 +83,12 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
       await ensureDaemon(name, entry, { registryRoot });
     }
     await reserveServicePortsBelow(FIRST_SERVICE_PORT);
-    directories = [];
+    copies = [];
   }, 60_000);
 
   afterEach(async () => {
-    for (const directory of directories) {
-      const devDir = path.join(directory, '.prisma-composer', 'dev');
-      await deleteAppInstances({ devDir, app: APP }).catch(() => undefined);
+    for (const { devDir, environment } of copies) {
+      await deleteAppInstances({ devDir, app: APP, environment }).catch(() => undefined);
     }
     for (const name of DAEMONS) await stopDaemon(name, { registryRoot }).catch(() => undefined);
     fs.rmSync(root, { recursive: true, force: true });
@@ -98,16 +97,19 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
   });
 
   /** Runs the app's nodes from a new directory, as `prisma dev` leaves them: the service deployed and serving, the bucket with a key. */
-  async function runApp(name: string): Promise<{ directory: string; devDir: string }> {
+  async function runApp(
+    name: string,
+    environment = 'dev',
+  ): Promise<{ directory: string; devDir: string }> {
     const directory = path.join(root, name);
-    directories.push(directory);
-    const devDir = path.join(directory, '.prisma-composer', 'dev');
-    await ensureAppInstances({ devDir, app: APP }, NODES);
-    const nodes = (await readEmulatorInstances(directory))?.apps[APP]?.nodes ?? {};
+    const devDir = path.join(directory, '.prisma-composer', 'dev', environment);
+    copies.push({ devDir, environment });
+    await ensureAppInstances({ devDir, app: APP, environment }, NODES);
+    const nodes = (await readEmulatorInstances(devDir))?.apps[APP]?.nodes ?? {};
     const gateway = nodes['current-app.gateway'];
     const uploads = nodes['current-app.uploads'];
     if (gateway?.kind !== 'service' || uploads === undefined) throw new Error('not recorded');
-    const artifactDir = path.join(root, `${name}-artifact`);
+    const artifactDir = path.join(root, `${name}-${environment}-artifact`);
     fs.mkdirSync(artifactDir, { recursive: true });
     fs.writeFileSync(path.join(artifactDir, 'bootstrap.js'), SERVING_BOOTSTRAP);
     await computeClient().putDeployment(gateway.id, {
@@ -115,18 +117,20 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
       artifactHash: 'v1',
       env: { PATH: process.env['PATH'] ?? '', PORT: String(gateway.port) },
     });
-    await bucketsClient().putCredentials(uploads.id, `AKIA${name.toUpperCase()}`, 'secret');
+    await bucketsClient().putCredentials(
+      uploads.id,
+      `AKIA${name.toUpperCase()}${environment === 'dev' ? '' : environment.toUpperCase()}`,
+      'secret',
+    );
     return { directory, devDir };
   }
 
   /** Redeploys the app's gateway with `source` as its bootstrap; resolves or rejects as the deployment does. */
   async function redeployGateway(
-    directory: string,
+    devDir: string,
     source: string,
   ): Promise<{ readonly id: string; readonly port: number; readonly deployed: Promise<unknown> }> {
-    const gateway = (await readEmulatorInstances(directory))?.apps[APP]?.nodes[
-      'current-app.gateway'
-    ];
+    const gateway = (await readEmulatorInstances(devDir))?.apps[APP]?.nodes['current-app.gateway'];
     if (gateway?.kind !== 'service') throw new Error('not recorded');
     const artifactDir = fs.mkdtempSync(path.join(root, 'redeploy-'));
     fs.writeFileSync(path.join(artifactDir, 'bootstrap.js'), source);
@@ -150,8 +154,8 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
     }
   }
 
-  async function currentOf(devDir: string): Promise<LocalTargetCurrentApp> {
-    const current = await localTargetDescriptor().current?.({ devDir });
+  async function currentOf(devDir: string, environment = 'dev'): Promise<LocalTargetCurrentApp> {
+    const current = await localTargetDescriptor().current?.({ devDir, app: APP, environment });
     if (current === undefined) throw new Error('no current app');
     return current;
   }
@@ -204,9 +208,9 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
   }, 90_000);
 
   test("stopping leaves none of the app's processes or Postgres servers running", async () => {
-    const { directory, devDir } = await runApp('a');
+    const { devDir } = await runApp('a');
     const current = await currentOf(devDir);
-    const nodes = (await readEmulatorInstances(directory))?.apps[APP]?.nodes ?? {};
+    const nodes = (await readEmulatorInstances(devDir))?.apps[APP]?.nodes ?? {};
     const gateway = nodes['current-app.gateway'];
     const catalog = nodes['current-app.catalog'];
     if (gateway?.kind !== 'service' || catalog?.kind !== 'database')
@@ -229,9 +233,9 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
   }, 90_000);
 
   test('stopping during a start in flight ends that start, and nothing is left listening', async () => {
-    const { directory, devDir } = await runApp('a');
+    const { devDir } = await runApp('a');
     const slow = await redeployGateway(
-      directory,
+      devDir,
       "setTimeout(() => Bun.serve({ port: Number(process.env['PORT']), fetch: () => new Response('late') }), 3000);\n",
     );
     const outcome = slow.deployed.then(
@@ -249,8 +253,8 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
   }, 90_000);
 
   test('a service waiting to be restarted after a crash is reported and stays stopped', async () => {
-    const { directory, devDir } = await runApp('a');
-    const crashing = await redeployGateway(directory, 'process.exit(1);\n');
+    const { devDir } = await runApp('a');
+    const crashing = await redeployGateway(devDir, 'process.exit(1);\n');
     void crashing.deployed.catch(() => undefined);
     await waitForStatus(crashing.id, 'backoff', 10_000);
 
@@ -263,8 +267,8 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
   }, 90_000);
 
   test('a service held after repeated crashes is not reported and stays held', async () => {
-    const { directory, devDir } = await runApp('a');
-    const crashing = await redeployGateway(directory, 'process.exit(1);\n');
+    const { devDir } = await runApp('a');
+    const crashing = await redeployGateway(devDir, 'process.exit(1);\n');
     void crashing.deployed.catch(() => undefined);
     await waitForStatus(crashing.id, 'held', 60_000);
 
@@ -304,11 +308,59 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
     expect(await current.locate('current-app.gateway')).toMatchObject({ state: 'running' });
   }, 90_000);
 
-  test('a directory where `prisma dev` never ran has no current app', async () => {
-    const devDir = path.join(root, 'never', '.prisma-composer', 'dev');
+  test('an app never run in a directory, or in an environment, has no local copy there', async () => {
+    const devDir = path.join(root, 'never', '.prisma-composer', 'dev', 'dev');
+    expect(
+      await localTargetDescriptor().current?.({ devDir, app: APP, environment: 'dev' }),
+    ).toBeUndefined();
 
-    expect(await localTargetDescriptor().current?.({ devDir })).toBeUndefined();
-  });
+    const ran = await runApp('a');
+    expect(
+      await localTargetDescriptor().current?.({
+        devDir: ran.devDir,
+        app: 'other-app',
+        environment: 'dev',
+      }),
+    ).toBeUndefined();
+    const testDir = path.join(ran.directory, '.prisma-composer', 'dev', 'test');
+    expect(
+      await localTargetDescriptor().current?.({ devDir: testDir, app: APP, environment: 'test' }),
+    ).toBeUndefined();
+  }, 60_000);
+
+  test('two environments of the app in one directory run at once, each at its own URLs', async () => {
+    const inDev = await runApp('both');
+    const inTest = await runApp('both', 'test');
+    const devCopy = await currentOf(inDev.devDir);
+    const testCopy = await currentOf(inTest.devDir, 'test');
+
+    for (const address of ['current-app.gateway', 'current-app.catalog', 'current-app.uploads']) {
+      expect(await urlOf(testCopy, address)).not.toBe(await urlOf(devCopy, address));
+    }
+    expect(await (await fetch(await urlOf(devCopy, 'current-app.gateway'))).text()).toBe(
+      'hello from gateway',
+    );
+    expect(await (await fetch(await urlOf(testCopy, 'current-app.gateway'))).text()).toBe(
+      'hello from gateway',
+    );
+  }, 90_000);
+
+  test("stopping one environment's copy leaves the other running", async () => {
+    const inDev = await runApp('stop-one');
+    const inTest = await runApp('stop-one', 'test');
+
+    const stopped = await (await currentOf(inTest.devDir, 'test')).stop();
+
+    expect(stopped).toHaveLength(2);
+    const devCopy = await currentOf(inDev.devDir);
+    expect(await devCopy.locate('current-app.gateway')).toMatchObject({ state: 'running' });
+    expect(await devCopy.locate('current-app.catalog')).toMatchObject({ state: 'running' });
+    expect(
+      await (await currentOf(inTest.devDir, 'test')).locate('current-app.gateway'),
+    ).toMatchObject({
+      state: 'stopped',
+    });
+  }, 90_000);
 
   test('a node whose emulator is not running says so', async () => {
     const { devDir } = await runApp('a');
@@ -341,6 +393,7 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
       for (const instance of instances) {
         expect(instance.kind).toBe(emulator.kind);
         expect(instance.labels['composer.app']).toBe(APP);
+        expect(instance.labels['composer.environment']).toBe('dev');
       }
     }
   }, 90_000);

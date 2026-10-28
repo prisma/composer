@@ -155,13 +155,13 @@ templates file in your app's own build and import the compiled output, as
 [`examples/email/scripts/build.ts`](../../../../examples/email/scripts/build.ts)
 does (see the matching `gotchas.md` entry).
 
-## Platform env vars (per stage)
+## Platform env vars (per environment)
 
 `deliveryMode` and `from` are module-boundary params — the app binds a
-source (`envParam`), so both vary per stage. `deliveryUrl` is a factory
+source (`envParam`), so both vary per environment. `deliveryUrl` is a factory
 option (`email({ deliveryUrl })`), static per app — it defaults to
 `https://api.resend.com` and follows the mode, which already varies per
-stage.
+environment.
 
 | Var | Production | Preview |
 | --- | --- | --- |
@@ -171,7 +171,7 @@ stage.
 
 The junk-credential row on preview is a known wart: the framework has no
 optional/conditional secrets (every wired secret is required, ADR-0029), so
-a stage that never delivers still has to set a non-empty value. See
+an environment that never delivers still has to set a non-empty value. See
 `gotchas.md` for the filed friction finding.
 
 ## Delivery policy
@@ -256,7 +256,7 @@ A one-off, by-hand verification that a real send actually delivers — not
 part of the test suite or the deploy smoke, since it needs a real Resend
 account:
 
-1. Set the stage's `EMAIL_DELIVERY_MODE` to `resend`, `EMAIL_FROM` to an
+1. Set the environment's `EMAIL_DELIVERY_MODE` to `resend`, `EMAIL_FROM` to an
    address on a domain verified with Resend, and `EMAIL_DELIVERY_CREDENTIAL`
    to a real Resend API key.
 2. Send one template to a real inbox you control.

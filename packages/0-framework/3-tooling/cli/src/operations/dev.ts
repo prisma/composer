@@ -52,6 +52,9 @@ export interface DevInput {
   /** The entry module, resolved against `cwd`. Overrides the `entry` in `config`; without either the operation fails with `CONFIG.ENTRY_MISSING`. */
   readonly entry?: string | undefined;
   readonly name?: string | undefined;
+  /** The environment to run as: a complete local copy of the app with its own services, databases and buckets. Defaults to `dev`. */
+  readonly environment?: string | undefined;
+  /** Deletes the environment's local copy of the app, and its data, before starting. Other environments are untouched. */
   readonly fresh?: boolean | undefined;
   /**
    * Return once every service answers and leave the app running, with no

@@ -27,6 +27,7 @@ function cliWith(fixtures: OperationsDoubleFixtures = {}) {
   const cli = createTestCli({
     commandFamilies: [family],
     commands: {
+      deploy: commandAt(family, 'deploy'),
       'dev url': commandAt(family, 'dev url'),
       'dev stop': commandAt(family, 'dev stop'),
     },
@@ -45,6 +46,18 @@ describe('dev url', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe('http://localhost:3000\n');
     expect(calls.devUrl.map((input) => input.address)).toEqual(['gateway']);
+  });
+
+  test('reads the environment dev unless --environment names another', async () => {
+    const { cli, calls } = cliWith();
+
+    await cli.run(['dev', 'url', 'shop.api']);
+    await cli.run(['dev', 'url', 'shop.api', '--environment', 'test']);
+
+    expect(calls.devUrl.map(({ address, environment }) => [address, environment])).toEqual([
+      ['shop.api', 'dev'],
+      ['shop.api', 'test'],
+    ]);
   });
 
   test('escapes a backslash and a tab in the URL', async () => {
@@ -105,8 +118,26 @@ describe('dev url', () => {
 });
 
 describe('dev stop', () => {
+  test('stops the config app in dev unless --environment, --name or --entry say otherwise', async () => {
+    const { cli, calls } = cliWith();
+
+    await cli.run(['dev', 'stop']);
+    await cli.run(['dev', 'stop', '--environment', 'test', '--name', 'other', '--entry', 'm.ts']);
+
+    expect(
+      calls.devStop.map(({ environment, name, entry }) => ({ environment, name, entry })),
+    ).toEqual([
+      { environment: 'dev', name: undefined, entry: undefined },
+      { environment: 'test', name: 'other', entry: 'm.ts' },
+    ]);
+  });
+
   test('returns what it stopped as the JSON result', async () => {
-    const stopped = { app: 'shop', stopped: [{ address: 'gateway', kind: 'service' }] };
+    const stopped = {
+      app: 'shop',
+      environment: 'dev',
+      stopped: [{ address: 'gateway', kind: 'service' }],
+    };
     const { cli } = cliWith({ devStop: { ok: true, value: stopped } as never });
 
     const result = await cli.run(['dev', 'stop', '--json']);
@@ -118,6 +149,7 @@ describe('dev stop', () => {
     const { cli } = cliWith({
       devStop: ok({
         app: 'orm-demo',
+        environment: 'dev',
         stopped: [
           { address: 'database', kind: 'database' },
           { address: 'api', kind: 'service' },
@@ -132,7 +164,7 @@ describe('dev stop', () => {
   });
 
   test('piped, prints nothing when nothing was running', async () => {
-    const { cli } = cliWith({ devStop: ok({ app: 'orm-demo', stopped: [] }) });
+    const { cli } = cliWith({ devStop: ok({ app: 'orm-demo', environment: 'dev', stopped: [] }) });
 
     const result = await cli.run(['dev', 'stop']);
 
@@ -144,6 +176,7 @@ describe('dev stop', () => {
     const { cli } = cliWith({
       devStop: ok({
         app: 'orm-demo',
+        environment: 'dev',
         stopped: [
           { address: 'database', kind: 'database' },
           { address: 'api', kind: 'service' },
@@ -153,18 +186,18 @@ describe('dev stop', () => {
 
     const result = await cli.run(['dev', 'stop', '--format', 'human']);
 
-    expect(result.stderr).toContain('Stopped orm-demo.');
+    expect(result.stderr).toContain('Stopped orm-demo in the environment dev.');
     expect(result.stderr).toMatch(/Address\s+Kind/);
     expect(result.stderr).toMatch(/api\s+service/);
   });
 
   test('says nothing was running when there was nothing to stop, and still succeeds', async () => {
-    const { cli } = cliWith({ devStop: ok({ app: 'orm-demo', stopped: [] }) });
+    const { cli } = cliWith({ devStop: ok({ app: 'orm-demo', environment: 'dev', stopped: [] }) });
 
     const result = await cli.run(['dev', 'stop', '--format', 'human']);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stderr).toContain('Nothing of orm-demo was running.');
+    expect(result.stderr).toContain('Nothing of orm-demo was running in the environment dev.');
     expect(result.stderr).not.toContain('Stopped orm-demo');
   });
 });

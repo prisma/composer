@@ -8,7 +8,7 @@ Amended by [ADR-0052](ADR-0052-composer-maps-its-nodes-to-emulator-instances-per
 
 Amended by [ADR-0056](ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): under `prisma dev`, a service runs the dev server its build adapter declares (`next dev`; a `dev` command written on `node()`) in place of its artifact, when it declares one. Such a service is not assembled and lowers without its `Deployment`; the Compute emulator runs the dev server as a command deployment on the service's instance, with the environment its deployment would get, re-stashed address-free as `run()` does. The dev session still owns no processes. A service whose adapter declares no dev server still boots exactly as deployed.
 
-Amended by [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md): `prisma dev` takes secrets and env-sourced params only from the environment of the run, the shell or a `.env` that `prisma.config.ts` loads, and never makes one up. A required secret that is unset or empty is an error; an optional one reaches the service as absent; an unset env-sourced param is still always an error. Each run takes values from its environment and never reuses one from an earlier run. The secrets bullet under Consequences is replaced by that ADR. To match it, the `preflight` signature in the `LocalTargetDescriptor` block below now returns a payload, and "minted placeholders" was removed from the dev-state list.
+Amended by [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md): `prisma dev` takes secrets and env-sourced params only from the environment variables of the run, the shell or a `.env` that `prisma.config.ts` loads, and never makes one up. A required secret that is unset or empty is an error; an optional one reaches the service as absent; an unset env-sourced param is still always an error. Each run takes values from its environment variables and never reuses one from an earlier run. The secrets bullet under Consequences is replaced by that ADR. To match it, the `preflight` signature in the `LocalTargetDescriptor` block below now returns a payload, and "minted placeholders" was removed from the dev-state list.
 
 ## Decision
 
@@ -239,7 +239,7 @@ this repo owns.
   readiness, version-skew restart) and the Compute emulator's supervision
   policy; the dev command itself supervises nothing — it renders the
   `attach` hook's view.
-- **The strict secrets model is unchanged** (ADR-0029). Dev policy lives in `localTarget.preflight`. *(Replaced by ADR-0058: every secret and env-sourced param comes from the environment of the run; a required one that is unset or empty is an error, an optional secret reaches the service as absent, and no value is reused from an earlier run. The original text gave an unbound secret a minted, stored placeholder and a printed warning.)*
+- **The strict secrets model is unchanged** (ADR-0029). Dev policy lives in `localTarget.preflight`. *(Replaced by ADR-0058: every secret and env-sourced param comes from the environment variables of the run; a required one that is unset or empty is an error, an optional secret reaches the service as absent, and no value is reused from an earlier run. The original text gave an unbound secret a minted, stored placeholder and a printed warning.)*
 - **Scheduled work runs for real** (ADR-0020): the scheduler is an ordinary
   service and fires locally. A manual-trigger affordance for
   determinism-sensitive workflows is a domain-doc concern, not a model change.

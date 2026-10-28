@@ -18,7 +18,7 @@ import type { ChildResult, EngineEvent } from '@prisma/cli-engine';
 import { defineSessionCommand, flag } from '@prisma/cli-engine';
 import { ok } from '@prisma/cli-engine/protocol';
 import type { DevEvent, DevInput } from '../../operations/dev.ts';
-import type { ServiceEndpoint } from '../../operations/shared.ts';
+import { DEV_ENVIRONMENT, type ServiceEndpoint } from '../../operations/shared.ts';
 import type { AlchemyInvocation, AlchemyOutcome, RunAlchemy } from '../../run-alchemy.ts';
 import { convergeSpawn, settleConvergeFailure } from '../converge.ts';
 import type { ComposerOperations } from '../family.ts';
@@ -208,13 +208,14 @@ function reportDevEvent(
 /** A detached session owns nothing to stop, so a Ctrl-C before it was ready stops the app the way `prisma dev stop` does. */
 async function stopDetachedApp(
   operations: ComposerOperations,
+  app: Pick<DevInput, 'entry' | 'name' | 'environment'>,
   ctx: {
     readonly config: DevInput['config'];
     readonly cwd: string;
     readonly report: (event: EngineEvent) => void;
   },
 ): Promise<void> {
-  const stopped = await operations.devStop({ config: ctx.config, cwd: ctx.cwd });
+  const stopped = await operations.devStop({ ...app, config: ctx.config, cwd: ctx.cwd });
   if (stopped.ok) return;
   ctx.report({
     kind: 'message',
@@ -237,15 +238,19 @@ export const createDevCommand = (operations: ComposerOperations) =>
         'A node is one service, database or bucket in the app. Each node runs on a local ' +
         'emulator: a program on this machine that stands in for Prisma Cloud and runs ' +
         "services, databases or S3-compatible buckets. A node's address is its path from the app " +
-        'name, with dots between names (shop.catalog.database). The app and where each node ' +
-        'runs are recorded in this directory: `prisma dev url` works from here while ' +
-        '`prisma dev` runs, and `prisma dev stop` also works after `prisma dev` was killed. ' +
+        'name, with dots between names (shop.catalog.database). ' +
+        'Each environment is a complete local copy of the app, with its own services, ' +
+        'databases, buckets and ports; the default is dev, and copies of other environments ' +
+        'run alongside it. Where each node runs is recorded in this directory: ' +
+        '`prisma dev url` works from here while `prisma dev` runs, and `prisma dev stop` also ' +
+        'works after `prisma dev` was killed. ' +
         'Ending `prisma dev` stops its services and database servers; data and ports are kept. ' +
         'With --detach it returns once every service answers and leaves the app running ' +
         'without watching for changes, until `prisma dev stop`.',
       examples: [
         '{bin} dev',
         '{bin} dev --fresh',
+        '{bin} dev --environment test --fresh',
         '{bin} dev --detach',
         '{bin} dev --entry other-module.ts',
       ],
@@ -265,10 +270,17 @@ export const createDevCommand = (operations: ComposerOperations) =>
             "root module's name).",
           placeholder: 'name',
         }),
+        environment: flag.string({
+          brief:
+            'The environment to run as. Each environment is a separate local copy of the app, ' +
+            'so a second one, such as test, runs alongside dev and leaves its data alone.',
+          placeholder: 'name',
+          default: DEV_ENVIRONMENT,
+        }),
         fresh: flag.boolean({
           brief:
-            "Delete this app's local services, databases and buckets, and their data, before " +
-            'starting.',
+            "Delete this app's local services, databases and buckets in the environment, and " +
+            'their data, before starting. Other environments are untouched.',
         }),
         detach: flag.boolean({
           brief:
@@ -286,6 +298,7 @@ export const createDevCommand = (operations: ComposerOperations) =>
           entry: args.flags.entry,
           config: ctx.config,
           name: args.flags.name,
+          environment: args.flags.environment,
           fresh: args.flags.fresh,
           detach: args.flags.detach,
           cwd: ctx.cwd,
@@ -301,7 +314,17 @@ export const createDevCommand = (operations: ComposerOperations) =>
       if (!result.ok) return settleConvergeFailure(result.failure, ctx);
 
       if (args.flags.detach) {
-        if (ctx.signal.aborted) await stopDetachedApp(operations, ctx);
+        if (ctx.signal.aborted) {
+          await stopDetachedApp(
+            operations,
+            {
+              entry: args.flags.entry,
+              name: args.flags.name,
+              environment: args.flags.environment,
+            },
+            ctx,
+          );
+        }
         return ok(undefined);
       }
 

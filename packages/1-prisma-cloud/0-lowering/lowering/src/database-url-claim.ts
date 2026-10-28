@@ -24,8 +24,8 @@ export const RESERVED_DATABASE_URL_KEYS = ['DATABASE_URL', 'DATABASE_URL_POOLED'
 /**
  * Both environment classes, each at PROJECT level (no branch id). A preview
  * branch with no override of its own reads the project-level preview row, so
- * these two rows cover every stage the app will ever deploy — including
- * stages that do not exist yet.
+ * these two rows cover every environment the app will ever deploy — including
+ * environments that do not exist yet.
  */
 const ENVIRONMENT_CLASSES = ['production', 'preview'] as const;
 

@@ -40,10 +40,21 @@ import {
   toRunReport,
   writeRunReport,
 } from '../run-report.ts';
-import { validateStageName } from '../validate-stage.ts';
-import type { DeployEvent, DeployInput, DeployStep, DeploySuccess } from './deploy.ts';
+import { validateEnvironmentName } from '../validate-environment.ts';
+import {
+  DEFAULT_DEPLOY_ENVIRONMENT,
+  type DeployEvent,
+  type DeployInput,
+  type DeployStep,
+  type DeploySuccess,
+} from './deploy.ts';
 import type { DestroyEvent, DestroyInput } from './destroy.ts';
-import { type ExtensionId, type OperationDeps, toStructured } from './shared.ts';
+import {
+  type ExtensionId,
+  type OperationDeps,
+  requireContainerForEnvironment,
+  toStructured,
+} from './shared.ts';
 
 const ALCHEMY_STATE_DIR = '.alchemy';
 
@@ -103,7 +114,7 @@ interface StackPipelineOptions {
   readonly entry: string | undefined;
   readonly config: ComposerConfigSource;
   readonly name: string | undefined;
-  readonly stage: string | undefined;
+  readonly environment: string;
   readonly cwd: string;
   readonly onEvent: ((event: DestroyEvent) => void) | undefined;
   readonly deps: OperationDeps;
@@ -123,7 +134,7 @@ export async function executeDeploy(
     entry: input.entry,
     config: input.config,
     name: input.name,
-    stage: input.stage,
+    environment: input.environment ?? DEFAULT_DEPLOY_ENVIRONMENT,
     cwd,
     onEvent: undefined,
     deps,
@@ -144,7 +155,7 @@ export async function executeDestroy(
     entry: input.entry,
     config: input.config,
     name: input.name,
-    stage: input.target.kind === 'stage' ? input.target.stage : undefined,
+    environment: input.environment,
     cwd,
     onEvent: input.onEvent,
     deps,
@@ -173,7 +184,7 @@ async function beginReporters(
   context: {
     readonly appName: string;
     readonly graph: Graph;
-    readonly stage: string | undefined;
+    readonly environment: string;
     readonly cwd: string;
     readonly reportId: string | undefined;
     readonly credentials: ContainerCredentials | undefined;
@@ -324,7 +335,7 @@ async function runStackPipeline(
       opts.reportPath,
       toRunReport({
         summary: outcome.ok ? outcome.value : undefined,
-        stage: opts.stage,
+        environment: opts.environment,
         failure: outcome.ok
           ? undefined
           : { code: outcome.failure.code, message: outcome.failure.message },
@@ -343,18 +354,16 @@ async function runStackPipelineInner(
   opts: StackPipelineOptions,
   reporters: ExtensionReporter[],
 ): Promise<Result<DeploymentSummary | undefined, CliStructuredError>> {
-  const { entry, config: composerConfig, name, stage, cwd, onEvent, deps, steps } = opts;
+  const { entry, config: composerConfig, name, environment, cwd, onEvent, deps, steps } = opts;
 
   steps.start({ name: 'prepare' });
-  if (stage !== undefined) {
-    try {
-      validateStageName(stage);
-    } catch (error) {
-      // validateStageName raises structured errors at origin; anything else
-      // escaping it is a bug and must throw (base-type rule 6).
-      if (CliStructuredError.is(error)) return notOk(error);
-      throw error;
-    }
+  try {
+    validateEnvironmentName(environment);
+  } catch (error) {
+    // validateEnvironmentName raises structured errors at origin; anything else
+    // escaping it is a bug and must throw (base-type rule 6).
+    if (CliStructuredError.is(error)) return notOk(error);
+    throw error;
   }
 
   // Destroy-only guardrail — first, ahead of every other step, so it
@@ -420,7 +429,7 @@ async function runStackPipelineInner(
         ...(await beginReporters(config.extensions, {
           appName: resolvedName,
           graph,
-          stage,
+          environment,
           cwd,
           reportId: opts.reportId,
           credentials: deps.credentials,
@@ -429,7 +438,7 @@ async function runStackPipelineInner(
     }
 
     // Resolve each extension's own container (e.g. Prisma Cloud's Project +
-    // named-stage Branch) via its own descriptor — deploy ensures (creates if
+    // the environment's Branch) via its own descriptor — deploy ensures (creates if
     // absent), destroy locates only — after assembly succeeds, so a deploy
     // that cannot assemble never creates anything on any platform.
     containers = new Map<ExtensionId, ContainerInstance>();
@@ -437,22 +446,37 @@ async function runStackPipelineInner(
       if (extension.container === undefined) continue;
       try {
         if (action === 'deploy') {
-          containers.set(
-            extension.id,
-            await extension.container.ensure({ appName: resolvedName, stage }, deps.credentials),
+          const instance = await extension.container.ensure(
+            { appName: resolvedName, environment },
+            deps.credentials,
           );
+          requireContainerForEnvironment(
+            action,
+            extension.id,
+            extension.container,
+            instance,
+            environment,
+          );
+          containers.set(extension.id, instance);
         } else {
           const instance = await extension.container.locate(
-            { appName: resolvedName, stage },
+            { appName: resolvedName, environment },
             deps.credentials,
           );
           if (instance === undefined) {
             throw new CliStructuredError(
               'DEPLOY.TARGET_NOT_FOUND',
-              `Nothing deployed for ${resolvedName}${stage !== undefined ? `/${stage}` : ''}.`,
+              `Nothing deployed for ${resolvedName} in the environment ${environment}.`,
               { fix: 'Deploy it first.' },
             );
           }
+          requireContainerForEnvironment(
+            action,
+            extension.id,
+            extension.container,
+            instance,
+            environment,
+          );
           containers.set(extension.id, instance);
         }
       } catch (error) {
@@ -466,32 +490,14 @@ async function runStackPipelineInner(
 
     // The Alchemy stage is never left to Alchemy's own default (`dev_$USER`
     // — machine-dependent, the TML-3157 incident): the state-owning extension's
-    // container (same selection as core's resolveStateLayer) pins it, else an
-    // explicit --stage must.
-    const pinnedStage = containers.get(config.state.extension)?.alchemyStage ?? stage;
-    if (pinnedStage === undefined) {
-      // Reachable only for deploy without --stage, and destroy of production
-      // (a stage destroy always has a user stage) — so the remedy can be
-      // command-specific without a third branch.
-      throw new CliStructuredError(
-        'DEPLOY.SCOPE_MISSING',
-        'The configured deploy target supplied no deploy scope (its container defines no ' +
-          'alchemyStage), so Alchemy has no stage to run under.',
-        {
-          fix:
-            action === 'deploy'
-              ? 'Pass --stage <name> to choose the deploy scope explicitly.'
-              : 'Destroying production needs a target whose container supplies the production ' +
-                'deploy scope.',
-        },
-      );
-    }
-    alchemyStage = pinnedStage;
+    // container (same selection as core's resolveStateLayer) pins it, else the
+    // environment name does.
+    alchemyStage = containers.get(config.state.extension)?.alchemyStage ?? environment;
     steps.finish({ name: 'connect' });
 
     // Preflight (deploy only): each extension verifies its platform
     // prerequisites — e.g. that every secret env var in the provision manifest
-    // exists for the resolved stage (ADR-0029) — BEFORE any stack file is written
+    // exists for the resolved environment (ADR-0029) — BEFORE any stack file is written
     // or Alchemy runs, so a missing secret fails fast with nothing side-effected.
     if (action === 'deploy') {
       steps.start({ name: 'preflight' });
@@ -508,7 +514,7 @@ async function runStackPipelineInner(
           const payload = await extension.preflight({
             graph,
             container: containers.get(extension.id),
-            stage,
+            environment,
             credentials: deps.credentials,
             report,
           });
@@ -545,7 +551,7 @@ async function runStackPipelineInner(
   // "failures are values" covers stack generation too, not just the pipeline.
   //
   // The result file's name is unique per run, so a summary is only ever read
-  // from THIS child's report hook: concurrent runs sharing a cwd (two stages
+  // from THIS child's report hook: concurrent runs sharing a cwd (two environments
   // deployed from one checkout) cannot read or delete each other's file.
   let stackPath: string;
   const resultFilePath = path.join(
@@ -681,7 +687,7 @@ async function runStackPipelineInner(
         for (const extension of pipeline.configSource.value.extensions) {
           if (extension.teardown === undefined) continue;
           try {
-            await extension.teardown({ container: containers.get(extension.id), stage });
+            await extension.teardown({ container: containers.get(extension.id), environment });
           } catch (error) {
             throw toStructured('DEPLOY.TEARDOWN_FAILED', error);
           }
@@ -689,7 +695,7 @@ async function runStackPipelineInner(
 
         // Container removal (destroy only, after every teardown): the CLI's
         // two-loop order — all teardowns, then all removes — is what structurally
-        // preserves ADR-0034's guarantee that a stage's state database is deleted
+        // preserves ADR-0034's guarantee that an environment's state database is deleted
         // before its Branch (a Branch with an attached database refuses deletion).
         for (const extension of pipeline.configSource.value.extensions) {
           if (extension.container === undefined) continue;

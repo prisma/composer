@@ -79,7 +79,7 @@ function fakeTopology(landed = true): {
 }
 
 /** Stands in for the extension's own container; the reporter only ever sees it through `refsOf`. */
-const CONTAINER = { projectId: 'proj_1', branchId: 'branch_1', stageBranchId: 'branch_1' };
+const CONTAINER = { projectId: 'proj_1', branchId: 'branch_1', deployBranchId: 'branch_1' };
 const refsOf = (container: ContainerInstance): BuildContainerRefs =>
   container as unknown as BuildContainerRefs;
 
@@ -93,7 +93,7 @@ const begin = (
   buildReporter({ api, env, warn, refsOf, topology }).begin({
     appName: 'storefront',
     graph: GRAPH,
-    stage: undefined,
+    environment: 'production',
     cwd: import.meta.dir,
     reportId,
   });
@@ -352,7 +352,7 @@ describe('buildReporter', () => {
     }).begin({
       appName: 'storefront',
       graph: GRAPH,
-      stage: undefined,
+      environment: 'production',
       cwd: import.meta.dir,
       reportId: undefined,
     });
@@ -374,7 +374,7 @@ describe('buildReporter', () => {
     }).begin({
       appName: 'storefront',
       graph: GRAPH,
-      stage: undefined,
+      environment: 'production',
       cwd: '/',
       reportId: undefined,
     });
@@ -419,7 +419,7 @@ describe('buildReporter', () => {
     expect(warnings.join('\n')).toContain('the platform is unavailable');
   });
 
-  test('attach replaces the stage Branch topology once and stamps the build with its content hash', async () => {
+  test('attach replaces the target Branch topology once and stamps the build with its content hash', async () => {
     const { api, recorded } = fakeApi('bld_new');
     const { topology, recordedTopology } = fakeTopology();
 
@@ -467,7 +467,7 @@ describe('buildReporter', () => {
     });
   });
 
-  test('a container that resolves no stage Branch submits nowhere, but the build still records the hash', async () => {
+  test('a container that resolves no target Branch submits nowhere, but the build still records the hash', async () => {
     const { api, recorded } = fakeApi('bld_new');
     const { topology, recordedTopology } = fakeTopology();
 
@@ -483,7 +483,7 @@ describe('buildReporter', () => {
     });
   });
 
-  test('a default-stage deploy submits to the default Branch and records no branch on the build', async () => {
+  test('a production deploy submits to the default Branch and records no branch on the build', async () => {
     const { api, recorded } = fakeApi('bld_new');
     const { topology, recordedTopology } = fakeTopology();
 
@@ -492,7 +492,7 @@ describe('buildReporter', () => {
       container: {
         projectId: 'proj_1',
         branchId: undefined,
-        stageBranchId: 'branch_default',
+        deployBranchId: 'branch_default',
       } as unknown as ContainerInstance,
     });
 
@@ -529,7 +529,7 @@ describe('buildReporter', () => {
     }).begin({
       appName: 'storefront',
       graph: poisoned,
-      stage: undefined,
+      environment: 'production',
       cwd: import.meta.dir,
       reportId: undefined,
     });

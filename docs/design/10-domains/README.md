@@ -8,9 +8,9 @@ architecture/design phase that comes *after* the high-level model is settled.
   the worked instance.
 - [`deploy-cli.md`](deploy-cli.md) — Prisma Composer's deploy entrypoint
   (`prisma deploy`, and the `destroy` operation): the pipeline,
-  stages and container (Project/Branch) resolution, the pack CLI seam and
+  environments and container (Project/Branch) resolution, the pack CLI seam and
   per-kind assembly contracts, and the error surface. Rests on ADR-0003 …
-  ADR-0006, ADR-0023, ADR-0024, ADR-0049 and ADR-0050.
+  ADR-0006, ADR-0023, ADR-0024, ADR-0049, ADR-0050 and ADR-0059.
 - [`module-composition.md`](module-composition.md) — module boundaries
   (deps/expose), forwarding, nesting, and the packaged reusable module. Rests
   on ADR-0016.

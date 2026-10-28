@@ -2,7 +2,9 @@
 
 Amended by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md): each operation takes a required `config: { value, file }`, and the effect-conflict diagnosis is retired. Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the `prisma-composer` binary is retired; the `prisma` CLI renders two of the four operations, as `prisma deploy` and `prisma dev`, and `destroy` and `log` are called from scripts. The surface below is otherwise unchanged.
 
-Amended by [ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md): two more operations, `devUrl` and `devStop`, act on the app `prisma dev` last ran from a directory.
+Amended by [ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md): two more operations, `devUrl` and `devStop`, act on the app `prisma dev` last ran from a directory. Amended 2026-10-28: they act on the app and environment named in their input instead, with `environment` defaulting to `dev` ([ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md)). `dev` and `log` take `environment` too, also defaulting to `dev`.
+
+Amended by [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md): `deploy` and `destroy` take `environment` instead of `stage` and `target`, `destroy` requires it, and `DEPLOY.STAGE_INVALID` is `DEPLOY.ENVIRONMENT_INVALID`.
 
 ## Decision
 

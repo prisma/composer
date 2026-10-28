@@ -12,12 +12,14 @@ call from a short script; there is no `prisma` command for them.
 | Bring the app up locally | `prisma dev` |
 | Hot reload a Next.js service | nothing extra: `prisma dev` runs `next dev` for it (see [Dev servers](#dev-servers)) |
 | Start clean (wipe local data first) | `prisma dev --fresh` |
+| Run a second, clean copy, for tests | `prisma dev --environment test --fresh` (see [Environments](#each-environment-is-a-separate-local-copy)) |
 | Watch the running app's logs | the `log` operation (see [Logs](#logs)) |
 
 `module.ts` is your entry file — the one whose default export is the root
 module, the same file you pass to `prisma deploy`. No `PRISMA_*` variables
 and no `prisma auth login` are needed; local dev never talks to the
-platform.
+platform. It runs as the environment `dev` unless you pass `--environment`,
+and each environment is a separate local copy of the app.
 
 ## Bring it up
 
@@ -67,8 +69,8 @@ again, a build change only repeats that notice.
 `Ctrl-C` stops your app's service processes and its local Postgres servers,
 and exits; so does `dev` ending on SIGTERM or a failure. The data stays, and
 so do the ports, so the next `prisma dev` is a warm start — same ports, same
-data. `--fresh` is what wipes this app's local instances and data before
-starting.
+data. `--fresh` is what wipes this app's local instances and data in this
+environment before starting.
 
 ### Dev servers
 
@@ -168,7 +170,8 @@ prisma dev stop
 ```
 
 This is the form for agents, scripts and CI, which then have no long-running
-process to manage. It combines with `--fresh` and `--name`. If it fails before
+process to manage. It combines with `--fresh`, `--name` and `--environment`;
+give `prisma dev url` and `prisma dev stop` the same `--environment`. If it fails before
 `ready`, it stops the whole app, including one an earlier `--detach` left running, and exits non-zero, as `prisma dev` does. A failed redeploy has already replaced that service's old process, so the previous app cannot be kept. Fix the build and run `prisma dev --detach` again. To
 pick up a rebuild, run `prisma dev --detach` again, or run `prisma dev` in the
 foreground: it takes over the running app, watches, and `Ctrl-C` stops it.
@@ -199,28 +202,59 @@ one line, naming a service or a database:
 [dev] database "catalog" now uses port 51302: its previous port 51300 is in use
 ```
 
-A directory keeps the local state of every app you run from it. If you run a
+A directory keeps the local state of every app you run from it. Running a
 different app from the same directory (another entry file, or another
-`--name`), `dev` stops the previous app's services and databases first, keeps
-their data and ports, and says so:
-
-```
-[dev] stopped the local services of "shop", the app run here before; its data is kept
-```
-
-Running `shop` again resumes them. `--fresh` wipes only the app you start
-with it.
+`--name`) stops nothing: both apps run at once, each on its own ports.
+`--fresh` wipes only the app you start with it, in its environment.
 
 A stopped service or database keeps its port reserved, and a database its
 data, so the instances of a checkout you delete keep theirs. There is no
 command to remove them yet.
 
+### Each environment is a separate local copy
+
+`prisma dev` runs as the environment `dev`. `--environment` names another,
+and each name is a complete, separate local copy of the app, with its own
+services, databases, buckets and ports. Two environments of one app run at
+once in one directory, and starting one stops nothing. The common use is a
+clean copy for tests that leaves your working data alone:
+
+```sh
+prisma dev                                       # dev, with your working data
+prisma dev --environment test --fresh --detach   # a clean copy; dev is untouched
+prisma dev url my-app.gateway --environment test # test's URL
+prisma dev stop --environment test
+```
+
+`--fresh` wipes only the environment it runs in. Everything local to one copy
+lives in `.prisma-composer/dev/<environment>/`: the record of its instances,
+its environment variable values, the key `prisma dev` hashes secret values with, the generated stack
+file, the unpacked artifacts and the bucket objects. The deploy engine keeps
+each copy's state in `.alchemy/state/<app>/<environment>`.
+
+Environment names are case-sensitive, but on a case-insensitive filesystem,
+such as the default on macOS, `Dev` and `dev` would share one folder. So the
+first `prisma dev` in an environment records its exact name in its folder, and
+`prisma dev`, `prisma dev url`, `prisma dev stop` and the `log` operation
+refuse a name that differs from the recorded one with `DEV.ENVIRONMENT_NAME_MISMATCH`.
+Use the recorded name, or one that differs from it by more than case.
+
+**Upgrading from a version with one local copy per directory.** The first
+`prisma dev`, `prisma dev url` or `prisma dev stop` after the upgrade moves
+the directory's existing local state into the environment `dev`, so your
+databases, bucket objects and ports are kept, and an app started with
+`--detach` before the upgrade can still be stopped.
+Keep `@prisma/composer-prisma-cloud` on the same Composer version as the
+`prisma` CLI: an older one would put every environment in one copy, so
+`prisma dev` refuses it with `DEPS.EXTENSION_INCOMPATIBLE`.
+
 ### Finding a running node, and stopping the app
 
-Ports differ from one directory to the next, so don't hard-code
-`localhost:3001`. From another terminal in the same directory, ask where a
-node of the running app answers, by its address, which starts with the app
-name:
+Ports differ from one directory and environment to the next, so don't
+hard-code `localhost:3001`. From another terminal in the same directory, ask
+where a node of the running app answers, by its address, which starts with the
+app name. It asks about the environment `dev`; pass `--environment` for
+another:
 
 ```bash
 prisma dev url my-app.gateway
@@ -229,7 +263,8 @@ prisma dev url my-app.gateway
 A service gives `http://localhost:<port>`, a database its connection string
 (with its local credentials), and a bucket its S3 endpoint followed by
 `/<bucket>`. A node inside a nested module has a longer address, such as
-`my-app.catalog.database`.
+`my-app.catalog.database`. The address names the app, so `dev url` does not
+load your entry file.
 
 The URL alone goes to stdout, whether it is a terminal or a pipe, so a script
 uses it directly. Check the exit status first, so a failure does not run
@@ -247,19 +282,23 @@ data to a piped stdout. `--json` gives the full result,
 `dev url` only reports a node that is running, so the URL it prints answers. Otherwise it fails with
 a code a script can branch on:
 
-- `DEV.NOT_STARTED_HERE`: `prisma dev` never ran in this directory.
+- `DEV.NOT_STARTED_HERE`: `prisma dev` never ran that app in that
+  environment in this directory.
+- `DEV.ENVIRONMENT_NAME_MISMATCH`: the environment's folder belongs to
+  another environment whose name differs only in case, such as `dev` for
+  `--environment Dev` on macOS.
 - `DEV.ADDRESS_UNKNOWN`: the app has no node at that address; the message
   lists the ones it has.
 - `DEV.EMULATOR_UNREACHABLE`: the emulator the node runs on is not running.
 - `DEV.NOT_RUNNING`: the node exists but is not running. Usually it is
-  stopped: `prisma dev stop`, `prisma dev` ending, and running another app in
-  this directory all stop an app's services and database servers. A service
+  stopped: `prisma dev stop` and `prisma dev` ending both stop an app's
+  services and database servers. A service
   that keeps crashing is reported this way too, with the path of its log; and
   a node the emulator lost is created again, empty, by the next `prisma dev`.
 
-`prisma dev stop` stops the app's service processes and database servers, as `Ctrl-C` does. Use it to stop an app started with `--detach`, or when `prisma dev` was killed without the chance to stop it. Data and ports are kept, so the next `prisma dev` is still a warm start. It lists what it stopped; when nothing of the app was running, it says so and still succeeds. Piped, it writes one line per node it stopped with two tab-separated fields: the node's address and its kind.
+`prisma dev stop` stops the app's service processes and database servers in one environment, as `Ctrl-C` does. It finds the app as `prisma dev` does, from your entry file or `--name`, and stops the environment `dev` unless you pass `--environment`. If that app never ran in that environment here, it fails with `DEV.NOT_STARTED_HERE`. Use it to stop an app started with `--detach`, or when `prisma dev` was killed without the chance to stop it. Data and ports are kept, so the next `prisma dev` is still a warm start. It lists what it stopped; when nothing of the app was running, it says so and still succeeds. Piped, it writes one line per node it stopped with two tab-separated fields: the node's address and its kind.
 
-`prisma emulator list` shows every local emulator on the machine, whether it is running, and every instance on it, with the directory, app and address it belongs to. It works from any directory. Piped, it writes one line per instance with six tab-separated fields: the emulator's kind (`service`, `database` or `bucket`), the instance id, its URL, its state, the address of the node it runs and the absolute path of the directory `prisma dev` ran from. The last two are empty for an instance Composer did not label. An emulator that is running but does not answer, or answers with an error, is shown with that error, and the others are still listed. `prisma emulator start` and `prisma emulator stop` are planned.
+`prisma emulator list` shows every local emulator on the machine, whether it is running, and every instance on it, with the directory, app and address it belongs to. It works from any directory. Piped, it writes one line per instance with six tab-separated fields: the emulator's kind (`service`, `database` or `bucket`), the instance id, its URL, its state, the address of the node it runs, the absolute path of the directory `prisma dev` ran from and the environment. The last three are empty for an instance Composer did not label, and the environment is also empty for an instance created before each environment had its own copy. An emulator that is running but does not answer, or answers with an error, is shown with that error, and the others are still listed. `prisma emulator start` and `prisma emulator stop` are planned.
 
 Each command's piped lines are listed in [Piped output](#piped-output).
 
@@ -267,7 +306,7 @@ Each command's piped lines are listed in [Piped output](#piped-output).
 app's local dev state — the symptom is a plan-time error naming an
 unregistered resource type (for example
 `No provider is registered for resource type 'PrismaComposer.Database'`).
-Local dev state is never migrated across framework versions. Note `--fresh`
+Note `--fresh`
 wipes local *data* too — database contents, bucket objects, instance state —
 not just the resource bookkeeping; the next start rebuilds empty resources.
 Use it when the local data is disposable, which in a dev loop it usually is.
@@ -289,9 +328,9 @@ The rules for every line:
 | `prisma deploy list` | deployed node | node address, kind (`project`, `service`, `postgres`, `bucket`, `module`, or another resource's type), platform ID, URL |
 | `prisma dev stop` | node it stopped | node address, node kind (`service`, `database` or `bucket`) |
 | `prisma dev url` | the node asked for | URL |
-| `prisma emulator list` | emulator instance | emulator kind (`service`, `database` or `bucket`), instance id, URL, state, node address, directory |
+| `prisma emulator list` | emulator instance | emulator kind (`service`, `database` or `bucket`), instance id, URL, state, node address, directory, environment |
 
-A command with nothing to report writes no lines and still exits 0: `dev stop` when nothing was running, and `deploy` for a node that published no entities (such as S3 credentials) or when the deploy wrote no report. [Deploying](deploying.md#production-and-stages) says how to tell these apart.
+A command with nothing to report writes no lines and still exits 0: `dev stop` when nothing was running, and `deploy` for a node that published no entities (such as S3 credentials) or when the deploy wrote no report. [Deploying](deploying.md#environments) says how to tell these apart.
 
 The directory in `emulator list` is an absolute path, unlike the paths other `prisma` commands print, which are relative to the working directory. The list covers every app on the machine and runs from any directory, so a relative path would change with the directory you run it from and would not identify an app reliably.
 
@@ -349,7 +388,7 @@ databases you can migrate and query, real object storage. What's swapped are
 the *providers* underneath — local emulators stand in for Prisma Cloud, so no
 token, workspace, or network is involved. Three consequences worth knowing:
 
-- **Secrets come from your environment.** `prisma dev` reads each secret from the environment it runs in, never makes one up, and never reuses a value from an earlier run. Either export it in the shell you run `prisma dev` from, or keep it in a `.env` file and load that file from `prisma.config.ts`: install the `dotenv` package (`npm install dotenv`, or your package manager's equivalent), then make `import 'dotenv/config'` the first line of `prisma.config.ts`. `process.loadEnvFile('.env')` also works, but only when the CLI runs under Node, not Bun.
+- **Secrets come from your environment variables.** `prisma dev` reads each secret from the environment variables it runs with, never makes one up, and never reuses a value from an earlier run. Either export it in the shell you run `prisma dev` from, or keep it in a `.env` file and load that file from `prisma.config.ts`: install the `dotenv` package (`npm install dotenv`, or your package manager's equivalent), then make `import 'dotenv/config'` the first line of `prisma.config.ts`. `process.loadEnvFile('.env')` also works, but only when the CLI runs under Node, not Bun.
 
   ```ts
   // prisma.config.ts
@@ -358,7 +397,7 @@ token, workspace, or network is involved. Three consequences worth knowing:
 
   If a secret your service's input schema requires is unset or empty, `prisma dev` stops before it starts anything and names the variable and the service. If the schema marks the secret optional, the service starts and sees that field as absent. Change a value and run `prisma dev` again, without `--fresh`, and the services that read it restart with the new value.
 
-  **A `.env` loaded by `prisma.config.ts` is also read by `prisma deploy`.** Deploy uploads any secret the target stage does not have yet from that environment, so a local-only value in `.env` becomes the hosted value. Keep local-only values out of `.env` before you deploy, or deploy from a shell where it is not loaded.
+  **A `.env` loaded by `prisma.config.ts` is also read by `prisma deploy`.** Deploy uploads any secret the target environment does not have yet from that environment, so a local-only value in `.env` becomes the hosted value. Keep local-only values out of `.env` before you deploy, or deploy from a shell where it is not loaded.
 
   A `.env` that only your framework loads (Next.js, for example) does not count, because Composer reads each secret before the dev server starts (see [Dev servers](#dev-servers)).
 

@@ -9,6 +9,7 @@ export * from '../dev-secrets.ts';
 export * from '../dev-store.ts';
 export * from '../emulator-instances.ts';
 export * from '../postgres.ts';
+export * from '../pre-environment-dev-state.ts';
 export * from '../prisma-dev-module.ts';
 export * from '../providers.ts';
 export * from '../resolve-package-entry.ts';

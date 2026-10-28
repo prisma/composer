@@ -24,12 +24,14 @@ const EMULATOR_NAMES = {
   bucket: 'Bucket emulator',
 } as const;
 
-/** The node and directory that started an instance, when Composer's labels say. */
+/** The node, directory and environment that started an instance, when Composer's labels say. */
 function startedBy(labels: Readonly<Record<string, string>>): string | undefined {
   const address = labels['composer.address'];
   const directory = labels['composer.directory'];
+  const environment = labels['composer.environment'];
   if (address === undefined) return undefined;
-  return directory === undefined ? address : `${address} in ${directory}`;
+  const where = directory === undefined ? address : `${address} in ${directory}`;
+  return environment === undefined ? where : `${where} (${environment})`;
 }
 
 function labelOf(emulator: EmulatorListing, dim: (text: string) => string): string {
@@ -57,8 +59,8 @@ export const createEmulatorListCommand = (list: ListEmulators) =>
         'Needs no project: it shows every directory’s instances. An emulator that is not ' +
         'running is listed with no instances, and one that runs but cannot be listed is ' +
         'shown with the error. Each instance’s labels say which directory, ' +
-        'app and node started it. A stopped instance keeps its port and data until it is ' +
-        'deleted.',
+        'app, node and environment started it. A stopped instance keeps its port and data ' +
+        'until it is deleted.',
       examples: ['{bin} emulator list', '{bin} emulator list --json'],
     },
     args: {},
@@ -100,6 +102,7 @@ export const createEmulatorListCommand = (list: ListEmulators) =>
                     instance.state,
                     instance.labels['composer.address'],
                     instance.labels['composer.directory'],
+                    instance.labels['composer.environment'],
                   ]),
                 ),
               ),

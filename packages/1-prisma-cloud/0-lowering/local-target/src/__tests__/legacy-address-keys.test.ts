@@ -28,7 +28,6 @@ import {
   ensureServiceInstance,
   type NodeInstance,
   readEmulatorInstances,
-  selectApp,
 } from '../emulator-instances.ts';
 import { withFullAddressKeys } from '../legacy-address-keys.ts';
 import { resolvePrismaDevModulePath } from '../prisma-dev-module.ts';
@@ -38,7 +37,6 @@ const service = (id: string): NodeInstance => ({ kind: 'service', id, port: 3000
 describe('withFullAddressKeys', () => {
   test('puts the app name in front of every key, whatever the key looks like', () => {
     const record: EmulatorInstances = {
-      current: 'shop',
       apps: {
         shop: {
           nodes: {
@@ -53,7 +51,6 @@ describe('withFullAddressKeys', () => {
     };
 
     expect(withFullAddressKeys(record)).toEqual({
-      current: 'shop',
       apps: {
         shop: {
           nodes: {
@@ -69,7 +66,6 @@ describe('withFullAddressKeys', () => {
 
   test('each app gets its own name in front', () => {
     const record = {
-      current: 'shop',
       apps: {
         shop: { nodes: { api: service('s') } },
         blog: { nodes: { api: service('b') } },
@@ -90,7 +86,11 @@ describe('the record format version', () => {
 
   beforeEach(() => {
     directory = fs.mkdtempSync(path.join(os.tmpdir(), 'local-target-record-format-'));
-    scope = { devDir: path.join(directory, '.prisma-composer', 'dev'), app: 'shop' };
+    scope = {
+      devDir: path.join(directory, '.prisma-composer', 'dev', 'dev'),
+      app: 'shop',
+      environment: 'dev',
+    };
     recordFile = path.join(scope.devDir, EMULATOR_INSTANCES_FILE);
     fs.mkdirSync(scope.devDir, { recursive: true });
   });
@@ -108,8 +108,7 @@ describe('the record format version', () => {
       apps: { shop: { nodes: { api: service('a'), shop: service('c'), 'shop.db': service('d') } } },
     });
 
-    expect(await readEmulatorInstances(directory)).toEqual({
-      current: 'shop',
+    expect(await readEmulatorInstances(scope.devDir)).toEqual({
       apps: {
         shop: {
           nodes: {
@@ -124,38 +123,50 @@ describe('the record format version', () => {
 
   test('a record with the version is read as it is, even a key that looks like an old one', async () => {
     const nodes = { 'shop.api': service('a'), api: service('b') };
+    write({ formatVersion: 3, apps: { shop: { nodes } } });
+
+    expect(await readEmulatorInstances(scope.devDir)).toEqual({ apps: { shop: { nodes } } });
+  });
+
+  test('a format 2 record keeps its full keys and loses its current app, and the next write stores format 3', async () => {
+    const nodes = { 'shop.api': service('a') };
     write({ formatVersion: 2, current: 'shop', apps: { shop: { nodes } } });
 
-    expect(await readEmulatorInstances(directory)).toEqual({
-      current: 'shop',
-      apps: { shop: { nodes } },
-    });
+    expect(await readEmulatorInstances(scope.devDir)).toEqual({ apps: { shop: { nodes } } });
+    await deleteAppInstances({ ...scope, app: 'other' });
+    expect(onDisk()).toEqual({ formatVersion: 3, apps: { shop: { nodes } } });
   });
+
+  /** A write that touches no emulator: forgetting an app with no instances. */
+  const writeRecord = () => deleteAppInstances({ ...scope, app: 'never-ran' });
 
   test('the first write stores the version and the full keys, and the next leaves the file byte for byte', async () => {
     write({ current: 'shop', apps: { shop: { nodes: { shop: service('c') } } } });
 
-    await selectApp(scope);
+    await writeRecord();
 
     expect(onDisk()).toEqual({
-      formatVersion: 2,
-      current: 'shop',
+      formatVersion: 3,
       apps: { shop: { nodes: { 'shop.shop': service('c') } } },
     });
     const first = fs.readFileSync(recordFile, 'utf8');
-    await selectApp(scope);
+    await writeRecord();
     expect(fs.readFileSync(recordFile, 'utf8')).toBe(first);
   });
 
   test('a new directory starts with the version', async () => {
-    await selectApp(scope);
+    await writeRecord();
 
-    expect(onDisk()).toEqual({ formatVersion: 2, current: 'shop', apps: { shop: { nodes: {} } } });
+    expect(onDisk()).toEqual({ formatVersion: 3, apps: {} });
   });
 });
 
 describe('bucketDataDir', () => {
-  const scope: AppScope = { devDir: '/p/.prisma-composer/dev', app: 'shop' };
+  const scope: AppScope = {
+    devDir: '/p/.prisma-composer/dev/dev',
+    app: 'shop',
+    environment: 'dev',
+  };
 
   test('names the folder by the address below the app', () => {
     expect(bucketDataDir(scope, 'shop.uploads')).toBe(
@@ -193,7 +204,11 @@ describe.skipIf(process.platform === 'win32')('upgrading a directory from short 
       const entry = fileURLToPath(import.meta.resolve(`@internal/dev-emulators/${name}-main`));
       await ensureDaemon(name, entry, { registryRoot });
     }
-    scope = { devDir: path.join(root, 'project', '.prisma-composer', 'dev'), app: APP };
+    scope = {
+      devDir: path.join(root, 'project', '.prisma-composer', 'dev', 'dev'),
+      app: APP,
+      environment: 'dev',
+    };
     recordFile = path.join(scope.devDir, EMULATOR_INSTANCES_FILE);
   });
 
@@ -235,7 +250,6 @@ describe.skipIf(process.platform === 'win32')('upgrading a directory from short 
 
   /** What `prisma dev` does at the start of a run, before Alchemy. */
   async function runDev() {
-    await selectApp(scope);
     const api = await ensureServiceInstance(scope, `${APP}.api`);
     const catalog = await ensureDatabaseInstance(
       scope,
@@ -258,7 +272,7 @@ describe.skipIf(process.platform === 'win32')('upgrading a directory from short 
     };
   }
 
-  test('the first run reuses every instance and the bucket folder, and rewrites the keys', async () => {
+  test('the first run reuses every instance and the bucket folder, and reads every key as a full address', async () => {
     const { nodes, bucketDir } = await writePreviousRelease();
 
     const run = await runDev();
@@ -269,9 +283,7 @@ describe.skipIf(process.platform === 'win32')('upgrading a directory from short 
       uploads: { id: nodes.uploads.id, dir: bucketDir },
     });
     expect(fs.readFileSync(path.join(bucketDir, 'kept.txt'), 'utf8')).toBe('kept');
-    expect(JSON.parse(fs.readFileSync(recordFile, 'utf8'))).toEqual({
-      formatVersion: 2,
-      current: APP,
+    expect(await readEmulatorInstances(scope.devDir)).toEqual({
       apps: {
         [APP]: {
           nodes: {

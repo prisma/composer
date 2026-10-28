@@ -10,7 +10,7 @@ One skill, `prisma-composer-core-concepts`, covering the whole story: the mental
 (Modules, `compute()`, `service.load()`), RPC contracts, databases, reusable
 modules (cron/storage/streams), config params, secrets, testing
 (`mockService`/`bootstrapService`), deploying (`prisma deploy`,
-stages, removing an app or a stage), and the production pitfalls. Composer's surface is small
+environments, removing an app or an environment), and the production pitfalls. Composer's surface is small
 enough for one skill; there is no router or per-topic cluster.
 
 ## Install

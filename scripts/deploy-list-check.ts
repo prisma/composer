@@ -1,6 +1,6 @@
 /**
  * Checks `deploy list --json` output against what the platform holds for the
- * stage: one entry per topology node, in topology order, with the kind its
+ * environment: one entry per topology node, in topology order, with the kind its
  * topology node implies; the root's ID is the Project's; each service, database and bucket has the ID of the row with its
  * `logicalId`; and a service's URL is its App row's endpoint, over https.
  * Pure, so it is unit-tested; `e2e-verify-deploy-list.ts` feeds it.

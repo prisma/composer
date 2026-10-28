@@ -1,8 +1,8 @@
 /**
  * The resource IDs and env keys the release before ADR-0057 built, when an
  * address left out the app name. Every resource declares its old ID with
- * `renamedFrom`, so a stage deployed by that release keeps its resources.
- * Delete this file once no such stage remains.
+ * `renamedFrom`, so an environment deployed by that release keeps its resources.
+ * Delete this file once no such environment remains.
  */
 import { renamedFrom } from 'alchemy/Rename';
 import { configKey, generatedParamVarName, inputKey } from './serializer.ts';

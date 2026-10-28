@@ -14,7 +14,7 @@ import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
 import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
-import { appNameOf } from './app-name.ts';
+import { appScopeOf } from './app-name.ts';
 import { type AppScope, ensureBucketInstance, recordedInstanceId } from './emulator-instances.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
 
@@ -30,9 +30,9 @@ function bucketIdOfInput(value: unknown): string {
 export const BUCKETS_DIR = 'buckets';
 
 /**
- * Where a bucket's objects live: in the project's dev directory, under its app, so `--fresh`
+ * Where a bucket's objects live: in the environment's folder, under its app, so `--fresh`
  * removes them with the app. The folder is named by the address below the app, which is the
- * name earlier releases gave it, so an upgrade finds the objects where they are.
+ * name earlier releases gave it.
  */
 export function bucketDataDir(scope: AppScope, address: string): string {
   const prefix = `${scope.app}.`;
@@ -40,10 +40,6 @@ export function bucketDataDir(scope: AppScope, address: string): string {
     throw new Error(`local dev: bucket address "${address}" is not inside the app "${scope.app}".`);
   }
   return path.join(scope.devDir, BUCKETS_DIR, scope.app, address.slice(prefix.length));
-}
-
-function appScopeOf(input: LocalTargetProvidersInput): AppScope {
-  return { devDir: input.devDir, app: appNameOf(input.container) };
 }
 
 /**

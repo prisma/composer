@@ -1,6 +1,6 @@
 /**
  * This extension's container lifecycle (the `container` descriptor,
- * ADR-0037): resolves the app's Project + (named stage) Branch via
+ * ADR-0037): resolves the app's Project and the environment's Branch via
  * `@internal/lowering`'s `resolveContainer`, before the generated stack file
  * runs — `deploy` ensures (creates if absent), `destroy` locates only.
  * Control-plane only (imported by control.ts and the hook modules); errors
@@ -17,6 +17,7 @@ import {
   deleteBranch,
   deleteProject,
   fromEnv,
+  isProductionEnvironment,
   type ManagementApiClient,
   ManagementClient,
   managementClientLayer,
@@ -40,7 +41,7 @@ function invalidAlchemyStageError(branchId: string): Error {
 }
 
 export class PrismaCloudContainer implements ContainerInstance {
-  /** The deterministic Alchemy stage (ContainerInstance SPI): the stage Branch's id, or the default Branch's id for the default stage. Absent only for the dev container, which resolves no Branch. */
+  /** The deterministic Alchemy stage (ContainerInstance SPI): the environment's Branch id, or the default Branch's id for `production`. Absent only for the dev container, which resolves no Branch. */
   readonly alchemyStage: string | undefined;
 
   constructor(
@@ -51,11 +52,11 @@ export class PrismaCloudContainer implements ContainerInstance {
     /** Set only by the dev container, which resolves no Branches. */
     readonly branchless: boolean = false,
   ) {
-    const stageBranchId = branchId ?? defaultBranchId;
-    if (stageBranchId !== undefined && !ALCHEMY_STAGE_PATTERN.test(stageBranchId)) {
-      throw invalidAlchemyStageError(stageBranchId);
+    const deployBranchId = branchId ?? defaultBranchId;
+    if (deployBranchId !== undefined && !ALCHEMY_STAGE_PATTERN.test(deployBranchId)) {
+      throw invalidAlchemyStageError(deployBranchId);
     }
-    this.alchemyStage = stageBranchId;
+    this.alchemyStage = deployBranchId;
   }
 
   serialize(): string {
@@ -115,9 +116,9 @@ export function deserialize(serialized: string): PrismaCloudContainer {
   if (!isRecord(input)) throw invalidPayloadError('"input" is not an object');
   const appName = input['appName'];
   if (typeof appName !== 'string') throw invalidPayloadError('"input.appName" is not a string');
-  const stage = input['stage'];
-  if (stage !== undefined && typeof stage !== 'string') {
-    throw invalidPayloadError('"input.stage" is not a string or absent');
+  const environment = input['environment'];
+  if (typeof environment !== 'string') {
+    throw invalidPayloadError('"input.environment" is not a string');
   }
 
   const projectId = parsed['projectId'];
@@ -136,7 +137,7 @@ export function deserialize(serialized: string): PrismaCloudContainer {
   }
 
   return new PrismaCloudContainer(
-    { appName, stage },
+    { appName, environment },
     projectId,
     branchId,
     defaultBranchId,
@@ -202,11 +203,22 @@ function runWithClient<A, E>(
   );
 }
 
+/** A CLI older than this extension sends no environment name; reading that as production could deploy or destroy the wrong place. */
+function requireEnvironmentName(input: LocateContainerInput): void {
+  const environment: unknown = input.environment;
+  if (typeof environment === 'string' && environment.length > 0) return;
+  throw new Error(
+    `${PRISMA_CLOUD_EXTENSION_ID}: the container request names no environment. ` +
+      'The Composer running it is probably older than this extension. Use the same Composer version for both.',
+  );
+}
+
 async function ensureContainer(
   input: LocateContainerInput,
   credentials: PrismaCloudCredentials | undefined,
   deps: ContainerDeps | undefined,
 ): Promise<PrismaCloudContainer> {
+  requireEnvironmentName(input);
   const workspaceId = requireWorkspaceId(credentials);
   const client = clientFor(credentials, deps);
   requireTokenUnlessInjected(client);
@@ -217,7 +229,7 @@ async function ensureContainer(
   const program = resolveContainer({
     workspaceId,
     appName: input.appName,
-    ...(input.stage !== undefined ? { stage: input.stage } : {}),
+    environment: input.environment,
     ...(region !== undefined ? { region } : {}),
     ensure: true,
   }).pipe(
@@ -227,6 +239,9 @@ async function ensureContainer(
         ok: false as const,
         message: `Prisma Management API error resolving containers: ${e.message}.`,
       }),
+    ),
+    Effect.catchTag('DefaultBranchUnderAnotherNameError', (e) =>
+      Effect.succeed({ ok: false as const, message: e.message }),
     ),
   );
 
@@ -245,6 +260,7 @@ async function locateContainer(
   credentials: PrismaCloudCredentials | undefined,
   deps: ContainerDeps | undefined,
 ): Promise<PrismaCloudContainer | undefined> {
+  requireEnvironmentName(input);
   const workspaceId = requireWorkspaceId(credentials);
   const client = clientFor(credentials, deps);
   requireTokenUnlessInjected(client);
@@ -252,11 +268,12 @@ async function locateContainer(
   const program = resolveContainer({
     workspaceId,
     appName: input.appName,
-    ...(input.stage !== undefined ? { stage: input.stage } : {}),
+    environment: input.environment,
     ensure: false,
   }).pipe(
     Effect.map((c) => ({ ok: true as const, container: c })),
     Effect.catchTag('ContainerNotFoundError', () => Effect.succeed({ ok: false as const })),
+    Effect.catchTag('DefaultBranchUnderAnotherNameError', (e) => Effect.fail(new Error(e.message))),
     Effect.catchTag('PrismaApiError', (e) =>
       Effect.fail(new Error(`Prisma Management API error resolving containers: ${e.message}.`)),
     ),
@@ -273,11 +290,11 @@ async function locateContainer(
 }
 
 /**
- * Soft-deletes a named stage's Branch after a successful `alchemy destroy`
+ * Soft-deletes a named environment's Branch after a successful `alchemy destroy`
  * has removed its members — the Management API refuses to delete a Branch
  * that still has live members.
  */
-async function removeStageBranch(
+async function removeEnvironmentBranch(
   branchId: string,
   credentials: PrismaCloudCredentials | undefined,
   deps: ContainerDeps | undefined,
@@ -289,7 +306,7 @@ async function removeStageBranch(
     Effect.catchTag('PrismaApiError', (e) =>
       Effect.succeed({
         ok: false as const,
-        message: `Failed to delete the stage Branch: ${e.message}.`,
+        message: `Failed to delete the environment's Branch: ${e.message}.`,
       }),
     ),
   );
@@ -298,9 +315,9 @@ async function removeStageBranch(
 }
 
 /**
- * Best-effort cleanup after a successful `--production` destroy: removes
+ * Best-effort cleanup after a successful destroy of `production`: removes
  * the app's Project so hand-run stacks don't accumulate as empty Projects
- * (they eventually hit the workspace's plan limit). Unlike `removeStageBranch`,
+ * (they eventually hit the workspace's plan limit). Unlike `removeEnvironmentBranch`,
  * this never throws: the destroy itself already succeeded, and the API's own
  * 400 ("still has dependencies") is the only check that matters — failing
  * the command over a cleanup step would be worse than leaving a Project shell.
@@ -325,7 +342,7 @@ async function removeAppProject(
     return;
   }
   if (outcome.error.status === 400) {
-    console.log(`Kept the Project (${projectId}) — it still has another stage's resources.`);
+    console.log(`Kept the Project (${projectId}) — it still has another environment's resources.`);
     return;
   }
   console.warn(
@@ -340,17 +357,17 @@ export function containerDescriptor(
     ensure: (input, credentials) => ensureContainer(input, credentials, deps),
     locate: (input, credentials) => locateContainer(input, credentials, deps),
     remove: (instance, credentials) =>
-      instance.input.stage !== undefined
-        ? removeStageBranch(instance.branchId ?? missingBranchId(instance), credentials, deps)
+      !isProductionEnvironment(instance.input.environment)
+        ? removeEnvironmentBranch(instance.branchId ?? missingBranchId(instance), credentials, deps)
         : removeAppProject(instance.projectId, credentials, deps),
     deserialize,
   };
 }
 
-/** Defensive: a named-stage container always resolves a Branch together with its stage — `ensure`/`locate`/`deserialize` never produce one without the other. */
+/** Defensive: a container for an environment other than `production` always resolves its Branch — `ensure`/`locate`/`deserialize` never produce one without it. */
 function missingBranchId(instance: PrismaCloudContainer): never {
   throw new Error(
-    `${PRISMA_CLOUD_EXTENSION_ID}: a named-stage ("${instance.input.stage}") container instance is ` +
+    `${PRISMA_CLOUD_EXTENSION_ID}: the container instance for the environment "${instance.input.environment}" is ` +
       'missing its branchId — this is a bug in ensure/locate/deserialize.',
   );
 }

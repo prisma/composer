@@ -28,7 +28,7 @@ const PLATFORM_OWNED_PARAM_NAMES: ReadonlySet<string> = new Set([
 /**
  * Binds a param slot to a named Prisma Cloud platform env var — the non-secret
  * sibling of `envSecret` (spec: env-sourced config params). The platform
- * injects the value into the running instance per stage; the param's own
+ * injects the value into the running instance per environment; the param's own
  * schema validates it at boot, unredacted. The name may not use the
  * framework's reserved `COMPOSER_` prefix or the platform-owned
  * `DATABASE_URL(_POOLED)` keys — same parity as `envSecret`.
@@ -160,7 +160,7 @@ export interface OriginParamPayload {
 }
 
 /**
- * Binds an input leaf to another service's public origin on the stage being deployed,
+ * Binds an input leaf to another service's public origin in the environment being deployed,
  * e.g. `auth()`'s `baseUrl: serviceOrigin('shop.web')`. `address` is the target service's
  * full address, starting with the app name.
  */

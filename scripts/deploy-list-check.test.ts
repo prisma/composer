@@ -43,7 +43,7 @@ const listed: ListedNode[] = [
 ];
 
 describe('deployListMismatches', () => {
-  it('accepts a listing that matches the topology and the rows on the stage Branch', () => {
+  it("accepts a listing that matches the topology and the rows on the environment's Branch", () => {
     assert.deepEqual(deployListMismatches(listed, platform), []);
   });
 
@@ -60,7 +60,7 @@ describe('deployListMismatches', () => {
     assert.equal(deployListMismatches(swapped, platform).length, 1);
   });
 
-  it('reports an ID that is not the row with the node logicalId on the stage Branch', () => {
+  it("reports an ID that is not the row with the node logicalId on the environment's Branch", () => {
     const wrong = listed.map((entry) =>
       entry.address === 'shop.api' ? { ...entry, platformId: 'app_other' } : entry,
     );

@@ -237,10 +237,10 @@ async function listComputeServices(app: string): Promise<readonly ServiceInfo[]>
   return services;
 }
 
-/** The nodes of `kind` that `prisma dev` recorded for `app` in storeDir's `.prisma-composer/dev/emulator-instances.json`. */
+/** The nodes of `kind` that `prisma dev` recorded for `app` in storeDir's `.prisma-composer/dev/dev/emulator-instances.json`. */
 function recordedNodes(app: string, kind: string): Record<string, { id: string }> {
   const record = readJson(
-    path.join(storeDir, '.prisma-composer', 'dev', 'emulator-instances.json'),
+    path.join(storeDir, '.prisma-composer', 'dev', 'dev', 'emulator-instances.json'),
   ) as
     | { apps: Record<string, { nodes: Record<string, { kind: string; id: string }> }> }
     | undefined;
@@ -415,7 +415,7 @@ async function withSql<T>(url: string, fn: (sql: Bun.SQL) => Promise<T>): Promis
 const PROVING_PRODUCT_ID = 'proving-row';
 const APP_NAME = 'store';
 const catalogDist = path.join(storeDir, 'modules', 'catalog', 'dist', 'server.mjs');
-const DEV_STACK_FILE = path.join(storeDir, '.prisma-composer', 'dev', 'alchemy.run.ts');
+const DEV_STACK_FILE = path.join(storeDir, '.prisma-composer', 'dev', 'dev', 'alchemy.run.ts');
 
 /** Walks up from `startDir` looking for `node_modules/.bin/alchemy` — same as local-dev.integration.ts's own helper. */
 function alchemyBin(startDir: string): string {
@@ -524,7 +524,7 @@ async function rebuildCatalogAndReconverge(
   const descriptor = prismaCloud();
   if (descriptor.localTarget === undefined) throw new Error('no localTarget descriptor');
   const dev = await descriptor.localTarget();
-  const container = await dev.container.ensure({ appName: APP_NAME, stage: undefined });
+  const container = await dev.container.ensure({ appName: APP_NAME, environment: 'dev' });
   const envVars = containerEnv(new Map([[descriptor.id, container]]));
 
   const result = spawnSync(
@@ -749,9 +749,9 @@ async function main(): Promise<void> {
       if (dev?.teardown !== undefined) {
         const container = await dev.container.ensure({
           appName: APP_NAME,
-          stage: undefined,
+          environment: 'dev',
         });
-        await dev.teardown({ container, stage: undefined });
+        await dev.teardown({ container, environment: 'dev' });
       }
     } catch (error) {
       console.error(

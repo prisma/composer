@@ -1,9 +1,9 @@
 /**
  * Databases and buckets through the directory's record, against real
  * Compute, Postgres and bucket emulators in a temporary emulators directory:
- * isolation between directories, stopping and resuming an app's databases
- * with their data, switching apps, re-creating a lost database, and
- * `--fresh`.
+ * isolation between directories and between environments, stopping and
+ * resuming an app's databases with their data, re-creating a lost database,
+ * and `--fresh`.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
@@ -27,7 +27,6 @@ import {
   deleteAppInstances,
   type NodeInstance,
   readEmulatorInstances,
-  selectApp,
   stopAppInstances,
 } from '../emulator-instances.ts';
 
@@ -89,9 +88,14 @@ describe.skipIf(process.platform === 'win32')('databases and buckets through the
     else process.env[EMULATORS_DIR_ENV] = savedEmulatorsDir;
   });
 
-  function scopeIn(name: string, app = APP): AppScope & { readonly directory: string } {
+  function scopeIn(
+    name: string,
+    app = APP,
+    environment = 'dev',
+  ): AppScope & { readonly directory: string } {
     const directory = path.join(root, name);
-    const scope = { directory, devDir: path.join(directory, '.prisma-composer', 'dev'), app };
+    const devDir = path.join(directory, '.prisma-composer', 'dev', environment);
+    const scope = { directory, devDir, app, environment };
     scopes.push(scope);
     return scope;
   }
@@ -99,7 +103,7 @@ describe.skipIf(process.platform === 'win32')('databases and buckets through the
   /** The instance recorded for `<app>.<name>`. */
   async function nodeOf(scope: AppScope & { readonly directory: string }, name: string) {
     const address = `${scope.app}.${name}`;
-    const node: NodeInstance | undefined = (await readEmulatorInstances(scope.directory))?.apps[
+    const node: NodeInstance | undefined = (await readEmulatorInstances(scope.devDir))?.apps[
       scope.app
     ]?.nodes[address];
     if (!node) throw new Error(`no instance recorded for "${address}"`);
@@ -169,28 +173,61 @@ describe.skipIf(process.platform === 'win32')('databases and buckets through the
     expect(await query(after.url, 'select v from kept')).toEqual([{ v: 'row' }]);
   }, 120_000);
 
-  test("switching A → B → A stops A's databases and resumes them with their data and ports", async () => {
-    const a = scopeIn('switch');
-    const b = { ...a, app: 'other-app' };
-    scopes.push(b);
-    await selectApp(a);
-    await ensureAppInstances(a, NODES);
-    const before = await databaseOf(a);
-    await query(before.url, "create table kept (v text); insert into kept values ('a')");
-    const recordedA = (await readEmulatorInstances(a.directory))?.apps[APP];
+  test('the same app in two environments of one directory has two databases and two buckets, running at once', async () => {
+    const inDev = scopeIn('environments');
+    const inTest = scopeIn('environments', APP, 'test');
+    await ensureAppInstances(inDev, NODES);
+    const devDb = await databaseOf(inDev);
+    await query(devDb.url, "create table marker (v text); insert into marker values ('dev')");
+    const devS3 = await s3For(inDev, 'AKIAENVDEV');
+    await devS3.s3.send(new PutObjectCommand({ Bucket: devS3.bucket, Key: 'only-dev', Body: 'd' }));
 
-    expect(await selectApp(b)).toBe(APP);
-    expect((await databaseOf(a)).status).toBe('stopped');
-    await ensureAppInstances(b, nodesOf(b.app));
+    await ensureAppInstances(inTest, NODES);
 
-    expect(await selectApp(a)).toBe('other-app');
-    const changes = await ensureAppInstances(a, NODES);
+    const testDb = await databaseOf(inTest);
+    expect(testDb.id).not.toBe(devDb.id);
+    expect(testDb.port).not.toBe(devDb.port);
+    expect((await databaseOf(inDev)).status).toBe('running');
+    expect(await query(testDb.url, "select to_regclass('marker') as reg")).toEqual([{ reg: null }]);
+    expect(await query(devDb.url, 'select v from marker')).toEqual([{ v: 'dev' }]);
+    const testS3 = await s3For(inTest, 'AKIAENVTEST');
+    expect(testS3.bucket).not.toBe(devS3.bucket);
+    const listed = await testS3.s3.send(new ListObjectsV2Command({ Bucket: testS3.bucket }));
+    expect(listed.Contents ?? []).toEqual([]);
+    expect(fs.existsSync(path.join(inDev.devDir, 'buckets', APP, 'uploads', 'only-dev'))).toBe(
+      true,
+    );
+    expect(fs.existsSync(path.join(inTest.devDir, 'buckets', APP, 'uploads', 'only-dev'))).toBe(
+      false,
+    );
+  }, 180_000);
 
-    expect(changes).toEqual([]);
-    expect((await readEmulatorInstances(a.directory))?.apps[APP]).toEqual(recordedA);
-    const after = await databaseOf(a);
-    expect(after).toMatchObject({ status: 'running', url: before.url });
-    expect(await query(after.url, 'select v from kept')).toEqual([{ v: 'a' }]);
+  test("--fresh in one environment deletes only that environment's copy; the other keeps its data", async () => {
+    const inDev = scopeIn('fresh-environment');
+    const inTest = scopeIn('fresh-environment', APP, 'test');
+    await ensureAppInstances(inDev, NODES);
+    await ensureAppInstances(inTest, NODES);
+    const devDb = await databaseOf(inDev);
+    await query(devDb.url, "create table kept (v text); insert into kept values ('dev')");
+    const testDatabase = await nodeOf(inTest, 'catalog');
+
+    await deleteAppInstances(inTest);
+
+    expect(await postgresClient().getInstance(testDatabase.id)).toBeUndefined();
+    expect((await readEmulatorInstances(inTest.devDir))?.apps[APP]).toBeUndefined();
+    expect(await databaseOf(inDev)).toMatchObject({ id: devDb.id, status: 'running' });
+    expect(await query(devDb.url, 'select v from kept')).toEqual([{ v: 'dev' }]);
+  }, 180_000);
+
+  test('running a second app in the same environment stops nothing of the first', async () => {
+    const first = scopeIn('two-apps');
+    const second = scopeIn('two-apps', 'other-app');
+    await ensureAppInstances(first, NODES);
+
+    await ensureAppInstances(second, nodesOf(second.app));
+
+    expect((await databaseOf(first)).status).toBe('running');
+    expect((await databaseOf(second)).status).toBe('running');
   }, 180_000);
 
   test('a recorded database the emulator lost is created again, empty, on its remembered port', async () => {
@@ -218,6 +255,6 @@ describe.skipIf(process.platform === 'win32')('databases and buckets through the
 
     expect(await postgresClient().getInstance(database.id)).toBeUndefined();
     expect(await bucketsClient().getInstance(bucket.id)).toBeUndefined();
-    expect((await readEmulatorInstances(scope.directory))?.apps[APP]).toBeUndefined();
+    expect((await readEmulatorInstances(scope.devDir))?.apps[APP]).toBeUndefined();
   }, 120_000);
 });

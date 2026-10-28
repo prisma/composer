@@ -124,7 +124,7 @@ export function validatePlatformName(
 /** What prisma-cloud's application hook produces; its own descriptors are the only consumers. */
 export interface CloudApplication {
   readonly projectId: string;
-  /** The named stage's Branch id; `undefined` on the default (production) stage. */
+  /** The environment's own Branch id; `undefined` for `production`, which deploys to the default Branch. */
   readonly branchId: string | undefined;
   /** The project's default Branch id; a deploy carries exactly one of `branchId`/`defaultBranchId`. */
   readonly defaultBranchId: string | undefined;
@@ -192,7 +192,7 @@ export function attachmentBranchIdOf(application: unknown, id: string): string |
   if (branchId === undefined && !app.branchless) {
     throw new Error(
       `prisma-cloud: cannot attach database "${id}" to a Branch — the resolved container ` +
-        "carries neither a stage Branch id nor the project's default Branch id. Container " +
+        "carries neither an environment Branch id nor the project's default Branch id. Container " +
         'resolution (ADR-0019) always provides one for a deploy; this is a bug in the ' +
         'container transport.',
     );
@@ -207,7 +207,7 @@ export function attachmentBranchIdOf(application: unknown, id: string): string |
  * the `name` arm. The returned `url` is direct, not pooled — PgWarm and the
  * migration flows need a direct connection.
  */
-export const stageDatabase = ({
+export const nodeDatabase = ({
   id,
   address,
   app,

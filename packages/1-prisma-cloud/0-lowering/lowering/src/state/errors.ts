@@ -6,7 +6,7 @@ import * as Data from 'effect/Data';
  * deployer actually sees, instead of a raw Effect defect.
  */
 export class HostedStateBootstrapError extends Data.TaggedError('HostedStateBootstrapError')<{
-  /** The container the state store lives in: a Project id, or `projectId/branchId` for a named stage. */
+  /** The container the state store lives in: a Project id, or `projectId/branchId` for an environment other than production. */
   readonly container: string;
   readonly step: string;
   readonly reason: string;

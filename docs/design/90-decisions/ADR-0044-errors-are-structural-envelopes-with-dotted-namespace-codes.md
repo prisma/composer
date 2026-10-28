@@ -2,6 +2,8 @@
 
 Amended 2026-10-23: the `CONFIG` registry gains ENTRY_MISSING, for a command or operation that has no entry module from the config or an override.
 
+Amended 2026-10-27: the `DEPLOY` registry follows [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md), which calls a place the app runs an environment. It gains ENVIRONMENT_INVALID, ENVIRONMENT_UNVALIDATABLE and ENVIRONMENT_REQUIRED, and retires STAGE_INVALID, STAGE_UNVALIDATABLE and SCOPE_MISSING. The `DEPS` registry gains EXTENSION_INCOMPATIBLE.
+
 ## The shape of a failure, end to end
 
 The site that detects a failure builds the complete error, because it is the only place that knows the context:
@@ -73,10 +75,10 @@ vocabulary, not import edges.
 | `CONFIG` | shape and coverage of the `composer` section of prisma.config.ts, and the refused old config file | composer-config.ts (family/section.ts, pipeline.ts, validate-coverage.ts) |
 | `COMPOSE` | topology loading: entry, root node, graph shape, naming | pipeline.ts (load-entry.ts, core's graph modules) |
 | `ASSEMBLE` | assembling each service's deploy artifact | `@internal/assemble`'s assemble-services.ts |
-| `DEPLOY` | target selection, stage, containers, preflight, engine, teardown, stack write | operations/execute-deploy-destroy.ts (main.ts, validate-stage.ts, run-alchemy.ts) |
+| `DEPLOY` | target selection, environment, containers, preflight, engine, teardown, stack write | operations/execute-deploy-destroy.ts (main.ts, validate-environment.ts, run-alchemy.ts) |
 | `DEV` | local dev pipeline and session, and the commands on the app it recorded | operations/execute-dev.ts (core/control/local-target.ts, operations/execute-dev-current.ts, `@internal/dev-emulators`) |
 | `LOG` | log attach and tail | operations/execute-log.ts |
-| `DEPS` | the consumer's installed dependency tree | operations/shared.ts |
+| `DEPS` | the consumer's installed dependency tree | operations/shared.ts, operations/execute-deploy-destroy.ts |
 
 Closed subcode registry:
 
@@ -92,14 +94,21 @@ Closed subcode registry:
 - `ASSEMBLE` — EXTENSION_MISSING, DESCRIPTOR_MISSING,
   DESCRIPTOR_KIND_MISMATCH, SERVICE_MISSING, BUILD_FAILED
 - `DEPLOY` — FLAG_INVALID, TARGET_CONFLICT, TARGET_MISSING, TARGET_NOT_FOUND,
-  STAGE_INVALID, STAGE_UNVALIDATABLE, SCOPE_MISSING, CONTAINER_FAILED,
+  ENVIRONMENT_INVALID, ENVIRONMENT_UNVALIDATABLE, ENVIRONMENT_REQUIRED,
+  CONTAINER_FAILED,
   PREFLIGHT_FAILED, ENGINE_FAILED, TEARDOWN_FAILED, CONTAINER_REMOVE_FAILED,
-  BUILD_REQUIRED, ALCHEMY_BIN_MISSING, NODE_MISSING, STACK_WRITE_FAILED.
+  BUILD_REQUIRED, ALCHEMY_BIN_MISSING, NODE_MISSING, STACK_WRITE_FAILED
+  *(STAGE_INVALID, STAGE_UNVALIDATABLE and SCOPE_MISSING retired by
+  [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md))*.
+  ENVIRONMENT_REQUIRED: a `destroy` call names no environment.
   `prisma dev` starts the Alchemy child the same way `deploy` does, so it
   raises ALCHEMY_BIN_MISSING and NODE_MISSING under `DEPLOY` too.
 - `DEV` — PLATFORM_UNSUPPORTED, TARGET_UNSUPPORTED, CONTAINER_FAILED, TEARDOWN_FAILED, PREFLIGHT_FAILED, EMULATOR_FAILED, SERVICE_START_FAILED, CONVERGE_FAILED, ATTACH_FAILED, STACK_WRITE_FAILED, EMULATORS_DIR_INVALID, EMULATOR_UNREACHABLE, SERVICE_READY_TIMEOUT_INVALID, NOT_STARTED_HERE, ADDRESS_UNKNOWN, NOT_RUNNING. EMULATOR_UNREACHABLE is raised by the emulator client when it cannot connect, so `log` raises it under `DEV` too; for a connection failure it takes the place of SERVICE_START_FAILED, ATTACH_FAILED and `LOG.ATTACH_FAILED`. `devUrl` also raises it when the emulator a node runs on is not running. NOT_STARTED_HERE (no `prisma dev` has recorded an app in the directory) is raised by `devUrl` and `devStop`; ADDRESS_UNKNOWN (the recorded app has no node at that address; the known addresses are listed) and NOT_RUNNING (the node exists but is not running; its state is named, and the reason and fix depend on it) by `devUrl` alone ([ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md)). Both operations raise EMULATOR_FAILED when the local target fails without a code. `emulator list` fails only with EMULATORS_DIR_INVALID; an emulator it cannot list is reported in that emulator's entry with EMULATOR_UNREACHABLE or EMULATOR_FAILED.
 - `LOG` — PLATFORM_UNSUPPORTED, ATTACH_FAILED, ADDRESS_UNKNOWN
-- `DEPS` — EXECUTOR_UNLOADABLE *(EFFECT_VERSION_CONFLICT retired by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*
+- `DEPS` — EXECUTOR_UNLOADABLE, EXTENSION_INCOMPATIBLE *(EFFECT_VERSION_CONFLICT retired by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*.
+  EXTENSION_INCOMPATIBLE: an installed extension is older than the Composer
+  running the deploy or destroy, so the container it resolved, rebuilt through
+  its own `deserialize`, does not name the environment that was asked for.
 
 Adding a subcode is an edit to this list; adding a namespace is an amendment to
 this ADR.

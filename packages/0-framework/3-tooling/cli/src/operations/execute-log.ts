@@ -8,13 +8,15 @@
  */
 import * as path from 'node:path';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
-import { DEV_DIR, resolveLocalTargets } from '@internal/core/local-target';
+import { devEnvironmentDir, resolveLocalTargets } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import { resolveAppIdentity } from '../pipeline.ts';
+import { validateEnvironmentName } from '../validate-environment.ts';
+import { requireDevEnvironmentName } from './dev-environment-name.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import type { LogAttached, LogDeps, LogEvent, LogInput, LogLine } from './log.ts';
-import { toStructured } from './shared.ts';
+import { DEV_ENVIRONMENT, toStructured } from './shared.ts';
 
 function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -141,13 +143,16 @@ export async function executeLog(
     );
   }
 
-  const devDir = path.join(cwd, DEV_DIR);
+  const environment = input.environment ?? DEV_ENVIRONMENT;
+  const devDir = path.join(cwd, devEnvironmentDir(environment));
 
   let name: string;
   const attachments: LocalTargetAttachment[] = [];
   let services: readonly { readonly address: string; readonly url: string }[];
 
   try {
+    validateEnvironmentName(environment);
+    requireDevEnvironmentName(devDir, environment);
     const identity =
       deps.identity ?? (await resolveAppIdentity(input.entry, input.name, cwd, input.config));
     name = identity.name;
@@ -160,7 +165,10 @@ export async function executeLog(
 
     for (const target of resolved.values()) {
       try {
-        const container = await target.container.ensure({ appName: name, stage: undefined });
+        const container = await target.container.ensure({
+          appName: name,
+          environment,
+        });
         attachments.push(await withEmulatorRetry(() => target.attach({ container, devDir })));
       } catch (error) {
         throw toStructured('LOG.ATTACH_FAILED', error);

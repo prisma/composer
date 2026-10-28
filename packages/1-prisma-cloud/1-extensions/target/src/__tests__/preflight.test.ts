@@ -10,7 +10,7 @@ import { envSecret } from '../secret.ts';
 
 /** A resolved container matching `input.container` after the boundary move — preflight narrows it with `prismaCloudContainerOf`. */
 const fakeContainer = (projectId: string, branchId: string | undefined) =>
-  new PrismaCloudContainer({ appName: 'app', stage: undefined }, projectId, branchId);
+  new PrismaCloudContainer({ appName: 'app', environment: 'production' }, projectId, branchId);
 
 const build = {
   extension: '@prisma/composer/node',
@@ -196,13 +196,17 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     delete process.env['STRIPE_SECRET_KEY'];
   });
 
-  test('default stage: checks the production class; all-present passes with no writes', async () => {
+  test('production: checks the production class; all-present passes with no writes', async () => {
     state.rows = [
       { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
 
     await runPreflight(
-      { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+      {
+        graph: secretGraph(),
+        container: fakeContainer('proj', undefined),
+        environment: 'production',
+      },
       { client: fakeClient(state) },
     );
 
@@ -212,13 +216,13 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toEqual([]);
   });
 
-  test('named stage: a preview TEMPLATE (branchId null) counts as present', async () => {
+  test('named environment: a preview TEMPLATE (branchId null) counts as present', async () => {
     state.rows = [
       { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
 
     await runPreflight(
-      { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), stage: 'pr-1' },
+      { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
       { client: fakeClient(state) },
     );
 
@@ -226,26 +230,26 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toEqual([]);
   });
 
-  test("named stage: this branch's own OVERRIDE counts as present", async () => {
+  test("named environment: this branch's own OVERRIDE counts as present", async () => {
     state.rows = [
       { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: 'br-1' },
     ];
 
     await runPreflight(
-      { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), stage: 'pr-1' },
+      { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
       { client: fakeClient(state) },
     );
 
     expect(state.posts).toEqual([]);
   });
 
-  test("named stage: another branch's override does NOT count — absent from both fails", async () => {
+  test("named environment: another branch's override does NOT count — absent from both fails", async () => {
     state.rows = [
       { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: 'br-2' },
     ];
 
     const error: unknown = await runPreflight(
-      { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), stage: 'pr-1' },
+      { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
       { client: fakeClient(state) },
     ).catch((e: unknown) => e);
 
@@ -254,12 +258,12 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toEqual([]);
   });
 
-  test('fill-missing (named stage): absent-but-in-shell is POSTed as a preview branch override', async () => {
+  test('fill-missing (named environment): absent-but-in-shell is POSTed as a preview branch override', async () => {
     state.rows = [];
 
     await withEnv({ STRIPE_SECRET_KEY: 'sk_live_fill' }, () =>
       runPreflight(
-        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), stage: 'pr-1' },
+        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
         { client: fakeClient(state) },
       ),
     );
@@ -275,12 +279,16 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     ]);
   });
 
-  test('fill-missing (default stage): POSTed as a production template, no branchId', async () => {
+  test('fill-missing (production): POSTed as a production template, no branchId', async () => {
     state.rows = [];
 
     await withEnv({ STRIPE_SECRET_KEY: 'sk_live_fill' }, () =>
       runPreflight(
-        { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+        {
+          graph: secretGraph(),
+          container: fakeContainer('proj', undefined),
+          environment: 'production',
+        },
         { client: fakeClient(state) },
       ),
     );
@@ -297,7 +305,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
     await withEnv({ STRIPE_SECRET_KEY: 'sk_live_ignored' }, () =>
       runPreflight(
-        { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+        {
+          graph: secretGraph(),
+          container: fakeContainer('proj', undefined),
+          environment: 'production',
+        },
         { client: fakeClient(state) },
       ),
     );
@@ -309,7 +321,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     state.rows = [];
 
     const error: unknown = await runPreflight(
-      { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+      {
+        graph: secretGraph(),
+        container: fakeContainer('proj', undefined),
+        environment: 'production',
+      },
       { client: fakeClient(state) },
     ).catch((e: unknown) => e);
 
@@ -324,11 +340,15 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toEqual([]);
   });
 
-  test('quotes the stage in the printed add command so it is safe to paste', async () => {
+  test('quotes the environment in the printed add command so it is safe to paste', async () => {
     state.rows = [];
 
     const error = await runPreflight(
-      { graph: secretGraph(), container: fakeContainer('proj', 'br_1'), stage: `it's "$HOME" x` },
+      {
+        graph: secretGraph(),
+        container: fakeContainer('proj', 'br_1'),
+        environment: `it's "$HOME" x`,
+      },
       { client: fakeClient(state) },
     ).catch((e: unknown) => e);
 
@@ -344,7 +364,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
         {
           graph: secretGraph(),
           container: fakeContainer('proj', undefined),
-          stage: undefined,
+          environment: 'production',
           report: (counts) => reports.push(counts),
         },
         { client: fakeClient(state) },
@@ -367,7 +387,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
   test('a graph with no pointer secrets is a pass-through — no platform calls at all', async () => {
     await runPreflight(
-      { graph: noSecretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+      {
+        graph: noSecretGraph(),
+        container: fakeContainer('proj', undefined),
+        environment: 'production',
+      },
       { client: fakeClient(state) },
     );
 
@@ -377,7 +401,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
   test('a generated leaf is skipped — nothing to seed, no platform calls at all', async () => {
     await runPreflight(
-      { graph: generatedGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+      {
+        graph: generatedGraph(),
+        container: fakeContainer('proj', undefined),
+        environment: 'production',
+      },
       { client: fakeClient(state) },
     );
 
@@ -396,7 +424,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
         {
           graph: secretGraph(),
           container: fakeContainer('proj', undefined),
-          stage: undefined,
+          environment: 'production',
           report: (counts) => reports.push(counts),
         },
         { client: fakeClient(state) },
@@ -441,7 +469,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     } as unknown as ManagementApiClient;
 
     await runPreflight(
-      { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+      {
+        graph: secretGraph(),
+        container: fakeContainer('proj', undefined),
+        environment: 'production',
+      },
       { client },
     );
 
@@ -454,7 +486,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     state.rows = [];
 
     const error: unknown = await runPreflight(
-      { graph: sharedSecretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+      {
+        graph: sharedSecretGraph(),
+        container: fakeContainer('proj', undefined),
+        environment: 'production',
+      },
       { client: fakeClient(state) },
     ).catch((e: unknown) => e);
 
@@ -470,7 +506,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     state.rows = [];
 
     const error: unknown = await runPreflight(
-      { graph: paramGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+      {
+        graph: paramGraph(),
+        container: fakeContainer('proj', undefined),
+        environment: 'production',
+      },
       { client: fakeClient(state) },
     ).catch((e: unknown) => e);
 
@@ -486,7 +526,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
     await withEnv({ APP_ORIGIN: 'https://preview.example.com' }, () =>
       runPreflight(
-        { graph: paramGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+        {
+          graph: paramGraph(),
+          container: fakeContainer('proj', undefined),
+          environment: 'production',
+        },
         { client: fakeClient(state) },
       ),
     );
@@ -505,7 +549,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     state.rows = [{ projectId: 'proj', class: 'production', key: 'APP_ORIGIN', branchId: null }];
 
     await runPreflight(
-      { graph: paramGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+      {
+        graph: paramGraph(),
+        container: fakeContainer('proj', undefined),
+        environment: 'production',
+      },
       { client: fakeClient(state) },
     );
 
@@ -514,7 +562,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
   test('a literal-bound param never reaches the platform — no calls at all', async () => {
     await runPreflight(
-      { graph: literalParamGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+      {
+        graph: literalParamGraph(),
+        container: fakeContainer('proj', undefined),
+        environment: 'production',
+      },
       { client: fakeClient(state) },
     );
 
@@ -531,7 +583,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       ];
 
       await runPreflight(
-        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), stage: 'pr-1' },
+        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
         { client: fakeClient(state) },
       );
 
@@ -547,7 +599,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
       await expect(
         runPreflight(
-          { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+          {
+            graph: secretGraph(),
+            container: fakeContainer('proj', undefined),
+            environment: 'production',
+          },
           { client: fakeClient(state) },
         ),
       ).rejects.toThrow(/pagination appears broken.*possibly incomplete listing/);
@@ -559,7 +615,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
       await expect(
         runPreflight(
-          { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+          {
+            graph: secretGraph(),
+            container: fakeContainer('proj', undefined),
+            environment: 'production',
+          },
           { client: fakeClient(state) },
         ),
       ).rejects.toThrow(/did not finish within 1000 pages/);
@@ -571,7 +631,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
       await expect(
         runPreflight(
-          { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+          {
+            graph: secretGraph(),
+            container: fakeContainer('proj', undefined),
+            environment: 'production',
+          },
           { client: fakeClient(state) },
         ),
       ).rejects.toThrow(/reported more pages but returned no cursor/);
@@ -591,7 +655,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       ];
 
       const timestamps = await runPreflight(
-        { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+        {
+          graph: secretGraph(),
+          container: fakeContainer('proj', undefined),
+          environment: 'production',
+        },
         { client: fakeClient(state) },
       );
 
@@ -617,7 +685,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       ];
 
       const timestamps = await runPreflight(
-        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), stage: 'feature' },
+        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'feature' },
         { client: fakeClient(state) },
       );
 
@@ -643,12 +711,12 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       ];
 
       const timestamps = await runPreflight(
-        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), stage: 'feature' },
+        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'feature' },
         { client: fakeClient(state) },
       );
 
       // Recency, not scope precedence: the rotation signal is the newest write
-      // among every row visible to this stage.
+      // among every row visible to this environment.
       expect(timestamps.get('STRIPE_SECRET_KEY')).toBe('2026-08-08T12:00:00.000Z');
     });
 
@@ -671,7 +739,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       ];
 
       const timestamps = await runPreflight(
-        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), stage: 'feature' },
+        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'feature' },
         { client: fakeClient(state) },
       );
 
@@ -683,7 +751,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
       const timestamps = await withEnv({ STRIPE_SECRET_KEY: 'sk_live_fill' }, () =>
         runPreflight(
-          { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+          {
+            graph: secretGraph(),
+            container: fakeContainer('proj', undefined),
+            environment: 'production',
+          },
           { client: fakeClient(state) },
         ),
       );
@@ -697,7 +769,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
       const timestamps = await withEnv({ STRIPE_SECRET_KEY: 'sk_live_fill' }, () =>
         runPreflight(
-          { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+          {
+            graph: secretGraph(),
+            container: fakeContainer('proj', undefined),
+            environment: 'production',
+          },
           { client: fakeClient(state) },
         ),
       );
@@ -707,7 +783,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
     test('a graph with nothing to check hands back an empty map', async () => {
       const timestamps = await runPreflight(
-        { graph: noSecretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+        {
+          graph: noSecretGraph(),
+          container: fakeContainer('proj', undefined),
+          environment: 'production',
+        },
         { client: fakeClient(state) },
       );
 
@@ -719,7 +799,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
       const timestamps = await withEnv({ STRIPE_SECRET_KEY: 'sk_live_sentinel' }, () =>
         runPreflight(
-          { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+          {
+            graph: secretGraph(),
+            container: fakeContainer('proj', undefined),
+            environment: 'production',
+          },
           { client: fakeClient(state) },
         ),
       );
@@ -756,7 +840,7 @@ describe('runPreflight — a COMPOSER_ key that changes owner in the move to ful
 
   const preflight = () =>
     runPreflight(
-      { graph: clashGraph(), container: fakeContainer('proj', 'br_1'), stage: 'pr-1' },
+      { graph: clashGraph(), container: fakeContainer('proj', 'br_1'), environment: 'pr-1' },
       { client: fakeClient(state) },
     );
 
@@ -776,11 +860,15 @@ describe('runPreflight — a COMPOSER_ key that changes owner in the move to ful
     expect(state.posts).toEqual([]);
   });
 
-  test('quotes the stage so the printed command is safe to paste', async () => {
+  test('quotes the environment so the printed command is safe to paste', async () => {
     state.rows = [row('COMPOSER_SHOP_X_ORIGIN')];
 
     const error = await runPreflight(
-      { graph: clashGraph(), container: fakeContainer('proj', 'br_1'), stage: `it's "$HOME" x` },
+      {
+        graph: clashGraph(),
+        container: fakeContainer('proj', 'br_1'),
+        environment: `it's "$HOME" x`,
+      },
       { client: fakeClient(state) },
     ).catch((e: unknown) => e);
 
@@ -832,7 +920,11 @@ describe('runPreflight — a chain of COMPOSER_ keys that change owner', () => {
   });
   const preflight = (state: FakeState) =>
     runPreflight(
-      { graph: chainGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+      {
+        graph: chainGraph(),
+        container: fakeContainer('proj', undefined),
+        environment: 'production',
+      },
       { client: fakeClient(state) },
     );
 

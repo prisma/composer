@@ -22,14 +22,8 @@ const build = {
   entry: 'server.js',
 };
 
-const fakeContainer = () =>
-  new PrismaCloudContainer(
-    { appName: 'app', stage: undefined },
-    'local',
-    undefined,
-    undefined,
-    true,
-  );
+const fakeContainer = (environment = 'dev') =>
+  new PrismaCloudContainer({ appName: 'app', environment }, 'local', undefined, undefined, true);
 
 /** Passes when every field named in `required` holds a secret. */
 const requiresSecrets = (...required: string[]): StandardSchemaV1<unknown, unknown> => ({
@@ -118,8 +112,12 @@ const sharedGraph = () =>
 
 const NAMES = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'APP_PORT'];
 
-const preflight = (graph: ReturnType<typeof Load>) =>
-  runDevPreflight({ graph, container: fakeContainer(), stage: undefined });
+const preflight = (graph: ReturnType<typeof Load>, environment = 'dev') =>
+  runDevPreflight({ graph, container: fakeContainer(environment), environment });
+
+/** The folder `prisma dev --environment <name>` keeps its local copy in. */
+const environmentDir = (cwd: string, folder = 'dev') =>
+  path.join(cwd, '.prisma-composer', 'dev', folder);
 
 async function preflightError(graph: ReturnType<typeof Load>): Promise<string> {
   const error: unknown = await preflight(graph).catch((e: unknown) => e);
@@ -312,7 +310,7 @@ describe('prisma dev preflight', () => {
 
   test('the fingerprint key is created once, readable only by its owner, and reused', async () => {
     process.env['APP_PORT'] = '3000';
-    const keyPath = path.join(cwd, '.prisma-composer', 'dev', 'fingerprint.key');
+    const keyPath = path.join(environmentDir(cwd), 'fingerprint.key');
 
     const first = devPayload(transported(await preflight(paramGraph())));
     const key = fs.readFileSync(keyPath);
@@ -325,7 +323,7 @@ describe('prisma dev preflight', () => {
 
   test('a lost fingerprint key only changes the fingerprints', async () => {
     process.env['APP_PORT'] = '3000';
-    const keyPath = path.join(cwd, '.prisma-composer', 'dev', 'fingerprint.key');
+    const keyPath = path.join(environmentDir(cwd), 'fingerprint.key');
 
     const first = devPayload(transported(await preflight(paramGraph())));
     fs.rmSync(keyPath);
@@ -352,18 +350,18 @@ describe('prisma dev preflight', () => {
 
   test('a damaged fingerprint key stops dev with the file and how to fix it', async () => {
     process.env['APP_PORT'] = '3000';
-    const devDir = path.join(cwd, '.prisma-composer', 'dev');
+    const devDir = environmentDir(cwd);
     fs.mkdirSync(devDir, { recursive: true });
     fs.writeFileSync(path.join(devDir, 'fingerprint.key'), 'short');
 
     const message = await preflightError(paramGraph());
 
-    expect(message).toContain(path.join('.prisma-composer', 'dev', 'fingerprint.key'));
+    expect(message).toContain(path.join('.prisma-composer', 'dev', 'dev', 'fingerprint.key'));
     expect(message).toContain('Delete the file or run `prisma dev --fresh`');
   });
 
   test('a secrets file left by an older prisma dev is deleted', async () => {
-    const devDir = path.join(cwd, '.prisma-composer', 'dev');
+    const devDir = environmentDir(cwd);
     fs.mkdirSync(devDir, { recursive: true });
     fs.writeFileSync(path.join(devDir, 'secrets.json'), '{"STRIPE_SECRET_KEY":"sk_live_old"}');
     fs.writeFileSync(path.join(devDir, 'env.json'), '{}');
@@ -371,5 +369,35 @@ describe('prisma dev preflight', () => {
     await preflight(paramGraph()).catch(() => undefined);
 
     expect(fs.readdirSync(devDir)).toEqual(['env.json']);
+  });
+
+  test('a secrets file a release before environments wrote is deleted, not moved into dev', async () => {
+    const root = path.join(cwd, '.prisma-composer', 'dev');
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(
+      path.join(root, 'emulator-instances.json'),
+      '{"formatVersion":2,"current":"app","apps":{}}',
+    );
+    fs.writeFileSync(path.join(root, 'secrets.json'), '{"STRIPE_SECRET_KEY":"sk_live_old"}');
+
+    await preflight(paramGraph(), 'test').catch(() => undefined);
+
+    expect(fs.existsSync(path.join(root, 'secrets.json'))).toBe(false);
+    expect(fs.existsSync(path.join(environmentDir(cwd), 'secrets.json'))).toBe(false);
+  });
+
+  test('each environment has its own fingerprint key, in its own folder', async () => {
+    process.env['APP_PORT'] = '3000';
+
+    const versions = [];
+    for (const environment of ['dev', 'test', 'feature/x']) {
+      const payload = devPayload(transported(await preflight(paramGraph(), environment)));
+      versions.push(payload.pointerVersions.get('APP_PORT'));
+    }
+
+    expect(new Set(versions).size).toBe(3);
+    for (const folder of ['dev', 'test', 'feature%2Fx']) {
+      expect(fs.existsSync(path.join(environmentDir(cwd, folder), 'fingerprint.key'))).toBe(true);
+    }
   });
 });

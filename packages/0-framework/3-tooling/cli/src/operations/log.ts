@@ -40,6 +40,8 @@ export interface LogInput {
   /** The entry module, resolved against `cwd`. Overrides the `entry` in `config`; without either the operation fails with `CONFIG.ENTRY_MISSING`. */
   readonly entry?: string | undefined;
   readonly name?: string | undefined;
+  /** The environment whose local copy to read. Defaults to `dev`. */
+  readonly environment?: string | undefined;
   /** Restrict to one service's dotted address; validated against running services. */
   readonly address?: string | undefined;
   /** Trailing history lines before live output. Defaults to 0 (live only). */

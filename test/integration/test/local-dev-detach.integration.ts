@@ -4,10 +4,14 @@
  *
  * 1. It exits 0 once every service answers, and the services keep answering
  *    after it exits.
- * 2. Stopping the app then stops them. The installed host does not mount
- *    `prisma dev stop` yet, so this calls the `devStop` operation of
- *    `@prisma/composer/control`, which that command renders.
- * 3. A detached run that fails before ready leaves nothing of the app
+ * 2. A second environment, `test`, runs beside `dev` in the same directory:
+ *    `dev url` gives each its own URL, `--fresh` on `test` keeps `dev`'s
+ *    bucket object, and stopping `test` leaves `dev` answering.
+ * 3. Stopping the app then stops them. The installed host does not mount
+ *    `prisma dev url` or `prisma dev stop` yet, so this calls the `devUrl`
+ *    and `devStop` operations of `@prisma/composer/control`, which those
+ *    commands render.
+ * 4. A detached run that fails before ready leaves nothing of the app
  *    running. The Compute emulator is restarted with a one-millisecond
  *    readiness timeout, so the first service fails after the converge has
  *    started the app's databases.
@@ -26,8 +30,8 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { Load, module } from '@prisma/composer';
-import { DEV_DIR } from '@prisma/composer/config';
-import { devStop } from '@prisma/composer/control';
+import { DEV_DIR, devEnvironmentDir } from '@prisma/composer/config';
+import { devStop, devUrl } from '@prisma/composer/control';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import prismaConfig from '../prisma.config.ts';
 import { prismaBinDir } from './spawn-prisma.ts';
@@ -38,7 +42,7 @@ function assert(condition: unknown, message: string): asserts condition {
 
 const integrationDir = path.resolve(import.meta.dir, '..');
 const fixtureEntry = path.join('test', 'fixtures', 'local-dev', 'module.ts');
-const devDir = path.join(integrationDir, '.prisma-composer', 'dev');
+const devDir = path.join(integrationDir, devEnvironmentDir('dev'));
 const logDir = path.join(integrationDir, '.local-dev-detach-logs');
 const CLI_BIN = path.join(prismaBinDir(integrationDir), 'prisma');
 const EXIT_TIMEOUT_MS = 120_000;
@@ -78,19 +82,24 @@ function env(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   return result;
 }
 
-/** Runs `prisma dev <fixture> --detach --fresh --json` to completion; returns its exit code and output. */
+/** Runs `prisma dev <fixture> --detach --fresh --json [args]` to completion; returns its exit code and output. */
 async function runDetached(
   runEnv: NodeJS.ProcessEnv,
+  args: readonly string[] = [],
 ): Promise<{ code: number | null; log: string }> {
   runCount += 1;
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, `run-${String(runCount)}.log`);
   const logFd = fs.openSync(logPath, 'w');
-  const child = spawn(CLI_BIN, ['dev', '--entry', fixtureEntry, '--detach', '--fresh', '--json'], {
-    cwd: integrationDir,
-    env: runEnv,
-    stdio: ['ignore', logFd, logFd],
-  });
+  const child = spawn(
+    CLI_BIN,
+    ['dev', '--entry', fixtureEntry, '--detach', '--fresh', '--json', ...args],
+    {
+      cwd: integrationDir,
+      env: runEnv,
+      stdio: ['ignore', logFd, logFd],
+    },
+  );
   fs.closeSync(logFd);
   const code = await new Promise<number | null>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -133,18 +142,27 @@ function acceptsConnection(port: number): Promise<boolean> {
   });
 }
 
-/** The ports the directory's record holds for the current app's services and databases. */
+/** The ports the environment's record holds for the app's services and databases. */
 function recordedPorts(): readonly { readonly kind: string; readonly port: number }[] {
   const record = JSON.parse(
     fs.readFileSync(path.join(devDir, 'emulator-instances.json'), 'utf8'),
   ) as {
-    current: string;
     apps: Record<string, { nodes: Record<string, { kind: string; port?: number }> }>;
   };
-  const nodes = record.apps[record.current]?.nodes ?? {};
+  const nodes = record.apps[APP]?.nodes ?? {};
   return Object.values(nodes).flatMap(({ kind, port }) =>
     port === undefined ? [] : [{ kind, port }],
   );
+}
+
+/** The URL `dev url` prints for the address in the environment. */
+async function urlOf(address: string, environment: string): Promise<string> {
+  const result = await devUrl({ config, address, environment, cwd: integrationDir });
+  assert(
+    result.ok,
+    `dev url ${address} --environment ${environment} succeeds (${result.ok ? '' : result.failure.message})`,
+  );
+  return result.value.url;
 }
 
 /** Asserts the record holds a service and a database port, and that none of them accepts connections. */
@@ -177,7 +195,7 @@ async function reserveServicePortsBelow(port: number): Promise<void> {
       module('portskip', () => {}),
       { id: 'portskip' },
     ),
-    container: await target.container.ensure({ appName: 'portskip', stage: undefined }),
+    container: await target.container.ensure({ appName: 'portskip', environment: 'dev' }),
     devDir: path.join(tempRoot, 'placeholders', DEV_DIR),
   });
   const { port: adminPort } = JSON.parse(
@@ -223,13 +241,56 @@ async function main(): Promise<void> {
   }
   console.log('[detach] PASS: exit 0 once ready, and every service answers after it exits');
 
-  // ——— 2. Stopping the app stops them ———
-  const stopped = await devStop({ config, cwd: integrationDir });
+  // ——— 2. A second environment runs beside dev ———
+  const test = await runDetached(env(), ['--environment', 'test']);
+  assert(
+    test.code === 0,
+    `prisma dev --environment test --detach exits 0 (got ${String(test.code)})`,
+  );
+  const devWeb = await urlOf(`${APP}.web`, 'dev');
+  const testWeb = await urlOf(`${APP}.web`, 'test');
+  assert(devWeb !== testWeb, `dev and test have different URLs (${devWeb}, ${testWeb})`);
+  for (const url of [devWeb, testWeb]) {
+    const res = await fetch(`${url}/health`);
+    assert(res.status === 200, `${url} answers while both environments run`);
+  }
+  const put = await fetch(`${devWeb}/blobs/kept.txt`, { method: 'PUT', body: 'dev data' });
+  assert(put.status === 201, `dev stores an object (got ${String(put.status)})`);
+
+  const freshTest = await runDetached(env(), ['--environment', 'test']);
+  assert(freshTest.code === 0, 'prisma dev --environment test --fresh --detach exits 0 again');
+  const kept = await fetch(`${devWeb}/blobs/kept.txt`);
+  assert(
+    kept.status === 200 && (await kept.text()) === 'dev data',
+    `dev's object survives --fresh on test (got ${String(kept.status)})`,
+  );
+  const inTest = await fetch(`${await urlOf(`${APP}.web`, 'test')}/blobs/kept.txt`);
+  assert(inTest.status === 404, `test does not see dev's object (got ${String(inTest.status)})`);
+
+  const stoppedTest = await devStop({
+    config,
+    entry: fixtureEntry,
+    environment: 'test',
+    cwd: integrationDir,
+  });
+  assert(
+    stoppedTest.ok,
+    `devStop --environment test succeeds (${stoppedTest.ok ? '' : stoppedTest.failure.message})`,
+  );
+  const testPort = Number(new URL(testWeb).port);
+  assert(!(await acceptsConnection(testPort)), `test's web port ${String(testPort)} is closed`);
+  assert((await fetch(`${devWeb}/health`)).status === 200, 'dev still answers after test stops');
+  console.log(
+    '[detach] PASS: test runs beside dev with its own URL; --fresh and stop on test leave dev alone',
+  );
+
+  // ——— 3. Stopping the app stops them ———
+  const stopped = await devStop({ config, entry: fixtureEntry, cwd: integrationDir });
   assert(stopped.ok, `devStop succeeds (${stopped.ok ? '' : stopped.failure.message})`);
   await assertNothingListens('after stopping');
   console.log('[detach] PASS: stopping the app closes every service and database port');
 
-  // ——— 3. A failure before ready leaves nothing running ———
+  // ——— 4. A failure before ready leaves nothing running ———
   // The Compute emulator reads the timeout when it starts, so end it first.
   await stopEmulator('compute');
   const failed = await runDetached(env({ PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS: '1' }));
@@ -271,10 +332,12 @@ async function cleanUp(): Promise<void> {
   const localTarget = prismaCloud().localTarget;
   if (localTarget !== undefined) {
     const target = await localTarget();
-    const container = await target.container.ensure({ appName: APP, stage: undefined });
-    await target.teardown?.({ container, stage: undefined }).catch((error: unknown) => {
-      console.error(`teardown failed: ${String(error)}`);
-    });
+    for (const environment of ['dev', 'test']) {
+      const container = await target.container.ensure({ appName: APP, environment });
+      await target.teardown?.({ container, environment }).catch((error: unknown) => {
+        console.error(`teardown of ${environment} failed: ${String(error)}`);
+      });
+    }
   }
   for (const name of ['compute', 'buckets', 'postgres']) await stopEmulator(name);
   fs.rmSync(tempRoot, { recursive: true, force: true });

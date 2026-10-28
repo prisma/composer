@@ -93,7 +93,7 @@ pnpm prisma deploy
 
 To remove it, delete its Project: find the id with `prisma project list`, then
 run `prisma project delete <id> --confirm <id>`; see
-[Removing an app or a stage](../../docs/guides/deploying.md#removing-an-app-or-a-stage).
+[Removing an app or an environment](../../docs/guides/deploying.md#removing-an-app-or-an-environment).
 Inside the
 prisma/composer repository, `pnpm deploy` and `pnpm destroy` wrap both with
 the repository's `.env`.

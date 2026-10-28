@@ -2,7 +2,7 @@
  * Deploy preflight (ADR-0029, extended for env-sourced params): before Alchemy
  * runs, verify every secret binding AND every env-sourced param binding in the
  * app's manifests (each a platform env-var NAME) exists on Prisma Cloud for
- * the target stage. A literal-bound param never touches the platform — only
+ * the target environment. A literal-bound param never touches the platform — only
  * `envParam(...)` sources are checked here.
  * A name absent on the platform but present in the deploy shell is provisioned
  * via a direct Management API POST — NEVER an Alchemy resource, so the value
@@ -41,7 +41,7 @@ import { collectPreflightNames } from './preflight-names.ts';
 
 type EnvClass = 'production' | 'preview';
 
-/** production for the default stage; preview for a named stage — matching how the pack writes config rows. */
+/** production for the environment `production`; preview for any other — matching how the pack writes config rows. */
 const classFor = (branchId: string | undefined): EnvClass =>
   branchId === undefined ? 'production' : 'preview';
 
@@ -85,13 +85,13 @@ async function listEnvVars(
 /** What the platform holds for one name: whether it is there at all, and when it last changed. */
 interface PlatformVariable {
   readonly exists: boolean;
-  /** The latest `updatedAt` across every row visible to this stage — undefined when the name is absent. */
+  /** The latest `updatedAt` across every row visible to this environment — undefined when the name is absent. */
   readonly updatedAt?: string;
 }
 
 /**
- * What the platform holds for `key` in the target stage's scope. Default stage
- * → any production-class template. Named stage → a preview template (branchId
+ * What the platform holds for `key` in the target environment's scope. `production`
+ * → any production-class template. Any other environment → a preview template (branchId
  * null) OR this branch's own override — the platform's preview materialization
  * (pdp-data-model.md). Metadata read only; env-var values are write-only.
  *
@@ -149,7 +149,7 @@ async function readPlatformVariable(
   return latest === undefined ? { exists } : { exists, updatedAt: latest };
 }
 
-/** Whether `key` has a row in the scope Composer writes its own rows to: production, or the stage's branch. */
+/** Whether `key` has a row in the scope Composer writes its own rows to: production, or the environment's branch. */
 async function composerRowExists(
   client: ManagementApiClient,
   projectId: string,
@@ -181,7 +181,7 @@ async function composerRowExists(
 /**
  * A clash blocks the deploy while the old owner's row still holds the key and has not moved to
  * its new key yet. Before the move, the deploy would fail on that key partway through; after it,
- * the key belongs to the new owner, and a new stage has neither row. The old owner's new key can
+ * the key belongs to the new owner, and a new environment has neither row. The old owner's new key can
  * itself be a third node's old key (`shop.x`, `shop.shop.x`, `shop.shop.shop.x`); a row there
  * counts as moved only when that clash is not pending, so a whole chain is reported at once.
  * Along a chain every key is longer than the one before, so the walk ends.
@@ -217,8 +217,8 @@ async function pendingEnvKeyClashes(
 
 /**
  * Provision `key`=`value` directly via the Management API for the target
- * stage's scope (a production template for the default stage; a preview branch
- * override for a named stage — the same scope the pack's config rows are
+ * environment's scope (a production template for `production`; a preview branch
+ * override for any other environment — the same scope the pack's config rows are
  * written to, through alchemy's `Prisma.EnvironmentVariable`). A 409 means a
  * concurrent deploy already provisioned
  * it — tolerated. The value is never logged.
@@ -279,13 +279,13 @@ function missingError(
   missing: readonly MissingBinding[],
   projectId: string,
   branchId: string | undefined,
-  stage: string | undefined,
+  environment: string,
 ): Error {
   const lines = missing.map((m) => `  - ${m.name}  (used by service "${m.serviceAddress}")`);
   const countPhrase =
     missing.length === 1 ? '1 required setting has' : `${missing.length} required settings have`;
   const scopeFlag =
-    branchId === undefined ? '--role production' : `--branch ${shellQuote(stage ?? branchId)}`;
+    branchId === undefined ? '--role production' : `--branch ${shellQuote(environment)}`;
   // `project env add` takes a single KEY=VALUE per call. Quoting the pair keeps the
   // `<value>` placeholder from being read as a shell redirection.
   const commands = missing.map(
@@ -299,7 +299,7 @@ function missingError(
   const consoleStep =
     branchId === undefined
       ? 'add each one under Production. Those values apply when the default branch deploys to production.'
-      : `add each one under Preview. Preview values apply to every branch deploy, including "${stage ?? branchId}".`;
+      : `add each one under Preview. Preview values apply to every branch deploy, including "${environment}".`;
   return new Error(
     `Deploy failed. ${countPhrase} no value:\n` +
       `${lines.join('\n')}\n\n` +
@@ -313,10 +313,10 @@ function envKeyClashError(
   clashes: readonly EnvKeyClash[],
   projectId: string,
   branchId: string | undefined,
-  stage: string | undefined,
+  environment: string,
 ): Error {
   const scopeFlag =
-    branchId === undefined ? '--role production' : `--branch ${shellQuote(stage ?? branchId)}`;
+    branchId === undefined ? '--role production' : `--branch ${shellQuote(environment)}`;
   const lines = clashes.map(
     (c) =>
       `  - ${c.key} belongs to "${c.oldOwner}" from the previous Composer release. ` +
@@ -335,7 +335,7 @@ function envKeyClashError(
       'nothing is lost; the running deployments keep their own copy until then.\n' +
       `${commands.join('\n')}\n` +
       'Or delete it in the Prisma Console: open the project, go to Environment variables, and ' +
-      `delete it under ${branchId === undefined ? 'Production' : `the branch "${stage ?? branchId}"`}.`,
+      `delete it under ${branchId === undefined ? 'Production' : `the branch "${environment}"`}.`,
   );
 }
 
@@ -384,7 +384,7 @@ export async function runPreflight(
 
   const client = input.credentials?.client ?? deps?.client ?? (await managementClient());
   const pending = await pendingEnvKeyClashes(client, projectId, branchId, clashes);
-  if (pending.length > 0) throw envKeyClashError(pending, projectId, branchId, input.stage);
+  if (pending.length > 0) throw envKeyClashError(pending, projectId, branchId, input.environment);
   const missing: MissingBinding[] = [];
   const updatedAt = new Map<string, string>();
   let filled = 0;
@@ -406,7 +406,7 @@ export async function runPreflight(
     missing.push(meta);
   }
   input.report?.({ checked: names.size, filled, missing: missing.length });
-  if (missing.length > 0) throw missingError(missing, projectId, branchId, input.stage);
+  if (missing.length > 0) throw missingError(missing, projectId, branchId, input.environment);
   return updatedAt;
 }
 

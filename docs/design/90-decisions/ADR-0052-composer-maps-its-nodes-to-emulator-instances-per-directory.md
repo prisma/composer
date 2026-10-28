@@ -2,6 +2,8 @@
 
 Amended by [ADR-0057](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md): the record's node keys and the `composer.address` label are full addresses (`shop.quotes`). A record keyed by the older, shorter addresses is rewritten on the first `prisma dev`, so its instances, ports and data are kept.
 
+Amended 2026-10-28: each environment runs its own local copy. `prisma dev --environment <name>` (default `dev`) runs the whole app as that environment, with its own services, databases, buckets and ports, so two environments of one app can run at once in one directory. The record is keyed by app, environment and node, and has no `current` app. Running another app or another environment stops nothing that is already running. Every local file that belongs to one copy lives in `.prisma-composer/dev/<environment>/`: the record, the environment variable values, the fingerprint key (ADR-0058), the generated stack file, the artifacts and the bucket objects. The folder name is the environment name, encoded, because a name may contain `/`. Alchemy's stage is the environment name, so Alchemy keeps each copy's state at `.alchemy/state/<app>/<environment>`. `--fresh` deletes only the copy of the app in the environment it runs. Each instance also gets a `composer.environment` label, for display only. Local state written before this change is moved into the `dev` environment by the first `prisma dev`, so its instances, ports, databases and bucket objects survive. That reverses the rule below that local state is never migrated, as the full-address amendment above already did for the record.
+
 
 ## Decision
 

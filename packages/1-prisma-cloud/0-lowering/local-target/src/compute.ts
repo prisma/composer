@@ -19,11 +19,10 @@ import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
 import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
-import { appNameOf } from './app-name.ts';
+import { appScopeOf } from './app-name.ts';
 import { extractComputeArtifact } from './artifact-extract.ts';
 import { envStore } from './dev-store.ts';
 import {
-  type AppScope,
   deleteNodeInstance,
   ensureServiceInstance,
   liveServiceInstance,
@@ -230,8 +229,8 @@ export async function materializeEnv(
   return env;
 }
 
-function appScopeOf(input: LocalTargetProvidersInput): AppScope {
-  return { devDir: input.devDir, app: appNameOf(input.container) };
+function artifactDirOf(devDir: string, artifactHash: string): string {
+  return path.join(devDir, 'artifacts', artifactHash);
 }
 
 function localUrl(port: number): string {
@@ -358,7 +357,7 @@ export function LocalDeploymentProvider(
           }
           const artifactHash = await artifactSha256(news.artifactPath);
 
-          const artifactDir = path.join(input.devDir, 'artifacts', artifactHash);
+          const artifactDir = artifactDirOf(input.devDir, artifactHash);
           if (!fs.existsSync(artifactDir)) {
             extractComputeArtifact(news.artifactPath, artifactDir);
           }
@@ -396,14 +395,18 @@ export function LocalDeploymentProvider(
       }),
     // An instance that no longer runs this deployment — re-created after the
     // emulator lost it, or never deployed — needs the deployment again, even
-    // when nothing in the app changed.
+    // when nothing in the app changed, and so does an artifact no longer
+    // unpacked in the environment's folder.
     diff: ({ output }) =>
       Effect.tryPromise({
         try: async () => {
           if (output === undefined) return undefined;
           const live = await liveServiceInstance(appScopeOf(input), output.appId);
-          if (live?.artifactHash === output.artifactHash) return undefined;
-          return { action: 'update' as const };
+          const { artifactHash } = output;
+          if (live?.artifactHash !== artifactHash) return { action: 'update' as const };
+          const unpacked =
+            artifactHash === undefined || fs.existsSync(artifactDirOf(input.devDir, artifactHash));
+          return unpacked ? undefined : { action: 'update' as const };
         },
         catch: (cause) => cause,
       }),

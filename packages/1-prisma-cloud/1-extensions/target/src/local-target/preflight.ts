@@ -1,7 +1,7 @@
 /**
  * Dev preflight (local-dev spec § 5, ADR-0041): the same name walk deploy's
  * preflight uses (`preflight-names.ts`), with dev's value-sourcing policy.
- * Every value comes from this run's environment: the shell, or a `.env` that
+ * Every value comes from this run's environment variables: the shell, or a `.env` that
  * `prisma.config.ts` loads. An unset or empty secret is left out of the
  * service's input; it is an error only when the service's schema rejects
  * its absence. An unset or empty env-sourced param is always an error.
@@ -13,8 +13,12 @@
 import type { Graph, ServiceNode } from '@internal/core';
 import { inputManifest } from '@internal/core';
 import type { PreflightInput, PreflightPayload } from '@internal/core/config';
-import { DEV_DIR } from '@internal/core/config';
-import { readOrCreateFingerprintKey, removeRetiredSecretsFile } from '@internal/local-target';
+import { DEV_DIR, devEnvironmentDir } from '@internal/core/config';
+import {
+  movePreEnvironmentDevState,
+  readOrCreateFingerprintKey,
+  removeRetiredSecretsFile,
+} from '@internal/local-target';
 import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
 import { collectPreflightNames, inputSecretNames, type PreflightName } from '../preflight-names.ts';
 import { inputValidationFailure } from '../serializer.ts';
@@ -96,7 +100,9 @@ async function fingerprint(key: CryptoKey, value: string): Promise<string> {
 export async function runDevPreflight(input: PreflightInput): Promise<PreflightPayload> {
   // No `node:path` import (invariant 5) — local dev is POSIX-only (spec's
   // Windows note), so a plain `/`-join is exact, not an approximation.
-  const devDir = `${process.cwd()}/${DEV_DIR}`;
+  movePreEnvironmentDevState(process.cwd());
+  const devDir = `${process.cwd()}/${devEnvironmentDir(input.environment)}`;
+  await removeRetiredSecretsFile(`${process.cwd()}/${DEV_DIR}`);
   await removeRetiredSecretsFile(devDir);
   const env = process.env;
 

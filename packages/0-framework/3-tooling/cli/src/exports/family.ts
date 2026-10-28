@@ -13,3 +13,4 @@ export type { ComposerOperations, CreateComposerFamilyOptions } from '../family/
 export { createComposerFamily, realOperations } from '../family/family.ts';
 export { composerSection } from '../family/section.ts';
 export { toEngineError } from '../family/translate-error.ts';
+export { DEFAULT_DEPLOY_ENVIRONMENT } from '../operations/deploy.ts';

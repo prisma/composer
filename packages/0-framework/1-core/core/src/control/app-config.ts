@@ -61,7 +61,7 @@ export interface ExtensionDescriptor {
    * Deploy-time prerequisite check — the CLI runs it once, after the app's
    * Project/Branch are resolved and BEFORE any stack file is written or Alchemy
    * runs. A target uses it to verify platform prerequisites (e.g. that every
-   * secret env var in the provision manifest exists for the resolved stage) and
+   * secret env var in the provision manifest exists for the resolved environment) and
    * throws to abort the deploy. Async: it talks to the platform (ADR-0029).
    *
    * What it returns is carried to the alchemy process for this same extension
@@ -79,7 +79,7 @@ export interface ExtensionDescriptor {
   preflight?(input: PreflightInput): Promise<PreflightPayload>;
   /**
    * Destroy-time cleanup — the CLI runs it once, after `alchemy destroy`
-   * succeeds and BEFORE the stage's Project/Branch are removed. A target uses
+   * succeeds and BEFORE the environment's containers are removed. A target uses
    * it to remove infrastructure it owns outside the stack (e.g. the deploy
    * state store, which the destroy above was still reading). Throwing aborts
    * the destroy before the containers go; a target that would rather warn than
@@ -132,8 +132,8 @@ export interface PreflightInput<C = unknown> {
   readonly graph: Graph;
   /** The calling extension's own resolved container; `undefined` when it declares no container descriptor. Narrow with the extension's guard. */
   readonly container: ContainerInstance | undefined;
-  /** The stage name (`--stage`), or `undefined` for the default stage — for diagnostics/scope. */
-  readonly stage: string | undefined;
+  /** The environment name. */
+  readonly environment: string;
   /** What the caller has already authenticated, for the platform calls preflight makes. Absent means the extension falls back to its own credential protocol. */
   readonly credentials?: ContainerCredentials<C> | undefined;
   /** Hands the deploy's progress output what the check covered, as counts (e.g. `{ checked: 53, filled: 0, missing: 0 }`). Counts only: never a name or a value. */
@@ -144,8 +144,8 @@ export interface PreflightInput<C = unknown> {
 export interface TeardownInput {
   /** The calling extension's own resolved container; `undefined` when it declares no container descriptor. Narrow with the extension's guard. */
   readonly container: ContainerInstance | undefined;
-  /** The stage name (`--stage`), or `undefined` for the default stage — for diagnostics/scope. */
-  readonly stage: string | undefined;
+  /** The environment name. */
+  readonly environment: string;
 }
 
 /** The deploy context handed to `ReporterDescriptor.begin`. `C` erases to `unknown` at the framework boundary, exactly as on `PreflightInput`. */
@@ -160,8 +160,8 @@ export interface ReportBeginInput<C = unknown> {
    * loaded (a breaking addition to this published type).
    */
   readonly graph: Graph;
-  /** The stage name (`--stage`), or `undefined` for the default stage. */
-  readonly stage: string | undefined;
+  /** The environment name. */
+  readonly environment: string;
   /** The directory the deploy command was run from — where a reporter reads repository metadata. */
   readonly cwd: string;
   /**
@@ -257,20 +257,22 @@ export interface LocalTargetDescriptor {
   /** `--fresh`: remove every local trace of the dev instance — emulator instances, state, data. */
   teardown?(input: TeardownInput): Promise<void>;
   /**
-   * The app `prisma dev` last ran from a directory, read from its dev state
-   * directory alone — no entry, no graph, no container — so a command can
-   * find or stop a running app without running the pipeline. Undefined when
-   * this extension recorded nothing there.
+   * The local copy of an app in one environment, read from the environment's
+   * dev state directory alone — no entry, no graph, no container — so a
+   * command can find or stop a running app without running the pipeline.
+   * Undefined when this extension recorded nothing for the app there.
    */
   current?(input: LocalTargetCurrentInput): Promise<LocalTargetCurrentApp | undefined>;
 }
 
 export interface LocalTargetCurrentInput {
-  /** Absolute path of the dev state directory (`<cwd>/.prisma-composer/dev`). */
+  /** Absolute path of the environment's dev state directory (`devEnvironmentDir`, under the cwd). */
   readonly devDir: string;
+  readonly app: string;
+  readonly environment: string;
 }
 
-/** The app `prisma dev` last ran from a directory, as one extension recorded it. */
+/** The local copy of an app in one environment, as one extension recorded it. */
 export interface LocalTargetCurrentApp {
   readonly app: string;
   /** Every node address recorded for the app. */
@@ -320,7 +322,7 @@ export interface LocalNodeStopped {
 export interface LocalTargetProvidersInput {
   /** This extension's resolved local-target container (its `input.appName` is the emulator app namespace). */
   readonly container: ContainerInstance | undefined;
-  /** Absolute path of the dev state directory (`<cwd>/.prisma-composer/dev`). */
+  /** Absolute path of the environment's dev state directory (`devEnvironmentDir`, under the cwd). */
   readonly devDir: string;
 }
 
@@ -328,12 +330,13 @@ export interface LocalTargetEmulatorsInput {
   /** The loaded application graph — inspected for which node kinds need an emulator. */
   readonly graph: Graph;
   readonly container: ContainerInstance | undefined;
-  /** Absolute path of the dev state directory (`<cwd>/.prisma-composer/dev`). */
+  /** Absolute path of the environment's dev state directory (`devEnvironmentDir`, under the cwd). */
   readonly devDir: string;
 }
 
 export interface LocalTargetAttachInput {
   readonly container: ContainerInstance | undefined;
+  /** Absolute path of the environment's dev state directory (`devEnvironmentDir`, under the cwd). */
   readonly devDir: string;
 }
 
@@ -362,8 +365,24 @@ export interface LocalTargetAttachment {
   stopApp(): Promise<void>;
 }
 
-/** `<cwd>/.prisma-composer/dev` — the dev instance's app-scoped state directory (ADR-0041, ADR-0004's tool-state rule). "dev" names the user-facing feature/dir (naming, operator 2026-07-23) — this constant's name and value are unchanged by the localTarget rename. */
+/** `<cwd>/.prisma-composer/dev` — local dev's state directory (ADR-0041, ADR-0004's tool-state rule), holding one folder per environment. */
 export const DEV_DIR = '.prisma-composer/dev';
+
+/**
+ * The folder, relative to the cwd, that holds one environment's local copy.
+ * The environment name is percent-encoded (`encodeURIComponent`), so a name
+ * with `/` stays one folder and `decodeURIComponent` gives the name back.
+ */
+export function devEnvironmentDir(environment: string): string {
+  return `${DEV_DIR}/${encodeURIComponent(environment)}`;
+}
+
+/**
+ * The file in an environment's folder that holds the environment's exact
+ * name. On a case-insensitive filesystem `Dev` and `dev` share one folder;
+ * the recorded name tells them apart.
+ */
+export const DEV_ENVIRONMENT_NAME_FILE = 'environment-name';
 
 /**
  * True when an extension only participates in assembly (every `nodes` entry
