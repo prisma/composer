@@ -53,7 +53,7 @@ Existing custom domains keep working: PDP backfills them into RoutingUrl records
 
 - **The graph's structure is the same whatever inputs Composer is given.** `resolve()` callbacks may compute values, never structure; calling `provision` inside one is an error that names this rule.
 - **One hostname per public URL, and a hostname is served by one RoutingUrl on the whole platform.** Several records may name it; the platform registers one at a time and the others report it as in use.
-- **A public URL's identity is its node address**, written as `logicalId` on its platform row, as for every other node (ADR-0057). A record created in Console has no `logicalId` and is never touched by a deploy.
+- **A public URL's identity is its node address**, written as `logicalId` on its platform row, as for every other node (ADR-0057). A record created in Console has no `logicalId`; a deploy touches it only to adopt it, when the code declares its hostname on the same service, by writing the node's `logicalId` on it.
 - **A hostname whose DNS isn't ready is a normal state, not an error**, once the platform record exists. Until then (see transitional shape) the deploy fails naming the hostname and the DNS step.
 - **Recorded decisions are updated before the code that depends on them merges.** prisma/composer#385, #386 and pdp-control-plane#5795 merge before the slices that implement them.
 - **The term is environment** on every public surface: flags, types, errors, guides, the agent skill. No public surface says "stage" when this project closes.
