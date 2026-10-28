@@ -56,7 +56,7 @@ A `Prisma.RoutingUrl` resource: create (no DNS needed), read conditions, update 
 `hostname()` lowers to `Prisma.RoutingUrl`; `prismaBuild()` still lowers to nothing. A hostname without DNS deploys with its unmet conditions reported, the deploy output names the first one and prints the Console link, and finishing DNS needs no redeploy. `origin()` is unchanged. The scenarios doc gains the slice that made each scenario true.
 
 - **Builds on:** P1, U2.
-- **Done when:** the spec's "At a glance" app deploys production before `shop.com`'s DNS exists, succeeds, and the hostname goes active after DNS is added with no further deploy.
+- **Done when:** the spec's "At a glance" app deploys production before `shop.com`'s DNS exists, succeeds, and the hostname goes active after DNS is added and one press of the Console's check button, with no further deploy.
 
 ### P3. The endpoint as a routing URL (step two)
 

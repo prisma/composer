@@ -34,7 +34,7 @@ shop.site   shop.com   waiting for DNS
             https://console.prisma.io/…/compute/svc_123/domains?setup=shop.com
 ```
 
-The author adds the CNAME at their DNS provider and presses the check button next to `shop.com` in the Console. The platform sees that DNS is right, creates the custom domain in the routing layer, obtains a certificate, and `shop.com` serves the shop. Nobody redeployed anything.
+The author adds the CNAME at their DNS provider and presses the check button next to `shop.com` in the Console. The platform sees that DNS is right and creates the custom domain in the routing layer. The certificate takes a minute to issue, and the platform follows that up by itself; then `shop.com` serves the shop. Nobody redeployed anything, and nobody pressed anything twice.
 
 A month later the author deletes the `web` service and deploys a new one under the same name. The record for `shop.com` is still there, its DNS still points at the platform, and the new deploy points it at the new service. `shop.com` keeps working.
 
@@ -130,7 +130,7 @@ Any number of RoutingUrls may name the same hostname, in any workspaces. Only on
 
 The RoutingUrl repository has one operation that looks at a row, evaluates its six conditions, and makes the Foundry call the row needs. It creates the custom domain when the first four conditions hold and no other row has one for the hostname. It reassigns the custom domain to the new compute version when the live deployment changes. It creates the custom domain again when Foundry has deleted it with its compute version. It moves a custom domain from one RoutingUrl to another when a row is replaced by one for the same hostname and service, so that a certificate is never reissued for a change that leaves the routing table the same. When Foundry reports the custom domain failed for a DNS reason and DNS is now right, it asks Foundry to retry.
 
-Every interactor that writes a RoutingUrl, and every lifecycle interactor that changes a service's live deployment or deletes a service or Branch, calls that operation for the rows it affects, in the request. When a Foundry call fails, the operation enqueues a delayed retry for the row on a Worker queue, and the consumer runs the same operation again with backoff, so a failed reassign at promote repairs itself. The two facts that complete a row, the user's DNS and Foundry's certificate, change without telling the control plane; they are looked up whenever the operation runs, and the user can run it with the check button in the Console. A cron that runs it for every row not yet serving, so the button is never needed, is a stretch goal at the end of the project.
+Every interactor that writes a RoutingUrl, and every lifecycle interactor that changes a service's live deployment or deletes a service or Branch, calls that operation for the rows it affects, in the request. When a Foundry call fails, or leaves the custom domain waiting for its certificate, the operation enqueues a delayed follow-up for the row on a Worker queue, and the consumer runs the same operation again with backoff, so a failed reassign at promote repairs itself and a certificate completes without the user pressing anything twice. When a row's custom domain is deleted, the operation also runs for every other row naming that hostname. The two facts that complete a row, the user's DNS and Foundry's certificate, change without telling the control plane; they are looked up whenever the operation runs, and the user can run it with the check button in the Console. A cron that runs it for every row not yet serving, so the button is never needed, is a stretch goal at the end of the project.
 
 ## The key operations and what reaches Metal
 
@@ -176,7 +176,8 @@ sequenceDiagram
   F-->>Repo: custom domain dom_55, status provisioning
   Repo->>Repo: store foundryCustomDomainId = dom_55
   F->>F: certificate issuance
-  Repo->>F: GET /v1/domains/dom_55 → active (the next check)
+  Repo->>Repo: status is provisioning: enqueue a delayed follow-up on a Worker queue
+  Repo->>F: GET /v1/domains/dom_55 → active (the queued follow-up)
   C->>C: reads the custom-domain registry; https://shop.com now routes to cv_1
 ```
 
@@ -209,13 +210,13 @@ When a deploy declares a RoutingUrl and no row on the Branch carries the node's 
 
 ## Scenarios
 
-**Deploying an app for the first time, with a custom hostname.** The deploy creates the service and the RoutingUrl and succeeds. The output says `shop.com` is waiting for DNS and gives the CNAME to add and the Console link. The user adds the CNAME and presses check in the Console, and the hostname serves. If the workspace has never claimed `shop.com`, the output instead says ownership is not verified and links to the workspace's Domains page, where the user claims it and gets the TXT record. Either order works.
+**Deploying an app for the first time, with a custom hostname.** The deploy creates the service and the RoutingUrl and succeeds. The output says `shop.com` is waiting for DNS and gives the CNAME to add and the Console link. The user adds the CNAME and presses check in the Console; the platform creates the custom domain, follows up the certificate on its own, and the hostname serves. If the workspace has never claimed `shop.com`, the output instead says ownership is not verified and links to the workspace's Domains page, where the user claims it and gets the TXT record. Either order works.
 
 **Deploying a code change, with no downtime.** The deploy creates a new deployment and promotes it. Promote re-points the endpoint and reassigns the custom domain to the new compute version. If the reassign fails, the failure is written on the RoutingUrl and a queued retry repairs it without anyone acting. The hostname, the certificate and the DNS are untouched throughout.
 
 **A preview environment.** `prisma deploy --environment pr-42` deploys into a new Branch. The code's `resolve()` returns `publicUrl.prismaBuild()` for it, so no RoutingUrl is created and the service is reached at its `prisma.build` endpoint. If the code instead names `pr-42.preview.shop.com`, one claim for `*.preview.shop.com` and one wildcard CNAME at the user's DNS provider cover every preview, and each preview hostname gets its own certificate when its custom domain is created.
 
-**Adding a custom hostname to a running app.** The author adds a `publicUrl()` node and deploys. The RoutingUrl is created, the service keeps serving at its endpoint, and the new hostname goes live once its conditions are met.
+**Adding a custom hostname to a running app.** The author adds a `publicUrl()` node and deploys. The RoutingUrl is created, the service keeps serving at its endpoint, and the new hostname goes live once the user has done the DNS and claim steps and pressed check.
 
 **Changing a hostname.** The author changes `'shop.com'` to `'theshop.com'`. The node keeps its address, so the same RoutingUrl is updated. The old hostname's custom domain is deleted and the new hostname goes through the six conditions.
 
@@ -225,7 +226,7 @@ When a deploy declares a RoutingUrl and no row on the Branch carries the node's 
 
 **A hostname set up in the Console last year, now declared in code.** The migrated RoutingUrl has the hostname, the service, and no `logicalId`. The deploy adopts it. Nothing in Foundry changes.
 
-**Two workspaces name the same hostname.** Both RoutingUrls exist. Whichever meets its conditions first gets the custom domain. The other reports the hostname as held, and names the holder if the caller may see that workspace. When the holder is deleted, the other gets a custom domain on its next check.
+**Two workspaces name the same hostname.** Both RoutingUrls exist. Whichever meets its conditions first gets the custom domain. The other reports the hostname as held, and names the holder if the caller may see that workspace. When the holder is deleted, the platform runs the check for every other row naming that hostname, so the other gets a custom domain without anyone acting.
 
 ## The second step
 
@@ -233,7 +234,7 @@ In this first step every service is still reachable at its `prisma.build` endpoi
 
 ## Not in this proposal
 
-Private routing between services. Routing by path. Any change to Foundry or Conduit. Re-checking DNS or ownership on a schedule.
+Private routing between services. Routing by path. Any change to Foundry or Conduit. Re-checking DNS or ownership for a hostname that already serves.
 
 ## Where the detail is
 
