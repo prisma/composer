@@ -73,16 +73,18 @@ if (branch === undefined) {
 }
 const branchId = asId(branch['id'], 'branch.id');
 
-// App names are unique per Branch, so the project-level list holds an "echo" app for
+// App names are unique per Branch, so the project-level list holds the echo app for
 // every environment — each row carries its branchId, which picks the
-// right one.
+// right one. The platform name is the node's address (ADR-0057).
+const appName = `${stack}.echo`;
 const candidates = rows(await get(`/apps?projectId=${projectId}&limit=100`)).filter(
-  (s) => s['name'] === 'echo',
+  (s) => s['name'] === appName,
 );
 const service = candidates.find((s) => s['branchId'] === branchId);
 if (service === undefined) {
   throw new Error(
-    `no "echo" app in the environment "${environment}" ` + `(candidates: ${candidates.length})`,
+    `no "${appName}" app in the environment "${environment}" ` +
+      `(candidates: ${candidates.length})`,
   );
 }
 const domain = service['appEndpointDomain'];
