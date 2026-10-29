@@ -121,6 +121,12 @@ if (siteUrls.length !== 1 || siteUrls[0] === undefined) {
   console.error(`FAIL - ${reportPath} has no single public-url entity under ${siteAddress}`);
   process.exit(1);
 }
+if (!URL.canParse(siteUrls[0])) {
+  console.error(
+    `FAIL - ${siteAddress} reports ${JSON.stringify(siteUrls[0])}, which is not a URL with a scheme`,
+  );
+  process.exit(1);
+}
 if (new URL(siteUrls[0]).origin !== new URL(url).origin) {
   console.error(`FAIL - ${siteAddress} reports ${siteUrls[0]}, but echo's URL is ${url}`);
   process.exit(1);
