@@ -422,6 +422,42 @@ describe("Load's second pass", () => {
     });
   });
 
+  test('an error names a param, a resource prop, or the whole input binding', () => {
+    const param = module('shop', ({ environment, provision }) => {
+      const label = resolve([environment.name], () => undefined);
+      provision(echoService(), { input: {}, params: { label: label as never } });
+    });
+    expect(loadError(() => Load(param, staging)).message).toBe(
+      'The resolve() function for param "label" of service "shop.echo" returned undefined. ' +
+        'Return a result for every environment; Composer never picks a default.',
+    );
+
+    const prop = module('shop', ({ environment, provision }) => {
+      provision(
+        resource({
+          name: 'site',
+          extension: 'test/pack',
+          provides: urlContract(),
+          props: { hosts: [environment.name] },
+        }),
+        { id: 'site' },
+      );
+    });
+    expect(loadError(() => Load(prop)).message).toBe(
+      'prop "hosts.0" of resource "shop.site" depends on environment.name, but Load was given ' +
+        'no environment. Pass { environment: { name } } to Load; the deploy and dev commands do.',
+    );
+
+    const whole = module('shop', ({ environment, provision }) => {
+      const input = resolve([environment.name], () => undefined);
+      provision(echoService(), { input: input as never });
+    });
+    expect(loadError(() => Load(whole, staging)).message).toBe(
+      'The resolve() function for the input binding of service "shop.echo" returned undefined. ' +
+        'Return a result for every environment; Composer never picks a default.',
+    );
+  });
+
   class SiteNode<C extends AnyContract, P extends ResourceProps> extends ResourceNodeBase<
     C,
     Record<never, never>,
