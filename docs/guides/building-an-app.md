@@ -415,6 +415,9 @@ envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
   field: a template literal, `String()`, arithmetic, `JSON.stringify` or
   `Object.keys` on `input.domain` reports that `input.domain` of the module is
   a value, not its real value.
+- A field exists only under a plain object. A path into a string, an array or
+  a secret, such as `input.domain.length` or `input.tags[0]`, fails the deploy
+  with a message saying that `input.domain` has no fields.
 - A truthiness check such as `if (input.enabled)` is not caught. The field is
   an object, so the check always passes and the branch always runs:
   `if (input.enabled) provision(extra)` provisions `extra` in every

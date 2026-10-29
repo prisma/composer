@@ -173,6 +173,7 @@ Rules that bite:
 The graph is the same in every environment; only configuration may differ.
 
 - A module declares `input` (one Standard Schema) as a service does; `provision(module, { input })` binds it, and the body receives each field as a value it can pass into a binding or list in `resolve()`. A root cannot declare `input` yet, and a module's `input` takes no `envParam()` yet.
+- A field exists only under a plain object: a path into a string, an array or a secret, such as `input.tags[0]`, fails the deploy naming the path.
 - A truthiness check such as `if (input.enabled)` is not caught: the field is an object, so the branch always runs, in every environment. A module's structure cannot depend on its input; to provision something only sometimes, let the parent decide whether to provision it.
 - The module body receives `environment`; `environment.name` is a value standing for the name `--environment` gave (`production` for `prisma deploy`, `dev` for `prisma dev` by default).
 - `resolve([deps], ([values]) => …)` from `@prisma/composer` returns a computed value; `fn` receives the dependencies' real values as one tuple.

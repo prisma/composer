@@ -11,6 +11,7 @@ import { inputFieldLabel } from './module-input.ts';
 import { isParamSource, isSecretSource, type ResourceNode, type ResourceProps } from './node.ts';
 import {
   type EnvironmentRealValues,
+  type InputOrigin,
   isPlainObject,
   isValue,
   originOf,
@@ -185,11 +186,27 @@ function substitute(
   return value;
 }
 
-/** The data at `path` inside a validated input; `undefined` where a key is absent or the data there is not a plain object. */
-function readPath(data: unknown, path: readonly string[]): unknown {
+function describeData(value: unknown): string {
+  if (Array.isArray(value)) return 'an array';
+  if (isSecretSource(value)) return 'a secret';
+  if (typeof value === 'object') return 'an object that is not plain data';
+  return `a ${typeof value}`;
+}
+
+/** The data at `origin`'s path inside a validated input; `undefined` where a key or a parent is absent. */
+function readPath(data: unknown, origin: InputOrigin): unknown {
   let current = data;
-  for (const key of path) {
-    if (!isPlainObject(current) || !Object.hasOwn(current, key)) return undefined;
+  for (const [index, key] of origin.path.entries()) {
+    if (current === undefined || current === null) return undefined;
+    if (!isPlainObject(current) || isSecretSource(current)) {
+      const parent = inputFieldLabel({ ...origin, path: origin.path.slice(0, index) });
+      throw new LoadError(
+        `${inputFieldLabel(origin)} of module "${origin.module}" does not exist: ${parent} is ` +
+          `${describeData(current)}, not a plain object, so it has no fields. ` +
+          `To compute with it, list it: resolve([${parent}], ([v]) => …).`,
+      );
+    }
+    if (!Object.hasOwn(current, key)) return undefined;
     current = current[key];
   }
   return current;
@@ -345,7 +362,7 @@ export function resolveValues(input: {
             `${describeSite(site)} depends on ${inputFieldLabel(origin)} of module "${origin.module}", which this Load does not provision. An input field can be passed on only inside the body of the module that received it.`,
           );
         }
-        result = readPath(validatedInputOf(entry), origin.path);
+        result = readPath(validatedInputOf(entry), origin);
         break;
       }
     }

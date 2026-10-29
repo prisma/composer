@@ -317,6 +317,20 @@ describe('forwarding and the second pass', () => {
     expect(bindingOf(graph)).toEqual({ from: 'shop@example.com' });
   });
 
+  test('a field under an optional object the binding leaves out has no real value', () => {
+    const email = module(
+      'email',
+      { input: type({ from: 'string', 'smtp?': { host: 'string' } }) },
+      ({ input, provision }) => {
+        provision(echoService(), { input: { from: input.from, host: input.smtp.host } });
+      },
+    );
+
+    const graph = Load(shopWith(email, { from: 'shop@example.com' }));
+
+    expect(bindingOf(graph)).toEqual({ from: 'shop@example.com' });
+  });
+
   test("environment.name and a resolve() result in a module's binding are resolved before the module's schema runs", () => {
     const seen: unknown[] = [];
     const child = module('child', { input: recording(seen) }, () => {});
@@ -592,6 +606,51 @@ describe('errors', () => {
       'input key "from" of service "shop.echo" depends on input.from of module "shop.gone", ' +
         'which this Load does not provision. An input field can be passed on only inside the ' +
         'body of the module that received it.',
+    );
+  });
+
+  test('a path through a string field fails naming the path', () => {
+    const email = module('email', { input: type({ from: 'string' }) }, ({ input, provision }) => {
+      provision(echoService(), { input: { trim: (input.from as never as { trim: never }).trim } });
+    });
+
+    expect(loadError(() => Load(shopWith(email, { from: 'a' }))).message).toBe(
+      'input.from.trim of module "shop.email" does not exist: input.from is a string, not a ' +
+        'plain object, so it has no fields. To compute with it, list it: ' +
+        'resolve([input.from], ([v]) => …).',
+    );
+  });
+
+  test('a path through an array field fails naming the path', () => {
+    const email = module('email', { input: type({ tags: 'string[]' }) }, ({ input, provision }) => {
+      provision(echoService(), {
+        input: { first: (input.tags as never as never[])[0] as never },
+      });
+    });
+
+    expect(loadError(() => Load(shopWith(email, { tags: ['a'] }))).message).toBe(
+      'input.tags.0 of module "shop.email" does not exist: input.tags is an array, not a ' +
+        'plain object, so it has no fields. To compute with it, list it: ' +
+        'resolve([input.tags], ([v]) => …).',
+    );
+  });
+
+  test('a path through a secret field fails naming the path', () => {
+    const email = module(
+      'email',
+      { input: type({ key: secretString() }) },
+      ({ input, provision }) => {
+        const payload = (input.key as never as { payload: never }).payload;
+        provision(echoService(), { input: { payload } });
+      },
+    );
+
+    expect(
+      loadError(() => Load(shopWith(email, { key: secretSource({ name: 'EMAIL_KEY' }) }))).message,
+    ).toBe(
+      'input.key.payload of module "shop.email" does not exist: input.key is a secret, not a ' +
+        'plain object, so it has no fields. To compute with it, list it: ' +
+        'resolve([input.key], ([v]) => …).',
     );
   });
 
