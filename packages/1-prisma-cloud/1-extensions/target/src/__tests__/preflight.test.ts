@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { Load, module, resolve } from '@internal/core';
+import { Load, module, resolve, resource } from '@internal/core';
 import { secretString } from '@internal/foundation/arktype';
 import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
@@ -621,6 +621,54 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain('  - MAIL_KEY  (used by module "app.mail")');
+  });
+
+  test("a secret a service receives through a module's input is named as used by the service", async () => {
+    delete process.env['MAIL_KEY'];
+    const mail = module('mail', { input: type({ key: secretString() }) }, ({ input, provision }) => {
+      provision(compute({ name: 'sender', deps: {}, input: anySchema, build }), {
+        id: 'sender',
+        input: { key: input.key },
+      });
+    });
+    const graph = Load(
+      module('app', ({ provision }) => {
+        provision(mail, { input: { key: envSecret('MAIL_KEY') } });
+      }),
+    );
+
+    const error: unknown = await runPreflight(
+      { graph, container: fakeContainer('proj', undefined), environment: 'production' },
+      { client: fakeClient(state) },
+    ).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain(
+      '  - MAIL_KEY  (used by service "app.mail.sender")',
+    );
+  });
+
+  test("a secret a resolve() in a resource's props lists is named as used by the resource", async () => {
+    delete process.env['SITE_KEY'];
+    const site = resource({
+      name: 'site',
+      extension: 'test/pack',
+      provides: { kind: 'test/url', __cmp: {}, satisfies: () => true },
+      props: { url: resolve([envSecret('SITE_KEY')], () => 'https://shop.example') },
+    });
+    const graph = Load(
+      module('app', ({ provision }) => {
+        provision(site, { id: 'site' });
+      }),
+    );
+
+    const error: unknown = await runPreflight(
+      { graph, container: fakeContainer('proj', undefined), environment: 'production' },
+      { client: fakeClient(state) },
+    ).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('  - SITE_KEY  (used by resource "app.site")');
   });
 
   describe('env-var listing pagination (bounded — drivePagesAsync)', () => {

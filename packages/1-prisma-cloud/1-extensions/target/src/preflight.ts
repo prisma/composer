@@ -21,7 +21,7 @@
  * out of band ships a new deployment. A timestamp, never a value: env-var
  * values are write-only and the API never returns one.
  */
-import type { Graph } from '@internal/core';
+import type { Graph, SecretSourceUse } from '@internal/core';
 import type { PreflightInput } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import {
@@ -253,7 +253,7 @@ async function fillMissing(
 interface MissingBinding {
   readonly name: string;
   readonly address: string;
-  readonly nodeKind: 'service' | 'module';
+  readonly nodeKind: SecretSourceUse['nodeKind'];
 }
 
 /** The preflight input typed against this extension's own client — the concrete form of the framework's erased `PreflightInput<unknown>`. */
@@ -353,10 +353,11 @@ async function managementClient(): Promise<ManagementApiClient> {
 /**
  * The Prisma Cloud extension's `preflight`. Every secret source the graph
  * names is checked, including one only a resolve() dependency lists. Uses the
- * shared name collector
- * (`collectPreflightNames`, ADR-0042) — every service's input-binding
- * `envSecret` leaf, plus `paramManifest` filtered to env-sourced reserved
- * params — checks each platform name against the platform, fills from the
+ * shared name collector (`collectPreflightNames`, ADR-0042): every secret
+ * source in a service's input binding or in `graph.secretSources`, deduped by
+ * name with the first entry winning the reported address, plus
+ * `paramManifest` filtered to env-sourced reserved params. It checks each
+ * platform name against the platform, fills from the
  * shell where possible, and fails loudly on anything absent from both.
  * `envParam` leaves of an input binding are NOT checked here — they resolve
  * from the deploy shell at serialize, and an unset one is an omitted key the
