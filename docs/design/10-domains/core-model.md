@@ -429,7 +429,7 @@ interface Graph {
 interface LoadOptions {
   readonly id?: NodeId                              // the root's address; defaults to its name
   readonly environment?: { readonly name: string }  // required by any value over environment.name
-  readonly configPool?: Readonly<Record<string, unknown>>  // what a source's config key reads; the commands pass the process environment
+  readonly configPool?: Readonly<Record<string, unknown>>  // what a source's pool key reads; the commands pass the process environment
 }
 function Load(root: ServiceNode | ModuleNode, opts?: LoadOptions): Graph   // throws LoadError
 class LoadError extends Error {}  // code COMPOSE.GRAPH_INVALID; optional `cause`

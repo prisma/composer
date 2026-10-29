@@ -12,7 +12,7 @@ import type {
 import { isRuntimeValue, paramSource, resolve, secretSource } from '../exports/index.ts';
 
 const secretValue = secretSource<{ name: string }, SecretString>({ name: 'K' });
-const paramValue = paramSource<{ name: string }, string>({ name: 'G' }, { configKey: 'G' });
+const paramValue = paramSource<{ name: string }, string>({ name: 'G' }, { poolKey: 'G' });
 
 test('a secret source is a SecretSource and a Value of its type, and resolve() receives that type', () => {
   expectTypeOf(secretValue).toExtend<SecretSource>();

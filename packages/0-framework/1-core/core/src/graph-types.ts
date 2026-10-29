@@ -18,7 +18,7 @@ export interface LoadOptions {
   readonly id?: NodeId;
   /** The facts of the environment being loaded. `name` is what `--environment` gave. Required by any value over `environment.name`. */
   readonly environment?: EnvironmentRealValues;
-  /** The config pool: the values a source with a config key, such as `envParam('NAME')`, reads by name at deploy. Required by any such source whose real value Load needs. The deploy and dev commands pass the process environment. */
+  /** The config pool: the values a source with a pool key, such as `envParam('NAME')`, reads by name at deploy. Required by any such source whose real value Load needs. The deploy and dev commands pass the process environment. */
   readonly configPool?: Readonly<Record<string, unknown>>;
 }
 
