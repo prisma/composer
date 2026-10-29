@@ -27,7 +27,7 @@ describe('runPipeline()', () => {
   test('runPipeline passes the process environment to Load as the config pool', async () => {
     const composer = configPoolConfig.composer;
     if (composer === undefined) throw new Error('the fixture declares a composer section');
-    process.env['S3_PIPELINE_PROBE'] = 'probe';
+    process.env['CONFIG_POOL_PROBE'] = 'probe';
     try {
       const { graph } = await runPipeline(
         undefined,
@@ -40,7 +40,7 @@ describe('runPipeline()', () => {
 
       expect(graph.inputBindings[0]?.binding).toEqual({ greeting: 'probe' });
     } finally {
-      delete process.env['S3_PIPELINE_PROBE'];
+      delete process.env['CONFIG_POOL_PROBE'];
     }
   });
 });
