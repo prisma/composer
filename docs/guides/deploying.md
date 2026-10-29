@@ -406,16 +406,7 @@ pattern: on push, run `prisma deploy --environment "pr-$PR_NUMBER"`; on
 close, run a script like the one under [Removing an app or an environment](#removing-an-app-or-an-environment)
 that passes that name, `environment: 'pr-42'` for PR 42.
 
-One extra: if your app binds input fields with `envSecret` or `envParam`
-(see [Building an app § Service input](building-an-app.md#service-input)),
-each environment keeps its own copy of those platform variables, and the
-platform copy is the store — the deploying shell only seeds it. A fresh
-environment (a new
-`pr-42`) has none of them yet, so CI must export the values
-(e.g. `AUTH_SIGNING_SECRET`, `APP_ORIGIN`) alongside the two credentials;
-preflight copies missing ones up on that first deploy. A name absent from
-both the platform and the shell fails the deploy early, naming the missing
-variable.
+One extra: if your app binds `envSecret` (see [Building an app § Service input](building-an-app.md#service-input)), each environment keeps its own copy of those platform variables, and the platform copy is the store; the deploying shell only seeds it. A fresh environment (a new `pr-42`) has none of them yet, so CI must export the values (e.g. `AUTH_SIGNING_SECRET`) alongside the two credentials; preflight copies missing ones up on that first deploy. A name absent from both the platform and the shell fails the deploy early, naming the missing variable. An `envParam` input is different: the deploy reads it from the shell on every deploy, so CI exports it every time.
 
 ## When a deploy stops on a missing connection value
 

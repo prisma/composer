@@ -123,6 +123,9 @@ parameter information the author supplies at wiring into a value. Four sources:
   (an rpc service key, an instance signing key) but it is **not a secret** — it
   is config the system produces and owns.
 
+Each source constructor, and `serviceOrigin()`, returns a [value](#value) that
+is the source too.
+
 Two properties fall out of the source, and neither is its own category:
 
 - **Persistence follows the source.** Environment sources (`envParam`,
@@ -165,16 +168,24 @@ The data a value stands for is its **real value**.
   dependencies' real values after every module body has run, with `provision`
   disabled. `resolve()` declares a computed value; Load resolves every value.
 - **Deploy-time or runtime.** A deploy-time value has its real value by the end
-  of Load. A runtime value is known only to the platform the app is deployed
-  to; at deploy time it is a pointer to it (the decision's table calls this
-  "held by the platform"). Today every value is deploy-time. A module input
-  field bound to `envSecret()` is deploy-time: its real value is the pointer,
-  never the secret.
+  of Load: `environment.name`, a `resolve()` result, and `envParam()`, whose
+  real value is the variable's value at deploy. A runtime value has no real
+  value when Load runs: the platform holds it (`envSecret()`), or the deploy
+  creates it later (`generatedParam()`, `serviceOrigin()`). Load holds a
+  **pointer** in its place, and uses the pointer as its real value: a
+  `resolve()` function that lists one receives the pointer, and a module input
+  field bound to one holds it. A pointer throws when code turns it into text or
+  a number, and `isRuntimeValue(x)` is true for one. A function may return a
+  pointer it received.
+- **Sources are values.** `envParam()`, `envSecret()`, `generatedParam()` and
+  `serviceOrigin()` each return one object that is a value and the deploy
+  target's source. Where a service's binding takes a source, the target
+  receives that object.
 
 In code the type is `Value<T>`, and `RealValuesOf<D>` is the tuple of
-real-value types `fn` receives for a dependency tuple `D`. `envParam()` and `envSecret()` are not values
-yet; they become values, with config and secret adapters, in the module-input
-project. A value is not a node: it has no lifecycle and no address. Elsewhere
+real-value types `fn` receives for a dependency tuple `D`. A source's type is
+the source and a value at once, such as `SecretSource & Value<SecretString>`.
+A value is not a node: it has no lifecycle and no address. Elsewhere
 in this glossary "value" in lower case keeps its ordinary meaning, plain data
 such as a param's value.
 

@@ -1,6 +1,8 @@
 # Config params
 
 > Amended by [ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares one `input` schema, as a compute service does; the module `params`/`paramNeed()` and `secrets`/`secret()` slots described here are removed.
+>
+> Amended by the module-input project (2026-10-29): every source constructor returns a value; see [Sources are values](#sources-are-values).
 
 How a service's configuration is declared, typed, carried to the platform, and
 read back at boot. Rests on
@@ -129,6 +131,46 @@ a loud lowering error.
 > the "secret is its own slot" framing are superseded there. Syncing this
 > domain doc to the input model is tracked with ADR-0042's own follow-ups; the
 > source model above is current.
+
+## Sources are values
+
+`envParam()`, `envSecret()`, `generatedParam()` and `serviceOrigin()` each
+return one object that is both the target's source and a
+[value](../03-domain-model/glossary.md#value). Where a source is accepted:
+
+| Where | `envParam()` | `envSecret()` | `generatedParam()` | `serviceOrigin()` |
+| --- | --- | --- | --- | --- |
+| A service's `input` binding | kept; read at serialize from the deploy shell, as today | kept | kept | kept |
+| A service's `params` | kept; pointer row, as today | kept (fails at deploy, as today) | kept (fails at deploy, as today) | kept (fails at deploy, as today) |
+| A module's `secrets` slot | refused, as today | accepted and forwarded | refused, as today | refused, as today |
+| A module's `params` slot | accepted and forwarded | refused | accepted and forwarded | accepted and forwarded |
+| A module's `input` binding | its string; unset or empty leaves the key out | its pointer; the schema checks an empty `SecretString` | its pointer; the schema checks an empty `SecretString` when redacted, else `''` | its pointer; the schema checks `https://origin.invalid` |
+| A `resolve()` dependency | its string; unset or empty fails | its pointer | its pointer | its pointer |
+| A resource's `props` | its string; unset or empty leaves the key out | refused by the type | refused by the type | refused at Load |
+
+A service's input binding, a service's params and a module's `secrets` and
+`params` slots receive the source itself, the same object they received before
+sources were values. So the target reads the same leaves, writes the same
+pointer rows and checks the same names, and the rest of this document holds
+unchanged.
+
+Where core needs a source's real value, in a module's input, a `resolve()`
+dependency or a resource's props, the source decides what that is.
+`envParam('NAME')` is deploy-time: its real value is the value of the variable
+`NAME` at deploy, read from the config pool Load is given, which the deploy and
+dev commands fill with the process environment; an unset or empty variable
+gives no real value. `envSecret('NAME')` is runtime: the deploy never holds the
+secret, so its real value at deploy is a pointer, the source itself, which the
+service dereferences at boot. `generatedParam()` and `serviceOrigin()` are
+runtime too, because the deploy creates their values after Load; their real
+value at deploy is also the pointer. A pointer cannot be read: turning it into
+text or a number throws an error that names the source. A `resolve()` function
+may return a pointer it received, at any depth of its result, and the target
+then receives it as if the source had been bound directly.
+
+Deploy preflight checks every `envSecret()` the graph names, including one that
+only a `resolve()` dependency lists and one in a module's input that no service
+receives.
 
 ## Serialization belongs to the target
 
