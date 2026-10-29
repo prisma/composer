@@ -163,7 +163,7 @@ One frozen constant, shared by every Load and every module body. There is nothin
 - types: `DepBindings`, `EnvironmentFacts`, `LoadOptions`, `PlainValue`, `RealValuesOf`, `ResourceProp`, `ResourceProps`, `Value`;
 - values: `isValue`, `resolve`.
 
-Not exported from the barrel: `ValueOrigin`, the three symbols, `environmentFacts` (the body reaches it through the module context). `@prisma/composer`'s index re-exports `@internal/core` wholesale, so nothing changes in `packages/9-public/composer`.
+`value.ts` also exports `originOf(value)`, core's only way to read a value's origin at runtime, since the symbols are exported as types only. Not exported from the barrel: `ValueOrigin`, `originOf`, the three symbols, `environmentFacts` (the body reaches it through the module context). `@prisma/composer`'s index re-exports `@internal/core` wholesale, so nothing changes in `packages/9-public/composer`.
 
 ## 4. Core: where a value is accepted
 
@@ -257,7 +257,7 @@ export interface ValueBindingSite {
   readonly address: NodeId;
   /** `input` for a service input binding, `param` for a service param, `props` for a resource's props. */
   readonly channel: 'input' | 'param' | 'props';
-  /** The param name for `param`; the dotted path inside the document for `input` and `props` (`''` at the root). Array members by index: `hosts.0`. */
+  /** The param name for `param` (a value nested inside a param literal is reported under that name); the dotted path inside the document for `input` and `props` (`''` at the root). Array members by index: `hosts.0`. */
   readonly path: string;
 }
 
@@ -283,7 +283,7 @@ D1 builds it with `inputBindings` and `params` only; D2 adds `resources` and `re
 
 The algorithm:
 
-1. **Collect.** Walk every input binding (`channel: 'input'`), every param binding (`channel: 'param'`, path `''`) and every resource's `props` (`channel: 'props'`) with the predicate above, guarding plain-data cycles with a `WeakSet` as `deepValues` does. Record each `Value` found with its binding site.
+1. **Collect.** Walk every input binding (`channel: 'input'`), every param binding (`channel: 'param'`, path = the param name) and every resource's `props` (`channel: 'props'`) with the predicate above, guarding plain-data cycles with a `WeakSet` as `deepValues` does. Record each `Value` found with its binding site.
 2. **Resolve**, with `const results = new Map<Value<unknown>, unknown>()` and `const visiting: Value<unknown>[] = []`:
 
    ```
@@ -343,9 +343,9 @@ Every error below is a `LoadError` (code `COMPOSE.GRAPH_INVALID`, the one code L
 
 Where the checks run:
 
-- The `id` check is the first statement of `provision()` after the sealed check, before the existing `typeof id !== 'string'` check (which would otherwise report "requires a non-empty id" for an object).
+- The `id` check runs directly after `id` is computed from `opts.id` and the node's name, before the existing `typeof id !== 'string'` check (which would otherwise report "requires a non-empty id" for an object).
 - The `deps` check runs at the top of the `provision()` closure's handling of `opts.deps`, before `markUsed`.
-- The `secrets` and `params` checks run inside `validateSecretBinding` and `validateParamNeedBinding`, before their existing "non-secret value" / "non-source value" checks.
+- The `secrets` and `params` checks run inside `validateSecretBinding` and `validateParamNeedBinding`, before their existing "non-secret value" / "non-source value" checks. Both functions gain an `address` parameter (the child's full address) so the new messages name it; the existing messages keep the short provision id.
 
 Why a computed value may not return a secret or param source in this slice: a forwarded `ctx.secrets` ref returned from `fn` would fail with "declares secret but never forwards it", because usage is marked at `provision()` time, before `fn` runs; and letting `fn` choose a platform variable's name per environment would fix a meaning for sources that the module-input project redesigns (design note 10). Pending Will's confirmation, § 14.
 
@@ -646,6 +646,9 @@ Each test below is one `test()` with the given title. Runtime tests use `bun tes
 11. An error thrown by `fn` is wrapped once in a `LoadError` with the thrown value as `cause` (§ 5.3). From ADR-0044: an unwrapped foreign error at the process boundary is reported as a Composer bug.
 
 ## 14. Settled after the review
+
+D1 landed on 2026-10-29 (commits b3b4fe91, 8c168c2f, d666545f) with the spec's letter adapted in five places, each now written into the sections above: `originOf` in `value.ts`; a param's site path is the param name; the `id` check sits after `id` is computed; `validateSecretBinding` and `validateParamNeedBinding` take the full address; `resolve-values.ts` carries one extra pinned-reason cast typing the substituted binding back to `InputBinding`.
+
 
 Each of these was put to Will on 2026-10-29 after the architect and principal-engineer reviews.
 
