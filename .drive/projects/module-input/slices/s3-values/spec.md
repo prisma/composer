@@ -85,7 +85,7 @@ The glossary already defines value, real value, deploy-time and runtime ([Value]
       /** How an error names the source, e.g. `envSecret('STRIPE_KEY')`. */
       readonly label: string;
       /** The config pool key whose value at deploy is the real value, as for `envParam()`. `undefined` for a value known only at boot, whose real value is `source`, a pointer. */
-      readonly configKey: string | undefined;
+      readonly poolKey: string | undefined;
       /** For a param source known only at boot: the string a module's input schema checks in its place. */
       readonly sentinel: string | undefined;
       /** A module's input schema checks an empty `SecretString` in its place: always for a secret source, and for a redacted param source. */
@@ -142,7 +142,7 @@ export interface SourceOptions {
 /** What a deploy target says about a param source it builds. */
 export interface ParamSourceOptions extends SourceOptions {
   /** The config pool key whose value at deploy is the source's real value, as for `envParam()`. Without one the source is known only at boot, and its real value is the source itself, a pointer. */
-  readonly configKey?: string;
+  readonly poolKey?: string;
   /** For a source known only at boot: the string a module's input schema checks in its place, because the deploy has no value for it. */
   readonly sentinel?: string;
   /** For a source known only at boot whose value is redacted: a module's input schema checks an empty `SecretString` in its place, as for a secret. */
@@ -165,13 +165,13 @@ The first type parameter keeps its position, so every existing `secretSource<Env
 Checks, in order, each a plain `Error` with exactly this text:
 
 - `options.label` given but not a non-empty string: `secretSource() label must be a non-empty string.` (or `paramSource() …`).
-- `options.configKey` given but not a non-empty string: `paramSource() configKey must be a non-empty string.`
-- `configKey` beside `sentinel` or `redacted: true`: `paramSource() takes configKey, for a value known at deploy, or sentinel or redacted, for one known only at boot, not both.`
+- `options.poolKey` given but not a non-empty string: `paramSource() poolKey must be a non-empty string.`
+- `poolKey` beside `sentinel` or `redacted: true`: `paramSource() takes poolKey, for a value known at deploy, or sentinel or redacted, for one known only at boot, not both.`
 - `sentinel` beside `redacted: true`: `paramSource() takes sentinel or redacted, not both.`
 
 Both build the source through one module-private function, `buildSource(brand, payload, origin)`:
 
-1. The origin is a plain object `{ kind: 'source', label, configKey, sentinel, redacted }`, with `label` defaulted (`'a secret source'` or `'a param source'`), `configKey` and `sentinel` `undefined` when not given, and `redacted` `true` for a secret source and `options.redacted === true` for a param source.
+1. The origin is a plain object `{ kind: 'source', label, poolKey, sentinel, redacted }`, with `label` defaulted (`'a secret source'` or `'a param source'`), `poolKey` and `sentinel` `undefined` when not given, and `redacted` `true` for a secret source and `options.redacted === true` for a param source.
 2. The source is `{ [VALUE]: true, [VALUE_ORIGIN]: origin, [brand]: true, payload }`. `VALUE` and `VALUE_ORIGIN` are imported from `./value.ts`.
 3. `Object.defineProperty(origin, 'source', { value: source })`: not enumerable, not writable.
 4. `Object.defineProperties(source, coercions(origin))` adds three non-enumerable, non-writable properties: `toString`, `valueOf` and `[Symbol.toPrimitive]`, each a function that throws the misuse error in § 3.4.
@@ -187,7 +187,7 @@ If the compiler refuses the return type, cast with `blindCast<SecretSource<P> & 
 
 The coercion functions throw a `LoadError` built by one module-private function, `sourceMisuse(origin, what)`. `<what>` is `primitiveMisuse(hint)` for `Symbol.toPrimitive`, `its toString() was called` for `toString`, and `its valueOf() was called` for `valueOf`, exactly S2's texts. The message, verbatim:
 
-- For a value known only at boot (`origin.configKey === undefined`):
+- For a value known only at boot (`origin.poolKey === undefined`):
 
   ```
   <label> is known only at boot: the deploy holds a pointer to it, never its value, and <what>. A resolve() function may return the pointer, or put it in its result, unchanged; to compute with the value, do it in the service that reads it.
@@ -227,7 +227,7 @@ It returns `undefined` unless `isValue(source)` and `originOf(source).kind === '
 export function isRuntimeValue(value: unknown): value is ParamSource | SecretSource;
 ```
 
-It is true when `isSecretSource(value) || isParamSource(value)`, and the source has no origin or its origin's `configKey` is `undefined`.
+It is true when `isSecretSource(value) || isParamSource(value)`, and the source has no origin or its origin's `poolKey` is `undefined`.
 
 ### 3.6 `node.ts`: the module slot checks
 
@@ -257,7 +257,7 @@ export interface LoadOptions {
   readonly id?: NodeId;
   /** The facts of the environment being loaded. `name` is what `--environment` gave. Required by any value over `environment.name`. */
   readonly environment?: EnvironmentRealValues;
-  /** The config pool: the values a source with a config key, such as `envParam('NAME')`, reads by name at deploy. Required by any such source whose real value Load needs. The deploy and dev commands pass the process environment. */
+  /** The config pool: the values a source with a pool key, such as `envParam('NAME')`, reads by name at deploy. Required by any such source whose real value Load needs. The deploy and dev commands pass the process environment. */
   readonly configPool?: Readonly<Record<string, unknown>>;
 }
 ```
@@ -296,10 +296,10 @@ So a source in a service's input binding or params is a leaf Load leaves alone, 
 ```
 case 'source':
   if isSecretSource(origin.source): recordSecret(origin.source, site)
-  if origin.configKey === undefined: result = origin.source           // the pointer
+  if origin.poolKey === undefined: result = origin.source           // the pointer
   else if configPool === undefined: throw the no-config-pool error (§ 4.12)
   else:
-    raw = configPool[origin.configKey]
+    raw = configPool[origin.poolKey]
     result = raw === undefined || raw === '' ? undefined : raw
 ```
 
@@ -465,8 +465,8 @@ Every error is a `LoadError` (code `COMPOSE.GRAPH_INVALID`) except the construct
 | --- | --- |
 | A pointer turned into text or a number | § 3.4, the first form. Inside a `resolve()` function it is wrapped: `<fn> threw: <that message>`. |
 | An `envParam()` turned into text or a number | § 3.4, the second form. |
-| A source with a config key, when Load has no config pool | `<site> depends on <label>, but Load was given no config pool to read "<key>" from. Pass { configPool } to Load; the deploy and dev commands pass the process environment.` |
-| A function lists a source with a config key whose variable is unset or empty | `<fn> lists <label>, but "<key>" is unset or empty, so it has no real value. Set "<key>", or bind <label> directly into an input binding, where an absent value leaves the key out and the schema decides.` |
+| A source with a pool key, when Load has no config pool | `<site> depends on <label>, but Load was given no config pool to read "<key>" from. Pass { configPool } to Load; the deploy and dev commands pass the process environment.` |
+| A function lists a source with a pool key whose variable is unset or empty | `<fn> lists <label>, but "<key>" is unset or empty, so it has no real value. Set "<key>", or bind <label> directly into an input binding, where an absent value leaves the key out and the schema decides.` |
 | A function returns a source it did not receive | § 4.5. Replaces C1's `returned a secret or param source` error. |
 | A module's input binding holds a param source with no sentinel and no redaction | `<site> is bound to a param source a module's input cannot take: it names no sentinel for the module's schema to check in its place, as a raw paramSource() does. Bind envParam(), generatedParam() or serviceOrigin(), or a value.` with `<site>` of kind `moduleInput` at the source's path. Replaces S2's param-source error. |
 | A module's schema changes a field bound to a pointer with a sentinel | `The input schema of module "<module>" changed input key "<path>", which is bound to <label>. Its value is known only at boot, so a module's schema may check the field but never transform it.` |
@@ -506,7 +506,7 @@ The checks are unchanged. The return is `secretSource<EnvSecretPayload, SecretSt
 export function envParam(name: string): ParamSource<EnvParamPayload> & Value<string>;
 ```
 
-Returns `paramSource<EnvParamPayload, string>({ [PRISMA_CLOUD_PARAM_SOURCE]: true, name }, { label: \`envParam('${name}')\`, configKey: name })`. Doc comment gains: `It returns a value known at deploy: where a module's input or a resolve() function needs its real value, that is the variable's value in the config pool, the process environment of the deploying shell.`
+Returns `paramSource<EnvParamPayload, string>({ [PRISMA_CLOUD_PARAM_SOURCE]: true, name }, { label: \`envParam('${name}')\`, poolKey: name })`. Doc comment gains: `It returns a value known at deploy: where a module's input or a resolve() function needs its real value, that is the variable's value in the config pool, the process environment of the deploying shell.`
 
 ```ts
 export function generatedParam(
@@ -568,7 +568,7 @@ Core's invariant test allows `process.env` only in `control/deploy.ts`, twice, t
 - `LowerOptions` in `control/deploy.ts` gains, after `environment`:
 
   ```ts
-  /** The config pool Load reads a source's config key from, such as envParam()'s variable. The generated stack files pass the process environment. */
+  /** The config pool Load reads a source's pool key from, such as envParam()'s variable. The generated stack files pass the process environment. */
   readonly configPool?: Readonly<Record<string, unknown>>;
   ```
 
@@ -606,7 +606,7 @@ All in the same pull request, per `.agents/rules/user-facing-surface-changes.mdc
   Index line gains: ``*(Amended 2026-10-29: `envSecret()` returns a value whose real value is a pointer; preflight checks every `envSecret()` the graph names.)*``
 - **The provision-time params decision**, `ADR-0032-…md`, an amendment note after the existing one, verbatim:
 
-  > Amended 2026-10-29 (module-input project, third slice): `envParam('NAME')` returns a value, `ParamSource & Value<string>`, that is also the source. In a service's input binding and a service's params the target receives the source, so both work as before: an input leaf is read from the deploying shell when the target serializes it, and a param keeps its pointer row, read at boot. In a module's input and as a `resolve()` dependency, its real value is the variable's value at deploy, read from the process environment; an unset or empty variable has none. `paramSource()` takes an optional `label`, `configKey`, `sentinel` and `redacted`.
+  > Amended 2026-10-29 (module-input project, third slice): `envParam('NAME')` returns a value, `ParamSource & Value<string>`, that is also the source. In a service's input binding and a service's params the target receives the source, so both work as before: an input leaf is read from the deploying shell when the target serializes it, and a param keeps its pointer row, read at boot. In a module's input and as a `resolve()` dependency, its real value is the variable's value at deploy, read from the process environment; an unset or empty variable has none. `paramSource()` takes an optional `label`, `poolKey`, `sentinel` and `redacted`.
 
   Index line gains: ``*(Amended 2026-10-29: `envParam()` returns a value; a module's input and `resolve()` read its variable at deploy.)*``
 - **Glossary**, `docs/design/03-domain-model/glossary.md`:
@@ -623,7 +623,7 @@ All in the same pull request, per `.agents/rules/user-facing-surface-changes.mdc
   - "How Load validates" gains, after the secret-source sentence: `A param source known only at boot reaches the schema as the sentinel its target names, an empty \`SecretString\` box when it is redacted, and is put back at its path; a schema that changes such a field fails the Load.`
   - "Not supported yet": the sentence about `envParam()` is removed.
 - **`docs/design/10-domains/core-model.md`**:
-  - The `LoadOptions` block gains `  readonly configPool?: Readonly<Record<string, unknown>>  // what a source's config key reads; the commands pass the process environment`.
+  - The `LoadOptions` block gains `  readonly configPool?: Readonly<Record<string, unknown>>  // what a source's pool key reads; the commands pass the process environment`.
   - The `LowerOptions` block gains `  readonly configPool?: Readonly<Record<string, unknown>>       // passed to Load; the generated stack files pass process.env`.
   - The second-pass paragraph: "or `fn` returned a Promise, `undefined`, a value, a secret or param source, or anything else that is not plain data" becomes "or `fn` returned a Promise, `undefined`, a value, a source it did not receive, or anything else that is neither plain data nor a pointer it received". "A value as a `provision()` id, in a `deps` entry, or as a module's `secrets` or `params` binding is a LoadError too." becomes "A value as a `provision()` id or in a `deps` entry, or a value that is not a source as a module's `secrets` or `params` binding, is a LoadError too." It gains, at its end: `A source is a value too. Load leaves one in place in a service's input binding and params, and computes its real value only where a module's input, a resolve() function or a resource's props needs it. The graph lists every secret source it names in \`secretSources\`.`
 - **`docs/guides/building-an-app.md`**:
@@ -651,7 +651,7 @@ Out: config and secrets adapters, `dotenv()`, a root's `input` and reading `envP
 Runtime tests use `bun test`; type tests use vitest `expectTypeOf` and `@ts-expect-error`. Core fixtures follow `module-input.test.ts`: `echoService()`, `shopWith(child, binding)`, `staging`, `loadError()`, `recording(seen)`, `refusing(message)`. Two more core fixtures:
 
 - `const pointer = (name: string) => secretSource({ name }, { label: \`envSecret('${name}')\` })`
-- `const variable = (name: string) => paramSource({ name }, { label: \`envParam('${name}')\`, configKey: name })`
+- `const variable = (name: string) => paramSource({ name }, { label: \`envParam('${name}')\`, poolKey: name })`
 
 ### 11.1 New file `packages/0-framework/1-core/core/src/__tests__/source-value.test.ts`
 
@@ -660,8 +660,8 @@ Runtime tests use `bun test`; type tests use vitest `expectTypeOf` and `@ts-expe
 1. `secretSource() and paramSource() return values that are also sources` — `isValue`, `isSecretSource` (or `isParamSource`) true; `payload` reads back; `Object.keys(source)` is `['payload']`; `Object.isFrozen(source)` is true.
 2. `a source's JSON is what it was before sources were values` — `JSON.stringify(secretSource({ name: 'X' }))` is `'{"payload":{"name":"X"}}'`.
 3. `a spread copy of a source is still a value and a source` — `{ ...pointer('X'), extra: 1 }`.
-4. `paramSource() refuses a config key beside a sentinel or redacted, a sentinel beside redacted, and an empty label or config key` — the § 3.3 messages.
-5. `isRuntimeValue() is true for a secret source and a param source without a config key, and false otherwise` — false for `variable('X')`, `environment.name`, a `resolve()` result, a string, `null` and a plain object.
+4. `paramSource() refuses a pool key beside a sentinel or redacted, a sentinel beside redacted, and an empty label or pool key` — the § 3.3 messages.
+5. `isRuntimeValue() is true for a secret source and a param source without a pool key, and false otherwise` — false for `variable('X')`, `environment.name`, a `resolve()` result, a string, `null` and a plain object.
 
 **Reading a source**
 
@@ -675,7 +675,7 @@ Runtime tests use `bun test`; type tests use vitest `expectTypeOf` and `@ts-expe
 8. `a source in a service's input binding reaches the graph as the same object` — `toBe` for `pointer('K')` and `variable('G')`, with no config pool.
 9. `a source in a service's params reaches the graph as the same object, with no config pool` — `variable('G')` on the `label` param.
 10. `a source bound to a module's secrets slot and forwarded reaches the service with the same payload` — `isSecretSource(leaf)`, `leaf.payload` equal.
-11. `a param source with a config key bound to a module's params slot and forwarded reaches the service param unchanged`.
+11. `a param source with a pool key bound to a module's params slot and forwarded reaches the service param unchanged`.
 
 **Real values**
 
@@ -731,10 +731,10 @@ Runtime tests use `bun test`; type tests use vitest `expectTypeOf` and `@ts-expe
 
 ### 11.5 CLI and lowering
 
-41. `pipeline.test.ts`: `runPipeline passes the process environment to Load as the config pool` — new fixture `cli/src/__tests__/fixtures/pipeline-config-pool/` (a copy of `fixtures/pipeline/prisma.config.ts`, and a `module.ts` whose root binds `paramSource({ name: 'S3_PIPELINE_PROBE' }, { configKey: 'S3_PIPELINE_PROBE' })` into a child module's input, forwarded to the `echo` service's `greeting`); with `S3_PIPELINE_PROBE=probe` set for the test, `graph.inputBindings[0].binding` equals `{ greeting: 'probe' }`.
+41. `pipeline.test.ts`: `runPipeline passes the process environment to Load as the config pool` — new fixture `cli/src/__tests__/fixtures/pipeline-config-pool/` (a copy of `fixtures/pipeline/prisma.config.ts`, and a `module.ts` whose root binds `paramSource({ name: 'S3_PIPELINE_PROBE' }, { poolKey: 'S3_PIPELINE_PROBE' })` into a child module's input, forwarded to the `echo` service's `greeting`); with `S3_PIPELINE_PROBE=probe` set for the test, `graph.inputBindings[0].binding` equals `{ greeting: 'probe' }`.
 42. `generate-stack.test.ts` and `generate-dev-stack.test.ts`: the rendered file contains `  configPool: process.env,` directly after the `environment` line.
 43. `stack-file-import.test.ts`: the stub `lower` records `opts.configPool === process.env`, and the evaluated stack file makes it `true`.
-44. `lowering.test.ts`: `lowering() passes opts.configPool to Load` — a module forwarding a config-key source into the service's `label` param through its input; the fake descriptor's `serialize` sees `config.service.label === 'probe'`.
+44. `lowering.test.ts`: `lowering() passes opts.configPool to Load` — a module forwarding a pool-key source into the service's `label` param through its input; the fake descriptor's `serialize` sees `config.service.label === 'probe'`.
 
 ### 11.6 Existing tests whose subject changed
 
@@ -769,10 +769,10 @@ Each decision in § 14 has a test that fails when the behavior breaks: decision 
 6. **The pointer is the source itself, and reading it throws a `LoadError`** (§ 3.4). Inside a `resolve()` function the error is wrapped once with the binding's name (§ 4.4), so the author finds both the function and the source.
 7. **`envParam()` turned into text in a module body throws too** (§ 3.4). Today it silently gives `[object Object]`. This is a behavior change an app could hit, and the guide says so (§ 9).
 8. **A function may return only a pointer it received** (§ 4.5), at any depth, matched by identity. Choosing between received pointers per environment is allowed, as the design notes settle. Making a new source inside the function is not.
-9. **`isRuntimeValue()` answers about pointers** (§ 3.5): true for a secret source and a param source without a config key, which is what a function receives. It is false for `envParam()` and for every other value. In a module body an input field is never one, because its binding is read after the body runs; the doc comment says so.
+9. **`isRuntimeValue()` answers about pointers** (§ 3.5): true for a secret source and a param source without a pool key, which is what a function receives. It is false for `envParam()` and for every other value. In a module body an input field is never one, because its binding is read after the body runs; the doc comment says so.
 10. **The graph lists every secret source; deploy preflight checks them; dev preflight does not** (§ 4.10, § 6.2, § 6.3). Deploy preflight checks platform state, which must not depend on which pointer a function returns. Dev has no platform state, and its rule is that a secret is required only when a service's schema needs it.
 11. **A forwarded `secrets` or `params` slot listed in `resolve()` counts as forwarded** (§ 4.11). C1 refused sources from functions partly because this was reported as never forwarded.
-12. **`secretSource()` and `paramSource()` take options, in a second parameter** (§ 3.2). `label` names a source in errors without core reading the payload. `configKey`, `sentinel` and `redacted` tell core what it needs about a param source's real value, again without the payload.
+12. **`secretSource()` and `paramSource()` take options, in a second parameter** (§ 3.2). `label` names a source in errors without core reading the payload. `poolKey`, `sentinel` and `redacted` tell core what it needs about a param source's real value, again without the payload.
 13. **`generatedParam()` gets overloads** (§ 6.1), so a redacted one stands for `SecretString` and a plain one for `string`, and each fits the module schema field it belongs in.
 
 ## 15. Conflicts

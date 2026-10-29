@@ -39,7 +39,7 @@ export default module('pipeline-config-pool-fixture', ({ provision }) => {
     input: {
       greeting: paramSource<{ name: string }, string>(
         { name: 'S3_PIPELINE_PROBE' },
-        { configKey: 'S3_PIPELINE_PROBE' },
+        { poolKey: 'S3_PIPELINE_PROBE' },
       ),
     },
   });

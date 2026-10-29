@@ -77,7 +77,7 @@ export interface SourceOptions {
 /** What a deploy target says about a param source it builds. */
 export interface ParamSourceOptions extends SourceOptions {
   /** The config pool key whose value at deploy is the source's real value, as for `envParam()`. Without one the source is known only at boot, and its real value is the source itself, a pointer. */
-  readonly configKey?: string;
+  readonly poolKey?: string;
   /** For a source known only at boot: the string a module's input schema checks in its place, because the deploy has no value for it. */
   readonly sentinel?: string;
   /** For a source known only at boot whose value is redacted: a module's input schema checks an empty `SecretString` in its place, as for a secret. */
@@ -97,7 +97,7 @@ export function secretSource<P, T = unknown>(
     buildSource(SECRET_SOURCE, payload, {
       kind: 'source',
       label,
-      configKey: undefined,
+      poolKey: undefined,
       sentinel: undefined,
       redacted: true,
     }),
@@ -182,15 +182,15 @@ export function paramSource<P, T = unknown>(
   options?: ParamSourceOptions,
 ): ParamSource<P> & Value<T> {
   const label = sourceLabel('paramSource', options?.label, 'a param source');
-  const configKey = options?.configKey;
-  if (configKey !== undefined && (typeof configKey !== 'string' || configKey.length === 0)) {
-    throw new Error('paramSource() configKey must be a non-empty string.');
+  const poolKey = options?.poolKey;
+  if (poolKey !== undefined && (typeof poolKey !== 'string' || poolKey.length === 0)) {
+    throw new Error('paramSource() poolKey must be a non-empty string.');
   }
   const sentinel = options?.sentinel;
   const redacted = options?.redacted === true;
-  if (configKey !== undefined && (sentinel !== undefined || redacted)) {
+  if (poolKey !== undefined && (sentinel !== undefined || redacted)) {
     throw new Error(
-      'paramSource() takes configKey, for a value known at deploy, or sentinel or redacted, for one known only at boot, not both.',
+      'paramSource() takes poolKey, for a value known at deploy, or sentinel or redacted, for one known only at boot, not both.',
     );
   }
   if (sentinel !== undefined && redacted) {
@@ -199,7 +199,7 @@ export function paramSource<P, T = unknown>(
   return blindCast<
     ParamSource<P> & Value<T>,
     'the frozen object carries the value brand, a source origin whose source is itself, the source brand and the payload, which is the ParamSource and Value shape'
-  >(buildSource(PARAM_SOURCE, payload, { kind: 'source', label, configKey, sentinel, redacted }));
+  >(buildSource(PARAM_SOURCE, payload, { kind: 'source', label, poolKey, sentinel, redacted }));
 }
 
 function sourceLabel(factory: string, label: unknown, fallback: string): string {
@@ -242,7 +242,7 @@ const sourceMisuses = new WeakSet<LoadError>();
 function sourceMisuse(origin: Omit<SourceOrigin, 'source'>, what: string): LoadError {
   const { label } = origin;
   const error = new LoadError(
-    origin.configKey === undefined
+    origin.poolKey === undefined
       ? `${label} is known only at boot: the deploy holds a pointer to it, never its value, and ${what}. ` +
           'A resolve() function may return the pointer, or put it in its result, unchanged; to compute with the value, do it in the service that reads it.'
       : `${label} is a value, not its real value, and ${what}. ` +
@@ -275,7 +275,7 @@ export function sourceOriginOf(source: ParamSource | SecretSource): SourceOrigin
  */
 export function isRuntimeValue(value: unknown): value is ParamSource | SecretSource {
   if (!isSecretSource(value) && !isParamSource(value)) return false;
-  return sourceOriginOf(value)?.configKey === undefined;
+  return sourceOriginOf(value)?.poolKey === undefined;
 }
 
 /** True if `value` is a param source (an `envParam` result or a forwarded ctx.params ref). */

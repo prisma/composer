@@ -43,7 +43,7 @@ const loadError = (run: () => unknown): LoadError => {
 
 const pointer = (name: string) => secretSource({ name }, { label: `envSecret('${name}')` });
 const variable = (name: string) =>
-  paramSource({ name }, { label: `envParam('${name}')`, configKey: name });
+  paramSource({ name }, { label: `envParam('${name}')`, poolKey: name });
 
 describe('building a source', () => {
   test('secretSource() and paramSource() return values that are also sources', () => {
@@ -72,11 +72,11 @@ describe('building a source', () => {
     expect(copy.payload).toEqual({ name: 'X' });
   });
 
-  test('paramSource() refuses a config key beside a sentinel or redacted, a sentinel beside redacted, and an empty label or config key', () => {
+  test('paramSource() refuses a pool key beside a sentinel or redacted, a sentinel beside redacted, and an empty label or pool key', () => {
     const both =
-      'paramSource() takes configKey, for a value known at deploy, or sentinel or redacted, for one known only at boot, not both.';
-    expect(() => paramSource({}, { configKey: 'X', sentinel: '' })).toThrow(both);
-    expect(() => paramSource({}, { configKey: 'X', redacted: true })).toThrow(both);
+      'paramSource() takes poolKey, for a value known at deploy, or sentinel or redacted, for one known only at boot, not both.';
+    expect(() => paramSource({}, { poolKey: 'X', sentinel: '' })).toThrow(both);
+    expect(() => paramSource({}, { poolKey: 'X', redacted: true })).toThrow(both);
     expect(() => paramSource({}, { sentinel: '', redacted: true })).toThrow(
       'paramSource() takes sentinel or redacted, not both.',
     );
@@ -86,12 +86,12 @@ describe('building a source', () => {
     expect(() => secretSource({}, { label: '' })).toThrow(
       'secretSource() label must be a non-empty string.',
     );
-    expect(() => paramSource({}, { configKey: '' })).toThrow(
-      'paramSource() configKey must be a non-empty string.',
+    expect(() => paramSource({}, { poolKey: '' })).toThrow(
+      'paramSource() poolKey must be a non-empty string.',
     );
   });
 
-  test('isRuntimeValue() is true for a secret source and a param source without a config key, and false otherwise', () => {
+  test('isRuntimeValue() is true for a secret source and a param source without a pool key, and false otherwise', () => {
     expect(isRuntimeValue(pointer('X'))).toBe(true);
     expect(isRuntimeValue(paramSource({}, { sentinel: '' }))).toBe(true);
     expect(isRuntimeValue(paramSource({ name: 'X' }))).toBe(true);

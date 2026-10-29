@@ -39,7 +39,7 @@ export type ValueOrigin<T> =
       /** How an error names the source, e.g. `envSecret('STRIPE_KEY')`. */
       readonly label: string;
       /** The config pool key whose value at deploy is the real value, as for `envParam()`. `undefined` for a value known only at boot, whose real value is `source`, a pointer. */
-      readonly configKey: string | undefined;
+      readonly poolKey: string | undefined;
       /** For a param source known only at boot: the string a module's input schema checks in its place. */
       readonly sentinel: string | undefined;
       /** A module's input schema checks an empty `SecretString` in its place: always for a secret source, and for a redacted param source. */

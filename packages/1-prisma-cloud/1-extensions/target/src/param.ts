@@ -64,7 +64,7 @@ export function envParam(name: string): ParamSource<EnvParamPayload> & Value<str
   }
   return paramSource<EnvParamPayload, string>(
     { [PRISMA_CLOUD_PARAM_SOURCE]: true, name },
-    { label: `envParam('${name}')`, configKey: name },
+    { label: `envParam('${name}')`, poolKey: name },
   );
 }
 
