@@ -247,15 +247,15 @@ export interface ResourceNode<
 }
 
 /** A resource's configuration: plain data and values, nested in objects and arrays. */
-export type ResourceProps = { readonly [key: string]: ResourceProp };
-export type ResourceProp =
+export type ResourceProps = { readonly [key: string]: ResourcePropsMember };
+export type ResourcePropsMember =
   | string
   | number
   | boolean
   | null
   | Value<PlainData>
-  | readonly ResourceProp[]
-  | { readonly [key: string]: ResourceProp };
+  | readonly ResourcePropsMember[]
+  | { readonly [key: string]: ResourcePropsMember };
 
 /**
  * A Service: inputs + its own declared params + how it is built. Inspectable,
