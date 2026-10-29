@@ -49,7 +49,8 @@ function misuse(origin: InputOrigin, what: string): LoadError {
   );
 }
 
-function primitiveMisuse(hint: string): string {
+/** What a coercion with `hint` did to a value, worded for a misuse error. */
+export function primitiveMisuse(hint: string): string {
   switch (hint) {
     case 'string':
       return 'it was turned into text (a template literal or String())';

@@ -5,10 +5,20 @@ import {
   LoadError,
   type NodeId,
   type ParamBinding,
+  type SecretSourceUse,
   type ServiceInputBinding,
 } from './graph-types.ts';
 import { inputFieldLabel } from './module-input.ts';
-import { isParamSource, isSecretSource, type ResourceNode, type ResourceProps } from './node.ts';
+import {
+  isParamSource,
+  isSecretSource,
+  isSourceMisuse,
+  type ParamSource,
+  type ResourceNode,
+  type ResourceProps,
+  type SecretSource,
+  sourceOriginOf,
+} from './node.ts';
 import {
   type EnvironmentRealValues,
   type InputOrigin,
@@ -67,12 +77,18 @@ function collect(
   site: ValueBindingSite,
   found: { value: Value<unknown>; site: ValueBindingSite }[],
   seen: WeakSet<object>,
+  recordSecret: (source: SecretSource, site: ValueBindingSite) => void,
 ): void {
+  if (isSecretSource(value) || isParamSource(value)) {
+    if (isSecretSource(value) && site.kind !== 'props') recordSecret(value, site);
+    if (site.kind === 'serviceInput' || site.kind === 'param' || !isValue(value)) return;
+    found.push({ value, site });
+    return;
+  }
   if (isValue(value)) {
     found.push({ value, site });
     return;
   }
-  if (isSecretSource(value) || isParamSource(value)) return;
   if (!Array.isArray(value) && !isPlainObject(value)) return;
   if (seen.has(value)) return;
   seen.add(value);
@@ -81,7 +97,7 @@ function collect(
     : Object.entries(value);
   for (const [key, member] of entries) {
     const path = site.kind === 'param' ? site.path : joinPath(site.path, key);
-    collect(member, { ...site, path }, found, seen);
+    collect(member, { ...site, path }, found, seen, recordSecret);
   }
 }
 
@@ -114,7 +130,24 @@ function isThenable(value: unknown): boolean {
   );
 }
 
-function checkResult(result: unknown, fnLabel: string): void {
+function pointersIn(values: unknown): ReadonlySet<object> {
+  const pointers = new Set<object>();
+  const seen = new WeakSet<object>();
+  const walk = (value: unknown): void => {
+    if (isSecretSource(value) || isParamSource(value)) {
+      pointers.add(value);
+      return;
+    }
+    if (!Array.isArray(value) && !isPlainObject(value)) return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    for (const member of Array.isArray(value) ? value : Object.values(value)) walk(member);
+  };
+  walk(values);
+  return pointers;
+}
+
+function checkResult(result: unknown, fnLabel: string, received: ReadonlySet<object>): void {
   if (isThenable(result)) {
     throw new LoadError(`${fnLabel} returned a Promise. resolve() runs synchronously at Load.`);
   }
@@ -126,14 +159,15 @@ function checkResult(result: unknown, fnLabel: string): void {
         `${fnLabel} returned undefined${atPath}. Return a result for every environment; Composer never picks a default.`,
       );
     }
+    if (isSecretSource(value) || isParamSource(value)) {
+      if (received.has(value)) return;
+      throw new LoadError(
+        `${fnLabel} returned a source${atPath} it did not receive, such as envSecret() or envParam() called inside the function. A resolve() function may return a pointer it received from a dependency, unchanged; bind any other source directly.`,
+      );
+    }
     if (isValue(value)) {
       throw new LoadError(
         `${fnLabel} returned a value${atPath}, not a real value. List that value as a dependency; fn receives its real value.`,
-      );
-    }
-    if (isSecretSource(value) || isParamSource(value)) {
-      throw new LoadError(
-        `${fnLabel} returned a secret or param source${atPath}. Bind envSecret() or envParam() directly; resolve() returns plain data.`,
       );
     }
     const notPlain = describeNotPlain(value);
@@ -156,13 +190,16 @@ function substitute(
   value: unknown,
   results: ReadonlyMap<Value<unknown>, unknown>,
   inProgress: WeakSet<object>,
+  sources: 'keep' | 'resolve',
 ): unknown {
+  if (isSecretSource(value) || isParamSource(value)) {
+    return sources === 'keep' || !isValue(value) ? value : results.get(value);
+  }
   if (isValue(value)) return results.get(value);
-  if (isSecretSource(value) || isParamSource(value)) return value;
   if (Array.isArray(value)) {
     if (inProgress.has(value)) return value;
     inProgress.add(value);
-    const rebuilt = value.map((member) => substitute(member, results, inProgress));
+    const rebuilt = value.map((member) => substitute(member, results, inProgress, sources));
     inProgress.delete(value);
     return rebuilt.every((member, index) => member === value[index]) ? value : rebuilt;
   }
@@ -172,7 +209,7 @@ function substitute(
     const rebuilt: Record<string, unknown> = {};
     let changed = false;
     for (const [key, member] of Object.entries(value)) {
-      const real = substitute(member, results, inProgress);
+      const real = substitute(member, results, inProgress, sources);
       if (real === undefined && isValue(member)) {
         changed = true;
         continue;
@@ -189,6 +226,7 @@ function substitute(
 function describeData(value: unknown): string {
   if (Array.isArray(value)) return 'an array';
   if (isSecretSource(value)) return 'a secret';
+  if (isParamSource(value)) return 'a value known only at boot';
   if (typeof value === 'object') return 'an object that is not plain data';
   return `a ${typeof value}`;
 }
@@ -198,7 +236,7 @@ function readPath(data: unknown, origin: InputOrigin): unknown {
   let current = data;
   for (const [index, key] of origin.path.entries()) {
     if (current === undefined || current === null) return undefined;
-    if (!isPlainObject(current) || isSecretSource(current)) {
+    if (!isPlainObject(current) || isSecretSource(current) || isParamSource(current)) {
       const parent = inputFieldLabel({ ...origin, path: origin.path.slice(0, index) });
       throw new LoadError(
         `${inputFieldLabel(origin)} of module "${origin.module}" does not exist: ${parent} is ` +
@@ -214,15 +252,23 @@ function readPath(data: unknown, origin: InputOrigin): unknown {
 
 function validateModuleInput(entry: ProvisionedModuleInput, resolved: unknown): unknown {
   const address = entry.moduleAddress;
+  const textPointers = new Map<string, ParamSource>();
+  const taggedBox = (source: SecretSource | ParamSource): SecretBox<string> => {
+    const sentinel = new SecretBox('');
+    Object.defineProperty(sentinel, SENTINEL_SOURCE, { value: source });
+    return sentinel;
+  };
   const withSentinels = (value: unknown, path: string): unknown => {
-    if (isSecretSource(value)) {
-      const sentinel = new SecretBox('');
-      Object.defineProperty(sentinel, SENTINEL_SOURCE, { value });
-      return sentinel;
-    }
+    if (isSecretSource(value)) return taggedBox(value);
     if (isParamSource(value)) {
+      const origin = sourceOriginOf(value);
+      if (origin?.redacted) return taggedBox(value);
+      if (origin?.sentinel !== undefined) {
+        textPointers.set(path, value);
+        return origin.sentinel;
+      }
       throw new LoadError(
-        `${describeSite({ address, kind: 'moduleInput', path })} is bound to a param source, such as envParam(). A module's input does not take a param source yet; bind it on the service's input inside the module, or forward it through the module's params slot.`,
+        `${describeSite({ address, kind: 'moduleInput', path })} is bound to a param source a module's input cannot take: it names no sentinel for the module's schema to check in its place, as a raw paramSource() does. Bind envParam(), generatedParam() or serviceOrigin(), or a value.`,
       );
     }
     if (isSecretString(value)) {
@@ -256,12 +302,20 @@ function validateModuleInput(entry: ProvisionedModuleInput, resolved: unknown): 
     );
   }
   const restore = (value: unknown, path: string): unknown => {
+    const pointer = textPointers.get(path);
+    if (pointer !== undefined) {
+      const origin = sourceOriginOf(pointer);
+      if (origin !== undefined && value === origin.sentinel) return pointer;
+      throw new LoadError(
+        `The input schema of module "${address}" changed input key "${path}", which is bound to ${origin?.label}. Its value is known only at boot, so a module's schema may check the field but never transform it.`,
+      );
+    }
     if (isSecretString(value)) {
-      const source = blindCast<
+      const tag = blindCast<
         Record<PropertyKey, unknown>,
         'reading the sentinel tag a module input validation put on its own SecretString box'
       >(value)[SENTINEL_SOURCE];
-      if (isSecretSource(source)) return source;
+      if (isSecretSource(tag) || isParamSource(tag)) return tag;
       const atPath = path === '' ? '' : ` at "${path}"`;
       throw new LoadError(
         `The input schema of module "${address}" produced a SecretString${atPath} that its binding did not supply. A module's schema may check a secret field, never create one.`,
@@ -280,12 +334,35 @@ function validateModuleInput(entry: ProvisionedModuleInput, resolved: unknown): 
   return restore(result.value, '');
 }
 
+function refusePointersInProps(address: NodeId, props: unknown): void {
+  const seen = new WeakSet<object>();
+  const walk = (value: unknown, path: string): void => {
+    if (isSecretSource(value) || isParamSource(value)) {
+      const label =
+        sourceOriginOf(value)?.label ??
+        (isSecretSource(value) ? 'a secret source' : 'a param source');
+      throw new LoadError(
+        `${describeSite({ address, kind: 'props', path })} is bound to ${label}, which is known only at boot. A resource's props are read at deploy; bind a value known at deploy.`,
+      );
+    }
+    if (!Array.isArray(value) && !isPlainObject(value)) return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    const entries: [string | number, unknown][] = Array.isArray(value)
+      ? value.map((member, index) => [index, member])
+      : Object.entries(value);
+    for (const [key, member] of entries) walk(member, joinPath(path, key));
+  };
+  walk(props, '');
+}
+
 /**
  * Resolves every value the graph binds, dependency-first, once each, and
  * returns each binding with its values replaced by their real values.
  */
 export function resolveValues(input: {
   readonly environment: EnvironmentRealValues | undefined;
+  readonly configPool: Readonly<Record<string, unknown>> | undefined;
   readonly inputBindings: readonly ServiceInputBinding[];
   readonly params: readonly ParamBinding[];
   readonly moduleInputs: readonly ProvisionedModuleInput[];
@@ -294,20 +371,35 @@ export function resolveValues(input: {
   readonly inputBindings: readonly ServiceInputBinding[];
   readonly params: readonly ParamBinding[];
   readonly resourceProps: ReadonlyMap<NodeId, ResourceProps>;
+  readonly secretSources: readonly SecretSourceUse[];
 } {
-  const { environment } = input;
+  const { environment, configPool } = input;
+  const secretSources: SecretSourceUse[] = [];
+  const recorded = new Set<SecretSource>();
+  const recordSecret = (source: SecretSource, site: ValueBindingSite): void => {
+    const original = sourceOriginOf(source)?.source;
+    const canonical = isSecretSource(original) ? original : source;
+    if (recorded.has(canonical)) return;
+    recorded.add(canonical);
+    secretSources.push({
+      source: canonical,
+      address: site.address,
+      nodeKind: site.kind === 'moduleInput' ? 'module' : 'service',
+    });
+  };
+
   const found: { value: Value<unknown>; site: ValueBindingSite }[] = [];
   for (const { serviceAddress, binding } of input.inputBindings) {
     const site: ValueBindingSite = { address: serviceAddress, kind: 'serviceInput', path: '' };
-    collect(binding, site, found, new WeakSet());
+    collect(binding, site, found, new WeakSet(), recordSecret);
   }
   for (const { serviceAddress, slot, binding } of input.params) {
     const site: ValueBindingSite = { address: serviceAddress, kind: 'param', path: slot };
-    collect(binding, site, found, new WeakSet());
+    collect(binding, site, found, new WeakSet(), recordSecret);
   }
   for (const [address, resource] of input.resources) {
     const site: ValueBindingSite = { address, kind: 'props', path: '' };
-    collect(resource.props, site, found, new WeakSet());
+    collect(resource.props, site, found, new WeakSet(), recordSecret);
   }
 
   const moduleInputByAddress = new Map(
@@ -343,16 +435,39 @@ export function resolveValues(input: {
         }
         result = environment[origin.fact];
         break;
+      case 'source': {
+        if (isSecretSource(origin.source)) recordSecret(origin.source, site);
+        if (origin.configKey === undefined) {
+          result = origin.source;
+        } else if (configPool === undefined) {
+          throw new LoadError(
+            `${describeSite(site)} depends on ${origin.label}, but Load was given no config pool to read "${origin.configKey}" from. Pass { configPool } to Load; the deploy and dev commands pass the process environment.`,
+          );
+        } else {
+          const raw = configPool[origin.configKey];
+          result = raw === undefined || raw === '' ? undefined : raw;
+        }
+        break;
+      }
       case 'computed': {
-        const args = origin.dependencies.map((dependency) => resolveOne(dependency, site));
+        const args = origin.dependencies.map((dependency) => {
+          const real = resolveOne(dependency, site);
+          const source = originOf(dependency);
+          if (real === undefined && source.kind === 'source') {
+            throw new LoadError(
+              `${fnLabelFor(site)} lists ${source.label}, but "${source.configKey}" is unset or empty, so it has no real value. Set "${source.configKey}", or bind ${source.label} directly into an input binding, where an absent value leaves the key out and the schema decides.`,
+            );
+          }
+          return real;
+        });
         try {
           result = origin.compute(args);
         } catch (thrown) {
-          if (thrown instanceof LoadError) throw thrown;
+          if (thrown instanceof LoadError && !isSourceMisuse(thrown)) throw thrown;
           const message = thrown instanceof Error ? thrown.message : String(thrown);
           throw new LoadError(`${fnLabelFor(site)} threw: ${message}`, { cause: thrown });
         }
-        checkResult(result, fnLabelFor(site));
+        checkResult(result, fnLabelFor(site), pointersIn(args));
         break;
       }
       case 'input': {
@@ -381,9 +496,9 @@ export function resolveValues(input: {
     validating.add(entry.moduleAddress);
     const site: ValueBindingSite = { address: entry.moduleAddress, kind: 'moduleInput', path: '' };
     const values: { value: Value<unknown>; site: ValueBindingSite }[] = [];
-    collect(entry.binding, site, values, new WeakSet());
+    collect(entry.binding, site, values, new WeakSet(), recordSecret);
     for (const { value, site: valueSite } of values) resolveOne(value, valueSite);
-    const resolved = substitute(entry.binding, results, new WeakSet());
+    const resolved = substitute(entry.binding, results, new WeakSet(), 'resolve');
     const validated = validateModuleInput(entry, resolved);
     validating.delete(entry.moduleAddress);
     validatedInputs.set(entry.moduleAddress, validated);
@@ -397,43 +512,46 @@ export function resolveValues(input: {
     [...input.resources].map(([address, resource]) => [address, resource.props]),
   );
   if (found.length === 0) {
+    for (const [address, props] of authoredProps) refusePointersInProps(address, props);
     return {
       inputBindings: input.inputBindings,
       params: input.params,
       resourceProps: authoredProps,
+      secretSources,
     };
   }
 
   const inProgress = new WeakSet<object>();
   const resourceProps = new Map<NodeId, ResourceProps>();
   for (const [address, props] of authoredProps) {
-    const substituted = substitute(props, results, inProgress);
-    resourceProps.set(
-      address,
+    const substituted = substitute(props, results, inProgress, 'resolve');
+    refusePointersInProps(address, substituted);
+    const resolvedProps =
       substituted === props
         ? props
         : blindCast<
             ResourceProps,
-            'substitution rebuilds the plain props object, replacing each Value<PlainData> with its real value: checkResult proved an environment or computed value plain data, and an input field is its module schema output, which the compiler typed PlainData but nothing checks again at runtime'
-          >(substituted),
-    );
+            'substitution rebuilds the plain props object, replacing each Value<PlainData> with its real value: an environment or computed value is plain data or a pointer it received, which checkResult checked, an input field is its module schema output, and the pointer check above refused any pointer left'
+          >(substituted);
+    resourceProps.set(address, resolvedProps);
   }
   return {
     resourceProps,
+    secretSources,
     inputBindings: input.inputBindings.map((entry) => {
-      const binding = substitute(entry.binding, results, inProgress);
+      const binding = substitute(entry.binding, results, inProgress, 'keep');
       return binding === entry.binding
         ? entry
         : {
             serviceAddress: entry.serviceAddress,
             binding: blindCast<
               ServiceInputBinding['binding'],
-              'substitution replaces each Value<InputBindingData> with its real value and keeps every other member: checkResult proved an environment or computed value plain data, and an input field is its module schema output with each secret put back as its source, which the service schema validates again when the target serializes the binding'
+              'substitution replaces each value with its real value and keeps every source in place: an environment or computed value is plain data or a pointer it received, which checkResult checked, and an input field is its module schema output with each pointer put back; the service schema validates the whole binding again when the target serializes it'
             >(binding),
           };
     }),
     params: input.params.flatMap((entry) => {
-      const binding = substitute(entry.binding, results, inProgress);
+      const binding = substitute(entry.binding, results, inProgress, 'keep');
       if (binding === undefined && isValue(entry.binding)) return [];
       return [binding === entry.binding ? entry : { ...entry, binding }];
     }),

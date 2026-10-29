@@ -1,6 +1,13 @@
 import { CliStructuredError } from '@internal/foundation/errors';
 import type { ContractStyle } from './contract.ts';
-import type { DependencyEnd, InputBinding, ModuleNode, ResourceNode, ServiceNode } from './node.ts';
+import type {
+  DependencyEnd,
+  InputBinding,
+  ModuleNode,
+  ResourceNode,
+  SecretSource,
+  ServiceNode,
+} from './node.ts';
 import type { EnvironmentRealValues } from './value.ts';
 
 /** Path-derived: root-scope children are bare ids ("auth", "db"); a nested module's own children dot-join under its address ("auth.db"). */
@@ -11,6 +18,8 @@ export interface LoadOptions {
   readonly id?: NodeId;
   /** The facts of the environment being loaded. `name` is what `--environment` gave. Required by any value over `environment.name`. */
   readonly environment?: EnvironmentRealValues;
+  /** The config pool: the values a source with a config key, such as `envParam('NAME')`, reads by name at deploy. Required by any such source whose real value Load needs. The deploy and dev commands pass the process environment. */
+  readonly configPool?: Readonly<Record<string, unknown>>;
 }
 
 export interface GraphNode {
@@ -105,6 +114,16 @@ export interface ParamBinding {
   readonly binding: unknown;
 }
 
+/** A secret source the graph names, in a binding or as a resolve() dependency, wherever it sits (ADR-0029). Deploy preflight checks every one, so the platform variables an app needs do not depend on which pointer a resolve() function returns. */
+export interface SecretSourceUse {
+  /** The source, as its target built it. Core never reads its payload. */
+  readonly source: SecretSource;
+  /** The node whose binding names it, directly or through a resolve() dependency: the first place Load met it. */
+  readonly address: NodeId;
+  /** That node's kind. */
+  readonly nodeKind: 'service' | 'module';
+}
+
 export interface Graph {
   readonly root: GraphNode;
   /** Root + one per input, topo-ordered (deps first). */
@@ -118,6 +137,8 @@ export interface Graph {
   readonly inputBindings: readonly ServiceInputBinding[];
   /** Every service param bound at provision — literal or source; unbound params are absent here and fall back to their `default` (see `buildConfig`). */
   readonly params: readonly ParamBinding[];
+  /** Every secret source a binding or a resolve() dependency names, once each, in the order Load met them (ADR-0029). */
+  readonly secretSources: readonly SecretSourceUse[];
 }
 
 /**

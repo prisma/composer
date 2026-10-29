@@ -11,7 +11,7 @@
  * `envSecret(...)` leaves (ADR-0042). A param is never secret.
  */
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import type { Graph, ParamBinding, ServiceInputBinding } from './graph-types.ts';
+import type { Graph, ParamBinding, SecretSourceUse, ServiceInputBinding } from './graph-types.ts';
 import type { ProvisionNeed, ServiceNode } from './node.ts';
 
 /**
@@ -159,6 +159,15 @@ export function inputManifest(graph: Graph): readonly ServiceInputBinding[] {
  */
 export function paramManifest(graph: Graph): readonly ParamBinding[] {
   return graph.params;
+}
+
+/**
+ * Every secret source the graph names, in a binding or as a resolve()
+ * dependency, wherever it sits: what a deploy target's preflight checks.
+ * Pure graph introspection, TARGET-AGNOSTIC.
+ */
+export function secretSourceManifest(graph: Graph): readonly SecretSourceUse[] {
+  return graph.secretSources;
 }
 
 // ——— Param constructors: plain data, target-agnostic (ADR-0018/0019). ———
