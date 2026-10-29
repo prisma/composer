@@ -234,6 +234,35 @@ describe('a resource with a slot wired at construction', () => {
       /^Dependency cycle: (shop\.web → shop\.site → shop\.web|shop\.site → shop\.web → shop\.site) — no deploy order exists\.$/,
     );
   });
+
+  test('a resource node from another copy of core, with no inputs, deps or props, loads as a resource with no slots', () => {
+    const forged = {
+      [Symbol.for('prisma:node')]: true,
+      kind: 'resource',
+      name: 'site',
+      extension: 'test/pack',
+      type: 'fake/url',
+      provides: urlContract(),
+    };
+    const root = module('shop', ({ provision }) => {
+      provision(forged as never, { id: 'site' });
+    });
+
+    const graph = Load(root);
+
+    expect(graph.nodes.find((n) => n.id === 'shop.site')?.node).toBe(forged as never);
+    expect(graph.nodes.map((n) => n.id)).toEqual(['shop.site', 'shop']);
+    expect(graph.edges).toEqual([]);
+    expect(graph.ports.filter((p) => p.node === 'shop.site')).toEqual([
+      {
+        node: 'shop.site',
+        direction: 'out',
+        name: '$out',
+        contractKind: 'fake/url',
+        style: undefined,
+      },
+    ]);
+  });
 });
 
 describe("a value in a resource's props", () => {

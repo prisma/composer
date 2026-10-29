@@ -599,7 +599,7 @@ function flatten(
       });
       recordAuthoredWiring(fullAddress, localWiring);
       pending.push({
-        deps: child.inputs,
+        deps: child.inputs ?? {},
         wiring: localWiring,
         targetId: fullAddress,
         targetKind: 'resource',

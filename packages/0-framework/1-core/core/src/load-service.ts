@@ -22,7 +22,7 @@ export function boundaryPortsOf(
   node: ModuleNode | ServiceNode | ResourceNode,
 ): BoundaryPort[] {
   const ports: BoundaryPort[] = [];
-  const slots: Record<string, unknown> = node.kind === 'module' ? node.deps : node.inputs;
+  const slots: Record<string, unknown> = node.kind === 'module' ? node.deps : slotsOf(node);
   for (const [name, slot] of Object.entries(slots)) {
     const type =
       typeof slot === 'object' && slot !== null && 'type' in slot && typeof slot.type === 'string'
@@ -50,16 +50,22 @@ export function boundaryPortsOf(
   return ports;
 }
 
+/** A resource node built by another installed copy of core may have no `inputs`; it has no slots. */
+function slotsOf(node: ServiceNode | ResourceNode): ServiceNode['inputs'] {
+  return node.kind === 'resource' ? (node.inputs ?? {}) : node.inputs;
+}
+
 export function dependencySlots(
   node: ServiceNode | ResourceNode,
   serviceId: NodeId,
 ): { nodes: GraphNode[]; edges: Edge[] } {
-  if (typeof node.inputs !== 'object' || node.inputs === null) {
+  const inputs = slotsOf(node);
+  if (typeof inputs !== 'object' || inputs === null) {
     throw new LoadError(`Service "${serviceId}" has no inputs map.`);
   }
   const nodes: GraphNode[] = [];
   const edges: Edge[] = [];
-  for (const [input, value] of Object.entries(node.inputs)) {
+  for (const [input, value] of Object.entries(inputs)) {
     // `inputs` is untrusted at runtime (a user module could carry junk the
     // types don't see), so the kind is re-checked as a plain string.
     const kind: string | undefined = isNode(value) ? value.kind : undefined;
