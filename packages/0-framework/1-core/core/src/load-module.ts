@@ -35,7 +35,7 @@ import {
 } from './node.ts';
 import { type ProvisionedModuleInput, resolveValues } from './resolve-values.ts';
 import { topoSort } from './toposort.ts';
-import { environmentFacts, isValue } from './value.ts';
+import { environmentFacts, isValue, originOf } from './value.ts';
 
 /**
  * Brands a ref-port with the AUTHORED endpoint it stands for — which port of
@@ -227,15 +227,23 @@ function validateWiring(
  * A value or a secret/param source is an opaque leaf: it is pushed (a
  * forwarded ref IS such a source, so identity-matching still needs it) but
  * never descended into, so a ref buried in an unrelated source's payload is
- * not falsely seen as used. `seen` guards object cycles so a self-referential binding cannot
+ * not falsely seen as used. A resolve() result's dependencies are walked too,
+ * so a ref it lists counts as used. `seen` guards object cycles so a self-referential binding cannot
  * recurse forever.
  */
 function deepValues(value: unknown, out: unknown[], seen: WeakSet<object> = new WeakSet()): void {
   out.push(value);
   if (typeof value !== 'object' || value === null) return;
-  if (isValue(value) || isSecretSource(value) || isParamSource(value)) return;
   if (seen.has(value)) return;
   seen.add(value);
+  if (isValue(value)) {
+    const origin = originOf(value);
+    if (origin.kind === 'computed') {
+      for (const dependency of origin.dependencies) deepValues(dependency, out, seen);
+    }
+    return;
+  }
+  if (isSecretSource(value) || isParamSource(value)) return;
   const members = Array.isArray(value) ? value : Object.values(value);
   for (const member of members) deepValues(member, out, seen);
 }
@@ -274,7 +282,7 @@ function validateSecretBinding(
           `"${enclosingModuleName}") — bind it with envSecret('NAME') or forward ctx.secrets.`,
       );
     }
-    if (isValue(bound)) {
+    if (isValue(bound) && !isSecretSource(bound)) {
       throw new LoadError(
         `The secrets for "${address}" bind "${slot}" to a value. A value is not a secret source; ` +
           "bind envSecret('NAME') or a forwarded ctx.secrets ref.",
@@ -341,7 +349,7 @@ function validateParamNeedBinding(
           'forward ctx.params.',
       );
     }
-    if (isValue(bound)) {
+    if (isValue(bound) && !isParamSource(bound)) {
       throw new LoadError(
         `The params for "${address}" bind "${slot}" to a value. A module param slot takes a param ` +
           "source; bind envParam('NAME') or a forwarded ctx.params ref.",
@@ -937,6 +945,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   }
   const resolved = resolveValues({
     environment: opts?.environment,
+    configPool: opts?.configPool,
     inputBindings,
     params: paramBindings,
     moduleInputs,
@@ -959,6 +968,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
     authoredEdges,
     inputBindings: resolved.inputBindings,
     params: resolved.params,
+    secretSources: resolved.secretSources,
   };
 }
 

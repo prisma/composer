@@ -7,12 +7,17 @@ import type { SecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { ConfigParam, Connection, Params } from './config.ts';
 import type { Contract } from './contract.ts';
-import type { ModuleInput } from './module-input.ts';
+import { LoadError } from './graph-types.ts';
+import { type ModuleInput, primitiveMisuse } from './module-input.ts';
 import {
   type EnvironmentFacts,
   isPlainObject,
   isValue,
+  originOf,
   type PlainData,
+  type SourceOrigin,
+  VALUE,
+  VALUE_ORIGIN,
   type Value,
 } from './value.ts';
 
@@ -48,8 +53,8 @@ export interface SecretNeed {
 /** A module's secret-forwarding slots: name → the need it declares. */
 export type Secrets = Record<string, SecretNeed>;
 
-/** The wiring value bound to a secret slot: a target-defined payload core forwards but never inspects. A target (e.g. @prisma/composer-prisma-cloud's `envSecret`) builds one via `secretSource()`. */
-export interface SecretSource<T = unknown> {
+/** A secret's source: a target-defined payload core forwards but never inspects. It is a value too, known only at boot; its real value at deploy is the source itself, a pointer. A target (e.g. @prisma/composer-prisma-cloud's `envSecret`) builds one with `secretSource()`. */
+export interface SecretSource<T = unknown> extends Value<unknown> {
   readonly [SECRET_SOURCE]: true;
   /** Target-defined. Core never reads this; the target that authored the source reads it back. */
   readonly payload: T;
@@ -63,9 +68,40 @@ export function secret(): SecretNeed {
   return Object.freeze({ [SECRET_NEED]: true as const, kind: 'secret' as const });
 }
 
-/** Builds an opaque secret source from a target-defined payload — the SPI a deploy target's own source constructor (e.g. `envSecret`) calls. Core forwards the source and never inspects the payload. */
-export function secretSource<T>(payload: T): SecretSource<T> {
-  return Object.freeze({ [SECRET_SOURCE]: true as const, payload });
+/** What a deploy target says about a source it builds. */
+export interface SourceOptions {
+  /** How errors name the source, e.g. `envSecret('STRIPE_KEY')`. Defaults to `a secret source` or `a param source`. */
+  readonly label?: string;
+}
+
+/** What a deploy target says about a param source it builds. */
+export interface ParamSourceOptions extends SourceOptions {
+  /** The config pool key whose value at deploy is the source's real value, as for `envParam()`. Without one the source is known only at boot, and its real value is the source itself, a pointer. */
+  readonly configKey?: string;
+  /** For a source known only at boot: the string a module's input schema checks in its place, because the deploy has no value for it. */
+  readonly sentinel?: string;
+  /** For a source known only at boot whose value is redacted: a module's input schema checks an empty `SecretString` in its place, as for a secret. */
+  readonly redacted?: boolean;
+}
+
+/** Builds a secret source from a target-defined payload: the SPI a deploy target's own constructor (e.g. `envSecret`) calls. The source is a value whose real value at deploy is itself, a pointer. Core forwards it and never inspects the payload. */
+export function secretSource<P, T = unknown>(
+  payload: P,
+  options?: SourceOptions,
+): SecretSource<P> & Value<T> {
+  const label = sourceLabel('secretSource', options?.label, 'a secret source');
+  return blindCast<
+    SecretSource<P> & Value<T>,
+    'the frozen object carries the value brand, a source origin whose source is itself, the source brand and the payload, which is the SecretSource and Value shape'
+  >(
+    buildSource(SECRET_SOURCE, payload, {
+      kind: 'source',
+      label,
+      configKey: undefined,
+      sentinel: undefined,
+      redacted: true,
+    }),
+  );
 }
 
 /** True if `value` is a secret source (an `envSecret` result or a forwarded ctx.secrets ref). */
@@ -133,16 +169,113 @@ const PARAM_NEED: unique symbol = blindCast<
   'unique-symbol brand for a module param-forwarding need'
 >(Symbol.for('prisma:param-need'));
 
-/** The wiring value bound to a param at provision time: a target-defined payload core forwards but never inspects. A target (e.g. @prisma/composer-prisma-cloud's `envParam`) builds one via `paramSource()`. */
-export interface ParamSource<T = unknown> {
+/** A param's source: a target-defined payload core forwards but never inspects. It is a value too: known at deploy when it names a config pool key (`envParam`), otherwise known only at boot, with the source itself, a pointer, as its real value. A target builds one with `paramSource()`. */
+export interface ParamSource<T = unknown> extends Value<unknown> {
   readonly [PARAM_SOURCE]: true;
   /** Target-defined. Core never reads this; the target that authored the source reads it back. */
   readonly payload: T;
 }
 
-/** Builds an opaque param source from a target-defined payload — the SPI a deploy target's own source constructor (e.g. `envParam`) calls. Core forwards the source and never inspects the payload. */
-export function paramSource<T>(payload: T): ParamSource<T> {
-  return Object.freeze({ [PARAM_SOURCE]: true as const, payload });
+/** Builds a param source from a target-defined payload: the SPI a deploy target's own constructor (e.g. `envParam`) calls. Core forwards it and never inspects the payload. */
+export function paramSource<P, T = unknown>(
+  payload: P,
+  options?: ParamSourceOptions,
+): ParamSource<P> & Value<T> {
+  const label = sourceLabel('paramSource', options?.label, 'a param source');
+  const configKey = options?.configKey;
+  if (configKey !== undefined && (typeof configKey !== 'string' || configKey.length === 0)) {
+    throw new Error('paramSource() configKey must be a non-empty string.');
+  }
+  const sentinel = options?.sentinel;
+  const redacted = options?.redacted === true;
+  if (configKey !== undefined && (sentinel !== undefined || redacted)) {
+    throw new Error(
+      'paramSource() takes configKey, for a value known at deploy, or sentinel or redacted, for one known only at boot, not both.',
+    );
+  }
+  if (sentinel !== undefined && redacted) {
+    throw new Error('paramSource() takes sentinel or redacted, not both.');
+  }
+  return blindCast<
+    ParamSource<P> & Value<T>,
+    'the frozen object carries the value brand, a source origin whose source is itself, the source brand and the payload, which is the ParamSource and Value shape'
+  >(buildSource(PARAM_SOURCE, payload, { kind: 'source', label, configKey, sentinel, redacted }));
+}
+
+function sourceLabel(factory: string, label: unknown, fallback: string): string {
+  if (label === undefined) return fallback;
+  if (typeof label !== 'string' || label.length === 0) {
+    throw new Error(`${factory}() label must be a non-empty string.`);
+  }
+  return label;
+}
+
+function buildSource(
+  brand: typeof SECRET_SOURCE | typeof PARAM_SOURCE,
+  payload: unknown,
+  origin: Omit<SourceOrigin, 'source'>,
+): object {
+  const source = { [VALUE]: true, [VALUE_ORIGIN]: origin, [brand]: true, payload };
+  Object.defineProperty(origin, 'source', { value: source });
+  Object.defineProperties(source, coercions(origin));
+  Object.freeze(origin);
+  return Object.freeze(source);
+}
+
+function coercions(origin: Omit<SourceOrigin, 'source'>): PropertyDescriptorMap {
+  const thrower = (what: string) => () => {
+    throw sourceMisuse(origin, what);
+  };
+  return {
+    toString: { value: thrower('its toString() was called') },
+    valueOf: { value: thrower('its valueOf() was called') },
+    [Symbol.toPrimitive]: {
+      value: (hint: string) => {
+        throw sourceMisuse(origin, primitiveMisuse(hint));
+      },
+    },
+  };
+}
+
+const sourceMisuses = new WeakSet<LoadError>();
+
+function sourceMisuse(origin: Omit<SourceOrigin, 'source'>, what: string): LoadError {
+  const { label } = origin;
+  const error = new LoadError(
+    origin.configKey === undefined
+      ? `${label} is known only at boot: the deploy holds a pointer to it, never its value, and ${what}. ` +
+          'A resolve() function may return the pointer, or put it in its result, unchanged; to compute with the value, do it in the service that reads it.'
+      : `${label} is a value, not its real value, and ${what}. ` +
+          'A module body can only pass it on: into a provision() binding or as a resolve() dependency. ' +
+          `To compute with it, list it: resolve([${label}], ([v]) => …).`,
+  );
+  sourceMisuses.add(error);
+  return error;
+}
+
+/** True for the error a source throws when code turns it into text or a number. Internal to core. */
+export function isSourceMisuse(error: unknown): boolean {
+  return error instanceof LoadError && sourceMisuses.has(error);
+}
+
+/** A source's origin; `undefined` for a source another installed copy of core built without one. Internal to core. */
+export function sourceOriginOf(source: ParamSource | SecretSource): SourceOrigin | undefined {
+  if (!isValue(source)) return undefined;
+  const origin = originOf(source);
+  return origin.kind === 'source' ? origin : undefined;
+}
+
+/**
+ * True when `value` is a pointer: the real value at deploy of a value known
+ * only at boot, such as `envSecret()`, `generatedParam()` or `serviceOrigin()`.
+ * A resolve() function receives one in place of such a value; it may return it
+ * unchanged, but cannot read it (ADR-0062). `envParam()` is not one: it is known
+ * at deploy. A module input field is never one in the body, because Load reads
+ * its binding only after the body has run.
+ */
+export function isRuntimeValue(value: unknown): value is ParamSource | SecretSource {
+  if (!isSecretSource(value) && !isParamSource(value)) return false;
+  return sourceOriginOf(value)?.configKey === undefined;
 }
 
 /** True if `value` is a param source (an `envParam` result or a forwarded ctx.params ref). */

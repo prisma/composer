@@ -1,4 +1,5 @@
 import { blindCast } from '@internal/foundation/casts';
+import type { ParamSource, SecretSource } from './node.ts';
 
 // Brands, Symbol.for so a check survives duplicated module instances (as NODE in node.ts).
 const VALUE: unique symbol = blindCast<never, 'unique-symbol brand for a value'>(
@@ -32,15 +33,33 @@ export type ValueOrigin<T> =
       readonly module: string;
       /** The key path inside that module's input; `[]` is the whole input. */
       readonly path: readonly string[];
+    }
+  | {
+      readonly kind: 'source';
+      /** How an error names the source, e.g. `envSecret('STRIPE_KEY')`. */
+      readonly label: string;
+      /** The config pool key whose value at deploy is the real value, as for `envParam()`. `undefined` for a value known only at boot, whose real value is `source`, a pointer. */
+      readonly configKey: string | undefined;
+      /** For a param source known only at boot: the string a module's input schema checks in its place. */
+      readonly sentinel: string | undefined;
+      /** A module's input schema checks an empty `SecretString` in its place: always for a secret source, and for a redacted param source. */
+      readonly redacted: boolean;
+      /** The source itself. Not enumerable, so a copy's origin compares equal and the origin holds no cycle. */
+      readonly source: ParamSource | SecretSource;
     };
 
 /** The origin of a module input field. Internal to core. */
 export type InputOrigin = Extract<ValueOrigin<unknown>, { readonly kind: 'input' }>;
 
+/** The origin of a deploy target's source. Internal to core. */
+export type SourceOrigin = Extract<ValueOrigin<unknown>, { readonly kind: 'source' }>;
+
 /**
- * An opaque stand-in a module body can pass wherever a `T` is accepted; its
- * real value is known by the end of Load (ADR-0062). `environment.name` is one;
- * each field of a module's `input` is one; `resolve()` returns one computed from others.
+ * An opaque stand-in a module body can pass wherever a `T` is accepted
+ * (ADR-0062). `environment.name` is one; each field of a module's `input` is
+ * one; `resolve()` returns one computed from others; a deploy target's source,
+ * such as `envParam()` or `envSecret()`, is one too. A deploy-time value's real
+ * value is known by the end of Load; a runtime value's real value at deploy is a pointer.
  */
 export interface Value<T> {
   readonly [VALUE]: true;
@@ -100,7 +119,7 @@ export function resolve<const D extends readonly Value<unknown>[], T>(
   });
 }
 
-/** True if `value` is a `Value` (checks the brand only, never a prototype). */
+/** True if `value` is a `Value`, a source included (checks the brand only, never a prototype). */
 export function isValue(value: unknown): value is Value<unknown> {
   return (
     typeof value === 'object' &&

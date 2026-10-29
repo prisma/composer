@@ -532,9 +532,9 @@ describe('errors', () => {
     expect(
       loadError(() => Load(shopWith(email, { from: paramSource({ name: 'X' }) }))).message,
     ).toBe(
-      'input key "from" of module "shop.email" is bound to a param source, such as envParam(). ' +
-        "A module's input does not take a param source yet; bind it on the service's input " +
-        "inside the module, or forward it through the module's params slot.",
+      'input key "from" of module "shop.email" is bound to a param source a module\'s input ' +
+        "cannot take: it names no sentinel for the module's schema to check in its place, as a " +
+        'raw paramSource() does. Bind envParam(), generatedParam() or serviceOrigin(), or a value.',
     );
   });
 
