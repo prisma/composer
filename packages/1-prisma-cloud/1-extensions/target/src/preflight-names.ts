@@ -10,11 +10,12 @@
  * Secrets are the `envSecret` leaves of every service's input binding
  * (ADR-0042); env-sourced params are the `envParam`-bound reserved params.
  * Secrets also include every secret source the graph names elsewhere
- * (secretSourceManifest): one a resolve() lists but does not return, and one
- * in a module's input that no service receives.
+ * (secretSourceManifest): one a resolve() lists but does not return, one in a
+ * module's input that no service receives, and one a resolve() in a
+ * resource's props lists.
  */
 
-import type { Graph } from '@internal/core';
+import type { Graph, SecretSourceUse } from '@internal/core';
 import { inputManifest, isSecretSource, paramManifest, secretSourceManifest } from '@internal/core';
 import {
   isEnvParamSource,
@@ -26,13 +27,13 @@ import { secretName } from './secret.ts';
 
 export interface PreflightName {
   readonly name: string;
-  /** The node that uses the name: a service, or a module whose input holds a secret no service receives. */
+  /** The node that uses the name: a service whose binding holds it, or, when no service receives it, the module whose input holds it or the resource whose props list it in a resolve(). */
   readonly address: string;
-  readonly nodeKind: 'service' | 'module';
+  readonly nodeKind: SecretSourceUse['nodeKind'];
 }
 
 export interface PreflightNames {
-  /** Every input-binding secret leaf's bound platform var name, deduped by name (first service wins the reported address). */
+  /** Every secret source in a service's input binding or in `graph.secretSources`, deduped by name; the first entry wins the reported address. */
   readonly secrets: readonly PreflightName[];
   /** Every env-sourced param binding's platform var name (envParam-bound only — a literal-bound param never touches the platform), deduped the same way. */
   readonly envParams: readonly PreflightName[];
@@ -69,7 +70,7 @@ export function inputSecretNames(binding: unknown, serviceAddress: string): read
   return [...new Set(leafNames)];
 }
 
-/** Walks each service's input binding for `envSecret` leaves, and `graph.params` for env-sourced params (ADR-0042). */
+/** Walks each service's input binding for `envSecret` leaves, then `graph.secretSources`, and `graph.params` for env-sourced params (ADR-0042). */
 export function collectPreflightNames(graph: Graph): PreflightNames {
   const secretEntries: PreflightName[] = [];
   for (const { serviceAddress, binding } of inputManifest(graph)) {
