@@ -767,7 +767,9 @@ export default module('shop', ({ provision }) => {
   the service's new deployment is live.
 
 One public URL serves one hostname. To serve `shop.com` and `www.shop.com`,
-provision two public URLs wired to the same interface.
+provision two public URLs wired to the same interface. Two public URLs in one
+app may not name the same hostname: the deploy and `prisma dev` stop before
+changing anything, naming both public URLs.
 
 `publicUrl()` checks a hostname as soon as it runs. It trims the hostname,
 drops one trailing dot and lowercases it. It throws, naming the public URL and
