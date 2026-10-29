@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { Load, module } from '@internal/core';
+import { Load, module, resolve } from '@internal/core';
+import { secretString } from '@internal/foundation/arktype';
 import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import { type } from 'arktype';
 import { PrismaCloudContainer } from '../container.ts';
 import { compute } from '../exports/index.ts';
 import { envParam, generatedParam } from '../param.ts';
@@ -572,6 +574,53 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
     expect(state.gets).toEqual([]);
     expect(state.posts).toEqual([]);
+  });
+
+  test('a secret only a resolve() dependency lists is checked, and fails when missing', async () => {
+    delete process.env['A'];
+    delete process.env['B'];
+    state.rows = [{ projectId: 'proj', class: 'production', key: 'A', branchId: null }];
+    const graph = Load(
+      module('app', ({ environment, provision }) => {
+        const stripeKey = resolve(
+          [envSecret('A'), envSecret('B'), environment.name],
+          ([a, b, name]) => (name === 'production' ? a : b),
+        );
+        provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
+          id: 'ingest',
+          input: { stripeKey },
+        });
+      }),
+      { environment: { name: 'production' } },
+    );
+
+    const error: unknown = await runPreflight(
+      { graph, container: fakeContainer('proj', undefined), environment: 'production' },
+      { client: fakeClient(state) },
+    ).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    const message = (error as Error).message;
+    expect(message).toContain('  - B  (used by service "app.ingest")');
+    expect(message).not.toContain('  - A  ');
+  });
+
+  test("a secret in a module's input that no service receives is checked, named as used by the module", async () => {
+    delete process.env['MAIL_KEY'];
+    const mail = module('mail', { input: type({ 'key?': secretString() }) }, () => {});
+    const graph = Load(
+      module('app', ({ provision }) => {
+        provision(mail, { input: { key: envSecret('MAIL_KEY') } });
+      }),
+    );
+
+    const error: unknown = await runPreflight(
+      { graph, container: fakeContainer('proj', undefined), environment: 'production' },
+      { client: fakeClient(state) },
+    ).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('  - MAIL_KEY  (used by module "app.mail")');
   });
 
   describe('env-var listing pagination (bounded — drivePagesAsync)', () => {

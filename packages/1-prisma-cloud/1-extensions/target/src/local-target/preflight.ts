@@ -46,7 +46,7 @@ const HOW_TO_SET =
   "(process.loadEnvFile('.env') works too, but only when the CLI runs under Node: Bun does not implement it.)";
 
 function missingEnvParamsSection(missing: readonly PreflightName[]): string {
-  const lines = missing.map((m) => `  - ${m.name}  (required by service "${m.serviceAddress}")`);
+  const lines = missing.map((m) => `  - ${m.name}  (required by service "${m.address}")`);
   return `${missing.length} env-sourced param(s) are not set:\n${lines.join('\n')}`;
 }
 

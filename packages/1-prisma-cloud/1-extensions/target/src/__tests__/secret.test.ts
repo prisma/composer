@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { isSecretSource, secretSource } from '@internal/core';
+import { isSecretSource, LoadError, secretSource } from '@internal/core';
 import { envSecret, secretName } from '../secret.ts';
 
 describe('envSecret (Prisma Cloud secret source)', () => {
@@ -25,5 +25,24 @@ describe('envSecret (Prisma Cloud secret source)', () => {
     const read = () => secretName(source, 'input key "stripeKey" of service "ingest"');
     expect(read).toThrow(/input key "stripeKey" of service "ingest".*not created by envSecret/);
     expect(read).toThrow(/envSecret\('NAME'\) from @prisma\/composer-prisma-cloud/);
+  });
+});
+
+describe('envSecret() as a value', () => {
+  test('envSecret() turned into text fails naming it and saying it is known only at boot', () => {
+    let thrown: unknown;
+    try {
+      String(envSecret('STRIPE_KEY'));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(LoadError);
+    expect((thrown as Error).message).toBe(
+      "envSecret('STRIPE_KEY') is known only at boot: the deploy holds a pointer to it, never " +
+        'its value, and it was turned into text (a template literal or String()). A resolve() ' +
+        'function may return the pointer, or put it in its result, unchanged; to compute with ' +
+        'the value, do it in the service that reads it.',
+    );
   });
 });

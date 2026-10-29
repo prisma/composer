@@ -1,5 +1,6 @@
-import { type SecretSource, secretSource } from '@internal/core';
+import { type SecretSource, secretSource, type Value } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
+import type { SecretString } from '@internal/foundation/secret';
 
 /**
  * Brands the payload `envSecret` builds. Core's `secretSource()` is a public
@@ -29,9 +30,11 @@ const PLATFORM_OWNED_SECRET_NAMES: ReadonlySet<string> = new Set([
  * Binds a secret slot to a named Prisma Cloud platform env var (ADR-0029). The
  * value is provisioned out-of-band; only the name is carried. The name may not
  * use the framework's reserved `COMPOSER_` prefix or the platform-owned
- * `DATABASE_URL(_POOLED)` keys.
+ * `DATABASE_URL(_POOLED)` keys. It returns a value known only at boot: a
+ * resolve() function that lists it receives a pointer, which throws when
+ * turned into text.
  */
-export function envSecret(name: string): SecretSource<EnvSecretPayload> {
+export function envSecret(name: string): SecretSource<EnvSecretPayload> & Value<SecretString> {
   if (typeof name !== 'string' || name.length === 0) {
     throw new Error(
       "envSecret() requires a non-empty platform env-var name, e.g. envSecret('STRIPE_SECRET_KEY').",
@@ -50,7 +53,10 @@ export function envSecret(name: string): SecretSource<EnvSecretPayload> {
         'Declare the database your service uses and read its url from that connection.',
     );
   }
-  return secretSource<EnvSecretPayload>({ [PRISMA_CLOUD_SECRET_SOURCE]: true, name });
+  return secretSource<EnvSecretPayload, SecretString>(
+    { [PRISMA_CLOUD_SECRET_SOURCE]: true, name },
+    { label: `envSecret('${name}')` },
+  );
 }
 
 /** True only for a payload that `envSecret` built — i.e. one carrying the brand. */
