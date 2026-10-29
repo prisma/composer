@@ -715,7 +715,11 @@ function flatten(
       deepValues(provisionInput, leaves);
       markSecretsUsed(leaves);
       markParamsUsed(leaves);
-      moduleInputs.push({ moduleAddress: fullAddress, schema: childInputSchema, binding: provisionInput });
+      moduleInputs.push({
+        moduleAddress: fullAddress,
+        schema: childInputSchema,
+        binding: provisionInput,
+      });
     }
     // Secrets: validate every declared module slot is bound to a real secret
     // source, reject extras. No `pending` deferral — a source carries its own

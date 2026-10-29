@@ -11,8 +11,8 @@ const VALUE_ORIGIN: unique symbol = blindCast<never, 'unique-symbol key for a va
 // Type-only, never assigned: carries T so Value<number> is not a Value<string>.
 declare const VALUE_TYPE: unique symbol;
 
-export { VALUE, VALUE_ORIGIN };
 export type { VALUE_TYPE };
+export { VALUE, VALUE_ORIGIN };
 
 /** Where Load gets a value's real value. Internal to core; not re-exported from the public barrel. */
 export type ValueOrigin<T> =

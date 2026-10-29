@@ -27,7 +27,8 @@ type Fields<O, Absent> = {
 };
 
 // An optional key's real value may be undefined even under exactOptionalPropertyTypes.
-type FieldType<O, K extends keyof O> = {} extends Pick<O, K> ? O[K] | undefined : O[K];
+type FieldType<O, K extends keyof O> =
+  Record<never, never> extends Pick<O, K> ? O[K] | undefined : O[K];
 
 /** The `input` a module body receives for its input schema `S`: one value per field, typed from the schema's output (ADR-0061). */
 export type ModuleInput<S extends StandardSchemaV1> = InputField<StandardSchemaV1.InferOutput<S>>;

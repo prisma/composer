@@ -231,12 +231,14 @@ export type ModuleInputBinding<T> =
           ? {
               readonly [K in keyof T]:
                 | ModuleInputBinding<T[K]>
-                | ({} extends Pick<T, K> ? Value<T[K] | undefined> : never);
+                | (Record<never, never> extends Pick<T, K> ? Value<T[K] | undefined> : never);
             }
           : T);
 
 /** A module input schema's Standard Schema input type. */
-type ModuleInputOf<I extends StandardSchemaV1 | undefined> = StandardSchemaV1.InferInput<NonNullable<I>>;
+type ModuleInputOf<I extends StandardSchemaV1 | undefined> = StandardSchemaV1.InferInput<
+  NonNullable<I>
+>;
 
 /** What `input()` returns: the schema's validated output type; `never` on a service that declares no input schema. */
 export type InputValueOf<I> = I extends StandardSchemaV1 ? StandardSchemaV1.InferOutput<I> : never;
@@ -476,7 +478,9 @@ type ModuleProvisionOptions<
   S extends Secrets,
   I extends StandardSchemaV1 | undefined,
   PB,
-> = { id?: string; params?: PB } & ([keyof D] extends [never] ? unknown : { deps: DepBindings<D> }) &
+> = { id?: string; params?: PB } & ([keyof D] extends [never]
+  ? unknown
+  : { deps: DepBindings<D> }) &
   ([keyof S] extends [never] ? unknown : { secrets: SecretBindings<S> }) &
   ([I] extends [StandardSchemaV1] ? { input: ModuleInputBinding<ModuleInputOf<I>> } : unknown);
 

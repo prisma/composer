@@ -218,7 +218,10 @@ function validateModuleInput(entry: ProvisionedModuleInput, resolved: unknown): 
     }
     if (isPlainObject(value)) {
       return Object.fromEntries(
-        Object.entries(value).map(([key, member]) => [key, withSentinels(member, joinPath(path, key))]),
+        Object.entries(value).map(([key, member]) => [
+          key,
+          withSentinels(member, joinPath(path, key)),
+        ]),
       );
     }
     return value;
