@@ -41,6 +41,7 @@ import {
   resource,
   service,
 } from '../node.ts';
+import { resolve } from '../value.ts';
 import { conn, providerContract } from './helpers.ts';
 
 const dbResource = () =>
@@ -595,6 +596,19 @@ describe('lowering a module root — a single service', () => {
     expect(serialize).toMatchObject({
       config: { service: { port: 3000 }, inputs: { db: { url: 'db://hello.db' } } },
     });
+  });
+
+  test('lowering() passes opts.environment to Load, so a computed param reaches buildConfig resolved', () => {
+    const { config, calls } = fakeExtension();
+    const root = module('hello', ({ environment, provision }) => {
+      const label = resolve([environment.name], ([name]) => name);
+      provision(app('fake/compute', {}, { label: string() }), { id: 'svc', params: { label } });
+    });
+
+    run(lowering(root, config, opts({ ...svcBundles, environment: 'test' })));
+
+    const serialize = calls.find((c) => c.phase === 'serialize');
+    expect(serialize).toMatchObject({ config: { service: { label: 'test' } } });
   });
 
   test('package receives the build adapter output dir/entry and the same address serialize used', () => {

@@ -211,10 +211,11 @@ export interface DeploymentResult {
 export interface LowerOptions {
   /** Stack + root node id. */
   readonly name: string;
+  /** The environment being deployed, as `--environment` gave it. Required by any value over `environment.name`; the generated stack files always pass it. */
+  readonly environment?: string;
   // One assembled bundle per provisioned service, keyed by the service's
   // full hierarchical address (its graph id).
   readonly bundles: Record<string, Bundle>;
-  readonly stage?: string;
   /** Alchemy state store for the stack. Defaults to the config's own state layer. */
   readonly state?: AlchemyStateLayer;
   /** Explicit provider set for the stack. Defaults to the config's own merged `providers()` (`mergedProviders`) — the same override precedence as `state`. The dev stack module passes `localTargetProviders(...)` here (ADR-0041); `lower()` itself learns nothing about the local target. */
@@ -629,7 +630,10 @@ export function lowering(
   opts: LowerOptions,
 ): Effect.Effect<undefined, LowerError, unknown> {
   return Effect.gen(function* () {
-    const graph = Load(root, { id: opts.name });
+    const graph = Load(root, {
+      id: opts.name,
+      ...(opts.environment !== undefined ? { environment: { name: opts.environment } } : {}),
+    });
     const extensions = yield* extensionsById(config);
     // Each extension's own resolved container, deserialized once from the
     // framework transport (the CLI parent wrote it; this is the alchemy
