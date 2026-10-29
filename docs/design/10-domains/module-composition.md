@@ -190,10 +190,12 @@ A module overload mirrors the service forms:
 
 ```ts
 provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
-  id: string,
   child: ModuleNode<D, E, I>,
-  wiring: Wiring<D>,        // omitted when D is empty
-  input: ModuleInputBinding<StandardSchemaV1.InferInput<I>>, // required when the module declares an input schema
+  opts: {
+    id?: string;
+    deps: DepBindings<D>;                                      // omitted when D is empty
+    input: ModuleInputBinding<StandardSchemaV1.InferInput<I>>; // required when the module declares an input schema
+  },
 ): ProvisionedRef<E>;
 ```
 
