@@ -12,7 +12,7 @@ export interface ValueBindingSite {
   /** The address of the node the binding belongs to. */
   readonly address: NodeId;
   /** `input` for a service input binding, `param` for a service param, `props` for a resource's props. */
-  readonly channel: 'input' | 'param' | 'props';
+  readonly kind: 'input' | 'param' | 'props';
   /** The param name for `param`; the dotted path inside the document for `input` and `props` (`''` at the root). Array members by index: `hosts.0`. */
   readonly path: string;
 }
@@ -22,7 +22,7 @@ function joinPath(path: string, key: string | number): string {
 }
 
 function describeSite(site: ValueBindingSite): string {
-  switch (site.channel) {
+  switch (site.kind) {
     case 'input':
       return site.path === ''
         ? `the input binding of service "${site.address}"`
@@ -54,7 +54,7 @@ function collect(
     ? value.map((member, index) => [index, member])
     : Object.entries(value);
   for (const [key, member] of entries) {
-    const path = site.channel === 'param' ? site.path : joinPath(site.path, key);
+    const path = site.kind === 'param' ? site.path : joinPath(site.path, key);
     collect(member, { ...site, path }, found, seen);
   }
 }
@@ -171,15 +171,15 @@ export function resolveValues(input: {
   const { environment } = input;
   const found: { value: Value<unknown>; site: ValueBindingSite }[] = [];
   for (const { serviceAddress, binding } of input.inputBindings) {
-    const site: ValueBindingSite = { address: serviceAddress, channel: 'input', path: '' };
+    const site: ValueBindingSite = { address: serviceAddress, kind: 'input', path: '' };
     collect(binding, site, found, new WeakSet());
   }
   for (const { serviceAddress, slot, binding } of input.params) {
-    const site: ValueBindingSite = { address: serviceAddress, channel: 'param', path: slot };
+    const site: ValueBindingSite = { address: serviceAddress, kind: 'param', path: slot };
     collect(binding, site, found, new WeakSet());
   }
   for (const [address, resource] of input.resources) {
-    const site: ValueBindingSite = { address, channel: 'props', path: '' };
+    const site: ValueBindingSite = { address, kind: 'props', path: '' };
     collect(resource.props, site, found, new WeakSet());
   }
 
