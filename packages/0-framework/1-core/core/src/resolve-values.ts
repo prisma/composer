@@ -242,8 +242,6 @@ function substitute(
 
 function describeData(value: unknown): string {
   if (Array.isArray(value)) return 'an array';
-  if (isSecretSource(value)) return 'a secret';
-  if (isParamSource(value)) return 'a value known only at boot';
   if (typeof value === 'object') return 'an object that is not plain data';
   return `a ${typeof value}`;
 }
@@ -253,12 +251,18 @@ function readPath(data: unknown, origin: InputOrigin): unknown {
   let current = data;
   for (const [index, key] of origin.path.entries()) {
     if (current === undefined || current === null) return undefined;
-    if (!isPlainObject(current) || isSecretSource(current) || isParamSource(current)) {
-      const parent = inputFieldLabel({ ...origin, path: origin.path.slice(0, index) });
+    const missing = `${inputFieldLabel(origin)} of module "${origin.module}" does not exist`;
+    const parent = inputFieldLabel({ ...origin, path: origin.path.slice(0, index) });
+    if (isSecretSource(current) || isParamSource(current)) {
       throw new LoadError(
-        `${inputFieldLabel(origin)} of module "${origin.module}" does not exist: ${parent} is ` +
-          `${describeData(current)}, not a plain object, so it has no fields. ` +
-          `To compute with it, list it: resolve([${parent}], ([v]) => …).`,
+        `${missing}: ${parent} stands for a value only the platform has at boot, so it has no ` +
+          'fields and can only be passed on unchanged.',
+      );
+    }
+    if (!isPlainObject(current)) {
+      throw new LoadError(
+        `${missing}: ${parent} is ${describeData(current)}, not a plain object, so it has no ` +
+          `fields. To compute with it, list it: resolve([${parent}], ([v]) => …).`,
       );
     }
     if (!Object.hasOwn(current, key)) return undefined;
