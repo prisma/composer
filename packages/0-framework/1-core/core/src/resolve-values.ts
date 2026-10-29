@@ -397,7 +397,7 @@ export function resolveValues(input: {
         ? props
         : blindCast<
             ResourceProps,
-            'substitution rebuilds the plain props object, replacing each Value<PlainData> with its real value, which checkResult proved plain data, so ResourceProps stays ResourceProps'
+            'substitution rebuilds the plain props object, replacing each Value<PlainData> with its real value: checkResult proved an environment or computed value plain data, and an input field is its module schema output, which the compiler typed PlainData but nothing checks again at runtime'
           >(substituted),
     );
   }
@@ -411,7 +411,7 @@ export function resolveValues(input: {
             serviceAddress: entry.serviceAddress,
             binding: blindCast<
               ServiceInputBinding['binding'],
-              'substitution replaces each Value<PlainData> with its real value, which checkResult proved plain data, and keeps every other member, so an InputBinding stays an InputBinding'
+              'substitution replaces each Value<InputBindingData> with its real value and keeps every other member: checkResult proved an environment or computed value plain data, and an input field is its module schema output with each secret put back as its source, which the service schema validates again when the target serializes the binding'
             >(binding),
           };
     }),
