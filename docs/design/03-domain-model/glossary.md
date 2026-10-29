@@ -56,11 +56,11 @@ another target's equivalent (Alchemy calls it a Platform).
 
 ### Resource
 
-A **provisioned dependency with a managed lifecycle** — the framework, through a
-provider, can create, update, and delete it. Its defining characteristic is the
-**state** it holds: a database, a bucket, a cache. Surfaced as a typed
-**capability** (via an Alchemy Layer): a Resource's Output provides it, a Module's
-Input requires one, and the wire is valid iff provided satisfies required.
+A **node whose lifecycle a provider manages**: the framework can create, update and
+delete it. Most Resources hold **state**, such as a database, a bucket or a cache.
+Surfaced as a typed **capability** (via an Alchemy Layer): a Resource's Output
+provides it, a Module's Input requires one, and the wire is valid iff provided
+satisfies required.
 
 The lifecycle can be implemented by cloud APIs *or* third-party/partner APIs, so a
 provisioned third-party account is a Resource too — a Stripe product, a Tigris
@@ -73,9 +73,9 @@ its lifecycle, not whether it's first-party.
   third-party) exposed through a capability Layer. The Module depends on the
   capability, not the vendor — swap R2 for S3 by swapping the Layer.
 
-A Resource may also declare Inputs, wired when it is constructed, so it can
-depend on the Service it serves: a public URL is one, a Resource by kind and a
-driver by role ([ADR-0060](../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md),
+A Resource may also declare dependency slots, wired when it is constructed, so
+it can depend on the Service it serves: a public URL is one, a Resource by kind
+and a driver by role ([ADR-0060](../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md),
 amended 2026-10-29). A Resource node that is wired carries references from the
 module body that built it, so it can only be provisioned there. A Resource's
 configuration that may hold a Value goes in `props`; Load resolves Values there
@@ -86,6 +86,12 @@ Not Resources: **Compute** is what a Service lowers to (one per deployment targe
 you call but don't provision is **Configuration**, not a Resource.
 
 See `layering.md` → Resources: first-class vs BYO.
+
+### Driver
+
+A node that depends on what it sends work to and that nothing calls. Cron and a
+public URL are drivers ([ADR-0020](../90-decisions/ADR-0020-scheduled-work-is-a-driver-not-a-resource.md)).
+Elsewhere in these docs, "driver" also means a database client library.
 
 ### Configuration — params and their sources
 
