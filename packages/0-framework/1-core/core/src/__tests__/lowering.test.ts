@@ -1184,6 +1184,55 @@ describe('provision phase (ADR-0031): resolving a provisioned param against the 
     });
   });
 
+  test("a provisioned need on a resource's slot is minted and reaches the resource through connectionInputs", () => {
+    const provisioner = fakeProvisioner((edge) => `minted:${edge.edgeId}`);
+    const { descriptor } = fakeExtension({
+      provisions: new Map([[PROVISION_BRAND, provisioner.descriptor]]),
+    });
+    const seen: unknown[] = [];
+    const config: PrismaAppConfig = {
+      extensions: [
+        {
+          ...descriptor,
+          nodes: {
+            ...descriptor.nodes,
+            'fake/url': Object.assign(
+              (ctx: LowerContext): Effect.Effect<LoweredResult, unknown, unknown> => {
+                seen.push(connectionInputs(ctx));
+                return Effect.succeed({ outputs: {}, entities: [] });
+              },
+              { kind: 'resource' as const },
+            ),
+          },
+        },
+      ],
+      state: { extension: descriptor.id, create: () => stateSentinel('config-default') },
+    };
+    const root = module('shop', ({ provision }) => {
+      const auth = provision(app('fake/compute', {}), { id: 'auth' });
+      provision(
+        resource({
+          name: 'site',
+          extension: 'test/pack',
+          provides: providerContract('fake/url', { url: '' }),
+          inputs: { auth: tokenEnd() },
+          deps: { auth },
+        }),
+        { id: 'site' },
+      );
+    });
+
+    run(lowering(root, config, provisionBundles));
+
+    expect(provisioner.calls).toHaveLength(1);
+    expect(provisioner.calls[0]).toMatchObject({
+      edgeId: 'shop.site.auth',
+      consumerAddress: 'shop.site',
+      providerAddress: 'shop.auth',
+    });
+    expect(seen).toEqual([{ auth: { token: 'minted:shop.site.auth' } }]);
+  });
+
   test('an unregistered brand fails the deploy with a LowerError naming the brand and the edge', () => {
     const { config } = fakeExtension(); // no provisions map
     const root = module('shop', {}, (h) => {
