@@ -69,7 +69,7 @@ Existing custom domains keep working: PDP backfills them into RoutingUrl records
 # Project DoD
 
 - A test app with one public service, deployed to production and to a preview environment with the same code, shows that service alone as public in the topology; production serves on the named hostname, the preview on its prisma.build URL.
-- The same app deployed to production before `shop.com`'s DNS exists succeeds, the deploy output names the outstanding step and prints the Console link, and the hostname goes active after DNS is added and one press of the Console's check button, with no further deploy.
+- The same app deployed to production before `shop.com`'s DNS exists succeeds, the deploy output names the outstanding step and prints the records to publish, and the hostname goes active after DNS is added and one press of the Console's check button, with no further deploy.
 - A service input bound to a `resolve()` value differs between two environments of the test app; `provision` inside the callback fails with an error naming the structure rule; a callback returning an invalid value fails the deploy before anything is created.
 - A RoutingUrl created without DNS shows its unmet conditions, becomes active once the records are published and the check button is pressed once, survives a promote and the deletion of its service, and a second record naming its hostname reports it as in use until the first is deleted.
 - The Console page for a service in the test project shows its custom hostnames with their conditions, and the workspace's Domains page shows the ownership claims.

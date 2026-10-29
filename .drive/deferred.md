@@ -269,3 +269,7 @@ ADR-0053 (the commands). What we deliberately didn't do:
 - **Tag the deploy preflight payload too** (for example `deploy:`), so both kinds are explicit on the wire. Do it with the deploy optional-secret fix above, which changes deploy anyway.
 - **Rename the persisted `<name>:updatedAt` trigger member** to match `pointerVersion`. It redeploys every hosted deployment once, so do it only together with a deploy change that already accepts one redeploy.
 - **Remove `removeRetiredSecretsFile`** (it deletes the `secrets.json` older `prisma dev` versions wrote) once no supported `@prisma/composer` release older than the one shipping this slice is in use: at the next major release, or three minor releases after this one, whichever comes first.
+
+## Public URLs — deferred, 2026-10-29
+
+- **Composer publishes a hostname's DNS records through an adapter.** An option on the Prisma Cloud extension naming a DNS provider, lowered to the Alchemy DNS adapter, publishes the ownership TXT record and the CNAME the deploy would otherwise print. The records are already outputs of the Alchemy RoutingUrl resource and of the `DeployedEntity`. Origin: public-URLs design discussion with Will, prompted by alchemy-run/alchemy#2701.

@@ -24,7 +24,7 @@ The platform's own project, `projects/routing-urls/` in pdp-control-plane, slice
 ## Increment 3. A Composer author deploys before DNS, finishes DNS later, and never redeploys for it
 
 - **U2. The Alchemy RoutingUrl resource.** Create with no DNS, read conditions, update hostname or service, delete; found by `logicalId`; adopts a live row on the same service with the same hostname and no `logicalId` by writing the `logicalId` on it. Written to Alchemy's own testing conventions with live credentials confirmed before dispatch, and released. Builds on the platform's slice 1 deployed.
-- **P2. Pending hostnames.** A named hostname lowers to `Prisma.RoutingUrl`; the deploy output names the first unmet condition and prints the Console link; `origin()` is unchanged. Builds on P1 and U2.
+- **P2. Pending hostnames.** A named hostname lowers to `Prisma.RoutingUrl`; the deploy output names the first unmet condition and prints every record still to publish, with name, type and value; the Alchemy RoutingUrl resource exposes the same records as outputs; `origin()` is unchanged. Builds on P1 and U2.
 - **Demo:** the spec's example app deploys production before `shop.com`'s DNS exists and succeeds; the hostname goes active after DNS and one press of the Console's check button, with no further deploy.
 
 ## Increment 4. A service nobody declared public has no public hostname

@@ -35,3 +35,15 @@ Will and the orchestrating agent designed the platform records (D1) together on 
 ## 6. Prisma now requires an ownership TXT record before registering a hostname
 
 Since prisma/pdp-control-plane#5785 (2026-10-24), `POST /v1/apps/{appId}/domains` refuses with 422 `domain-ownership-required` unless `_prisma-verification.<hostname>` carries the workspace's value. Composer never publishes DNS, so for Composer this is one more record the author publishes, the ownership proof ADR-0060 already describes. P1's "DNS not ready" error and its live check must cover this record as well as the CNAME. Alchemy's website functions and its live custom-domain test don't publish it; Will handed that to the provider's maintainers on 2026-10-27. It does not block U1.
+
+## 7. A deploy prints the records to publish; the platform turns a published record into the claim
+
+Settled 2026-10-29. For a pending hostname the deploy output prints every record the user still has to publish, the ownership TXT record and the CNAME, with name, type and value, not a Console link. On the platform, a RoutingUrl carries the TXT record among its conditions and creates nothing else; when the platform finds the record in DNS it creates the workspace's domain ownership claim, verified. Only an explicit claim in the Console, which is how a wildcard is claimed, exists unverified.
+
+**Why.** A claim belongs to the workspace and outlives any one project or environment, so Composer cannot own one: a destroy of a preview would delete production's proof. Having the platform create the claim on verification gives the deploy-first flow with no second resource and no side effect on create. The pattern matches Cloudflare's custom hostnames and AWS Certificate Manager, which return the validation record from the create and track it on the hostname.
+
+**Rejected.** The RoutingUrl creating an unverified claim as a side effect: it leaves a claim row for every hostname ever declared and creates a resource outside the request's own. Composer creating the claim: it would own something it must not delete.
+
+## 8. Publishing DNS through an adapter is a follow-on, and the foundation is laid now
+
+Settled 2026-10-29. Composer does not publish DNS in this project. The records to publish are exposed twice so that a later feature can: as outputs of the Alchemy RoutingUrl resource, and in the `DeployedEntity` the deploy reports. A follow-on project adds an option on the Prisma Cloud extension naming a DNS provider, lowered to the same Alchemy DNS adapter Alchemy's own sites use, so a hostname on a provider Composer can drive needs no manual step. ADR-0060's statement that Composer never publishes DNS is amended when that lands.
