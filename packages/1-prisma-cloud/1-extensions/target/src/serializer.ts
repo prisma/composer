@@ -354,6 +354,10 @@ export interface GeneratedLeaf {
 /** Stands in for a `serviceOrigin()` leaf in deploy-time validation; boot validates the real one. */
 const ORIGIN_SENTINEL = 'https://origin.invalid';
 
+// Carried on each secret sentinel box as an own property, because an ArkType schema with a morph copies
+// its input, and the copy holds the same box under a different parent: the box must name its own pointer.
+const SECRET_SENTINEL = Symbol.for('prisma:secret-sentinel');
+
 /** One pointer var name and the input path that produced it — the collision guard's unit. */
 export interface PointerName {
   readonly path: string;
@@ -363,7 +367,7 @@ export interface PointerName {
 /** What `resolveInputBinding` hands back: the schema-ready object plus the sentinel→platform-name map, the generated leaves, and every key path that resolved absent. */
 export interface ResolvedInputBinding {
   readonly resolved: unknown;
-  /** Each secret leaf's sentinel box, mapped to the platform var it points to — identity is the lever `serializeInput` substitutes by. */
+  /** Each secret leaf's sentinel box, mapped to the platform var it points to. Each box also carries that name itself, which is what `serializeInput` substitutes by. */
   readonly sentinels: ReadonlyMap<SecretString, string>;
   /** Every generated leaf — provisioned by the descriptor, substituted to a `$generated` pointer by path. */
   readonly generated: readonly GeneratedLeaf[];
@@ -469,6 +473,7 @@ export function resolveInputBinding(
         return ABSENT;
       }
       const sentinel = new SecretBox('');
+      Object.defineProperty(sentinel, SECRET_SENTINEL, { value: name });
       sentinels.set(sentinel, name);
       return sentinel;
     }
@@ -575,9 +580,9 @@ export function serializeInput(
         'secretness, or the schema refines on secret content — which ADR-0042 forbids.)',
     );
   }
-  const { validated, sentinels, generated, absent } = judged;
+  const { validated, generated, absent } = judged;
   const emittedSecrets = new Set<string>();
-  const document = substitutePointers(validated, sentinels, generated, address, emittedSecrets);
+  const document = substitutePointers(validated, generated, address, emittedSecrets);
   return {
     key: inputKey(address),
     value: JSON.stringify(document),
@@ -657,7 +662,7 @@ export function inputValidationFailure(
 /**
  * Walks the VALIDATED output, mapping each generated leaf (by input path) to
  * its `{ "$generated": VAR, "redacted": <bool> }` pointer and each sentinel box
- * (by identity) to its `{ "$secret": name }` pointer, escaping any user key that
+ * (by the name it carries) to its `{ "$secret": name }` pointer, escaping any user key that
  * matches a reserved marker. The generated check runs FIRST, so a redacted
  * generated leaf's sentinel box becomes `$generated`, never mistaken for a
  * secret. The `redacted` facet rides the pointer so schema-blind boot knows
@@ -668,7 +673,6 @@ export function inputValidationFailure(
  */
 function substitutePointers(
   value: unknown,
-  sentinels: ReadonlyMap<SecretString, string>,
   generated: readonly GeneratedLeaf[],
   address: string,
   emittedSecrets: Set<string>,
@@ -678,8 +682,11 @@ function substitutePointers(
     const leaf = generatedByPath.get(path);
     if (leaf !== undefined) return { [GENERATED_MARKER]: leaf.varName, redacted: leaf.redacted };
     if (v instanceof SecretBox) {
-      const name = sentinels.get(v);
-      if (name === undefined) {
+      const name = blindCast<
+        Record<PropertyKey, unknown>,
+        'reading the pointer name the deploy walk put on its own sentinel box'
+      >(v)[SECRET_SENTINEL];
+      if (typeof name !== 'string') {
         throw new Error(
           `input key "${path}" of service "${address}" validated to a SecretString the binding did ` +
             'not supply — a schema must not mint secret boxes (a default/transform cannot name a ' +

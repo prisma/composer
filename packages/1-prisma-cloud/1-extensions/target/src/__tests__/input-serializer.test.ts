@@ -509,3 +509,15 @@ describe('the pointer-name collision guard (ADR-0041, F02)', () => {
     expect([...sentinels.values()]).toEqual(['MY_SECRET']);
   });
 });
+
+describe('an ArkType schema with a morph', () => {
+  test('a secret field survives an ArkType morph elsewhere in the schema', () => {
+    const row = serializeInput(
+      svc(type({ key: secretString(), count: 'string.integer.parse' })),
+      'web',
+      { key: envSecret('KEY'), count: '4' },
+      { env: {} },
+    );
+    expect(JSON.parse(row?.value ?? '')).toEqual({ key: { $secret: 'KEY' }, count: 4 });
+  });
+});
