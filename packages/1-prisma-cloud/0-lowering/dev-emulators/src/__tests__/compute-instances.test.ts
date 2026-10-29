@@ -16,7 +16,6 @@ import {
   entryFor,
   SERVING_BOOTSTRAP,
   servingBootstrapEnv,
-  skipContendedServicePorts,
   tempDir,
   waitForHttp,
   writeBootstrap,
@@ -29,7 +28,6 @@ beforeEach(async () => {
   registryRoot = tempDir('compute-instances-registry');
   await ensureFreshDaemon('compute', registryRoot);
   client = computeClient({ registryRoot });
-  await skipContendedServicePorts(client);
 });
 
 afterEach(async () => {
@@ -353,5 +351,26 @@ describe('the emulator never interprets Composer data', () => {
     const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
     expect(code).not.toMatch(/\b(apps?|appName|address(es)?|directory|composer)\b/i);
+  });
+});
+
+describe('emulators in different emulators directories', () => {
+  test("a stopped instance's port is not given to another emulator's instance until it is deleted", async () => {
+    // Far above the ports other suites' emulators hand out, so none takes it after the delete.
+    const requested = await getPort({ port: portNumbers(58_000, 59_000) });
+    const held = await client.createInstance({ labels: {}, port: requested });
+    const otherRoot = tempDir('compute-instances-other-registry');
+    await ensureFreshDaemon('compute', otherRoot);
+    const other = computeClient({ registryRoot: otherRoot });
+    try {
+      const whileHeld = await other.createInstance({ labels: {}, port: held.port });
+      await client.deleteInstance(held.id);
+      const afterDelete = await other.createInstance({ labels: {}, port: held.port });
+
+      expect(whileHeld.port).not.toBe(held.port);
+      expect(afterDelete.port).toBe(held.port);
+    } finally {
+      await stopDaemon('compute', { registryRoot: otherRoot }).catch(() => undefined);
+    }
   });
 });

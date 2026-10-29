@@ -14,7 +14,6 @@ import {
   LOGGING_BOOTSTRAP,
   SERVING_BOOTSTRAP,
   servingBootstrapEnv,
-  skipContendedServicePorts,
   sleep,
   tempDir,
   waitFor,
@@ -33,7 +32,6 @@ beforeEach(async () => {
   // steer past any low service port a process outside this test's control
   // already holds, the same class of shared-machine contention the
   // daemon-port retry feature addresses one layer down.
-  await skipContendedServicePorts(computeClient({ registryRoot }));
 });
 
 afterEach(async () => {

@@ -338,7 +338,7 @@ function main(): void {
     const method = req.method ?? 'GET';
     // segments[0] === '_pcdev'
     if (method === 'GET' && segments.length === 2 && segments[1] === 'health') {
-      return json(res, 200, { version: ownVersion });
+      return json(res, 200, { version: ownVersion, pid: process.pid });
     }
     if (segments[1] !== 'instances') {
       res.writeHead(404);
@@ -371,7 +371,7 @@ function main(): void {
     const method = req.method ?? 'GET';
 
     if (method === 'GET' && url.pathname === '/health') {
-      return json(res, 200, { version: ownVersion });
+      return json(res, 200, { version: ownVersion, pid: process.pid });
     }
 
     if (url.pathname.startsWith('/_pcdev/')) {
@@ -413,6 +413,10 @@ function main(): void {
       // portable evidence that exactly one instance is listening (tests
       // count occurrences of this line rather than inspecting OS processes,
       // whose command-line rendering/flags differ across platforms).
+      server.once('error', (err) => {
+        console.error(`buckets-main: cannot listen on 127.0.0.1:${String(port)}`, err);
+        process.exit(1);
+      });
       server.listen(port, '127.0.0.1', () => {
         console.log(`[dev-emulators] buckets-main listening on 127.0.0.1:${String(port)}`);
       });
