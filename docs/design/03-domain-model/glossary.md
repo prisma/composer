@@ -127,6 +127,26 @@ To pull an unmanaged external dependency *into* the topology as a reproducible n
 provision it (making it a Resource) or wrap it in a Service that exposes your domain
 interface.
 
+### Value
+
+An opaque handle in a module body for something that has a real value once the
+graph is fully evaluated. The body can pass a value wherever a value of its type
+is accepted, and can do nothing else with it: it cannot read it, compare it or
+branch on it. That is what keeps the graph's structure the same whatever inputs
+Composer is given ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
+
+- **Provided or computed.** A provided value is handed to the module body:
+  `environment.name` is one. A computed value is what `resolve(dependencies, fn)`
+  returns; Load runs `fn` with its dependencies' real values after every module
+  body has run, with `provision` disabled.
+- **Deploy-time or runtime.** A deploy-time value holds its real value by the end
+  of Load. A runtime value is known only on the deployment system; its
+  deploy-time form is a pointer to it. Today every value is deploy-time.
+
+In code the type is `Value<T>`. `envParam()` and `envSecret()` are not values
+yet; they become values, with config and secret adapters, in the module-input
+project. A value is not a node: it has no lifecycle and no address.
+
 ### Topology
 
 The graph of Modules and Resources wired together through their Inputs and Outputs.

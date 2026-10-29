@@ -1,34 +1,34 @@
 # C1 — dispatch plan
 
-Spec: [spec.md](spec.md). Four dispatches, sequential: D1 and D2 both edit `node.ts` and `load-module.ts`; D3 needs D1's `Load` option; D4 describes what D1 to D3 built.
+Spec: [spec.md](spec.md). Four dispatches, sequential: D1 and D2 both edit `node.ts` and `load-module.ts`; D3 needs D1's `Load` option; D4 describes what D1 to D3 built. Every dispatch implements its spec sections exactly; an implementer who finds the spec and the code in conflict stops and reports.
 
-## D1. `resolve()` and the second pass, in core
+## D1. The value type, `resolve()` and the second pass, in core
 
-- **Outcome:** `packages/0-framework/1-core/core` has `ResolvedValue`, `resolve()`, `environment.name` on the module context, the second pass in Load with the sealed `provision`, acceptance in `InputBinding` and `ParamBindings`, rejection everywhere else, `Load(root, { environment })`, and `LowerOptions.environment` in place of `stage`. `@prisma/composer`'s index exports `resolve` and `ResolvedValue`.
-- **Tests:** one per spec edge case; the ordering, memoisation and cycle rules; `lowering()` sees substituted bindings; type tests for `fn`'s tuple typing and for a `ResolvedValue` refused as `id`, `deps`, `secrets`.
-- **Builds on:** main at 1d4017ce.
-- **Hands to:** `pnpm --filter @internal/core build`, `typecheck`, `test`, `test:types` green; `pnpm lint` and `pnpm lint:casts` green on the package.
+- **Outcome:** spec §§ 3, 4, 5 and 7.1: `value.ts`, `evaluate-values.ts`, the module context's `environment`, `InputBinding` and `ParamBindings` accepting a `Value`, the runtime rejections, `LoadOptions.environment`, the sealed `provision`, `LowerOptions.environment` in place of `stage`, the exports.
+- **Tests:** spec § 11.1, § 11.2, § 11.4 test 33, § 11.5 (all but the resource lines).
+- **Builds on:** this branch at the commit that records the spec.
+- **Hands to:** `pnpm --filter @internal/core build`, `typecheck`, `test`, `test:types` green; `pnpm lint` and `pnpm lint:casts` green.
 
 ## D2. A resource with its edge already set
 
-- **Outcome:** `resource({ inputs, deps, options })` carries dependency slots, their wiring and a plain-data options bag whose resolved values the second pass substitutes (prototype preserved); `provision(resource)` records slot nodes and edges, validates the wiring, counts a forwarded module input, records the authored edge; `provision(resource, { deps })` stays rejected.
-- **Tests:** the graph shape (slot node, `input` edge, `dependency` edge, topological order after the producer); the unwired slot error; the forwarded-input case; a resource descriptor in `lowering()` reads the producer's outputs through `ctx.lowered` and a resolved option through `ctx.node.options`.
+- **Outcome:** spec § 6: `ResourceNode` with `inputs`, `deps`, `options`; `resource()` and `ResourceNodeBase` taking them; `dependencySlots` and `boundaryPortsOf` over resources; the resource branch of `provision()`; the resolved copy; the doc-comment changes.
+- **Tests:** spec § 11.3, § 11.4 test 34, the resource lines of § 11.5.
 - **Builds on:** D1.
-- **Hands to:** the same checks as D1, green.
+- **Hands to:** the same checks as D1, green, plus `pnpm --filter @internal/prisma-cloud-lowering test` and `pnpm --filter @internal/prisma-cloud-target test` green (the topology and the Postgres resource node).
 
-## D3. The environment name reaches Load, and an example uses it
+## D3. The environment name reaches Load, and the example uses it
 
-- **Outcome:** `pipeline.ts` passes the environment into Load (its callers in `execute-deploy-destroy.ts` and `execute-dev.ts` hand it over); `generate-stack.ts` and `generate-dev-stack.ts` render `environment`; `examples/env-param` binds a second input key to a `resolve()` over `environment.name`, and its server echoes it.
-- **Tests:** the stack-file renderers assert the `environment` line; the pipeline test passes an environment through; the example's smoke test covers the new key.
+- **Outcome:** spec §§ 7.2, 7.3 and 8.
+- **Tests:** spec § 11.6 and § 11.7.
 - **Builds on:** D1.
 - **Hands to:** `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test` green at the root.
 
-## D4. The docs describe it
+## D4. The documents
 
-- **Outcome:** `docs/guides/building-an-app.md` (a section on values that differ per environment, and the resource change where modules are described), `docs/guides/deploying.md` (the environments section points at it), `skills/prisma-composer-core-concepts/SKILL.md`, the glossary ("Resolved value"), `core-model.md` and `module-composition.md` (the second pass; resources may declare slots wired at construction).
-- **Builds on:** D1 to D3 (the docs describe real exports).
-- **Hands to:** `website` content tests green; a grep over `docs/` and `skills/` for "resources take no wiring" and "only service-to-service edges" finds nothing stale.
+- **Outcome:** spec § 9, every item.
+- **Builds on:** D1 to D3.
+- **Hands to:** `pnpm --filter website test` green; `grep -rn ResolvedValue docs skills .drive/projects/public-urls` finds nothing; `pnpm check:skill-packaging` green.
 
 ## D5. Verify (orchestrator)
 
-Full suite; `prisma dev` of `examples/env-param` as `dev` and as `test`, each echoing its own name; `prisma deploy` to two environments with the deploy credentials; the structure error and the `undefined` error against a scratch copy; `/drive-code-review` without the walkthrough; fixes; pull request.
+Spec § 12: the full suite; `prisma dev` of `examples/env-param` as two environments; `prisma deploy` to two environments with the deploy credentials; the two failure cases on a scratch copy; `/drive-code-review` without the walkthrough; fixes; the pull request with Auto-fix on.

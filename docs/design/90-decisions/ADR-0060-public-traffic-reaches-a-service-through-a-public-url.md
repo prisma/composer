@@ -1,5 +1,7 @@
 # ADR-0060: Traffic from the internet reaches a service only through a public URL the author declares
 
+Amended 2026-10-29: the public URL node is a **resource**, by the glossary's test (its lifecycle, a RoutingUrl, is managed through a provider). Core builds "a node with its edge already set" by letting a resource declare dependency slots and wire them at construction, `resource({ inputs, deps })`, and carry plain-data `options` (where `url` lives) that Load's second pass resolves. This amends [ADR-0013](ADR-0013-resources-are-provisioned-by-modules-deps-are-declarations.md), which said a resource takes no wiring. The mechanism is specified in the public-URLs project's slice C1.
+
 ## Decision
 
 A service is reachable from outside the application only through a **public URL**: a node in the module graph that sends traffic for one hostname to one service. The author provisions it where the hostname is decided, usually the root module.

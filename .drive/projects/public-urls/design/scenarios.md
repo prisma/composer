@@ -181,7 +181,7 @@ No `publicUrl` is declared for it, so the topology shows it as not public and Co
 
 | Need | Where |
 | --- | --- |
-| `publicUrl` node with its two strategy constructors; `resolve(deps, fn)` producing a `ResolvedValue`, run after the graph is built with `provision` disabled; the `environment` references handed to the module body | Composer core |
+| `publicUrl` node with its two strategy constructors; `resolve(deps, fn)` producing a `Value`, run after the graph is built with `provision` disabled; the `environment` values handed to the module body | Composer core |
 | Module and root `input` as one schema; config adapters (separate work; only scenario 9 uses them) | Composer core |
 | RoutingUrl record on a Branch for a custom hostname, found by `logicalId`, created before DNS and before the service's deployment, pointing at a service, with its Foundry custom domain kept bound to the live deployment by the RoutingUrl repository; a hostname change replaces the old hostname | PDP |
 | Deploy output and Console distinguish: deployed, prisma.build URL ready, awaiting ownership claim, awaiting DNS, certificate pending | PDP and Composer |

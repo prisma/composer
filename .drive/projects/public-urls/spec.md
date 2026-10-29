@@ -33,7 +33,7 @@ The decisions and their reasons are recorded in ADR-0059 to ADR-0062, `.drive/pr
 
 - Routing by path. Subpaths are several public URLs, each with its own hostname, not a router primitive.
 - Private addressing between services. Making the platform's own hostname opt-in is step two of this project (P3 and the platform's fifth slice), with its scenarios in [step-two-migration-scenarios.md](../../../.drive/projects/public-urls/design/step-two-migration-scenarios.md).
-- Modules declaring `input` (ADR-0061), `resolve()` over module inputs, and config adapters with `dotenv()` (the second half of ADR-0062). They are a follow-on project, `module-input`, recorded in `.drive/deferred.md`. This project ships `resolve()` over `environment.name` and other resolved values only.
+- Modules declaring `input` (ADR-0061), `resolve()` over module inputs, and config adapters with `dotenv()` (the second half of ADR-0062). They are a follow-on project, `module-input`, recorded in `.drive/deferred.md`. This project ships `resolve()` over `environment.name` and other values only.
 - Secrets adapters, and the reference-based `serviceOrigin`.
 - Any change to Foundry. The control plane keeps it consistent over Foundry's existing APIs.
 - A RoutingUrl for every service. A record exists only because something asked for it: Composer declares one per `publicUrl()` with a named hostname.
