@@ -367,8 +367,25 @@ export interface ResolvedInputBinding {
   readonly sentinels: ReadonlyMap<SecretString, string>;
   /** Every generated leaf — provisioned by the descriptor, substituted to a `$generated` pointer by path. */
   readonly generated: readonly GeneratedLeaf[];
-  /** Dot-joined binding paths whose env-bound leaf resolved absent (unset/empty deploy-shell var) — deploy-report fodder. */
+  /** Dot-joined binding paths whose env-bound leaf resolved absent (unset/empty deploy-shell var, or a secret `prisma dev` found unset) — deploy-report fodder. */
   readonly absent: readonly string[];
+}
+
+const NO_ABSENT_SECRETS: ReadonlySet<string> = new Set();
+
+/** How `resolveInputBinding`, `serializeInput` and `inputValidationFailure` read the environment and which secrets they leave out. */
+export interface SerializeInputOptions {
+  /** Where `envParam` leaves are read; the process environment by default. */
+  readonly env?: Record<string, string | undefined>;
+  /** `envSecret` names to leave out of the document; only `prisma dev` passes any. */
+  readonly absentSecrets?: ReadonlySet<string>;
+}
+
+function withDefaults(options: SerializeInputOptions): Required<SerializeInputOptions> {
+  return {
+    env: options.env ?? process.env,
+    absentSecrets: options.absentSecrets ?? NO_ABSENT_SECRETS,
+  };
 }
 
 /**
@@ -404,14 +421,17 @@ export function assertDistinctPointerNames(
  * `envSecret` leaves become empty sentinel `SecretBox`es (the value never
  * enters the deploy); `envParam` leaves read the deploy shell — unset or
  * empty means the enclosing object key is OMITTED, and the schema arbitrates
- * whether that absence is legal (ADR-0042). Everything non-plain (a class
- * instance, a function, a raw SecretBox holding a value) is rejected loudly.
+ * whether that absence is legal (ADR-0042). An `envSecret` leaf named in
+ * `absentSecrets` is omitted the same way; only `prisma dev` passes any.
+ * Everything non-plain (a class instance, a function, a raw SecretBox holding
+ * a value) is rejected loudly.
  */
 export function resolveInputBinding(
   binding: unknown,
-  env: Record<string, string | undefined>,
   address = '',
+  options: SerializeInputOptions = {},
 ): ResolvedInputBinding {
+  const { env, absentSecrets } = withDefaults(options);
   const sentinels = new Map<SecretString, string>();
   const generated: GeneratedLeaf[] = [];
   const pointers: PointerName[] = [];
@@ -443,9 +463,13 @@ export function resolveInputBinding(
         value,
         path === '' ? 'the input binding root' : `input key "${path}"`,
       );
+      pointers.push({ path, varName: name });
+      if (absentSecrets.has(name)) {
+        absent.push(path === '' ? `(root) → ${name}` : `${path} → ${name}`);
+        return ABSENT;
+      }
       const sentinel = new SecretBox('');
       sentinels.set(sentinel, name);
-      pointers.push({ path, varName: name });
       return sentinel;
     }
     if (isParamSource(value)) {
@@ -539,8 +563,50 @@ export function serializeInput(
   node: ServiceNode,
   address: string,
   binding: unknown,
-  env: Record<string, string | undefined> = process.env,
+  options: SerializeInputOptions = {},
 ): InputDocumentRow | undefined {
+  const judged = judgeInput(node, address, binding, options);
+  if (judged === undefined) return undefined;
+  if (!judged.ok) {
+    throw new Error(
+      `invalid input for service "${address}": ${judged.thrown ? '' : 'config param validation failed: '}${judged.message}\n` +
+        '(Deploy-time validation sees each envSecret leaf as an opaque, empty SecretString box. ' +
+        'A failure naming a secret field means the binding and schema disagree about its ' +
+        'secretness, or the schema refines on secret content — which ADR-0042 forbids.)',
+    );
+  }
+  const { validated, sentinels, generated, absent } = judged;
+  const emittedSecrets = new Set<string>();
+  const document = substitutePointers(validated, sentinels, generated, address, emittedSecrets);
+  return {
+    key: inputKey(address),
+    value: JSON.stringify(document),
+    absent,
+    generated,
+    // The names the DOCUMENT actually carries (a schema transform can drop a
+    // bound leaf), sorted and unique: the fingerprint depends only on the set
+    // of referenced variables, so a binding refactor that reorders or
+    // duplicates leaves cannot move it.
+    secrets: [...emittedSecrets].sort(),
+  };
+}
+
+type InputJudgement =
+  | ({ readonly ok: true; readonly validated: unknown } & ResolvedInputBinding)
+  | {
+      readonly ok: false;
+      readonly message: string;
+      /** True when the validator threw (an async or broken schema) rather than reporting issues. */
+      readonly thrown: boolean;
+    };
+
+/** Resolves the binding and validates it with the service's schema; undefined for a service with no input schema. */
+function judgeInput(
+  node: ServiceNode,
+  address: string,
+  binding: unknown,
+  options: SerializeInputOptions,
+): InputJudgement | undefined {
   const schema = node.inputSchema;
   if (schema === undefined) {
     if (binding !== undefined) {
@@ -555,32 +621,37 @@ export function serializeInput(
       `service "${address}" declares an input schema but has no recorded input binding — Load should have required it (ADR-0042).`,
     );
   }
-  const { resolved, sentinels, generated, absent } = resolveInputBinding(binding, env, address);
-  let validated: unknown;
+  const resolved = resolveInputBinding(binding, address, options);
+  let result: ReturnType<typeof standardValidate>;
   try {
-    validated = standardValidateSync(schema, resolved);
+    result = standardValidate(schema, resolved.resolved);
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
-    throw new Error(
-      `invalid input for service "${address}": ${message}\n` +
-        '(Deploy-time validation sees each envSecret leaf as an opaque, empty SecretString box. ' +
-        'A failure naming a secret field means the binding and schema disagree about its ' +
-        'secretness, or the schema refines on secret content — which ADR-0042 forbids.)',
-    );
+    return {
+      ok: false,
+      message: cause instanceof Error ? cause.message : String(cause),
+      thrown: true,
+    };
   }
-  const emittedSecrets = new Set<string>();
-  const document = substitutePointers(validated, sentinels, generated, address, emittedSecrets);
-  return {
-    key: inputKey(address),
-    value: JSON.stringify(document),
-    absent,
-    generated,
-    // The names the DOCUMENT actually carries (a schema transform can drop a
-    // bound leaf), sorted and unique: the fingerprint depends only on the set
-    // of referenced variables, so a binding refactor that reorders or
-    // duplicates leaves cannot move it.
-    secrets: [...emittedSecrets].sort(),
-  };
+  return 'issues' in result
+    ? { ok: false, message: result.issues, thrown: false }
+    : { ok: true, validated: result.value, ...resolved };
+}
+
+/**
+ * The schema's message when the service's input, with each `envSecret` leaf
+ * in `absentSecrets` left out, fails validation; undefined when it passes or
+ * the service has no input schema. Used by the `prisma dev` preflight.
+ */
+export function inputValidationFailure(
+  node: ServiceNode,
+  address: string,
+  binding: unknown,
+  options: SerializeInputOptions = {},
+): string | undefined {
+  const judged = judgeInput(node, address, binding, options);
+  if (judged === undefined || judged.ok) return undefined;
+  if (judged.thrown) throw new Error(`invalid input for service "${address}": ${judged.message}`);
+  return judged.message;
 }
 
 /**
@@ -789,6 +860,16 @@ function standardValidateSync<S extends StandardSchemaV1>(
   schema: S,
   value: unknown,
 ): StandardSchemaV1.InferOutput<S> {
+  const result = standardValidate(schema, value);
+  if ('issues' in result) throw new Error(`config param validation failed: ${result.issues}`);
+  return result.value;
+}
+
+/** Synchronous validation that returns the issue messages, joined, instead of throwing them. */
+function standardValidate<S extends StandardSchemaV1>(
+  schema: S,
+  value: unknown,
+): { readonly value: StandardSchemaV1.InferOutput<S> } | { readonly issues: string } {
   const result = schema['~standard'].validate(value);
   if (result instanceof Promise) {
     throw new Error(
@@ -796,9 +877,7 @@ function standardValidateSync<S extends StandardSchemaV1>(
     );
   }
   if (result.issues !== undefined) {
-    throw new Error(
-      `config param validation failed: ${result.issues.map((issue) => issue.message).join('; ')}`,
-    );
+    return { issues: result.issues.map((issue) => issue.message).join('; ') };
   }
-  return result.value;
+  return { value: result.value };
 }

@@ -59,18 +59,13 @@ async function readJson<T>(
   return isValid(parsed) ? parsed : empty;
 }
 
-async function writeJsonAtomic(
-  filePath: string,
-  value: unknown,
-  mode: number | undefined,
-): Promise<void> {
+async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
   const dir = path.dirname(filePath);
   await fs.mkdir(dir, { recursive: true });
   const tmpPath = path.join(dir, `.${path.basename(filePath)}.${crypto.randomUUID()}.tmp`);
   const json = `${JSON.stringify(value, null, 2)}\n`;
-  await fs.writeFile(tmpPath, json, mode !== undefined ? { mode } : undefined);
+  await fs.writeFile(tmpPath, json);
   await fs.rename(tmpPath, filePath);
-  if (mode !== undefined) await fs.chmod(filePath, mode);
 }
 
 export interface DevStore<T> {
@@ -84,7 +79,6 @@ export function createStore<T>(
   filePath: string,
   isValid: (value: unknown) => value is T,
   empty: T,
-  mode?: number,
 ): DevStore<T> {
   return {
     read: () => enqueue(filePath, () => readJson(filePath, isValid, empty)),
@@ -92,7 +86,7 @@ export function createStore<T>(
       enqueue(filePath, async () => {
         const current = await readJson(filePath, isValid, empty);
         const next = mutate(current);
-        await writeJsonAtomic(filePath, next, mode);
+        await writeJsonAtomic(filePath, next);
         return next;
       }),
   };
@@ -110,9 +104,4 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 /** `<devDir>/env.json` — every `EnvironmentVariable` row, key → value. Last write wins. */
 export function envStore(devDir: string): DevStore<Record<string, string>> {
   return createStore(path.join(devDir, 'env.json'), isStringRecord, {});
-}
-
-/** `<devDir>/secrets.json` — platform var name → value (shell-sourced or minted placeholder). Mode 0o600. */
-export function secretsStore(devDir: string): DevStore<Record<string, string>> {
-  return createStore(path.join(devDir, 'secrets.json'), isStringRecord, {}, 0o600);
 }

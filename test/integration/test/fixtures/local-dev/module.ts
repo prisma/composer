@@ -4,13 +4,12 @@
  * lowering exercises every one of the eight local providers. The package's
  * `prisma.config.ts` carries the `composer` section a real `dev` would read.
  *
- * `bgService`'s secret/env-param binding (S5 proof, spec's acceptance
- * criterion 5), on ADR-0042's input model: `apiKey` is an `envSecret` leaf of
- * the input binding — absent from the shell, dev mints a placeholder and
- * warns; the env-sourced param rides the reserved `port` channel, bound to
- * `LOCALDEV_FIXTURE_GREETING` — absent from the shell, dev hard-errors. Both
- * names are fixture-private, chosen not to collide with any real platform env
- * var.
+ * `bgService` binds two secrets and an env-sourced param. `apiKey` is
+ * required, so dev stops when `LOCALDEV_FIXTURE_API_KEY` is unset;
+ * `webhookSecret` is optional, so an unset `LOCALDEV_FIXTURE_WEBHOOK_SECRET`
+ * reaches the service as absent. The param rides the reserved `port` channel,
+ * bound to `LOCALDEV_FIXTURE_GREETING`; dev stops when it is unset. The names
+ * are fixture-private, chosen not to collide with any real platform env var.
  */
 import { module } from '@prisma/composer';
 import { bucket, envParam, envSecret, rawPostgres } from '@prisma/composer-prisma-cloud';
@@ -22,7 +21,10 @@ export default module('localdevs4fixture', ({ provision }) => {
   const store = provision(bucket({ name: 'files' }));
   provision(webService, { deps: { db, store } });
   provision(bgService, {
-    input: { apiKey: envSecret('LOCALDEV_FIXTURE_API_KEY') },
+    input: {
+      apiKey: envSecret('LOCALDEV_FIXTURE_API_KEY'),
+      webhookSecret: envSecret('LOCALDEV_FIXTURE_WEBHOOK_SECRET'),
+    },
     params: { port: envParam('LOCALDEV_FIXTURE_GREETING') },
   });
 });

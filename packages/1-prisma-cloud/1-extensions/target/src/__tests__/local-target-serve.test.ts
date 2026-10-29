@@ -63,7 +63,7 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
         COMPOSER_OTHER_ROW: 'a sibling service row',
       }),
     );
-    fs.writeFileSync(path.join(devDir, 'secrets.json'), JSON.stringify({ STRIPE_KEY: 'sk_real' }));
+    process.env['STRIPE_KEY'] = 'sk_real';
     serverDir = path.join(root, 'app', 'gateway');
     fs.mkdirSync(serverDir, { recursive: true });
     fs.writeFileSync(path.join(serverDir, 'server.js'), ENV_ECHO_SERVER);
@@ -72,6 +72,7 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
 
   afterEach(async () => {
     delete process.env[SHELL_MARKER];
+    delete process.env['STRIPE_KEY'];
     await deleteAppInstances({ devDir, app: APP, environment: 'dev' }).catch(() => undefined);
     await stopDaemon('compute', { registryRoot: path.join(root, 'emulators') }).catch(
       () => undefined,
@@ -118,6 +119,46 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
       COMPOSER_OTHER_ROW: null,
       [SHELL_MARKER]: 'from the shell',
     });
+  });
+
+  test('a changed secret value restarts the dev server with the new value', async () => {
+    const attachment = await attach();
+    const { instance } = await ensureServiceInstance(
+      { devDir, app: APP, environment: 'dev' },
+      'gateway',
+    );
+    const serve = () =>
+      attachment.serve?.({
+        address: 'gateway',
+        node: gateway,
+        server: server(['bun', 'server.js']),
+      });
+
+    await serve();
+    process.env['STRIPE_KEY'] = 'sk_rotated';
+    const changed = await serve();
+
+    expect(changed?.restarted).toBe(true);
+    const env = await (await fetch(`http://127.0.0.1:${String(instance.port)}`)).json();
+    expect(env).toMatchObject({ STRIPE_KEY: 'sk_rotated' });
+  });
+
+  test('an unset secret is not given to the dev server', async () => {
+    delete process.env['STRIPE_KEY'];
+    const attachment = await attach();
+    const { instance } = await ensureServiceInstance(
+      { devDir, app: APP, environment: 'dev' },
+      'gateway',
+    );
+
+    await attachment.serve?.({
+      address: 'gateway',
+      node: gateway,
+      server: server(['bun', 'server.js']),
+    });
+
+    const env = await (await fetch(`http://127.0.0.1:${String(instance.port)}`)).json();
+    expect(env).toMatchObject({ STRIPE_KEY: null });
   });
 
   test('serving the same command again restarts nothing; a changed command restarts it', async () => {

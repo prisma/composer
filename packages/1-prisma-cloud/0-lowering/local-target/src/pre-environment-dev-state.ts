@@ -2,9 +2,10 @@
  * Releases before each environment had its own folder kept local dev state
  * directly in `.prisma-composer/dev/`. That state is the environment `dev`'s:
  * the first run after an upgrade moves the record, the environment variable
- * values, the placeholder secrets and the bucket objects into `dev`'s folder,
- * so its databases and objects are kept. Unpacked artifacts and the generated
- * stack file are regenerated, so they are removed instead. Delete this file
+ * values and the bucket objects into `dev`'s folder, so its databases and
+ * objects are kept. Unpacked artifacts and the generated stack file are
+ * regenerated, and the old stored secret values must not be kept (ADR-0058),
+ * so they are removed instead. Delete this file
  * once no such folder remains.
  */
 import * as fs from 'node:fs';
@@ -14,8 +15,8 @@ import { BUCKETS_DIR } from './bucket.ts';
 import { EMULATOR_INSTANCES_FILE } from './emulator-instances.ts';
 
 const PRE_ENVIRONMENT_ENVIRONMENT = 'dev';
-const MOVED = [EMULATOR_INSTANCES_FILE, 'env.json', 'secrets.json', BUCKETS_DIR];
-const REMOVED = ['artifacts', 'alchemy.run.ts'];
+const MOVED = [EMULATOR_INSTANCES_FILE, 'env.json', BUCKETS_DIR];
+const REMOVED = ['artifacts', 'alchemy.run.ts', 'secrets.json'];
 
 function isFile(file: string): boolean {
   return fs.statSync(file, { throwIfNoEntry: false })?.isFile() === true;
