@@ -625,12 +625,16 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
   test("a secret a service receives through a module's input is named as used by the service", async () => {
     delete process.env['MAIL_KEY'];
-    const mail = module('mail', { input: type({ key: secretString() }) }, ({ input, provision }) => {
-      provision(compute({ name: 'sender', deps: {}, input: anySchema, build }), {
-        id: 'sender',
-        input: { key: input.key },
-      });
-    });
+    const mail = module(
+      'mail',
+      { input: type({ key: secretString() }) },
+      ({ input, provision }) => {
+        provision(compute({ name: 'sender', deps: {}, input: anySchema, build }), {
+          id: 'sender',
+          input: { key: input.key },
+        });
+      },
+    );
     const graph = Load(
       module('app', ({ provision }) => {
         provision(mail, { input: { key: envSecret('MAIL_KEY') } });
@@ -643,9 +647,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     ).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain(
-      '  - MAIL_KEY  (used by service "app.mail.sender")',
-    );
+    expect((error as Error).message).toContain('  - MAIL_KEY  (used by service "app.mail.sender")');
   });
 
   test("a secret a resolve() in a resource's props lists is named as used by the resource", async () => {
