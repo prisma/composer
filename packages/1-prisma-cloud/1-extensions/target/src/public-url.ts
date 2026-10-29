@@ -1,6 +1,7 @@
 import type { DepBindings, Graph, ResourceNode, Value } from '@internal/core';
 import { isValue, resource } from '@internal/core';
 import { rawHttp } from '@internal/http';
+import { PRISMA_CLOUD_EXTENSION_ID } from './extension-id.ts';
 
 /** Serve the service at a hostname the author names. */
 export type HostnameStrategy = {
@@ -101,8 +102,6 @@ function classify(url: unknown): Classified {
 
 const describe = (value: unknown): string => JSON.stringify(value) ?? String(value);
 
-const EXTENSION = '@prisma/composer-prisma-cloud';
-
 /** The strategy a public URL's resolved `url` names; throws, naming `address`, for anything else. */
 export function resolvedStrategy(url: unknown, address: string): PublicUrlStrategy {
   const classified = classify(url);
@@ -120,7 +119,7 @@ export function publicUrlStrategies(
   graph: Graph,
 ): { readonly address: string; readonly strategy: PublicUrlStrategy }[] {
   return graph.nodes.flatMap(({ id, node }) =>
-    node.kind === 'resource' && node.extension === EXTENSION && node.type === 'public-url'
+    node.kind === 'resource' && node.extension === PRISMA_CLOUD_EXTENSION_ID && node.type === 'public-url'
       ? [{ address: id, strategy: resolvedStrategy(node.props['url'], id) }]
       : [],
   );
@@ -153,7 +152,7 @@ export function publicUrl(opts: {
   }
   return resource({
     name: opts.name,
-    extension: EXTENSION,
+    extension: PRISMA_CLOUD_EXTENSION_ID,
     type: 'public-url',
     inputs: { target: rawHttp() },
     deps: { target: opts.target },
