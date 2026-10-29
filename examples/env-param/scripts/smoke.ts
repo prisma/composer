@@ -13,7 +13,10 @@
  *   directory (the build adapter's directory form — proving assemble copied
  *   the whole tree, not just the entry).
  *
- *   EXPECTED_GREETING=… [ENV_PARAM_ENVIRONMENT=…] [ENV_PARAM_STACK_NAME=…] bun scripts/smoke.ts
+ * Before polling, it reads the run report `pnpm deploy` wrote and asserts the
+ * public URL `site` is reported as a `public-url` entity whose URL is echo's.
+ *
+ *   EXPECTED_GREETING=… [ENV_PARAM_ENVIRONMENT=…] [ENV_PARAM_STACK_NAME=…] [ENV_PARAM_REPORT=…] bun scripts/smoke.ts
  *
  * ENV_PARAM_ENVIRONMENT defaults to production, the Project's default Branch;
  * any other name resolves the Branch with that gitName and its app.
@@ -92,6 +95,37 @@ if (typeof domain !== 'string' || domain === '')
   throw new Error('service has no endpoint domain yet');
 const url = domain.startsWith('http') ? domain : `https://${domain}/`;
 console.log(`echo URL (${environment}): ${url}`);
+
+const reportPath = process.env['ENV_PARAM_REPORT'] || '.prisma/deploy-report.json';
+const report = blindCast<
+  {
+    outcome?: string;
+    environment?: string;
+    nodes?: { address: string; entities: { kind: string; url?: string }[] }[];
+  },
+  'the run report prisma deploy --report writes'
+>(await Bun.file(reportPath).json());
+if (report.outcome !== 'succeeded' || report.environment !== environment) {
+  throw new Error(
+    `${reportPath} is not a succeeded deploy to ${environment} ` +
+      `(outcome ${report.outcome}, environment ${report.environment})`,
+  );
+}
+const siteAddress = `${stack}.site`;
+const siteUrls = (report.nodes ?? [])
+  .filter((node) => node.address === siteAddress)
+  .flatMap((node) => node.entities)
+  .filter((entity) => entity.kind === 'public-url')
+  .map((entity) => entity.url);
+if (siteUrls.length !== 1 || siteUrls[0] === undefined) {
+  console.error(`FAIL - ${reportPath} has no single public-url entity under ${siteAddress}`);
+  process.exit(1);
+}
+if (new URL(siteUrls[0]).origin !== new URL(url).origin) {
+  console.error(`FAIL - ${siteAddress} reports ${siteUrls[0]}, but echo's URL is ${url}`);
+  process.exit(1);
+}
+console.log(`ok - ${siteAddress} is a public-url entity at echo's URL ${siteUrls[0]}`);
 
 /** The marker inside src/assets/logo.svg — served only if the asset shipped beside the entry. */
 const assetMarker = 'prisma-composer-env-param-asset';
