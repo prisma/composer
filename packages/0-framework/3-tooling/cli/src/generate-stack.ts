@@ -12,9 +12,8 @@ export interface StackFileInput {
   /** Absolute path to the `prisma.config.ts` that declared the `composer` section — imported by relative path. */
   readonly configFile: string;
   readonly name: string;
-  // No `stage` field: core's lower() never reads LowerOptions.stage — the
-  // effective stage is Alchemy's own, passed as `--stage` on the alchemy
-  // invocation (run-alchemy.ts).
+  /** The environment being deployed, as `--environment` gave it. */
+  readonly environment: string;
   readonly assembled: AssembledServices;
 }
 
@@ -38,6 +37,7 @@ function renderBundle(bundle: { dir: string; entry: string }): string {
 function renderOptions(input: StackFileInput): string {
   const lines: string[] = [];
   lines.push(`  name: ${quote(input.name)},`);
+  lines.push(`  environment: ${quote(input.environment)},`);
 
   lines.push('  bundles: {');
   for (const [id, bundle] of Object.entries(input.assembled.bundles)) {

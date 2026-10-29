@@ -71,6 +71,21 @@ describe('renderDevStackFile()', () => {
   });
 });
 
+describe('renderDevStackFile() — the environment', () => {
+  test('passes the environment to lower(), so Load resolves values over environment.name', () => {
+    const content = renderDevStackFile({
+      entryPath: '/repo/app/module.ts',
+      cwd: '/repo/app',
+      configFile: '/repo/app/prisma.config.ts',
+      name: 'app',
+      environment: 'test',
+      assembled: { devServers: {}, bundles: {} },
+    });
+
+    expect(content).toContain('  name: "app",\n  environment: "test",\n');
+  });
+});
+
 describe('renderDevStackFile() — services with dev servers (ADR-0056)', () => {
   const input = (devServers: Record<string, { cwd: string; display: string }>) => ({
     entryPath: '/repo/app/module.ts',

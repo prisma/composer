@@ -11,6 +11,7 @@ describe('renderStackFile() — a module root', () => {
       cwd: '/repo/app',
       configFile: '/repo/app/prisma.config.ts',
       name: 'app',
+      environment: 'staging',
       assembled: {
         devServers: {},
         bundles: {
@@ -33,8 +34,9 @@ describe('renderStackFile() — a module root', () => {
     expect(content).toContain(
       '"storefront": { dir: "/repo/app/modules/storefront/standalone", entry: "server.js" }',
     );
-    // No `stage:` in the generated LowerOptions — core's lower() never reads
-    // it; the stage rides on the `alchemy --stage` flag instead.
+    // The environment reaches Load in the alchemy child; the Alchemy stage
+    // rides on the `alchemy --stage` flag, never in LowerOptions.
+    expect(content).toContain('environment: "staging"');
     expect(content).not.toContain('stage:');
   });
 
@@ -44,6 +46,7 @@ describe('renderStackFile() — a module root', () => {
       cwd: '/app',
       configFile: '/app/prisma.config.ts',
       name: 'app',
+      environment: 'staging',
       assembled: { devServers: {}, bundles: {} },
     });
 
@@ -56,6 +59,7 @@ describe('renderStackFile() — a module root', () => {
       cwd: '/repo/app',
       configFile: '/repo/app/prisma.config.ts',
       name: 'storefront-auth',
+      environment: 'staging',
       assembled: {
         devServers: {},
         bundles: { app: { dir: '/repo/app/dist', entry: 'server.js' } },
@@ -76,6 +80,7 @@ describe('renderStackFile() — a module root', () => {
       cwd: '/repo/app',
       configFile: '/repo/app/prisma.config.ts',
       name: 'storefront-auth',
+      environment: 'staging',
       assembled: {
         devServers: {},
         bundles: { app: { dir: '/repo/app/dist', entry: 'server.js' } },
@@ -95,6 +100,7 @@ describe('renderStackFile() — a module root', () => {
       cwd: '/repo/apps/shop',
       configFile: '/repo/prisma.config.ts',
       name: 'app',
+      environment: 'staging',
       assembled: {
         devServers: {},
         bundles: { app: { dir: '/repo/apps/shop/dist', entry: 'server.js' } },
@@ -116,6 +122,7 @@ describe('renderStackFile() — a module root', () => {
       cwd,
       configFile: '/repo/examples/foo*/app/prisma.config.ts',
       name: 'app',
+      environment: 'staging',
       assembled: {
         devServers: {},
         bundles: { app: { dir: '/repo/examples/foo*/app/dist/bundle', entry: 'server.js' } },
@@ -147,6 +154,7 @@ describe('the generated stack file for a real module entry (no alchemy run)', ()
       cwd: fixtureDir,
       configFile: path.join(fixtureDir, 'prisma.config.ts'),
       name: entry.root.name,
+      environment: 'staging',
       assembled: {
         devServers: {},
         bundles: {
@@ -204,6 +212,7 @@ describe('nested-module proof (H1: module-composition) — dotted addresses surv
       cwd: '/repo/app',
       configFile: '/repo/app/prisma.config.ts',
       name: 'shop',
+      environment: 'staging',
       assembled: {
         devServers: {},
         bundles: { 'shop.auth.api': { dir: '/bundles/auth-api', entry: 'server.js' } },

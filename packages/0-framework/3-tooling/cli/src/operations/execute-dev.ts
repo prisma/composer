@@ -175,7 +175,14 @@ export async function executeDev(
     // The shared prefix (pipeline.ts): entry load, Load, registry coverage,
     // name resolution, assemble.
     const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler, devServers: true };
-    pipeline = await runPipeline(input.entry, input.name, cwd, input.config, pipelineDeps);
+    pipeline = await runPipeline(
+      input.entry,
+      input.name,
+      environment,
+      cwd,
+      input.config,
+      pipelineDeps,
+    );
     const { graph, name } = pipeline;
     const config = pipeline.configSource.value;
 
@@ -491,7 +498,14 @@ export async function executeDev(
     // app and keeps watching".
     const rebuild = async (): Promise<void> => {
       try {
-        const rePipeline = await runPipeline(input.entry, input.name, cwd, input.config, watchDeps);
+        const rePipeline = await runPipeline(
+          input.entry,
+          input.name,
+          environment,
+          cwd,
+          input.config,
+          watchDeps,
+        );
         const stackPath = writeDevStackFile({
           entryPath: rePipeline.entryModule.path,
           cwd,
