@@ -432,11 +432,11 @@ Rules, in order after the existing name, extension and `provides` checks:
   - `deps: blindCast<DepBindings<D>, 'omitted deps are the empty bindings of the empty Deps; the deps-match check above guarantees the keys agree at runtime'>(frozenShallowCopy(def.deps ?? {}))`
   - `props: blindCast<P, 'omitted props are the empty props; the plain-object check above is the runtime guard'>(frozenShallowCopy(def.props ?? {}))`
 
-`ResourceNodeBase<C, D, P>` takes the same three optional fields in its constructor `def`, runs the same checks, and assigns `inputs`, `deps`, `props` with the same casts. Its doc comment adds: `A class built on this base must not use #private fields: Load copies a node whose props hold a value, and a copy carries own properties only.` `PostgresResourceNode` in the Prisma Cloud extension passes none of the three and compiles unchanged. Moving its `config` and `targetRef` into `props` is recorded as debt in `.drive/deferred.md`, not done here.
+`ResourceNodeBase<C, D, P>` (with `D` and `P` defaulting to `Record<never, never>`, as `resource()`'s do) takes the same three optional fields in its constructor `def`, runs the same checks, and assigns `inputs`, `deps`, `props` with the same casts; `resource()` runs them through the base class, so the casts appear once. `isPlainObject` lives in `value.ts` (which still imports only `blindCast`), since `node.ts` needs it and `resolve-values.ts` imports `node.ts`. Its doc comment adds: `A class built on this base must not use #private fields: Load copies a node whose props hold a value, and a copy carries own properties only.` `PostgresResourceNode` in the Prisma Cloud extension passes none of the three and compiles unchanged. Moving its `config` and `targetRef` into `props` is recorded as debt in `.drive/deferred.md`, not done here.
 
 ### 6.4 Load
 
-In `flatten`'s `provision` closure, the `child.kind === 'resource'` branch changes as follows. The four existing rejections stay (deps, secrets, input, params supplied at `provision()` are still errors; the wiring is the node's own). Then:
+In `flatten`'s `provision` closure, the `child.kind === 'resource'` branch changes as follows. The four existing rejections stay (deps, secrets, input, params supplied at `provision()` are still errors; the wiring is the node's own), and the `deps` one gets a true text: `provision("site") received deps for a resource — a resource's slots are wired when it is constructed, not at provision().` (D3 changes the text; test 33 asserts it.) A resource node built by another installed copy of core may lack `inputs`, `deps` or `props`; `dependencySlots` and this branch treat an absent one as empty, as the brand check's dual-package comment in `node.ts` intends (D3). Then:
 
 ```
 const localWiring = { ...child.deps };
@@ -452,7 +452,7 @@ pending.push({ deps: child.inputs, wiring: localWiring, targetId: fullAddress, t
 return refForResource(fullAddress, child);
 ```
 
-- `serviceInputs(service, serviceId)` in `load-service.ts` is renamed `dependencySlots(node: ServiceNode | ResourceNode, id: NodeId)`; its body is unchanged except that it reads `node.inputs` and its error texts keep saying `Input "x" of "id"` (they do not name the kind). `loadService` calls it under the new name.
+- `serviceInputs(service, serviceId)` in `load-service.ts` is renamed `dependencySlots(node: ServiceNode | ResourceNode, serviceId: NodeId)`; its body is unchanged except that it reads `node.inputs` (absent on a resource from another core copy means empty) and its error texts keep saying `Input "x" of "id"` (they do not name the kind). `loadService` calls it under the new name.
 - `boundaryPortsOf(id, node)` in `load-service.ts` accepts `ModuleNode | ServiceNode | ResourceNode`; for a resource it reads `node.inputs` for the `in` ports and emits no `out` ports (the `$out` port is pushed by `flatten`, as today, so the port order on the wire is unchanged for a resource with no slots).
 - `PendingWiring.targetKind` gains `'resource'`; `validateWiring`'s messages already interpolate `targetKind`, so no text changes.
 - `assertDependencyDag` is unchanged: it walks every `dependency` edge. Its doc comment, which says only service and module edges can cycle, is rewritten: `A resource with dependency slots can take part in a cycle too.`
@@ -588,7 +588,7 @@ Each test below is one `test()` with the given title. Runtime tests use `bun tes
 30. `the authored edge runs from the producer's out port to the resource's in port`.
 31. `a forwarded module input wired into a resource's slot counts as used and authors the edge from the module's in port`.
 32. `resource() rejects a declared input with no deps entry, an extra deps entry, and a value in deps` — exact messages.
-33. `provision(resource, { deps }) is still rejected`.
+33. `provision(resource, { deps }) is still rejected` — with the text in § 6.4.
 34. `a resource slot wired to a ref that does not satisfy the required contract fails` — through `validateWiring`, with the existing message.
 35. `a resource that depends on a service that depends on it is a dependency cycle` — the service's untyped slot is wired to the forged ref `{ id: 'shop.site' }`, because a resource's wiring needs the producer's ref first; the existing cycle message names both.
 36. `a value in a resource's props is substituted and the graph holds a copy with the prototype kept` — a class on `ResourceNodeBase` with a method, calling `freezeNode(this)` in its constructor; `graph.nodes` entry's `node.props.url` is the string, `node.describe()` still works, `isNode(node)` is true, and the authored node object is unchanged.
@@ -648,6 +648,8 @@ Each test below is one `test()` with the given title. Runtime tests use `bun tes
 ## 14. Settled after the review
 
 D1 landed on 2026-10-29 (commits b3b4fe91, 8c168c2f, d666545f) with the spec's letter adapted in five places, each now written into the sections above: `originOf` in `value.ts`; a param's site path is the param name; the `id` check sits after `id` is computed; `validateSecretBinding` and `validateParamNeedBinding` take the full address; `resolve-values.ts` carries one extra pinned-reason cast typing the substituted binding back to `InputBinding`.
+
+D2 landed on 2026-10-29 (commits 77b45ba6, 4b3cb003, a6244546, 45b79ca9) with: `isPlainObject` in `value.ts`; a second such cast for rebuilt props; the base class's type defaults; `dependencySlots` keeping its `serviceId` parameter name. D3 adds the true `provision(resource, { deps })` text and the tolerance for a resource from another core copy.
 
 
 Each of these was put to Will on 2026-10-29 after the architect and principal-engineer reviews.

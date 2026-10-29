@@ -11,14 +11,14 @@ Spec: [spec.md](spec.md). Four dispatches, sequential: D1 and D2 both edit `node
 
 ## D2. A resource with its edge already set
 
-- **Outcome:** spec § 6: `ResourceNode` with `inputs`, `wiring`, `props`; `resource()` and `ResourceNodeBase` taking them; `dependencySlots` and `boundaryPortsOf` over resources; the resource branch of `provision()`; `resolveValues` over resource props and the resolved copy; `connectionInputs` and the minting loop in `deploy.ts`; the doc-comment changes.
+- **Outcome:** spec § 6: `ResourceNode` with `inputs`, `deps`, `props`; `resource()` and `ResourceNodeBase` taking them; `dependencySlots` and `boundaryPortsOf` over resources; the resource branch of `provision()`; `resolveValues` over resource props and the resolved copy; `connectionInputs` and the minting loop in `deploy.ts`; the doc-comment changes.
 - **Tests:** spec § 11.3, § 11.4 tests 39 and 40, the resource lines of § 11.5.
 - **Builds on:** D1.
 - **Hands to:** the same checks as D1, green, plus `pnpm --filter @internal/prisma-cloud-lowering test` and `pnpm --filter @internal/prisma-cloud-target test` green (the topology and the Postgres resource node).
 
 ## D3. The environment name reaches Load, and the example uses it
 
-- **Outcome:** spec §§ 7.2, 7.3 and 8.
+- **Outcome:** spec §§ 7.2, 7.3 and 8, plus two one-line core fixes § 6.4 names: the true `provision(resource, { deps })` error text, and treating an absent `inputs`/`deps`/`props` on a resource from another core copy as empty.
 - **Tests:** spec § 11.6 and § 11.7.
 - **Builds on:** D1.
 - **Hands to:** `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test` green at the root.
