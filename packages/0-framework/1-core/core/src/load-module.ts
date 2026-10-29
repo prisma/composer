@@ -14,7 +14,7 @@ import {
   RESOURCE_OUT_PORT,
   type ServiceInputBinding,
 } from './graph-types.ts';
-import { boundaryPortsOf, dependencySlots } from './load-service.ts';
+import { boundaryPortsOf, slotNodesAndEdges } from './load-service.ts';
 import {
   type DependencyEnd,
   type Deps,
@@ -545,7 +545,7 @@ function flatten(
     }
     // Brand-check on a widened alias: predicate-narrowing the declared union
     // drops the `any`-instantiated ResourceNode member (the same quirk
-    // dependencySlots sidesteps by widening `kind` to a plain string).
+    // slotNodesAndEdges sidesteps by widening `kind` to a plain string).
     const untrusted: unknown = child;
     if (
       !isNode(untrusted) ||
@@ -586,7 +586,7 @@ function flatten(
       const localWiring = { ...child.deps };
       markUsed(Object.values(localWiring));
       byId.set(fullAddress, child);
-      const slots = dependencySlots(child, fullAddress);
+      const slots = slotNodesAndEdges(child, fullAddress);
       nodes.push(...slots.nodes, { id: fullAddress, parent: selfId, node: child });
       edges.push(...slots.edges, ...wiringEdges(localWiring, fullAddress));
       ports.push(...boundaryPortsOf(fullAddress, child));
@@ -671,7 +671,7 @@ function flatten(
       for (const [slot, binding] of Object.entries(localParams)) {
         paramBindings.push({ serviceAddress: fullAddress, slot, binding });
       }
-      const inputs = dependencySlots(child, fullAddress);
+      const inputs = slotNodesAndEdges(child, fullAddress);
       nodes.push(...inputs.nodes, { id: fullAddress, parent: selfId, node: child });
       edges.push(...inputs.edges, ...wiringEdges(localWiring, fullAddress));
       ports.push(...boundaryPortsOf(fullAddress, child));

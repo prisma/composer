@@ -55,13 +55,13 @@ function slotsOf(node: ServiceNode | ResourceNode): ServiceNode['inputs'] {
   return node.kind === 'resource' ? (node.inputs ?? {}) : node.inputs;
 }
 
-export function dependencySlots(
+export function slotNodesAndEdges(
   node: ServiceNode | ResourceNode,
-  serviceId: NodeId,
+  nodeId: NodeId,
 ): { nodes: GraphNode[]; edges: Edge[] } {
   const inputs = slotsOf(node);
   if (typeof inputs !== 'object' || inputs === null) {
-    throw new LoadError(`Service "${serviceId}" has no inputs map.`);
+    throw new LoadError(`Node "${nodeId}" has no inputs map.`);
   }
   const nodes: GraphNode[] = [];
   const edges: Edge[] = [];
@@ -71,7 +71,7 @@ export function dependencySlots(
     const kind: string | undefined = isNode(value) ? value.kind : undefined;
     if (kind === 'resource') {
       throw new LoadError(
-        `Input "${input}" of "${serviceId}" is a resource node — a resource is provisioned by ` +
+        `Input "${input}" of "${nodeId}" is a resource node — a resource is provisioned by ` +
           'the composing module, never created for a service that mentions it. Declare the input ' +
           "as a dependency (the pack's dependency factory) and wire the module-provisioned " +
           "resource's ref into it.",
@@ -79,16 +79,16 @@ export function dependencySlots(
     }
     if (kind !== 'dependency') {
       throw new LoadError(
-        `Input "${input}" of "${serviceId}" is not a branded dependency end ` +
+        `Input "${input}" of "${nodeId}" is not a branded dependency end ` +
           '(construct it with the dependency() factory).',
       );
     }
     if (value.type.length === 0) {
-      throw new LoadError(`Input "${input}" of "${serviceId}" has an empty node type.`);
+      throw new LoadError(`Input "${input}" of "${nodeId}" has an empty node type.`);
     }
-    const id = `${serviceId}.${input}`;
-    nodes.push({ id, parent: serviceId, node: value });
-    edges.push({ from: id, to: serviceId, input, kind: 'input' });
+    const id = `${nodeId}.${input}`;
+    nodes.push({ id, parent: nodeId, node: value });
+    edges.push({ from: id, to: nodeId, input, kind: 'input' });
   }
   return { nodes, edges };
 }
@@ -113,7 +113,7 @@ export function loadService(root: ServiceNode, rootId: NodeId): Graph {
     );
   }
   const rootGraphNode: GraphNode = { id: rootId, parent: undefined, node: root };
-  const { nodes, edges } = dependencySlots(root, rootId);
+  const { nodes, edges } = slotNodesAndEdges(root, rootId);
   return {
     root: rootGraphNode,
     nodes: [...topoSort(nodes, edges), rootGraphNode],
