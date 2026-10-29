@@ -43,10 +43,10 @@ import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 import { STREAMS_API_KEY } from '../streams-keys.ts';
 import {
-  type PointerUpdatedAt,
-  pointerUpdatedAtLookup,
-  serializePointerUpdatedAt,
-} from './pointer-timestamps.ts';
+  serializeDeployPreflightPayload,
+  type TransportedPreflight,
+  transportedPreflight,
+} from './preflight-payload.ts';
 
 /**
  * ADR-0031's registered provisioner for RPC_PEER_KEY: mints one `ServiceKey`
@@ -283,7 +283,7 @@ export const PROVIDER_PARAMS: ReadonlyMap<symbol, ProviderParam | ServiceProvide
  * required for `prisma dev`, which never sets `PRISMA_REGION` and
  * must not fail on its absence (local-dev spec § 5).
  */
-function resolveOptions(opts: PrismaCloudOptions): Omit<ResolvedCloudOptions, 'pointerUpdatedAt'> {
+function resolveOptions(opts: PrismaCloudOptions): Omit<ResolvedCloudOptions, 'preflight'> {
   const workspaceId = opts.workspaceId ?? process.env['PRISMA_WORKSPACE_ID'] ?? '';
 
   if (opts.region !== undefined) {
@@ -314,11 +314,11 @@ function resolveOptions(opts: PrismaCloudOptions): Omit<ResolvedCloudOptions, 'p
  */
 function lazyOptions(
   opts: PrismaCloudOptions,
-  pointerUpdatedAt: PointerUpdatedAt,
+  preflight: TransportedPreflight,
 ): () => ResolvedCloudOptions {
   let cached: ResolvedCloudOptions | undefined;
   return () => {
-    cached ??= { ...resolveOptions(opts), pointerUpdatedAt };
+    cached ??= { ...resolveOptions(opts), preflight };
     return cached;
   };
 }
@@ -329,9 +329,9 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
   // deploy preflight, read by the environment fingerprint. A closure, not a
   // module variable, so two `prismaCloud()` extensions cannot share it. In
   // the alchemy process (no preflight) the lookup falls back to what the CLI
-  // transported (pointer-timestamps.ts).
+  // transported (preflight-payload.ts).
   const preflightTimestamps = new Map<string, string>();
-  const o = lazyOptions(opts, pointerUpdatedAtLookup(preflightTimestamps, process.env));
+  const o = lazyOptions(opts, transportedPreflight(preflightTimestamps, process.env));
 
   return {
     id: PRISMA_CLOUD_EXTENSION_ID,
@@ -360,7 +360,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     preflight: (input: PrismaCloudPreflightInput) =>
       runPreflight(input).then((timestamps) => {
         for (const [name, updatedAt] of timestamps) preflightTimestamps.set(name, updatedAt);
-        return serializePointerUpdatedAt(timestamps);
+        return serializeDeployPreflightPayload(timestamps);
       }),
 
     // Records the deploy as a Build so it appears in the Console, and passes

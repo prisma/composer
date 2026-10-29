@@ -2,8 +2,8 @@
  * The plan-S5 proving script for acceptance criteria 4 and 5 (spec's
  * acceptance criteria list): drives the installed `prisma` host's `dev`
  * against the S4 fixture (`test/fixtures/local-dev/`), extended for this
- * proof with a bucket consumer flow on `web` and a secret/env-param on
- * `bkg` (module.ts's `apiKey`/`greeting` binding). Same pattern as
+ * proof with a bucket consumer flow on `web` and secrets and an env-sourced
+ * param on `bkg` (module.ts's binding). Same pattern as
  * `local-dev-store.integration.ts` — a real child process, teed output,
  * bounded waits.
  *
@@ -13,15 +13,19 @@
  * the environment's `emulator-instances.json` records; drop a file directly into
  * that directory and GET it back through the app.
  *
- * Criterion 5 (value sourcing): with `LOCALDEV_FIXTURE_API_KEY` unset, the
- * pinned placeholder warning appears and the topology still serves; with
- * `LOCALDEV_FIXTURE_GREETING` (an `envParam`) unset, dev exits nonzero with
- * the pinned missing-env-param listing error naming it — checked in two
- * separate sessions, since the second failure happens in preflight, before
- * anything converges.
+ * Criterion 5 (value sourcing): every value comes from the environment of
+ * the run, either the shell or a `.env` the fixture's `prisma.config.ts`
+ * loads. A required secret or env-sourced param that is unset or empty stops
+ * dev with an error naming it. An optional secret that is unset or empty
+ * reaches the service as absent. A value changed between two runs reaches
+ * the running service on the next warm start.
+ *
+ * Every session runs from the fixture directory, so the CLI reads the
+ * fixture's own `prisma.config.ts`.
  */
 
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
@@ -56,8 +60,10 @@ function assertEqual<T>(actual: T, expected: T, message: string): void {
 }
 
 const integrationDir = path.resolve(import.meta.dir, '..');
-const fixtureEntry = path.join('test', 'fixtures', 'local-dev', 'module.ts');
-const devDir = path.join(integrationDir, '.prisma-composer', 'dev', 'dev');
+const fixtureDir = path.join(integrationDir, 'test', 'fixtures', 'local-dev');
+const fixtureEntry = 'module.ts';
+const envFile = path.join(fixtureDir, '.env');
+const devDir = path.join(fixtureDir, '.prisma-composer', 'dev', 'dev');
 const logDir = path.join(integrationDir, '.local-dev-criteria-4-5-logs');
 const CLI_BIN = path.join(prismaBinDir(integrationDir), 'prisma');
 const READY_TIMEOUT_MS = 90_000;
@@ -192,7 +198,7 @@ function startDevRaw(
     ...(opts.fresh === true ? ['--fresh'] : []),
   ];
   const child = spawn(CLI_BIN, args, {
-    cwd: integrationDir,
+    cwd: fixtureDir,
     env,
     stdio: ['ignore', logFd, logFd],
   });
@@ -247,37 +253,110 @@ async function stopDev(session: DevSession): Promise<void> {
   );
 }
 
+/** The Deployment's row in Alchemy's local state; it changes only when that deployment is updated. */
+function deploymentState(address: string): string {
+  const stateDir = path.join(fixtureDir, '.alchemy', 'state');
+  const files = fs.readdirSync(stateDir, { recursive: true, encoding: 'utf8' });
+  const file = files.find((name) => path.basename(name) === `${address}.deployment.json`);
+  if (file === undefined) {
+    throw new Error(`no Deployment state for ${address} under ${stateDir}: ${files.join(', ')}`);
+  }
+  return fs.readFileSync(path.join(stateDir, file), 'utf8');
+}
+
+const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+
+const GREETING = { LOCALDEV_FIXTURE_GREETING: 'hi-from-s5-proving' };
+
+/** Runs a session that must stop in preflight; returns its log. */
+async function expectPreflightFailure(env: NodeJS.ProcessEnv): Promise<string> {
+  const { child, logPath } = startDevRaw(env);
+  const exitCode = await waitForExit(child, EXIT_TIMEOUT_MS);
+  assert(exitCode !== 0 && exitCode !== null, 'dev must exit nonzero');
+  return readLog(logPath);
+}
+
+function assertNamesMissing(log: string, variable: string, service: string): void {
+  // In the structured frame the quotes around the service name arrive JSON-escaped.
+  const named = new RegExp(`${variable}\\s+\\(required by service \\\\?"${service}\\\\?"`);
+  assert(named.test(log), `the error must name ${variable} and service "${service}"`);
+  assert(
+    log.includes('export it in the shell you run `prisma dev` from'),
+    'the error must say how to set it in the shell',
+  );
+  assert(
+    log.includes('prisma.config.ts'),
+    'the error must say how to load it from prisma.config.ts',
+  );
+}
+
+interface BgStatus {
+  readonly apiKeySha256: string;
+  readonly hasWebhookSecret: boolean;
+}
+
+async function bgStatus(session: DevSession): Promise<BgStatus> {
+  const bkg = session.endpoints.find((e) => e.address === 'localdevs4fixture.bkg');
+  assert(bkg !== undefined, 'the bkg service must appear in the front door');
+  return waitForAsync(
+    () =>
+      fetch(`${bkg.url}/status`).then((r) => (r.ok ? (r.json() as Promise<BgStatus>) : undefined)),
+    15_000,
+  );
+}
+
 async function main(): Promise<void> {
   console.log(
-    'local dev (S5 proving): criteria 4 (bucket) and 5 (placeholder/env-param) against the S4 fixture',
+    'local dev (S5 proving): criteria 4 (bucket) and 5 (value sourcing) against the S4 fixture',
   );
 
-  fs.rmSync(path.join(integrationDir, '.prisma-composer'), { recursive: true, force: true });
-  fs.rmSync(path.join(integrationDir, '.alchemy'), { recursive: true, force: true });
+  fs.rmSync(path.join(fixtureDir, '.prisma-composer'), { recursive: true, force: true });
+  fs.rmSync(path.join(fixtureDir, '.alchemy'), { recursive: true, force: true });
+  fs.rmSync(envFile, { force: true });
 
   let session: DevSession | undefined;
   try {
-    // ——— Criterion 5a: the secret is unset — a placeholder warning, topology still serves ———
-    session = await startDevUntilReady(
+    // ——— Criterion 5: a required secret that is unset, then empty, stops dev ———
+    for (const value of [undefined, '']) {
+      const log = await expectPreflightFailure(
+        baseEnv({ ...GREETING, LOCALDEV_FIXTURE_API_KEY: value }),
+      );
+      assertNamesMissing(log, 'LOCALDEV_FIXTURE_API_KEY', 'localdevs4fixture.bkg');
+    }
+    console.log('[proving] PASS: a required secret that is unset or empty stops dev, naming it');
+
+    // ——— Criterion 5: a required env-sourced param that is unset stops dev ———
+    const paramLog = await expectPreflightFailure(
       baseEnv({
-        LOCALDEV_FIXTURE_API_KEY: undefined,
-        LOCALDEV_FIXTURE_GREETING: 'hi-from-s5-proving',
+        LOCALDEV_FIXTURE_API_KEY: 'a-real-looking-key',
+        LOCALDEV_FIXTURE_GREETING: undefined,
       }),
     );
-    console.log(`[proving] session 1 ready: ${JSON.stringify(session.endpoints)}`);
-    const log1 = readLog(session.logPath);
-    assert(
-      log1.includes(
-        '[dev] LOCALDEV_FIXTURE_API_KEY is not set in this shell — using a local placeholder. Anything that talks to the real service behind it will fail; everything else runs.',
-      ),
-      'the pinned placeholder warning must appear for the unset secret',
+    assertNamesMissing(paramLog, 'LOCALDEV_FIXTURE_GREETING', 'localdevs4fixture.bkg');
+    console.log('[proving] PASS: an unset env-sourced param stops dev, naming it');
+
+    // ——— Criterion 5: a value loaded by prisma.config.ts reaches the service; an unset optional secret arrives absent ———
+    fs.writeFileSync(envFile, 'LOCALDEV_FIXTURE_API_KEY=from-the-config-file\n');
+    session = await startDevUntilReady(
+      baseEnv({
+        ...GREETING,
+        LOCALDEV_FIXTURE_API_KEY: undefined,
+        LOCALDEV_FIXTURE_WEBHOOK_SECRET: undefined,
+      }),
     );
-    console.log('[proving] PASS criterion 5a: placeholder warning printed, topology still serves');
+    console.log(`[proving] session ready: ${JSON.stringify(session.endpoints)}`);
+    assertEqual(
+      await bgStatus(session),
+      { apiKeySha256: sha256('from-the-config-file'), hasWebhookSecret: false },
+      'the config-loaded value reaches bkg, and the unset optional secret arrives absent',
+    );
+    console.log(
+      '[proving] PASS: a config-loaded value reaches the service; an unset optional secret is absent',
+    );
 
     // ——— Criterion 4: bucket round-trip through the app ———
     const web = session.endpoints.find((e) => e.address === 'localdevs4fixture.web');
     assert(web !== undefined, 'the web service must appear in the front door');
-    if (web === undefined) throw new Error('unreachable');
 
     const putRes = await waitForAsync(
       () =>
@@ -300,7 +379,6 @@ async function main(): Promise<void> {
     assertEqual(onDisk, 'hello from the S5 bucket proof', 'the PUT object is a plain file on disk');
     console.log(`[proving] PASS criterion 4 (write direction): ${objectPath}`);
 
-    // Drop a file directly into the bucket directory, read it back through the app.
     const droppedPath = path.join(bucketDir, 'dropped-key.txt');
     fs.writeFileSync(droppedPath, 'dropped straight onto disk');
     const getRes = await waitForAsync(
@@ -308,9 +386,8 @@ async function main(): Promise<void> {
         fetch(`${web.url}/blobs/dropped-key.txt`).then((r) => (r.status === 200 ? r : undefined)),
       10_000,
     );
-    const getBody = await getRes.text();
     assertEqual(
-      getBody,
+      await getRes.text(),
       'dropped straight onto disk',
       'a file dropped on disk is readable back through the app',
     );
@@ -319,44 +396,47 @@ async function main(): Promise<void> {
     );
 
     await stopDev(session);
-    console.log('[proving] session 1 stopped cleanly on SIGINT');
+    session = undefined;
 
-    // ——— Criterion 5b: the envParam is unset — a hard error naming it, nonzero exit ———
-    const { child: child2, logPath: logPath2 } = startDevRaw(
+    // ——— Criterion 5: a changed value reaches the service on a warm start; an empty optional secret arrives absent ———
+    fs.rmSync(envFile, { force: true });
+    const webStateBefore = deploymentState('localdevs4fixture.web');
+    const bkgStateBefore = deploymentState('localdevs4fixture.bkg');
+    // An older prisma dev stored secret values here; starting dev must delete it.
+    fs.writeFileSync(path.join(devDir, 'secrets.json'), '{"LOCALDEV_FIXTURE_API_KEY":"old"}');
+    session = await startDevUntilReady(
       baseEnv({
-        LOCALDEV_FIXTURE_API_KEY: 'a-real-looking-key',
-        LOCALDEV_FIXTURE_GREETING: undefined,
+        ...GREETING,
+        LOCALDEV_FIXTURE_API_KEY: 'changed-in-the-shell',
+        LOCALDEV_FIXTURE_WEBHOOK_SECRET: '',
       }),
     );
-    const exitCode = await waitForExit(child2, EXIT_TIMEOUT_MS);
-    const log2 = readLog(logPath2);
-    assert(
-      exitCode !== 0 && exitCode !== null,
-      'dev must exit nonzero when a required envParam is unset',
+    assertEqual(
+      await bgStatus(session),
+      { apiKeySha256: sha256('changed-in-the-shell'), hasWebhookSecret: false },
+      'the changed value reaches bkg on a warm start, and the empty optional secret arrives absent',
     );
     assert(
-      log2.includes(
-        'local dev preflight failed — 1 env-sourced param(s) are not set in this shell:',
-      ),
-      'the pinned listing-error header must appear',
+      deploymentState('localdevs4fixture.bkg') !== bkgStateBefore,
+      'bkg, which reads the secret, is redeployed',
     );
-    assert(
-      // In the structured frame the quotes around the address arrive JSON-escaped.
-      /LOCALDEV_FIXTURE_GREETING\s+\(required by service \\?"localdevs4fixture\.bkg\\?"\)/.test(
-        log2,
-      ),
-      'the error must name LOCALDEV_FIXTURE_GREETING and the service that requires it',
-    );
-    assert(
-      log2.includes('Set each in the shell you run `prisma dev` from.'),
-      'the pinned fix instruction must appear',
+    assertEqual(
+      deploymentState('localdevs4fixture.web'),
+      webStateBefore,
+      'web, which does not read the secret, is not redeployed',
     );
     console.log(
-      `[proving] PASS criterion 5b: exit ${String(exitCode)}, pinned listing error naming LOCALDEV_FIXTURE_GREETING`,
+      '[proving] PASS: a changed value reaches only the service that reads it, on a warm start',
+    );
+
+    assert(
+      !fs.existsSync(path.join(devDir, 'secrets.json')),
+      'a secrets file left by an older prisma dev is deleted',
     );
 
     console.log('PASS: local dev (S5 proving) — criteria 4 and 5');
   } finally {
+    fs.rmSync(envFile, { force: true });
     if (session !== undefined) {
       await stopDev(session).catch(() => undefined);
     }
@@ -380,14 +460,21 @@ async function main(): Promise<void> {
           appName: 'localdevs4fixture',
           environment: 'dev',
         });
-        await dev.teardown({ container, environment: 'dev' });
+        // The teardown finds the dev state directory from the current directory.
+        const previousCwd = process.cwd();
+        process.chdir(fixtureDir);
+        try {
+          await dev.teardown({ container, environment: 'dev' });
+        } finally {
+          process.chdir(previousCwd);
+        }
       }
     } catch (error) {
       console.error(
         `[proving] final cleanup did not complete cleanly: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    const stray = spawnSync('pgrep', ['-f', `prisma dev ${fixtureEntry}`]);
+    const stray = spawnSync('pgrep', ['-f', `prisma dev --entry ${fixtureEntry}`]);
     for (const line of (stray.stdout?.toString() ?? '').split('\n')) {
       const pid = Number(line.trim());
       if (Number.isFinite(pid) && pid > 0) {

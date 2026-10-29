@@ -255,7 +255,7 @@ export interface LocalTargetAttachment {
 The Prisma Cloud target's `serve`:
 
 1. Finds the service's instance through the directory's record (`ensureServiceInstance(scope, address)`, which creates none here because the converge already did), taking its `id` and `port`.
-2. Materializes the deployment environment with the existing `materializeEnv(devDir, address, port)`: the service's own rows from `env.json` (`scopedEnvRows`), `COMPOSER_<ADDRESS>_PORT`, every value in `secrets.json`, and `PATH` and `HOME` from the shell.
+2. Materializes the deployment environment with the existing `materializeEnv(devDir, address, port)`: the service's own rows from `env.json` (`scopedEnvRows`), `COMPOSER_<ADDRESS>_PORT`, the current values of the variables its rows point at (every value in `secrets.json` until [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md)), and `PATH` and `HOME` from the shell.
 3. Applies the stash to it (next section), producing the address-free rows, `PORT` and `HOST`.
 4. Builds the command's environment as `{ ...process.env, ...materialized, ...stashed }`, in that order, dropping entries whose value is `undefined`.
 5. Calls `server.argv({ port, host: '0.0.0.0' })`.

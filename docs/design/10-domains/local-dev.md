@@ -104,8 +104,8 @@ already running. The environment name is what the local target's container
 and hooks receive, and it is Alchemy's stage, so Alchemy keeps each copy's
 state at `.alchemy/state/<app>/<environment>`. Every other local file that
 belongs to one copy lives in `.prisma-composer/dev/<environment>/`: the record
-of instances, the environment variable values, the placeholder secrets, the
-generated stack file, the artifacts and the bucket objects. The folder name is
+of instances, the environment variable values, the fingerprint key
+(ADR-0058), the generated stack file, the artifacts and the bucket objects. The folder name is
 the environment name, encoded, because an environment name may contain `/`.
 Alchemy keeps the stage `feature/x` inside the folder of the stage `feature`,
 so `--fresh` removes only the files directly in its own stage's folder.
@@ -367,9 +367,9 @@ are reused. A bucket's objects live in the environment's
 
 **Moving earlier local state into `dev`.** Releases before environments had
 their own local copies kept one record, one set of environment variable
-values, one set of placeholder secrets and one bucket folder for the whole
+values, one set of stored secret values and one bucket folder for the whole
 directory, directly in `.prisma-composer/dev/`. The first `prisma dev`,
-`dev url`, `dev stop` or `log` after the upgrade moves them into `.prisma-composer/dev/dev/`, so they become the
+`dev url`, `dev stop` or `log` after the upgrade moves them, except the stored secret values, which it deletes (ADR-0058), into `.prisma-composer/dev/dev/`, so they become the
 environment `dev` and its instances, ports, databases and bucket objects are
 kept. Alchemy's local state needs no move: those releases already ran as the
 stage `dev`. This reverses the earlier rule that local dev state is never
@@ -538,15 +538,13 @@ The same table the port's hand-rolled script implemented, now standard:
 | dependency connection values (URLs) | the local provider's resolved value, through the normal lowering |
 | service params | bound literals / defaults, identical to deploy |
 | `envParam` sources (ADR-0032) | the dev shell's environment, same names; missing → a hard error listing the names (params feed boot-time schema validation — junk there is a confusing crash, not a legible degraded mode) |
-| secrets (ADR-0029) | shell env if set; else a minted placeholder (persisted, stable across restarts) + one printed warning per slot |
+| secrets (ADR-0029, ADR-0058) | the run's environment variables: the shell, or a `.env` that `prisma.config.ts` loads. Unset or empty counts as missing. A missing secret the service's schema requires is a hard error naming the variable, the service and both ways to set it; a missing optional secret is left out of the service's input. No value is reused from an earlier run. |
 | minted needs (ADR-0030/0031: service keys, streams keys) | minted locally by the unchanged provisioners |
 | origin (ADR-0039) | `http://localhost:<port>` via the unchanged origin channel |
 
-The placeholder policy means a topology with a genuine external credential
-(an LLM API key, say) boots and serves everything that doesn't touch that
-credential; the paths that do touch it fail at the external service with the
-placeholder — exactly the degraded-but-running behavior local dev wants, with
-the warning naming the variable to export for full function.
+Whether a missing secret is required is decided by validation, not by reading the schema (ADR-0042): the dev preflight validates each service's input with every missing secret left out, and then with each one left out alone, and names as required only the secrets whose absence alone fails. The preflight sends the alchemy process, on the preflight transport, the names of the absent secrets and an HMAC-SHA256 fingerprint of the value of each variable that a service's input or params point at, keyed by the environment's own `.prisma-composer/dev/<environment>/fingerprint.key`. The serializer leaves out the absent secrets, and the fingerprint fills each deployment's `<name>:updatedAt` trigger member, so a value changed between two runs redeploys exactly the services that read it. The local `Deployment` provider reads current values from `process.env` and gives each service only the variables its own input and params point at.
+
+To load a `.env`, install the `dotenv` package in the app and put `import 'dotenv/config'` as the first line of `prisma.config.ts`. `process.loadEnvFile('.env')` works only when the CLI runs under Node: when the CLI was started through Bun, the converge runs under Bun, which does not implement it. A `.env` loaded this way is read by every `prisma` command, including `prisma deploy`, whose preflight uploads any secret the target environment does not have yet: keep local-only values out of it before deploying, or deploy from a shell where it is not loaded.
 
 ## Scheduled work
 
@@ -570,7 +568,7 @@ Deploy's rule holds: every failure names its fix.
 | the bucket emulator fails to start or report healthy | the instance name, its log file path, and the port it tried |
 | a `@prisma/dev` server fails to start | the underlying error, sanitized — connection-URL credentials are masked before embedding |
 | port conflict on a persisted allocation | which service, which port, and how to free or re-allocate (`--fresh`) |
-| secret slot unbound | warning (not an error) naming the env var and the placeholder behavior |
+| required secret unset or empty | hard error listing every missing variable, the service that needs it, the schema's message, and both ways to set it (shell, or a `.env` loaded by `prisma.config.ts`); an optional one is not an error |
 | env-sourced param unbound | hard error listing the missing names, deploy-preflight style |
 | a service exits before it listens, or does not listen within the readiness timeout | the address, the port, the exit code if it exited, and the log path; `dev` stops the app's services before it returns the failure |
 | an emulator does not accept connections (retried briefly; an error response from the emulator is never retried) | `DEV.EMULATOR_UNREACHABLE`, with the emulator's URL, from `dev` and `log` alike |
@@ -606,20 +604,7 @@ gaps found during implementation.)
 
 ## Proven against a real app
 
-The design's founding claim was proven against open-chat — a real,
-pre-existing Composer app in its own repo (chat service, Postgres, streams
-and storage modules), written before local dev existed. With no cloud
-credentials of any kind in the shell, `prisma dev`
-brought it up: sign-in worked, chat history loaded, and the live-tail
-stream delivered events. Chat generation failed at exactly one place — the
-outbound OpenRouter call — because the local run minted a placeholder for
-the `OPENROUTER_API_KEY` secret instead of demanding a real one: the
-designed failure boundary, observed end to end. The port itself was one
-commit: point the app's framework dependency at the build under test,
-switch its service to `node()`'s directory build form, fix a launcher path
-that only worked un-moved, catch up with two API changes — and delete the
-app's 169-line hand-rolled dev script, which the framework command
-replaces.
+The design's founding claim was proven against open-chat — a real, pre-existing Composer app in its own repo (chat service, Postgres, streams and storage modules), written before local dev existed. With no cloud credentials of any kind in the shell, `prisma dev` brought it up: sign-in worked, chat history loaded, and the live-tail stream delivered events. Chat generation failed at one place, the outbound OpenRouter call, because local dev at the time gave the unset `OPENROUTER_API_KEY` secret a made-up placeholder value. ADR-0058 removed placeholders: today that run stops at start with an error naming `OPENROUTER_API_KEY`, or, if the schema marks it optional, starts with the key absent. The port itself was one commit: point the app's framework dependency at the build under test, switch its service to `node()`'s directory build form, fix a launcher path that only worked un-moved, catch up with two API changes — and delete the app's 169-line hand-rolled dev script, which the framework command replaces.
 
 ## Known limitations (found while proving the implementation)
 
