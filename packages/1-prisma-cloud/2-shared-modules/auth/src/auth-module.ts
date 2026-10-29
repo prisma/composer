@@ -50,10 +50,10 @@ export function auth(opts?: AuthModuleOptions): ModuleNode<
         admin: authAdminContract,
       },
     },
-    ({ inputs, params, provision }) => {
+    ({ deps, params, provision }) => {
       const service = provision(authService(), {
         id: 'service',
-        deps: { db: inputs.db, email: inputs.email },
+        deps: { db: deps.db, email: deps.email },
         input: {
           baseUrl: params.baseUrl,
           secret: generatedParam(),

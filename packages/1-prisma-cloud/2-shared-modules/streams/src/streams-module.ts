@@ -29,10 +29,10 @@ export function streams(opts?: {
       deps: { store: s3() },
       expose: { streams: streamsProviderContract },
     },
-    ({ inputs, provision }) => {
+    ({ deps, provision }) => {
       const service = provision(streamsService(), {
         id: 'service',
-        deps: { store: inputs.store },
+        deps: { store: deps.store },
       });
       return { streams: service.streams };
     },

@@ -38,10 +38,10 @@ export function cron<
     name?: string;
   } & RunnerInput<I>,
 ): ModuleNode<RD, Record<never, never>> {
-  return module(opts.name ?? 'cron', { deps: opts.runner.inputs }, ({ inputs, provision }) => {
+  return module(opts.name ?? 'cron', { deps: opts.runner.inputs }, ({ deps, provision }) => {
     const runner = provision(opts.runner, {
       id: 'runner',
-      deps: inputs,
+      deps,
       ...(opts.input !== undefined ? { input: opts.input } : {}),
     });
     provision(cronScheduler(), {

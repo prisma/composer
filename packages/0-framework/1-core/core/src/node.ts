@@ -344,7 +344,7 @@ export interface ModuleNode<
 }
 
 /**
- * What a module's body receives: its declared inputs as forwardable wiring
+ * What a module's body receives: its declared dependencies as forwardable wiring
  * values, plus `provision` to register the owned services/modules it wires them into.
  */
 export interface ModuleContext<
@@ -352,8 +352,8 @@ export interface ModuleContext<
   S extends Secrets = Secrets,
   PN extends ParamNeeds = ParamNeeds,
 > {
-  /** The module's declared inputs as wiring values — pass them into provision(). */
-  readonly inputs: { [K in keyof D]: InputRef<D[K]> };
+  /** The module's declared dependencies as wiring values — pass them into provision(). */
+  readonly deps: { [K in keyof D]: InputRef<D[K]> };
   /** The module's declared secret slots as forwardable sources — pass them into a child's `secrets` (ADR-0029). */
   readonly secrets: { readonly [K in keyof S]: SecretSource };
   /** The module's declared param-forwarding slots as forwardable sources — pass them into a child's `params`. */
@@ -398,7 +398,7 @@ type ReqOf<DE> = DE extends DependencyEnd<any, infer Req> ? Req : never;
 /**
  * The producers that satisfy a node's declared dependency slots — one ref per
  * slot, checked against its required contract. A slot also accepts
- * `InputRef<D[K]>` so a module body can forward its own `ctx.inputs` straight
+ * `InputRef<D[K]>` so a module body can forward its own `ctx.deps` straight
  * into a nested `provision()` call — the same value shape a producer's own
  * exposed port carries.
  */

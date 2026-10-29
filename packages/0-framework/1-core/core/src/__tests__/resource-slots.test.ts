@@ -124,8 +124,8 @@ describe('a resource with a slot wired at construction', () => {
   });
 
   test("a forwarded module input wired into a resource's slot counts as used and authors the edge from the module's in port", () => {
-    const gateway = module('gateway', { deps: { api: httpDep() } }, ({ inputs, provision }) => {
-      provision(siteFor(inputs.api), { id: 'site' });
+    const gateway = module('gateway', { deps: { api: httpDep() } }, ({ deps, provision }) => {
+      provision(siteFor(deps.api), { id: 'site' });
     });
     const root = module('shop', ({ provision }) => {
       const web = provision(webService(), { id: 'web' });

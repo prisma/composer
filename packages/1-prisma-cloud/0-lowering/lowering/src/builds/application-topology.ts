@@ -26,6 +26,7 @@ export interface ApplicationTopologyNodeBody {
 export interface ApplicationTopologyPortBody {
   /** The OWNING node's logical id. */
   readonly logicalId: string;
+  /** `in` is a dependency of the node, `out` an interface it exposes (ADR-0063). */
   readonly direction: 'in' | 'out';
   readonly name: string;
   readonly contractKind?: string;
