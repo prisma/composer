@@ -134,6 +134,8 @@ export interface PreflightInput<C = unknown> {
   readonly container: ContainerInstance | undefined;
   /** The environment name. */
   readonly environment: string;
+  /** The pools the command read for this environment. Preflight fills a missing `envSecret()` platform variable from `pools.secrets` and an `envParam()` param's from `pools.config`. */
+  readonly pools: ConfigPools;
   /** What the caller has already authenticated, for the platform calls preflight makes. Absent means the extension falls back to its own credential protocol. */
   readonly credentials?: ContainerCredentials<C> | undefined;
   /** Hands the deploy's progress output what the check covered, as counts (e.g. `{ checked: 53, filled: 0, missing: 0 }`). Counts only: never a name or a value. */
@@ -326,6 +328,8 @@ export interface LocalTargetProvidersInput {
   readonly container: ContainerInstance | undefined;
   /** Absolute path of the environment's dev state directory (`devEnvironmentDir`, under the cwd). */
   readonly devDir: string;
+  /** The pools the command read for this environment. A local deployment takes the values its rows point at from them. */
+  readonly pools: ConfigPools;
 }
 
 export interface LocalTargetEmulatorsInput {
@@ -340,6 +344,8 @@ export interface LocalTargetAttachInput {
   readonly container: ContainerInstance | undefined;
   /** Absolute path of the environment's dev state directory (`devEnvironmentDir`, under the cwd). */
   readonly devDir: string;
+  /** The pools the command read for this environment. A local deployment takes the values its rows point at from them. */
+  readonly pools: ConfigPools;
 }
 
 export interface LocalTargetAttachment {
@@ -422,16 +428,52 @@ export type NodeDescriptor =
       serve?(input: ServeInput): Promise<DevServer | undefined>;
     };
 
+/** What a config adapter receives (ADR-0062). */
+export interface ConfigAdapterInput {
+  /** The environment's name, as `--environment` gave it. */
+  readonly environment: string;
+  /** The absolute directory of the prisma.config.ts that declares the `composer` section. A file adapter reads its files relative to it (ADR-0004). */
+  readonly configDirectory: string;
+}
+
+/** The values one adapter returns, by name. */
+export type ConfigValues = Readonly<Record<string, unknown>>;
+
+/**
+ * A function in the `config` or `secrets` list of the `composer` section (ADR-0062):
+ * it receives the environment and returns that environment's values. Composer calls it
+ * in the CLI and again in the deploy engine's process, so it must return the same
+ * values for the same environment both times.
+ */
+export type ConfigAdapter = (input: ConfigAdapterInput) => ConfigValues | Promise<ConfigValues>;
+
+/** What the `config` adapters return, merged by top-level key, a later adapter winning: the root's input, and what `envParam()` reads. */
+export type ConfigPool = Readonly<Record<string, unknown>>;
+
+/** What the `secrets` adapters return, merged the same way. Every value is text. Only preflight and local dev read it; it is never logged, reported or written anywhere but the platform variable it fills. */
+export type SecretsPool = Readonly<Record<string, string>>;
+
+/** The two pools one command read for one environment. */
+export interface ConfigPools {
+  readonly config: ConfigPool;
+  readonly secrets: SecretsPool;
+}
+
 /**
  * The config file's default export. `extensions` lists every extension the
  * app deploys through; `state` is the ONE state store per deploy — explicit,
- * platform-agnostic, never defaulted by an extension.
+ * platform-agnostic, never defaulted by an extension. `config` and `secrets`
+ * list the adapters the two pools come from.
  */
 export interface PrismaAppConfig {
   /** The module whose default export is the app root, relative to `prisma.config.ts`. `--entry` overrides it. */
   readonly entry?: string;
   readonly extensions: ExtensionDescriptor[];
   readonly state: StateDescriptor;
+  /** Where the config pool comes from. Defaults to `[environmentVariables()]`; a list given here replaces the default. */
+  readonly config?: readonly ConfigAdapter[];
+  /** Where the secrets pool comes from. Defaults to `[environmentVariables()]`; a list given here replaces the default. */
+  readonly secrets?: readonly ConfigAdapter[];
 }
 
 /** Typed identity — exists so the `composer` section of `prisma.config.ts` gets checked against PrismaAppConfig where it is written. */
