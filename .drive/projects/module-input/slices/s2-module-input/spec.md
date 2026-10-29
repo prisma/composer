@@ -661,7 +661,7 @@ All in the same pull request. The repo rule `.agents/rules/user-facing-surface-c
 
 In: everything above, in `packages/0-framework/1-core/core`, the serializer fix and two tests in `packages/1-prisma-cloud/1-extensions/target`, `docs/`, `skills/`.
 
-Out: a root's `input` and the config adapters (S4); `envParam()` and `envSecret()` as values, a pointer that throws when used as text, and `resolve()` returning a pointer (S3); removing `params`, `paramNeed()`, `secrets` and the module form of `secret()`, and migrating `auth()`, `email()` and the examples (S5); the serializer's morph problem (§ 7); widening `ParamBindings` or `ResourcePropsMember` to optional or secret values; carrying validated module inputs on the `Graph`.
+Out: a root's `input` and the config adapters (S4); `envParam()` and `envSecret()` as values, a pointer that throws when used as text, and `resolve()` returning a pointer (S3); removing `params`, `paramNeed()`, `secrets` and the module form of `secret()`, and migrating `auth()`, `email()` and the examples (S5); widening `ParamBindings` or `ResourcePropsMember` to optional or secret values; carrying validated module inputs on the `Graph`.
 
 ## 10. Tests
 
