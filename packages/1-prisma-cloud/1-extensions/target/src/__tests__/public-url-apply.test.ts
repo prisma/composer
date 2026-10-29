@@ -19,6 +19,7 @@ import { publicUrlDescriptor } from '../descriptors/public-url.ts';
 import { publicUrl } from '../public-url.ts';
 
 const APP_ID = 'app_1';
+const OTHER_APP_ID = 'app_2';
 const BRANCH_ID = 'br_default';
 
 interface FakePlatform {
@@ -155,7 +156,7 @@ const build = {
 const web = compute({ name: 'web', deps: {}, build, expose: { http: rawHttpContract } });
 
 /** The public URL's lowering, as core runs it after the target service's deploy. */
-function program(hostname: string) {
+function program(hostname: string, serviceId = APP_ID) {
   const graph = Load(
     module('shop', ({ provision }) => {
       const svc = provision(web);
@@ -168,7 +169,7 @@ function program(hostname: string) {
     address: 'shop.site',
     node: site?.node,
     graph,
-    lowered: new Map([['shop.web', { serviceId: APP_ID, url: 'https://app_1.cdg.prisma.build' }]]),
+    lowered: new Map([['shop.web', { serviceId, url: `https://${serviceId}.cdg.prisma.build` }]]),
   } as unknown as LowerContext;
   const lowering = publicUrlDescriptor();
   if (lowering.kind !== 'resource') throw new Error('expected a resource descriptor');
@@ -227,5 +228,24 @@ describe('a hostname public URL under the Alchemy apply engine', () => {
     expect(create).toBeGreaterThanOrEqual(0);
     expect(remove).toBeGreaterThan(create);
     expect([...platform.domains.values()].map((d) => d.hostname)).toEqual(['new.shop.com']);
+  });
+
+  test('moving a hostname to another service is refused and leaves the serving custom domain alone', async () => {
+    const { platform, options } = fakePlatform([]);
+    const stack = Core.scratchStack(options, 'public-url-move');
+
+    await Core.run(stack.deploy(program('shop.com')), options);
+    platform.requests.length = 0;
+    const moved = await Core.run(
+      Effect.exit(stack.deploy(program('shop.com', OTHER_APP_ID))),
+      options,
+    );
+
+    expect(Exit.isFailure(moved)).toBe(true);
+    expect(failureText(moved)).toContain("Prisma cannot atomically replace custom domain 'shop.com'");
+    expect(platform.requests.filter((r) => !r.startsWith('GET'))).toEqual([]);
+    expect([...platform.domains.values()].map((d) => [d.hostname, d.appId])).toEqual([
+      ['shop.com', APP_ID],
+    ]);
   });
 });
