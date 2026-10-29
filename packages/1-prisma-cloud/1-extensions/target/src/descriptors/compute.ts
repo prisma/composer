@@ -11,6 +11,7 @@ import * as Output from 'alchemy/Output';
 import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
+import { DeploymentArtifact } from '../deployment-artifact.ts';
 import { GeneratedParam } from '../generated-param-resource.ts';
 import {
   fromLegacyId,
@@ -255,6 +256,8 @@ export function computeDescriptor(
           svc,
           address,
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
+          undefined,
+          o().environmentSet?.() !== undefined,
         );
         if (inputRow !== undefined) {
           // Each `$secret` pointer in the document names an OPERATOR-owned
@@ -429,6 +432,7 @@ export function computeDescriptor(
           ),
         };
         const app = graph.root.id;
+        const environmentSet = o().environmentSet?.();
         const deployment = yield* Prisma.Deployment(resourceId(address, 'deployment'), {
           // `app` carries the ordering edge on serialize's variable writes as
           // well as the app id — see `appAfterEnvironment` for why it is the
@@ -447,26 +451,50 @@ export function computeDescriptor(
           // Route to the port the app actually binds (the service's `port`
           // param, resolved by serialize) — not a hardcoded constant.
           portMapping: { http: serialized.port },
-          // A Composer deploy always ships: upload the artifact, wait for it
-          // to run, then move the app's stable endpoint onto it. Neither is
-          // configurable — "deployed but not serving" is not a state Composer
-          // expresses.
-          start: true,
-          promote: true,
+          // Named sets record the completed upload before release can fail.
+          start: environmentSet === undefined,
+          promote: environmentSet === undefined,
         }).pipe(fromLegacyId(legacyNodeResourceId(app, address, 'deploy')));
+        const registered =
+          environmentSet === undefined
+            ? undefined
+            : yield* DeploymentArtifact(resourceId(address, 'artifact'), {
+                deploymentId: Output.map(
+                  Output.of(deployment),
+                  (uploaded) => uploaded.deploymentId,
+                ),
+                artifactHash: artifact.sha256,
+                requiredEnvironmentVariables: [...environmentSet.keys],
+                release: environmentSet.missing.length === 0,
+              });
+        const endpoint =
+          registered === undefined
+            ? deployment.appEndpointDomain
+            : Output.flatMap(
+                Output.all(Output.of(registered), provisioned.endpointDomain),
+                ([, domain]) => Output.literal(domain),
+              );
         // `url` IS published here: a Compute service's deployed URL is a
         // public endpoint, and this descriptor is the only party that knows
         // that. Both fields are still unresolved Output references at this
         // point — apply resolves them before the report's runner sees them.
         //
         return {
-          outputs: { url: deployment.appEndpointDomain, projectId: provisioned.projectId },
+          outputs: { url: endpoint, projectId: provisioned.projectId },
           entities: [
             {
               kind: 'compute-service',
               id: provisioned.serviceId,
-              url: deployment.appEndpointDomain,
+              url: endpoint,
               ...inputDetails(serialized),
+              ...(registered === undefined
+                ? {}
+                : {
+                    details: {
+                      ...inputDetails(serialized).details,
+                      Configuration: registered.consoleUrl,
+                    },
+                  }),
             },
           ],
         };

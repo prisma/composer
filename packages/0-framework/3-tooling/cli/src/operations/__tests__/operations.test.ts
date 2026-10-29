@@ -737,6 +737,40 @@ describe('deploy()', () => {
     expect(fs.existsSync(path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'))).toBe(false);
   });
 
+  test('a recoverable preflight failure is returned after apply completes and marks the run unsuccessful', async () => {
+    const app = makeAppDir('recoverable-configuration');
+    let applied = false;
+    const failure = new CliStructuredError('DEPLOY.CONFIGURATION_REQUIRED', 'TOKEN needs a value.');
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(
+            fakeConfig({
+              preflight: async (input) => {
+                input.deferFailure?.(failure);
+                return 'metadata';
+              },
+            }),
+          ),
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => {
+            applied = true;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+    expect(applied).toBe(true);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure).toBe(failure);
+  });
+
   test('an alchemy exit 42 is an execution failure carrying the exit code and both hint fields', async () => {
     const app = makeAppDir();
 

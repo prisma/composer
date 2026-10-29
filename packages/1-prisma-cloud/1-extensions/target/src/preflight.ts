@@ -339,7 +339,7 @@ function envKeyClashError(
   );
 }
 
-async function managementClient(): Promise<ManagementApiClient> {
+export async function managementClient(): Promise<ManagementApiClient> {
   if ((process.env['PRISMA_SERVICE_TOKEN'] ?? '').length === 0) throw tokenRequiredError();
   return Effect.runPromise(
     Effect.gen(function* () {

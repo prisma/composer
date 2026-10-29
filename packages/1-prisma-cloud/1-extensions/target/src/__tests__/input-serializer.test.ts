@@ -463,3 +463,27 @@ describe('the pointer-name collision guard (ADR-0041, F02)', () => {
     expect([...sentinels.values()]).toEqual(['MY_SECRET']);
   });
 });
+
+describe('named-set runtime parameters', () => {
+  test('keeps a pointer instead of freezing the deploy shell and validates the configured value at boot', async () => {
+    const node = svc(type({ greeting: 'string', $param: 'string' }));
+    const row = serializeInput(
+      node,
+      'web',
+      { greeting: envParam('NAMED_GREETING'), $param: 'literal' },
+      { NAMED_GREETING: 'old-shell' },
+      true,
+    )!;
+    expect(JSON.parse(row.value)).toEqual({
+      greeting: { $param: 'NAMED_GREETING' },
+      $$param: 'literal',
+    });
+    expect(row.value).not.toContain('old-shell');
+    await withEnv({ [inputKey('web')]: row.value, NAMED_GREETING: 'configured-later' }, () => {
+      expect(readInput(node, 'web')).toEqual({ greeting: 'configured-later', $param: 'literal' });
+    });
+    await withEnv({ [inputKey('web')]: row.value, NAMED_GREETING: '' }, () => {
+      expect(readInput(node, 'web')).toEqual({ greeting: '', $param: 'literal' });
+    });
+  });
+});

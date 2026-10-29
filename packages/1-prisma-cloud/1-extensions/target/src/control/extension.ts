@@ -3,7 +3,11 @@
  * @internal/lowering is imported; loaded only by `prisma.config.ts`.
  */
 
-import type { ExtensionDescriptor, StateDescriptor } from '@internal/core/config';
+import {
+  type ExtensionDescriptor,
+  readPreflightPayload,
+  type StateDescriptor,
+} from '@internal/core/config';
 import type { ProvisionerDescriptor } from '@internal/core/deploy';
 import { blindCast } from '@internal/foundation/casts';
 import * as Prisma from '@internal/lowering';
@@ -18,6 +22,7 @@ import {
   PRISMA_CLOUD_EXTENSION_ID,
   prismaCloudContainerOf,
 } from '../container.ts';
+import { DeploymentArtifactProvider } from '../deployment-artifact.ts';
 import { bucketDescriptor } from '../descriptors/bucket.ts';
 import { computeDescriptor } from '../descriptors/compute.ts';
 import { postgresDescriptor } from '../descriptors/orm-postgres.ts';
@@ -30,12 +35,17 @@ import type {
   ResolvedCloudOptions,
   ServiceProviderParam,
 } from '../descriptors/shared.ts';
+import {
+  type EnvironmentSetSelection,
+  runEnvironmentSetPreflight,
+} from '../environment-set-preflight.ts';
+import { type RuntimeEnvironmentSet, readEnvironmentSetState } from '../environment-set-state.ts';
 import { GeneratedParamProvider } from '../generated-param-resource.ts';
 import { fromLegacyId, legacyServiceKeyId, legacyStreamsKeyId } from '../legacy-resource-ids.ts';
 import { SELF_ORIGIN } from '../origin-key.ts';
 import { OrmMigrationProvider } from '../orm-migration-resource.ts';
 import { PgWarmProvider } from '../pg-warm-resource.ts';
-import { type PrismaCloudPreflightInput, runPreflight } from '../preflight.ts';
+import type { PrismaCloudPreflightInput } from '../preflight.ts';
 import { RESERVED_PROVIDER_PARAMS } from '../provider-params.ts';
 import { prismaCloudReporter } from '../reporting/reporter.ts';
 import { resourceId } from '../resource-ids.ts';
@@ -187,11 +197,16 @@ export interface PrismaCloudOptions {
   workspaceId?: string;
   /** Defaults to the PRISMA_REGION environment variable when set. */
   region?: Prisma.ProjectRegion;
+  /** Named user values shared by branches. Defaults to the branch selection, or default for new projects. */
+  environmentSet?: EnvironmentSetSelection;
 }
 
 /** Prisma.providers()'s ProviderCollection doesn't structurally unify with Alchemy's inferred providers Layer (a @internal/lowering typings gap); it satisfies it at runtime. */
 function asProvidersLayer<A, E, R>(layer: Layer.Layer<A, E, R>): Layer.Layer<never> {
-  return layer as unknown as Layer.Layer<never>;
+  return blindCast<
+    Layer.Layer<never>,
+    'upstream Prisma providers satisfy the Alchemy provider collection at runtime; their inferred service union does not unify'
+  >(layer);
 }
 
 /**
@@ -315,10 +330,11 @@ function resolveOptions(opts: PrismaCloudOptions): Omit<ResolvedCloudOptions, 'p
 function lazyOptions(
   opts: PrismaCloudOptions,
   pointerUpdatedAt: PointerUpdatedAt,
+  environmentSet: () => RuntimeEnvironmentSet | undefined,
 ): () => ResolvedCloudOptions {
   let cached: ResolvedCloudOptions | undefined;
   return () => {
-    cached ??= { ...resolveOptions(opts), pointerUpdatedAt };
+    cached ??= { ...resolveOptions(opts), pointerUpdatedAt, environmentSet };
     return cached;
   };
 }
@@ -331,7 +347,14 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
   // the alchemy process (no preflight) the lookup falls back to what the CLI
   // transported (pointer-timestamps.ts).
   const preflightTimestamps = new Map<string, string>();
-  const o = lazyOptions(opts, pointerUpdatedAtLookup(preflightTimestamps, process.env));
+  let environmentSet: RuntimeEnvironmentSet | undefined;
+  const o = lazyOptions(
+    opts,
+    pointerUpdatedAtLookup(preflightTimestamps, process.env),
+    () =>
+      environmentSet ??
+      readEnvironmentSetState(readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, process.env)),
+  );
 
   return {
     id: PRISMA_CLOUD_EXTENSION_ID,
@@ -341,13 +364,13 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     providers: () =>
       asProvidersLayer(
         Layer.mergeAll(
-          Prisma.providers(),
           PgWarmProvider(),
           OrmMigrationProvider(),
           S3CredentialsProvider(),
           GeneratedParamProvider(),
+          DeploymentArtifactProvider(),
           Prisma.ServiceKeyProvider(),
-        ),
+        ).pipe(Layer.provideMerge(Prisma.providers())),
       ),
 
     // Deploy-time prerequisite check (ADR-0029): verify every pointer secret in
@@ -358,9 +381,13 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // recovers this extension's own client type from the framework's erased
     // one; without it `input.credentials` arrives as `unknown`.
     preflight: (input: PrismaCloudPreflightInput) =>
-      runPreflight(input).then((timestamps) => {
-        for (const [name, updatedAt] of timestamps) preflightTimestamps.set(name, updatedAt);
-        return serializePointerUpdatedAt(timestamps);
+      runEnvironmentSetPreflight(input, opts.environmentSet).then((result) => {
+        preflightTimestamps.clear();
+        for (const [name, updatedAt] of result.timestamps) preflightTimestamps.set(name, updatedAt);
+        environmentSet = result.environmentSet;
+        return environmentSet === undefined
+          ? serializePointerUpdatedAt(result.timestamps)
+          : JSON.stringify({ timestamps: Object.fromEntries(result.timestamps), environmentSet });
       }),
 
     // Records the deploy as a Build so it appears in the Console, and passes

@@ -275,6 +275,16 @@ Cloud's; Composer uses neither
 and
 [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md).
 
+### Environment set — Prisma Cloud
+
+A project-owned, named collection of user-provided environment variables. An
+environment selects one set through the Prisma Cloud target's deploy
+configuration; multiple environments can share it. A set is distinct from the
+environment that consumes it: it owns neither compute nor data nor deploy state.
+New projects start with one shared `default` set. Generated resource credentials
+and `COMPOSER_*` wiring remain branch-scoped. See
+[ADR-0060](../90-decisions/ADR-0060-environments-select-named-sets-and-retain-incomplete-deployments.md).
+
 ### Container — Project / Branch
 
 The two Prisma Cloud objects an environment resolves to before Alchemy runs:

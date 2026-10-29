@@ -319,6 +319,30 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/deployment-artifact.ts",
+      "domain": "prisma-cloud",
+      "layer": "extensions",
+      "plane": "control"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/environment-set-api.ts",
+      "domain": "prisma-cloud",
+      "layer": "extensions",
+      "plane": "control"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/environment-set-preflight.ts",
+      "domain": "prisma-cloud",
+      "layer": "extensions",
+      "plane": "control"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/environment-set-state.ts",
+      "domain": "prisma-cloud",
+      "layer": "extensions",
+      "plane": "control"
+    },
+    {
       "glob": "packages/1-prisma-cloud/1-extensions/target/src/preflight.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
