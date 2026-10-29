@@ -14,6 +14,7 @@
  * through index.ts) — it must never import `@internal/lowering` or `effect`.
  */
 import type { Graph } from '@internal/core';
+import { slotsOf } from '@internal/core';
 
 /** One faceted dependency edge: a consumer input whose param carries a provisioning need. */
 export interface ProvisionedEdge {
@@ -40,7 +41,7 @@ export function provisionedEdges(graph: Graph): readonly ProvisionedEdge[] {
     if (consumer === undefined || (consumer.kind !== 'service' && consumer.kind !== 'resource')) {
       continue;
     }
-    const slot = consumer.inputs[edge.input];
+    const slot = slotsOf(consumer)[edge.input];
     if (slot === undefined) continue;
 
     for (const param of Object.values(slot.connection.params)) {

@@ -933,3 +933,8 @@ export function isNode(
     (value as Record<PropertyKey, unknown>)[NODE] === true
   );
 }
+
+/** A node's dependency slots. A resource node built by another installed copy of core may have no `inputs`; that means none. */
+export function slotsOf(node: ServiceNode | ResourceNode): ServiceNode['inputs'] {
+  return node.kind === 'resource' ? (node.inputs ?? {}) : node.inputs;
+}

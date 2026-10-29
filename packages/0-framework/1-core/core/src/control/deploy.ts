@@ -15,6 +15,7 @@ import {
   type ProvisionNeed,
   type ResourceNode,
   type ServiceNode,
+  slotsOf,
 } from '../node.ts';
 import type {
   ContainerInstance,
@@ -704,7 +705,7 @@ export function lowering(
       if (consumer === undefined || (consumer.kind !== 'service' && consumer.kind !== 'resource')) {
         continue;
       }
-      const slot = consumer.inputs[edge.input];
+      const slot = slotsOf(consumer)[edge.input];
       if (slot === undefined) continue;
       const provisionedParams = Object.entries(slot.connection.params).filter(
         ([, param]) => param.provision !== undefined,

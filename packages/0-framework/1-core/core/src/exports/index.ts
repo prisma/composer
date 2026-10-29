@@ -81,6 +81,7 @@ export {
   secret,
   secretSource,
   service,
+  slotsOf,
 } from '../node.ts';
 export type { EnvironmentFacts, PlainData, RealValuesOf, Value } from '../value.ts';
 export { isValue, resolve } from '../value.ts';

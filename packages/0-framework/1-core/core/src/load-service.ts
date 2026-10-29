@@ -7,7 +7,7 @@ import {
   LoadError,
   type NodeId,
 } from './graph-types.ts';
-import { isNode, type ModuleNode, type ResourceNode, type ServiceNode } from './node.ts';
+import { isNode, type ModuleNode, type ResourceNode, type ServiceNode, slotsOf } from './node.ts';
 import { topoSort } from './toposort.ts';
 
 /**
@@ -51,9 +51,6 @@ export function boundaryPortsOf(
 }
 
 /** A resource node built by another installed copy of core may have no `inputs`; it has no slots. */
-function slotsOf(node: ServiceNode | ResourceNode): ServiceNode['inputs'] {
-  return node.kind === 'resource' ? (node.inputs ?? {}) : node.inputs;
-}
 
 export function slotNodesAndEdges(
   node: ServiceNode | ResourceNode,
