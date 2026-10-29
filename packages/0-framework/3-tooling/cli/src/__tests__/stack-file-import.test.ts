@@ -43,7 +43,7 @@ function runStack(stackFile: string) {
 }
 
 describe('the generated stack files, evaluated', () => {
-  test('the deploy stack passes the composer export of prisma.config.ts the environment and the process environment as the config pool to lower()', () => {
+  test('the deploy stack passes the composer export of prisma.config.ts, the environment, and the process environment as the config pool, to lower()', () => {
     expect(runStack(writeStackFile(stackInput))).toEqual({
       app: 'fixture-module',
       extensions: ['fixture-extension'],
@@ -53,7 +53,7 @@ describe('the generated stack files, evaluated', () => {
     });
   });
 
-  test('the dev stack passes the composer export of prisma.config.ts the environment and the process environment as the config pool to lower()', () => {
+  test('the dev stack passes the composer export of prisma.config.ts, the environment, and the process environment as the config pool, to lower()', () => {
     expect(runStack(writeDevStackFile(stackInput))).toEqual({
       app: 'fixture-module',
       extensions: ['fixture-extension'],

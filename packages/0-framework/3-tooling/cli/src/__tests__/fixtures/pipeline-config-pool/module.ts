@@ -38,8 +38,8 @@ export default module('pipeline-config-pool-fixture', ({ provision }) => {
   provision(greeter, {
     input: {
       greeting: paramSource<{ name: string }, string>(
-        { name: 'S3_PIPELINE_PROBE' },
-        { poolKey: 'S3_PIPELINE_PROBE' },
+        { name: 'CONFIG_POOL_PROBE' },
+        { poolKey: 'CONFIG_POOL_PROBE' },
       ),
     },
   });
