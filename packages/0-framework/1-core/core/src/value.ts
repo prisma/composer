@@ -18,7 +18,7 @@ export type ValueOrigin<T> =
   | {
       readonly kind: 'environment';
       /** Which deploy-time fact of the environment this is. Only the name exists today. */
-      readonly fact: 'name';
+      readonly fact: keyof EnvironmentFacts;
     }
   | {
       readonly kind: 'computed';
@@ -117,6 +117,11 @@ export interface EnvironmentFacts {
   /** The environment's name, as `--environment` gave it. */
   readonly name: Value<string>;
 }
+
+/** The real values of the environment facts: what Load is given for the environment being loaded. */
+export type EnvironmentRealValues = {
+  readonly [K in keyof EnvironmentFacts]: EnvironmentFacts[K] extends Value<infer T> ? T : never;
+};
 
 /** The one `environment` object every module body receives. */
 export const environmentFacts: EnvironmentFacts = Object.freeze({

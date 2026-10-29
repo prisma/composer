@@ -1,9 +1,17 @@
 import { CliStructuredError } from '@internal/foundation/errors';
 import type { ContractStyle } from './contract.ts';
 import type { DependencyEnd, InputBinding, ModuleNode, ResourceNode, ServiceNode } from './node.ts';
+import type { EnvironmentRealValues } from './value.ts';
 
 /** Path-derived: root-scope children are bare ids ("auth", "db"); a nested module's own children dot-join under its address ("auth.db"). */
 export type NodeId = string;
+
+export interface LoadOptions {
+  /** The root's address: the app name. Defaults to the root's `name`. */
+  readonly id?: NodeId;
+  /** The facts of the environment being loaded. `name` is what `--environment` gave. Required by any value over `environment.name`. */
+  readonly environment?: EnvironmentRealValues;
+}
 
 export interface GraphNode {
   readonly id: NodeId;

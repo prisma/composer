@@ -1,6 +1,5 @@
 import { blindCast } from '@internal/foundation/casts';
 import { contractStyleOf } from './contract.ts';
-import type { LoadOptions } from './graph.ts';
 import {
   type AuthoredEdge,
   type BoundaryPort,
@@ -8,6 +7,7 @@ import {
   type Graph,
   type GraphNode,
   LoadError,
+  type LoadOptions,
   type NodeId,
   type ParamBinding,
   type PortEndpoint,

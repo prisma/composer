@@ -6,7 +6,13 @@ import {
   type ServiceInputBinding,
 } from './graph-types.ts';
 import { isParamSource, isSecretSource, type ResourceNode, type ResourceProps } from './node.ts';
-import { isPlainObject, isValue, originOf, type Value } from './value.ts';
+import {
+  type EnvironmentRealValues,
+  isPlainObject,
+  isValue,
+  originOf,
+  type Value,
+} from './value.ts';
 
 export interface ValueBindingSite {
   /** The address of the node the binding belongs to. */
@@ -159,7 +165,7 @@ function substitute(
  * returns each binding with its values replaced by their real values.
  */
 export function resolveValues(input: {
-  readonly environment: { readonly name: string } | undefined;
+  readonly environment: EnvironmentRealValues | undefined;
   readonly inputBindings: readonly ServiceInputBinding[];
   readonly params: readonly ParamBinding[];
   readonly resources: ReadonlyMap<NodeId, ResourceNode>;

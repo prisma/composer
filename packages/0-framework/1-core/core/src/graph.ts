@@ -1,4 +1,4 @@
-import { type Graph, LoadError, type NodeId } from './graph-types.ts';
+import { type Graph, LoadError, type LoadOptions } from './graph-types.ts';
 import { loadModule } from './load-module.ts';
 import { loadService } from './load-service.ts';
 import { isNode, type ModuleNode, type ServiceNode } from './node.ts';
@@ -9,19 +9,13 @@ export type {
   Edge,
   Graph,
   GraphNode,
+  LoadOptions,
   NodeId,
   ParamBinding,
   PortEndpoint,
   ServiceInputBinding,
 } from './graph-types.ts';
 export { LoadError, RESOURCE_OUT_PORT } from './graph-types.ts';
-
-export interface LoadOptions {
-  /** The root's address: the app name. Defaults to the root's `name`. */
-  readonly id?: NodeId;
-  /** The facts of the environment being loaded. `name` is what `--environment` gave. Required by any value over `environment.name`. */
-  readonly environment?: { readonly name: string };
-}
 
 const APP_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
