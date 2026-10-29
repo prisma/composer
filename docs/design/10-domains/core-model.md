@@ -393,7 +393,7 @@ function service<D extends Deps, P extends Params>(def: {
   build: BuildAdapter
 }): ServiceNode<D, P>   // the pack wraps this and returns its runnable/loadable subclass
 
-function module(name: string, body: (h: ModuleBuilder) => void): ModuleNode   // body runs at Load, not here
+function module(name: string, boundary: { deps?, input?, expose? }, body: (ctx: ModuleContext) => ModuleOutputs): ModuleNode   // body runs at Load, not here
 ```
 
 `service()` freezes `inputs`/`params`/`build`; `dependency()` freezes the
@@ -464,7 +464,10 @@ as from inside a `resolve()` function, is a LoadError, because a value can
 configure a node but never change the graph's structure. Load then collects
 every value in a service's input binding, a service's param bindings and a
 resource's `props`, resolves each one dependency-first and once, and
-substitutes the real values. A value over `environment.name` takes the name
+substitutes the real values. An input field of a module takes its real value
+from that module's input binding, resolved and then validated by the module's
+schema; every module's binding is validated once, parents first, before any
+service binding is resolved. A value over `environment.name` takes the name
 from `opts.environment`; a computed value runs its `fn` with its
 dependencies' real values. A resource whose `props` held a value appears in
 the graph as a copy that keeps its prototype. The errors name the binding the

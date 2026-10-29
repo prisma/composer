@@ -159,7 +159,8 @@ Rules that bite:
 5. **A Module forwards a secret need without learning the platform name.**
    Declare `secrets: { signingKey: secret() }` on the Module boundary and
    pass the forwarded ref as a binding leaf; the parent binds the real
-   source.
+   source. A module can instead declare `input` with a `secretString()`
+   field and pass that field on.
 6. `input.apiKey.expose()` is the only way to a secret's value; the box
    redacts everywhere else (logs, JSON, errors).
 
@@ -167,6 +168,7 @@ Rules that bite:
 
 The graph is the same in every environment; only configuration may differ.
 
+- A module declares `input` (one Standard Schema) as a service does; `provision(module, { input })` binds it, and the body receives each field as a value it can pass into a binding or list in `resolve()`. A root cannot declare `input` yet, and a module's `input` takes no `envParam()` yet.
 - The module body receives `environment`; `environment.name` is a value standing for the name `--environment` gave (`production` for `prisma deploy`, `dev` for `prisma dev` by default).
 - `resolve([deps], ([values]) => …)` from `@prisma/composer` returns a computed value; `fn` receives the dependencies' real values as one tuple.
 - A value is accepted as a leaf of a service's `input` binding, at any depth, or as a service param. Never as a provision id, a `deps` entry, or a module's `secrets` or `params` binding.

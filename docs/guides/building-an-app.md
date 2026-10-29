@@ -361,8 +361,8 @@ outermost Module, with no boundary at all.
   module named `auth` would read as `auth.auth`).
 - `deps` — a value for each declared dependency slot: another provision, or
   an exposed port.
-- `input` — the service's input binding ([below](#service-input)); required
-  exactly when the service declares an input schema.
+- `input` — the service's or module's input binding; required exactly when
+  the node declares an input schema.
 - `secrets` — for a module boundary: a binding for each forwarded secret
   need.
 
@@ -370,6 +370,59 @@ Two naming rules the platform enforces: provision names must be at least
 three characters (call a database `'database'`, not `'db'` — the wiring key
 on the service side can still be `db`), and ids must be unique within their
 module.
+
+### A module's input
+
+A module declares its configuration as one `input` schema, as a service does
+([below](#service-input)), and whoever provisions it binds `input`:
+
+```ts
+import { module, resolve } from '@prisma/composer';
+import { secretString } from '@prisma/composer/arktype';
+import { envSecret } from '@prisma/composer-prisma-cloud';
+import { type } from 'arktype';
+
+const email = module(
+  'email',
+  { input: type({ from: 'string', deliveryCredential: secretString(), 'replyTo?': 'string' }) },
+  ({ input, environment, provision }) => {
+    const sender = resolve([input.from, environment.name], ([from, name]) =>
+      name === 'production' ? from : `${name}+${from}`);
+    provision(emailService, {
+      id: 'service',
+      input: { from: sender, replyTo: input.replyTo, deliveryCredential: input.deliveryCredential },
+    });
+  },
+);
+
+export default module('shop', ({ provision }) => {
+  provision(email, {
+    input: { from: 'shop@example.com', deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') },
+  });
+});
+```
+
+`prisma deploy --environment staging` gives `shop.email.service` the input
+`{ from: 'staging+shop@example.com', deliveryCredential:
+envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
+
+- The body receives each field as a [value](#values-that-differ-per-environment).
+  It can pass a field into a `provision()` binding, or list it as a
+  `resolve()` dependency to compute with it.
+- Reading a field in the body fails the deploy with a message naming the
+  field: a template literal, `String()`, arithmetic, `JSON.stringify` or
+  `Object.keys` on `input.domain` reports that `input.domain` of the module is
+  a value, not its real value.
+- An optional field the binding leaves out is a key left out: above, the
+  service's input has no `replyTo` key.
+- The module's schema checks the binding when the deploy loads the graph, so
+  a mistake fails before anything reaches the platform.
+- A root module cannot declare `input` yet, and a module's `input` does not
+  take `envParam()` yet. Bind `envParam()` on the service inside the module,
+  or forward it through the module's `params` slot.
+- A body reaches only the keys every member of a union schema has, and has no
+  element access into an array field. To narrow, forward the whole `input`,
+  or narrow inside a `resolve()` function.
 
 ## Object Storage
 
@@ -666,7 +719,8 @@ prisma dev                             # "HELLO FROM DEV"
 for data that is known only once the deploy knows which environment it is
 deploying. The module body cannot read a value, compare it or branch on it.
 It can only pass it on: as a dependency of another `resolve()`, as a leaf of
-a service's input binding at any depth, or as a service param. A value
+a service's input binding at any depth, or as a service param. A field of a
+module's `input` is a value too ([A module's input](#a-modules-input)). A value
 cannot be a provision id or a `deps` entry, and a module's `secrets` and
 `params` bindings take sources, not values.
 
