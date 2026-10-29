@@ -1,5 +1,27 @@
 # ADR-0060: Environments select named sets; missing values leave a recoverable deployment
 
+## Previous behavior
+
+The target had no environment-set option:
+
+```ts
+prismaCloud()
+```
+
+Composer chose the configuration scope from the deployment environment. The
+platform offered two fixed scopes, production and preview, with project-level
+templates and branch overrides:
+
+| Composer environment | Branch | User values came from |
+| --- | --- | --- |
+| `production` | The project's default branch | The production template |
+| `staging` | `staging` | The preview template, overridden by this branch's values |
+| `pr-42` | `pr-42` | The same preview template, overridden by this branch's values |
+
+Naming an environment `staging` created a separate branch, but did not create a
+separate shared configuration set. Users could share the preview template or
+set branch overrides; Composer could not select an arbitrary named set.
+
 ## Decision
 
 Prisma Cloud configuration lives in **named environment sets**: project-owned
@@ -9,12 +31,23 @@ Authors can create more sets and select them through the Prisma Cloud target's
 deploy configuration, without changing the application graph.
 
 ```ts
+// One shared default set for a new project's environments.
+prismaCloud()
+
+// Use this named set wherever this configuration is deployed.
 prismaCloud({ environmentSet: "staging" })
+
+// Choose which named set each environment uses.
 prismaCloud({
   environmentSet: ({ environment }) =>
     environment === "production" ? "production" : "previews",
 })
 ```
+
+The callback above selects `production` for the production environment and
+`previews` for staging and every preview environment. Those are user-chosen set
+names; another mapping can give staging its own set. The environment-to-branch
+mapping stays the same. Only the source of user-provided values changes.
 
 With no option, Composer keeps a branch's named selection. A branch with legacy
 user values stays on the legacy path until a set is explicitly selected.
@@ -60,10 +93,10 @@ successful deployment. It requires neither a new push nor the deploy machine.
 
 ## Reasoning
 
-A per-branch configuration map makes every new preview repeat setup that is
-usually identical. A shared default lets a user deploy without designing an
-environment strategy first. Named sets let that same user separate production,
-staging, and previews when their needs grow. Selecting a set is a deployment
+The fixed preview scope could share one template, but separate groups such as
+staging and previews required branch overrides. Named sets let users share each
+group's values without repeating those overrides. A shared default lets a user
+begin without designing an environment strategy. Selecting a set is a deployment
 choice; reusable services still declare inputs without knowing a set's name.
 
 Configuration often becomes known only after the first deploy. Creating the
