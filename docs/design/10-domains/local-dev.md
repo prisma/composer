@@ -202,7 +202,13 @@ emulator generates carries one, and a test fails if one does.
 **Ports.** An instance gets its port when it is created and keeps it until it
 is deleted, running or stopped. A requested port is used when no instance
 holds it and it can be bound; otherwise the instance gets the lowest such port
-from 3000. The port is in the deployment's env (`COMPOSER_<ADDRESS>_PORT`) and
+from 3000. "No instance" means none of any emulator on the machine, whatever
+its emulators directory: a stopped instance has nothing bound, so each Compute
+and Postgres emulator publishes the ports its instances hold, and the ports of
+database starts in flight, in `~/.prisma-composer/port-claims/<pid>.json`. It
+chooses a port only while holding that folder's lock, excludes the ports in
+every file whose process is alive, and publishes its own before releasing the
+lock. A file whose process has died is removed. The port is in the deployment's env (`COMPOSER_<ADDRESS>_PORT`) and
 in its dependents' URLs, and a warm start does not redeploy, so a port that
 changed between sessions would leave services built for the old one.
 

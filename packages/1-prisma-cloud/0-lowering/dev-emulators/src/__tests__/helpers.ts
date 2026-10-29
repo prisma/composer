@@ -4,7 +4,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import getPort, { portNumbers } from 'get-port';
-import type { ComputeClient } from '../client.ts';
 import { type DaemonName, ensureDaemon } from '../daemon.ts';
 
 /**
@@ -154,25 +153,5 @@ export async function skipContendedDaemonPorts(registryRoot: string): Promise<vo
       path.join(registryRoot, `fake-occupant-${String(port)}.json`),
       JSON.stringify({ pid: process.pid, port, version: 'fake', logPath: '/dev/null' }),
     );
-  }
-}
-
-const DEFAULT_MIN_SERVICE_PORT = 3000;
-
-/**
- * Creates dummy instances on a fresh Compute daemon to push every REAL
- * instance this test creates afterward past any port near the default
- * service range already bound by a process outside this test's control.
- * The emulator checks that a port is bindable when it creates an instance,
- * but a process outside this test can still bind it before the instance's
- * service does.
- */
-export async function skipContendedServicePorts(
-  client: Pick<ComputeClient, 'createInstance'>,
-  minPort: number = DEFAULT_MIN_SERVICE_PORT,
-): Promise<void> {
-  const freePort = await getPort({ port: portNumbers(minPort, minPort + 200) });
-  for (let i = 0; i < freePort - minPort; i++) {
-    await client.createInstance({ labels: { purpose: 'port-skip' } });
   }
 }
