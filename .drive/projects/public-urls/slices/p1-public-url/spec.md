@@ -225,7 +225,7 @@ alchemy-run/alchemy#2696 (custom domains on any Branch) merged on 2026-10-27; th
 
 1. `publicUrl({ name, url, target })` builds a `resource` node of type `public-url` with one `target` slot wired to `target` and `props.url`. A non-HTTP interface as `target` is a type error.
 2. Omitting `url`, or passing an invalid hostname as a string or to `publicUrl.hostname()`, throws at construction, naming the public URL and the problem.
-3. A `resolve()` value for `url` that resolves to a string, a `HostnameStrategy` or a `PrismaBuildStrategy` lowers per § 5; one that resolves to anything else fails the deploy and dev before anything is created, naming the node's address.
+3. A `resolve()` value for `url` that resolves to a string, a `HostnameStrategy` or a `PrismaBuildStrategy` lowers per § 5; one that resolves to anything else fails the deploy and dev before any of the app's resources are created or changed, naming the node's address.
 4. A `prisma-build` public URL declares no Alchemy resource and reports one `public-url` entity whose URL is the target service's URL.
 5. A hostname public URL declares exactly one `Prisma.CustomDomain` whose id contains the hostname and whose `app` resolves from the target service's deployment; it reports one `public-url` entity with URL `https://<hostname>`.
 6. A public URL wired to a module's forwarded HTTP interface lowers against the concrete service inside the module.
