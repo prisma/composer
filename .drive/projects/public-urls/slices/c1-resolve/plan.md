@@ -11,8 +11,8 @@ Spec: [spec.md](spec.md). Four dispatches, sequential: D1 and D2 both edit `node
 
 ## D2. A resource with its edge already set
 
-- **Outcome:** `resource({ inputs, deps })` carries dependency slots and their wiring; `provision(resource)` records slot nodes and edges, validates the wiring, counts a forwarded module input, records the authored edge; `provision(resource, { deps })` stays rejected.
-- **Tests:** the graph shape (slot node, `input` edge, `dependency` edge, topological order after the producer); the unwired slot error; the forwarded-input case; a resource descriptor in `lowering()` reads the producer's outputs through `ctx.lowered`.
+- **Outcome:** `resource({ inputs, deps, options })` carries dependency slots, their wiring and a plain-data options bag whose resolved values the second pass substitutes (prototype preserved); `provision(resource)` records slot nodes and edges, validates the wiring, counts a forwarded module input, records the authored edge; `provision(resource, { deps })` stays rejected.
+- **Tests:** the graph shape (slot node, `input` edge, `dependency` edge, topological order after the producer); the unwired slot error; the forwarded-input case; a resource descriptor in `lowering()` reads the producer's outputs through `ctx.lowered` and a resolved option through `ctx.node.options`.
 - **Builds on:** D1.
 - **Hands to:** the same checks as D1, green.
 
