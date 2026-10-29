@@ -1,6 +1,6 @@
 /**
  * The local-target provider bundle (local-dev spec § 4): the SAME
- * `Providers` collection tag `providers()` uses, backed by the eight local
+ * `Providers` collection tag `providers()` uses, backed by the local
  * providers instead of the hosted Management-API-backed ones. No
  * `ManagementClient`, no credentials layer — this bundle must typecheck
  * without either.
@@ -12,6 +12,7 @@ import {
   Bucket,
   BucketAccessKey,
   Connection,
+  CustomDomain,
   Database,
   Deployment,
   EnvironmentVariable,
@@ -26,6 +27,7 @@ import {
   LocalEnvironmentVariableProvider,
   LocalProjectProvider,
 } from './compute.ts';
+import { LocalCustomDomainProvider } from './custom-domain.ts';
 import { LocalConnectionProvider, LocalDatabaseProvider } from './postgres.ts';
 
 export const localTargetProviders = (input: LocalTargetProvidersInput): Layer.Layer<never> =>
@@ -40,6 +42,7 @@ export const localTargetProviders = (input: LocalTargetProvidersInput): Layer.La
       EnvironmentVariable,
       Bucket,
       BucketAccessKey,
+      CustomDomain,
     ]),
   ).pipe(
     Layer.provide(
@@ -52,6 +55,7 @@ export const localTargetProviders = (input: LocalTargetProvidersInput): Layer.La
         LocalEnvironmentVariableProvider(input),
         LocalBucketProvider(input),
         LocalBucketAccessKeyProvider(input),
+        LocalCustomDomainProvider(input),
       ),
     ),
     Layer.orDie,

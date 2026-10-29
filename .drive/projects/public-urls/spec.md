@@ -54,7 +54,8 @@ Existing custom domains keep working: PDP backfills them into RoutingUrl records
 - **The graph's structure is the same whatever inputs Composer is given.** `resolve()` callbacks may compute values, never structure; calling `provision` inside one is an error that names this rule.
 - **One hostname per public URL, and a hostname is served by one RoutingUrl on the whole platform.** Several records may name it; the platform registers one at a time and the others report it as in use.
 - **A public URL's identity is its node address**, written as `logicalId` on its platform row, as for every other node (ADR-0057). A record created in Console has no `logicalId`; a deploy touches it only to adopt it, when the code declares its hostname on the same service, by writing the node's `logicalId` on it.
-- **A hostname whose DNS isn't ready is a normal state, not an error**, once the platform record exists. Until then (see transitional shape) the deploy fails naming the hostname and the DNS step.
+- **A hostname whose DNS isn't ready is a normal state, not an error**, once the platform record exists. Until then (see transitional shape) the deploy fails naming the hostname and the DNS step. Once the record exists, a deploy that declares a hostname nobody has set up yet succeeds, and its output says how to prove ownership of the domain and which CNAME to publish, so the hostname can start receiving traffic.
+- **A deploy never takes a serving hostname out of service by accident.** When a public URL's hostname is serving traffic and the deploy would change it to a hostname that cannot serve yet (its ownership is not verified or its DNS does not point at the platform), the deploy fails before changing anything, names both hostnames, and says which records to publish first. Removing the public URL, or switching it to `publicUrl.prismaBuild()`, is the author's explicit choice and goes through. This holds in every step: in step one because `Prisma.CustomDomain` refuses the new domain before the old one is deleted, and from P2 on because the RoutingUrl resource checks it explicitly, since the platform accepts a record whose hostname is not ready (Will, 2026-10-29; design note 12).
 - **Recorded decisions are updated before the code that depends on them merges.** prisma/composer#385, #386 and pdp-control-plane#5795 merge before the slices that implement them.
 - **The term is environment** on every public surface: flags, types, errors, guides, the agent skill. No public surface says "stage" when this project closes.
 
@@ -75,6 +76,7 @@ Existing custom domains keep working: PDP backfills them into RoutingUrl records
 - The Console page for a service in the test project shows its custom hostnames with their conditions, and the workspace's Domains page shows the ownership claims.
 - `prisma deploy --environment <name>` and `prisma dev --environment <name>` work, `--stage` is gone, `destroy` targets an environment by name, and no public surface says "stage".
 - `prisma dev` with a named hostname in the code warns once that the hostname is ignored and otherwise runs.
+- A deploy of the test app that changes production's serving hostname to one with no ownership proof or DNS fails, names both hostnames and the records to publish, and production keeps serving on the old hostname.
 - The design records, glossary and domain docs describe the shipped design, and the scenarios in `.drive/projects/public-urls/design/scenarios.md` each name the slice that made them true.
 
 # Open questions

@@ -138,6 +138,8 @@ export interface PreflightInput<C = unknown> {
   readonly credentials?: ContainerCredentials<C> | undefined;
   /** Hands the deploy's progress output what the check covered, as counts (e.g. `{ checked: 53, filled: 0, missing: 0 }`). Counts only: never a name or a value. */
   readonly report?: ((counts: Readonly<Record<string, number>>) => void) | undefined;
+  /** Shows the user a warning that does not stop the run. Only `prisma dev` passes it and shows the warnings; deploy passes none. */
+  readonly warn?: ((message: string) => void) | undefined;
 }
 
 /** The resolved destroy context handed to an extension's `teardown` hook. */

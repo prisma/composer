@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit",
     "dev": "bun run src/server.ts",
     "smoke:deployed": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun scripts/smoke.ts )",
-    "deploy": "pnpm turbo run build --filter @prisma/example-env-param... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../node_modules/.bin/prisma deploy ${ENV_PARAM_STACK_NAME:+--name \"$ENV_PARAM_STACK_NAME\"} --environment \"${ENV_PARAM_ENVIRONMENT:-production}\" )",
+    "deploy": "pnpm turbo run build --filter @prisma/example-env-param... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../node_modules/.bin/prisma deploy ${ENV_PARAM_STACK_NAME:+--name \"$ENV_PARAM_STACK_NAME\"} --environment \"${ENV_PARAM_ENVIRONMENT:-production}\" --report \"${ENV_PARAM_REPORT:-.prisma/deploy-report.json}\" )",
     "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts --environment production ${ENV_PARAM_STACK_NAME:+--name \"$ENV_PARAM_STACK_NAME\"} )",
     "destroy:environment": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts --environment \"${ENV_PARAM_ENVIRONMENT:?ENV_PARAM_ENVIRONMENT is required}\" ${ENV_PARAM_STACK_NAME:+--name \"$ENV_PARAM_STACK_NAME\"} )"
   },

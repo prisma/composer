@@ -1029,6 +1029,9 @@ importers:
       '@internal/foundation':
         specifier: workspace:0.36.0
         version: link:../../../0-framework/0-foundation/foundation
+      '@internal/http':
+        specifier: workspace:0.36.0
+        version: link:../../../0-framework/2-authoring/http
       '@internal/local-target':
         specifier: workspace:0.36.0
         version: link:../../0-lowering/local-target
@@ -1075,9 +1078,6 @@ importers:
       '@distilled.cloud/prisma':
         specifier: 1.0.0-rc.15
         version: 1.0.0-rc.15(effect@4.0.3)
-      '@internal/http':
-        specifier: workspace:0.36.0
-        version: link:../../../0-framework/2-authoring/http
       '@internal/tsdown-config':
         specifier: workspace:0.36.0
         version: link:../../../0-framework/0-foundation/tsdown-config

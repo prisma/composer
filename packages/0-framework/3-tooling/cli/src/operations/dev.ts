@@ -16,6 +16,8 @@ export type DevEvent =
   /** Initial front door + after each successful re-converge. */
   | { readonly kind: 'ready'; readonly endpoints: readonly ServiceEndpoint[] }
   | { readonly kind: 'unwatchable'; readonly address: string }
+  /** A target's preflight warned about the graph; the session still starts. */
+  | { readonly kind: 'target-warning'; readonly message: string }
   | { readonly kind: 'rebuild-failed'; readonly message: string }
   /** The file watcher itself errored (EMFILE, a vanished directory); the session keeps running. */
   | { readonly kind: 'watch-error'; readonly message: string }

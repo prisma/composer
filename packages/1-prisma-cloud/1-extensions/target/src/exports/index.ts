@@ -19,6 +19,14 @@ export {
 } from '../param.ts';
 export type { ProvisionedEdge } from '../provisioned-edges.ts';
 export { provisionedEdges } from '../provisioned-edges.ts';
+export type {
+  HostnameStrategy,
+  PrismaBuildStrategy,
+  PublicUrlNode,
+  PublicUrlOption,
+  PublicUrlStrategy,
+} from '../public-url.ts';
+export { publicUrl } from '../public-url.ts';
 export type { RawPostgresConfig } from '../raw-postgres.ts';
 export { rawPostgres, rawPostgresContract } from '../raw-postgres.ts';
 export type { RequiredPackHead, RequiredPackHeadCmp } from '../required-pack-head.ts';
