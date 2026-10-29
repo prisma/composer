@@ -21,6 +21,8 @@ export function module<D extends Deps, E extends Expose>(
 interface ModuleContext<D extends Deps> {
   /** The module's declared inputs as wiring values — pass them into provision(). */
   readonly inputs: { [K in keyof D]: InputRef<D[K]> };
+  /** The deploy-time facts of the environment, each a value: today only `environment.name`. */
+  readonly environment: EnvironmentFacts;
   /** Registers an owned child (service or module) under a stable id. */
   readonly provision: ModuleBuilder["provision"];
 }
@@ -39,6 +41,12 @@ type ModuleOutputs<E extends Expose> = { [P in keyof E]: RefPort<E[P]> };
   checks the return against `E` (each returned `RefPort`'s contract must be
   assignable to the declared output contract); Load re-checks via
   `satisfies()` — the same two-layer check all wiring uses.
+- The body also receives `environment`, whose `name` is a value: an opaque
+  stand-in the body cannot read or branch on. The body lists it as a
+  dependency of `resolve(dependencies, fn)`, which returns a computed value it
+  can bind to a service's input or params; Load runs `fn` after every module
+  body has run
+  ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
 - A module with an empty boundary is the closed, deploy-root form; it is the
   degenerate case of one shape, not a separate shape. Omitting the boundary
   argument — `module(name, body)`, where the body provisions and returns

@@ -155,7 +155,8 @@ The data a value stands for is its **real value**.
   to; at deploy time it is a pointer to it (the decision's table calls this
   "held by the platform"). Today every value is deploy-time.
 
-In code the type is `Value<T>`. `envParam()` and `envSecret()` are not values
+In code the type is `Value<T>`, and `RealValuesOf<D>` is the tuple of
+real-value types `fn` receives for a dependency tuple `D`. `envParam()` and `envSecret()` are not values
 yet; they become values, with config and secret adapters, in the module-input
 project. A value is not a node: it has no lifecycle and no address. Elsewhere
 in this glossary "value" in lower case keeps its ordinary meaning, plain data
