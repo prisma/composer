@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { Load, module, resolve } from '@internal/core';
 import { rawHttpContract } from '@internal/http';
+import type { ManagementApiClient } from '@internal/lowering';
 import { compute } from '../compute.ts';
+import { PrismaCloudContainer } from '../container.ts';
+import { runPreflight } from '../preflight.ts';
 import { parseHostname, publicUrl, resolvedStrategy } from '../public-url.ts';
 
 const build = {
@@ -146,5 +149,46 @@ describe('resolvedStrategy()', () => {
     expect(() => resolvedStrategy('https://shop.com', 'shop.site')).toThrow(
       'shop.site: "https://shop.com" has a scheme',
     );
+  });
+});
+
+describe('the deploy preflight', () => {
+  test('fails on a url that resolves to neither a hostname nor a strategy, before calling the platform', async () => {
+    const calls: string[] = [];
+    const client = new Proxy(
+      {},
+      {
+        get: (_, method) => () => {
+          calls.push(String(method));
+          throw new Error('the preflight must not reach the platform');
+        },
+      },
+    ) as ManagementApiClient;
+    const graph = Load(
+      module('shop', ({ environment, provision }) => {
+        const svc = provision(web);
+        const url = resolve([environment.name], () => 42) as unknown as string;
+        provision(publicUrl({ name: 'site', url, target: svc.http }));
+      }),
+      { environment: { name: 'production' } },
+    );
+
+    await expect(
+      runPreflight(
+        {
+          graph,
+          container: new PrismaCloudContainer(
+            { appName: 'shop', environment: 'production' },
+            'proj_1',
+            undefined,
+          ),
+          environment: 'production',
+        },
+        { client },
+      ),
+    ).rejects.toThrow(
+      'shop.site: url resolved to 42, which is not a hostname or a public URL strategy.',
+    );
+    expect(calls).toEqual([]);
   });
 });

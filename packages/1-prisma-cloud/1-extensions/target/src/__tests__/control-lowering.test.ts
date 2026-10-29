@@ -60,6 +60,7 @@ const recorded: {
   creds: Array<[string, unknown]>;
   bucket: Array<[string, unknown]>;
   bucketKey: Array<[string, unknown]>;
+  customDomain: Array<[string, unknown]>;
   generated: Array<[string, unknown]>;
   pnMigrate: Array<[string, unknown]>;
   databaseUrlClaims: string[];
@@ -78,6 +79,7 @@ const recorded: {
   creds: [],
   bucket: [],
   bucketKey: [],
+  customDomain: [],
   generated: [],
   pnMigrate: [],
   databaseUrlClaims: [],
@@ -141,6 +143,7 @@ mock.module('alchemy/Prisma', () => ({
       `Deployment ${id}`,
       Effect.succeed({
         deploymentId: 'v1',
+        appId: `deployment-app-of:${id}`,
         appEndpointDomain: `https://${id}.example`,
       }),
     );
@@ -182,6 +185,14 @@ mock.module('alchemy/Prisma', () => ({
         bucketName: 'user-bucket-stub',
       }),
     );
+  },
+  CustomDomain: (id: string, props: { hostname: string }) => {
+    recorded.customDomain.push([id, props]);
+    return Effect.succeed({
+      customDomainId: `${id}#cloud-id`,
+      hostname: props.hostname,
+      status: 'pending',
+    });
   },
   Database: (id: string, props: unknown) => {
     recorded.db.push([id, props]);
@@ -315,12 +326,14 @@ const {
   bucket,
   envSecret,
   generatedParam,
+  publicUrl,
   rawPostgres,
   rawPostgresContract,
   s3StoreService,
   serviceOrigin,
 } = await import('../exports/index.ts');
-const { dependency, Load, module, provisionNeed, string } = await import('@internal/core');
+const { dependency, Load, module, provisionNeed, resolve, string } = await import('@internal/core');
+const { rawHttpContract } = await import('@internal/http');
 const { composeApplicationTopology } = await import('@internal/lowering/builds');
 const { lowering } = await import('@internal/core/deploy');
 const { RPC_PEER_KEY } = await import('@internal/service-rpc');
@@ -1849,6 +1862,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     expect(result.outputs).toEqual({
       url: 'https://shop.auth.deployment.example',
       projectId: 'shop-project#cloud-id',
+      serviceId: 'deployment-app-of:shop.auth.deployment',
     });
     // compute publishes its URL deliberately — a Compute service's deployed
     // endpoint IS public, and this descriptor is the only party that knows it.
@@ -2074,6 +2088,7 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
     expect(result.outputs).toEqual({
       url: 'https://shop.store.deployment.example',
       projectId: 'shop-project#cloud-id',
+      serviceId: 'deployment-app-of:shop.store.deployment',
       bucket: 'streams',
       accessKeyId: 'AKIA123',
       secretAccessKey: 'sekret',
@@ -3550,4 +3565,151 @@ afterAll(() => {
     variables.filter((resource) => !/^EnvironmentVariable \S+\.env\.COMPOSER_/.test(resource)),
   ).toEqual([]);
   expect(declared.filter(([, adopt]) => adopt !== true)).toEqual([]);
+});
+
+describe("prismaCloud().nodes['public-url'] — the public URL descriptor", () => {
+  const build = {
+    extension: '@prisma/composer/node',
+    type: 'node',
+    module: 'file:///test/service.ts',
+    entry: 'server.js',
+  };
+  const web = compute({ name: 'web', deps: {}, build, expose: { http: rawHttpContract } });
+  type Url = Parameters<typeof publicUrl>[0]['url'];
+
+  const shop = (url: Url | { readonly resolvesTo: unknown }) =>
+    module('shop', ({ environment, provision }) => {
+      const svc = provision(web);
+      const value =
+        typeof url === 'object' && 'resolvesTo' in url
+          ? (resolve([environment.name], () => url.resolvesTo) as Url)
+          : url;
+      provision(publicUrl({ name: 'site', url: value, target: svc.http }));
+      return {};
+    });
+
+  const lowerSite = (root: ReturnType<typeof shop>): LoweredResult => {
+    const graph = Load(root, { id: 'shop', environment: { name: 'production' } });
+    const site = graph.nodes.find((n) => n.id === 'shop.site');
+    const ctx = {
+      id: 'shop.site',
+      address: 'shop.site',
+      node: site?.node,
+      graph,
+      lowered: new Map([
+        [
+          'shop.web',
+          { serviceId: 'svc_123', url: 'https://svc_123.cdg.prisma.build', projectId: 'p' },
+        ],
+      ]),
+    } as unknown as LowerContext;
+    return run<LoweredResult>(
+      resourceDescriptorOf(prismaCloud({ workspaceId: 'ws_1' }), 'public-url')(ctx),
+    );
+  };
+
+  const lowerThroughCore = (root: ReturnType<typeof shop>, bundles: Record<string, string>) =>
+    withEnv(containerEnv('shop-project#cloud-id'), () => {
+      run<undefined>(
+        lowering(root, configFor(prismaCloud({ workspaceId: 'ws_1' })), {
+          name: 'shop',
+          environment: 'production',
+          bundles: Object.fromEntries(
+            Object.entries(bundles).map(([address, dir]) => [address, { dir, entry: 'server.js' }]),
+          ),
+        }),
+      );
+    });
+
+  test('prisma-build declares no resource and reports the target service URL', () => {
+    const before = recorded.customDomain.length;
+
+    const result = lowerSite(shop(publicUrl.prismaBuild()));
+
+    expect(recorded.customDomain.slice(before)).toEqual([]);
+    expect(result).toEqual({
+      outputs: {},
+      entities: [
+        { kind: 'public-url', id: 'svc_123', url: 'https://svc_123.cdg.prisma.build', details: {} },
+      ],
+    });
+  });
+
+  test('a hostname declares one CustomDomain whose id holds the hostname, and reports https://<hostname>', () => {
+    const before = recorded.customDomain.length;
+
+    const result = lowerSite(shop('Shop.COM.'));
+
+    expect(recorded.customDomain.slice(before)).toEqual([
+      ['shop.site.domain.shop.com', { app: 'svc_123', hostname: 'shop.com' }],
+    ]);
+    expect(result).toEqual({
+      outputs: {},
+      entities: [
+        {
+          kind: 'public-url',
+          id: 'shop.site.domain.shop.com#cloud-id',
+          url: 'https://shop.com',
+          details: { hostname: 'shop.com', status: 'pending' },
+        },
+      ],
+    });
+  });
+
+  test("the CustomDomain's app comes from the target service's Deployment, so it waits for the promote", async () => {
+    const before = recorded.customDomain.length;
+
+    await lowerThroughCore(shop('shop.com'), { 'shop.web': 'modules/web/dist' });
+
+    expect(recorded.customDomain.slice(before)).toEqual([
+      [
+        'shop.site.domain.shop.com',
+        { app: 'deployment-app-of:shop.web.deployment', hostname: 'shop.com' },
+      ],
+    ]);
+  });
+
+  test.each([
+    ['a string', 'shop.com', 1],
+    ['a hostname strategy', publicUrl.hostname('shop.com'), 1],
+    ['the prisma-build strategy', publicUrl.prismaBuild(), 0],
+  ])('a value that resolves to %s lowers like the literal', (_, resolved, domains) => {
+    const before = recorded.customDomain.length;
+
+    lowerSite(shop({ resolvesTo: resolved }));
+
+    expect(recorded.customDomain.length - before).toBe(domains);
+  });
+
+  test('a value that resolves to anything else fails, naming the address, before any CustomDomain', () => {
+    const before = recorded.customDomain.length;
+
+    expect(() => lowerSite(shop({ resolvesTo: 42 }))).toThrow(
+      'shop.site: url resolved to 42, which is not a hostname or a public URL strategy.',
+    );
+    expect(recorded.customDomain.length).toBe(before);
+  });
+
+  test("a module's forwarded HTTP interface lowers against the concrete service inside it", async () => {
+    const storefront = module(
+      'storefront',
+      { expose: { http: rawHttpContract } },
+      ({ provision }) => ({ http: provision(web).http }),
+    );
+    const root = module('shop', ({ provision }) => {
+      const front = provision(storefront);
+      provision(publicUrl({ name: 'site', url: 'shop.com', target: front.http }));
+      return {};
+    });
+    const before = recorded.customDomain.length;
+
+    await lowerThroughCore(root, { 'shop.storefront.web': 'modules/web/dist' });
+
+    expect(recorded.customDomain.slice(before)).toEqual([
+      [
+        'shop.site.domain.shop.com',
+        { app: 'deployment-app-of:shop.storefront.web.deployment', hostname: 'shop.com' },
+      ],
+    ]);
+  });
 });

@@ -33,11 +33,12 @@ import {
 } from '@internal/lowering';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import { prismaCloudContainerOf } from './container.ts';
+import { PRISMA_CLOUD_EXTENSION_ID, prismaCloudContainerOf } from './container.ts';
 import { type EnvKeyClash, findEnvKeyClashes } from './env-key-clash.ts';
 import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
 import { collectPreflightNames } from './preflight-names.ts';
+import { resolvedStrategy } from './public-url.ts';
 
 type EnvClass = 'production' | 'preview';
 
@@ -348,6 +349,18 @@ async function managementClient(): Promise<ManagementApiClient> {
   );
 }
 
+function checkPublicUrls(graph: Graph): void {
+  for (const { id, node } of graph.nodes) {
+    if (
+      node.kind === 'resource' &&
+      node.extension === PRISMA_CLOUD_EXTENSION_ID &&
+      node.type === 'public-url'
+    ) {
+      resolvedStrategy(node.props['url'], id);
+    }
+  }
+}
+
 /**
  * The Prisma Cloud extension's `preflight`. Uses the shared name collector
  * (`collectPreflightNames`, ADR-0042) — every service's input-binding
@@ -363,6 +376,7 @@ export async function runPreflight(
   input: PrismaCloudPreflightInput,
   deps?: { readonly client?: ManagementApiClient },
 ): Promise<ReadonlyMap<string, string>> {
+  checkPublicUrls(input.graph);
   const { projectId, branchId } = prismaCloudContainerOf(input.container);
 
   // One check per platform NAME (many leaves/services, secret or param, may
