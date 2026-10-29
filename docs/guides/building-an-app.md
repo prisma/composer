@@ -3,8 +3,9 @@
 This guide covers everything you reach for once
 [Getting started](getting-started.md) has shown you the shape: giving a
 service a database (plain or Prisma-ORM-typed), packaging pieces as reusable
-Modules, the cron/storage/streams modules that ship with the framework, and
-the service input — configuration and secrets as one schema.
+Modules, the cron/storage/streams modules that ship with the framework, the
+service input — configuration and secrets as one schema — and making a
+service reachable from the internet.
 
 ## How the pieces fit
 
@@ -666,7 +667,8 @@ prisma dev                             # "HELLO FROM DEV"
 for data that is known only once the deploy knows which environment it is
 deploying. The module body cannot read a value, compare it or branch on it.
 It can only pass it on: as a dependency of another `resolve()`, as a leaf of
-a service's input binding at any depth, or as a service param. A value
+a service's input binding at any depth, as a service param, or as a
+[public URL's `url`](#a-hostname-per-environment). A value
 cannot be a provision id or a `deps` entry, and a module's `secrets` and
 `params` bindings take sources, not values.
 
@@ -711,6 +713,151 @@ When a dependency's `fn` is the one that failed, the message says so: it
 starts `A resolve() function that … depends on`.
 [`examples/env-param`](../../examples/env-param/) serves a value computed
 from the environment's name.
+
+## Making a service public
+
+A service is reachable from the internet only through a **public URL** that
+you declare. A public URL depends on the HTTP interface a service exposes, and
+exposes nothing itself. Provision it where the hostname is decided, usually
+in the root module:
+
+```ts
+// web/src/service.ts
+import { rawHttpContract } from '@prisma/composer/http';
+import node from '@prisma/composer/node';
+import { compute } from '@prisma/composer-prisma-cloud';
+
+export default compute({
+  name: 'web', deps: {}, expose: { http: rawHttpContract },
+  build: node({ module: import.meta.url, entry: '../dist/server.mjs' }),
+});
+```
+
+```ts
+// module.ts
+import { module } from '@prisma/composer';
+import { publicUrl } from '@prisma/composer-prisma-cloud';
+import webService from './web/src/service.ts';
+
+export default module('shop', ({ provision }) => {
+  const web = provision(webService);
+  provision(publicUrl({ name: 'site', url: 'shop.com', target: web.http }));
+});
+```
+
+`publicUrl()` takes three parameters:
+
+- `name` gives the public URL its address, `shop.site`, like any other node.
+- `target` is the HTTP interface the service exposes, here `web.http`. It
+  must be a [raw HTTP interface](#raw-http-connections-and-reverse-proxies):
+  wiring an RPC interface fails the type check. A module's exposed HTTP
+  interface works too: the public URL serves the service inside the module
+  that exposes it.
+- `url` says which hostname serves the service. It is required: leaving it
+  out throws.
+
+`url` takes one of two strategies:
+
+- `publicUrl.prismaBuild()` serves the service at its `prisma.build`
+  hostname, the one the platform gives every service. It creates nothing on
+  the platform, and the deploy reports the service's URL for the public URL.
+- `publicUrl.hostname('shop.com')` serves the service at a hostname you
+  name. A bare string, `url: 'shop.com'`, means the same. On Prisma Cloud
+  the deploy attaches the hostname to the service as a custom domain, once
+  the service's new deployment is live.
+
+One public URL serves one hostname. To serve `shop.com` and `www.shop.com`,
+provision two public URLs wired to the same interface. Two public URLs in one
+app may not name the same hostname: the deploy and `prisma dev` stop before
+changing anything, naming both public URLs.
+
+`publicUrl()` checks a hostname as soon as it runs. It trims the hostname,
+drops one trailing dot and lowercases it. It throws, naming the public URL and
+the problem, for a scheme such as `https://`, a path, a port, a `*` label, an
+IP address, fewer than two labels, a label that is not 1 to 63 characters of
+`a-z`, `0-9` and `-` or that starts or ends with `-`, or a hostname longer
+than 253 characters:
+
+```text
+publicUrl("site"): "https://shop.com" has a scheme. Pass the hostname alone, without "https://".
+```
+
+### A hostname per environment
+
+The hostname usually differs per environment, so `url` is usually a
+[value](#values-that-differ-per-environment). `fn` returns either strategy,
+or a bare string:
+
+```ts
+import { module, resolve } from '@prisma/composer';
+import { publicUrl } from '@prisma/composer-prisma-cloud';
+
+export default module('shop', ({ environment, provision }) => {
+  const web = provision(webService);
+  const url = resolve([environment.name], ([name]) =>
+    name === 'production' ? 'shop.com' : publicUrl.prismaBuild());
+  provision(publicUrl({ name: 'site', url, target: web.http }));
+});
+```
+
+Production serves at `shop.com`, and every other environment at its
+service's `prisma.build` hostname. The graph is the same in every
+environment; only the resolved `url` differs. A value is checked once it
+resolves, so a `fn` that returns anything else stops `prisma deploy` and
+`prisma dev` before any of the app's resources are created or changed:
+
+```text
+shop.site: url resolved to 42, which is not a hostname or a public URL strategy.
+```
+
+### Before you name a hostname
+
+The deploy attaches a named hostname to the service straight away, and the
+platform refuses it unless two DNS records are already published:
+
+- a TXT record at `_prisma-verification.<hostname>` carrying your
+  workspace's verification value, which proves you own the hostname, and
+- a CNAME record that points the hostname at the platform.
+
+If either is missing, the deploy fails with the platform's error, such as
+`domain-ownership-required` for a missing TXT record. Publish the records,
+then deploy again. Until a hostname can be declared before its DNS is ready,
+use `publicUrl.prismaBuild()` for every environment whose DNS is not set up.
+
+Until the next Composer release, a named hostname works only in the production
+environment, the one on the project's default branch. Use
+`publicUrl.prismaBuild()` in every other environment.
+
+Changing a hostname that is serving to one whose records are not published
+fails the deploy too, and the old hostname keeps serving. The deploy creates
+the new custom domain before it removes the old one, and stops when the
+platform refuses the new one.
+
+To move a hostname to another service, remove its public URL and deploy, then
+add it on the new service and deploy again. The hostname does not serve
+between the two deploys.
+
+### Under `prisma dev`
+
+`prisma dev` serves every service on its local URL. It ignores a named
+hostname, and prints one warning per public URL that names one:
+
+```text
+shop.site names the hostname shop.com. prisma dev ignores it and serves the service on its local URL.
+```
+
+This holds whatever name `--environment` gives: the local target ignores
+hostnames in every environment.
+
+### A service with no public URL
+
+A service with no public URL is meant to be reached only by other services
+in the app. Today the platform still gives every service a `prisma.build`
+hostname, so such a service is reachable there. When the platform makes that
+hostname opt-in, your code does not change.
+
+[`examples/env-param`](../../examples/env-param/) makes its service public at
+its `prisma.build` hostname.
 
 ## Builds
 

@@ -273,6 +273,9 @@ ADR-0053 (the commands). What we deliberately didn't do:
 ## Public URLs — deferred, 2026-10-29
 
 - **Composer publishes a hostname's DNS records through an adapter.** An option on the Prisma Cloud extension naming a DNS provider, lowered to the Alchemy DNS adapter, publishes the ownership TXT record and the CNAME the deploy would otherwise print. The records are already outputs of the Alchemy RoutingUrl resource and of the `DeployedEntity`. Origin: public-URLs design discussion with Will, prompted by alchemy-run/alchemy#2701.
+- **`prisma deploy list` shows a public URL with no platform id and no URL.** `deployed-nodes.ts` in `@prisma/composer-cli` joins each topology node to its platform row by `logicalId`, and a `Prisma.CustomDomain` row carries none. P2's RoutingUrl row carries the node's address as its `logicalId`; add a `public-url` case then, reading the row's hostname. Origin: public-URLs slice P1.
+- **The deploy output does not say which services have no public URL but are still reachable at their platform hostname** (ADR-0060). Saying so needs the output to know which nodes are public URLs. Do it with P3, when the platform hostname becomes opt-in and the message changes anyway. Origin: public-URLs slice P1.
+- **A deploy that dies after the platform creates a custom domain, but before Alchemy records it, cannot finish.** The next deploy finds the domain on the service and `Prisma.CustomDomain` refuses it as not its own. P2's RoutingUrl row carries the node's address as its `logicalId`, so the resource finds its own row and adopts it. Until then the user deletes the domain in the Console and deploys again. Origin: public-URLs slice P1 code review.
 
 # Values — deferred (2026-10-29)
 

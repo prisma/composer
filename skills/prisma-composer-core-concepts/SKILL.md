@@ -47,6 +47,7 @@ app, executing nothing when imported. Three node kinds exist:
 | --- | --- | --- |
 | Service | `compute()` | A running unit of your code; atomic, Composer sees only its boundary |
 | Resource | `rawPostgres()`, `bucket()` | A stateful managed dependency |
+| Resource: public URL | `publicUrl()` | Makes one service reachable from the internet at one hostname; depends on the service's exposed HTTP interface and exposes nothing |
 | Module | `module()` | A grouping boundary; runs no code of its own, depends on and exposes typed interfaces; its builder receives `deps`, `secrets`, `params`, `environment` and `provision` |
 
 Nodes connect through typed **interfaces**: `deps` declares what a node depends on,
@@ -75,8 +76,8 @@ Composer itself is target-agnostic: `@prisma/composer` carries authoring,
 testing, and the CLI, coupled to no platform. A deploy target is an extension
 registered in the deploy config; `@prisma/composer-prisma-cloud` is the
 Prisma Cloud target and the one this skill's deploy sections assume. Its
-root exports `compute`, `rawPostgres`, `bucket`, `envSecret`, and
-`envParam`; the ORM vocabulary (`postgres`, `dataContract`) lives under the
+root exports `compute`, `rawPostgres`, `bucket`, `publicUrl`, `envSecret`,
+and `envParam`; the ORM vocabulary (`postgres`, `dataContract`) lives under the
 `/orm` subpath, alongside the shared `/cron`, `/storage`, `/streams`,
 `/auth`, and `/email` modules. These are the only two Composer packages a
 basic Prisma Cloud app needs, and nothing installs them for you: a fresh
@@ -169,7 +170,7 @@ The graph is the same in every environment; only configuration may differ.
 
 - The module body receives `environment`; `environment.name` is a value standing for the name `--environment` gave (`production` for `prisma deploy`, `dev` for `prisma dev` by default).
 - `resolve([deps], ([values]) => …)` from `@prisma/composer` returns a computed value; `fn` receives the dependencies' real values as one tuple.
-- A value is accepted as a leaf of a service's `input` binding, at any depth, or as a service param. Never as a provision id, a `deps` entry, or a module's `secrets` or `params` binding.
+- A value is accepted as a leaf of a service's `input` binding, at any depth, as a service param, or as a public URL's `url`. Never as a provision id, a `deps` entry, or a module's `secrets` or `params` binding.
 - A value is opaque in the body: you cannot read, compare or branch on it. List it as a `resolve()` dependency instead.
 - Calling `provision()` inside `fn` fails the load: `fn` computes configuration, never graph structure.
 - `fn` is pure and synchronous and returns plain data (no `undefined`, Promise, value, `envParam()` or `envSecret()`); a deploy and `destroy` both run it, in two processes. To retire an environment, keep its case in every `fn` until `destroy` for it has finished.
@@ -227,6 +228,27 @@ the app's. Each dependency shows in the application topology as a call, also
 through module boundaries; a URL passed as `input` (`serviceOrigin()`)
 does not, so declare a dependency for every service you call. The auth
 module's `api` port is a raw HTTP port: wire it with `rawHttp()`.
+
+**Public URLs.** A service is reachable from the internet only through a
+public URL the app declares:
+`provision(publicUrl({ name: 'site', url, target: web.http }))`, where
+`web` exposes `http: rawHttpContract` (an RPC interface as `target` fails
+`tsc`; a module's forwarded HTTP interface lands on the service inside it).
+`url` is required and is one of two strategies: `publicUrl.prismaBuild()`
+serves at the service's `prisma.build` hostname and creates nothing;
+`publicUrl.hostname('shop.com')`, or the bare string `'shop.com'`, attaches
+that hostname to the service as a custom domain. One hostname per public URL.
+A per-environment `url` is a `resolve()` value returning either strategy or a
+string; anything else fails deploy and dev before any of the app's resources
+are created or changed. Before
+a deploy names a hostname, the TXT record `_prisma-verification.<hostname>`
+and a CNAME to the platform must be published, or the deploy fails with the
+platform's error (`domain-ownership-required` for the TXT record); don't
+work around it, publish the records or use `publicUrl.prismaBuild()` there. A
+change from a serving hostname to one that is not ready fails the deploy and
+the old hostname keeps serving. `prisma dev` ignores a named hostname and
+warns once per public URL that names a hostname. A service with no public URL is still reachable at
+its `prisma.build` hostname today.
 
 ## Builds are yours
 

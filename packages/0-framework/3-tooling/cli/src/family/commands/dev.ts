@@ -137,6 +137,10 @@ function reportDevEvent(
         });
         return;
 
+      case 'target-warning':
+        report({ kind: 'message', severity: 'warn', text: event.message });
+        return;
+
       case 'rebuild-failed':
         report({ kind: 'message', severity: 'warn', text: `Rebuild failed: ${event.message}` });
         return;

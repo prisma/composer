@@ -26,8 +26,9 @@ import {
 } from '@internal/lowering';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
+import { PRISMA_CLOUD_EXTENSION_ID } from './extension-id.ts';
 
-export const PRISMA_CLOUD_EXTENSION_ID = '@prisma/composer-prisma-cloud';
+export { PRISMA_CLOUD_EXTENSION_ID };
 
 /** Accepts exactly what Alchemy's own `--stage` validation accepts (pinned 2.0.0-beta.59, `Cli/commands/_shared.ts`), rewritten without overlapping quantifiers so it cannot backtrack catastrophically. Asserted before a Branch id is exposed as a stage. */
 const ALCHEMY_STAGE_PATTERN = /^[a-z0-9][-_a-z0-9]*$/i;

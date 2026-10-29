@@ -461,7 +461,11 @@ export function computeDescriptor(
         // point — apply resolves them before the report's runner sees them.
         //
         return {
-          outputs: { url: deployment.appEndpointDomain, projectId: provisioned.projectId },
+          outputs: {
+            url: deployment.appEndpointDomain,
+            projectId: provisioned.projectId,
+            serviceId: deployment.appId,
+          },
           entities: [
             {
               kind: 'compute-service',
@@ -489,7 +493,7 @@ export function computeDescriptor(
           return domain;
         });
         return {
-          outputs: { url, projectId: provisioned.projectId },
+          outputs: { url, projectId: provisioned.projectId, serviceId: provisioned.serviceId },
           entities: [
             {
               kind: 'compute-service',

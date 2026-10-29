@@ -34,6 +34,8 @@ export default module('shop', ({ environment, provision }) => {
 
 **What's different from today:** nothing is reachable differently. What changes is the model: the topology now says `web` is the one public service. The deploy output says the other services are still reachable at their platform hostnames, until the platform's later step makes those opt-in.
 
+**P1:** makes this true, except the deploy output's note that the other services are still reachable at their platform hostnames, which is deferred.
+
 ## 2. Production on a named hostname, previews on prisma.build
 
 **User:** "Production is `shop.com`. Every other environment gets whatever hostname the platform gives it."
@@ -51,6 +53,8 @@ provision(publicUrl({
 **Production Branch:** named public RoutingUrl `shop.site` = `shop.com` → `shop.web`. Receives traffic once the workspace has a verified domain ownership claim for `shop.com` and DNS points at the service's region (Foundry: a Custom domain, registered by the control plane once every condition holds). Until then the deploy succeeds and `web` still answers on its `*.prisma.build` hostname. The deploy output says which step is outstanding (ownership claim, DNS, or the certificate) and prints every record still to publish, with name, type and value. The user can also claim and verify `shop.com` in Console before this deploy ever runs; neither order is required. Finishing DNS never needs another deploy.
 
 **Any other Branch:** no record; `web` answers at its `*.prisma.build` hostname, which the deploy output reports for `shop.site`.
+
+**P1:** makes the production half true only once both DNS records are published: `shop.com` lowers to a custom domain, and a deploy without the TXT or CNAME record fails with the platform's error instead of succeeding. P2 makes the rest true.
 
 ## 3. Production, staging and previews, each different
 
@@ -97,6 +101,8 @@ provision(publicUrl({ name: 'www', url: resolve([environment.name], ([name]) => 
 
 **Production Branch:** two named Public URLs. Each has its own setup state and certificate. **Any other Branch:** no records; both nodes report the service's one `*.prisma.build` hostname.
 
+**P1:** makes this true: two custom domains in production, and both nodes report the service's `prisma.build` URL elsewhere.
+
 ## 6. Two services, two hostnames
 
 **User:** "`shop.com` serves `web`, `api.shop.com` serves `api`. Nothing else is public."
@@ -112,6 +118,8 @@ provision(publicUrl({ name: 'apiUrl', url: resolve([environment.name], ([name]) 
 
 **Production Branch:** two named Public URLs, each pointing at its own Compute Service.
 
+**P1:** makes this true, with a custom domain on each service in production.
+
 ## 7. A public URL on a reusable module's service
 
 **User:** "The auth module from npm should answer at `auth.shop.com`."
@@ -122,6 +130,8 @@ provision(publicUrl({ name: 'authUrl', url: resolve([environment.name], ([name])
 ```
 
 The `auth()` module exposes `api` as a raw HTTP connection. At Load, `identity.api` resolves to the service inside the module (`shop.auth.service`), so the RoutingUrl points at that service. The module decided its `api` could be made public by exposing it; the app decided it is. `identity.admin` is a service RPC connection, so wiring a `publicUrl` to it is a type error.
+
+**P1:** makes this true: the public URL lowers against the concrete service inside the module, and an RPC interface as `target` is a type error.
 
 ## 8. A service that needs its own public URL
 
@@ -171,11 +181,15 @@ The `publicUrl` line is deleted. The deploy plan deletes `shop.site`, which remo
 
 The environment is `dev`. `environment.name` resolves to `'dev'`. The local target gives `shop.site` a stand-in that creates nothing: there is no Branch and no Foundry. `prisma dev url site` can print the local URL of the service it's wired to. If the resolved value names a hostname, local dev ignores it and prints one warning per public URL saying so. Nothing in local dev keys on the name `dev` itself: `environment.name` is whatever the user passed, and the local target ignores hostnames regardless.
 
+**P1:** makes this true: the local stand-in creates nothing, and `prisma dev` warns once per public URL that names a hostname.
+
 ## 13. A service with no public URL
 
 **User:** "`worker` consumes a queue. Nothing outside should reach it."
 
 No `publicUrl` is declared for it, so the topology shows it as not public and Composer creates no RoutingUrl for it. The platform still gives it a `*.prisma.build` hostname, as it gives every service, so `worker` is reachable today; the deploy output says so. Making that hostname opt-in is the platform's later step, and nothing in the user's code changes when it lands.
+
+**P1:** makes this true, except the deploy output saying the service is still reachable, which is deferred.
 
 ## What the scenarios need from each side
 

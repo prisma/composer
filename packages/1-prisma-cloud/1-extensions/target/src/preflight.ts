@@ -38,6 +38,7 @@ import { type EnvKeyClash, findEnvKeyClashes } from './env-key-clash.ts';
 import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
 import { collectPreflightNames } from './preflight-names.ts';
+import { checkPublicUrls } from './public-url.ts';
 
 type EnvClass = 'production' | 'preview';
 
@@ -363,6 +364,7 @@ export async function runPreflight(
   input: PrismaCloudPreflightInput,
   deps?: { readonly client?: ManagementApiClient },
 ): Promise<ReadonlyMap<string, string>> {
+  checkPublicUrls(input.graph);
   const { projectId, branchId } = prismaCloudContainerOf(input.container);
 
   // One check per platform NAME (many leaves/services, secret or param, may

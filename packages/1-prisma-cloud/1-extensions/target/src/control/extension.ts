@@ -21,6 +21,7 @@ import {
 import { bucketDescriptor } from '../descriptors/bucket.ts';
 import { computeDescriptor } from '../descriptors/compute.ts';
 import { postgresDescriptor } from '../descriptors/orm-postgres.ts';
+import { publicUrlDescriptor } from '../descriptors/public-url.ts';
 import { rawPostgresDescriptor } from '../descriptors/raw-postgres.ts';
 import { s3CredentialsDescriptor } from '../descriptors/s3-credentials.ts';
 import { s3StoreDescriptor } from '../descriptors/s3-store.ts';
@@ -191,7 +192,10 @@ export interface PrismaCloudOptions {
 
 /** Prisma.providers()'s ProviderCollection doesn't structurally unify with Alchemy's inferred providers Layer (a @internal/lowering typings gap); it satisfies it at runtime. */
 function asProvidersLayer<A, E, R>(layer: Layer.Layer<A, E, R>): Layer.Layer<never> {
-  return layer as unknown as Layer.Layer<never>;
+  return blindCast<
+    Layer.Layer<never>,
+    "Prisma.providers()'s ProviderCollection does not unify with Alchemy's inferred providers Layer; it satisfies it at runtime"
+  >(layer);
 }
 
 /**
@@ -403,6 +407,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
       // provides.kind), and a real bucket provides the 's3' contract — so the
       // bucket descriptor registers under 's3', not 'bucket'.
       s3: bucketDescriptor(o),
+      'public-url': publicUrlDescriptor(),
     },
 
     // A lazy reference, not the descriptor (ADR-0041, operator directive):

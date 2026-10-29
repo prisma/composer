@@ -63,7 +63,7 @@ const prismaManagementHttpLayer = Layer.effect(
 /**
  * Upstream alchemy's live providers for the postgres family (Project,
  * Database, Connection), the compute family (App, Deployment,
- * EnvironmentVariable), and the bucket family (Bucket, BucketAccessKey),
+ * EnvironmentVariable, CustomDomain), and the bucket family (Bucket, BucketAccessKey),
  * over upstream's management clients, authenticated by
  * {@link prismaEnvironment}. The generated Management API operations read
  * their token and origin from the same environment.
@@ -83,6 +83,7 @@ const upstreamPrismaProviders = () =>
     Prisma.EnvironmentVariableProvider(),
     Prisma.BucketProvider(),
     Prisma.BucketAccessKeyProvider(),
+    Prisma.CustomDomainProvider(),
   ).pipe(
     Layer.provideMerge(Prisma.PrismaClientLive),
     Layer.provideMerge(prismaEnvironment()),
@@ -114,6 +115,7 @@ export const providers = () =>
       Prisma.EnvironmentVariable,
       Prisma.Bucket,
       Prisma.BucketAccessKey,
+      Prisma.CustomDomain,
     ]),
   ).pipe(
     Layer.provideMerge(upstreamPrismaProviders()),
