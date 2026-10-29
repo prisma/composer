@@ -30,9 +30,9 @@ export interface ProvisionedModuleInput {
 export interface ValueBindingSite {
   /** The address of the node the binding belongs to. */
   readonly address: NodeId;
-  /** `input` for a service input binding, `moduleInput` for a module's input binding, `param` for a service param, `props` for a resource's props. */
-  readonly kind: 'input' | 'moduleInput' | 'param' | 'props';
-  /** The param name for `param`; the dotted path inside the document for `input`, `moduleInput` and `props` (`''` at the root). Array members by index: `hosts.0`. */
+  /** `serviceInput` for a service input binding, `moduleInput` for a module's input binding, `param` for a service param, `props` for a resource's props. */
+  readonly kind: 'serviceInput' | 'moduleInput' | 'param' | 'props';
+  /** The param name for `param`; the dotted path inside the document for `serviceInput`, `moduleInput` and `props` (`''` at the root). Array members by index: `hosts.0`. */
   readonly path: string;
 }
 
@@ -44,7 +44,7 @@ function joinPath(path: string, key: string | number): string {
 
 function describeSite(site: ValueBindingSite): string {
   switch (site.kind) {
-    case 'input':
+    case 'serviceInput':
       return site.path === ''
         ? `the input binding of service "${site.address}"`
         : `input key "${site.path}" of service "${site.address}"`;
@@ -281,7 +281,7 @@ export function resolveValues(input: {
   const { environment } = input;
   const found: { value: Value<unknown>; site: ValueBindingSite }[] = [];
   for (const { serviceAddress, binding } of input.inputBindings) {
-    const site: ValueBindingSite = { address: serviceAddress, kind: 'input', path: '' };
+    const site: ValueBindingSite = { address: serviceAddress, kind: 'serviceInput', path: '' };
     collect(binding, site, found, new WeakSet());
   }
   for (const { serviceAddress, slot, binding } of input.params) {

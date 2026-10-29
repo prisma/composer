@@ -488,7 +488,7 @@ export interface ProvisionedModuleInput {
 }
 ```
 
-`ValueBindingSite.kind` becomes `'input' | 'moduleInput' | 'param' | 'props'`. Its doc comment becomes: `` `input` for a service input binding, `moduleInput` for a module's input binding, `param` for a service param, `props` for a resource's props. `` The `path` doc comment says `input`, `moduleInput` and `props`.
+`ValueBindingSite.kind` becomes `'serviceInput' | 'moduleInput' | 'param' | 'props'`: the existing `'input'` is renamed `'serviceInput'` (after the review), so each kind says whose input it is. Its doc comment becomes: `` `serviceInput` for a service input binding, `moduleInput` for a module's input binding, `param` for a service param, `props` for a resource's props. `` The `path` doc comment says `serviceInput`, `moduleInput` and `props`.
 
 `describeSite` gains, verbatim:
 
