@@ -38,6 +38,7 @@ function renderOptions(input: StackFileInput): string {
   const lines: string[] = [];
   lines.push(`  name: ${quote(input.name)},`);
   lines.push(`  environment: ${quote(input.environment)},`);
+  lines.push('  configPool: process.env,');
 
   lines.push('  bundles: {');
   for (const [id, bundle] of Object.entries(input.assembled.bundles)) {

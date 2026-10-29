@@ -40,6 +40,19 @@ describe('renderStackFile() — a module root', () => {
     expect(content).not.toContain('stage:');
   });
 
+  test('passes the process environment to lower() as the config pool, directly after the environment', () => {
+    const content = renderStackFile({
+      entryPath: '/app/module.ts',
+      cwd: '/app',
+      configFile: '/app/prisma.config.ts',
+      name: 'app',
+      environment: 'staging',
+      assembled: { devServers: {}, bundles: {} },
+    });
+
+    expect(content).toContain('  environment: "staging",\n  configPool: process.env,\n');
+  });
+
   test('imports alchemy only through @prisma/composer, which the app can resolve under pnpm', () => {
     const content = renderStackFile({
       entryPath: '/app/module.ts',

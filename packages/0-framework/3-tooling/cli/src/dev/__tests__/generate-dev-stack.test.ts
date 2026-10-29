@@ -84,6 +84,19 @@ describe('renderDevStackFile() — the environment', () => {
 
     expect(content).toContain('  name: "app",\n  environment: "test",\n');
   });
+
+  test('passes the process environment to lower() as the config pool, directly after the environment', () => {
+    const content = renderDevStackFile({
+      entryPath: '/repo/app/module.ts',
+      cwd: '/repo/app',
+      configFile: '/repo/app/prisma.config.ts',
+      name: 'app',
+      environment: 'test',
+      assembled: { devServers: {}, bundles: {} },
+    });
+
+    expect(content).toContain('  environment: "test",\n  configPool: process.env,\n');
+  });
 });
 
 describe('renderDevStackFile() — services with dev servers (ADR-0056)', () => {

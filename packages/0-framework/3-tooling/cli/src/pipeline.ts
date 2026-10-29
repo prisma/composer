@@ -174,7 +174,11 @@ export async function runPipeline(
   }
 
   // 3. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
-  const graph = Load(entryModule.root, { id: name, environment: { name: environment } });
+  const graph = Load(entryModule.root, {
+    id: name,
+    environment: { name: environment },
+    configPool: process.env,
+  });
   if (graph.root.node.kind !== 'module') {
     throw new CliStructuredError('COMPOSE.ROOT_NOT_MODULE', 'The deploy root must be a module.', {
       fix:
