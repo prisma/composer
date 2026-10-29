@@ -114,7 +114,7 @@ The row reports every condition and the first unmet one as the next thing the us
 | `POST /v1/services/{id}/urls`, `GET /v1/services/{id}/urls` | create and list a service's rows |
 | `GET`, `PATCH`, `DELETE /v1/urls/{id}` | read with conditions; change hostname, service (same Branch) or `logicalId`; delete |
 | `GET /v1/projects/{id}/branches/{id}/urls?logicalId=` | a Branch's rows, filtered for deploy tools |
-| `POST`, `GET /v1/workspaces/{id}/domains`; `GET`, `DELETE /v1/workspaces/{id}/domains/{id}`; `POST …/verify` | claim, list, read, delete, verify |
+| `POST`, `GET /v1/workspaces/{id}/domain-ownerships`; `GET`, `DELETE /v1/domain-ownerships/{id}`; `POST /v1/domain-ownerships/{id}/verify` | claim, list, read, delete, verify |
 
 Mutations go through interactors: create, update and delete a RoutingUrl; create and delete a DomainOwnership; verify a DomainOwnership. The claim routes live under `/v1/workspaces/{workspaceId}/domain-ownerships` and `/v1/domain-ownerships/{id}`, because the resource is a workspace's ownership of a domain, not the domain. Reads are routes over the repositories. Responses carry the six conditions and the Console setup link while any is unmet. The existing `/v1/services/{id}/domains` and `/v1/domains/{id}` routes become a view over RoutingUrls for one deprecation cycle. The Alchemy Prisma provider gains a `Prisma.RoutingUrl` resource over these routes, replacing `Prisma.CustomDomain` for Composer.
 
