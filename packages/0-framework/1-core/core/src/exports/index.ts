@@ -23,6 +23,7 @@ export type {
   Edge,
   Graph,
   GraphNode,
+  LoadOptions,
   NodeId,
   ParamBinding,
   PortEndpoint,
@@ -32,6 +33,7 @@ export { assertAppName, Load, LoadError, RESOURCE_OUT_PORT } from '../graph.ts';
 export { hydrate, hydrateSync } from '../hydrate.ts';
 export type {
   BuildAdapter,
+  DepBindings,
   DependencyEnd,
   Deps,
   Expose,
@@ -54,6 +56,8 @@ export type {
   ProvisionNeed,
   RefPort,
   ResourceNode,
+  ResourceProps,
+  ResourcePropsMember,
   RunnableServiceNode,
   SecretBindings,
   SecretNeed,
@@ -77,4 +81,7 @@ export {
   secret,
   secretSource,
   service,
+  slotsOf,
 } from '../node.ts';
+export type { EnvironmentFacts, PlainData, RealValuesOf, Value } from '../value.ts';
+export { isValue, resolve } from '../value.ts';

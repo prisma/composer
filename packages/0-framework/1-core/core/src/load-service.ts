@@ -7,19 +7,22 @@ import {
   LoadError,
   type NodeId,
 } from './graph-types.ts';
-import { isNode, type ModuleNode, type ServiceNode } from './node.ts';
+import { isNode, type ModuleNode, type ResourceNode, type ServiceNode, slotsOf } from './node.ts';
 import { topoSort } from './toposort.ts';
 
 /**
- * The declared boundary ports of a module or service node at `id`: dep slots
- * as `in` ports (contractKind = the slot's `type`), exposed contracts as
- * `out` ports (contractKind = the contract's `kind`, style = its declared
- * style). A resource's one
- * `$out` port is recorded at its provision site instead (load-module.ts).
+ * The declared boundary ports of a module, service or resource node at `id`:
+ * dep slots as `in` ports (contractKind = the slot's `type`), exposed
+ * contracts as `out` ports (contractKind = the contract's `kind`, style = its
+ * declared style). A resource's one `$out` port is recorded at its provision
+ * site instead (load-module.ts).
  */
-export function boundaryPortsOf(id: NodeId, node: ModuleNode | ServiceNode): BoundaryPort[] {
+export function boundaryPortsOf(
+  id: NodeId,
+  node: ModuleNode | ServiceNode | ResourceNode,
+): BoundaryPort[] {
   const ports: BoundaryPort[] = [];
-  const slots: Record<string, unknown> = node.kind === 'module' ? node.deps : node.inputs;
+  const slots: Record<string, unknown> = node.kind === 'module' ? node.deps : slotsOf(node);
   for (const [name, slot] of Object.entries(slots)) {
     const type =
       typeof slot === 'object' && slot !== null && 'type' in slot && typeof slot.type === 'string'
@@ -27,7 +30,8 @@ export function boundaryPortsOf(id: NodeId, node: ModuleNode | ServiceNode): Bou
         : undefined;
     ports.push({ node: id, direction: 'in', name, contractKind: type, style: undefined });
   }
-  for (const [name, contract] of Object.entries(node.expose ?? {})) {
+  const expose = node.kind === 'resource' ? {} : (node.expose ?? {});
+  for (const [name, contract] of Object.entries(expose)) {
     const kind =
       typeof contract === 'object' &&
       contract !== null &&
@@ -46,22 +50,25 @@ export function boundaryPortsOf(id: NodeId, node: ModuleNode | ServiceNode): Bou
   return ports;
 }
 
-export function serviceInputs(
-  service: ServiceNode,
-  serviceId: NodeId,
+/** A resource node built by another installed copy of core may have no `inputs`; it has no slots. */
+
+export function slotNodesAndEdges(
+  node: ServiceNode | ResourceNode,
+  nodeId: NodeId,
 ): { nodes: GraphNode[]; edges: Edge[] } {
-  if (typeof service.inputs !== 'object' || service.inputs === null) {
-    throw new LoadError(`Service "${serviceId}" has no inputs map.`);
+  const inputs = slotsOf(node);
+  if (typeof inputs !== 'object' || inputs === null) {
+    throw new LoadError(`Node "${nodeId}" has no inputs map.`);
   }
   const nodes: GraphNode[] = [];
   const edges: Edge[] = [];
-  for (const [input, value] of Object.entries(service.inputs)) {
+  for (const [input, value] of Object.entries(inputs)) {
     // `inputs` is untrusted at runtime (a user module could carry junk the
     // types don't see), so the kind is re-checked as a plain string.
     const kind: string | undefined = isNode(value) ? value.kind : undefined;
     if (kind === 'resource') {
       throw new LoadError(
-        `Input "${input}" of "${serviceId}" is a resource node — a resource is provisioned by ` +
+        `Dependency "${input}" of "${nodeId}" is a resource node — a resource is provisioned by ` +
           'the composing module, never created for a service that mentions it. Declare the input ' +
           "as a dependency (the pack's dependency factory) and wire the module-provisioned " +
           "resource's ref into it.",
@@ -69,16 +76,16 @@ export function serviceInputs(
     }
     if (kind !== 'dependency') {
       throw new LoadError(
-        `Input "${input}" of "${serviceId}" is not a branded dependency end ` +
+        `Dependency "${input}" of "${nodeId}" is not a branded dependency end ` +
           '(construct it with the dependency() factory).',
       );
     }
     if (value.type.length === 0) {
-      throw new LoadError(`Input "${input}" of "${serviceId}" has an empty node type.`);
+      throw new LoadError(`Dependency "${input}" of "${nodeId}" has an empty node type.`);
     }
-    const id = `${serviceId}.${input}`;
-    nodes.push({ id, parent: serviceId, node: value });
-    edges.push({ from: id, to: serviceId, input, kind: 'input' });
+    const id = `${nodeId}.${input}`;
+    nodes.push({ id, parent: nodeId, node: value });
+    edges.push({ from: id, to: nodeId, input, kind: 'input' });
   }
   return { nodes, edges };
 }
@@ -87,7 +94,7 @@ export function loadService(root: ServiceNode, rootId: NodeId): Graph {
   for (const [input, value] of Object.entries(root.inputs)) {
     if (isNode(value) && value.kind === 'dependency') {
       throw new LoadError(
-        `Service "${rootId}" has an unwired dependency input "${input}" — this service is composed ` +
+        `Service "${rootId}" has an unwired dependency "${input}" — this service is composed ` +
           `by a module; deploy the module instead of loading "${rootId}" directly.`,
       );
     }
@@ -103,7 +110,7 @@ export function loadService(root: ServiceNode, rootId: NodeId): Graph {
     );
   }
   const rootGraphNode: GraphNode = { id: rootId, parent: undefined, node: root };
-  const { nodes, edges } = serviceInputs(root, rootId);
+  const { nodes, edges } = slotNodesAndEdges(root, rootId);
   return {
     root: rootGraphNode,
     nodes: [...topoSort(nodes, edges), rootGraphNode],

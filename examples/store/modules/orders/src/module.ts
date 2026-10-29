@@ -18,11 +18,11 @@ const config = fileURLToPath(new URL('../prisma.config.ts', import.meta.url));
 export default module(
   'orders',
   { deps: { catalog: rpc(catalogContract) }, expose: { rpc: ordersContract } },
-  ({ inputs, provision }) => {
+  ({ deps, provision }) => {
     const db = provision(postgres({ name: 'database', contract: ordersData, config }));
     const service = provision(ordersService, {
       id: 'service',
-      deps: { db, catalog: inputs.catalog },
+      deps: { db, catalog: deps.catalog },
     });
     return { rpc: service.rpc };
   },

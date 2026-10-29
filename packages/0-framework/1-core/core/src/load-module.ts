@@ -7,14 +7,16 @@ import {
   type Graph,
   type GraphNode,
   LoadError,
+  type LoadOptions,
   type NodeId,
   type ParamBinding,
   type PortEndpoint,
   RESOURCE_OUT_PORT,
   type ServiceInputBinding,
 } from './graph-types.ts';
-import { boundaryPortsOf, serviceInputs } from './load-service.ts';
+import { boundaryPortsOf, slotNodesAndEdges } from './load-service.ts';
 import {
+  type AnyContract,
   type DependencyEnd,
   type Deps,
   isConfigKeySegment,
@@ -26,9 +28,12 @@ import {
   type ModuleNode,
   type ProvisionedRef,
   type ResourceNode,
+  type ResourceProps,
   type ServiceNode,
 } from './node.ts';
+import { resolveValues } from './resolve-values.ts';
 import { topoSort } from './toposort.ts';
+import { environmentFacts, isValue } from './value.ts';
 
 /**
  * Brands a ref-port with the AUTHORED endpoint it stands for — which port of
@@ -76,17 +81,20 @@ function refFor(id: string, service: ServiceNode): ProvisionedRef {
 }
 
 /**
- * The resource variant of refFor: a resource has exactly one port — the
+ * The resource variant of refFor: a resource has at most one port — the
  * contract it provides — flattened onto the ref itself, tagged with the
  * provider id. `id` and the authored brand are written last so a hostile
- * contract value cannot clobber them.
+ * contract value cannot clobber them. A resource that exposes nothing gets
+ * only its id.
  */
 function refForResource(id: string, resource: ResourceNode): ProvisionedRef {
+  const provides: AnyContract | undefined = resource.provides;
+  if (provides === undefined) return { id };
   return blindCast<
     ProvisionedRef,
     'the ref is the provided contract value tagged with the provider id — the `{ id } & RefPort<C>` shape the resource provision() overload pins'
   >({
-    ...resource.provides,
+    ...provides,
     __providerId: id,
     id,
     [AUTHORED_PORT]: { node: id, name: RESOURCE_OUT_PORT },
@@ -102,7 +110,7 @@ function producerIdOf(ref: unknown): string | undefined {
 }
 
 /**
- * Brands each `ctx.inputs` entry with the input key it stands for (see
+ * Brands each `ctx.deps` entry with the input key it stands for (see
  * flatten): diagnostic only — usage attribution relies on the per-key object
  * identity the branding copy creates, never on reading this back.
  */
@@ -140,7 +148,7 @@ interface PendingWiring {
   readonly deps: Deps;
   readonly wiring: Record<string, unknown>;
   readonly targetId: string;
-  readonly targetKind: 'service' | 'module';
+  readonly targetKind: 'service' | 'module' | 'resource';
   readonly enclosingModuleName: string;
 }
 
@@ -203,7 +211,7 @@ function validateWiring(
     if (!isNode(value) || wiring[input] !== undefined) continue;
     if (value.kind === 'dependency') {
       throw new LoadError(
-        `Dependency input "${input}" of provisioned ${targetKind} "${targetId}" is not wired to a ` +
+        `Dependency "${input}" of provisioned ${targetKind} "${targetId}" is not wired to a ` +
           `producer (module "${enclosingModuleName}").`,
       );
     }
@@ -251,6 +259,7 @@ function wiringEdges(wiring: Record<string, unknown>, targetId: string): Edge[] 
 function validateSecretBinding(
   child: ModuleNode,
   id: string,
+  address: NodeId,
   secretWiring: Record<string, unknown>,
   enclosingModuleName: string,
 ): void {
@@ -261,6 +270,12 @@ function validateSecretBinding(
       throw new LoadError(
         `Secret slot "${slot}" of provisioned ${kind} "${id}" is not bound (module ` +
           `"${enclosingModuleName}") — bind it with envSecret('NAME') or forward ctx.secrets.`,
+      );
+    }
+    if (isValue(bound)) {
+      throw new LoadError(
+        `The secrets for "${address}" bind "${slot}" to a value. A value is not a secret source; ` +
+          "bind envSecret('NAME') or a forwarded ctx.secrets ref.",
       );
     }
     if (!isSecretSource(bound)) {
@@ -311,6 +326,7 @@ function validateServiceParamBinding(
 function validateParamNeedBinding(
   child: ModuleNode,
   id: string,
+  address: NodeId,
   paramWiring: Record<string, unknown>,
   enclosingModuleName: string,
 ): void {
@@ -321,6 +337,12 @@ function validateParamNeedBinding(
         `Param slot "${slot}" of provisioned module "${id}" is not bound (module ` +
           `"${enclosingModuleName}") — bind it with a param source (e.g. envParam('NAME')) or ` +
           'forward ctx.params.',
+      );
+    }
+    if (isValue(bound)) {
+      throw new LoadError(
+        `The params for "${address}" bind "${slot}" to a value. A module param slot takes a param ` +
+          "source; bind envParam('NAME') or a forwarded ctx.params ref.",
       );
     }
     if (!isParamSource(bound)) {
@@ -373,6 +395,7 @@ function flatten(
   byId: Map<string, ServiceNode | ResourceNode | ModuleNode>,
   ports: BoundaryPort[],
   authoredEdges: AuthoredEdge[],
+  loading: { sealed: boolean },
 ): Record<string, unknown> {
   ports.push(...boundaryPortsOf(selfId, moduleNode));
   const localIds = new Set<string>();
@@ -380,7 +403,7 @@ function flatten(
   const usedSecrets = new Set<string>();
   const usedParams = new Set<string>();
 
-  // Each ctx.inputs entry gets its OWN object identity: a shallow copy of the
+  // Each ctx.deps entry gets its OWN object identity: a shallow copy of the
   // wired producer ref, branded (symbol-keyed) with the input key it stands
   // for. Without the copy, wiring ONE producer ref into TWO inputs would
   // alias both entries to the same object, and forwarding one would falsely
@@ -394,7 +417,7 @@ function flatten(
       typeof wired === 'object' && wired !== null ? { ...wired, [MODULE_INPUT_KEY]: key } : wired;
   }
 
-  // An input counts as USED when its per-key ctx.inputs value shows up in a
+  // An input counts as USED when its per-key ctx.deps value shows up in a
   // provision's wiring (forwarded down) — or, below, in the body's returned
   // outputs (passed through). Identity comparison is key-precise because each
   // entry is its own object.
@@ -407,7 +430,7 @@ function flatten(
   };
 
   // The authored SOURCE endpoint a wiring value stands for: this module's own
-  // `in` port when the value is one of its forwarded ctx.inputs (identity,
+  // `in` port when the value is one of its forwarded ctx.deps (identity,
   // like markUsed — and checked FIRST, because a forwarded copy still carries
   // the original producer's authored brand), else the producer `out` port the
   // ref-port was built for. A whole ref wired wholesale into an untyped slot
@@ -432,7 +455,7 @@ function flatten(
     }
   };
 
-  // The secrets forwarding channel mirrors ctx.inputs: each declared secret slot
+  // The secrets forwarding channel mirrors ctx.deps: each declared secret slot
   // gets its OWN branded copy of the source bound to it, so forwarding one down a
   // provision counts precisely (identity), and `name` reads through unchanged.
   const ctxSecrets: Record<string, unknown> = {};
@@ -477,6 +500,14 @@ function flatten(
     },
     // biome-ignore lint/suspicious/noExplicitAny: ModuleBuilder's real overload set is checked at the call site; the collector implementation is untyped by design.
   ): any => {
+    if (loading.sealed) {
+      throw new LoadError(
+        `provision() was called after module "${moduleNode.name}" was loaded, from inside a ` +
+          'resolve() function. resolve() computes values, never structure: the graph is the same ' +
+          'whatever inputs Composer is given (ADR-0062). Provision the node in the module body and ' +
+          'pass the value into it.',
+      );
+    }
     // The id defaults to the node's own `name`; `opts.deps`/`opts.secrets`/
     // `opts.input`/`opts.params` carry the producers, secret sources, input
     // binding, and param bindings that satisfy its slots. The "_"/"." and
@@ -487,6 +518,13 @@ function flatten(
     const provisionSecrets = opts?.secrets;
     const provisionInput = opts?.input;
     const provisionParams = opts?.params;
+    if (isValue(id)) {
+      throw new LoadError(
+        `provision() received a value as its id (module "${moduleNode.name}"). A value can ` +
+          'configure a node, never decide its address: the graph is the same whatever inputs ' +
+          'Composer is given (ADR-0062).',
+      );
+    }
     if (typeof id !== 'string' || id.length === 0) {
       throw new LoadError(`provision() requires a non-empty id (module "${moduleNode.name}").`);
     }
@@ -511,7 +549,7 @@ function flatten(
     }
     // Brand-check on a widened alias: predicate-narrowing the declared union
     // drops the `any`-instantiated ResourceNode member (the same quirk
-    // serviceInputs sidesteps by widening `kind` to a plain string).
+    // slotNodesAndEdges sidesteps by widening `kind` to a plain string).
     const untrusted: unknown = child;
     if (
       !isNode(untrusted) ||
@@ -528,7 +566,7 @@ function flatten(
     if (child.kind === 'resource') {
       if (provisionWiring !== undefined) {
         throw new LoadError(
-          `provision("${id}") received deps for a resource — a resource has no dependency slots to satisfy.`,
+          `provision("${id}") received deps for a resource — a resource's slots are wired when it is constructed, not at provision().`,
         );
       }
       if (provisionSecrets !== undefined) {
@@ -549,18 +587,43 @@ function flatten(
       if (child.type.length === 0) {
         throw new LoadError(`provision("${id}") received a resource with an empty node type.`);
       }
+      const localWiring = { ...child.deps };
+      markUsed(Object.values(localWiring));
       byId.set(fullAddress, child);
-      nodes.push({ id: fullAddress, parent: selfId, node: child });
-      ports.push({
-        node: fullAddress,
-        direction: 'out',
-        name: RESOURCE_OUT_PORT,
-        contractKind: child.provides.kind,
-        style: contractStyleOf(child.provides),
+      const slots = slotNodesAndEdges(child, fullAddress);
+      nodes.push(...slots.nodes, { id: fullAddress, parent: selfId, node: child });
+      edges.push(...slots.edges, ...wiringEdges(localWiring, fullAddress));
+      ports.push(...boundaryPortsOf(fullAddress, child));
+      const provides: AnyContract | undefined = child.provides;
+      if (provides !== undefined) {
+        ports.push({
+          node: fullAddress,
+          direction: 'out',
+          name: RESOURCE_OUT_PORT,
+          contractKind: provides.kind,
+          style: contractStyleOf(provides),
+        });
+      }
+      recordAuthoredWiring(fullAddress, localWiring);
+      pending.push({
+        deps: child.inputs ?? {},
+        wiring: localWiring,
+        targetId: fullAddress,
+        targetKind: 'resource',
+        enclosingModuleName: moduleNode.name,
       });
       return refForResource(fullAddress, child);
     }
 
+    for (const [input, ref] of Object.entries(provisionWiring ?? {})) {
+      if (isValue(ref)) {
+        throw new LoadError(
+          `The deps for "${fullAddress}.${input}" are bound to a value. A value can configure a ` +
+            'node, never decide its edges: the graph is the same whatever inputs Composer is given ' +
+            '(ADR-0062).',
+        );
+      }
+    }
     const localWiring = { ...(provisionWiring ?? {}) };
     markUsed(Object.values(localWiring));
 
@@ -615,7 +678,7 @@ function flatten(
       for (const [slot, binding] of Object.entries(localParams)) {
         paramBindings.push({ serviceAddress: fullAddress, slot, binding });
       }
-      const inputs = serviceInputs(child, fullAddress);
+      const inputs = slotNodesAndEdges(child, fullAddress);
       nodes.push(...inputs.nodes, { id: fullAddress, parent: selfId, node: child });
       edges.push(...inputs.edges, ...wiringEdges(localWiring, fullAddress));
       ports.push(...boundaryPortsOf(fullAddress, child));
@@ -641,12 +704,12 @@ function flatten(
     // source, reject extras. No `pending` deferral — a source carries its own
     // name, so nothing needs the whole graph to resolve (unlike a
     // dependency's producer).
-    validateSecretBinding(child, id, localSecrets, moduleNode.name);
+    validateSecretBinding(child, id, fullAddress, localSecrets, moduleNode.name);
 
     // A module's param-forwarding slots have no schema of their own: every
     // declared one must be bound to a real ParamSource, the same requirement
     // secrets place on a module's secret slots.
-    validateParamNeedBinding(child, id, localParams, moduleNode.name);
+    validateParamNeedBinding(child, id, fullAddress, localParams, moduleNode.name);
 
     edges.push(...wiringEdges(localWiring, fullAddress));
     recordAuthoredWiring(fullAddress, localWiring);
@@ -671,11 +734,12 @@ function flatten(
       byId,
       ports,
       authoredEdges,
+      loading,
     );
     nodes.push({ id: fullAddress, parent: selfId, node: child });
     byId.set(fullAddress, child);
     // Each returned output gets its OWN shallow copy branded as THIS module's
-    // out port — the same per-key copy trick ctx.inputs uses — so wiring it
+    // out port — the same per-key copy trick ctx.deps uses — so wiring it
     // into a sibling authors an edge from the module boundary, not from the
     // inner producer the flat view resolves to. `__providerId` and
     // `satisfies` read through unchanged.
@@ -696,9 +760,10 @@ function flatten(
     ModuleContext<Deps>,
     "ctxInputs/ctxSecrets/ctxParams hold one resolved ref per moduleNode.deps/secrets/paramSlots key (the same shapes a producer port, an envSecret source, and an envParam source carry), and provision is exactly ModuleBuilder['provision'] — together they satisfy ModuleContext<D, S, PN> structurally for whatever D/S/PN this moduleNode declares"
   >({
-    inputs: ctxInputs,
+    deps: ctxInputs,
     secrets: ctxSecrets,
     params: ctxParams,
+    environment: environmentFacts,
     provision: blindCast<
       ModuleBuilder['provision'],
       'single implementation behind the provision() overloads — returns the contract-carrying ref for a resource, a ProvisionedRef for a service, and a ProvisionedRef for a nested module, exactly what each overload pins, but an object property cannot carry an overloaded implementation signature'
@@ -719,7 +784,7 @@ function flatten(
   for (const key of Object.keys(moduleNode.deps)) {
     if (!used.has(key)) {
       throw new LoadError(
-        `Module "${moduleNode.name}" declares input "${key}" but never forwards it into a provision nor returns it as an output.`,
+        `Module "${moduleNode.name}" declares dependency "${key}" but never forwards it into a provision nor returns it as an exposed interface.`,
       );
     }
   }
@@ -767,13 +832,13 @@ function flatten(
   return outputs;
 }
 
-export function loadModule(root: ModuleNode, opts?: { id?: NodeId }): Graph {
+export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   const rootId = opts?.id ?? root.name;
   const rootDepKeys = Object.keys(root.deps);
   if (rootDepKeys.length > 0) {
     const names = rootDepKeys.map((k) => `"${k}"`).join(', ');
     throw new LoadError(
-      `Module "${root.name}" declares input${rootDepKeys.length > 1 ? 's' : ''} ${names} but is being ` +
+      `Module "${root.name}" declares ${rootDepKeys.length > 1 ? 'dependencies' : 'dependency'} ${names} but is being ` +
         'deployed as the root — a root has no enclosing scope to wire them; compose ' +
         `"${root.name}" from another module that provisions and wires it instead.`,
     );
@@ -805,42 +870,82 @@ export function loadModule(root: ModuleNode, opts?: { id?: NodeId }): Graph {
   const byId = new Map<string, ServiceNode | ResourceNode | ModuleNode>();
   const ports: BoundaryPort[] = [];
   const authoredEdges: AuthoredEdge[] = [];
+  const loading = { sealed: false };
 
-  flatten(
-    root,
-    rootId,
-    {},
-    {},
-    {},
-    nodes,
-    edges,
-    pending,
+  try {
+    flatten(
+      root,
+      rootId,
+      {},
+      {},
+      {},
+      nodes,
+      edges,
+      pending,
+      inputBindings,
+      paramBindings,
+      byId,
+      ports,
+      authoredEdges,
+      loading,
+    );
+    for (const entry of pending) validateWiring(entry, byId);
+    assertDependencyDag(edges);
+  } finally {
+    loading.sealed = true;
+  }
+  const resources = new Map<NodeId, ResourceNode>();
+  for (const [address, node] of byId) {
+    if (node.kind === 'resource') resources.set(address, node);
+  }
+  const resolved = resolveValues({
+    environment: opts?.environment,
     inputBindings,
-    paramBindings,
-    byId,
-    ports,
-    authoredEdges,
-  );
-
-  for (const entry of pending) validateWiring(entry, byId);
-  assertDependencyDag(edges);
+    params: paramBindings,
+    resources,
+  });
+  const resolvedNodes = nodes.map((entry): GraphNode => {
+    const props = resolved.resourceProps.get(entry.id);
+    if (entry.node.kind !== 'resource' || props === undefined || props === entry.node.props) {
+      return entry;
+    }
+    return { ...entry, node: withResolvedProps(entry.node, props) };
+  });
 
   const rootGraphNode: GraphNode = { id: rootId, parent: undefined, node: root };
   return {
     root: rootGraphNode,
-    nodes: [...topoSort(nodes, edges), rootGraphNode],
+    nodes: [...topoSort(resolvedNodes, edges), rootGraphNode],
     edges,
     ports,
     authoredEdges,
-    inputBindings,
-    params: paramBindings,
+    inputBindings: resolved.inputBindings,
+    params: resolved.params,
   };
 }
 
 /**
+ * A frozen copy of `node` holding `props`, keeping its prototype (a class built
+ * on `ResourceNodeBase` keeps its methods) and its own properties, the brand included.
+ */
+function withResolvedProps(node: ResourceNode, props: ResourceProps): ResourceNode {
+  const copy: ResourceNode = Object.freeze(
+    Object.create(Object.getPrototypeOf(node), {
+      ...Object.getOwnPropertyDescriptors(node),
+      props: {
+        value: Object.freeze(props),
+        enumerable: true,
+        writable: false,
+        configurable: false,
+      },
+    }),
+  );
+  return copy;
+}
+
+/**
  * The dependency edges must form a DAG — a cycle means neither producer can
- * deploy first. Resources take no wiring, so only service/module-to-service/module
- * edges can ever participate in a cycle; no special-casing needed.
+ * deploy first. A resource with dependency slots can take part in a cycle too.
  */
 function assertDependencyDag(edges: readonly Edge[]): void {
   const adjacency = new Map<string, string[]>();

@@ -1,4 +1,4 @@
-import { type Graph, LoadError, type NodeId } from './graph-types.ts';
+import { type Graph, LoadError, type LoadOptions } from './graph-types.ts';
 import { loadModule } from './load-module.ts';
 import { loadService } from './load-service.ts';
 import { isNode, type ModuleNode, type ServiceNode } from './node.ts';
@@ -9,6 +9,7 @@ export type {
   Edge,
   Graph,
   GraphNode,
+  LoadOptions,
   NodeId,
   ParamBinding,
   PortEndpoint,
@@ -38,9 +39,10 @@ export function assertAppName(name: string): void {
  * module it provisions into one graph of hierarchical addresses. A malformed
  * graph is a `LoadError` that names its fix; the individual validation rules
  * live with `loadService` / `loadModule` and are covered by name in the Load
- * tests. Executes nothing of the user's own code beyond module bodies.
+ * tests. Executes nothing of the user's own code beyond module bodies and `resolve()`
+ * functions.
  */
-export function Load(root: ServiceNode | ModuleNode, opts?: { id?: NodeId }): Graph {
+export function Load(root: ServiceNode | ModuleNode, opts?: LoadOptions): Graph {
   // Brand-check the untrusted root once (a user default-export could be junk
   // TypeScript believes is a node), then route by its discriminant.
   if (!isNode(root)) {

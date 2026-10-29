@@ -23,7 +23,7 @@ const stackInput = {
   cwd: fixtureDir,
   configFile: path.join(fixtureDir, 'prisma.config.ts'),
   name: 'fixture-module',
-  environment: 'dev',
+  environment: 'staging',
   assembled: { devServers: {}, bundles: {} },
 };
 
@@ -43,19 +43,21 @@ function runStack(stackFile: string) {
 }
 
 describe('the generated stack files, evaluated', () => {
-  test('the deploy stack passes the composer export of prisma.config.ts to lower()', () => {
+  test('the deploy stack passes the composer export of prisma.config.ts and the environment to lower()', () => {
     expect(runStack(writeStackFile(stackInput))).toEqual({
       app: 'fixture-module',
       extensions: ['fixture-extension'],
       state: 'fixture-extension',
+      environment: 'staging',
     });
   });
 
-  test('the dev stack passes the composer export of prisma.config.ts to lower()', () => {
+  test('the dev stack passes the composer export of prisma.config.ts and the environment to lower()', () => {
     expect(runStack(writeDevStackFile(stackInput))).toEqual({
       app: 'fixture-module',
       extensions: ['fixture-extension'],
       state: 'fixture-extension',
+      environment: 'staging',
     });
   });
 

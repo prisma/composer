@@ -220,6 +220,11 @@ After a deploy, each service is a Compute service in the Project; its public
 URL is its service endpoint domain — printed when the deploy finishes, and
 also shown in the Console.
 
+The graph is the same in every environment; only configuration may differ.
+To compute a value from the environment's name, use `resolve()` over
+`environment.name`, as [Values that differ per environment](building-an-app.md#values-that-differ-per-environment)
+describes.
+
 ## What a deploy prints
 
 While it runs, a deploy prints each step as it starts and when it finishes,

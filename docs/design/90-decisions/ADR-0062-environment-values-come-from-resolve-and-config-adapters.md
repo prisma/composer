@@ -1,5 +1,7 @@
 # ADR-0062: A value that differs per environment is computed with `resolve()`; values from outside the code come through config adapters
 
+Amended 2026-10-29: the thing `resolve()` returns is a **value**, typed `Value<T>`, not `ResolvedValue<T>`. A value is an opaque stand-in, in a module body, for data that is known later; the data it stands for is its real value. A value is provided or computed: `environment.name` is provided (what the decision below calls a reference to a deploy-time fact), and `resolve(dependencies, fn)` returns one computed from others; `fn` must be a pure function of its dependencies, because a deploy Loads the graph in two processes. A value is deploy-time or runtime: a deploy-time value holds its real value by the end of Load; a runtime value is known only to the platform the app is deployed to, and at deploy time it is a pointer to it. Every value shipped by the public-URLs project is deploy-time. `envParam()` and `envSecret()` are not values yet: with the `module-input` project they return values, the special handling of environment variables is replaced by config adapters and secret adapters, and the two functions then store the value in a platform variable the deploy owns, as `generatedParam` does today, instead of passing it through. The glossary's "Value" entry defines the term.
+
 ## Decision
 
 A module computes a value that depends on the environment, or on its inputs, with **`resolve()`**. Values that live outside the code reach the root module's `input` through **config adapters** named in `prisma.config.ts`. Every environment has a name, and no environment is special.
@@ -87,7 +89,7 @@ Adapters are not how per-environment choice is expressed. That is `resolve()`, i
 
 ## Consequences
 
-- **`resolve()` ships in `@prisma/composer`**, target-neutral, returning `ResolvedValue<T>`; every node parameter and input binding that carries a value accepts a `ResolvedValue` of its type. `name`, `id`, `deps` and `target` do not. The module body receives `environment` beside `input` and `provision`.
+- **`resolve()` ships in `@prisma/composer`**, target-neutral, returning `Value<T>` (see the amendment above); every node parameter and input binding that carries a value accepts a `Value` of its type. `name`, `id`, `deps` and `target` do not. The module body receives `environment` beside `input` and `provision`.
 - **The `composer` section has `config`, and later `secrets`.** Its validator rejects unknown keys ([ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md)), so both are known fields, each an array of adapters. `dotenv()` ships with Composer.
 - **`prisma deploy` and `prisma dev` take `--environment`**, defaulting to `production` and `dev` ([ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md)); `destroy` takes an environment name with no default.
 - **Values in `.env` files are plain.** A secret belongs with `envSecret`, or with a secrets adapter. The root's schema refuses a plain value where it expects `secretString()`.

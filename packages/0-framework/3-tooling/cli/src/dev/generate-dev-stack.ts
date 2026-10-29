@@ -54,6 +54,7 @@ function renderBundle(bundle: { dir: string; entry: string }): string {
 function renderOptions(input: DevStackFileInput): string {
   const lines: string[] = [];
   lines.push(`  name: ${quote(input.name)},`);
+  lines.push(`  environment: ${quote(input.environment)},`);
 
   lines.push('  bundles: {');
   for (const [id, bundle] of Object.entries(input.assembled.bundles)) {

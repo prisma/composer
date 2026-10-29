@@ -1203,6 +1203,62 @@ describe('executorLoadFailure()', () => {
 });
 
 describe('destroy()', () => {
+  test('destroy passes the environment into runPipeline, so Load resolves values over environment.name', async () => {
+    const app = makeAppDir();
+    fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
+    fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
+    fs.writeFileSync(
+      app.entryPath,
+      [
+        `import { module, resolve, service } from ${JSON.stringify(coreIndex)};`,
+        '',
+        "export default module('fixture-app', ({ environment, provision }) => {",
+        '  const label = resolve([environment.name], ([name]) => {',
+        '    globalThis.resolvedEnvironments.push(name);',
+        '    return name;',
+        '  });',
+        '  provision(',
+        '    service({',
+        "      name: 'app',",
+        "      extension: 'fixture-extension',",
+        "      type: 'fixture/compute',",
+        '      inputs: {},',
+        '      params: {},',
+        "      input: { '~standard': { version: 1, vendor: 'fixture', validate: (value) => ({ value }) } },",
+        "      build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
+        '    }),',
+        "    { id: 'app', input: { environment: label } },",
+        '  );',
+        '});',
+        '',
+      ].join('\n'),
+    );
+    const seen: string[] = [];
+    Object.assign(globalThis, { resolvedEnvironments: seen });
+
+    try {
+      const result = await silently(() =>
+        destroyWithDeps(
+          {
+            config: composerConfig(fakeConfig()),
+            entry: app.entryPath,
+            environment: 'staging',
+            cwd: app.dir,
+          },
+          {
+            runAssembler: fakeAssembler,
+            alchemy: async () => ({ exitCode: 0, signal: null }),
+          },
+        ),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(seen).toEqual(['staging']);
+    } finally {
+      Reflect.deleteProperty(globalThis, 'resolvedEnvironments');
+    }
+  });
+
   test('destroy locates the container for the environment it names', async () => {
     for (const environment of ['staging', 'production']) {
       const app = makeAppDir();

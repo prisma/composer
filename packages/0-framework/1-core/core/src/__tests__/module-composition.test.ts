@@ -53,7 +53,7 @@ describe('a module with a declared dep that is never forwarded (Load error a)', 
   test('names the module and the input, and points at the fix', () => {
     const brokenAuthModule = () =>
       module('auth', { deps: { db: untypedEnd() } }, ({ provision }) => {
-        provision(noOpService(), { id: 'api' }); // never uses ctx.inputs.db
+        provision(noOpService(), { id: 'api' }); // never uses ctx.deps.db
         return {};
       });
 
@@ -65,7 +65,7 @@ describe('a module with a declared dep that is never forwarded (Load error a)', 
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      'Module "auth" declares input "db" but never forwards it into a provision nor returns it as an output.',
+      'Module "auth" declares dependency "db" but never forwards it into a provision nor returns it as an exposed interface.',
     );
   });
 
@@ -81,14 +81,14 @@ describe('a module with a declared dep that is never forwarded (Load error a)', 
       });
 
     const aliasedModule = () =>
-      module('aliased', { deps: { a: untypedEnd(), b: untypedEnd() } }, ({ inputs, provision }) => {
-        provision(consumer(), { id: 'c', deps: { in: inputs.a } }); // only "a" forwarded; "b" ignored
+      module('aliased', { deps: { a: untypedEnd(), b: untypedEnd() } }, ({ deps, provision }) => {
+        provision(consumer(), { id: 'c', deps: { in: deps.a } }); // only "a" forwarded; "b" ignored
         return {};
       });
 
     const root = module('shop', {}, ({ provision }) => {
       const p = provision(noOpService(), { id: 'p' });
-      // The SAME ref wired into both inputs — without per-key ctx.inputs
+      // The SAME ref wired into both inputs — without per-key ctx.deps
       // identities, the two entries alias and forwarding "a" falsely marks "b".
       provision(aliasedModule(), { id: 'x', deps: { a: p, b: p } });
       return {};
@@ -96,7 +96,7 @@ describe('a module with a declared dep that is never forwarded (Load error a)', 
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      'Module "aliased" declares input "b" but never forwards it into a provision nor returns it as an output.',
+      'Module "aliased" declares dependency "b" but never forwards it into a provision nor returns it as an exposed interface.',
     );
   });
 
@@ -112,8 +112,8 @@ describe('a module with a declared dep that is never forwarded (Load error a)', 
       });
 
     const wiredModule = () =>
-      module('wired', { deps: { a: untypedEnd(), b: untypedEnd() } }, ({ inputs, provision }) => {
-        provision(consumer(), { id: 'c', deps: { one: inputs.a, two: inputs.b } });
+      module('wired', { deps: { a: untypedEnd(), b: untypedEnd() } }, ({ deps, provision }) => {
+        provision(consumer(), { id: 'c', deps: { one: deps.a, two: deps.b } });
         return {};
       });
 
@@ -201,7 +201,7 @@ describe('a module with non-empty deps Loaded as root (Load error c)', () => {
 
     expect(() => Load(rootWithDeps)).toThrow(LoadError);
     expect(() => Load(rootWithDeps)).toThrow(
-      'Module "auth" declares input "db" but is being deployed as the root — a root has no enclosing ' +
+      'Module "auth" declares dependency "db" but is being deployed as the root — a root has no enclosing ' +
         'scope to wire them; compose "auth" from another module that provisions and wires it instead.',
     );
   });
@@ -216,7 +216,9 @@ describe('a module with non-empty deps Loaded as root (Load error c)', () => {
       },
     );
 
-    expect(() => Load(rootWithDeps)).toThrow(/declares inputs "db", "cache" but is being deployed/);
+    expect(() => Load(rootWithDeps)).toThrow(
+      /declares dependencies "db", "cache" but is being deployed/,
+    );
   });
 });
 
@@ -235,8 +237,8 @@ describe('a forwarding cycle through a module boundary (Load error d)', () => {
     // 'sub' honestly forwards its declared "peer" input into its own child
     // ("inner") — an ordinary down-forward, no forging needed for that half.
     const subModule = () =>
-      module('sub', { deps: { peer: untypedEnd() } }, ({ inputs, provision }) => {
-        provision(peerService(), { id: 'inner', deps: { peer: inputs.peer } });
+      module('sub', { deps: { peer: untypedEnd() } }, ({ deps, provision }) => {
+        provision(peerService(), { id: 'inner', deps: { peer: deps.peer } });
         return {};
       });
 
@@ -320,8 +322,8 @@ describe('3-level nesting: addresses, and forwarding down + up round trip', () =
     module(
       'inner',
       { deps: { cfg: cfgEnd() }, expose: { out: outContract } },
-      ({ inputs, provision }) => {
-        const leaf = provision(leafService(), { id: 'leaf', deps: { cfg: inputs.cfg } });
+      ({ deps, provision }) => {
+        const leaf = provision(leafService(), { id: 'leaf', deps: { cfg: deps.cfg } });
         return { out: leaf.out };
       },
     );
@@ -332,8 +334,8 @@ describe('3-level nesting: addresses, and forwarding down + up round trip', () =
     module(
       'mid',
       { deps: { cfg: cfgEnd() }, expose: { out: outContract } },
-      ({ inputs, provision }) => {
-        const inner = provision(innerModule(), { id: 'inner', deps: { cfg: inputs.cfg } });
+      ({ deps, provision }) => {
+        const inner = provision(innerModule(), { id: 'inner', deps: { cfg: deps.cfg } });
         return { out: inner.out };
       },
     );
@@ -433,11 +435,11 @@ describe('pass-through: an expose may return a boundary input directly', () => {
   // The module provisions NOTHING with its input — it only re-offers it as its
   // own output. Re-offering is using, not ignoring (rule a).
   const passModule = () =>
-    module('pass', { deps: { svc: rpcEnd() }, expose: { svc: rpcContract } }, ({ inputs }) => ({
-      svc: inputs.svc,
+    module('pass', { deps: { svc: rpcEnd() }, expose: { svc: rpcContract } }, ({ deps }) => ({
+      svc: deps.svc,
     }));
 
-  test('Loads clean — returning an input as an output counts as using it', () => {
+  test('Loads clean — returning a dependency as an exposed interface counts as using it', () => {
     const root = module('shop', {}, ({ provision }) => {
       const origin = provision(rpcProvider(), { id: 'origin' });
       const pass = provision(passModule(), { id: 'pass', deps: { svc: origin.rpc } });
@@ -501,8 +503,8 @@ describe('untyped inputs (no required contract) forward with no compile-time che
     // contract check (InputRef<untyped> is `never`); the typed consumer's
     // required contract is only enforced by Load.
     const relayModule = () =>
-      module('relay', { deps: { anything: untypedEnd() } }, ({ inputs, provision }) => {
-        provision(typedConsumer, { id: 'sink', deps: { svc: inputs.anything } });
+      module('relay', { deps: { anything: untypedEnd() } }, ({ deps, provision }) => {
+        provision(typedConsumer, { id: 'sink', deps: { svc: deps.anything } });
         return {};
       });
 
@@ -547,8 +549,8 @@ describe('a resource-backed input now forwards across a module boundary (unified
     });
 
   const dbModule = () =>
-    module('db-module', { deps: { db: dbDep() } }, ({ inputs, provision }) => {
-      provision(dbConsumer(), { id: 'consumer', deps: { db: inputs.db } });
+    module('db-module', { deps: { db: dbDep() } }, ({ deps, provision }) => {
+      provision(dbConsumer(), { id: 'consumer', deps: { db: deps.db } });
       return {};
     });
 

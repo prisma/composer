@@ -328,7 +328,7 @@ type Deps = Record<string, DependencyEnd<any, any>>
 
 // A Module: transparent wiring, no code of its own. The body runs at Load (it is
 // wiring, not user code) and provisions the services it owns, supplying a
-// producer for every dependency input. Minimal form — boundary ports and
+// producer for every dependency. Minimal form — boundary interfaces and
 // nesting arrive with full Module composition (see § Extension points).
 interface ModuleNode {
   readonly [NODE]: true
@@ -369,11 +369,15 @@ validate, and freeze. This is the whole "framework provides / pack wraps" contra
 
 ```ts
 // @prisma/composer
-function resource<C extends Contract<any, any>>(def: {
+function resource<C extends Contract<any, any> | undefined = undefined, D extends Deps = {}, P extends ResourceProps = {}>(def: {
   name: string
   extension: string
-  provides: C                      // the routing `type` is derived as provides.kind
-}): ResourceNode<C>
+  provides?: C                     // the routing `type` is derived as provides.kind
+  type?: string                    // instead of provides, for a resource that exposes nothing
+  inputs?: D                       // dependency slots, as a service declares them
+  deps?: DepBindings<D>            // the producer wired into each slot, at construction
+  props?: P                        // plain data and values; Load resolves the values
+}): ResourceNode<C, D, P>
 
 function dependency<P extends Params, C, Req = unknown>(def: {
   name?: string                    // diagnostic only; falls back to `type`
@@ -393,14 +397,18 @@ function module(name: string, body: (h: ModuleBuilder) => void): ModuleNode   //
 ```
 
 `service()` freezes `inputs`/`params`/`build`; `dependency()` freezes the
-connection's declared params; `resource()` derives `type` from `provides.kind`.
+connection's declared params; `resource()` derives `type` from `provides.kind`,
+requires `deps` to name exactly the keys of `inputs` (a resource is wired when
+it is constructed, never at `provision()`), and refuses a value in `deps`.
 All throw on an empty `type`; `service()` and `dependency()` also reject an
 input or param name containing `_`, and a module's `provision()` rejects an id
 containing `_` or `.` — the pack's config-key serializer joins address segments
 and names with `_` (node ids join path segments with `.`), so either character
 inside a name would collide with that separator. Nothing executes: constructing
 nodes is pure. The pack's authoring factory (`compute()`) calls `service()` and
-returns a subclass carrying `run` and `load`.
+returns a subclass carrying `run` and `load`. A pack that builds a resource as a class
+extends `ResourceNodeBase`, and that class must not use `#private` fields: Load
+copies a resource whose `props` hold a value, and the copy carries own properties only.
 
 ## Graph and Load (`@prisma/composer`)
 
@@ -418,8 +426,12 @@ interface Graph {
   readonly edges: readonly Edge[]
 }
 
-function Load(root: ServiceNode | ModuleNode, opts?: { id?: NodeId }): Graph   // throws LoadError
-class LoadError extends Error {}
+interface LoadOptions {
+  readonly id?: NodeId                              // the root's address; defaults to its name
+  readonly environment?: { readonly name: string }  // required by any value over environment.name
+}
+function Load(root: ServiceNode | ModuleNode, opts?: LoadOptions): Graph   // throws LoadError
+class LoadError extends Error {}  // code COMPOSE.GRAPH_INVALID; optional `cause`
 ```
 
 Load accepts a service or a module root. For a service it walks `root.inputs`, assigns
@@ -440,10 +452,29 @@ targeted LoadError — a resource is provisioned by the composing module, never
 created by mention; the dependency edges form a **DAG** (a cycle is a LoadError
 with the cycle named — a consequence of address-at-deploy-time wiring: if A
 needs B's address to deploy and B needs A's, neither can go first; resources
-take no wiring, so only service-to-service edges can cycle). A service Loaded
+a resource may declare slots wired at construction, so its edges take part in
+the cycle check like any other). A service Loaded
 directly as the root may carry no dependency slot at all — nothing at the root
 wires or provisions for it — so an unwired slot is a LoadError naming the input
-and pointing at deploying the composing module instead. Load executes nothing of the user's — the graph is data
+and pointing at deploying the composing module instead.
+
+Load then runs a second pass over values. Once every module body has run and
+the wiring is checked, `provision` is sealed: a call to it from then on, such
+as from inside a `resolve()` function, is a LoadError, because a value can
+configure a node but never change the graph's structure. Load then collects
+every value in a service's input binding, a service's param bindings and a
+resource's `props`, resolves each one dependency-first and once, and
+substitutes the real values. A value over `environment.name` takes the name
+from `opts.environment`; a computed value runs its `fn` with its
+dependencies' real values. A resource whose `props` held a value appears in
+the graph as a copy that keeps its prototype. The errors name the binding the
+value sits in: no `environment` was given, a cycle, `fn` threw (wrapped once,
+with the thrown error as `cause`), or `fn` returned a Promise, `undefined`, a
+value, a secret or param source, or anything else that is not plain data. A
+value as a `provision()` id, in a `deps` entry, or as a module's `secrets` or
+`params` binding is a LoadError too.
+
+Load executes nothing of the user's beyond module bodies and `resolve()` functions — the graph is data
 in memory to inspect or hand to `lower` (or the node's `run`). A **topology view** — nodes as `{ id, kind, type }`
 plus edges, function slots dropped — is `JSON.stringify`-able by construction; the
 serialized-artifact emit step builds on this later.
@@ -641,13 +672,14 @@ interface DeploymentResult {
 
 interface LowerOptions {
   readonly name: string                                  // stack name (+ Load's root id override)
+  readonly environment?: string                          // the environment being deployed, as --environment gave it;
+                                                         // Load's environment.name. The generated stack files always pass it.
   // `prisma deploy` runs each service's build-adapter assembler and writes
   // the resulting bundle dirs here, into the generated stack file it hands to
   // `lower()` — one bundle per provision id (the deploy root is always a
   // module). A hand-composed / mixed-stack caller (the escape hatch — see
   // § Lowering) supplies these itself.
   readonly bundles: Record<string, Bundle>
-  readonly stage?: string
   readonly state?: AlchemyStateLayer                     // explicit override — wins over the config's
                                                          // own state store (PrismaAppConfig.state.create())
   // Invoked once per deploy, during apply, with the Deploy operation's RESOLVED
@@ -1319,7 +1351,7 @@ producer from a resource — one mechanism.
   [`connection-contracts.md`](connection-contracts.md); this document's type
   sketches predate it and show the pre-contract shapes.
 - **Full Module composition** — the minimal module wires services; boundary ports
-  (a module's own Inputs/Outputs), nesting, and forwarding per the authoring-surface
+  (a module's own dependencies and exposed interfaces), nesting, and forwarding per the authoring-surface
   design come next. Services stay opaque leaves.
 - **Runtime name lookup** — if the platform gains service-name resolution, the
   pack's `serialize` becomes a no-op and its connection hydrate resolves by name;

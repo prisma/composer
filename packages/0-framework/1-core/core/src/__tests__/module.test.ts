@@ -165,7 +165,7 @@ describe('Load of a module root', () => {
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      /Dependency input "auth" of provisioned service "shop.storefront" is not wired/,
+      /Dependency "auth" of provisioned service "shop.storefront" is not wired/,
     );
   });
 
@@ -284,12 +284,12 @@ describe('Load of a module root', () => {
     expect(authIndex).toBeLessThan(storefrontIndex);
   });
 
-  test('a lone service Loaded directly with an unwired dependency input is a LoadError naming the input and pointing at the composing module', () => {
+  test('a lone service Loaded directly with an unwired dependency is a LoadError naming it and pointing at the composing module', () => {
     const lone = makeStorefrontService();
 
     expect(() => Load(lone, { id: 'storefront' })).toThrow(LoadError);
     expect(() => Load(lone, { id: 'storefront' })).toThrow(
-      /"storefront" has an unwired dependency input "auth".*composed by a module.*deploy the module/s,
+      /"storefront" has an unwired dependency "auth".*composed by a module.*deploy the module/s,
     );
   });
 });
@@ -381,11 +381,11 @@ describe('Load of a module root — provisioned resources', () => {
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      /Dependency input "db" of provisioned service "shop.auth" is not wired/,
+      /Dependency "db" of provisioned service "shop.auth" is not wired/,
     );
   });
 
-  test('passing deps to a resource provision is a LoadError — a resource has no dependency slots', () => {
+  test('passing deps to a resource provision is a LoadError — a resource is wired when it is constructed', () => {
     const root = module('shop', {}, (h) => {
       // TypeScript's overloads reject `deps` on a resource provision — forged
       // here to exercise the runtime backstop.
@@ -395,7 +395,7 @@ describe('Load of a module root — provisioned resources', () => {
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      /provision\("db"\) received deps for a resource — a resource has no dependency slots to satisfy/,
+      /provision\("db"\) received deps for a resource — a resource's slots are wired when it is constructed, not at provision\(\)\./,
     );
   });
 });

@@ -1,5 +1,9 @@
 # ADR-0013: Resources are provisioned by modules; dependencies are uniform contract-checked slots
 
+Amended by [ADR-0063](ADR-0063-a-node-depends-on-an-interface-or-exposes-one.md): a dependency slot is a node's dependency on an interface, and a resource exposes the interface it provides; the words Input and Output are retired.
+
+Amended by [ADR-0060](ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md) (2026-10-29): a resource may declare dependency slots, wired at construction rather than at `provision()`, so a resource such as a public URL can depend on the service it serves, and may carry plain-data `props` that Load resolves; its contract may be consumed outside the graph, as a public URL's ingress point is. Everything else here stands: a resource is still provisioned in exactly one place, a service still cannot create one by mentioning it, and the slot is the same contract-checked `DependencyEnd` a service declares.
+
 ## Decision
 
 A service says what it needs, not who supplies it. It declares a

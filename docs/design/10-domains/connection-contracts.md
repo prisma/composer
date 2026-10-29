@@ -76,7 +76,7 @@ export const authContract = contract({
 })
 
 // auth/service.ts — the provider DECLARES what it exposes. `expose` is a record of
-// named output ports, each its own contract.
+// named exposed interfaces, each its own contract.
 export default compute({
   build: node({ entry: "server.js" }),
   expose: { rpc: authContract },
@@ -101,7 +101,7 @@ const { auth } = service.load()
 await auth.verify({ token })          // input {token}, output {ok}, both typed
 
 // the module — WIRING is where the provider is checked against the consumer.
-// authRef carries auth's exposed ports; pick one for the consumer's slot.
+// authRef carries auth's exposed interfaces; pick one for the consumer's slot.
 module("storefront-auth", (h) => {
   const authRef = h.provision("auth", authService)
   h.provision("storefront", storefront, { auth: authRef.rpc })   // TS: rpc port must satisfy the slot
@@ -117,15 +117,16 @@ Each piece carries the type that makes the wiring check itself:
   instead binds to its typed config and the app builds its own client
   ([ADR-0015](../90-decisions/ADR-0015-dependencies-resolve-to-bindings-clients-are-app-side.md)).
 - **`expose`** on the provider service carries the *exposed* contracts, keyed by
-  output-port name.
+  interface name.
 - **`provision(id, service)`** returns a `ProvisionedRef` whose named members
-  (`authRef.rpc`) each carry their port's contract.
+  (`authRef.rpc`) each carry that interface's contract.
 - **`provision(id, consumer, wiring)`** types `wiring` so each slot demands a ref
   whose contract is assignable to the slot's required contract.
 
-This is the hexagonal shape made concrete: a service has typed **input ports** (its
-deps, consumed via `load()`) and typed **output ports** (its `expose`, served via
-`serve()`); the module connects an output port to an input port.
+This is the hexagonal shape made concrete: a service has typed **dependencies** (its
+`deps`, consumed via `load()`) and typed **exposed interfaces** (its `expose`, served via
+`serve()`); the module connects a dependency to an exposed interface
+([ADR-0063](../90-decisions/ADR-0063-a-node-depends-on-an-interface-or-exposes-one.md)).
 
 ## What a Contract is
 
@@ -262,7 +263,7 @@ interface Contract<Kind extends string, Cmp> {
 `style` is declared by the contract, and a connection's style is the style of
 the contract on its producing port. `request-response` and `stream` are styles,
 not kinds: a kind such as service RPC or raw HTTP may declare one or none. The
-core reads `style` only to copy it onto the graph's output ports. Service RPC
+core reads `style` only to copy it onto the graph's exposed interfaces. Service RPC
 declares `request-response`. Raw HTTP declares none,
 because an arbitrary HTTP server may answer a request or hold a stream open. A
 deploy target that reports the application topology labels each edge with the

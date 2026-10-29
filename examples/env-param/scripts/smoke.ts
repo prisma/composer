@@ -2,10 +2,13 @@
 /**
  * Verifies a DEPLOYED env-param example: resolves the echo service's URL via
  * the Management API (state is hosted, not local files), polls it until it
- * responds, and asserts two things about what arrived:
+ * serves the expected greeting and environment (an older revision may still
+ * serve for a while after deploy), and asserts three things about what arrived:
  *
  * - the greeting it serves is exactly the value the target environment's platform
- *   var carries (the param round trip), and
+ *   var carries (the param round trip),
+ * - the environment it serves is "deployed to <environment>", which Load
+ *   computed from the environment's name, and
  * - GET /logo.svg serves the asset that sits beside the entry in the built
  *   directory (the build adapter's directory form — proving assemble copied
  *   the whole tree, not just the entry).
@@ -70,16 +73,18 @@ if (branch === undefined) {
 }
 const branchId = asId(branch['id'], 'branch.id');
 
-// App names are unique per Branch, so the project-level list holds an "echo" app for
+// App names are unique per Branch, so the project-level list holds the echo app for
 // every environment — each row carries its branchId, which picks the
-// right one.
+// right one. The platform name is the node's address (ADR-0057).
+const appName = `${stack}.echo`;
 const candidates = rows(await get(`/apps?projectId=${projectId}&limit=100`)).filter(
-  (s) => s['name'] === 'echo',
+  (s) => s['name'] === appName,
 );
 const service = candidates.find((s) => s['branchId'] === branchId);
 if (service === undefined) {
   throw new Error(
-    `no "echo" app in the environment "${environment}" ` + `(candidates: ${candidates.length})`,
+    `no "${appName}" app in the environment "${environment}" ` +
+      `(candidates: ${candidates.length})`,
   );
 }
 const domain = service['appEndpointDomain'];
@@ -95,15 +100,20 @@ const assetUrl = new URL('/logo.svg', url).href;
 // Poll: a version cold-starts after deploy (PRO-200).
 const deadline = Date.now() + 180_000;
 let last = '';
+let mismatchedEnvironment: { value: string | undefined } | undefined;
 while (Date.now() < deadline) {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     last = await res.text();
-    const body = blindCast<{ greeting?: string }, 'the echo service serves { greeting }'>(
-      JSON.parse(last),
-    );
-    if (res.ok && body.greeting === expected) {
+    const body = blindCast<
+      { greeting?: string; environment?: string },
+      'the echo service serves { greeting, environment }'
+    >(JSON.parse(last));
+    if (res.ok && body.greeting === expected && body.environment !== `deployed to ${environment}`) {
+      mismatchedEnvironment = { value: body.environment };
+    } else if (res.ok && body.greeting === expected) {
       console.log(`ok - ${environment} serves greeting ${JSON.stringify(expected)}`);
+      console.log(`ok - ${environment} serves environment "deployed to ${environment}"`);
 
       // The tree, not just the entry: fetch the entry's sibling asset. Only
       // checked once the service is up, so a cold start can't read as a
@@ -125,6 +135,12 @@ while (Date.now() < deadline) {
     // not up yet — retry
   }
   await Bun.sleep(6_000);
+}
+if (mismatchedEnvironment !== undefined) {
+  console.error(
+    `FAIL - ${environment} serves environment ${JSON.stringify(mismatchedEnvironment.value)}, expected "deployed to ${environment}"`,
+  );
+  process.exit(1);
 }
 console.error(
   `FAIL - never served greeting ${JSON.stringify(expected)} within the deadline. Last body: ${last.slice(0, 500)}`,

@@ -1,0 +1,334 @@
+import { describe, expect, test } from 'bun:test';
+import { string } from '../config.ts';
+import { Load, LoadError } from '../graph.ts';
+import { dependency, module, resource, service } from '../node.ts';
+import { resolve } from '../value.ts';
+import { conn, providerContract } from './helpers.ts';
+
+const build = {
+  extension: '@prisma/composer/node',
+  type: 'node',
+  module: 'file:///test/service.ts',
+  entry: 'server.js',
+};
+
+const httpContract = () => providerContract('fake/http', { url: '' });
+const urlContract = () => providerContract('fake/url', { url: '' });
+
+const httpDep = () =>
+  dependency({
+    type: 'fake/http',
+    connection: conn({ url: string() }, (v) => ({ url: v.url })),
+    required: httpContract(),
+  });
+
+const untypedDep = () =>
+  dependency({
+    type: 'fake/http',
+    connection: conn({ url: string() }, (v) => ({ url: v.url })),
+  });
+
+const webService = () =>
+  service({
+    name: 'web',
+    extension: 'test/pack',
+    type: 'fake/compute',
+    inputs: {},
+    params: {},
+    build,
+    expose: { http: httpContract() },
+  });
+
+const siteFor = (target: unknown) =>
+  resource({
+    name: 'site',
+    extension: 'test/pack',
+    provides: urlContract(),
+    inputs: { target: httpDep() },
+    deps: { target: target as never },
+  });
+
+const loadError = (run: () => unknown): LoadError => {
+  try {
+    run();
+  } catch (error) {
+    if (error instanceof LoadError) return error;
+    throw error;
+  }
+  throw new Error('expected a LoadError');
+};
+
+const constructionError = (run: () => unknown): Error => {
+  try {
+    run();
+  } catch (error) {
+    if (error instanceof Error) return error;
+    throw error;
+  }
+  throw new Error('expected an Error');
+};
+
+const webAndSite = () =>
+  module('shop', ({ provision }) => {
+    const web = provision(webService(), { id: 'web' });
+    provision(siteFor(web.http), { id: 'site' });
+  });
+
+describe('a resource with a slot wired at construction', () => {
+  test('a resource with a slot wired at construction loads with the slot node, the input edge and the dependency edge', () => {
+    const graph = Load(webAndSite());
+
+    const ids = graph.nodes.map((n) => n.id);
+    expect(graph.nodes.find((n) => n.id === 'shop.site.target')?.node.kind).toBe('dependency');
+    expect(graph.edges).toContainEqual({
+      from: 'shop.site.target',
+      to: 'shop.site',
+      input: 'target',
+      kind: 'input',
+    });
+    expect(graph.edges).toContainEqual({
+      from: 'shop.web',
+      to: 'shop.site',
+      input: 'target',
+      kind: 'dependency',
+    });
+    expect(ids.indexOf('shop.site')).toBeGreaterThan(ids.indexOf('shop.web'));
+  });
+
+  test("the resource's slot is an in port and $out stays its out port", () => {
+    const graph = Load(webAndSite());
+
+    expect(graph.ports).toContainEqual({
+      node: 'shop.site',
+      direction: 'in',
+      name: 'target',
+      contractKind: 'fake/http',
+      style: undefined,
+    });
+    expect(graph.ports).toContainEqual({
+      node: 'shop.site',
+      direction: 'out',
+      name: '$out',
+      contractKind: 'fake/url',
+      style: undefined,
+    });
+  });
+
+  test("the authored edge runs from the producer's out port to the resource's in port", () => {
+    const graph = Load(webAndSite());
+
+    expect(graph.authoredEdges).toContainEqual({
+      from: { node: 'shop.web', direction: 'out', name: 'http' },
+      to: { node: 'shop.site', direction: 'in', name: 'target' },
+    });
+  });
+
+  test("a forwarded module input wired into a resource's slot counts as used and authors the edge from the module's in port", () => {
+    const gateway = module('gateway', { deps: { api: httpDep() } }, ({ deps, provision }) => {
+      provision(siteFor(deps.api), { id: 'site' });
+    });
+    const root = module('shop', ({ provision }) => {
+      const web = provision(webService(), { id: 'web' });
+      provision(gateway, { id: 'gateway', deps: { api: web.http } });
+    });
+
+    const graph = Load(root);
+
+    expect(graph.authoredEdges).toContainEqual({
+      from: { node: 'shop.gateway', direction: 'in', name: 'api' },
+      to: { node: 'shop.gateway.site', direction: 'in', name: 'target' },
+    });
+    expect(graph.edges).toContainEqual({
+      from: 'shop.web',
+      to: 'shop.gateway.site',
+      input: 'target',
+      kind: 'dependency',
+    });
+  });
+
+  test('resource() rejects a declared input with no deps entry, an extra deps entry, and a value in deps', () => {
+    const base = { name: 'site', extension: 'test/pack', provides: urlContract() };
+    const ref = { id: 'shop.web' };
+
+    expect(
+      constructionError(() =>
+        resource({ ...base, inputs: { target: httpDep() }, deps: {} as never }),
+      ).message,
+    ).toBe(
+      'resource() declares dependency "target" but its deps leave it unwired. A resource is wired when it is constructed.',
+    );
+    expect(
+      constructionError(() =>
+        resource({
+          ...base,
+          inputs: { target: httpDep() },
+          deps: { target: ref, extra: ref } as never,
+        }),
+      ).message,
+    ).toBe('resource() deps name "extra", which is not a declared input.');
+    expect(
+      constructionError(() =>
+        resource({
+          ...base,
+          inputs: { target: httpDep() },
+          deps: { target: resolve([], () => 'x') } as never,
+        }),
+      ).message,
+    ).toBe(
+      'resource() deps wire "target" to a value. A value can configure a node, never decide its edges (ADR-0062).',
+    );
+  });
+
+  test('provision(resource, { deps }) is still rejected', () => {
+    const root = module('shop', ({ provision }) => {
+      const web = provision(webService(), { id: 'web' });
+      provision(siteFor(web.http), { id: 'site', deps: { target: web.http } } as never);
+    });
+
+    expect(loadError(() => Load(root)).message).toBe(
+      'provision("site") received deps for a resource — a resource\'s slots are wired when it is constructed, not at provision().',
+    );
+  });
+
+  test('a resource slot wired to a ref that does not satisfy the required contract fails', () => {
+    const root = module('shop', ({ provision }) => {
+      const other = provision(
+        resource({ name: 'other', extension: 'test/pack', provides: urlContract() }),
+        { id: 'other' },
+      );
+      provision(siteFor(other), { id: 'site' });
+    });
+
+    expect(loadError(() => Load(root)).message).toBe(
+      'The deps for "shop.site.target" do not satisfy the slot\'s required contract.',
+    );
+  });
+
+  test('a resource that depends on a service that depends on it is a dependency cycle', () => {
+    const backWeb = service({
+      name: 'web',
+      extension: 'test/pack',
+      type: 'fake/compute',
+      inputs: { back: untypedDep() },
+      params: {},
+      build,
+      expose: { http: httpContract() },
+    });
+    const root = module('shop', ({ provision }) => {
+      const web = provision(backWeb, { id: 'web', deps: { back: { id: 'shop.site' } } });
+      provision(siteFor(web.http), { id: 'site' });
+    });
+
+    const message = loadError(() => Load(root)).message;
+    expect(message).toMatch(
+      /^Dependency cycle: (shop\.web → shop\.site → shop\.web|shop\.site → shop\.web → shop\.site) — no deploy order exists\.$/,
+    );
+  });
+
+  test('a resource node from another copy of core, with no inputs, deps or props, loads as a resource with no slots', () => {
+    const forged = {
+      [Symbol.for('prisma:node')]: true,
+      kind: 'resource',
+      name: 'site',
+      extension: 'test/pack',
+      type: 'fake/url',
+      provides: urlContract(),
+    };
+    const root = module('shop', ({ provision }) => {
+      provision(forged as never, { id: 'site' });
+    });
+
+    const graph = Load(root);
+
+    expect(graph.nodes.find((n) => n.id === 'shop.site')?.node).toBe(forged as never);
+    expect(graph.nodes.map((n) => n.id)).toEqual(['shop.site', 'shop']);
+    expect(graph.edges).toEqual([]);
+    expect(graph.ports.filter((p) => p.node === 'shop.site')).toEqual([
+      {
+        node: 'shop.site',
+        direction: 'out',
+        name: '$out',
+        contractKind: 'fake/url',
+        style: undefined,
+      },
+    ]);
+  });
+});
+
+describe('a resource that exposes nothing', () => {
+  test('a resource that exposes nothing loads with no $out port and provision() returns only its id', () => {
+    let ref: unknown;
+    const root = module('shop', ({ provision }) => {
+      ref = provision(resource({ name: 'site', extension: 'test/pack', type: 'fake/url' }), {
+        id: 'site',
+      });
+    });
+
+    const graph = Load(root);
+
+    expect(graph.nodes.find((n) => n.id === 'shop.site')?.node).toMatchObject({
+      kind: 'resource',
+      type: 'fake/url',
+    });
+    expect(graph.ports.filter((p) => p.node === 'shop.site')).toEqual([]);
+    expect(ref).toEqual({ id: 'shop.site' });
+  });
+
+  test('resource() refuses both provides and type, and neither', () => {
+    expect(
+      constructionError(() =>
+        resource({
+          name: 'site',
+          extension: 'test/pack',
+          provides: urlContract(),
+          type: 'fake/url',
+        }),
+      ).message,
+    ).toBe(
+      "resource() takes either provides or type, not both — type is the contract's kind when a contract is provided.",
+    );
+    expect(
+      constructionError(() => resource({ name: 'site', extension: 'test/pack' })).message,
+    ).toBe(
+      'resource() requires provides, the contract it offers, or type, for a resource that offers nothing.',
+    );
+  });
+
+  test('a resource that exposes nothing and depends on a service loads with its slot and no out port', () => {
+    const root = module('shop', ({ provision }) => {
+      const web = provision(webService(), { id: 'web' });
+      provision(
+        resource({
+          name: 'site',
+          extension: 'test/pack',
+          type: 'fake/url',
+          inputs: { target: httpDep() },
+          deps: { target: web.http },
+        }),
+        { id: 'site' },
+      );
+    });
+
+    const graph = Load(root);
+
+    expect(graph.ports.filter((p) => p.node === 'shop.site')).toEqual([
+      {
+        node: 'shop.site',
+        direction: 'in',
+        name: 'target',
+        contractKind: 'fake/http',
+        style: undefined,
+      },
+    ]);
+    expect(graph.edges).toContainEqual({
+      from: 'shop.web',
+      to: 'shop.site',
+      input: 'target',
+      kind: 'dependency',
+    });
+    expect(graph.authoredEdges).toContainEqual({
+      from: { node: 'shop.web', direction: 'out', name: 'http' },
+      to: { node: 'shop.site', direction: 'in', name: 'target' },
+    });
+  });
+});

@@ -15,6 +15,7 @@ import {
   type ProvisionNeed,
   type ResourceNode,
   type ServiceNode,
+  slotsOf,
 } from '../node.ts';
 import type {
   ContainerInstance,
@@ -211,10 +212,11 @@ export interface DeploymentResult {
 export interface LowerOptions {
   /** Stack + root node id. */
   readonly name: string;
+  /** The environment being deployed, as `--environment` gave it. Required by any value over `environment.name`; the generated stack files always pass it. */
+  readonly environment?: string;
   // One assembled bundle per provisioned service, keyed by the service's
   // full hierarchical address (its graph id).
   readonly bundles: Record<string, Bundle>;
-  readonly stage?: string;
   /** Alchemy state store for the stack. Defaults to the config's own state layer. */
   readonly state?: AlchemyStateLayer;
   /** Explicit provider set for the stack. Defaults to the config's own merged `providers()` (`mergedProviders`) — the same override precedence as `state`. The dev stack module passes `localTargetProviders(...)` here (ADR-0041); `lower()` itself learns nothing about the local target. */
@@ -368,6 +370,38 @@ export function buildConfig(
   lowered: ReadonlyMap<NodeId, Outputs>,
   provisioned: ReadonlyMap<string, unknown>,
 ): Config {
+  const inputs = slotConnectionParams(node, id, graph, lowered, provisioned);
+
+  const boundParams = new Map(
+    graph.params.filter((binding) => binding.serviceAddress === id).map((b) => [b.slot, b.binding]),
+  );
+  const service: Record<string, unknown> = {};
+  for (const [name, param] of Object.entries(node.params)) {
+    const value = resolveParam(node, id, name, param, boundParams.get(name));
+    if (value !== undefined) service[name] = value;
+  }
+
+  return { service, inputs };
+}
+
+/**
+ * The connection params of each of a service's or resource's dependency
+ * slots, resolved against the producer's lowered outputs or the minted
+ * `provisioned` value, with the connection contract enforced (see `buildConfig`).
+ */
+export function connectionInputs(
+  ctx: LowerContext,
+): Readonly<Record<string, Readonly<Record<string, unknown>>>> {
+  return slotConnectionParams(ctx.node, ctx.id, ctx.graph, ctx.lowered, ctx.provisioned);
+}
+
+function slotConnectionParams(
+  node: ServiceNode | ResourceNode,
+  id: NodeId,
+  graph: Graph,
+  lowered: ReadonlyMap<NodeId, Outputs>,
+  provisioned: ReadonlyMap<string, unknown>,
+): Readonly<Record<string, Readonly<Record<string, unknown>>>> {
   const inputs: Record<string, Record<string, unknown>> = {};
 
   for (const [inputName, inputNode] of Object.entries(node.inputs)) {
@@ -413,17 +447,7 @@ export function buildConfig(
     }
     inputs[inputName] = values;
   }
-
-  const boundParams = new Map(
-    graph.params.filter((binding) => binding.serviceAddress === id).map((b) => [b.slot, b.binding]),
-  );
-  const service: Record<string, unknown> = {};
-  for (const [name, param] of Object.entries(node.params)) {
-    const value = resolveParam(node, id, name, param, boundParams.get(name));
-    if (value !== undefined) service[name] = value;
-  }
-
-  return { service, inputs };
+  return inputs;
 }
 
 /**
@@ -629,7 +653,10 @@ export function lowering(
   opts: LowerOptions,
 ): Effect.Effect<undefined, LowerError, unknown> {
   return Effect.gen(function* () {
-    const graph = Load(root, { id: opts.name });
+    const graph = Load(root, {
+      id: opts.name,
+      ...(opts.environment !== undefined ? { environment: { name: opts.environment } } : {}),
+    });
     const extensions = yield* extensionsById(config);
     // Each extension's own resolved container, deserialized once from the
     // framework transport (the CLI parent wrote it; this is the alchemy
@@ -675,8 +702,10 @@ export function lowering(
     for (const edge of graph.edges) {
       if (edge.kind !== 'dependency') continue;
       const consumer = graph.nodes.find((n) => n.id === edge.to)?.node;
-      if (consumer === undefined || consumer.kind !== 'service') continue;
-      const slot = consumer.inputs[edge.input];
+      if (consumer === undefined || (consumer.kind !== 'service' && consumer.kind !== 'resource')) {
+        continue;
+      }
+      const slot = slotsOf(consumer)[edge.input];
       if (slot === undefined) continue;
       const provisionedParams = Object.entries(slot.connection.params).filter(
         ([, param]) => param.provision !== undefined,

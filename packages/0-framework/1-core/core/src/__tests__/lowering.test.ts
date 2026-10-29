@@ -15,6 +15,7 @@ import {
   type Artifact,
   type Bundle,
   buildConfig,
+  connectionInputs,
   joinDeployment,
   type LowerContext,
   LowerError,
@@ -41,6 +42,7 @@ import {
   resource,
   service,
 } from '../node.ts';
+import { resolve } from '../value.ts';
 import { conn, providerContract } from './helpers.ts';
 
 const dbResource = () =>
@@ -245,7 +247,7 @@ const runError = (eff: ReturnType<typeof lowering>): LowerError =>
   Effect.runSync(Effect.flip(eff as Effect.Effect<undefined, LowerError>));
 
 describe('buildConfig', () => {
-  test("matches a dependency input's params by name to the wired producer's lowered outputs, via its dependency edge", () => {
+  test("matches a dependency's params by name to the wired producer's lowered outputs, via its dependency edge", () => {
     const auth = app('fake/compute', { db: dbEnd() }, { port: number({ default: 3000 }) });
     const root = module('shop', {}, (h) => {
       const db = h.provision(dbResource(), { id: 'db' });
@@ -595,6 +597,118 @@ describe('lowering a module root — a single service', () => {
     expect(serialize).toMatchObject({
       config: { service: { port: 3000 }, inputs: { db: { url: 'db://hello.db' } } },
     });
+  });
+
+  test('lowering() passes opts.environment to Load, so a computed param reaches buildConfig resolved', () => {
+    const { config, calls } = fakeExtension();
+    const root = module('hello', ({ environment, provision }) => {
+      const label = resolve([environment.name], ([name]) => name);
+      provision(app('fake/compute', {}, { label: string() }), { id: 'svc', params: { label } });
+    });
+
+    run(lowering(root, config, opts({ ...svcBundles, environment: 'test' })));
+
+    const serialize = calls.find((c) => c.phase === 'serialize');
+    expect(serialize).toMatchObject({ config: { service: { label: 'test' } } });
+  });
+
+  test("lowering() hands a resource descriptor its resolved props and its producer's outputs through connectionInputs", () => {
+    const { descriptor } = fakeExtension();
+    const seen: { url: unknown; inputs: unknown }[] = [];
+    const config: PrismaAppConfig = {
+      extensions: [
+        {
+          ...descriptor,
+          nodes: {
+            ...descriptor.nodes,
+            'fake/url': Object.assign(
+              (ctx: LowerContext): Effect.Effect<LoweredResult, unknown, unknown> => {
+                const { url } = ctx.node.kind === 'resource' ? ctx.node.props : {};
+                seen.push({
+                  url,
+                  inputs: connectionInputs(ctx),
+                });
+                return Effect.succeed({ outputs: {}, entities: [] });
+              },
+              { kind: 'resource' as const },
+            ),
+          },
+        },
+      ],
+      state: { extension: descriptor.id, create: () => stateSentinel('config-default') },
+    };
+    const root = module('hello', ({ environment, provision }) => {
+      const web = provision(app('fake/compute', {}), { id: 'web' });
+      provision(
+        resource({
+          name: 'site',
+          extension: 'test/pack',
+          provides: providerContract('fake/url', { url: '' }),
+          inputs: { target: httpEnd() },
+          deps: { target: web },
+          props: { url: resolve([environment.name], ([name]) => `https://${name}.shop.example`) },
+        }),
+        { id: 'site' },
+      );
+    });
+
+    run(
+      lowering(
+        root,
+        config,
+        opts({
+          bundles: { 'hello.web': { dir: 'dist/bundle', entry: 'server.js' } },
+          environment: 'test',
+        }),
+      ),
+    );
+
+    expect(seen).toEqual([
+      {
+        url: 'https://test.shop.example',
+        inputs: { target: { url: 'https://hello.web.example' } },
+      },
+    ]);
+  });
+
+  test('connectionInputs fails when a producer does not supply a param a resource slot declares', () => {
+    const root = module('hello', ({ provision }) => {
+      const web = provision(app('fake/compute', {}), { id: 'web' });
+      provision(
+        resource({
+          name: 'site',
+          extension: 'test/pack',
+          provides: providerContract('fake/url', { url: '' }),
+          inputs: { target: httpEnd() },
+          deps: { target: web },
+        }),
+        { id: 'site' },
+      );
+    });
+    const graph = Load(root);
+    const site = graph.nodes.find((n) => n.id === 'hello.site')?.node;
+    if (site?.kind !== 'resource') throw new Error('expected the site resource');
+    const lowered = new Map<string, Outputs>([['hello.web', { host: 'web.internal' }]]);
+
+    const ctx: LowerContext = {
+      id: 'hello.site',
+      address: 'hello.site',
+      node: site,
+      graph,
+      opts: opts(),
+      application: undefined,
+      container: undefined,
+      lowered,
+      provisioned: new Map(),
+    };
+
+    expect(() => connectionInputs(ctx)).toThrow(
+      new LowerError(
+        'Connection input "hello.site.target" declares param "url", but its producer "hello.web" ' +
+          'did not supply it — the producer\'s outputs carry [host]. Add "url" to the outputs the ' +
+          'producer returns from its lowering, or declare the param optional on the connection.',
+      ),
+    );
   });
 
   test('package receives the build adapter output dir/entry and the same address serialize used', () => {
@@ -1068,6 +1182,55 @@ describe('provision phase (ADR-0031): resolving a provisioned param against the 
     expect(consumerSerialize).toMatchObject({
       config: { inputs: { auth: { token: 'minted:shop.consumer.auth' } } },
     });
+  });
+
+  test("a provisioned need on a resource's slot is minted and reaches the resource through connectionInputs", () => {
+    const provisioner = fakeProvisioner((edge) => `minted:${edge.edgeId}`);
+    const { descriptor } = fakeExtension({
+      provisions: new Map([[PROVISION_BRAND, provisioner.descriptor]]),
+    });
+    const seen: unknown[] = [];
+    const config: PrismaAppConfig = {
+      extensions: [
+        {
+          ...descriptor,
+          nodes: {
+            ...descriptor.nodes,
+            'fake/url': Object.assign(
+              (ctx: LowerContext): Effect.Effect<LoweredResult, unknown, unknown> => {
+                seen.push(connectionInputs(ctx));
+                return Effect.succeed({ outputs: {}, entities: [] });
+              },
+              { kind: 'resource' as const },
+            ),
+          },
+        },
+      ],
+      state: { extension: descriptor.id, create: () => stateSentinel('config-default') },
+    };
+    const root = module('shop', ({ provision }) => {
+      const auth = provision(app('fake/compute', {}), { id: 'auth' });
+      provision(
+        resource({
+          name: 'site',
+          extension: 'test/pack',
+          provides: providerContract('fake/url', { url: '' }),
+          inputs: { auth: tokenEnd() },
+          deps: { auth },
+        }),
+        { id: 'site' },
+      );
+    });
+
+    run(lowering(root, config, provisionBundles));
+
+    expect(provisioner.calls).toHaveLength(1);
+    expect(provisioner.calls[0]).toMatchObject({
+      edgeId: 'shop.site.auth',
+      consumerAddress: 'shop.site',
+      providerAddress: 'shop.auth',
+    });
+    expect(seen).toEqual([{ auth: { token: 'minted:shop.site.auth' } }]);
   });
 
   test('an unregistered brand fails the deploy with a LowerError naming the brand and the edge', () => {

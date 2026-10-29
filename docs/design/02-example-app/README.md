@@ -63,7 +63,7 @@ Each Module is a bounded context wrapping a Service (its code) plus any private
 Resources. Storefront and Auth are single-Service Modules; Sales and Delivery each
 own a private Resource alongside their Service.
 
-| Module | Services | Private Resources | Inputs | Outputs |
+| Module | Services | Private Resources | Depends on | Exposes |
 | --- | --- | --- | --- | --- |
 | **Storefront** | Next.js | — | `sales` (r/r), `auth` (r/r) | `site` (r/r · **ingress**) |
 | **Sales & Billing** | Sales API | Invoices (object storage) | `data` (TCP · *sales* contract); `email` (**egress** → Configuration) | `sales` API (r/r); `order-placed` (stream) |
@@ -72,9 +72,9 @@ own a private Resource alongside their Service.
 
 Plus one shared **Resource**, owned by the outermost Module (not by any of the four):
 
-| Resource | Output |
+| Resource | Exposes |
 | --- | --- |
-| **Postgres** (shared) | `data` **Data Output** offering the contract hashes `{sales, delivery, auth}` — the **aggregate contract** |
+| **Postgres** (shared) | `data`, a data interface offering the contract hashes `{sales, delivery, auth}` — the **aggregate contract** |
 
 ## What the example demonstrates
 
@@ -86,7 +86,7 @@ Plus one shared **Resource**, owned by the outermost Module (not by any of the f
   everything is a stream.
 - **The shared Postgres has one owner — the outermost Module.** It isn't owned by
   Sales, Delivery, or Auth; it's owned by the **outermost Module** (the module
-  topology), which wires it to each consumer's Data Input and owns its migration. Sales,
+  topology), which wires it to each consumer's data dependency and owns its migration. Sales,
   Delivery, and Auth each declare only the contract slice they need; the owner's
   schema satisfies the **aggregate** (the union), and consumer slices don't overlap.
   Shared instance, single migration owner, every data dependency still a visible edge.
@@ -97,14 +97,14 @@ Plus one shared **Resource**, owned by the outermost Module (not by any of the f
   doesn't provision — an **egress** backed by an API key. That's Configuration on
   the Sales Service, so it's neither a node nor a topology edge; hence the dashed
   arrow, drawn outside every Module.
-- **Ingress vs internal.** Only Storefront's `site` Output is public ingress; the
-  sales/auth/delivery APIs are internal request/response Outputs consumed by other
-  Modules.
+- **Ingress vs internal.** Only Storefront's exposed `site` interface is public ingress; the
+  sales/auth/delivery APIs are internal request/response interfaces that other Modules
+  depend on.
 - **Encapsulation by convention.** No Module reads another's tables; cross-Module needs go
-  through an Output (an API, the *order-placed* stream), never the database. The
+  through an exposed interface (an API, the *order-placed* stream), never the database. The
   recommended convention, not (yet) an enforced rule.
 - **A Module behaves like a Service.** Each is stateless and reprovisionable
-  with typed I/O, so if Delivery grew enough to split internally, a nested
+  with typed dependencies and exposed interfaces, so if Delivery grew enough to split internally, a nested
   Module would wire exactly like the Service it replaced.
 
 ## How it lowers (sketch)
@@ -115,7 +115,7 @@ and migrated by the outermost Module, its schema satisfying the aggregate contra
 invoices bucket and the Redis → their
 own Alchemy Resources (provider create/update/delete), provisioned per environment;
 the `order-placed` stream → a Stream; each request/response edge → an endpoint +
-injected typed client; each Data Input → a contract-scoped connection injected at
+injected typed client; each data dependency → a contract-scoped connection injected at
 runtime (no `DATABASE_URL` in user code); the email key → `effect/Config` bound to
 the Sales Service's environment. The framework emits the whole graph as the
 topology artifact — Configuration and egress ride along as environment binding,
@@ -123,7 +123,7 @@ not nodes.
 
 ## Open questions / deferred
 
-- Whether Delivery needs a request/response Output at all, or is purely
+- Whether Delivery needs to expose a request/response interface at all, or is purely
   stream-driven — depends on the product.
 - **Auth: Module or external?** As modelled, Auth is a **Module** that owns its
   tables. If instead you used a hosted BetterAuth you don't provision, it wouldn't be an

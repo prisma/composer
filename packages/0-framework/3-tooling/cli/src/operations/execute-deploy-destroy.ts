@@ -414,7 +414,15 @@ async function runStackPipelineInner(
               cause: error,
             })
         : undefined;
-    pipeline = await runPipeline(entry, name, cwd, composerConfig, pipelineDeps, onAssembleError);
+    pipeline = await runPipeline(
+      entry,
+      name,
+      environment,
+      cwd,
+      composerConfig,
+      pipelineDeps,
+      onAssembleError,
+    );
     steps.finish({ name: 'assemble' });
     const { graph, name: resolvedName } = pipeline;
     const config = pipeline.configSource.value;
@@ -570,6 +578,7 @@ async function runStackPipelineInner(
         cwd,
         configFile: pipeline.configSource.file,
         name: pipeline.name,
+        environment,
         assembled: pipeline.assembled,
       });
     } catch (error) {

@@ -1,5 +1,9 @@
 # ADR-0060: Traffic from the internet reaches a service only through a public URL the author declares
 
+Amended by [ADR-0063](ADR-0063-a-node-depends-on-an-interface-or-exposes-one.md): in that record's words, a public URL depends on the service's exposed HTTP interface and exposes nothing.
+
+Amended 2026-10-29: the public URL node is a **resource** by kind, because a provider manages its lifecycle (a RoutingUrl), and a **driver** by role, because it depends on what it sends traffic to and nothing calls it. The scheduled-work decision ([ADR-0020](ADR-0020-scheduled-work-is-a-driver-not-a-resource.md)) contrasted a driver with a resource a consumer loads; it does not rule out a driver whose lifecycle is managed. Core builds "a node with its edge already set" by letting a resource declare dependency slots and wire them at construction, `resource({ inputs, deps })`, where `deps` names the producer wired into each slot as it does at `provision()`, and carry plain-data `props` (where `url` lives) that Load's second pass resolves. This amends the resource decision ([ADR-0013](ADR-0013-resources-are-provisioned-by-modules-deps-are-declarations.md)), which modelled a resource as a producer only, with no dependency slots of its own. The mechanism is specified in the public-URLs project's slice C1.
+
 ## Decision
 
 A service is reachable from outside the application only through a **public URL**: a node in the module graph that sends traffic for one hostname to one service. The author provisions it where the hostname is decided, usually the root module.
