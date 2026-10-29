@@ -1,5 +1,12 @@
-import { isParamSource, type ParamBinding, type ParamSource, paramSource } from '@internal/core';
+import {
+  isParamSource,
+  type ParamBinding,
+  type ParamSource,
+  paramSource,
+  type Value,
+} from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
+import type { SecretString } from '@internal/foundation/secret';
 
 /**
  * Brands the payload `envParam` builds. Core's `paramSource()` is a public
@@ -31,9 +38,12 @@ const PLATFORM_OWNED_PARAM_NAMES: ReadonlySet<string> = new Set([
  * injects the value into the running instance per environment; the param's own
  * schema validates it at boot, unredacted. The name may not use the
  * framework's reserved `COMPOSER_` prefix or the platform-owned
- * `DATABASE_URL(_POOLED)` keys — same parity as `envSecret`.
+ * `DATABASE_URL(_POOLED)` keys — same parity as `envSecret`. It returns a
+ * value known at deploy: where a module's input or a resolve() function needs
+ * its real value, that is the variable's value in the config pool, the process
+ * environment of the deploying shell.
  */
-export function envParam(name: string): ParamSource<EnvParamPayload> {
+export function envParam(name: string): ParamSource<EnvParamPayload> & Value<string> {
   if (typeof name !== 'string' || name.length === 0) {
     throw new Error(
       "envParam() requires a non-empty platform env-var name, e.g. envParam('APP_ORIGIN').",
@@ -52,7 +62,10 @@ export function envParam(name: string): ParamSource<EnvParamPayload> {
         'Declare the database your service uses and read its url from that connection.',
     );
   }
-  return paramSource<EnvParamPayload>({ [PRISMA_CLOUD_PARAM_SOURCE]: true, name });
+  return paramSource<EnvParamPayload, string>(
+    { [PRISMA_CLOUD_PARAM_SOURCE]: true, name },
+    { label: `envParam('${name}')`, configKey: name },
+  );
 }
 
 /** True only for a payload that `envParam` built — i.e. one carrying the brand. */
@@ -110,8 +123,17 @@ const GENERATED_PARAM_MAX_BYTES = 1024;
  * `bytes` must be an integer between 16 and 1024 (default 32).
  */
 export function generatedParam(
+  opts?: GeneratedParamOptions & { readonly redacted?: true },
+): ParamSource<GeneratedParamPayload> & Value<SecretString>;
+export function generatedParam(
+  opts: GeneratedParamOptions & { readonly redacted: false },
+): ParamSource<GeneratedParamPayload> & Value<string>;
+export function generatedParam(
+  opts: GeneratedParamOptions,
+): ParamSource<GeneratedParamPayload> & Value<SecretString | string>;
+export function generatedParam(
   opts: GeneratedParamOptions = {},
-): ParamSource<GeneratedParamPayload> {
+): ParamSource<GeneratedParamPayload> & Value<SecretString | string> {
   const bytes = opts.bytes ?? GENERATED_PARAM_DEFAULT_BYTES;
   const redacted = opts.redacted ?? true;
   if (
@@ -124,11 +146,12 @@ export function generatedParam(
         `${GENERATED_PARAM_MAX_BYTES} (got ${String(bytes)}).`,
     );
   }
-  return paramSource<GeneratedParamPayload>({
-    [PRISMA_CLOUD_GENERATED_PARAM_SOURCE]: true,
-    bytes,
-    redacted,
-  });
+  return paramSource<GeneratedParamPayload, SecretString | string>(
+    { [PRISMA_CLOUD_GENERATED_PARAM_SOURCE]: true, bytes, redacted },
+    redacted
+      ? { label: 'generatedParam()', redacted: true }
+      : { label: 'generatedParam()', sentinel: '' },
+  );
 }
 
 /** True only for a payload that `generatedParam` built — i.e. one carrying the brand. */
@@ -159,18 +182,24 @@ export interface OriginParamPayload {
   readonly address: string;
 }
 
+/** What a schema checks at deploy in place of a serviceOrigin() leaf, whose value exists only once the deploy has created the service; boot checks the real one. */
+export const ORIGIN_SENTINEL = 'https://origin.invalid';
+
 /**
  * Binds an input leaf to another service's public origin in the environment being deployed,
  * e.g. `auth()`'s `baseUrl: serviceOrigin('shop.web')`. `address` is the target service's
  * full address, starting with the app name.
  */
-export function serviceOrigin(address: string): ParamSource<OriginParamPayload> {
+export function serviceOrigin(address: string): ParamSource<OriginParamPayload> & Value<string> {
   if (typeof address !== 'string' || address.length === 0) {
     throw new Error(
       "serviceOrigin() requires the target service's full address, e.g. serviceOrigin('shop.web').",
     );
   }
-  return paramSource<OriginParamPayload>({ [PRISMA_CLOUD_ORIGIN_PARAM_SOURCE]: true, address });
+  return paramSource<OriginParamPayload, string>(
+    { [PRISMA_CLOUD_ORIGIN_PARAM_SOURCE]: true, address },
+    { label: `serviceOrigin('${address}')`, sentinel: ORIGIN_SENTINEL },
+  );
 }
 
 /** True iff `value` was built by `serviceOrigin`. */

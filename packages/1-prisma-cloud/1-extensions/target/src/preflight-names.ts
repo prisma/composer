@@ -9,10 +9,13 @@
  *
  * Secrets are the `envSecret` leaves of every service's input binding
  * (ADR-0042); env-sourced params are the `envParam`-bound reserved params.
+ * Secrets also include every secret source the graph names elsewhere
+ * (secretSourceManifest): one a resolve() lists but does not return, and one
+ * in a module's input that no service receives.
  */
 
 import type { Graph } from '@internal/core';
-import { inputManifest, isSecretSource, paramManifest } from '@internal/core';
+import { inputManifest, isSecretSource, paramManifest, secretSourceManifest } from '@internal/core';
 import {
   isEnvParamSource,
   isGeneratedParamSource,
@@ -23,7 +26,9 @@ import { secretName } from './secret.ts';
 
 export interface PreflightName {
   readonly name: string;
-  readonly serviceAddress: string;
+  /** The node that uses the name: a service, or a module whose input holds a secret no service receives. */
+  readonly address: string;
+  readonly nodeKind: 'service' | 'module';
 }
 
 export interface PreflightNames {
@@ -69,13 +74,24 @@ export function collectPreflightNames(graph: Graph): PreflightNames {
   const secretEntries: PreflightName[] = [];
   for (const { serviceAddress, binding } of inputManifest(graph)) {
     for (const name of inputSecretNames(binding, serviceAddress)) {
-      secretEntries.push({ name, serviceAddress });
+      secretEntries.push({ name, address: serviceAddress, nodeKind: 'service' });
     }
+  }
+  for (const use of secretSourceManifest(graph)) {
+    secretEntries.push({
+      name: secretName(use.source, `a secret source of ${use.nodeKind} "${use.address}"`),
+      address: use.address,
+      nodeKind: use.nodeKind,
+    });
   }
   const envParams = dedupedNames(
     paramManifest(graph)
       .filter((binding) => isEnvParamSource(binding.binding))
-      .map((binding) => ({ name: paramName(binding), serviceAddress: binding.serviceAddress })),
+      .map((binding) => ({
+        name: paramName(binding),
+        address: binding.serviceAddress,
+        nodeKind: 'service' as const,
+      })),
   );
   return { secrets: dedupedNames(secretEntries), envParams };
 }

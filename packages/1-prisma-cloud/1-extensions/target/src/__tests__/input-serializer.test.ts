@@ -9,7 +9,7 @@ import { Load, module, SecretBox, type ServiceNode, service } from '@internal/co
 import { secretString } from '@internal/foundation/arktype';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
-import { envParam, generatedParam } from '../param.ts';
+import { envParam, generatedParam, serviceOrigin } from '../param.ts';
 import { envSecret } from '../secret.ts';
 import {
   assertDistinctPointerNames,
@@ -553,5 +553,37 @@ describe('an ArkType schema with a morph', () => {
         'in the schema), so the service would fail to read the secret at boot. Move the transform ' +
         'into the service code, or keep the schema free of transforms.',
     );
+  });
+});
+
+describe('a source forwarded through a module input', () => {
+  const forwarded = (schema: StandardSchemaV1, binding: Record<string, unknown>) => {
+    const login = module('login', { input: schema }, ({ input, provision }) => {
+      provision(svc(schema), { input: input as never });
+    });
+    const graph = Load(
+      module('shop', ({ provision }) => {
+        provision(login, { input: binding as never });
+      }),
+    );
+    const node = graph.nodes.find((entry) => entry.id === 'shop.login.web')?.node as ServiceNode;
+    return serializeInput(node, 'shop.login.web', graph.inputBindings[0]?.binding, { env: {} });
+  };
+
+  test("serviceOrigin() forwarded through a module's input serializes to its origin pointer", () => {
+    const row = forwarded(type({ baseUrl: 'string' }), { baseUrl: serviceOrigin('shop.web') });
+
+    expect(JSON.parse(row?.value ?? '')).toEqual({
+      baseUrl: { $generated: 'COMPOSER_SHOP_LOGIN_WEB_BASEURL_GENERATED', redacted: false },
+    });
+    expect(row?.generated[0]?.origin).toBe('shop.web');
+  });
+
+  test("a redacted generatedParam() forwarded through a module's secretString() field serializes to its generated pointer", () => {
+    const row = forwarded(type({ secret: secretString() }), { secret: generatedParam() });
+
+    expect(JSON.parse(row?.value ?? '')).toEqual({
+      secret: { $generated: 'COMPOSER_SHOP_LOGIN_WEB_SECRET_GENERATED', redacted: true },
+    });
   });
 });
