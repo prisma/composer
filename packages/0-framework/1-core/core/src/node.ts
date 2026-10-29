@@ -6,7 +6,7 @@ import { blindCast } from '@internal/foundation/casts';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { ConfigParam, Connection, Params } from './config.ts';
 import type { Contract } from './contract.ts';
-import type { EnvironmentFacts, PlainValue, Value } from './value.ts';
+import { type EnvironmentFacts, isPlainObject, isValue, type PlainValue, type Value } from './value.ts';
 
 // Brand — set by the factories below; how Load tells a node from junk.
 // Symbol.for so the check survives duplicated module instances in a workspace.
@@ -218,7 +218,11 @@ export interface BuildAdapter {
  * Provisioned by a module, never embedded in a service's deps. `provides`
  * is the Contract the resource offers; `type` is derived from `provides.kind`.
  */
-export interface ResourceNode<C extends AnyContract = AnyContract> {
+export interface ResourceNode<
+  C extends AnyContract = AnyContract,
+  D extends Deps = Deps,
+  P extends ResourceProps = ResourceProps,
+> {
   readonly [NODE]: true;
   readonly kind: 'resource';
   /** Human-readable, given at authoring — logs/diagnostics only; identity remains the deploy address (ADR-0006). */
@@ -228,7 +232,24 @@ export interface ResourceNode<C extends AnyContract = AnyContract> {
   readonly type: C['kind'];
   /** The Contract this resource provides — the resource's single port. */
   readonly provides: C;
+  /** Dependency slots, as a service's `inputs`. Empty for a resource that depends on nothing. */
+  readonly inputs: D;
+  /** The producer wired into each slot, as a `provision()` call's `deps` supplies for a service. A resource is wired when it is constructed. (On a module node `deps` holds the declared slots; here it holds the producers.) */
+  readonly deps: DepBindings<D>;
+  /** Plain data the factory records, the resource's configuration. Load resolves any value inside it; nowhere else on a resource is a value resolved. Empty for a resource with none. */
+  readonly props: P;
 }
+
+/** A resource's configuration: plain data and values, nested in objects and arrays. */
+export type ResourceProps = { readonly [key: string]: ResourceProp };
+export type ResourceProp =
+  | string
+  | number
+  | boolean
+  | null
+  | Value<PlainValue>
+  | readonly ResourceProp[]
+  | { readonly [key: string]: ResourceProp };
 
 /**
  * A Service: inputs + its own declared params + how it is built. Inspectable,
@@ -570,13 +591,56 @@ export function freezeNode<T extends object>(node: T): T {
   return node;
 }
 
+/** The slots, wiring and configuration a resource may carry, checked once for `resource()` and `ResourceNodeBase`. */
+function requireResourceWiring(def: {
+  inputs?: Deps;
+  deps?: Record<string, unknown>;
+  props?: ResourceProps;
+}): void {
+  const inputs = def.inputs ?? {};
+  const deps = def.deps ?? {};
+  requireConfigKeySegmentNames(Object.keys(inputs), 'input', 'resource');
+  for (const [input, slot] of Object.entries(inputs)) {
+    const declared: unknown = slot;
+    if (!isNode(declared) || declared.kind !== 'dependency') {
+      throw new Error(
+        `resource() input "${input}" is not a branded dependency end (construct it with the dependency() factory).`,
+      );
+    }
+  }
+  for (const input of Object.keys(inputs)) {
+    if (deps[input] === undefined) {
+      throw new Error(
+        `resource() declares input "${input}" but its deps leave it unwired. A resource is wired when it is constructed.`,
+      );
+    }
+  }
+  for (const [input, producer] of Object.entries(deps)) {
+    if (!Object.hasOwn(inputs, input)) {
+      throw new Error(`resource() deps name "${input}", which is not a declared input.`);
+    }
+    if (isValue(producer)) {
+      throw new Error(
+        `resource() deps wire "${input}" to a value. A value can configure a node, never decide its edges (ADR-0062).`,
+      );
+    }
+  }
+  if (def.props !== undefined && !isPlainObject(def.props)) {
+    throw new Error('resource() props must be a plain object.');
+  }
+}
+
 /**
  * Everything `resource()` establishes, minus the freeze — an extension
  * whose resource node carries extra fields extends this, assigns them, and
  * calls `freezeNode(this)` as its constructor's last statement.
+ * A class built on this base must not use #private fields: Load copies a node whose props hold a value, and a copy carries own properties only.
  */
-export abstract class ResourceNodeBase<C extends AnyContract = AnyContract>
-  implements ResourceNode<C>
+export abstract class ResourceNodeBase<
+  C extends AnyContract = AnyContract,
+  D extends Deps = Record<never, never>,
+  P extends ResourceProps = Record<never, never>,
+> implements ResourceNode<C, D, P>
 {
   readonly [NODE] = true as const;
   readonly kind = 'resource' as const;
@@ -584,8 +648,18 @@ export abstract class ResourceNodeBase<C extends AnyContract = AnyContract>
   readonly extension: string;
   readonly type: C['kind'];
   readonly provides: C;
+  readonly inputs: D;
+  readonly deps: DepBindings<D>;
+  readonly props: P;
 
-  constructor(def: { name: string; extension: string; provides: C }) {
+  constructor(def: {
+    name: string;
+    extension: string;
+    provides: C;
+    inputs?: D;
+    deps?: DepBindings<D>;
+    props?: P;
+  }) {
     requireName(def.name, 'resource');
     requireExtension(def.extension, 'resource');
     const provides = def.provides;
@@ -601,16 +675,40 @@ export abstract class ResourceNodeBase<C extends AnyContract = AnyContract>
           '(a non-empty `kind` plus its `satisfies()`).',
       );
     }
+    requireResourceWiring(def);
     this.name = def.name;
     this.extension = def.extension;
     this.type = provides.kind;
     this.provides = provides;
+    this.inputs = blindCast<
+      D,
+      'an omitted inputs map is the empty Deps; the deps-match check above guarantees the keys agree at runtime'
+    >(frozenShallowCopy(def.inputs ?? {}));
+    this.deps = blindCast<
+      DepBindings<D>,
+      'omitted deps are the empty bindings of the empty Deps; the deps-match check above guarantees the keys agree at runtime'
+    >(frozenShallowCopy(def.deps ?? {}));
+    this.props = blindCast<
+      P,
+      'omitted props are the empty props; the plain-object check above is the runtime guard'
+    >(frozenShallowCopy(def.props ?? {}));
   }
 }
 
 /** The core leaf: exactly the base, frozen. */
-class FrozenResourceNode<C extends AnyContract> extends ResourceNodeBase<C> {
-  constructor(def: { name: string; extension: string; provides: C }) {
+class FrozenResourceNode<
+  C extends AnyContract,
+  D extends Deps,
+  P extends ResourceProps,
+> extends ResourceNodeBase<C, D, P> {
+  constructor(def: {
+    name: string;
+    extension: string;
+    provides: C;
+    inputs?: D;
+    deps?: DepBindings<D>;
+    props?: P;
+  }) {
     super(def);
     freezeNode(this);
   }
@@ -621,11 +719,18 @@ class FrozenResourceNode<C extends AnyContract> extends ResourceNodeBase<C> {
  * it provides; the routing `type` is the contract's `kind`. Pure — nothing
  * is provisioned until a module provisions it.
  */
-export function resource<C extends AnyContract>(def: {
+export function resource<
+  C extends AnyContract,
+  D extends Deps = Record<never, never>,
+  P extends ResourceProps = Record<never, never>,
+>(def: {
   name: string;
   extension: string;
   provides: C;
-}): ResourceNode<C> {
+  inputs?: D;
+  deps?: DepBindings<D>;
+  props?: P;
+}): ResourceNode<C, D, P> {
   return new FrozenResourceNode(def);
 }
 

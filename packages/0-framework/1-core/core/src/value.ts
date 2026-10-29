@@ -100,6 +100,13 @@ export function isValue(value: unknown): value is Value<unknown> {
   );
 }
 
+/** True for an object whose prototype is `Object.prototype` or `null`: the only objects Load walks into. */
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 /** Where Load gets `value`'s real value. Internal to core. */
 export function originOf<T>(value: Value<T>): ValueOrigin<T> {
   return value[VALUE_ORIGIN];

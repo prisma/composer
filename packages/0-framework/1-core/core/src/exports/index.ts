@@ -56,6 +56,8 @@ export type {
   ProvisionNeed,
   RefPort,
   ResourceNode,
+  ResourceProp,
+  ResourceProps,
   RunnableServiceNode,
   SecretBindings,
   SecretNeed,

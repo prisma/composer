@@ -6,7 +6,7 @@ import {
   type ServiceInputBinding,
 } from './graph-types.ts';
 import { isParamSource, isSecretSource } from './node.ts';
-import { isValue, originOf, type Value } from './value.ts';
+import { isPlainObject, isValue, originOf, type Value } from './value.ts';
 
 export interface ValueBindingSite {
   /** The address of the node the binding belongs to. */
@@ -15,12 +15,6 @@ export interface ValueBindingSite {
   readonly channel: 'input' | 'param' | 'props';
   /** The param name for `param`; the dotted path inside the document for `input` and `props` (`''` at the root). Array members by index: `hosts.0`. */
   readonly path: string;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== 'object' || value === null) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
 }
 
 function joinPath(path: string, key: string | number): string {
