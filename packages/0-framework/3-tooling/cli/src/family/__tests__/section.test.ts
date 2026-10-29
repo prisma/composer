@@ -153,7 +153,7 @@ describe('composerSection.validate() on unknown fields', () => {
             {
               kind: 'edit-file',
               label:
-                'Remove `environment`. The section takes only `entry`, `extensions` and `state`.',
+                'Remove `environment`. The section takes only `entry`, `extensions`, `state`, `config` and `secrets`.',
             },
           ],
           where: { path: DECLARING_FILE },
@@ -378,6 +378,75 @@ describe('composerSection.validate() on extensions', () => {
         },
       ],
     });
+  });
+});
+
+describe('composerSection.validate() on config and secrets', () => {
+  test("config and secrets are passed through as the file's own arrays", () => {
+    const config = [() => ({ A: 'a' })];
+    const secrets = [() => ({ B: 'b' })];
+    const result = validate({ ...validSection(), config, secrets });
+    if (!result.ok) throw new Error('expected the section to validate');
+    const value = result.value.value as { config?: unknown; secrets?: unknown };
+    expect(value.config).toBe(config);
+    expect(value.secrets).toBe(secrets);
+
+    const without = validate(validSection());
+    if (!without.ok) throw new Error('expected the section to validate');
+    expect(Object.hasOwn(without.value.value, 'config')).toBe(false);
+  });
+
+  test('config or secrets that is not an array fails', () => {
+    for (const list of ['config', 'secrets'] as const) {
+      for (const value of [{}, 'dotenv', () => ({})]) {
+        expect(validate({ ...validSection(), [list]: value })).toEqual({
+          ok: false,
+          diagnostics: [
+            {
+              code: 'CONFIG.FIELD_INVALID',
+              severity: 'error',
+              summary: `\`composer.${list}\` must be an array of adapters.`,
+              nextActions: [
+                {
+                  kind: 'edit-file',
+                  label: `Set \`${list}\` to a list of adapters, e.g. \`${list}: [dotenv(), environmentVariables()]\`, imported from '@prisma/composer/config'.`,
+                },
+              ],
+              where: { path: DECLARING_FILE },
+              meta: { field: list },
+            },
+          ],
+        });
+      }
+    }
+  });
+
+  test('an adapter entry that is not a function fails', () => {
+    for (const list of ['config', 'secrets'] as const) {
+      for (const entry of [{}, null, 'dotenv']) {
+        expect(validate({ ...validSection(), [list]: [() => ({}), entry] })).toEqual({
+          ok: false,
+          diagnostics: [
+            {
+              code: 'CONFIG.FIELD_INVALID',
+              severity: 'error',
+              summary: `\`composer.${list}[1]\` must be an adapter: a function that receives the environment and returns its values.`,
+              nextActions: [{ kind: 'edit-file', label: 'Put an adapter here, e.g. `dotenv()`.' }],
+              where: { path: DECLARING_FILE },
+              meta: { field: `${list}[1]` },
+            },
+          ],
+        });
+      }
+    }
+  });
+
+  test('the validator never calls an adapter', () => {
+    const throwing = () => {
+      throw new Error('called');
+    };
+    const result = validate({ ...validSection(), config: [throwing], secrets: [throwing] });
+    expect(result.ok).toBe(true);
   });
 });
 

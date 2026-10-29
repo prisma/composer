@@ -625,7 +625,7 @@ describe('deploy()', () => {
 
       expect(failure).toMatchObject({
         code: 'CONFIG.FIELD_UNKNOWN',
-        fix: 'Pass the `composer` property of the prisma.config.ts export, not the whole export. The section takes only `entry`, `extensions` and `state`.',
+        fix: 'Pass the `composer` property of the prisma.config.ts export, not the whole export. The section takes only `entry`, `extensions`, `state`, `config` and `secrets`.',
         where: { path: path.join(app.dir, 'prisma.config.ts') },
       });
       expect(containerCalls).toEqual([]);
