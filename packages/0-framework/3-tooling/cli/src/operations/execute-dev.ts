@@ -9,8 +9,9 @@
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import type { Graph, ServiceNode } from '@internal/core';
-import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
+import type { ConfigPools, ContainerInstance, PrismaAppConfig } from '@internal/core/config';
 import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
 import type { DevServer } from '@internal/core/deploy';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
@@ -132,6 +133,12 @@ function contentHash(file: string): string | undefined {
   }
 }
 
+function samePools(started: ConfigPools, now: ConfigPools): boolean {
+  return (
+    isDeepStrictEqual(started.config, now.config) && isDeepStrictEqual(started.secrets, now.secrets)
+  );
+}
+
 export async function executeDev(
   input: DevInput,
   deps: OperationDeps,
@@ -174,7 +181,11 @@ export async function executeDev(
     validateEnvironmentName(environment);
     // The shared prefix (pipeline.ts): entry load, Load, registry coverage,
     // name resolution, assemble.
-    const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler, devServers: true };
+    const pipelineDeps: PipelineDeps = {
+      runAssembler: deps.runAssembler,
+      devServers: true,
+      readSecrets: true,
+    };
     pipeline = await runPipeline(
       input.entry,
       input.name,
@@ -228,6 +239,7 @@ export async function executeDev(
           graph,
           container: containers.get(id),
           environment,
+          pools: pipeline.pools,
           warn: (message) => emit({ kind: 'target-warning', message }),
         });
         if (payload !== undefined) preflightPayloads.set(id, payload);
@@ -258,7 +270,10 @@ export async function executeDev(
 
     for (const [id, dev] of resolved) {
       try {
-        attachmentsById.set(id, await dev.attach({ container: containers.get(id), devDir }));
+        attachmentsById.set(
+          id,
+          await dev.attach({ container: containers.get(id), devDir, pools: pipeline.pools }),
+        );
       } catch (error) {
         throw toStructured('DEV.ATTACH_FAILED', error);
       }
@@ -477,16 +492,22 @@ export async function executeDev(
       emit({ kind: 'unwatchable', address });
     }
 
-    const watchDeps: PipelineDeps = { runAssembler: deps.runAssembler, devServers: true };
+    const watchDeps: PipelineDeps = {
+      runAssembler: deps.runAssembler,
+      devServers: true,
+      readSecrets: true,
+    };
     const watchFiles = deps.watch ?? startWatch;
     const onWatchError = (error: unknown): void =>
       emit({ kind: 'watch-error', message: failureMessage(error) });
     const configFile = pipeline.configSource.file;
     const startedConfig = contentHash(configFile);
     let configChanged = false;
+    let valuesChanged = false;
     // Read on every event, not only from the config watcher: a build watch
     // on a directory that contains the file can fire first.
-    const pausedForConfig = (): boolean => {
+    const paused = (): boolean => {
+      if (valuesChanged) return true;
       if (!configChanged && contentHash(configFile) === startedConfig) return false;
       configChanged = true;
       emit({ kind: 'config-changed', file: configFile });
@@ -494,7 +515,7 @@ export async function executeDev(
     };
     configWatch = watchFiles(
       [{ address: configFile, paths: [configFile] }],
-      () => void pausedForConfig(),
+      () => void paused(),
       onWatchError,
     );
     // The whole rebuild is inside one try/catch: it runs fire-and-forget, so
@@ -511,6 +532,11 @@ export async function executeDev(
           input.config,
           watchDeps,
         );
+        if (!samePools(pipeline.pools, rePipeline.pools)) {
+          if (!valuesChanged) emit({ kind: 'values-changed' });
+          valuesChanged = true;
+          return;
+        }
         const stackPath = writeDevStackFile({
           entryPath: rePipeline.entryModule.path,
           cwd,
@@ -555,13 +581,13 @@ export async function executeDev(
       do {
         changedDuringRebuild = false;
         await rebuild();
-      } while (changedDuringRebuild && !pausedForConfig());
+      } while (changedDuringRebuild && !paused());
       rebuilding = false;
     };
     watch = watchFiles(
       targets,
       () => {
-        if (pausedForConfig()) return;
+        if (paused()) return;
         if (rebuilding) {
           changedDuringRebuild = true;
           return;
