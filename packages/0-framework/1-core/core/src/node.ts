@@ -6,7 +6,13 @@ import { blindCast } from '@internal/foundation/casts';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { ConfigParam, Connection, Params } from './config.ts';
 import type { Contract } from './contract.ts';
-import { type EnvironmentFacts, isPlainObject, isValue, type PlainValue, type Value } from './value.ts';
+import {
+  type EnvironmentFacts,
+  isPlainObject,
+  isValue,
+  type PlainValue,
+  type Value,
+} from './value.ts';
 
 // Brand — set by the factories below; how Load tells a node from junk.
 // Symbol.for so the check survives duplicated module instances in a workspace.

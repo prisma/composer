@@ -7,17 +7,20 @@ import {
   LoadError,
   type NodeId,
 } from './graph-types.ts';
-import { isNode, type ModuleNode, type ServiceNode } from './node.ts';
+import { isNode, type ModuleNode, type ResourceNode, type ServiceNode } from './node.ts';
 import { topoSort } from './toposort.ts';
 
 /**
- * The declared boundary ports of a module or service node at `id`: dep slots
- * as `in` ports (contractKind = the slot's `type`), exposed contracts as
- * `out` ports (contractKind = the contract's `kind`, style = its declared
- * style). A resource's one
- * `$out` port is recorded at its provision site instead (load-module.ts).
+ * The declared boundary ports of a module, service or resource node at `id`:
+ * dep slots as `in` ports (contractKind = the slot's `type`), exposed
+ * contracts as `out` ports (contractKind = the contract's `kind`, style = its
+ * declared style). A resource's one `$out` port is recorded at its provision
+ * site instead (load-module.ts).
  */
-export function boundaryPortsOf(id: NodeId, node: ModuleNode | ServiceNode): BoundaryPort[] {
+export function boundaryPortsOf(
+  id: NodeId,
+  node: ModuleNode | ServiceNode | ResourceNode,
+): BoundaryPort[] {
   const ports: BoundaryPort[] = [];
   const slots: Record<string, unknown> = node.kind === 'module' ? node.deps : node.inputs;
   for (const [name, slot] of Object.entries(slots)) {
@@ -27,7 +30,8 @@ export function boundaryPortsOf(id: NodeId, node: ModuleNode | ServiceNode): Bou
         : undefined;
     ports.push({ node: id, direction: 'in', name, contractKind: type, style: undefined });
   }
-  for (const [name, contract] of Object.entries(node.expose ?? {})) {
+  const expose = node.kind === 'resource' ? {} : (node.expose ?? {});
+  for (const [name, contract] of Object.entries(expose)) {
     const kind =
       typeof contract === 'object' &&
       contract !== null &&
@@ -46,16 +50,16 @@ export function boundaryPortsOf(id: NodeId, node: ModuleNode | ServiceNode): Bou
   return ports;
 }
 
-export function serviceInputs(
-  service: ServiceNode,
+export function dependencySlots(
+  node: ServiceNode | ResourceNode,
   serviceId: NodeId,
 ): { nodes: GraphNode[]; edges: Edge[] } {
-  if (typeof service.inputs !== 'object' || service.inputs === null) {
+  if (typeof node.inputs !== 'object' || node.inputs === null) {
     throw new LoadError(`Service "${serviceId}" has no inputs map.`);
   }
   const nodes: GraphNode[] = [];
   const edges: Edge[] = [];
-  for (const [input, value] of Object.entries(service.inputs)) {
+  for (const [input, value] of Object.entries(node.inputs)) {
     // `inputs` is untrusted at runtime (a user module could carry junk the
     // types don't see), so the kind is re-checked as a plain string.
     const kind: string | undefined = isNode(value) ? value.kind : undefined;
@@ -103,7 +107,7 @@ export function loadService(root: ServiceNode, rootId: NodeId): Graph {
     );
   }
   const rootGraphNode: GraphNode = { id: rootId, parent: undefined, node: root };
-  const { nodes, edges } = serviceInputs(root, rootId);
+  const { nodes, edges } = dependencySlots(root, rootId);
   return {
     root: rootGraphNode,
     nodes: [...topoSort(nodes, edges), rootGraphNode],

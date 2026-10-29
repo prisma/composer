@@ -5,7 +5,7 @@ import {
   type ParamBinding,
   type ServiceInputBinding,
 } from './graph-types.ts';
-import { isParamSource, isSecretSource } from './node.ts';
+import { isParamSource, isSecretSource, type ResourceNode, type ResourceProps } from './node.ts';
 import { isPlainObject, isValue, originOf, type Value } from './value.ts';
 
 export interface ValueBindingSite {
@@ -162,9 +162,11 @@ export function resolveValues(input: {
   readonly environment: { readonly name: string } | undefined;
   readonly inputBindings: readonly ServiceInputBinding[];
   readonly params: readonly ParamBinding[];
+  readonly resources: ReadonlyMap<NodeId, ResourceNode>;
 }): {
   readonly inputBindings: readonly ServiceInputBinding[];
   readonly params: readonly ParamBinding[];
+  readonly resourceProps: ReadonlyMap<NodeId, ResourceProps>;
 } {
   const { environment } = input;
   const found: { value: Value<unknown>; site: ValueBindingSite }[] = [];
@@ -175,6 +177,10 @@ export function resolveValues(input: {
   for (const { serviceAddress, slot, binding } of input.params) {
     const site: ValueBindingSite = { address: serviceAddress, channel: 'param', path: slot };
     collect(binding, site, found, new WeakSet());
+  }
+  for (const [address, resource] of input.resources) {
+    const site: ValueBindingSite = { address, channel: 'props', path: '' };
+    collect(resource.props, site, found, new WeakSet());
   }
 
   const results = new Map<Value<unknown>, unknown>();
@@ -224,10 +230,33 @@ export function resolveValues(input: {
 
   for (const { value, site } of found) resolveOne(value, site);
 
-  if (found.length === 0) return { inputBindings: input.inputBindings, params: input.params };
+  const authoredProps = new Map(
+    [...input.resources].map(([address, resource]) => [address, resource.props]),
+  );
+  if (found.length === 0) {
+    return {
+      inputBindings: input.inputBindings,
+      params: input.params,
+      resourceProps: authoredProps,
+    };
+  }
 
   const inProgress = new WeakSet<object>();
+  const resourceProps = new Map<NodeId, ResourceProps>();
+  for (const [address, props] of authoredProps) {
+    const substituted = substitute(props, results, inProgress);
+    resourceProps.set(
+      address,
+      substituted === props
+        ? props
+        : blindCast<
+            ResourceProps,
+            'substitution rebuilds the plain props object, replacing each Value<PlainValue> with its real value, which checkResult proved plain data, so ResourceProps stays ResourceProps'
+          >(substituted),
+    );
+  }
   return {
+    resourceProps,
     inputBindings: input.inputBindings.map((entry) => {
       const binding = substitute(entry.binding, results, inProgress);
       return binding === entry.binding

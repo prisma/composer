@@ -14,7 +14,7 @@ import {
   RESOURCE_OUT_PORT,
   type ServiceInputBinding,
 } from './graph-types.ts';
-import { boundaryPortsOf, serviceInputs } from './load-service.ts';
+import { boundaryPortsOf, dependencySlots } from './load-service.ts';
 import {
   type DependencyEnd,
   type Deps,
@@ -27,6 +27,7 @@ import {
   type ModuleNode,
   type ProvisionedRef,
   type ResourceNode,
+  type ResourceProps,
   type ServiceNode,
 } from './node.ts';
 import { resolveValues } from './resolve-values.ts';
@@ -143,7 +144,7 @@ interface PendingWiring {
   readonly deps: Deps;
   readonly wiring: Record<string, unknown>;
   readonly targetId: string;
-  readonly targetKind: 'service' | 'module';
+  readonly targetKind: 'service' | 'module' | 'resource';
   readonly enclosingModuleName: string;
 }
 
@@ -544,7 +545,7 @@ function flatten(
     }
     // Brand-check on a widened alias: predicate-narrowing the declared union
     // drops the `any`-instantiated ResourceNode member (the same quirk
-    // serviceInputs sidesteps by widening `kind` to a plain string).
+    // dependencySlots sidesteps by widening `kind` to a plain string).
     const untrusted: unknown = child;
     if (
       !isNode(untrusted) ||
@@ -582,14 +583,27 @@ function flatten(
       if (child.type.length === 0) {
         throw new LoadError(`provision("${id}") received a resource with an empty node type.`);
       }
+      const localWiring = { ...child.deps };
+      markUsed(Object.values(localWiring));
       byId.set(fullAddress, child);
-      nodes.push({ id: fullAddress, parent: selfId, node: child });
+      const slots = dependencySlots(child, fullAddress);
+      nodes.push(...slots.nodes, { id: fullAddress, parent: selfId, node: child });
+      edges.push(...slots.edges, ...wiringEdges(localWiring, fullAddress));
+      ports.push(...boundaryPortsOf(fullAddress, child));
       ports.push({
         node: fullAddress,
         direction: 'out',
         name: RESOURCE_OUT_PORT,
         contractKind: child.provides.kind,
         style: contractStyleOf(child.provides),
+      });
+      recordAuthoredWiring(fullAddress, localWiring);
+      pending.push({
+        deps: child.inputs,
+        wiring: localWiring,
+        targetId: fullAddress,
+        targetKind: 'resource',
+        enclosingModuleName: moduleNode.name,
       });
       return refForResource(fullAddress, child);
     }
@@ -657,7 +671,7 @@ function flatten(
       for (const [slot, binding] of Object.entries(localParams)) {
         paramBindings.push({ serviceAddress: fullAddress, slot, binding });
       }
-      const inputs = serviceInputs(child, fullAddress);
+      const inputs = dependencySlots(child, fullAddress);
       nodes.push(...inputs.nodes, { id: fullAddress, parent: selfId, node: child });
       edges.push(...inputs.edges, ...wiringEdges(localWiring, fullAddress));
       ports.push(...boundaryPortsOf(fullAddress, child));
@@ -871,16 +885,28 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   for (const entry of pending) validateWiring(entry, byId);
   assertDependencyDag(edges);
   loading.sealed = true;
+  const resources = new Map<NodeId, ResourceNode>();
+  for (const [address, node] of byId) {
+    if (node.kind === 'resource') resources.set(address, node);
+  }
   const resolved = resolveValues({
     environment: opts?.environment,
     inputBindings,
     params: paramBindings,
+    resources,
+  });
+  const resolvedNodes = nodes.map((entry): GraphNode => {
+    const props = resolved.resourceProps.get(entry.id);
+    if (entry.node.kind !== 'resource' || props === undefined || props === entry.node.props) {
+      return entry;
+    }
+    return { ...entry, node: withResolvedProps(entry.node, props) };
   });
 
   const rootGraphNode: GraphNode = { id: rootId, parent: undefined, node: root };
   return {
     root: rootGraphNode,
-    nodes: [...topoSort(nodes, edges), rootGraphNode],
+    nodes: [...topoSort(resolvedNodes, edges), rootGraphNode],
     edges,
     ports,
     authoredEdges,
@@ -890,9 +916,27 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
 }
 
 /**
+ * A frozen copy of `node` holding `props`, keeping its prototype (a class built
+ * on `ResourceNodeBase` keeps its methods) and its own properties, the brand included.
+ */
+function withResolvedProps(node: ResourceNode, props: ResourceProps): ResourceNode {
+  const copy: ResourceNode = Object.freeze(
+    Object.create(Object.getPrototypeOf(node), {
+      ...Object.getOwnPropertyDescriptors(node),
+      props: {
+        value: Object.freeze(props),
+        enumerable: true,
+        writable: false,
+        configurable: false,
+      },
+    }),
+  );
+  return copy;
+}
+
+/**
  * The dependency edges must form a DAG — a cycle means neither producer can
- * deploy first. Resources take no wiring, so only service/module-to-service/module
- * edges can ever participate in a cycle; no special-casing needed.
+ * deploy first. A resource with dependency slots can take part in a cycle too.
  */
 function assertDependencyDag(edges: readonly Edge[]): void {
   const adjacency = new Map<string, string[]>();
