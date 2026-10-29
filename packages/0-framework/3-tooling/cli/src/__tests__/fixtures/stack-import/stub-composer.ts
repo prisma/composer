@@ -14,7 +14,7 @@ plugin({
     build.module(
       '@prisma/composer/deploy',
       js(
-        'export const lower = (app, config, opts) => { console.log(JSON.stringify({ app: app.name, extensions: config.extensions.map((e) => e.id), state: config.state.extension, environment: opts.environment })); return {}; };',
+        'export const lower = (app, config, opts) => { console.log(JSON.stringify({ app: app.name, extensions: config.extensions.map((e) => e.id), state: config.state.extension, environment: opts.environment, configPool: opts.configPool === process.env })); return {}; };',
       ),
     );
     build.module(
