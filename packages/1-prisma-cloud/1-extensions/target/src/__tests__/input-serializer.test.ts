@@ -5,7 +5,7 @@
  * escaping, sentinel validation, and the round trip.
  */
 import { describe, expect, test } from 'bun:test';
-import { SecretBox, service } from '@internal/core';
+import { Load, module, SecretBox, type ServiceNode, service } from '@internal/core';
 import { secretString } from '@internal/foundation/arktype';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
@@ -507,6 +507,34 @@ describe('the pointer-name collision guard (ADR-0041, F02)', () => {
     );
     expect(generated).toHaveLength(1);
     expect([...sentinels.values()]).toEqual(['MY_SECRET']);
+  });
+});
+
+describe('a secret forwarded through a module input', () => {
+  test("a secret forwarded through a module's input serializes to its $secret pointer", () => {
+    const email = module(
+      'email',
+      { input: type({ from: 'string', key: secretString() }) },
+      ({ input, provision }) => {
+        provision(svc(type({ from: 'string', key: secretString() })), {
+          input: { from: input.from, key: input.key },
+        });
+      },
+    );
+    const graph = Load(
+      module('shop', ({ provision }) => {
+        provision(email, { input: { from: 'shop@example.com', key: envSecret('EMAIL_KEY') } });
+      }),
+    );
+    const address = graph.inputBindings[0]?.serviceAddress ?? '';
+    const node = graph.nodes.find((entry) => entry.id === address)?.node as ServiceNode;
+
+    const row = serializeInput(node, address, graph.inputBindings[0]?.binding, { env: {} });
+
+    expect(JSON.parse(row?.value ?? '')).toEqual({
+      from: 'shop@example.com',
+      key: { $secret: 'EMAIL_KEY' },
+    });
   });
 });
 
