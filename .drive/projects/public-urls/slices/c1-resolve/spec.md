@@ -651,6 +651,8 @@ D1 landed on 2026-10-29 (commits b3b4fe91, 8c168c2f, d666545f) with the spec's l
 
 D2 landed on 2026-10-29 (commits 77b45ba6, 4b3cb003, a6244546, 45b79ca9) with: `isPlainObject` in `value.ts`; a second such cast for rebuilt props; the base class's type defaults; `dependencySlots` keeping its `serviceId` parameter name. D3 adds the true `provision(resource, { deps })` text and the tolerance for a resource from another core copy.
 
+D3 landed on 2026-10-29 (commits 0b951e4a, 8320253d, 48a36fa4, f363f547, 5f7c14b4), with: `boundaryPortsOf` sharing the absent-`inputs` tolerance through a `slotsOf` helper in `load-service.ts`; `module.test.ts`'s older assertion on the `provision(resource, { deps })` text updated; test 45 proving the environment reaches `destroy`'s Load by recording the name a `resolve()` function receives, because the destroy tests run the real pipeline with a fake assembler and a fake `alchemy`; test 44's empty bundle as `{ dir: '', entry: '' }` and its fixture config using `as const` on descriptor kinds. The local proof in § 12 passed: `deployed to dev` and `deployed to test`.
+
 
 Each of these was put to Will on 2026-10-29 after the architect and principal-engineer reviews.
 
