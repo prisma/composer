@@ -58,6 +58,7 @@ describe('publicUrl()', () => {
     ['*.shop.com', 'has a "*" label'],
     ['10.0.0.1', 'is an IP address'],
     ['::1', 'is an IP address'],
+    ['cafe:8080', 'has a port'],
     ['localhost', 'is not a hostname: it needs at least two labels'],
     ['-shop.com', 'has the label "-shop"'],
     ['shop_1.com', 'has the label "shop_1"'],

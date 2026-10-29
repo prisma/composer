@@ -41,7 +41,8 @@ export function parseHostname(raw: string): string | { error: string } {
     return { error: `${quoted} has a scheme. Pass the hostname alone, without "https://".` };
   }
   if (name.includes('/')) return { error: `${quoted} has a path. Pass the hostname alone.` };
-  if (IPV6.test(name) || IPV4.test(name)) {
+  const ipv6 = (name.startsWith('[') || name.split(':').length > 2) && IPV6.test(name);
+  if (ipv6 || IPV4.test(name)) {
     return { error: `${quoted} is an IP address. A public URL needs a hostname.` };
   }
   if (name.includes(':')) return { error: `${quoted} has a port. Pass the hostname alone.` };
