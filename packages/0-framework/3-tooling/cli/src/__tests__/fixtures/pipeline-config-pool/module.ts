@@ -18,14 +18,29 @@ const echo = service({
   build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'server.js' },
 });
 
-const greeter = module('greeter', { input: anyInput }, ({ input, provision }) => {
-  provision(echo, { input: { greeting: (input as never as { greeting: never }).greeting } });
+const greetingInput = {
+  '~standard': {
+    version: 1 as const,
+    vendor: 'fixture',
+    types: { input: { greeting: '' }, output: { greeting: '' } },
+    validate: (value: unknown) =>
+      typeof value === 'object' && value !== null && 'greeting' in value
+        ? { value: { greeting: String(value.greeting) } }
+        : { issues: [{ message: 'greeting is required' }] },
+  },
+};
+
+const greeter = module('greeter', { input: greetingInput }, ({ input, provision }) => {
+  provision(echo, { input: { greeting: input.greeting } });
 });
 
 export default module('pipeline-config-pool-fixture', ({ provision }) => {
   provision(greeter, {
     input: {
-      greeting: paramSource({ name: 'S3_PIPELINE_PROBE' }, { configKey: 'S3_PIPELINE_PROBE' }),
+      greeting: paramSource<{ name: string }, string>(
+        { name: 'S3_PIPELINE_PROBE' },
+        { configKey: 'S3_PIPELINE_PROBE' },
+      ),
     },
   });
 });
