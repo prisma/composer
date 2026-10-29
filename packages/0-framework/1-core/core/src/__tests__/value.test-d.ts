@@ -104,3 +104,12 @@ test('a resource declares its slots and wires them at construction, checked agai
   // @ts-expect-error the ref does not provide the slot's required contract
   resource({ ...base, inputs: { target }, deps: { target: dbRef } });
 });
+
+test('provisioning a resource that exposes nothing returns only its id', () => {
+  const site = resource({ name: 'site', extension: 'test/pack', type: 'fake/url' });
+  module('shop', ({ provision }) => {
+    const ref = provision(site);
+    expectTypeOf(ref).toExtend<{ readonly id: string }>();
+    expectTypeOf<keyof typeof ref>().toEqualTypeOf<'id'>();
+  });
+});

@@ -254,3 +254,79 @@ describe('a resource with a slot wired at construction', () => {
     ]);
   });
 });
+
+describe('a resource that exposes nothing', () => {
+  test('a resource that exposes nothing loads with no $out port and provision() returns only its id', () => {
+    let ref: unknown;
+    const root = module('shop', ({ provision }) => {
+      ref = provision(resource({ name: 'site', extension: 'test/pack', type: 'fake/url' }), {
+        id: 'site',
+      });
+    });
+
+    const graph = Load(root);
+
+    expect(graph.nodes.find((n) => n.id === 'shop.site')?.node).toMatchObject({
+      kind: 'resource',
+      type: 'fake/url',
+    });
+    expect(graph.ports.filter((p) => p.node === 'shop.site')).toEqual([]);
+    expect(ref).toEqual({ id: 'shop.site' });
+  });
+
+  test('resource() refuses both provides and type, and neither', () => {
+    expect(
+      constructionError(() =>
+        resource({
+          name: 'site',
+          extension: 'test/pack',
+          provides: urlContract(),
+          type: 'fake/url',
+        }),
+      ).message,
+    ).toBe(
+      "resource() takes either provides or type, not both — type is the contract's kind when a contract is provided.",
+    );
+    expect(constructionError(() => resource({ name: 'site', extension: 'test/pack' })).message).toBe(
+      'resource() requires provides, the contract it offers, or type, for a resource that offers nothing.',
+    );
+  });
+
+  test('a resource that exposes nothing and depends on a service loads with its slot and no out port', () => {
+    const root = module('shop', ({ provision }) => {
+      const web = provision(webService(), { id: 'web' });
+      provision(
+        resource({
+          name: 'site',
+          extension: 'test/pack',
+          type: 'fake/url',
+          inputs: { target: httpDep() },
+          deps: { target: web.http },
+        }),
+        { id: 'site' },
+      );
+    });
+
+    const graph = Load(root);
+
+    expect(graph.ports.filter((p) => p.node === 'shop.site')).toEqual([
+      {
+        node: 'shop.site',
+        direction: 'in',
+        name: 'target',
+        contractKind: 'fake/http',
+        style: undefined,
+      },
+    ]);
+    expect(graph.edges).toContainEqual({
+      from: 'shop.web',
+      to: 'shop.site',
+      input: 'target',
+      kind: 'dependency',
+    });
+    expect(graph.authoredEdges).toContainEqual({
+      from: { node: 'shop.web', direction: 'out', name: 'http' },
+      to: { node: 'shop.site', direction: 'in', name: 'target' },
+    });
+  });
+});

@@ -224,10 +224,11 @@ export interface BuildAdapter {
 /**
  * A Resource's identity: the one place a piece of infrastructure exists.
  * Provisioned by a module, never embedded in a service's deps. `provides`
- * is the Contract the resource offers; `type` is derived from `provides.kind`.
+ * is the Contract the resource offers, and `type` is its `kind`; a resource
+ * that offers nothing has no `provides` and names its `type` directly.
  */
 export interface ResourceNode<
-  C extends AnyContract = AnyContract,
+  C extends AnyContract | undefined = AnyContract,
   D extends Deps = Deps,
   P extends ResourceProps = ResourceProps,
 > {
@@ -237,8 +238,8 @@ export interface ResourceNode<
   readonly name: string;
   /** The extension package that authored this node, e.g. "@prisma/composer-prisma-cloud" — the registry key at deploy. */
   readonly extension: string;
-  readonly type: C['kind'];
-  /** The Contract this resource provides — the resource's single port. */
+  readonly type: string;
+  /** The Contract this resource provides — the resource's single port. Undefined for a resource that exposes nothing, such as a public URL. */
   readonly provides: C;
   /** Dependency slots, as a service's `inputs`. Empty for a resource that depends on nothing. */
   readonly inputs: D;
@@ -438,10 +439,10 @@ type ModuleProvisionArgs<D extends Deps, S extends Secrets, PB> = [keyof D] exte
 
 export interface ModuleBuilder {
   /** Provisions an owned resource; its id defaults to the node's `name`. */
-  provision<C extends AnyContract>(
+  provision<C extends AnyContract | undefined>(
     resource: ResourceNode<C>,
     opts?: { id?: string },
-  ): { readonly id: string } & RefPort<C>;
+  ): { readonly id: string } & (C extends AnyContract ? RefPort<C> : Record<never, never>);
   /** Registers an owned service; its id defaults to the node's `name`; `deps`/`input` are required iff it declares them; a reserved param may be bound (literal or `ParamSource`), overriding its default. */
   provision<
     D extends Deps,
@@ -638,6 +639,39 @@ function requireResourceWiring(def: {
   }
 }
 
+/** A resource's routing `type`: its contract's `kind`, or the `type` named by a resource that offers nothing. */
+function resourceType(def: { provides?: unknown; type?: string }): string {
+  const provides = def.provides;
+  if (provides === undefined) {
+    if (typeof def.type !== 'string' || def.type.length === 0) {
+      throw new Error(
+        'resource() requires provides, the contract it offers, or type, for a resource that offers nothing.',
+      );
+    }
+    return def.type;
+  }
+  if (def.type !== undefined) {
+    throw new Error(
+      "resource() takes either provides or type, not both — type is the contract's kind when a contract is provided.",
+    );
+  }
+  if (
+    typeof provides !== 'object' ||
+    provides === null ||
+    !('kind' in provides) ||
+    typeof provides.kind !== 'string' ||
+    provides.kind.length === 0 ||
+    !('satisfies' in provides) ||
+    typeof provides.satisfies !== 'function'
+  ) {
+    throw new Error(
+      'resource() requires `provides` — the Contract this resource offers ' +
+        '(a non-empty `kind` plus its `satisfies()`).',
+    );
+  }
+  return provides.kind;
+}
+
 /**
  * Everything `resource()` establishes, minus the freeze — an extension
  * whose resource node carries extra fields extends this, assigns them, and
@@ -645,7 +679,7 @@ function requireResourceWiring(def: {
  * A class built on this base must not use #private fields: Load copies a node whose props hold a value, and a copy carries own properties only.
  */
 export abstract class ResourceNodeBase<
-  C extends AnyContract = AnyContract,
+  C extends AnyContract | undefined = AnyContract,
   D extends Deps = Record<never, never>,
   P extends ResourceProps = Record<never, never>,
 > implements ResourceNode<C, D, P>
@@ -654,7 +688,7 @@ export abstract class ResourceNodeBase<
   readonly kind = 'resource' as const;
   readonly name: string;
   readonly extension: string;
-  readonly type: C['kind'];
+  readonly type: string;
   readonly provides: C;
   readonly inputs: D;
   readonly deps: DepBindings<D>;
@@ -663,31 +697,22 @@ export abstract class ResourceNodeBase<
   constructor(def: {
     name: string;
     extension: string;
-    provides: C;
+    provides?: C;
+    type?: string;
     inputs?: D;
     deps?: DepBindings<D>;
     props?: P;
   }) {
     requireName(def.name, 'resource');
     requireExtension(def.extension, 'resource');
-    const provides = def.provides;
-    if (
-      typeof provides !== 'object' ||
-      provides === null ||
-      typeof provides.kind !== 'string' ||
-      provides.kind.length === 0 ||
-      typeof provides.satisfies !== 'function'
-    ) {
-      throw new Error(
-        'resource() requires `provides` — the Contract this resource offers ' +
-          '(a non-empty `kind` plus its `satisfies()`).',
-      );
-    }
+    this.type = resourceType(def);
     requireResourceWiring(def);
     this.name = def.name;
     this.extension = def.extension;
-    this.type = provides.kind;
-    this.provides = provides;
+    this.provides = blindCast<
+      C,
+      'provides is the authored C itself; an omitted provides is the undefined that C admits, since a resource that offers nothing is typed ResourceNode<undefined>'
+    >(def.provides);
     this.inputs = blindCast<
       D,
       'an omitted inputs map is the empty Deps; the deps-match check above guarantees the keys agree at runtime'
@@ -705,14 +730,15 @@ export abstract class ResourceNodeBase<
 
 /** The core leaf: exactly the base, frozen. */
 class FrozenResourceNode<
-  C extends AnyContract,
+  C extends AnyContract | undefined,
   D extends Deps,
   P extends ResourceProps,
 > extends ResourceNodeBase<C, D, P> {
   constructor(def: {
     name: string;
     extension: string;
-    provides: C;
+    provides?: C;
+    type?: string;
     inputs?: D;
     deps?: DepBindings<D>;
     props?: P;
@@ -724,17 +750,19 @@ class FrozenResourceNode<
 
 /**
  * Constructs a branded, frozen Resource node — an identity plus the Contract
- * it provides; the routing `type` is the contract's `kind`. Pure — nothing
- * is provisioned until a module provisions it.
+ * it provides; the routing `type` is the contract's `kind`. A resource that
+ * offers nothing omits `provides` and names its `type`. Pure — nothing is
+ * provisioned until a module provisions it.
  */
 export function resource<
-  C extends AnyContract,
+  C extends AnyContract | undefined = undefined,
   D extends Deps = Record<never, never>,
   P extends ResourceProps = Record<never, never>,
 >(def: {
   name: string;
   extension: string;
-  provides: C;
+  provides?: C;
+  type?: string;
   inputs?: D;
   deps?: DepBindings<D>;
   props?: P;

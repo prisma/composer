@@ -16,6 +16,7 @@ import {
 } from './graph-types.ts';
 import { boundaryPortsOf, slotNodesAndEdges } from './load-service.ts';
 import {
+  type AnyContract,
   type DependencyEnd,
   type Deps,
   isConfigKeySegment,
@@ -80,17 +81,20 @@ function refFor(id: string, service: ServiceNode): ProvisionedRef {
 }
 
 /**
- * The resource variant of refFor: a resource has exactly one port — the
+ * The resource variant of refFor: a resource has at most one port — the
  * contract it provides — flattened onto the ref itself, tagged with the
  * provider id. `id` and the authored brand are written last so a hostile
- * contract value cannot clobber them.
+ * contract value cannot clobber them. A resource that exposes nothing gets
+ * only its id.
  */
 function refForResource(id: string, resource: ResourceNode): ProvisionedRef {
+  const provides: AnyContract | undefined = resource.provides;
+  if (provides === undefined) return { id };
   return blindCast<
     ProvisionedRef,
     'the ref is the provided contract value tagged with the provider id — the `{ id } & RefPort<C>` shape the resource provision() overload pins'
   >({
-    ...resource.provides,
+    ...provides,
     __providerId: id,
     id,
     [AUTHORED_PORT]: { node: id, name: RESOURCE_OUT_PORT },
@@ -590,13 +594,16 @@ function flatten(
       nodes.push(...slots.nodes, { id: fullAddress, parent: selfId, node: child });
       edges.push(...slots.edges, ...wiringEdges(localWiring, fullAddress));
       ports.push(...boundaryPortsOf(fullAddress, child));
-      ports.push({
-        node: fullAddress,
-        direction: 'out',
-        name: RESOURCE_OUT_PORT,
-        contractKind: child.provides.kind,
-        style: contractStyleOf(child.provides),
-      });
+      const provides: AnyContract | undefined = child.provides;
+      if (provides !== undefined) {
+        ports.push({
+          node: fullAddress,
+          direction: 'out',
+          name: RESOURCE_OUT_PORT,
+          contractKind: provides.kind,
+          style: contractStyleOf(provides),
+        });
+      }
       recordAuthoredWiring(fullAddress, localWiring);
       pending.push({
         deps: child.inputs ?? {},
