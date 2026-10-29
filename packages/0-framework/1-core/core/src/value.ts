@@ -43,13 +43,13 @@ export type RealValuesOf<D extends readonly Value<unknown>[]> = {
 };
 
 /** Plain data: what a `resolve()` function may return, and the only thing a value may stand for in a binding. */
-export type PlainValue =
+export type PlainData =
   | string
   | number
   | boolean
   | null
-  | readonly PlainValue[]
-  | { readonly [key: string]: PlainValue };
+  | readonly PlainData[]
+  | { readonly [key: string]: PlainData };
 
 /**
  * A value computed from other values. `fn` receives the dependencies' real

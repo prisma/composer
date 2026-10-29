@@ -10,7 +10,7 @@ import {
   type EnvironmentFacts,
   isPlainObject,
   isValue,
-  type PlainValue,
+  type PlainData,
   type Value,
 } from './value.ts';
 
@@ -196,7 +196,7 @@ export type InputBinding =
   | null
   | ParamSource
   | SecretSource
-  | Value<PlainValue>
+  | Value<PlainData>
   | readonly InputBinding[]
   | { readonly [key: string]: InputBinding };
 
@@ -253,7 +253,7 @@ export type ResourceProp =
   | number
   | boolean
   | null
-  | Value<PlainValue>
+  | Value<PlainData>
   | readonly ResourceProp[]
   | { readonly [key: string]: ResourceProp };
 

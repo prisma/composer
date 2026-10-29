@@ -82,5 +82,5 @@ export {
   secretSource,
   service,
 } from '../node.ts';
-export type { EnvironmentFacts, PlainValue, RealValuesOf, Value } from '../value.ts';
+export type { EnvironmentFacts, PlainData, RealValuesOf, Value } from '../value.ts';
 export { isValue, resolve } from '../value.ts';
