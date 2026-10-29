@@ -276,5 +276,7 @@ ADR-0053 (the commands). What we deliberately didn't do:
 
 # Values — deferred (2026-10-29)
 
+- **`resolveParam` in `control/deploy.ts` uses "resolve" for a different act** (picking a param's binding or default and validating it) than Load's resolving of values. Rename it, for example to `bindParam`, when that file is next touched.
+
 - **Rename `Values<P>` to `ParamValues<P>` at the next breaking release.** `Values<P>` is the hydrated data of a node's params, exported from `@prisma/composer`. Since `Value<T>` became the type `resolve()` returns, the two names read as related when they are not. Renaming a public type breaks callers, so it waits for a release that already breaks them. Origin: public-URLs slice C1.
 - **Move `PostgresResourceNode`'s `config` and `targetRef` into `props`.** A resource's configuration now has one home, `props`, which is the only place on a resource where Load resolves a value. The Prisma Cloud Postgres resource still carries its own fields, so a value cannot configure it. Origin: public-URLs slice C1.

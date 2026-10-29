@@ -397,11 +397,11 @@ export type ResourceProp =
   | { readonly [key: string]: ResourceProp };
 ```
 
-Why `deps` for the producers: it is the meaning `deps` has at every `provision()` call, so a pack author reads the resource factory as a provision call with the node's own slots. The one collision is inside core, on `ModuleNode.deps`, which holds declared slots; the doc comment above says so. (Settled with Will on 2026-10-29; `wiring` was rejected.) Why `props`: the glossary's provisioning-plane entry uses "props" for the desired configuration passed at declare time, which is what a resource descriptor turns these into; "options" in this codebase means a function's options argument (`LoadOptions`, `LowerOptions`), and in Pulumi `ResourceOptions` means meta-settings such as `dependsOn`.
+Why `deps` for the producers: it is the meaning `deps` has at every `provision()` call, so a pack author reads the resource factory as a provision call with the node's own slots. The cost accepted: `ModuleNode.deps`, `module()`'s boundary `deps` and `compute()`'s `deps` declare slots, while `provision()`'s and `resource()`'s `deps` bind producers; the field's doc comment names all five. (Settled with Will on 2026-10-29; `wiring` was rejected.) Why `props`: the glossary's provisioning-plane entry uses "props" for the desired configuration passed at declare time, which is what a resource descriptor turns these into; "options" in this codebase means a function's options argument (`LoadOptions`, `LowerOptions`), and in Pulumi `ResourceOptions` means meta-settings such as `dependsOn`.
 
 `DepBindings<D>` is the existing unexported type in `node.ts`; it is exported now, since it appears in a public interface. The existing generic parameter `C` keeps its position so every current `ResourceNode<C>` still compiles; `D` and `P` default to the widest shapes.
 
-Every resource still provides a contract and gets the `$out` port. A public URL provides its HTTP ingress point as its own contract, which P1 names; nothing inside the graph wires to it, since no slot requires that contract kind, and `provision()`'s ref is inert for the same reason. Settled with Will on 2026-10-29: `provides` stays required.
+A resource may expose nothing (§ 6.7). Will, 2026-10-29, on the public URL: nothing inside the graph can depend on it, since its consumer is the internet, so "exposes an ingress interface" was the resource model talking, not the design. A public URL depends on the service's exposed HTTP interface and exposes nothing.
 
 ### 6.3 The factory and the base class
 
@@ -481,6 +481,18 @@ return refForResource(fullAddress, child);
 ### 6.6 The application topology
 
 `composeApplicationTopology` in `packages/1-prisma-cloud/0-lowering/lowering/src/builds/application-topology.ts` needs no change: it maps every `graph.ports` entry and every `graph.authoredEdges` entry. A resource with a slot submits an `in` port and an edge into it; the topology's content hash changes for such a graph, which the platform stores opaquely. The platform's `replaceApplicationTopology` interactor (pdp-control-plane, `packages/interactors/src/application-topology/replaceApplicationTopology.ts`, read 2026-10-29) checks only that ports are unique by node, direction and name, that every edge endpoint names a submitted port, and that a consuming endpoint has one incoming edge. It does not restrict which kinds carry `in` ports. The edge's `family` is `communication` when the producer is a service, which is what a public URL's edge is.
+
+### 6.7 A resource that exposes nothing
+
+Settled with Will on 2026-10-29, after the fix round. A public URL offers a hostname to the internet, which is outside the topology; no node can depend on it. So a resource may be built without `provides`:
+
+- `resource()` and `ResourceNodeBase`'s `def` take `provides?: C` and `type?: string`. Exactly one of them is required: `provides` given, `type` is `provides.kind` as today, and giving both is `Error`: `resource() takes either provides or type, not both — type is the contract's kind when a contract is provided.`; `provides` omitted, `type` is required and non-empty, else `Error`: `resource() requires provides, the contract it offers, or type, for a resource that offers nothing.`
+- `ResourceNode<C extends AnyContract | undefined = AnyContract, D, P>` has `readonly provides: C` and `readonly type: string`. `provision()`'s resource overload returns `{ readonly id: string } & (C extends AnyContract ? RefPort<C> : Record<never, never>)`; `refForResource` returns `{ id }` (with the authored-port brand omitted) when `provides` is `undefined`.
+- Load pushes the `$out` port only when `provides` is defined. `validateRegistryCoverage` and `descriptorFor` read `type`, so nothing changes there. The application topology receives no `out` port for such a resource.
+- A dependency slot wired to the `{ id }` ref of a resource that exposes nothing fails `validateWiring`'s contract check as today (nothing satisfies a required contract); an untyped slot accepts it, as it accepts any ref.
+- Every existing resource factory passes `provides` and compiles unchanged.
+- Tests, in `resource-slots.test.ts`: `a resource that exposes nothing loads with no $out port and provision() returns only its id`; `resource() refuses both provides and type, and neither`; `a resource that exposes nothing and depends on a service loads with its slot and no out port` (the public URL shape). In `value.test-d.ts`: `provision(resourceWithoutProvides)` is `{ id: string }` with no other member.
+- The glossary's Resource entry says a Resource may expose nothing, and names the public URL; `core-model.md`'s factory signature shows `provides?` and `type?`.
 
 ## 7. The environment name's path into Load
 
@@ -653,10 +665,12 @@ D2 landed on 2026-10-29 (commits 77b45ba6, 4b3cb003, a6244546, 45b79ca9) with: `
 
 D3 landed on 2026-10-29 (commits 0b951e4a, 8320253d, 48a36fa4, f363f547, 5f7c14b4), with: `boundaryPortsOf` sharing the absent-`inputs` tolerance through a `slotsOf` helper in `load-service.ts`; `module.test.ts`'s older assertion on the `provision(resource, { deps })` text updated; test 45 proving the environment reaches `destroy`'s Load by recording the name a `resolve()` function receives, because the destroy tests run the real pipeline with a fake assembler and a fake `alchemy`; test 44's empty bundle as `{ dir: '', entry: '' }` and its fixture config using `as const` on descriptor kinds. The local proof in § 12 passed: `deployed to dev` and `deployed to test`.
 
+The code review's fix round landed on 2026-10-29 (17 commits, febac4bf to 998934bf) and renamed, against this spec's text: `PlainValue` → `PlainData`; `dependencySlots` → `slotNodesAndEdges(node, nodeId)` with the error `Node "…" has no inputs map.`; `ResourceProp` → `ResourcePropsMember`; `ValueBindingSite.channel` → `kind`; `connectionInputs(ctx: LowerContext)`; `LoadOptions` declared in `graph-types.ts`; a value's `fact` is `keyof EnvironmentFacts` and `EnvironmentRealValues` (core-only) is the real-value shape `LoadOptions.environment` uses; `loadModule` seals in a `finally`; `provisionedEdges` in the Prisma Cloud target accepts a resource consumer; the smoke script keeps polling on an `environment` mismatch; the guide and skill say to keep an environment's case in every `fn` until the `destroy` operation for it has finished; the glossary gains a Driver entry and the Resource entry leads with the lifecycle test. Where this spec's earlier sections still use the old names, the code's names stand.
+
 
 Each of these was put to Will on 2026-10-29 after the architect and principal-engineer reviews.
 
-1. **A resource keeps `provides`.** A public URL provides an HTTP ingress point as its own contract; nothing inside the graph wires to it. No change to the resource model beyond the slot wired at construction (§ 6.2).
+1. **A resource may expose nothing** (§ 6.7). First settled as "keeps `provides`", then reversed by Will on 2026-10-29: a public URL depends on the service's exposed HTTP interface and exposes nothing, because nothing in the graph can depend on it.
 2. **`deps`, not `wiring`, for a resource's bound producers** (§ 6.2). `wiring` was rejected; `deps` carries the meaning it has at `provision()`.
 3. **`props` for a resource's configuration** (§ 6.2). Decided by the orchestrator so the build could start.
 4. **A computed value may not return a secret or param source** (§ 5.3). Decided by the orchestrator so the build could start, for the two reasons given there.
