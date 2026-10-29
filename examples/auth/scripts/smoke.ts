@@ -67,8 +67,8 @@ function urlOf(name: string): string {
     throw new Error(`app "${name}" has no endpoint domain yet`);
   return (domain.startsWith('http') ? domain : `https://${domain}`).replace(/\/$/, '');
 }
-const apiUrl = urlOf('api');
-const opsUrl = urlOf('ops');
+const apiUrl = urlOf(`${stack}.api`);
+const opsUrl = urlOf(`${stack}.ops`);
 console.log(`api URL: ${apiUrl}`);
 console.log(`ops URL: ${opsUrl}`);
 
