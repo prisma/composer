@@ -1,10 +1,13 @@
 import { blindCast } from '@internal/foundation/casts';
+import { isSecretString, SecretBox } from '@internal/foundation/secret';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import {
   LoadError,
   type NodeId,
   type ParamBinding,
   type ServiceInputBinding,
 } from './graph-types.ts';
+import { inputFieldLabel } from './module-input.ts';
 import { isParamSource, isSecretSource, type ResourceNode, type ResourceProps } from './node.ts';
 import {
   type EnvironmentRealValues,
@@ -14,14 +17,26 @@ import {
   type Value,
 } from './value.ts';
 
+/** A provisioned module's input binding, recorded at its provision() call. Load validates it in the second pass; the graph does not carry it. */
+export interface ProvisionedModuleInput {
+  /** The module's address. */
+  readonly moduleAddress: NodeId;
+  /** The module's input schema. */
+  readonly schema: StandardSchemaV1;
+  /** The binding the provision() call supplied, values in place. */
+  readonly binding: unknown;
+}
+
 export interface ValueBindingSite {
   /** The address of the node the binding belongs to. */
   readonly address: NodeId;
-  /** `input` for a service input binding, `param` for a service param, `props` for a resource's props. */
-  readonly kind: 'input' | 'param' | 'props';
-  /** The param name for `param`; the dotted path inside the document for `input` and `props` (`''` at the root). Array members by index: `hosts.0`. */
+  /** `input` for a service input binding, `moduleInput` for a module's input binding, `param` for a service param, `props` for a resource's props. */
+  readonly kind: 'input' | 'moduleInput' | 'param' | 'props';
+  /** The param name for `param`; the dotted path inside the document for `input`, `moduleInput` and `props` (`''` at the root). Array members by index: `hosts.0`. */
   readonly path: string;
 }
+
+const SENTINEL_SOURCE = Symbol('prisma:module-input-sentinel');
 
 function joinPath(path: string, key: string | number): string {
   return path === '' ? String(key) : `${path}.${key}`;
@@ -33,6 +48,10 @@ function describeSite(site: ValueBindingSite): string {
       return site.path === ''
         ? `the input binding of service "${site.address}"`
         : `input key "${site.path}" of service "${site.address}"`;
+    case 'moduleInput':
+      return site.path === ''
+        ? `the input binding of module "${site.address}"`
+        : `input key "${site.path}" of module "${site.address}"`;
     case 'param':
       return `param "${site.path}" of service "${site.address}"`;
     case 'props':
@@ -85,6 +104,7 @@ function describeNotPlain(value: unknown): string | undefined {
 }
 
 function isThenable(value: unknown): boolean {
+  if (isValue(value)) return false;
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -151,13 +171,93 @@ function substitute(
     const rebuilt: Record<string, unknown> = {};
     let changed = false;
     for (const [key, member] of Object.entries(value)) {
-      rebuilt[key] = substitute(member, results, inProgress);
-      if (rebuilt[key] !== member) changed = true;
+      const real = substitute(member, results, inProgress);
+      if (real === undefined && isValue(member)) {
+        changed = true;
+        continue;
+      }
+      rebuilt[key] = real;
+      if (real !== member) changed = true;
     }
     inProgress.delete(value);
     return changed ? rebuilt : value;
   }
   return value;
+}
+
+/** The data at `path` inside a validated input; `undefined` where a key is absent or the data there is not a plain object. */
+function readPath(data: unknown, path: readonly string[]): unknown {
+  let current = data;
+  for (const key of path) {
+    if (!isPlainObject(current) || !Object.hasOwn(current, key)) return undefined;
+    current = current[key];
+  }
+  return current;
+}
+
+function validateModuleInput(entry: ProvisionedModuleInput, resolved: unknown): unknown {
+  const address = entry.moduleAddress;
+  const withSentinels = (value: unknown, path: string): unknown => {
+    if (isSecretSource(value)) {
+      const sentinel = new SecretBox('');
+      Object.defineProperty(sentinel, SENTINEL_SOURCE, { value });
+      return sentinel;
+    }
+    if (isParamSource(value)) {
+      throw new LoadError(
+        `${describeSite({ address, kind: 'moduleInput', path })} is bound to a param source, such as envParam(). A module's input does not take a param source yet; bind it on the service's input inside the module, or forward it through the module's params slot.`,
+      );
+    }
+    if (isSecretString(value)) {
+      throw new LoadError(
+        `${describeSite({ address, kind: 'moduleInput', path })} is bound to a SecretString. A secret's value never appears in the code; bind envSecret('NAME'), or pass on an input field typed secretString().`,
+      );
+    }
+    if (Array.isArray(value)) {
+      return value.map((member, index) => withSentinels(member, joinPath(path, index)));
+    }
+    if (isPlainObject(value)) {
+      return Object.fromEntries(
+        Object.entries(value).map(([key, member]) => [key, withSentinels(member, joinPath(path, key))]),
+      );
+    }
+    return value;
+  };
+  const result = entry.schema['~standard'].validate(withSentinels(resolved, ''));
+  if (result instanceof Promise) {
+    throw new LoadError(
+      `The input schema of module "${address}" returned a Promise from validate(). A module's input is validated synchronously at Load; use a schema with no asynchronous checks.`,
+    );
+  }
+  if (result.issues !== undefined) {
+    const messages = result.issues.map((issue) => issue.message).join('; ');
+    throw new LoadError(
+      `The input binding of module "${address}" does not match the module's input schema: ${messages}`,
+    );
+  }
+  const restore = (value: unknown, path: string): unknown => {
+    if (isSecretString(value)) {
+      const source = blindCast<
+        Record<PropertyKey, unknown>,
+        'reading the sentinel tag a module input validation put on its own SecretString box'
+      >(value)[SENTINEL_SOURCE];
+      if (isSecretSource(source)) return source;
+      const atPath = path === '' ? '' : ` at "${path}"`;
+      throw new LoadError(
+        `The input schema of module "${address}" produced a SecretString${atPath} that its binding did not supply. A module's schema may check a secret field, never create one.`,
+      );
+    }
+    if (Array.isArray(value)) {
+      return value.map((member, index) => restore(member, joinPath(path, index)));
+    }
+    if (isPlainObject(value)) {
+      return Object.fromEntries(
+        Object.entries(value).map(([key, member]) => [key, restore(member, joinPath(path, key))]),
+      );
+    }
+    return value;
+  };
+  return restore(result.value, '');
 }
 
 /**
@@ -168,6 +268,7 @@ export function resolveValues(input: {
   readonly environment: EnvironmentRealValues | undefined;
   readonly inputBindings: readonly ServiceInputBinding[];
   readonly params: readonly ParamBinding[];
+  readonly moduleInputs: readonly ProvisionedModuleInput[];
   readonly resources: ReadonlyMap<NodeId, ResourceNode>;
 }): {
   readonly inputBindings: readonly ServiceInputBinding[];
@@ -188,6 +289,12 @@ export function resolveValues(input: {
     const site: ValueBindingSite = { address, kind: 'props', path: '' };
     collect(resource.props, site, found, new WeakSet());
   }
+
+  const moduleInputByAddress = new Map(
+    input.moduleInputs.map((entry) => [entry.moduleAddress, entry]),
+  );
+  const validatedInputs = new Map<NodeId, unknown>();
+  const validating = new Set<NodeId>();
 
   const results = new Map<Value<unknown>, unknown>();
   const visiting: Value<unknown>[] = [];
@@ -228,12 +335,42 @@ export function resolveValues(input: {
         checkResult(result, fnLabelFor(site));
         break;
       }
+      case 'input': {
+        const entry = moduleInputByAddress.get(origin.module);
+        if (entry === undefined) {
+          throw new LoadError(
+            `${describeSite(site)} depends on ${inputFieldLabel(origin)} of module "${origin.module}", which this Load does not provision. An input field can be passed on only inside the body of the module that received it.`,
+          );
+        }
+        result = readPath(validatedInputOf(entry), origin.path);
+        break;
+      }
     }
     visiting.pop();
     results.set(value, result);
     return result;
   };
 
+  const validatedInputOf = (entry: ProvisionedModuleInput): unknown => {
+    if (validatedInputs.has(entry.moduleAddress)) return validatedInputs.get(entry.moduleAddress);
+    if (validating.has(entry.moduleAddress)) {
+      throw new LoadError(
+        `The input binding of module "${entry.moduleAddress}" depends on that module's own input. Remove the cycle.`,
+      );
+    }
+    validating.add(entry.moduleAddress);
+    const site: ValueBindingSite = { address: entry.moduleAddress, kind: 'moduleInput', path: '' };
+    const values: { value: Value<unknown>; site: ValueBindingSite }[] = [];
+    collect(entry.binding, site, values, new WeakSet());
+    for (const { value, site: valueSite } of values) resolveOne(value, valueSite);
+    const resolved = substitute(entry.binding, results, new WeakSet());
+    const validated = validateModuleInput(entry, resolved);
+    validating.delete(entry.moduleAddress);
+    validatedInputs.set(entry.moduleAddress, validated);
+    return validated;
+  };
+
+  for (const entry of input.moduleInputs) validatedInputOf(entry);
   for (const { value, site } of found) resolveOne(value, site);
 
   const authoredProps = new Map(
@@ -275,9 +412,10 @@ export function resolveValues(input: {
             >(binding),
           };
     }),
-    params: input.params.map((entry) => {
+    params: input.params.flatMap((entry) => {
       const binding = substitute(entry.binding, results, inProgress);
-      return binding === entry.binding ? entry : { ...entry, binding };
+      if (binding === undefined && isValue(entry.binding)) return [];
+      return [binding === entry.binding ? entry : { ...entry, binding }];
     }),
   };
 }
