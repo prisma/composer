@@ -60,7 +60,8 @@ A **node whose lifecycle a provider manages**: the framework can create, update 
 delete it. Most Resources hold **state**, such as a database, a bucket or a cache.
 Surfaced as a typed **capability** (via an Alchemy Layer): a Resource's Output
 provides it, a Module's Input requires one, and the wire is valid iff provided
-satisfies required.
+satisfies required. A Resource may expose nothing: a public URL offers a hostname
+to the internet, which is outside the graph, so no node can depend on it.
 
 The lifecycle can be implemented by cloud APIs *or* third-party/partner APIs, so a
 provisioned third-party account is a Resource too — a Stripe product, a Tigris

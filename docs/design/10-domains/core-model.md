@@ -369,10 +369,11 @@ validate, and freeze. This is the whole "framework provides / pack wraps" contra
 
 ```ts
 // @prisma/composer
-function resource<C extends Contract<any, any>, D extends Deps = {}, P extends ResourceProps = {}>(def: {
+function resource<C extends Contract<any, any> | undefined = undefined, D extends Deps = {}, P extends ResourceProps = {}>(def: {
   name: string
   extension: string
-  provides: C                      // the routing `type` is derived as provides.kind
+  provides?: C                     // the routing `type` is derived as provides.kind
+  type?: string                    // instead of provides, for a resource that exposes nothing
   inputs?: D                       // dependency slots, as a service declares them
   deps?: DepBindings<D>            // the producer wired into each slot, at construction
   props?: P                        // plain data and values; Load resolves the values
