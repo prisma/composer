@@ -1,15 +1,19 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Load, module } from '@internal/core';
-import { secretsStore } from '@internal/local-target';
+import { Load, module, type ServiceNode } from '@internal/core';
+import { preflightEnv } from '@internal/core/config';
+import { SecretBox } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { PrismaCloudContainer } from '../container.ts';
+import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
+import { decodePreflightPayload, transportedPreflight } from '../control/preflight-payload.ts';
 import { compute } from '../exports/index.ts';
 import { runDevPreflight } from '../local-target/preflight.ts';
 import { envParam } from '../param.ts';
 import { envSecret } from '../secret.ts';
+import { serializeInput } from '../serializer.ts';
 
 const build = {
   extension: '@prisma/composer/node',
@@ -21,165 +25,380 @@ const build = {
 const fakeContainer = (environment = 'dev') =>
   new PrismaCloudContainer({ appName: 'app', environment }, 'local', undefined, undefined, true);
 
-/** Load never validates a binding, so a pass-anything schema is enough here (ADR-0042). */
-const anySchema: StandardSchemaV1<unknown, unknown> = {
-  '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },
-};
+/** Passes when every field named in `required` holds a secret. */
+const requiresSecrets = (...required: string[]): StandardSchemaV1<unknown, unknown> => ({
+  '~standard': {
+    version: 1,
+    vendor: 'test',
+    validate: (value) => {
+      const record = typeof value === 'object' && value !== null ? value : {};
+      const missing = required.filter(
+        (key) => !(Object.getOwnPropertyDescriptor(record, key)?.value instanceof SecretBox),
+      );
+      return missing.length === 0
+        ? { value }
+        : { issues: missing.map((key) => ({ message: `${key} is required` })) };
+    },
+  },
+});
 
-// A secret is an `envSecret` leaf of the service's INPUT binding (ADR-0042);
-// dev preflight walks the binding for it and mints a placeholder when unset.
-const secretGraph = () =>
+/** Passes when at least one of `keys` holds a secret. */
+const requiresOneOf = (...keys: string[]): StandardSchemaV1<unknown, unknown> => ({
+  '~standard': {
+    version: 1,
+    vendor: 'test',
+    validate: (value) => {
+      const record = typeof value === 'object' && value !== null ? value : {};
+      return keys.some((key) => key in record)
+        ? { value }
+        : { issues: [{ message: `one of ${keys.join(', ')} is required` }] };
+    },
+  },
+});
+
+const billingGraph = (schema: StandardSchemaV1<unknown, unknown>) =>
   Load(
     module('app', ({ provision }) => {
-      provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
-        id: 'ingest',
-        input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+      provision(compute({ name: 'billing', deps: {}, input: schema, build }), {
+        id: 'billing',
+        input: {
+          stripeKey: envSecret('STRIPE_SECRET_KEY'),
+          webhookSecret: envSecret('STRIPE_WEBHOOK_SECRET'),
+        },
       });
     }),
   );
 
-// The reserved `port` param keeps the env-sourced param channel (ADR-0042):
-// binding it to envParam(...) is what a missing-env-param hard-error is proven
-// against — dev preflight reads env-sourced params from `paramManifest`.
 const paramGraph = () =>
   Load(
     module('app', ({ provision }) => {
       provision(compute({ name: 'web', deps: {}, build }), {
         id: 'web',
-        params: { port: envParam('APP_ORIGIN') },
+        params: { port: envParam('APP_PORT') },
       });
     }),
   );
 
-describe('runDevPreflight (local-dev spec S5, ADR-0041 D7)', () => {
+const mixedGraph = (schema: StandardSchemaV1<unknown, unknown>) =>
+  Load(
+    module('app', ({ provision }) => {
+      provision(compute({ name: 'billing', deps: {}, input: schema, build }), {
+        id: 'billing',
+        input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+      });
+      provision(compute({ name: 'web', deps: {}, build }), {
+        id: 'web',
+        params: { port: envParam('APP_PORT') },
+      });
+    }),
+  );
+
+const sharedGraph = () =>
+  Load(
+    module('app', ({ provision }) => {
+      provision(
+        compute({ name: 'billing', deps: {}, input: requiresSecrets('stripeKey'), build }),
+        {
+          id: 'billing',
+          input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+        },
+      );
+      provision(compute({ name: 'reports', deps: {}, input: requiresSecrets(), build }), {
+        id: 'reports',
+        input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+      });
+    }),
+  );
+
+const NAMES = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'APP_PORT'];
+
+const preflight = (graph: ReturnType<typeof Load>, environment = 'dev') =>
+  runDevPreflight({ graph, container: fakeContainer(environment), environment });
+
+/** The folder `prisma dev --environment <name>` keeps its local copy in. */
+const environmentDir = (cwd: string, folder = 'dev') =>
+  path.join(cwd, '.prisma-composer', 'dev', folder);
+
+async function preflightError(graph: ReturnType<typeof Load>): Promise<string> {
+  const error: unknown = await preflight(graph).catch((e: unknown) => e);
+  if (!(error instanceof Error)) throw new Error('expected the preflight to fail');
+  return error.message;
+}
+
+/** What the alchemy process sees after the CLI transports the payload. */
+function transported(payload: string | undefined): Record<string, string> {
+  return preflightEnv(
+    payload === undefined ? new Map() : new Map([[PRISMA_CLOUD_EXTENSION_ID, payload]]),
+  );
+}
+
+function billingDocument(
+  graph: ReturnType<typeof Load>,
+  childEnv: Record<string, string>,
+): unknown {
+  const node = graph.nodes.find((entry) => entry.id === 'app.billing')?.node as ServiceNode;
+  const binding = graph.inputBindings.find((b) => b.serviceAddress === 'app.billing')?.binding;
+  const { absentSecrets } = transportedPreflight(new Map(), childEnv);
+  const row = serializeInput(node, 'app.billing', binding, { env: {}, absentSecrets });
+  return JSON.parse(row?.value ?? 'null');
+}
+
+/** The dev payload as the alchemy process decodes it. */
+function devPayload(childEnv: Record<string, string>) {
+  const decoded = decodePreflightPayload(
+    childEnv['PRISMA_COMPOSER_PREFLIGHT_PRISMA_COMPOSER_PRISMA_CLOUD'],
+  );
+  if (decoded.kind !== 'dev') throw new Error(`expected a dev payload, got ${decoded.kind}`);
+  return decoded;
+}
+
+const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+
+describe('prisma dev preflight', () => {
   let cwd: string;
   let previousCwd: string;
-  let warnings: string[];
-  let originalWarn: typeof console.warn;
 
   beforeEach(() => {
     cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-preflight-test-'));
     previousCwd = process.cwd();
     process.chdir(cwd);
-    delete process.env['STRIPE_SECRET_KEY'];
-    delete process.env['APP_ORIGIN'];
-    warnings = [];
-    originalWarn = console.warn;
-    console.warn = (msg: string) => {
-      warnings.push(msg);
-    };
+    for (const name of NAMES) delete process.env[name];
   });
 
   afterEach(() => {
     process.chdir(previousCwd);
     fs.rmSync(cwd, { recursive: true, force: true });
-    console.warn = originalWarn;
+    for (const name of NAMES) delete process.env[name];
   });
 
-  test('a missing secret mints a placeholder, persists it, and warns exactly once', async () => {
-    await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), environment: 'dev' });
+  test('a required secret that is unset stops dev, naming the variable, the service and both fixes', async () => {
+    process.env['STRIPE_WEBHOOK_SECRET'] = 'whsec_1';
 
-    const stored = await secretsStore(path.join(cwd, '.prisma-composer', 'dev', 'dev')).read();
-    expect(stored['STRIPE_SECRET_KEY']).toMatch(/^local-placeholder-[0-9a-f]{16}$/);
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toBe(
-      '[dev] STRIPE_SECRET_KEY is not set in this shell — using a local placeholder. Anything ' +
-        'that talks to the real service behind it will fail; everything else runs.',
+    const message = await preflightError(billingGraph(requiresSecrets('stripeKey')));
+
+    expect(message).toContain('STRIPE_SECRET_KEY');
+    expect(message).toContain('service "app.billing"');
+    expect(message).toContain('stripeKey is required');
+    expect(message).toContain('export it in the shell you run `prisma dev` from');
+    expect(message).toContain(
+      "install the dotenv package and add import 'dotenv/config' at the top of prisma.config.ts",
     );
+    expect(message).toContain('only when the CLI runs under Node: Bun does not implement it');
   });
 
-  test('the minted placeholder is stable across two preflight runs', async () => {
-    await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), environment: 'dev' });
-    const first = (await secretsStore(path.join(cwd, '.prisma-composer', 'dev', 'dev')).read())[
-      'STRIPE_SECRET_KEY'
-    ];
+  test('a required secret that is set to an empty string stops dev the same way', async () => {
+    process.env['STRIPE_SECRET_KEY'] = '';
+    process.env['STRIPE_WEBHOOK_SECRET'] = 'whsec_1';
 
-    await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), environment: 'dev' });
-    const second = (await secretsStore(path.join(cwd, '.prisma-composer', 'dev', 'dev')).read())[
-      'STRIPE_SECRET_KEY'
-    ];
+    const message = await preflightError(billingGraph(requiresSecrets('stripeKey')));
 
-    expect(second).toBe(first);
-    // The pinned policy warns only on the MINT branch — reusing an already-
-    // persisted placeholder is silent, so the second run adds no warning.
-    expect(warnings).toHaveLength(1);
+    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
   });
 
-  test('a secret set in the shell is used directly, with no placeholder and no warning', async () => {
-    process.env['STRIPE_SECRET_KEY'] = 'sk_live_from_shell';
+  test('the error lists every missing required secret and leaves out the optional ones', async () => {
+    const message = await preflightError(billingGraph(requiresSecrets('stripeKey')));
 
-    await runDevPreflight({ graph: secretGraph(), container: fakeContainer(), environment: 'dev' });
+    expect(message).toContain('STRIPE_SECRET_KEY');
+    expect(message).not.toContain('STRIPE_WEBHOOK_SECRET');
 
-    const stored = await secretsStore(path.join(cwd, '.prisma-composer', 'dev', 'dev')).read();
-    expect(stored['STRIPE_SECRET_KEY']).toBe('sk_live_from_shell');
-    expect(warnings).toEqual([]);
+    const both = await preflightError(billingGraph(requiresSecrets('stripeKey', 'webhookSecret')));
+    expect(both).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
+    expect(both).toContain('STRIPE_WEBHOOK_SECRET  (required by service "app.billing"');
   });
 
-  test('a missing env-sourced param is a hard error listing the name and service, instructing the shell fix', async () => {
-    const error: unknown = await runDevPreflight({
-      graph: paramGraph(),
-      container: fakeContainer(),
-      environment: 'dev',
-    }).catch((e: unknown) => e);
+  test('when the schema needs some of several unset secrets but none alone, the error says so instead of calling each one required', async () => {
+    const message = await preflightError(billingGraph(requiresOneOf('stripeKey', 'webhookSecret')));
 
-    expect(error).toBeInstanceOf(Error);
-    const message = (error as Error).message;
-    expect(message).toContain('APP_ORIGIN');
+    expect(message).toContain('some of STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET');
+    expect(message).not.toContain('required by service');
+  });
+
+  test('an optional secret that is unset is left out of the service input', async () => {
+    process.env['STRIPE_SECRET_KEY'] = 'sk_test_1';
+    const graph = billingGraph(requiresSecrets('stripeKey'));
+
+    const childEnv = transported(await preflight(graph));
+
+    expect(billingDocument(graph, childEnv)).toEqual({
+      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
+    });
+  });
+
+  test('an optional secret that is set to an empty string is left out of the service input', async () => {
+    process.env['STRIPE_SECRET_KEY'] = 'sk_test_1';
+    process.env['STRIPE_WEBHOOK_SECRET'] = '';
+    const graph = billingGraph(requiresSecrets('stripeKey'));
+
+    const childEnv = transported(await preflight(graph));
+
+    expect(billingDocument(graph, childEnv)).toEqual({
+      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
+    });
+  });
+
+  test('the payload reaches the alchemy process with the absent secrets and a hash of each value, never the value', async () => {
+    process.env['STRIPE_SECRET_KEY'] = 'sk_test_1';
+
+    const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
+
+    const payload = devPayload(childEnv);
+    expect([...payload.absentSecrets]).toEqual(['STRIPE_WEBHOOK_SECRET']);
+    expect([...payload.pointerVersions.keys()]).toEqual(['STRIPE_SECRET_KEY']);
+    expect(Object.values(childEnv).join('')).not.toContain('sk_test_1');
+  });
+
+  test("the deployment's trigger member for a secret changes exactly when its value changes", async () => {
+    const graph = billingGraph(requiresSecrets('stripeKey'));
+    const memberFor = async (value: string) => {
+      process.env['STRIPE_SECRET_KEY'] = value;
+      const { pointerVersion } = transportedPreflight(
+        new Map(),
+        transported(await preflight(graph)),
+      );
+      return pointerVersion('STRIPE_SECRET_KEY');
+    };
+
+    const first = await memberFor('sk_test_1');
+    expect(await memberFor('sk_test_1')).toBe(first);
+    expect(await memberFor('sk_test_2')).not.toBe(first);
+    expect(first).not.toBe(sha256('sk_test_1'));
+  });
+
+  test('an unset secret has no trigger member value', async () => {
+    process.env['STRIPE_SECRET_KEY'] = 'sk_test_1';
+
+    const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
+
+    expect(
+      transportedPreflight(new Map(), childEnv).pointerVersion('STRIPE_WEBHOOK_SECRET'),
+    ).toBeUndefined();
+  });
+
+  test('a missing env-sourced param is a hard error naming the variable and service', async () => {
+    const message = await preflightError(paramGraph());
+
+    expect(message).toContain('APP_PORT');
     expect(message).toContain('service "app.web"');
-    expect(message).toContain('Set each in the shell you run `prisma dev` from.');
+    expect(message).toContain('export it in the shell you run `prisma dev` from');
+    expect(message).toContain("import 'dotenv/config'");
   });
 
-  test('each environment keeps its own placeholders, in its own folder; a / in the name stays one folder', async () => {
-    for (const environment of ['dev', 'test', 'feature/x']) {
-      await runDevPreflight({
-        graph: secretGraph(),
-        container: fakeContainer(environment),
-        environment,
-      });
-    }
+  test('missing params and secrets are reported together, with the ways to set them given once', async () => {
+    const message = await preflightError(mixedGraph(requiresSecrets('stripeKey')));
 
-    const folders = ['dev', 'test', 'feature%2Fx'].map((f) =>
-      path.join(cwd, '.prisma-composer', 'dev', f),
-    );
-    const placeholders = await Promise.all(
-      folders.map(async (folder) => (await secretsStore(folder).read())['STRIPE_SECRET_KEY']),
-    );
-    expect(new Set(placeholders).size).toBe(3);
-    expect(fs.readdirSync(path.join(cwd, '.prisma-composer', 'dev')).sort()).toEqual(
-      ['dev', 'feature%2Fx', 'test'].sort(),
-    );
+    expect(message).toContain('APP_PORT  (required by service "app.web")');
+    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
+    expect(message.split('Set each missing variable').length - 1).toBe(1);
   });
 
-  test("a folder written before environments had folders has its secrets moved into dev's, and reused", async () => {
+  test('an input that fails even with every secret set is reported as invalid, next to the other problems', async () => {
+    const message = await preflightError(mixedGraph(requiresSecrets('somethingElse')));
+
+    expect(message).toContain('invalid input for service "app.billing": somethingElse is required');
+    expect(message).not.toContain('Deploy-time');
+    expect(message).not.toContain('STRIPE_SECRET_KEY');
+    expect(message).toContain('APP_PORT  (required by service "app.web")');
+  });
+
+  test('an env-sourced param that is set is fingerprinted for the alchemy process', async () => {
+    process.env['APP_PORT'] = '3000';
+
+    const childEnv = transported(await preflight(paramGraph()));
+
+    expect([...devPayload(childEnv).pointerVersions.keys()]).toEqual(['APP_PORT']);
+  });
+
+  test('the fingerprint key is created once, readable only by its owner, and reused', async () => {
+    process.env['APP_PORT'] = '3000';
+    const keyPath = path.join(environmentDir(cwd), 'fingerprint.key');
+
+    const first = devPayload(transported(await preflight(paramGraph())));
+    const key = fs.readFileSync(keyPath);
+    const second = devPayload(transported(await preflight(paramGraph())));
+
+    // Windows has no POSIX file modes, and local dev does not run there.
+    if (process.platform !== 'win32') expect(fs.statSync(keyPath).mode & 0o777).toBe(0o600);
+    expect(fs.readFileSync(keyPath)).toEqual(key);
+    expect(second.pointerVersions).toEqual(first.pointerVersions);
+  });
+
+  test('a lost fingerprint key only changes the fingerprints', async () => {
+    process.env['APP_PORT'] = '3000';
+    const keyPath = path.join(environmentDir(cwd), 'fingerprint.key');
+
+    const first = devPayload(transported(await preflight(paramGraph())));
+    fs.rmSync(keyPath);
+    const second = devPayload(transported(await preflight(paramGraph())));
+
+    expect(second.pointerVersions.get('APP_PORT')).not.toBe(first.pointerVersions.get('APP_PORT'));
+  });
+
+  test('a secret shared by two services stops dev naming only the service that requires it', async () => {
+    const message = await preflightError(sharedGraph());
+
+    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
+    expect(message).not.toContain('service "app.reports"');
+  });
+
+  test('a secret shared by two services that is set gets one fingerprint', async () => {
+    process.env['STRIPE_SECRET_KEY'] = 'sk_test_1';
+
+    const payload = devPayload(transported(await preflight(sharedGraph())));
+
+    expect([...payload.pointerVersions.keys()]).toEqual(['STRIPE_SECRET_KEY']);
+    expect([...payload.absentSecrets]).toEqual([]);
+  });
+
+  test('a damaged fingerprint key stops dev with the file and how to fix it', async () => {
+    process.env['APP_PORT'] = '3000';
+    const devDir = environmentDir(cwd);
+    fs.mkdirSync(devDir, { recursive: true });
+    fs.writeFileSync(path.join(devDir, 'fingerprint.key'), 'short');
+
+    const message = await preflightError(paramGraph());
+
+    expect(message).toContain(path.join('.prisma-composer', 'dev', 'dev', 'fingerprint.key'));
+    expect(message).toContain('Delete the file or run `prisma dev --fresh`');
+  });
+
+  test('a secrets file left by an older prisma dev is deleted', async () => {
+    const devDir = environmentDir(cwd);
+    fs.mkdirSync(devDir, { recursive: true });
+    fs.writeFileSync(path.join(devDir, 'secrets.json'), '{"STRIPE_SECRET_KEY":"sk_live_old"}');
+    fs.writeFileSync(path.join(devDir, 'env.json'), '{}');
+
+    await preflight(paramGraph()).catch(() => undefined);
+
+    expect(fs.readdirSync(devDir)).toEqual(['env.json']);
+  });
+
+  test('a secrets file a release before environments wrote is deleted, not moved into dev', async () => {
     const root = path.join(cwd, '.prisma-composer', 'dev');
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(
       path.join(root, 'emulator-instances.json'),
       '{"formatVersion":2,"current":"app","apps":{}}',
     );
-    fs.writeFileSync(
-      path.join(root, 'secrets.json'),
-      '{"STRIPE_SECRET_KEY":"local-placeholder-0123456789abcdef"}',
-    );
+    fs.writeFileSync(path.join(root, 'secrets.json'), '{"STRIPE_SECRET_KEY":"sk_live_old"}');
 
-    await runDevPreflight({
-      graph: secretGraph(),
-      container: fakeContainer('test'),
-      environment: 'test',
-    });
+    await preflight(paramGraph(), 'test').catch(() => undefined);
 
     expect(fs.existsSync(path.join(root, 'secrets.json'))).toBe(false);
-    expect((await secretsStore(path.join(root, 'dev')).read())['STRIPE_SECRET_KEY']).toBe(
-      'local-placeholder-0123456789abcdef',
-    );
+    expect(fs.existsSync(path.join(environmentDir(cwd), 'secrets.json'))).toBe(false);
   });
 
-  test('an env-sourced param present in the shell is written to secrets.json with no error', async () => {
-    process.env['APP_ORIGIN'] = 'https://localhost:3000';
+  test('each environment has its own fingerprint key, in its own folder', async () => {
+    process.env['APP_PORT'] = '3000';
 
-    await runDevPreflight({ graph: paramGraph(), container: fakeContainer(), environment: 'dev' });
+    const versions = [];
+    for (const environment of ['dev', 'test', 'feature/x']) {
+      const payload = devPayload(transported(await preflight(paramGraph(), environment)));
+      versions.push(payload.pointerVersions.get('APP_PORT'));
+    }
 
-    const stored = await secretsStore(path.join(cwd, '.prisma-composer', 'dev', 'dev')).read();
-    expect(stored['APP_ORIGIN']).toBe('https://localhost:3000');
+    expect(new Set(versions).size).toBe(3);
+    for (const folder of ['dev', 'test', 'feature%2Fx']) {
+      expect(fs.existsSync(path.join(environmentDir(cwd, folder), 'fingerprint.key'))).toBe(true);
+    }
   });
 });

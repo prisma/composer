@@ -21,7 +21,7 @@ import {
 import { Client as PgClient } from 'pg';
 import { ensureAppInstances } from '../app-instances.ts';
 import { currentApp } from '../current-app.ts';
-import { envStore, secretsStore } from '../dev-store.ts';
+import { envStore } from '../dev-store.ts';
 import {
   type AppScope,
   deleteAppInstances,
@@ -56,7 +56,7 @@ describe('moving the folder', () => {
     fs.rmSync(directory, { recursive: true, force: true });
   });
 
-  test("moves the record, environment variables, secrets and bucket objects into dev's folder, records its name as dev, and drops what is regenerated", async () => {
+  test("moves the record, environment variables and bucket objects into dev's folder, records its name as dev, and drops what is regenerated or stored secret values", async () => {
     fs.cpSync(FIXTURE, root, { recursive: true });
 
     movePreEnvironmentDevState(directory);
@@ -67,7 +67,6 @@ describe('moving the folder', () => {
         path.join('dev', EMULATOR_INSTANCES_FILE),
         path.join('dev', 'env.json'),
         path.join('dev', DEV_ENVIRONMENT_NAME_FILE),
-        path.join('dev', 'secrets.json'),
       ].sort(),
     );
     expect(await readEmulatorInstances(dev)).toEqual({
@@ -83,9 +82,6 @@ describe('moving the folder', () => {
     });
     expect(await envStore(dev).read()).toEqual({
       COMPOSER_SHOP_API_CATALOG_URL: 'postgres://localhost:51300/catalog',
-    });
-    expect(await secretsStore(dev).read()).toEqual({
-      OPENROUTER_API_KEY: 'local-placeholder-0123456789abcdef',
     });
   });
 

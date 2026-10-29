@@ -118,22 +118,13 @@ the same port; you never set a `COMPOSER_*` variable yourself. On top of that
 it keeps your shell's environment (`NODE_OPTIONS`, proxy settings), which a
 deployed artifact does not; Composer's values win over the shell's.
 
-**Secrets come from the shell `prisma` runs in, not from the dev server's own
-`.env` loading.** Next.js loads `.env` itself, but never over a variable that
-is already set, and Composer has already set every secret: to your shell's
-value, or to a `local-placeholder-…` value when your shell has none. A secret
-that is only in `.env` therefore reaches the app as the placeholder, and the
-`[dev] STRIPE_SECRET_KEY is not set in this shell` warning says so. Load `.env`
-where `prisma` reads it, at the top of `prisma.config.ts`:
+**Secrets come from the environment `prisma` runs in, not from the dev server's own `.env` loading.** Composer reads each secret before the dev server starts, so a secret that is only in a `.env` that Next.js loads is unset as far as Composer knows: if the service requires it, `prisma dev` stops and names it; if it is optional, the service sees the field as absent. Load `.env` where `prisma` reads it, at the top of `prisma.config.ts`, after installing the `dotenv` package:
 
 ```ts
-import { existsSync } from 'node:fs';
-
-if (existsSync('.env')) process.loadEnvFile('.env');
+import 'dotenv/config';
 ```
 
-(or `export` the variables in your shell). The next `prisma dev` replaces the
-placeholder with the real value.
+(or `export` the variables in your shell). A changed value restarts the dev server on the next `prisma dev`.
 
 What else changes for such a service:
 
@@ -237,7 +228,7 @@ prisma dev stop --environment test
 
 `--fresh` wipes only the environment it runs in. Everything local to one copy
 lives in `.prisma-composer/dev/<environment>/`: the record of its instances,
-its environment variable values and placeholder secrets, the generated stack
+its environment variable values, the key `prisma dev` hashes secret values with, the generated stack
 file, the unpacked artifacts and the bucket objects. The deploy engine keeps
 each copy's state in `.alchemy/state/<app>/<environment>`.
 
@@ -397,12 +388,20 @@ databases you can migrate and query, real object storage. What's swapped are
 the *providers* underneath — local emulators stand in for Prisma Cloud, so no
 token, workspace, or network is involved. Three consequences worth knowing:
 
-- **Unset secrets don't stop the app.** A secret you haven't set in your shell
-  gets a local placeholder and a one-line warning; the app boots and serves,
-  and only the code path that actually spends that secret fails — at the real
-  external service it calls. Set the secret in your shell, or load your `.env`
-  in `prisma.config.ts`, to exercise that path; a `.env` that only your
-  framework loads does not count (see [Dev servers](#dev-servers)).
+- **Secrets come from your environment variables.** `prisma dev` reads each secret from the environment variables it runs with, never makes one up, and never reuses a value from an earlier run. Either export it in the shell you run `prisma dev` from, or keep it in a `.env` file and load that file from `prisma.config.ts`: install the `dotenv` package (`npm install dotenv`, or your package manager's equivalent), then make `import 'dotenv/config'` the first line of `prisma.config.ts`. `process.loadEnvFile('.env')` also works, but only when the CLI runs under Node, not Bun.
+
+  ```ts
+  // prisma.config.ts
+  import 'dotenv/config';
+  ```
+
+  If a secret your service's input schema requires is unset or empty, `prisma dev` stops before it starts anything and names the variable and the service. If the schema marks the secret optional, the service starts and sees that field as absent. Change a value and run `prisma dev` again, without `--fresh`, and the services that read it restart with the new value.
+
+  **A `.env` loaded by `prisma.config.ts` is also read by `prisma deploy`.** Deploy uploads any secret the target environment does not have yet from that environment, so a local-only value in `.env` becomes the hosted value. Keep local-only values out of `.env` before you deploy, or deploy from a shell where it is not loaded.
+
+  A `.env` that only your framework loads (Next.js, for example) does not count, because Composer reads each secret before the dev server starts (see [Dev servers](#dev-servers)).
+
+  Each service gets only the secrets and env-sourced params its own input and params point at. Code that reads `process.env.X` directly, where `X` is bound by another service, gets nothing.
 - **The emulators outlive a session.** They're shared, machine-wide daemons,
   so your data survives `Ctrl-C` and even a reboot until you `--fresh`. That's
   what makes restarts warm.

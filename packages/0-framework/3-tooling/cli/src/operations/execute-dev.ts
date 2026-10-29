@@ -11,7 +11,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Graph, ServiceNode } from '@internal/core';
 import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
-import { containerEnv } from '@internal/core/config';
+import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
 import type { DevServer } from '@internal/core/deploy';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import { devEnvironmentDir, resolveLocalTargets } from '@internal/core/local-target';
@@ -153,6 +153,7 @@ export async function executeDev(
   let pipeline: Awaited<ReturnType<typeof runPipeline>>;
   let resolved: ReadonlyMap<string, LocalTargetDescriptor>;
   const containers = new Map<ExtensionId, ContainerInstance>();
+  let preflightTransportEnv: Record<string, string> = {};
   // Each participating extension's view of the running app, made before the
   // first converge so a target that cannot run a dev server fails first.
   const attachmentsById = new Map<ExtensionId, LocalTargetAttachment>();
@@ -212,13 +213,25 @@ export async function executeDev(
     }
 
     // Preflight — always (dev has no deploy/destroy split).
+    const preflightPayloads = new Map<ExtensionId, string>();
     for (const [id, dev] of resolved) {
       if (dev.preflight === undefined) continue;
       try {
-        await dev.preflight({ graph, container: containers.get(id), environment });
+        const payload = await dev.preflight({ graph, container: containers.get(id), environment });
+        if (payload !== undefined) preflightPayloads.set(id, payload);
       } catch (error) {
         throw toStructured('DEV.PREFLIGHT_FAILED', error);
       }
+    }
+    try {
+      preflightTransportEnv = preflightEnv(preflightPayloads);
+    } catch (error) {
+      throw toStructured('DEV.PREFLIGHT_FAILED', error);
+    }
+    // Blank every transport var this run did not fill, so a stale one in the
+    // shell cannot pass for this run's payload.
+    for (const extension of config.extensions) {
+      preflightTransportEnv[preflightEnvVarName(extension.id)] ??= '';
     }
 
     // Emulators — ensure the daemons this topology's node kinds need, and their per-node state.
@@ -259,6 +272,7 @@ export async function executeDev(
     cwd,
     stage: environment,
     containerEnv: containerEnv(containers),
+    preflightEnv: preflightTransportEnv,
   });
 
   const converge = async (): Promise<{ outcome: AlchemyOutcome; stackPath: string }> => {

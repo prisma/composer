@@ -5,7 +5,8 @@
  * `Prisma.Project` is an identity stand-in. Attributes match upstream's
  * shapes; fields the emulator cannot answer are left absent, and both
  * `appEndpointDomain`s carry the emulator's local URL. Nothing here reads
- * `process.cwd()` or the environment.
+ * `process.cwd()`; the environment is read only for the variables a service's
+ * rows point at.
  */
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
@@ -20,7 +21,7 @@ import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
 import { appScopeOf } from './app-name.ts';
 import { extractComputeArtifact } from './artifact-extract.ts';
-import { envStore, secretsStore } from './dev-store.ts';
+import { envStore } from './dev-store.ts';
 import {
   deleteNodeInstance,
   ensureServiceInstance,
@@ -116,6 +117,44 @@ export function scopedEnvRows(
   return scoped;
 }
 
+// The pointer formats of `@prisma/composer-prisma-cloud`'s serializer.ts,
+// duplicated for the same layer-order reason as `servicePortEnvKey`.
+const PARAM_POINTER_PREFIX = '@composer-param-pointer:';
+const SECRET_MARKER = '$secret';
+const INPUT_KEY_NAME = 'INPUT';
+
+function collectSecretPointers(value: unknown, out: Set<string>): void {
+  if (Array.isArray(value)) {
+    for (const member of value) collectSecretPointers(member, out);
+    return;
+  }
+  if (!Predicate.isObject(value)) return;
+  const pointer = value[SECRET_MARKER];
+  if (Object.keys(value).length === 1 && typeof pointer === 'string') {
+    out.add(pointer);
+    return;
+  }
+  for (const member of Object.values(value)) collectSecretPointers(member, out);
+}
+
+/** The variables this service's own rows point at: its input document's `$secret` pointers and its param pointer rows. */
+export function pointedVariableNames(
+  rows: Readonly<Record<string, string>>,
+  address: string,
+): ReadonlySet<string> {
+  const ownPrefix = ownEnvKeyPrefix(address);
+  const names = new Set<string>();
+  for (const [key, value] of Object.entries(rows)) {
+    if (!key.startsWith(ownPrefix)) continue;
+    if (value.startsWith(PARAM_POINTER_PREFIX)) {
+      names.add(value.slice(PARAM_POINTER_PREFIX.length));
+    } else if (key === `${ownPrefix}${INPUT_KEY_NAME}`) {
+      collectSecretPointers(JSON.parse(value), names);
+    }
+  }
+  return names;
+}
+
 function manifestMissingAddressError(): Error {
   return new Error(
     'artifact manifest carries no address — repackage with a current @prisma/composer.',
@@ -168,19 +207,23 @@ export function readComputeManifest(artifactDir: string): {
 
 /**
  * The environment a service's deployment runs with: its own rows from
- * `env.json` (`scopedEnvRows`), `COMPOSER_<ADDRESS>_PORT`, every value in
- * `secrets.json`, and `PATH` and `HOME` from the shell. The `Deployment`
- * provider puts it with an artifact; a dev server is given it too (ADR-0056).
+ * `env.json` (`scopedEnvRows`), `COMPOSER_<ADDRESS>_PORT`, the current values
+ * of the variables its rows point at, and `PATH` and `HOME` from the shell.
+ * The `Deployment` provider puts it with an artifact; a dev server is given it
+ * too (ADR-0056).
  */
 export async function materializeEnv(
   devDir: string,
   address: string,
   port: number,
 ): Promise<Record<string, string>> {
-  const env: Record<string, string> = scopedEnvRows(await envStore(devDir).read(), address);
+  const rows = await envStore(devDir).read();
+  const env: Record<string, string> = scopedEnvRows(rows, address);
   env[servicePortEnvKey(address)] = JSON.stringify(port);
-  const secrets = await secretsStore(devDir).read();
-  for (const [key, value] of Object.entries(secrets)) env[key] = value;
+  for (const name of pointedVariableNames(rows, address)) {
+    const value = process.env[name];
+    if (value !== undefined && value.length > 0) env[name] = value;
+  }
   if (process.env['PATH'] !== undefined) env['PATH'] = process.env['PATH'];
   if (process.env['HOME'] !== undefined) env['HOME'] = process.env['HOME'];
   return env;
@@ -293,7 +336,8 @@ export function LocalEnvironmentVariableProvider(
 /**
  * `Prisma.Deployment` → unpacks the artifact once per hash, finds the
  * service's emulator instance and its port, materializes the child's full env (env store +
- * secrets + the port override + `PATH`/`HOME`), and puts the deployment — the
+ * the current values of the variables its rows point at + the port override +
+ * `PATH`/`HOME`), and puts the deployment — the
  * emulator (re)starts the child only when the hash or env actually changed.
  * `portMapping` is ignored on purpose: the emulator owns port allocation, and
  * the child learns its port from `COMPOSER_<ADDRESS>_PORT` in the env this

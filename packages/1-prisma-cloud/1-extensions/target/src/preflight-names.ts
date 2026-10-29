@@ -3,9 +3,9 @@
  * check — extracted so the two walks (`runPreflight`, `runDevPreflight`)
  * cannot drift (local-dev spec § 5). Deploy checks secrets and env-sourced
  * params identically (one platform-existence check per name); dev applies a
- * DIFFERENT policy to each (a placeholder for a missing secret, a hard error
- * for a missing env-sourced param), so the two lists stay separate here
- * rather than merged into one.
+ * DIFFERENT policy to each (a missing secret is an error only when the
+ * service's schema rejects its absence, a missing env-sourced param always
+ * is), so the two lists stay separate here rather than merged into one.
  *
  * Secrets are the `envSecret` leaves of every service's input binding
  * (ADR-0042); env-sourced params are the `envParam`-bound reserved params.
@@ -57,13 +57,20 @@ function collectSecretLeafNames(binding: unknown, serviceAddress: string, out: s
   for (const member of members) collectSecretLeafNames(member, serviceAddress, out);
 }
 
+/** The distinct `envSecret` names one service's input binding points at. */
+export function inputSecretNames(binding: unknown, serviceAddress: string): readonly string[] {
+  const leafNames: string[] = [];
+  collectSecretLeafNames(binding, serviceAddress, leafNames);
+  return [...new Set(leafNames)];
+}
+
 /** Walks each service's input binding for `envSecret` leaves, and `graph.params` for env-sourced params (ADR-0042). */
 export function collectPreflightNames(graph: Graph): PreflightNames {
   const secretEntries: PreflightName[] = [];
   for (const { serviceAddress, binding } of inputManifest(graph)) {
-    const leafNames: string[] = [];
-    collectSecretLeafNames(binding, serviceAddress, leafNames);
-    for (const name of leafNames) secretEntries.push({ name, serviceAddress });
+    for (const name of inputSecretNames(binding, serviceAddress)) {
+      secretEntries.push({ name, serviceAddress });
+    }
   }
   const envParams = dedupedNames(
     paramManifest(graph)

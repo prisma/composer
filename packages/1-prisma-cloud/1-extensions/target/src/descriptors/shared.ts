@@ -6,7 +6,7 @@ import * as Output from 'alchemy/Output';
 import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
-import type { PointerUpdatedAt } from '../control/pointer-timestamps.ts';
+import type { TransportedPreflight } from '../control/preflight-payload.ts';
 import { fromLegacyId, legacyNodeResourceId } from '../legacy-resource-ids.ts';
 import { resourceId } from '../resource-ids.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
@@ -82,15 +82,11 @@ export interface ResolvedCloudOptions {
    */
   readonly providerParams: ReadonlyMap<symbol, ProviderParam | ServiceProviderParam>;
   /**
-   * When a platform variable a row POINTS at was last written, by name — the
-   * out-of-band rotation signal the compute deploy hook folds into its
-   * environment fingerprint. The deploy preflight supplies the times (it
-   * already reads exactly these names off the platform) and transports them to
-   * the alchemy process. Always present: a run with no times to offer — every
-   * `prisma dev` run, which talks to no platform — supplies a lookup
-   * that answers "unknown" for every name, so no caller has to.
+   * What the preflight of this run sent, not options the user gave: a version
+   * of each variable a row points at (the rotation signal the compute deploy
+   * hook folds into its triggers), and the secrets `prisma dev` found unset.
    */
-  readonly pointerUpdatedAt: PointerUpdatedAt;
+  readonly preflight: TransportedPreflight;
 }
 
 /**
