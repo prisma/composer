@@ -385,7 +385,7 @@ describe('Load of a module root — provisioned resources', () => {
     );
   });
 
-  test('passing deps to a resource provision is a LoadError — a resource has no dependency slots', () => {
+  test('passing deps to a resource provision is a LoadError — a resource is wired when it is constructed', () => {
     const root = module('shop', {}, (h) => {
       // TypeScript's overloads reject `deps` on a resource provision — forged
       // here to exercise the runtime backstop.
@@ -395,7 +395,7 @@ describe('Load of a module root — provisioned resources', () => {
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      /provision\("db"\) received deps for a resource — a resource has no dependency slots to satisfy/,
+      /provision\("db"\) received deps for a resource — a resource's slots are wired when it is constructed, not at provision\(\)\./,
     );
   });
 });
