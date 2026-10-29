@@ -405,7 +405,9 @@ containing `_` or `.` — the pack's config-key serializer joins address segment
 and names with `_` (node ids join path segments with `.`), so either character
 inside a name would collide with that separator. Nothing executes: constructing
 nodes is pure. The pack's authoring factory (`compute()`) calls `service()` and
-returns a subclass carrying `run` and `load`.
+returns a subclass carrying `run` and `load`. A pack that builds a resource as a class
+extends `ResourceNodeBase`, and that class must not use `#private` fields: Load
+copies a resource whose `props` hold a value, and the copy carries own properties only.
 
 ## Graph and Load (`@prisma/composer`)
 
