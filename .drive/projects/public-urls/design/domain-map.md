@@ -76,7 +76,7 @@ New:
 | Entity | What it is |
 | --- | --- |
 | **RoutingUrl** | A custom hostname mapped to a service, whichever of the service's deployments is live. It exists as soon as it's declared and calls no Foundry API on creation. It receives traffic once all of its conditions hold (ownership verified, service present, live deployment, DNS pointing at the switchboard, custom domain bound, certificate active); until then the deploy still succeeds and the record shows the first unmet condition. The RoutingUrl repository keeps its Foundry custom domain bound to the live deployment. It survives its service being deleted. Composer finds it by its `logicalId`. A hostname serves one RoutingUrl on the whole platform. Nothing is created unless something asked for it. |
-| **Domain ownership claim** | A workspace's claim to a domain, verified or not: an exact hostname or an exact wildcard covering one label. Verification is today's check, unchanged: the user publishes a TXT record at `_prisma-verification.<domain>` carrying a value specific to their workspace (prisma/pdp-control-plane#5785), so the claim belongs to the workspace and is shared by every project in it. The user verifies on the platform; Composer has no part in it. A RoutingUrl starts receiving traffic once its hostname is covered by a verified claim. |
+| **Domain ownership** | A workspace's proof that it owns a domain, which exists only once its verification record has been found: an exact hostname, or a wildcard such as `*.preview.shop.com` whose `*` stands for exactly one label. Verification is today's check, unchanged: the user publishes a TXT record at `_prisma-verification.<domain>` carrying a value specific to their workspace (prisma/pdp-control-plane#5785), so the claim belongs to the workspace and is shared by every project in it. The platform creates it when it finds the record, from the Domains page or from a waiting hostname; Composer has no part in it. A RoutingUrl starts receiving traffic once its hostname is covered by a domain ownership. |
 
 ## Composer: how authors describe the app
 
@@ -114,7 +114,7 @@ Any number of records may name the hostname; PDP enforces the rule when a record
 
 ## Settled on 2026-10-27
 
-- The ownership claim belongs to the workspace, because the verification does. It claims an exact hostname or an exact wildcard covering one label; verifying `example.com` does not cover `preview.example.com`.
+- The domain ownership belongs to the workspace, because the verification does. It covers an exact hostname, or a wildcard whose `*` stands for exactly one label; verifying `example.com` does not cover `preview.example.com`.
 - Foundry is not changed; the control plane keeps it consistent over its existing APIs.
 - A deploy whose public URL names a hostname another RoutingUrl serves succeeds, and its record reports the hostname as in use until the other record releases it.
 - Settled on 2026-10-28: the first step covers custom hostnames only. The platform's own hostname stays as it is, and making it an opt-in RoutingUrl is a later step.
