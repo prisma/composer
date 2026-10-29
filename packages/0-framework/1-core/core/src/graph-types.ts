@@ -118,10 +118,10 @@ export interface ParamBinding {
 export interface SecretSourceUse {
   /** The source, as its target built it. Core never reads its payload. */
   readonly source: SecretSource;
-  /** The node whose binding names it, directly or through a resolve() dependency: the first place Load met it. */
+  /** A service whose final binding holds it, if one does. Otherwise the first node whose binding names it, directly or through a resolve() dependency: a module whose input holds it, or a resource whose props list it in a resolve(). */
   readonly address: NodeId;
   /** That node's kind. */
-  readonly nodeKind: 'service' | 'module';
+  readonly nodeKind: 'service' | 'module' | 'resource';
 }
 
 export interface Graph {
