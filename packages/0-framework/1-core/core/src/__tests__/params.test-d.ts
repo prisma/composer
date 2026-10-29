@@ -9,6 +9,7 @@ import { expectTypeOf, test } from 'vitest';
 import { number, string } from '../config.ts';
 import type { BuildAdapter, ParamNeed, ParamSource } from '../node.ts';
 import { module, paramNeed, paramSource, service } from '../node.ts';
+import type { Value } from '../value.ts';
 
 const build: BuildAdapter = {
   extension: '@prisma/composer/node',
@@ -17,8 +18,8 @@ const build: BuildAdapter = {
   entry: 'server.js',
 };
 
-test('paramSource() is a ParamSource; paramNeed() is a ParamNeed', () => {
-  expectTypeOf(paramSource('APP_ORIGIN')).toEqualTypeOf<ParamSource<string>>();
+test('paramSource() is a ParamSource and a value; paramNeed() is a ParamNeed', () => {
+  expectTypeOf(paramSource('APP_ORIGIN')).toEqualTypeOf<ParamSource<string> & Value<unknown>>();
   expectTypeOf(paramNeed()).toEqualTypeOf<ParamNeed>();
 });
 
