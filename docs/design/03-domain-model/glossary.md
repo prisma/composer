@@ -109,14 +109,16 @@ parameter information the author supplies at wiring into a value. Four sources:
 
 - **literal** — the author supplies the value; it travels in the service's
   input document.
-- **`envParam(NAME)`** — the author supplies an environment-variable name; the
-  target reads the environment at deploy/boot. The value is **never written
-  into deploy state** — deliberately, so it varies by environment, not by
-  deployment logic.
+- **`envParam(NAME)`** — the author supplies an environment-variable name.
+  Where the value goes depends on where it is bound. In a service's input, the
+  deploy reads `NAME` from its [config pool](#config-pool) and writes the value
+  into the service's input document, so every deploy reads it again. In a
+  service's per-key params, the deploy writes a pointer row to a platform
+  variable, and the service reads that variable at boot. Either way it varies
+  by environment, not by deployment logic.
 - **`envSecret(NAME)`** — the author supplies a name; the target reads the
-  platform's secret store. Like `envParam`, the value **never enters deploy
-  state**; unlike it, the value is **redacted**. **This is the only thing the
-  framework calls a secret.**
+  platform's secret store. The value **never enters deploy state**, and it is
+  **redacted**. **This is the only thing the framework calls a secret.**
 - **`generatedParam(...)`** — the author supplies generation parameters; the
   **target generates the value at deploy** and **persists it in deploy state**,
   stable across redeploys. A generated value can act as asymmetric knowledge
@@ -128,8 +130,10 @@ is the source too.
 
 Two properties fall out of the source, and neither is its own category:
 
-- **Persistence follows the source.** Environment sources (`envParam`,
-  `envSecret`) re-resolve per environment and never enter deploy state.
+- **Persistence follows the source.** Environment sources re-resolve per
+  environment. `envSecret` never enters deploy state; `envParam` is read again
+  on every deploy into a service's input document, or at boot through a
+  param's pointer row.
   Generated and literal values live in the deployment. Persistence is a
   *consequence* of where the value comes from, not a flag.
 - **Redaction is an orthogonal facet** — whether a value is printed in the
@@ -188,6 +192,16 @@ the source and a value at once, such as `SecretSource & Value<SecretString>`.
 A value is not a node: it has no lifecycle and no address. Elsewhere
 in this glossary "value" in lower case keeps its ordinary meaning, plain data
 such as a param's value.
+
+### Config pool
+
+The merged values the deploy reads deploy-time config from, by name. An
+`envParam('NAME')` in a service's input, in a module's input or listed in
+`resolve()` reads `NAME` there. Today the pool is the process environment of
+the shell that runs `prisma deploy` or `prisma dev`; once the config adapters
+ship, it is merged from them. In code it is `LoadOptions.configPool`, which the
+commands fill, and the name a source reads is its **pool key**
+(`paramSource()`'s `poolKey` option).
 
 ### Topology
 
