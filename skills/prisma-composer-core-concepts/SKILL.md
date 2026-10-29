@@ -239,14 +239,15 @@ serves at the service's `prisma.build` hostname and creates nothing;
 `publicUrl.hostname('shop.com')`, or the bare string `'shop.com'`, attaches
 that hostname to the service as a custom domain. One hostname per public URL.
 A per-environment `url` is a `resolve()` value returning either strategy or a
-string; anything else fails deploy and dev before anything is created. Before
+string; anything else fails deploy and dev before any of the app's resources
+are created or changed. Before
 a deploy names a hostname, the TXT record `_prisma-verification.<hostname>`
 and a CNAME to the platform must be published, or the deploy fails with the
 platform's error (`domain-ownership-required` for the TXT record); don't
 work around it, publish the records or use `publicUrl.prismaBuild()` there. A
 change from a serving hostname to one that is not ready fails the deploy and
 the old hostname keeps serving. `prisma dev` ignores a named hostname and
-warns once per public URL. A service with no public URL is still reachable at
+warns once per public URL that names a hostname. A service with no public URL is still reachable at
 its `prisma.build` hostname today.
 
 ## Builds are yours

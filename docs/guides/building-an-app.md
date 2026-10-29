@@ -802,7 +802,7 @@ Production serves at `shop.com`, and every other environment at its
 service's `prisma.build` hostname. The graph is the same in every
 environment; only the resolved `url` differs. A value is checked once it
 resolves, so a `fn` that returns anything else stops `prisma deploy` and
-`prisma dev` before anything is created:
+`prisma dev` before any of the app's resources are created or changed:
 
 ```text
 shop.site: url resolved to 42, which is not a hostname or a public URL strategy.
@@ -822,10 +822,18 @@ If either is missing, the deploy fails with the platform's error, such as
 then deploy again. Until a hostname can be declared before its DNS is ready,
 use `publicUrl.prismaBuild()` for every environment whose DNS is not set up.
 
+Until the next Composer release, a named hostname works only in the production
+environment, the one on the project's default branch. Use
+`publicUrl.prismaBuild()` in every other environment.
+
 Changing a hostname that is serving to one whose records are not published
 fails the deploy too, and the old hostname keeps serving. The deploy creates
 the new custom domain before it removes the old one, and stops when the
 platform refuses the new one.
+
+To move a hostname to another service, remove its public URL and deploy, then
+add it on the new service and deploy again. The hostname does not serve
+between the two deploys.
 
 ### Under `prisma dev`
 
