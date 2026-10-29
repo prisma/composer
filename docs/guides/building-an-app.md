@@ -309,10 +309,10 @@ When a service and its database belong together, package them as a
 consumer provisions the Module and wires its exposed contract — it never
 sees, and can never reach, the database inside.
 
-A Module declares its boundary (what it needs, what it offers) in the second
-argument, wires its internals in the builder function, and returns the ports
-it promised. The builder function receives `provision`, the boundary's
-forwarded `secrets`, `params` and `inputs`, and `environment`, whose
+A Module declares its boundary (what it depends on, what it exposes) in the second
+argument, wires its internals in the builder function, and returns the exposed
+interfaces it promised. The builder function receives `provision`, the boundary's
+forwarded `deps`, `secrets` and `params`, and `environment`, whose
 `name` is a value ([below](#values-that-differ-per-environment)):
 
 ```ts
@@ -348,8 +348,10 @@ const auth = provision(authModule, {
 provision(storefrontService, { deps: { auth: auth.rpc } });
 ```
 
-A Module can also declare boundary `deps` — inputs its parent must supply,
-wired exactly like a service's. The root module you already have is just the
+A Module can also declare boundary `deps` — dependencies its parent must supply,
+wired exactly like a service's. The builder function receives them as `deps`,
+ready to forward into a `provision()` call. (Before Composer 0.36 this field was
+called `inputs`; rename it in the builder function's destructuring.) The root module you already have is just the
 outermost Module, with no boundary at all.
 
 `provision(node, opts?)` takes:

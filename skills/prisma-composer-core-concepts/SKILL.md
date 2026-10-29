@@ -47,7 +47,7 @@ app, executing nothing when imported. Three node kinds exist:
 | --- | --- | --- |
 | Service | `compute()` | A running unit of your code; atomic, Composer sees only its ports |
 | Resource | `rawPostgres()`, `bucket()` | A stateful managed dependency |
-| Module | `module()` | A grouping boundary; runs no code of its own, exposes typed ports |
+| Module | `module()` | A grouping boundary; runs no code of its own, depends on and exposes typed interfaces; its builder receives `deps`, `secrets`, `params`, `environment` and `provision` |
 
 Nodes connect through **ports**: `deps` declares what a node requires,
 `expose` declares what it offers. Wiring happens in a Module's builder via
