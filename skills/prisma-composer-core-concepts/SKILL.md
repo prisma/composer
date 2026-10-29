@@ -129,7 +129,7 @@ client back from `load()`.
 | The value is… | Declare | Provide | Read |
 | --- | --- | --- | --- |
 | produced by another node | `deps: { db: rawPostgres() }` | wire at `provision()` | `load()` |
-| anything else (config or credential) | one field of the `input` schema | bind at `provision()`: literal, `envParam()`, or `envSecret()` | `input()` |
+| anything else (config or credential) | one field of the `input` schema | bind at `provision()`: literal, `envParam()`, `envSecret()`, or a `resolve()` value | `input()` |
 
 The service declares its whole incoming configuration, plain values and
 credentials together, as **one [Standard Schema](https://standardschema.dev)**
@@ -162,6 +162,17 @@ Rules that bite:
    source.
 6. `input.apiKey.expose()` is the only way to a secret's value; the box
    redacts everywhere else (logs, JSON, errors).
+
+### Values that differ per environment
+
+The graph is the same in every environment; only configuration may differ.
+
+- The module body receives `environment`; `environment.name` is a value standing for the name `--environment` gave (`production` for `prisma deploy`, `dev` for `prisma dev` by default).
+- `resolve([deps], ([values]) => …)` from `@prisma/composer` returns a computed value; `fn` receives the dependencies' real values as one tuple.
+- A value is accepted as a leaf of a service's `input` binding, at any depth, or as a service param. Never as a provision id, a `deps` entry, or a module's `secrets` or `params` binding.
+- A value is opaque in the body: you cannot read, compare or branch on it. List it as a `resolve()` dependency instead.
+- Calling `provision()` inside `fn` fails the load: `fn` computes configuration, never graph structure.
+- `fn` is pure and synchronous and returns plain data (no `undefined`, Promise, value, `envParam()` or `envSecret()`); a deploy and `destroy` both run it, in two processes.
 
 ## Contracts and RPC
 

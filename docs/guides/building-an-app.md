@@ -311,7 +311,9 @@ sees, and can never reach, the database inside.
 
 A Module declares its boundary (what it needs, what it offers) in the second
 argument, wires its internals in the builder function, and returns the ports
-it promised:
+it promised. The builder function receives `provision`, the boundary's
+forwarded `secrets`, `params` and `inputs`, and `environment`, whose
+`name` is a value ([below](#values-that-differ-per-environment)):
 
 ```ts
 import { module, secret } from '@prisma/composer';
@@ -504,7 +506,7 @@ and choosing the channel is most of the decision:
 | The value is… | Declare it as | Provide it | Read it |
 | --- | --- | --- | --- |
 | produced by another node — a database, another service | a dependency: `deps: { db: rawPostgres() }` | wire it at `provision()` | `service.load()` |
-| anything else — a region, a flag, a job list, a credential | one field of the service's `input` schema | bind it at `provision()`: a literal, `envParam()`, or `envSecret()` | `service.input()` |
+| anything else — a region, a flag, a job list, a credential | one field of the service's `input` schema | bind it at `provision()`: a literal, `envParam()`, `envSecret()`, or a value from `resolve()` | `service.input()` |
 
 Dependencies are covered above. This section is the second row.
 
@@ -553,8 +555,9 @@ standalone `server.js`, which binds `PORT` itself.)
 
 The service declares what shapes are legal; the place that provisions it
 decides where each value comes from. The binding is a plain object mirroring
-the schema's shape whose leaves are literals, `envParam(...)`, or
-`envSecret(...)`:
+the schema's shape whose leaves are literals, `envParam(...)`,
+`envSecret(...)`, or values from `resolve()`
+([below](#values-that-differ-per-environment)):
 
 ```ts
 import { envParam, envSecret } from '@prisma/composer-prisma-cloud';
@@ -633,6 +636,78 @@ At boot the framework swaps each pointer for a redacting box over the named
 variable, validates against the schema again, and `service.input()` returns
 the typed object. The document is secret-free by construction, which is why
 the deploy report can print it verbatim.
+
+## Values that differ per environment
+
+The graph is the same in every environment: the same services, the same
+databases, the same wiring. What may differ is configuration. A module body
+computes it with `resolve()`, from the name of the environment being
+deployed:
+
+```ts
+import { module, resolve } from '@prisma/composer';
+
+export default module('shop', ({ environment, provision }) => {
+  const greeting = resolve([environment.name], ([name]) => `hello from ${name}`);
+  const shout = resolve([greeting], ([text]) => text.toUpperCase());
+  provision(echoService, { input: { greeting: shout } });
+});
+```
+
+```sh
+prisma deploy                          # echo's greeting input is "HELLO FROM PRODUCTION"
+prisma deploy --environment staging    # "HELLO FROM STAGING"
+prisma dev                             # "HELLO FROM DEV"
+```
+
+`environment.name` and the result of `resolve()` are **values**: stand-ins
+for data that is known only once the deploy knows which environment it is
+deploying. The module body cannot read a value, compare it or branch on it.
+It can only pass it on: as a dependency of another `resolve()`, as a leaf of
+a service's input binding at any depth, or as a service param. A value
+cannot be a provision id or a `deps` entry, and a module's `secrets` and
+`params` bindings take sources, not values.
+
+`resolve(dependencies, fn)` lists the values it depends on, and `fn`
+receives their real values as one tuple, in the same order. After every
+module body has run, the deploy runs each `fn` once, dependencies first, and
+puts its result where the value was bound. `fn` returns plain data: strings,
+finite numbers, booleans, `null`, arrays and plain objects. It runs
+synchronously.
+
+Two rules follow from running `fn` after the module bodies:
+
+- **`fn` cannot add to the graph.** Calling `provision()` inside `fn` fails
+  the deploy. Provision the node in the module body and pass the value into
+  it.
+- **`fn` must be a pure function of its dependencies.** A deploy runs it in
+  two processes, the `prisma` CLI and the process that deploys, and each
+  must compute the same graph. Removing an environment with the `destroy`
+  operation runs every `fn` too, for the environment being removed, and
+  every `prisma dev` rebuild runs them again. A `fn` that reads the clock, a
+  random number, a file or an environment variable deploys a graph nobody
+  checked.
+
+Each of these stops `prisma deploy` or `prisma dev` before anything reaches
+the platform, with a message that names the binding the value sits in, such as
+`input key "greeting" of service "shop.echo"`:
+
+- `fn` throws. The message carries the thrown error's message, and the
+  thrown error is its cause.
+- `fn` returns `undefined`, at the top or anywhere inside its result. Return
+  a result for every environment; Composer never picks a default.
+- `fn` returns a value. List that value as a dependency instead; `fn`
+  receives its real value.
+- `fn` returns `envParam()` or `envSecret()`. Bind those directly, not
+  through `resolve()`.
+- `fn` returns a Promise, a function, a class instance or anything else
+  that is not plain data.
+- A value depends on itself.
+
+When a dependency's `fn` is the one that failed, the message says so: it
+starts `A resolve() function that … depends on`.
+[`examples/env-param`](../../examples/env-param/) serves a value computed
+from the environment's name.
 
 ## Builds
 
