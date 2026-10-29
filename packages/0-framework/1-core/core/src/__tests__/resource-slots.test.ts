@@ -287,7 +287,9 @@ describe('a resource that exposes nothing', () => {
     ).toBe(
       "resource() takes either provides or type, not both — type is the contract's kind when a contract is provided.",
     );
-    expect(constructionError(() => resource({ name: 'site', extension: 'test/pack' })).message).toBe(
+    expect(
+      constructionError(() => resource({ name: 'site', extension: 'test/pack' })).message,
+    ).toBe(
       'resource() requires provides, the contract it offers, or type, for a resource that offers nothing.',
     );
   });
