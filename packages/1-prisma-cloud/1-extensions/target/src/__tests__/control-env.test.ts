@@ -34,6 +34,7 @@ describe('prismaCloud() — constructs with NO environment present (local-dev sp
         'compute',
         'credentials',
         'postgres',
+        'public-url',
         'raw-postgres',
         's3',
         's3-store',
