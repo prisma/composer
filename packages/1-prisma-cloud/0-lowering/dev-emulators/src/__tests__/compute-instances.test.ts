@@ -355,3 +355,22 @@ describe('the emulator never interprets Composer data', () => {
     expect(code).not.toMatch(/\b(apps?|appName|address(es)?|directory|composer)\b/i);
   });
 });
+
+describe('emulators in different emulators directories', () => {
+  test("a stopped instance's port is not given to another emulator's instance until it is deleted", async () => {
+    const held = await client.createInstance({ labels: {} });
+    const otherRoot = tempDir('compute-instances-other-registry');
+    await ensureFreshDaemon('compute', otherRoot);
+    const other = computeClient({ registryRoot: otherRoot });
+    try {
+      const whileHeld = await other.createInstance({ labels: {}, port: held.port });
+      await client.deleteInstance(held.id);
+      const afterDelete = await other.createInstance({ labels: {}, port: held.port });
+
+      expect(whileHeld.port).not.toBe(held.port);
+      expect(afterDelete.port).toBe(held.port);
+    } finally {
+      await stopDaemon('compute', { registryRoot: otherRoot }).catch(() => undefined);
+    }
+  });
+});

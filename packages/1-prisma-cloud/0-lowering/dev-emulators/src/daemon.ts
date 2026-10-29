@@ -84,8 +84,10 @@ function isRegistryEntry(value: unknown): value is RegistryEntry {
   );
 }
 
+/** `pid` is absent from a daemon of an earlier version. */
 interface HealthBody {
   readonly version: string;
+  readonly pid?: number;
 }
 
 function isHealthBody(value: unknown): value is HealthBody {
@@ -93,7 +95,8 @@ function isHealthBody(value: unknown): value is HealthBody {
     typeof value === 'object' &&
     value !== null &&
     'version' in value &&
-    typeof value.version === 'string'
+    typeof value.version === 'string' &&
+    (!('pid' in value) || typeof value.pid === 'number')
   );
 }
 
@@ -241,11 +244,10 @@ interface HealthOutcome {
  * live. Only a child that stays alive without becoming healthy consumes
  * the full budget.
  *
- * Verifies the health response's OWN version, not just that something
- * answered: if our child failed to bind (a foreign process already held
- * the port) that foreign process may itself answer `/health` successfully
- * — a version mismatch there is exactly the "port taken" case, not a false
- * "healthy", and must not be reported as such.
+ * Healthy means our child answered: the response must carry our version
+ * and the child's pid. If the child failed to bind, whatever holds the port
+ * may answer `/health` too, including a daemon of this same version started
+ * from another registry root.
  */
 async function awaitHealthy(
   child: ChildProcess,
@@ -263,7 +265,7 @@ async function awaitHealthy(
     if (exited) return { healthy: false, exitedBeforeHealthy: true };
     const remaining = deadline - Date.now();
     const health = await probeHealth(port, healthPath, Math.max(200, Math.min(1000, remaining)));
-    if (health && health.version === ownVersion)
+    if (health && health.version === ownVersion && health.pid === child.pid)
       return { healthy: true, exitedBeforeHealthy: false };
     if (exited) return { healthy: false, exitedBeforeHealthy: true };
     await sleep(HEALTH_POLL_INTERVAL_MS);
@@ -362,9 +364,10 @@ type ObserveResult =
 
 /**
  * Reads the registry entry and classifies it. "dead-or-unhealthy" covers
- * both a provably dead pid AND a live pid that fails health — the latter
- * can't be confirmed as our daemon (a reused pid after a reboot, a hung
- * foreign process), so it is never signaled, only dropped.
+ * a provably dead pid, a live pid that fails health, and a port answered by
+ * another daemon's pid — none can be confirmed as our daemon (a reused pid
+ * after a reboot, a hung foreign process, a daemon of another registry
+ * root), so it is never signaled, only dropped.
  */
 async function observeExisting(
   registryFile: string,
@@ -375,6 +378,9 @@ async function observeExisting(
   if (!entry) return { kind: 'absent' };
   if (!isPidAlive(entry.pid)) return { kind: 'dead-or-unhealthy', entry };
   const health = await probeHealth(entry.port, healthPath, EXISTING_HEALTH_TIMEOUT_MS);
+  if (health?.pid !== undefined && health.pid !== entry.pid) {
+    return { kind: 'dead-or-unhealthy', entry };
+  }
   if (health && health.version === ownVersion) return { kind: 'healthy', entry };
   if (health && health.version !== ownVersion) return { kind: 'stale-version', entry };
   return { kind: 'dead-or-unhealthy', entry };

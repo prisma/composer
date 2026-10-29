@@ -276,6 +276,41 @@ describe('ports', () => {
     expect(again.port).toBe(db.port);
   }, 60_000);
 
+  test('databases created at once by emulators in two emulators directories each start again on their own port', async () => {
+    const client = await startedClient();
+    const otherRoot = tempDir('postgres-other-registry');
+    await ensureFreshDaemon('postgres', otherRoot);
+    const other = postgresClient({ registryRoot: otherRoot });
+    const otherCreated: string[] = [];
+    try {
+      const create = async (target: PostgresClient, ids: string[]) => {
+        const db = await target.createInstance({
+          labels: {},
+          prismaDevModulePath: prismaDevModulePath(),
+        });
+        ids.push(db.id);
+        return db;
+      };
+      const databases = await Promise.all([
+        create(client, created),
+        create(client, created),
+        create(other, otherCreated),
+        create(other, otherCreated),
+      ]);
+      await client.stopInstances(created);
+      await other.stopInstances(otherCreated);
+      await client.startInstances(created, prismaDevModulePath());
+      await other.startInstances(otherCreated, prismaDevModulePath());
+
+      expect(new Set(databases.map((db) => db.port)).size).toBe(databases.length);
+      for (const db of databases)
+        expect(await query(db.url, 'select 1 as one')).toEqual([{ one: 1 }]);
+    } finally {
+      for (const id of otherCreated) await other.deleteInstance(id).catch(() => undefined);
+      await stopDaemon('postgres', { registryRoot: otherRoot }).catch(() => undefined);
+    }
+  }, 120_000);
+
   test('a bind failure on a fresh allocation moves to the next free port', async () => {
     const client = await startedClient();
     // Occupy the FIRST candidate database port a fresh allocation would

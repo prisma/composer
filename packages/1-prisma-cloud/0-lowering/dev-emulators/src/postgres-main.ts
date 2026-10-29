@@ -25,6 +25,7 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import getPort, { clearLockedPorts, portNumbers } from 'get-port';
 import { isPidAlive, readOwnVersion } from './daemon.ts';
+import { PortClaims } from './port-claims.ts';
 import {
   isStringKeyedRecord,
   portOfUrl,
@@ -518,6 +519,13 @@ function main(): void {
     return new Set(Object.values(state.instances).map((db) => db.port));
   }
 
+  const portClaims = new PortClaims();
+  /** Ports picked for a start that has not bound them yet, and a new database's port until its instance is recorded. */
+  const startingPorts = new Set<number>();
+  function claimedHere(): number[] {
+    return [...heldPorts(), ...startingPorts];
+  }
+
   async function smallestUnusedPort(exclude: ReadonlySet<number>): Promise<number> {
     return getPort({
       port: portNumbers(MIN_DATABASE_PORT, MAX_DATABASE_PORT),
@@ -624,22 +632,25 @@ function main(): void {
       try {
         const server = await serializeStart(async () => {
           const registryPorts = await registryClaimedPorts(internalState, serverName);
-          if (isFreshAllocation) {
-            dbPort = await allocatePort(
-              attempt === 1 ? opts.requestedPort : undefined,
-              new Set([...registryPorts, ...conflicted]),
-            );
-          }
-          const auxExclude = new Set([...registryPorts, ...conflicted, dbPort]);
-          const pickAux = async (): Promise<number> => {
-            const picked = await smallestUnusedPort(auxExclude);
-            auxExclude.add(picked);
-            auxPorts.push(picked);
-            return picked;
-          };
-          const httpPort = await pickAux();
-          const shadowPort = await pickAux();
-          const streamsPort = await pickAux();
+          const [httpPort, shadowPort, streamsPort] = await portClaims.allocate(
+            async (claimedElsewhere) => {
+              const taken = new Set([...registryPorts, ...conflicted, ...claimedElsewhere]);
+              if (isFreshAllocation) {
+                dbPort = await allocatePort(attempt === 1 ? opts.requestedPort : undefined, taken);
+                startingPorts.add(dbPort);
+              }
+              const auxExclude = new Set([...taken, dbPort]);
+              const pickAux = async (): Promise<number> => {
+                const picked = await smallestUnusedPort(auxExclude);
+                auxExclude.add(picked);
+                auxPorts.push(picked);
+                startingPorts.add(picked);
+                return picked;
+              };
+              return [await pickAux(), await pickAux(), await pickAux()];
+            },
+            claimedHere,
+          );
           return prismaDev.startPrismaDevServer({
             name: serverName,
             databasePort: dbPort,
@@ -650,8 +661,11 @@ function main(): void {
           });
         });
         leakedStartNames.delete(serverName);
+        for (const port of auxPorts) startingPorts.delete(port);
         return { url: server.database.connectionString, port: dbPort, server };
       } catch (err) {
+        for (const port of auxPorts) startingPorts.delete(port);
+        if (isFreshAllocation) startingPorts.delete(dbPort);
         if (isNameAlreadyTaken(err) && alreadyRunningRetries < MAX_ALREADY_RUNNING_RETRIES) {
           alreadyRunningRetries += 1;
           // A refusal on a name THIS process leaked with no record behind it
@@ -760,6 +774,7 @@ function main(): void {
       });
     } catch (err) {
       await discardFailedServer(serverName, body.prismaDevModulePath);
+      await portClaims.publish(claimedHere());
       throw err;
     }
     const record: DatabaseRecord = {
@@ -777,6 +792,8 @@ function main(): void {
     // must survive the daemon dying right after, or its data would be left
     // under a name no state lists.
     await stateFile.write(state);
+    startingPorts.delete(started.port);
+    await portClaims.publish(claimedHere());
     return record;
   }
 
@@ -868,6 +885,7 @@ function main(): void {
       // Written before the delete is acknowledged, so a daemon that dies
       // right after never brings the database back.
       await stateFile.write(state);
+      await portClaims.publish(claimedHere());
       // get-port holds every port it returns for up to 30 seconds; the freed
       // port must be free again for a database created right after.
       clearLockedPorts();
@@ -921,7 +939,7 @@ function main(): void {
       .map((s) => decodeURIComponent(s));
 
     if (method === 'GET' && segments.length === 1 && segments[0] === 'health') {
-      return json(res, 200, { version: ownVersion });
+      return json(res, 200, { version: ownVersion, pid: process.pid });
     }
 
     if (segments[0] !== 'instances') {
@@ -1007,6 +1025,7 @@ function main(): void {
       await live.close().catch(() => undefined);
     }
     await stateFile.flush();
+    portClaims.withdraw();
     server.close();
     process.exit(0);
   }
@@ -1035,6 +1054,15 @@ function main(): void {
     .then((loaded) => {
       state = loaded;
       schedulePersist();
+      return portClaims.publish(heldPorts());
+    })
+    .then(() => {
+      // Without this, the uncaughtException handler above takes a failed bind
+      // and the daemon keeps running without listening.
+      server.once('error', (err) => {
+        console.error(`postgres-main: cannot listen on 127.0.0.1:${String(port)}`, err);
+        process.exit(1);
+      });
       server.listen(port, '127.0.0.1', () => {
         console.log(`[dev-emulators] postgres-main listening on 127.0.0.1:${String(port)}`);
       });

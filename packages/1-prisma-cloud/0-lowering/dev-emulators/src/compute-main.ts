@@ -22,6 +22,7 @@ import * as net from 'node:net';
 import * as path from 'node:path';
 import getPort, { clearLockedPorts, portNumbers } from 'get-port';
 import { readOwnVersion, SERVICE_READY_TIMEOUT_ENV } from './daemon.ts';
+import { PortClaims } from './port-claims.ts';
 import { readJsonFile, StateFile } from './state-file.ts';
 
 const MIN_SERVICE_PORT = 3000;
@@ -391,6 +392,7 @@ function main(): void {
   const logsDir = path.join(stateDir, 'logs');
 
   let state: InstancesState = { instances: {} };
+  const portClaims = new PortClaims();
   const runtimes = new Map<string, RuntimeInfo>();
   // Bumped every time a log file is cleared (a fresh start). A live
   // follower watches this rather than the file size, so it resets to the new
@@ -443,13 +445,17 @@ function main(): void {
   }
 
   /**
-   * The requested port when no instance holds it and it is bindable,
-   * otherwise the smallest such port at or above `MIN_SERVICE_PORT`. Which
-   * ports instances hold is ours; whether a candidate is actually bindable is
-   * `get-port`'s (spec § 2's dependency razor).
+   * The requested port when no instance of any emulator on the machine holds
+   * it and it is bindable, otherwise the smallest such port at or above
+   * `MIN_SERVICE_PORT`. Which ports instances hold is ours; whether a
+   * candidate is actually bindable is `get-port`'s (spec § 2's dependency
+   * razor).
    */
-  async function allocatePort(requested: number | undefined): Promise<number> {
-    const exclude = heldPorts();
+  async function allocatePort(
+    requested: number | undefined,
+    claimedElsewhere: ReadonlySet<number>,
+  ): Promise<number> {
+    const exclude = new Set([...heldPorts(), ...claimedElsewhere]);
     if (requested !== undefined && !exclude.has(requested)) {
       const given = await getPort({ port: requested, exclude });
       if (given === requested) return given;
@@ -459,14 +465,17 @@ function main(): void {
 
   async function createInstance(body: CreateBody): Promise<InstanceRecord> {
     const id = newInstanceId();
-    const inst: InstanceRecord = {
-      id,
-      labels: { ...body.labels },
-      port: await allocatePort(body.port),
-      status: 'stopped',
-      logPath: path.join(logsDir, `${id}.log`),
-    };
-    state.instances[id] = inst;
+    const inst = await portClaims.allocate(async (claimedElsewhere) => {
+      const created: InstanceRecord = {
+        id,
+        labels: { ...body.labels },
+        port: await allocatePort(body.port, claimedElsewhere),
+        status: 'stopped',
+        logPath: path.join(logsDir, `${id}.log`),
+      };
+      state.instances[id] = created;
+      return created;
+    }, heldPorts);
     schedulePersist();
     return inst;
   }
@@ -747,6 +756,7 @@ function main(): void {
     runtimes.delete(inst.id);
     delete state.instances[inst.id];
     schedulePersist();
+    await portClaims.publish(heldPorts());
     // get-port holds every port it returns for up to 30 seconds; the freed
     // port must be free again for an instance created right after.
     // `heldPorts()` already keeps other instances' ports out.
@@ -1029,7 +1039,7 @@ function main(): void {
       .map((s) => decodeURIComponent(s));
 
     if (method === 'GET' && segments.length === 1 && segments[0] === 'health') {
-      return json(res, 200, { version: ownVersion });
+      return json(res, 200, { version: ownVersion, pid: process.pid });
     }
 
     if (segments[0] !== 'instances') {
@@ -1106,6 +1116,7 @@ function main(): void {
     // otherwise a SIGTERM racing an in-flight write (e.g. an ensureDaemon
     // version-skew restart) can silently lose it.
     await stateFile.flush();
+    portClaims.withdraw();
     server.close();
     process.exit(0);
   }
@@ -1128,11 +1139,18 @@ function main(): void {
         }
         state = loaded;
       }
+      return portClaims.publish(heldPorts());
+    })
+    .then(() => {
       // A single, unambiguous line into the daemon's own stdio log once
       // actually bound and accepting connections — the daemon's own
       // portable evidence that exactly one instance is listening (tests
       // count occurrences of this line rather than inspecting OS processes,
       // whose command-line rendering/flags differ across platforms).
+      server.once('error', (err) => {
+        console.error(`compute-main: cannot listen on 127.0.0.1:${String(port)}`, err);
+        process.exit(1);
+      });
       server.listen(port, '127.0.0.1', () => {
         console.log(`[dev-emulators] compute-main listening on 127.0.0.1:${String(port)}`);
       });
