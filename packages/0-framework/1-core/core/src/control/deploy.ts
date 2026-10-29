@@ -214,7 +214,7 @@ export interface LowerOptions {
   readonly name: string;
   /** The environment being deployed, as `--environment` gave it. Required by any value over `environment.name`; the generated stack files always pass it. */
   readonly environment?: string;
-  /** The config pool Load reads a source's pool key from, such as envParam()'s variable. The generated stack files pass the process environment. */
+  /** The config pool Load reads a source's pool key and the root's input from, and the Prisma Cloud serializer reads a service's envParam() leaves from. The generated stack files pass what readConfigPool() returns. */
   readonly configPool?: Readonly<Record<string, unknown>>;
   // One assembled bundle per provisioned service, keyed by the service's
   // full hierarchical address (its graph id).
