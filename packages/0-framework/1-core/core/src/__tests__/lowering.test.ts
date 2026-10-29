@@ -619,7 +619,7 @@ describe('lowering a module root — a single service', () => {
       provision(app('fake/compute', {}, { label: string() }), { id: 'svc', params: { label } });
     });
     const root = module('hello', ({ provision }) => {
-      provision(relay, { input: { label: paramSource({ name: 'X' }, { configKey: 'X' }) } });
+      provision(relay, { input: { label: paramSource({ name: 'X' }, { poolKey: 'X' }) } });
     });
     const bundles = { 'hello.relay.svc': { dir: 'dist/bundle', entry: 'server.js' } };
 

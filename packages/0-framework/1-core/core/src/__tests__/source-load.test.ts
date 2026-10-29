@@ -85,7 +85,7 @@ const bindingOf = (graph: Graph, index = 0): Record<string, unknown> =>
 
 const pointer = (name: string) => secretSource({ name }, { label: `envSecret('${name}')` });
 const variable = (name: string) =>
-  paramSource({ name }, { label: `envParam('${name}')`, configKey: name });
+  paramSource({ name }, { label: `envParam('${name}')`, poolKey: name });
 
 const origin = () =>
   paramSource({}, { label: "serviceOrigin('shop.web')", sentinel: 'https://origin.invalid' });
@@ -129,7 +129,7 @@ describe('sources a service takes stay in place', () => {
     expect((leaf as SecretSource).payload).toBe(key.payload);
   });
 
-  test("a param source with a config key bound to a module's params slot and forwarded reaches the service param unchanged", () => {
+  test("a param source with a pool key bound to a module's params slot and forwarded reaches the service param unchanged", () => {
     const relay = module('relay', { params: { label: paramNeed() } }, ({ params, provision }) => {
       provision(echoService(), { input: {}, params: { label: params.label } });
     });

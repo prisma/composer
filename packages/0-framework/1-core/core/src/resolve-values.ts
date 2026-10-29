@@ -437,14 +437,14 @@ export function resolveValues(input: {
         break;
       case 'source': {
         if (isSecretSource(origin.source)) recordSecret(origin.source, site);
-        if (origin.configKey === undefined) {
+        if (origin.poolKey === undefined) {
           result = origin.source;
         } else if (configPool === undefined) {
           throw new LoadError(
-            `${describeSite(site)} depends on ${origin.label}, but Load was given no config pool to read "${origin.configKey}" from. Pass { configPool } to Load; the deploy and dev commands pass the process environment.`,
+            `${describeSite(site)} depends on ${origin.label}, but Load was given no config pool to read "${origin.poolKey}" from. Pass { configPool } to Load; the deploy and dev commands pass the process environment.`,
           );
         } else {
-          const raw = configPool[origin.configKey];
+          const raw = configPool[origin.poolKey];
           result = raw === undefined || raw === '' ? undefined : raw;
         }
         break;
@@ -455,7 +455,7 @@ export function resolveValues(input: {
           const source = originOf(dependency);
           if (real === undefined && source.kind === 'source') {
             throw new LoadError(
-              `${fnLabelFor(site)} lists ${source.label}, but "${source.configKey}" is unset or empty, so it has no real value. Set "${source.configKey}", or bind ${source.label} directly into an input binding, where an absent value leaves the key out and the schema decides.`,
+              `${fnLabelFor(site)} lists ${source.label}, but "${source.poolKey}" is unset or empty, so it has no real value. Set "${source.poolKey}", or bind ${source.label} directly into an input binding, where an absent value leaves the key out and the schema decides.`,
             );
           }
           return real;
