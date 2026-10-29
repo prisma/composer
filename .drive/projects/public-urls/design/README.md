@@ -240,11 +240,11 @@ Private routing between services. Routing by path. Any change to Foundry or Cond
 
 Composer:
 
-- [ADR-0060](../../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md): the public URL node, and the alternatives considered.
-- [ADR-0062](../../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): `resolve()`, environments and config adapters.
-- [ADR-0061](../../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): module input, a follow-on project.
+- [ADR-0060](../../../../docs/design/90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md): the public URL node, and the alternatives considered.
+- [ADR-0062](../../../../docs/design/90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): `resolve()`, environments and config adapters.
+- [ADR-0061](../../../../docs/design/90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): module input, a follow-on project.
 - [composer-to-platform.md](composer-to-platform.md): how a node becomes a platform record. [scenarios.md](scenarios.md): thirteen worked scenarios with code and records. [domain-map.md](domain-map.md): every entity in each system.
-- The project's spec and plan: [`.drive/projects/public-urls/`](../../../../.drive/projects/public-urls/).
+- The project's spec and plan: [`.drive/projects/public-urls/`](../).
 
 Prisma Cloud (the platform team maintains these in prisma/pdp-control-plane under `docs/compute/`, on the branch of prisma/pdp-control-plane#5795):
 

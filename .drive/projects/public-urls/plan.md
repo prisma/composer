@@ -1,6 +1,6 @@
 # Public URLs — plan
 
-**Spec:** [spec.md](spec.md) · **Decisions:** ADR-0059 to ADR-0062, `docs/design/05-prisma-cloud/public-urls/composer-to-platform.md`, pdp-control-plane ADR 015 and the data-plane consistency proposal · **Execution decisions:** [design-notes.md](design-notes.md)
+**Spec:** [spec.md](spec.md) · **Decisions:** ADR-0059 to ADR-0062, `.drive/projects/public-urls/design/composer-to-platform.md`, pdp-control-plane ADR 015 and the data-plane consistency proposal · **Execution decisions:** [design-notes.md](design-notes.md)
 
 Four increments, each something a user can do that they could not before, across four repositories. Each increment carries the internal work it needs; nothing ships as foundation alone. Will and this session drive all of it: the platform increments may be split off to another agent or run as sessions this one starts in the platform clone. Will tracks the work outside Linear.
 
@@ -30,7 +30,7 @@ The platform's own project, `projects/routing-urls/` in pdp-control-plane, slice
 ## Increment 4. A service nobody declared public has no public hostname
 
 - **Platform slice 4.** The `prisma.build` endpoint becomes a RoutingUrl a service can lack, with the backfill of existing endpoints into rows with no `logicalId`.
-- **P3. `publicUrl.prismaBuild()` lowers to that RoutingUrl**, and U2's adoption takes over the row the backfill made for an existing service. Specified against [step-two-migration-scenarios.md](../../../docs/design/05-prisma-cloud/public-urls/step-two-migration-scenarios.md) once increment 2 has landed.
+- **P3. `publicUrl.prismaBuild()` lowers to that RoutingUrl**, and U2's adoption takes over the row the backfill made for an existing service. Specified against [step-two-migration-scenarios.md](../../../.drive/projects/public-urls/design/step-two-migration-scenarios.md) once increment 2 has landed.
 - **Demo:** a new service with no `publicUrl()` answers on no hostname; an existing app's services keep their addresses through the upgrade; every migration scenario holds against a real Branch.
 
 ## Enablers, not increments

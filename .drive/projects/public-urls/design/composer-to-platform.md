@@ -1,6 +1,6 @@
 # Public URLs on Prisma Cloud
 
-How a `publicUrl()` node ([ADR-0060](../../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md)) becomes platform state, and what the platform provides for it. The platform side is decided in pdp-control-plane's decision record "a custom hostname is a RoutingUrl record the control plane owns" ([prisma/pdp-control-plane#5795](https://github.com/prisma/pdp-control-plane/pull/5795)); its design is `docs/compute/RoutingUrls.md` and `RoutingUrlLifecycle.md` there, and `projects/routing-urls/` holds the spec and plan.
+How a `publicUrl()` node ([ADR-0060](../../../../docs/design/90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md)) becomes platform state, and what the platform provides for it. The platform side is decided in pdp-control-plane's decision record "a custom hostname is a RoutingUrl record the control plane owns" ([prisma/pdp-control-plane#5795](https://github.com/prisma/pdp-control-plane/pull/5795)); its design is `docs/compute/RoutingUrls.md` and `RoutingUrlLifecycle.md` there, and `projects/routing-urls/` holds the spec and plan.
 
 ## The two sides
 
@@ -18,7 +18,7 @@ When `url` names a hostname, the Composer node `shop.site` becomes one RoutingUr
 | service | the service for `shop.web` |
 | conditions | ownership verified, service present, live deployment, DNS points at the switchboard, custom domain bound, certificate active |
 
-One public URL node is one platform record. Its address is its `logicalId`, as for every node with a platform row ([ADR-0057](../../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md)). The hostname and the service it points at are properties of the record, so changing either updates the same record.
+One public URL node is one platform record. Its address is its `logicalId`, as for every node with a platform row ([ADR-0057](../../../../docs/design/90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md)). The hostname and the service it points at are properties of the record, so changing either updates the same record.
 
 When `url` is `publicUrl.prismaBuild()`, the node becomes no record in the first step. Every service already has its `<id>.<region>.prisma.build` hostname, and the node says the service is public at it. The deploy output reports that hostname for the node. In the second step the node becomes the platform's RoutingUrl for that hostname.
 
@@ -54,7 +54,7 @@ The `<id>.<region>.prisma.build` hostname every service gets is a separate Found
 
 ## Step two, on both sides
 
-- The platform's endpoint becomes an opt-in RoutingUrl, so a service nothing should reach from outside has no public hostname, and `publicUrl.prismaBuild()` lowers to that row. Until then every service is reachable at its platform hostname, and the node records that it is meant to be. The scenarios that step has to satisfy are in `docs/design/05-prisma-cloud/public-urls/step-two-migration-scenarios.md` while the project is open. Composer takes ownership of the rows that exist by the adoption rule above.
+- The platform's endpoint becomes an opt-in RoutingUrl, so a service nothing should reach from outside has no public hostname, and `publicUrl.prismaBuild()` lowers to that row. Until then every service is reachable at its platform hostname, and the node records that it is meant to be. The scenarios that step has to satisfy are in [step-two-migration-scenarios.md](step-two-migration-scenarios.md) while the project is open. Composer takes ownership of the rows that exist by the adoption rule above.
 
 ## Later, on the platform side
 
@@ -64,8 +64,8 @@ The `<id>.<region>.prisma.build` hostname every service gets is a separate Found
 
 ## Related
 
-- [ADR-0060](../../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md): public URLs in Composer's model.
-- [ADR-0062](../../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): `resolve()` and per-environment values.
-- [ADR-0048](../../90-decisions/ADR-0048-prisma-cloud-resources-come-from-the-upstream-alchemy-provider.md): Prisma Cloud resources come from the upstream provider.
+- [ADR-0060](../../../../docs/design/90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md): public URLs in Composer's model.
+- [ADR-0062](../../../../docs/design/90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): `resolve()` and per-environment values.
+- [ADR-0048](../../../../docs/design/90-decisions/ADR-0048-prisma-cloud-resources-come-from-the-upstream-alchemy-provider.md): Prisma Cloud resources come from the upstream provider.
 - [public-url-domain-map.md](domain-map.md) and [public-url-scenarios.md](scenarios.md).
-- [alchemy-lowering.md](../alchemy-lowering.md): the rest of the Prisma Cloud lowering.
+- [alchemy-lowering.md](../../../../docs/design/05-prisma-cloud/alchemy-lowering.md): the rest of the Prisma Cloud lowering.
