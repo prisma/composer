@@ -623,11 +623,11 @@ Existing checks that now also cover an input field, with their existing messages
 
 Nowhere else: not as a `provision()` id or a node's `name`, not in `deps`, not in a module's `secrets` or `params` binding, not as an `expose` return. Each is refused by § 5.4 or an existing check.
 
-## 7. The Prisma Cloud target: one serializer fix
+## 7. The Prisma Cloud target: one serializer error
 
 Load hands the target the same `Graph` as before: service input bindings with every value replaced by its real value. A secret forwarded through a module's input arrives as the original `envSecret()` source, so the serializer and preflight treat it exactly as a directly bound one. § 10.3 proves it with one test.
 
-The serializer's ArkType morph problem (the spike's finding c) is fixed here, in its own commit, because module input makes such schemas more likely and the fix is the same tagging § 5.2 uses. In `packages/1-prisma-cloud/1-extensions/target/src/serializer.ts`, each secret sentinel `SecretBox` the deploy walk creates carries a symbol-keyed property naming its pointer (`Symbol.for('prisma:secret-sentinel')`, value the platform variable's name). The substitution that maps validated output back to pointers reads that property instead of matching the box by identity. A box in the validated output without the property is still refused with the existing "validated to a SecretString the binding did not supply" error.
+The serializer's ArkType morph problem (the spike's finding c) gets a clear error here, not a fix. An ArkType morph anywhere in a service's schema copies the input, `SecretBox` included, and the copy loses the box's private value. Boot validates the same schema again, so a deploy that let the copy through would hand the running service a secret whose `expose()` throws. (The first version of this section tagged each sentinel so the copy still serialized; the review showed it only moved the failure from deploy to boot, and Will decided on the refusal below.) In `packages/1-prisma-cloud/1-extensions/target/src/serializer.ts`, when the validated output holds a box the binding did not supply at a path where the binding has a secret, the deploy fails naming the service, the input path and the cause, and says to move the transform into the service code or keep the schema free of transforms. A box at a path where the binding has no secret keeps the existing "validated to a SecretString the binding did not supply" error. A real fix needs `SecretBox` to survive the copy, a foundation change recorded in `.drive/deferred.md`.
 
 ## 8. Documentation
 
@@ -659,7 +659,7 @@ All in the same pull request. The repo rule `.agents/rules/user-facing-surface-c
 
 ## 9. Scope
 
-In: everything above, in `packages/0-framework/1-core/core`, the serializer fix and two tests in `packages/1-prisma-cloud/1-extensions/target`, `docs/`, `skills/`.
+In: everything above, in `packages/0-framework/1-core/core`, the serializer error and two tests in `packages/1-prisma-cloud/1-extensions/target`, `docs/`, `skills/`.
 
 Out: a root's `input` and the config adapters (S4); `envParam()` and `envSecret()` as values, a pointer that throws when used as text, and `resolve()` returning a pointer (S3); removing `params`, `paramNeed()`, `secrets` and the module form of `secret()`, and migrating `auth()`, `email()` and the examples (S5); widening `ParamBindings` or `ResourcePropsMember` to optional or secret values; carrying validated module inputs on the `Graph`.
 
@@ -739,7 +739,7 @@ Schemas are declared, not built: `declare const shopSchema: StandardSchemaV1<Sho
 
 34. In `packages/1-prisma-cloud/1-extensions/target/src/__tests__/input-serializer.test.ts`, a new `describe('a secret forwarded through a module input', …)` with `a secret forwarded through a module's input serializes to its $secret pointer`: `Load` (from `@internal/core`) a root that provisions an `email` module with ArkType input `type({ from: 'string', key: secretString() })`, bound `{ from: 'shop@example.com', key: envSecret('EMAIL_KEY') }`; the module provisions `svc(type({ from: 'string', key: secretString() }))` with `input: { from: input.from, key: input.key }`. `serializeInput(node, address, graph.inputBindings[0].binding, { env: {} })`, with `node` the graph node at that address; `JSON.parse(row.value)` equals `{ from: 'shop@example.com', key: { $secret: 'EMAIL_KEY' } }`.
 
-35. In the same file, `describe('an ArkType schema with a morph', …)` with `a secret field survives an ArkType morph elsewhere in the schema`: a service with ArkType input `type({ key: secretString(), count: 'string.integer.parse' })`, bound `{ key: envSecret('KEY'), count: '4' }`; `serializeInput` succeeds and `JSON.parse(row.value)` equals `{ key: { $secret: 'KEY' }, count: 4 }`. It fails on main with the "validated to a SecretString the binding did not supply" error.
+35. In the same file, `describe('an ArkType schema with a morph', …)` with `a secret field beside an ArkType morph is refused at deploy, naming the copied secret`: a service with ArkType input `type({ key: secretString(), name: 'string.trim' })`, bound `{ key: envSecret('KEY'), name: ' shop ' }`; `serializeInput` throws the § 7 error for input key `key` of service `web`.
 
 ## 11. Done when
 
@@ -776,6 +776,6 @@ Where the code, the spike, the plan or a decision record disagree, and what this
 
 ## 14. Settled by the orchestrator
 
-1. **The serializer's morph problem is fixed in this slice** (§ 7, test 35), in its own commit.
+1. **The serializer's morph problem gets a clear deploy error in this slice** (§ 7, test 35), in its own commit; the real fix is deferred.
 2. **The interim errors are acceptable.** Nothing that works today stops working, so a release between S2 and S4 only shows a not-yet-supported error to someone trying a new feature, with what to do instead. S2 does not wait for S3 and S4.
 3. **For S3:** a module's binding must accept every param source a service binding accepts, `envParam()`, `generatedParam()` and `serviceOrigin()`, because S5 moves `auth()`, whose `baseUrl` the auth example binds with `serviceOrigin()`, onto `input`.
