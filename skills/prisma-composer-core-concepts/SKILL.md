@@ -172,7 +172,7 @@ The graph is the same in every environment; only configuration may differ.
 - A value is accepted as a leaf of a service's `input` binding, at any depth, or as a service param. Never as a provision id, a `deps` entry, or a module's `secrets` or `params` binding.
 - A value is opaque in the body: you cannot read, compare or branch on it. List it as a `resolve()` dependency instead.
 - Calling `provision()` inside `fn` fails the load: `fn` computes configuration, never graph structure.
-- `fn` is pure and synchronous and returns plain data (no `undefined`, Promise, value, `envParam()` or `envSecret()`); a deploy and `destroy` both run it, in two processes.
+- `fn` is pure and synchronous and returns plain data (no `undefined`, Promise, value, `envParam()` or `envSecret()`); a deploy and `destroy` both run it, in two processes. To retire an environment, keep its case in every `fn` until `destroy` for it has finished.
 
 ## Contracts and RPC
 

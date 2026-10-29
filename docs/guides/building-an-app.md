@@ -686,7 +686,8 @@ Two rules follow from running `fn` after the module bodies:
   operation runs every `fn` too, for the environment being removed, and
   every `prisma dev` rebuild runs them again. A `fn` that reads the clock, a
   random number, a file or an environment variable deploys a graph nobody
-  checked.
+  checked. To retire an environment, keep its case in every `fn` until the
+  `destroy` operation for it has finished.
 
 Each of these stops `prisma deploy` or `prisma dev` before anything reaches
 the platform, with a message that names the binding the value sits in, such as
