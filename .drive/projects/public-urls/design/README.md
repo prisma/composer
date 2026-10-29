@@ -210,7 +210,7 @@ When a deploy declares a RoutingUrl and no row on the Branch carries the node's 
 
 ## Scenarios
 
-**Deploying an app for the first time, with a custom hostname.** The deploy creates the service and the RoutingUrl and succeeds. The output says `shop.com` is waiting for DNS and gives the CNAME to add and the Console link. The user adds the CNAME and presses check in the Console; the platform creates the custom domain, follows up the certificate on its own, and the hostname serves. If the workspace has never claimed `shop.com`, the output instead says ownership is not verified and links to the workspace's Domains page, where the user claims it and gets the TXT record. Either order works.
+**Deploying an app for the first time, with a custom hostname.** The deploy creates the service and the RoutingUrl and succeeds. The output says what `shop.com` is waiting for and prints every record still to publish: the ownership TXT record if the workspace holds no verified claim for `shop.com`, and the CNAME, each with name, type and value. The user publishes them and presses check in the Console; the platform finds the TXT record and creates the workspace's claim, verified, creates the custom domain, follows up the certificate on its own, and the hostname serves. A user who claimed `shop.com` in the Console beforehand sees only the CNAME. Either order works.
 
 **Deploying a code change, with no downtime.** The deploy creates a new deployment and promotes it. Promote re-points the endpoint and reassigns the custom domain to the new compute version. If the reassign fails, the failure is written on the RoutingUrl and a queued retry repairs it without anyone acting. The hostname, the certificate and the DNS are untouched throughout.
 
@@ -240,11 +240,11 @@ Private routing between services. Routing by path. Any change to Foundry or Cond
 
 Composer:
 
-- [ADR-0060](../../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md): the public URL node, and the alternatives considered.
-- [ADR-0062](../../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): `resolve()`, environments and config adapters.
-- [ADR-0061](../../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): module input, a follow-on project.
+- [ADR-0060](../../../../docs/design/90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md): the public URL node, and the alternatives considered.
+- [ADR-0062](../../../../docs/design/90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): `resolve()`, environments and config adapters.
+- [ADR-0061](../../../../docs/design/90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): module input, a follow-on project.
 - [composer-to-platform.md](composer-to-platform.md): how a node becomes a platform record. [scenarios.md](scenarios.md): thirteen worked scenarios with code and records. [domain-map.md](domain-map.md): every entity in each system.
-- The project's spec and plan: [`.drive/projects/public-urls/`](../../../../.drive/projects/public-urls/).
+- The project's spec and plan: [`.drive/projects/public-urls/`](../).
 
 Prisma Cloud (the platform team maintains these in prisma/pdp-control-plane under `docs/compute/`, on the branch of prisma/pdp-control-plane#5795):
 

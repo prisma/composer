@@ -256,6 +256,7 @@ ADR-0053 (the commands). What we deliberately didn't do:
 ## Public URLs — deferred, 2026-10-28
 
 - **An environment named `main` resolves to the production Branch.** `production` finds the Project's default Branch by its flag; any other name finds a Branch by git name, and the default Branch's git name is `main`. So `--environment main` and `production` share one Branch and one deploy state. This predates the public-URL work (it exists today with `--stage main`) and is left as it is; a fix would refuse an environment name whose Branch is the default Branch and point at `production`.
+
 # dev-secrets-from-env — deferred (2026-10-23)
 
 - **Deploy fails when an optional secret is missing on the platform.** ADR-0042 says an env-bound leaf whose variable is unset resolves to "key omitted" and the schema decides whether that is legal. For `envSecret` leaves this is not implemented in deploy: the serializer always writes a `$secret` pointer, and deploy preflight fails when a bound secret is missing on both the platform and the shell, even when the schema marks the field optional. Fix inside deploy's own preflight: leave the field out when the schema accepts its absence. Origin: Will scoped the `prisma dev` secrets change (prisma/composer#379) to dev only.
@@ -268,3 +269,7 @@ ADR-0053 (the commands). What we deliberately didn't do:
 - **Tag the deploy preflight payload too** (for example `deploy:`), so both kinds are explicit on the wire. Do it with the deploy optional-secret fix above, which changes deploy anyway.
 - **Rename the persisted `<name>:updatedAt` trigger member** to match `pointerVersion`. It redeploys every hosted deployment once, so do it only together with a deploy change that already accepts one redeploy.
 - **Remove `removeRetiredSecretsFile`** (it deletes the `secrets.json` older `prisma dev` versions wrote) once no supported `@prisma/composer` release older than the one shipping this slice is in use: at the next major release, or three minor releases after this one, whichever comes first.
+
+## Public URLs — deferred, 2026-10-29
+
+- **Composer publishes a hostname's DNS records through an adapter.** An option on the Prisma Cloud extension naming a DNS provider, lowered to the Alchemy DNS adapter, publishes the ownership TXT record and the CNAME the deploy would otherwise print. The records are already outputs of the Alchemy RoutingUrl resource and of the `DeployedEntity`. Origin: public-URLs design discussion with Will, prompted by alchemy-run/alchemy#2701.

@@ -26,9 +26,9 @@ flowchart LR
 | Update a RoutingUrl: hostname, service, `logicalId` | `PATCH /v1/urls/{id}` | update | the changed columns. A new hostname clears the Foundry columns; the old custom domain is deleted | repository operation on the row |
 | Delete a RoutingUrl | `DELETE /v1/urls/{id}` | delete | `deletedAt` | the custom domain is deleted, or moved to a waiting row for the same hostname and service |
 | Read a RoutingUrl | `GET /v1/urls/{id}`, the list routes | none; a route over the repository | nothing | nothing |
-| Claim a domain | `POST /v1/workspaces/{id}/domains` | create DomainOwnership | row with `verifiedAt` null | verify runs once at once, and other workspaces' verified claims covering the domain are re-verified |
-| Verify a claim | `POST /v1/workspaces/{id}/domains/{id}/verify` | verify DomainOwnership | `verifiedAt` set or cleared from the TXT lookup | repository operation on every RoutingUrl the claim covers |
-| Delete a claim | `DELETE /v1/workspaces/{id}/domains/{id}` | delete DomainOwnership | `deletedAt` | repository operation on every RoutingUrl no other claim covers; their custom domains are deleted |
+| Claim a domain explicitly | `POST /v1/workspaces/{id}/domain-ownerships` | create DomainOwnership | row with `verifiedAt` null | verify runs once at once, and other workspaces' verified claims covering the domain are re-verified |
+| Verify a claim | `POST /v1/domain-ownerships/{id}/verify` | verify DomainOwnership | `verifiedAt` set or cleared from the TXT lookup | repository operation on every RoutingUrl the claim covers |
+| Delete a claim | `DELETE /v1/domain-ownerships/{id}` | delete DomainOwnership | `deletedAt` | repository operation on every RoutingUrl no other claim covers; their custom domains are deleted |
 
 ## Lifecycle events that reach a RoutingUrl
 
@@ -57,7 +57,7 @@ Both are looked up when the repository operation runs: on every write to the row
 
 ## What the repository operation does for one row
 
-1. Read the row, its service, the service's live deployment, and the live DomainOwnership rows covering its hostname. Compute ownership verified, service present and live deployment.
+1. Read the row, its service, the service's live deployment, and the live DomainOwnership rows covering its hostname. If no verified claim covers the hostname, look up `_prisma-verification.<hostname>`; if it carries the workspace's value, create the claim for the exact hostname, verified, and if it does not, the row's ownership condition carries the record to publish. Compute ownership verified, service present and live deployment.
 2. If the service is gone, or the row or its Branch is deleted, or ownership is unverified: delete the row's custom domain if it has one, unless another live row names the same hostname on the same service, in which case move the custom domain id, `foundryIssuanceStartedAt`, the status columns to that row. Clear the Foundry columns on this one. If this run deleted or moved a custom domain, run these steps once for each other live row that names the same hostname, since one of them may now be able to create its own; that nested run does not fan out again. Stop.
 3. If the service exists but no deployment is live: leave the custom domain as it is and stop. The row reports "custom domain bound" as unmet.
 4. Look up DNS and write `dnsCheckedAt`. If DNS does not point at the service's regional switchboard: stop. Do not call Foundry.
