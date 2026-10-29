@@ -347,6 +347,16 @@ describe('props', () => {
         "boot. A resource's props are read at deploy; bind a value known at deploy.",
     );
   });
+
+  test("a secret source a resolve() in a resource's props lists is listed under the resource", () => {
+    const key = pointer('K');
+
+    const graph = Load(site({ url: resolve([key], () => 'https://shop.example') }));
+
+    expect(graph.secretSources).toEqual([
+      { source: key, address: 'shop.site', nodeKind: 'resource' },
+    ]);
+  });
 });
 
 describe('the secret list and forwarded slots', () => {
@@ -382,7 +392,18 @@ describe('the secret list and forwarded slots', () => {
     expect(graph.secretSources[0]?.source).toBe(key);
   });
 
-  test('graph.secretSources lists a source once, where Load first met it', () => {
+  test("a secret source a service receives through a module's input is listed under the service", () => {
+    const key = pointer('K');
+
+    const graph = Load(shopWith(forwarding(type({ key: secretString() })), { key }));
+
+    expect(graph.secretSources).toEqual([
+      { source: key, address: 'shop.email.echo', nodeKind: 'service' },
+    ]);
+    expect(graph.secretSources[0]?.source).toBe(key);
+  });
+
+  test('graph.secretSources lists a source once, under the first service that receives it', () => {
     const key = pointer('K');
     const root = module('shop', ({ provision }) => {
       provision(echoService(), { id: 'one', input: { key } });
