@@ -149,10 +149,12 @@ Rules that bite:
    (`'string.trim'`, `.pipe()`) copies the input, the copied secret loses its
    value, and the deploy refuses it. Transform in the service code instead.
 2. **`envParam` values arrive as raw strings**; bind them to string fields. In
-   `input`, the deploy reads the variable from the deploying shell on every
-   deploy. Only `envSecret` lives on the platform: each environment keeps its
-   own copy, and the deploying shell only seeds a missing name (the deploy
-   fails early, naming the variable, when both lack it).
+   a service's `input`, the deploy reads the variable from the deploying shell
+   on every deploy and writes its value into the input document. As a service
+   param, the deploy writes a pointer row to a platform variable, which the
+   service reads at boot. `envSecret` always lives on the platform: each
+   environment keeps its own copy, and the deploying shell only seeds a missing
+   name (the deploy fails early, naming the variable, when both lack it).
 3. **Absence is the schema's call.** An env-bound field whose variable is
    unset or empty resolves to *key omitted*, which is legal only if the
    schema allows it (optional field, union arm). The deploy report prints the
