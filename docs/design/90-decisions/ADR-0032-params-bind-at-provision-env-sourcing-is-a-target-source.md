@@ -2,6 +2,8 @@
 
 Amended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module no longer declares `paramNeed()` slots; values reach a module through its `input`. `envParam` is unchanged.
 
+Amended 2026-10-29 (module-input project, third slice): `envParam('NAME')` returns a value, `ParamSource & Value<string>`, that is also the source. In a service's input binding and a service's params the target receives the source, so both work as before: an input leaf is read from the deploying shell when the target serializes it, and a param keeps its pointer row, read at boot. In a module's input and as a `resolve()` dependency, its real value is the variable's value at deploy, read from the process environment; an unset or empty variable has none. `paramSource()` takes an optional `label`, `configKey`, `sentinel` and `redacted`.
+
 ## Decision
 
 A config param can be bound at `provision()` time — to a literal value or to a

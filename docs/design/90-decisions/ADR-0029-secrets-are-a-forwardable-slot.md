@@ -2,6 +2,8 @@
 
 Amended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module no longer declares `secret()` slots; a secret reaches a module as a `secretString()` field of its `input`. `envSecret` is unchanged.
 
+Amended 2026-10-29 (module-input project, third slice): `envSecret('NAME')` returns a value, `SecretSource & Value<SecretString>`, that is also the source. Wherever a binding took the source, the target receives the same object, so the pointer, preflight and boot are unchanged. Its real value at deploy is a pointer: a `resolve()` function that lists it receives the source itself, which throws when turned into text or a number, and may return it. Deploy preflight checks every `envSecret()` the graph names, including one a function lists but does not return and one in a module's input that no service receives. `secretSource()` takes an optional `label`, the name errors use.
+
 ## Decision
 
 A **secret** is one specific thing: a value the deployment reads from the

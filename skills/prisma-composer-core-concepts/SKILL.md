@@ -148,10 +148,11 @@ Rules that bite:
    cannot also transform its input: an ArkType morph anywhere in it
    (`'string.trim'`, `.pipe()`) copies the input, the copied secret loses its
    value, and the deploy refuses it. Transform in the service code instead.
-2. **`envParam` values arrive as raw strings**; bind them to string fields.
-   The environment's platform variable is the store; the deploying shell only seeds
-   a missing name (and the deploy fails early, naming the variable, when both
-   lack it). Changing the platform value needs a redeploy.
+2. **`envParam` values arrive as raw strings**; bind them to string fields. In
+   `input`, the deploy reads the variable from the deploying shell on every
+   deploy. Only `envSecret` lives on the platform: each environment keeps its
+   own copy, and the deploying shell only seeds a missing name (the deploy
+   fails early, naming the variable, when both lack it).
 3. **Absence is the schema's call.** An env-bound field whose variable is
    unset or empty resolves to *key omitted*, which is legal only if the
    schema allows it (optional field, union arm). The deploy report prints the
@@ -172,15 +173,16 @@ Rules that bite:
 
 The graph is the same in every environment; only configuration may differ.
 
-- A module declares `input` (one Standard Schema) as a service does; `provision(module, { input })` binds it, and the body receives each field as a value it can pass into a binding or list in `resolve()`. A root cannot declare `input` yet, and a module's `input` takes no `envParam()` yet.
+- A module declares `input` (one Standard Schema) as a service does; `provision(module, { input })` binds it, and the body receives each field as a value it can pass into a binding or list in `resolve()`. A root cannot declare `input` yet, and a module's `input` takes every source a service's does.
 - A field exists only under a plain object: a path into a string, an array or a secret, such as `input.tags[0]`, fails the deploy naming the path.
 - A truthiness check such as `if (input.enabled)` is not caught: the field is an object, so the branch always runs, in every environment. A module's structure cannot depend on its input; to provision something only sometimes, let the parent decide whether to provision it.
 - The module body receives `environment`; `environment.name` is a value standing for the name `--environment` gave (`production` for `prisma deploy`, `dev` for `prisma dev` by default).
 - `resolve([deps], ([values]) => …)` from `@prisma/composer` returns a computed value; `fn` receives the dependencies' real values as one tuple.
-- A value is accepted as a leaf of a service's or a module's `input` binding, at any depth, as a service param, as one of a `resource()` node's `props`, or as a public URL's `url`. Never as a provision id, a `deps` entry, or a module's `secrets` or `params` binding.
+- A value is accepted as a leaf of a service's or a module's `input` binding, at any depth, as a service param, as one of a `resource()` node's `props`, or as a public URL's `url`. Never as a provision id or a `deps` entry; a module's `secrets` and `params` bindings take only sources.
 - A value is opaque in the body: you cannot read, compare or branch on it. List it as a `resolve()` dependency instead.
 - Calling `provision()` inside `fn` fails the load: `fn` computes configuration, never graph structure.
-- `fn` is pure and synchronous and returns plain data (no `undefined`, Promise, value, `envParam()` or `envSecret()`); a deploy and `destroy` both run it, in two processes. To retire an environment, keep its case in every `fn` until `destroy` for it has finished.
+- `fn` is pure and synchronous and returns plain data (no `undefined`, Promise or value, and no source it did not receive); a deploy and `destroy` both run it, in two processes. To retire an environment, keep its case in every `fn` until `destroy` for it has finished.
+- Sources are values. `resolve([envParam('X')], ([x]) => …)` receives the string, and an unset `X` fails the deploy. For `envSecret()`, `generatedParam()` and `serviceOrigin()` the function receives a pointer that throws when used as text; it may return the pointer unchanged. `isRuntimeValue(x)` is true for one. Preflight checks every `envSecret()` listed, even one the function does not return.
 
 ## Contracts and RPC
 
