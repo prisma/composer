@@ -242,7 +242,7 @@ export interface ResourceNode<
   readonly provides: C;
   /** Dependency slots, as a service's `inputs`. Empty for a resource that depends on nothing. */
   readonly inputs: D;
-  /** The producer wired into each slot, as a `provision()` call's `deps` supplies for a service. A resource is wired when it is constructed. (On a module node `deps` holds the declared slots; here it holds the producers.) */
+  /** The producer wired into each slot, as a `provision()` call's `deps` supplies for a service. A resource is wired when it is constructed. `deps` names two things: `ModuleNode.deps`, `module()`'s boundary `deps` and `compute()`'s `deps` declare slots, while `provision()`'s and `resource()`'s `deps` bind producers to slots. */
   readonly deps: DepBindings<D>;
   /** Plain data the factory records, the resource's configuration. Load resolves any value inside it; nowhere else on a resource is a value resolved. Empty for a resource with none. */
   readonly props: P;
