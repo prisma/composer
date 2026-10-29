@@ -312,8 +312,9 @@ sees, and can never reach, the database inside.
 A Module declares its boundary (what it depends on, what it exposes) in the second
 argument, wires its internals in the builder function, and returns the exposed
 interfaces it promised. The builder function receives `provision`, the boundary's
-forwarded `deps`, `secrets` and `params`, and `environment`, whose
-`name` is a value ([below](#values-that-differ-per-environment)):
+forwarded `deps`, `secrets` and `params`, the module's `input`
+([below](#a-modules-input)), and `environment`, whose `name` is a value
+([below](#values-that-differ-per-environment)):
 
 ```ts
 import { module, secret } from '@prisma/composer';
@@ -413,6 +414,11 @@ envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
   field: a template literal, `String()`, arithmetic, `JSON.stringify` or
   `Object.keys` on `input.domain` reports that `input.domain` of the module is
   a value, not its real value.
+- A truthiness check such as `if (input.enabled)` is not caught. The field is
+  an object, so the check always passes and the branch always runs:
+  `if (input.enabled) provision(extra)` provisions `extra` in every
+  environment. A module's structure cannot depend on its input; to provision
+  something only sometimes, let the parent decide whether to provision it.
 - An optional field the binding leaves out is a key left out: above, the
   service's input has no `replyTo` key.
 - The module's schema checks the binding when the deploy loads the graph, so
@@ -726,10 +732,11 @@ prisma dev                             # "HELLO FROM DEV"
 for data that is known only once the deploy knows which environment it is
 deploying. The module body cannot read a value, compare it or branch on it.
 It can only pass it on: as a dependency of another `resolve()`, as a leaf of
-a service's input binding at any depth, or as a service param. A field of a
-module's `input` is a value too ([A module's input](#a-modules-input)). A value
-cannot be a provision id or a `deps` entry, and a module's `secrets` and
-`params` bindings take sources, not values.
+a service's or a module's input binding at any depth, as a service param, or
+as one of a `resource()` node's `props`. A field of a module's `input` is a
+value too ([A module's input](#a-modules-input)). A value cannot be a
+provision id or a `deps` entry, and a module's `secrets` and `params`
+bindings take sources, not values.
 
 `resolve(dependencies, fn)` lists the values it depends on, and `fn`
 receives their real values as one tuple, in the same order. After every

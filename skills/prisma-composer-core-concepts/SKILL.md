@@ -172,9 +172,10 @@ Rules that bite:
 The graph is the same in every environment; only configuration may differ.
 
 - A module declares `input` (one Standard Schema) as a service does; `provision(module, { input })` binds it, and the body receives each field as a value it can pass into a binding or list in `resolve()`. A root cannot declare `input` yet, and a module's `input` takes no `envParam()` yet.
+- A truthiness check such as `if (input.enabled)` is not caught: the field is an object, so the branch always runs, in every environment. A module's structure cannot depend on its input; to provision something only sometimes, let the parent decide whether to provision it.
 - The module body receives `environment`; `environment.name` is a value standing for the name `--environment` gave (`production` for `prisma deploy`, `dev` for `prisma dev` by default).
 - `resolve([deps], ([values]) => …)` from `@prisma/composer` returns a computed value; `fn` receives the dependencies' real values as one tuple.
-- A value is accepted as a leaf of a service's `input` binding, at any depth, or as a service param. Never as a provision id, a `deps` entry, or a module's `secrets` or `params` binding.
+- A value is accepted as a leaf of a service's or a module's `input` binding, at any depth, as a service param, or as one of a `resource()` node's `props`. Never as a provision id, a `deps` entry, or a module's `secrets` or `params` binding.
 - A value is opaque in the body: you cannot read, compare or branch on it. List it as a `resolve()` dependency instead.
 - Calling `provision()` inside `fn` fails the load: `fn` computes configuration, never graph structure.
 - `fn` is pure and synchronous and returns plain data (no `undefined`, Promise, value, `envParam()` or `envSecret()`); a deploy and `destroy` both run it, in two processes. To retire an environment, keep its case in every `fn` until `destroy` for it has finished.
