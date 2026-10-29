@@ -369,7 +369,7 @@ export function buildConfig(
   lowered: ReadonlyMap<NodeId, Outputs>,
   provisioned: ReadonlyMap<string, unknown>,
 ): Config {
-  const inputs = connectionInputs(node, id, graph, lowered, provisioned);
+  const inputs = slotConnectionParams(node, id, graph, lowered, provisioned);
 
   const boundParams = new Map(
     graph.params.filter((binding) => binding.serviceAddress === id).map((b) => [b.slot, b.binding]),
@@ -389,6 +389,12 @@ export function buildConfig(
  * `provisioned` value, with the connection contract enforced (see `buildConfig`).
  */
 export function connectionInputs(
+  ctx: LowerContext,
+): Readonly<Record<string, Readonly<Record<string, unknown>>>> {
+  return slotConnectionParams(ctx.node, ctx.id, ctx.graph, ctx.lowered, ctx.provisioned);
+}
+
+function slotConnectionParams(
   node: ServiceNode | ResourceNode,
   id: NodeId,
   graph: Graph,

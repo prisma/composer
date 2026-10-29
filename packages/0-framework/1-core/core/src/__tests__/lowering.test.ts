@@ -626,13 +626,7 @@ describe('lowering a module root — a single service', () => {
                 const { url } = ctx.node.kind === 'resource' ? ctx.node.props : {};
                 seen.push({
                   url,
-                  inputs: connectionInputs(
-                    ctx.node,
-                    ctx.id,
-                    ctx.graph,
-                    ctx.lowered,
-                    ctx.provisioned,
-                  ),
+                  inputs: connectionInputs(ctx),
                 });
                 return Effect.succeed({ outputs: {}, entities: [] });
               },
@@ -696,7 +690,19 @@ describe('lowering a module root — a single service', () => {
     if (site?.kind !== 'resource') throw new Error('expected the site resource');
     const lowered = new Map<string, Outputs>([['hello.web', { host: 'web.internal' }]]);
 
-    expect(() => connectionInputs(site, 'hello.site', graph, lowered, new Map())).toThrow(
+    const ctx: LowerContext = {
+      id: 'hello.site',
+      address: 'hello.site',
+      node: site,
+      graph,
+      opts: opts(),
+      application: undefined,
+      container: undefined,
+      lowered,
+      provisioned: new Map(),
+    };
+
+    expect(() => connectionInputs(ctx)).toThrow(
       new LowerError(
         'Connection input "hello.site.target" declares param "url", but its producer "hello.web" ' +
           'did not supply it — the producer\'s outputs carry [host]. Add "url" to the outputs the ' +
