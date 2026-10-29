@@ -45,4 +45,6 @@ A `resolve()` function receives each dependency's real value. For a field bound 
 - A real value is the schema's output, so a field typed `number` from `string.integer.parse` receives `4`, not `'4'`.
 - A discriminated union's body reaches only the keys every member has; to narrow, forward the whole `input` or narrow inside a `resolve()` function. Array fields have no element access.
 - Proven by the S1 spike: [slices/s1-spike/report.md](slices/s1-spike/report.md).
-- `ParamSource` and `SecretSource` become the target's payload inside a value; `isValue()` is true for `envParam()` and `envSecret()` results.
+- A source is a value: `envSecret()`, `envParam()`, `generatedParam()` and `serviceOrigin()` each return one object that is both the target's source and a `Value`, so the serializer, preflight and boot see the same objects as today. Load computes a real value only where core uses one: a module's input binding, a `resolve()` dependency and a resource's props.
+- `generatedParam()` and `serviceOrigin()` are run-time config in a service's input today: the platform holds the value and boot reads it. So the run-time config cell is not empty; it holds the framework's own sources.
+- In a service's per-key `params`, `envParam()` is a run-time pointer row. In a service's `input` it is read from the deploy shell. Both behaviours stay.
