@@ -252,7 +252,8 @@ async function fillMissing(
 
 interface MissingBinding {
   readonly name: string;
-  readonly serviceAddress: string;
+  readonly address: string;
+  readonly nodeKind: 'service' | 'module';
 }
 
 /** The preflight input typed against this extension's own client — the concrete form of the framework's erased `PreflightInput<unknown>`. */
@@ -282,7 +283,7 @@ function missingError(
   branchId: string | undefined,
   environment: string,
 ): Error {
-  const lines = missing.map((m) => `  - ${m.name}  (used by service "${m.serviceAddress}")`);
+  const lines = missing.map((m) => `  - ${m.name}  (used by ${m.nodeKind} "${m.address}")`);
   const countPhrase =
     missing.length === 1 ? '1 required setting has' : `${missing.length} required settings have`;
   const scopeFlag =
@@ -350,7 +351,9 @@ async function managementClient(): Promise<ManagementApiClient> {
 }
 
 /**
- * The Prisma Cloud extension's `preflight`. Uses the shared name collector
+ * The Prisma Cloud extension's `preflight`. Every secret source the graph
+ * names is checked, including one only a resolve() dependency lists. Uses the
+ * shared name collector
  * (`collectPreflightNames`, ADR-0042) — every service's input-binding
  * `envSecret` leaf, plus `paramManifest` filtered to env-sourced reserved
  * params — checks each platform name against the platform, fills from the

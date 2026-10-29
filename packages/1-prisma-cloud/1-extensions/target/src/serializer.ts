@@ -29,7 +29,12 @@ import { SecretBox, type SecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { addressKeySegments, configKey, ORIGIN_KEY_NAME } from './config-key.ts';
-import { isEnvParamSource, isGeneratedParamSource, isOriginParamSource } from './param.ts';
+import {
+  isEnvParamSource,
+  isGeneratedParamSource,
+  isOriginParamSource,
+  ORIGIN_SENTINEL,
+} from './param.ts';
 import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
 import { secretName } from './secret.ts';
 
@@ -350,9 +355,6 @@ export interface GeneratedLeaf {
   /** A `serviceOrigin()` leaf's target address; its origin replaces the random value. */
   readonly origin?: string;
 }
-
-/** Stands in for a `serviceOrigin()` leaf in deploy-time validation; boot validates the real one. */
-const ORIGIN_SENTINEL = 'https://origin.invalid';
 
 /** One pointer var name and the input path that produced it — the collision guard's unit. */
 export interface PointerName {

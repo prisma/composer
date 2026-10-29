@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { isParamSource, paramSource } from '@internal/core';
+import { isParamSource, Load, module, paramSource, service } from '@internal/core';
+import { type } from 'arktype';
 import { envParam, isEnvParamSource, paramBindingFor, paramName } from '../param.ts';
 
 describe('envParam (Prisma Cloud param source)', () => {
@@ -50,5 +51,38 @@ describe('envParam (Prisma Cloud param source)', () => {
     expect(() => paramBindingFor([], 'web', 'appOrigin')).toThrow(
       /param slot "appOrigin" of "web" resolved to a source but has no bound entry/,
     );
+  });
+});
+
+describe('envParam() in a module input', () => {
+  test("envParam() in a module's input is the variable's value in the config pool", () => {
+    const web = service({
+      name: 'web',
+      extension: '@prisma/composer-prisma-cloud',
+      type: 'compute',
+      inputs: {},
+      params: {},
+      input: type({ appOrigin: 'string' }),
+      build: {
+        extension: '@prisma/composer/node',
+        type: 'node',
+        module: 'file:///test/service.ts',
+        entry: 'server.js',
+      },
+    });
+    const site = module(
+      'site',
+      { input: type({ appOrigin: 'string' }) },
+      ({ input, provision }) => {
+        provision(web, { input: { appOrigin: input.appOrigin } });
+      },
+    );
+    const root = module('shop', ({ provision }) => {
+      provision(site, { input: { appOrigin: envParam('APP_ORIGIN') } });
+    });
+
+    const graph = Load(root, { configPool: { APP_ORIGIN: 'https://shop.example' } });
+
+    expect(graph.inputBindings[0]?.binding).toEqual({ appOrigin: 'https://shop.example' });
   });
 });
