@@ -2,8 +2,8 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { expectTypeOf, test } from 'vitest';
 import type {
   InputBinding,
-  InputField,
   ModuleContext,
+  ModuleInputField,
   ModuleNode,
   SecretString,
   Value,
@@ -31,7 +31,7 @@ declare const flagSchema: StandardSchemaV1<unknown, { flag: boolean; kind: 'a' |
 declare const fitsSchema: StandardSchemaV1<{ EMAIL_FROM: string }>;
 declare const misfitsSchema: StandardSchemaV1<{ missing: string }>;
 
-let otherField!: InputField<string>;
+let otherField!: ModuleInputField<string>;
 
 /** What `resolve()`'s `fn` receives for a value: its real-value type. */
 type RealValue<V> = V extends Value<infer T> ? T : never;
@@ -40,10 +40,10 @@ const email = module('email', { input: emailSchema }, () => {});
 
 test("each input field is a value typed from the schema's output", () => {
   module('shop', { input: shopSchema }, ({ input }) => {
-    expectTypeOf(input.EMAIL_FROM).toEqualTypeOf<InputField<string>>();
+    expectTypeOf(input.EMAIL_FROM).toEqualTypeOf<ModuleInputField<string>>();
     expectTypeOf<RealValue<typeof input.SITE_HOSTNAME>>().toEqualTypeOf<string | undefined>();
     expectTypeOf<RealValue<typeof input.smtp.tls.ca>>().toEqualTypeOf<string | undefined>();
-    expectTypeOf(input.tags).toEqualTypeOf<InputField<string[]>>();
+    expectTypeOf(input.tags).toEqualTypeOf<ModuleInputField<string[]>>();
     expectTypeOf(input.tags).toEqualTypeOf<Value<string[]>>();
     // @ts-expect-error an array field has no element access
     void input.tags[0];
@@ -161,5 +161,5 @@ test('a module with an input schema is a ModuleNode', () => {
 });
 
 test('an input field is a value', () => {
-  expectTypeOf<InputField<string>>().toExtend<Value<string>>();
+  expectTypeOf<ModuleInputField<string>>().toExtend<Value<string>>();
 });

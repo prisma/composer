@@ -9,9 +9,9 @@ type PlainObject = { readonly [key: string]: unknown };
 
 /**
  * What a module body holds for an input field whose real value has type `T`:
- * a value, plus one `InputField` per key when `T` is a plain object.
+ * a value, plus one `ModuleInputField` per key when `T` is a plain object.
  */
-export type InputField<T> = Value<T> & FieldsOf<T>;
+export type ModuleInputField<T> = Value<T> & FieldsOf<T>;
 
 type FieldsOf<T> = [NonNullable<T>] extends [never]
   ? unknown
@@ -23,7 +23,7 @@ type FieldsOf<T> = [NonNullable<T>] extends [never]
 
 // `Absent` carries a parent's optionality down: if `a` may be absent, so may `a.b`.
 type Fields<O, Absent> = {
-  readonly [K in keyof O & string]-?: InputField<FieldType<O, K> | Absent>;
+  readonly [K in keyof O & string]-?: ModuleInputField<FieldType<O, K> | Absent>;
 };
 
 // An optional key's real value may be undefined even under exactOptionalPropertyTypes.
@@ -31,7 +31,9 @@ type FieldType<O, K extends keyof O> =
   Record<never, never> extends Pick<O, K> ? O[K] | undefined : O[K];
 
 /** The `input` a module body receives for its input schema `S`: one value per field, typed from the schema's output (ADR-0061). */
-export type ModuleInput<S extends StandardSchemaV1> = InputField<StandardSchemaV1.InferOutput<S>>;
+export type ModuleInput<S extends StandardSchemaV1> = ModuleInputField<
+  StandardSchemaV1.InferOutput<S>
+>;
 
 /** `input` or `input.a.b`: how an error names an input field. */
 export function inputFieldLabel(origin: InputOrigin): string {

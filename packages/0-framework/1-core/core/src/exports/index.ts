@@ -31,7 +31,7 @@ export type {
 } from '../graph.ts';
 export { assertAppName, Load, LoadError, RESOURCE_OUT_PORT } from '../graph.ts';
 export { hydrate, hydrateSync } from '../hydrate.ts';
-export type { InputField, ModuleInput } from '../module-input.ts';
+export type { ModuleInput, ModuleInputField } from '../module-input.ts';
 export type {
   BuildAdapter,
   DepBindings,

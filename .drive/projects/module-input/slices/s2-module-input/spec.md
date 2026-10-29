@@ -102,9 +102,9 @@ type PlainObject = { readonly [key: string]: unknown };
 
 /**
  * What a module body holds for an input field whose real value has type `T`:
- * a value, plus one `InputField` per key when `T` is a plain object.
+ * a value, plus one `ModuleInputField` per key when `T` is a plain object.
  */
-export type InputField<T> = Value<T> & FieldsOf<T>;
+export type ModuleInputField<T> = Value<T> & FieldsOf<T>;
 
 type FieldsOf<T> = [NonNullable<T>] extends [never]
   ? unknown
@@ -116,14 +116,14 @@ type FieldsOf<T> = [NonNullable<T>] extends [never]
 
 // `Absent` carries a parent's optionality down: if `a` may be absent, so may `a.b`.
 type Fields<O, Absent> = {
-  readonly [K in keyof O & string]-?: InputField<FieldType<O, K> | Absent>;
+  readonly [K in keyof O & string]-?: ModuleInputField<FieldType<O, K> | Absent>;
 };
 
 // An optional key's real value may be undefined even under exactOptionalPropertyTypes.
 type FieldType<O, K extends keyof O> = {} extends Pick<O, K> ? O[K] | undefined : O[K];
 
 /** The `input` a module body receives for its input schema `S`: one value per field, typed from the schema's output (ADR-0061). */
-export type ModuleInput<S extends StandardSchemaV1> = InputField<StandardSchemaV1.InferOutput<S>>;
+export type ModuleInput<S extends StandardSchemaV1> = ModuleInputField<StandardSchemaV1.InferOutput<S>>;
 ```
 
 The two comments above are the spike's and stay: each says something the code cannot.
@@ -386,7 +386,7 @@ The first overload was probed with the existing secret slot, the new input, and 
 
 `exports/index.ts` adds, in its alphabetical groups:
 
-- from `../module-input.ts`, types: `InputField`, `ModuleInput`;
+- from `../module-input.ts`, types: `ModuleInput`, `ModuleInputField`;
 - from `../node.ts`, types: `InputBindingData`, `ModuleInputBinding`.
 
 Not exported: `buildModuleInput`, `inputFieldLabel`, `InputOrigin`, `ModuleInputOf`, `ProvisionedModuleInput` (§ 5.2), `VALUE`, `VALUE_ORIGIN`. `@prisma/composer` re-exports `@internal/core` wholesale, so nothing changes in `packages/9-public/composer`.
@@ -720,7 +720,7 @@ A forged input field: `{ [Symbol.for('prisma:value')]: true, [Symbol.for('prisma
 
 Schemas are declared, not built: `declare const shopSchema: StandardSchemaV1<ShopIn, ShopOut>`, where `ShopOut` is `{ EMAIL_FROM: string; SITE_HOSTNAME?: string; smtp: { host: string; port: number; tls?: { ca: string } }; tags: string[]; signingKey: SecretString; count: number }` and `ShopIn` is the same with `count: string` and `signingKey: unknown`. A second, `emailSchema: StandardSchemaV1<{ from: string; key: SecretString; replyTo?: string }, …same>`, has a secret field whose input type is `SecretString`.
 
-- Field types: `input.EMAIL_FROM` is `InputField<string>`; `input.SITE_HOSTNAME`'s real value is `string | undefined`; `input.smtp.tls.ca`'s is `string | undefined`; `input.tags` is `Value<string[]>` and `input.tags[0]` is an error; `input.signingKey`'s real value is `SecretString` and `input.signingKey.expose` is an error; `input.count`'s real value is `number`; `input` itself stands for `ShopOut`; `input.nope` is an error; assigning `input.EMAIL_FROM` is an error.
+- Field types: `input.EMAIL_FROM` is `ModuleInputField<string>`; `input.SITE_HOSTNAME`'s real value is `string | undefined`; `input.smtp.tls.ca`'s is `string | undefined`; `input.tags` is `Value<string[]>` and `input.tags[0]` is an error; `input.signingKey`'s real value is `SecretString` and `input.signingKey.expose` is an error; `input.count`'s real value is `number`; `input` itself stands for `ShopOut`; `input.nope` is an error; assigning `input.EMAIL_FROM` is an error.
 - A union schema `StandardSchemaV1<…, { on: false } | { on: true; key: SecretString }>`: `input.on`'s real value is `boolean`, `input.key` is an error.
 - `ModuleContext` of a module declaring no input: `input` is `undefined`.
 - `if (input.flag === true)` against a `boolean` field and `switch (input.kind) { case 'a': }` against a `'a' | 'b'` field are errors.
@@ -731,7 +731,7 @@ Schemas are declared, not built: `declare const shopSchema: StandardSchemaV1<Sho
 - Forwarding the whole `input` into a child whose input type it satisfies compiles; into one it does not satisfy is an error.
 - `InputBinding` accepts `{ k: Value<SecretString> }`, `{ k: Value<string | undefined> }` and `{ smtp: Value<{ host: string; key: SecretString }> }`.
 - `ModuleNode<…, typeof emailSchema>` (from `module()`) is assignable to `ModuleNode`.
-- `InputField<string>` is assignable to `Value<string>`.
+- `ModuleInputField<string>` is assignable to `Value<string>`.
 
 `value.test-d.ts`: the test `a value standing for plain data is an input binding leaf; any other value is not` is renamed `a value standing for input data is an input binding leaf; a Date or a source is not`. Its body does not change.
 
@@ -751,7 +751,7 @@ Schemas are declared, not built: `declare const shopSchema: StandardSchemaV1<Sho
 
 1. **Validation runs during the second pass, synchronously** (§ 5.2). The spike's correction b: a child's real value is read from its parent's validated output. The plan said "after".
 2. **A module's binding is validated even when no field is used** (§ 5.2, step 5). The decision says the binding is validated at deploy, as a service's is; skipping an unused module would let a wrong binding through silently.
-3. **Names: `InputField<T>`, `ModuleInput<S>`, `ModuleInputBinding<T>`, `InputBindingData`, `buildModuleInput`.** The spike's `InputValue`/`InputValues` would sit beside the existing `InputValueOf<I>`, which means validated service input data, the real value. Two names one letter apart for the value and its real value would mislead. `Bindable` named nothing specific to modules.
+3. **Names: `ModuleInputField<T>`, `ModuleInput<S>`, `ModuleInputBinding<T>`, `InputBindingData`, `buildModuleInput`.** The spike's `InputValue`/`InputValues` would sit beside the existing `InputValueOf<I>`, which means validated service input data, the real value. Two names one letter apart for the value and its real value would mislead. `Bindable` named nothing specific to modules. The field type carries the `Module` prefix its siblings have, so a reader does not take it for a field of a service's input, which is plain data (renamed from `InputField` after the review).
 4. **The misuse error is a `LoadError`** (§ 3.2). It is thrown from a module body during Load, and the error decision ([ADR-0044](../../../../../docs/design/90-decisions/ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md)) reports an unstructured error at the process boundary as a Composer bug.
 5. **A literal `SecretString` is refused in a module binding**, by the type and at runtime (§ 4.2, § 5.4). The spike's `Bindable` accepted one. The Prisma Cloud serializer already refuses one in a service binding.
 6. **A root that declares `input` is refused** (§ 5.1). Nothing can fill it until S4; accepting it and leaving the body's fields with no real value would fail later and less clearly.
