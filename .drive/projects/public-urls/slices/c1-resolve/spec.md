@@ -222,7 +222,7 @@ The following never accept a value. The compiler refuses the first three outrigh
 - A node's `name` (typed `string`).
 - A module's `secrets` binding (typed `SecretSource`).
 - A module's `params` binding (typed `ParamSource`).
-- A `deps` entry of a service or a module, and a resource's `wiring` (§ 6).
+- A `deps` entry of a service, a module or a resource (§ 6).
 
 ## 5. Core: the second pass of Load
 
@@ -379,8 +379,8 @@ export interface ResourceNode<
   readonly provides: C;
   /** Dependency slots, as a service's `inputs`. Empty for a resource that depends on nothing. */
   readonly inputs: D;
-  /** The producer wired to each slot. A resource is wired when it is constructed, a service at `provision()`. */
-  readonly wiring: DepBindings<D>;
+  /** The producer wired into each slot, as a `provision()` call's `deps` supplies for a service. A resource is wired when it is constructed. (On a module node `deps` holds the declared slots; here it holds the producers.) */
+  readonly deps: DepBindings<D>;
   /** Plain data the factory records, the resource's configuration. Load resolves any value inside it; nowhere else on a resource is a value resolved. Empty for a resource with none. */
   readonly props: P;
 }
@@ -397,11 +397,11 @@ export type ResourceProp =
   | { readonly [key: string]: ResourceProp };
 ```
 
-Why `wiring` and not `deps`: on a module node, in `compute({ deps })` and in `module({ deps })`, `deps` is the map of slots a node declares; only a `provision()` call's `deps` is the producers bound to them, and the code calls that wiring (`PendingWiring.wiring`, `recordAuthoredWiring`). A resource fixes its wiring at construction, which is a real difference from a service, and the field name makes it visible. Why `props`: the glossary's provisioning-plane entry uses "props" for the desired configuration passed at declare time, which is what a resource descriptor turns these into; "options" in this codebase means a function's options argument (`LoadOptions`, `LowerOptions`), and in Pulumi `ResourceOptions` means meta-settings such as `dependsOn`. Both names pending Will, § 14.
+Why `deps` for the producers: it is the meaning `deps` has at every `provision()` call, so a pack author reads the resource factory as a provision call with the node's own slots. The one collision is inside core, on `ModuleNode.deps`, which holds declared slots; the doc comment above says so. (Settled with Will on 2026-10-29; `wiring` was rejected.) Why `props`: the glossary's provisioning-plane entry uses "props" for the desired configuration passed at declare time, which is what a resource descriptor turns these into; "options" in this codebase means a function's options argument (`LoadOptions`, `LowerOptions`), and in Pulumi `ResourceOptions` means meta-settings such as `dependsOn`.
 
 `DepBindings<D>` is the existing unexported type in `node.ts`; it is exported now, since it appears in a public interface. The existing generic parameter `C` keeps its position so every current `ResourceNode<C>` still compiles; `D` and `P` default to the widest shapes.
 
-Every resource still provides a contract and gets the `$out` port. Whether a resource may provide nothing, which the public URL decision requires of a public URL, is pending Will, § 14; this spec builds the mechanism either way, and the answer changes § 6.3's `provides` rule and § 6.4's `$out` line only.
+Every resource still provides a contract and gets the `$out` port. A public URL provides its HTTP ingress point as its own contract, which P1 names; nothing inside the graph wires to it, since no slot requires that contract kind, and `provision()`'s ref is inert for the same reason. Settled with Will on 2026-10-29: `provides` stays required.
 
 ### 6.3 The factory and the base class
 
@@ -415,7 +415,7 @@ export function resource<
   extension: string;
   provides: C;
   inputs?: D;
-  wiring?: DepBindings<D>;
+  deps?: DepBindings<D>;
   props?: P;
 }): ResourceNode<C, D, P>;
 ```
@@ -424,22 +424,22 @@ Rules, in order after the existing name, extension and `provides` checks:
 
 - `inputs` keys pass `requireConfigKeySegmentNames(…, 'input', 'resource')`, as a service's do.
 - Every `inputs` entry must be a branded dependency end; otherwise `Error`: `resource() input "target" is not a branded dependency end (construct it with the dependency() factory).`
-- `wiring` must name exactly the keys of `inputs`: a missing one is `Error`: `resource() declares input "target" but its wiring leaves it unwired. A resource is wired when it is constructed.`; an extra one is `Error`: `resource() wiring names "extra", which is not a declared input.`
-- A `wiring` entry that is a `Value` is `Error`: `resource() wires "target" to a value. A value can configure a node, never decide its edges (ADR-0062).`
+- `deps` must name exactly the keys of `inputs`: a missing one is `Error`: `resource() declares input "target" but its deps leave it unwired. A resource is wired when it is constructed.`; an extra one is `Error`: `resource() deps name "extra", which is not a declared input.`
+- A `deps` entry that is a `Value` is `Error`: `resource() deps wire "target" to a value. A value can configure a node, never decide its edges (ADR-0062).`
 - `props`, when given, must satisfy `isPlainObject` (§ 5.2); otherwise `Error`: `resource() props must be a plain object.` Its contents are not validated at construction: a function or a class instance inside is rejected by the deploy target that reads it, as an input binding's is today.
 - The node is frozen with three pinned casts, because `frozenShallowCopy(def.inputs ?? {})` is `D | {}` and TypeScript refuses to assign it to `D`:
-  - `inputs: blindCast<D, 'an omitted inputs map is the empty Deps; the wiring-match check above guarantees the keys agree at runtime'>(frozenShallowCopy(def.inputs ?? {}))`
-  - `wiring: blindCast<DepBindings<D>, 'an omitted wiring is the empty bindings of the empty Deps; the wiring-match check above guarantees the keys agree at runtime'>(frozenShallowCopy(def.wiring ?? {}))`
+  - `inputs: blindCast<D, 'an omitted inputs map is the empty Deps; the deps-match check above guarantees the keys agree at runtime'>(frozenShallowCopy(def.inputs ?? {}))`
+  - `deps: blindCast<DepBindings<D>, 'omitted deps are the empty bindings of the empty Deps; the deps-match check above guarantees the keys agree at runtime'>(frozenShallowCopy(def.deps ?? {}))`
   - `props: blindCast<P, 'omitted props are the empty props; the plain-object check above is the runtime guard'>(frozenShallowCopy(def.props ?? {}))`
 
-`ResourceNodeBase<C, D, P>` takes the same three optional fields in its constructor `def`, runs the same checks, and assigns `inputs`, `wiring`, `props` with the same casts. Its doc comment adds: `A class built on this base must not use #private fields: Load copies a node whose props hold a value, and a copy carries own properties only.` `PostgresResourceNode` in the Prisma Cloud extension passes none of the three and compiles unchanged. Moving its `config` and `targetRef` into `props` is recorded as debt in `.drive/deferred.md`, not done here.
+`ResourceNodeBase<C, D, P>` takes the same three optional fields in its constructor `def`, runs the same checks, and assigns `inputs`, `deps`, `props` with the same casts. Its doc comment adds: `A class built on this base must not use #private fields: Load copies a node whose props hold a value, and a copy carries own properties only.` `PostgresResourceNode` in the Prisma Cloud extension passes none of the three and compiles unchanged. Moving its `config` and `targetRef` into `props` is recorded as debt in `.drive/deferred.md`, not done here.
 
 ### 6.4 Load
 
 In `flatten`'s `provision` closure, the `child.kind === 'resource'` branch changes as follows. The four existing rejections stay (deps, secrets, input, params supplied at `provision()` are still errors; the wiring is the node's own). Then:
 
 ```
-const localWiring = { ...child.wiring };
+const localWiring = { ...child.deps };
 markUsed(Object.values(localWiring));
 byId.set(fullAddress, child);
 const slots = dependencySlots(child, fullAddress);
@@ -530,10 +530,10 @@ No integration test deploys this example; the smoke script and § 12's QA are it
 All in the same pull request, per `.agents/rules/user-facing-surface-changes.mdc`.
 
 - **ADR-0062** amendment note (already written, 2026-10-29; D4 edits it): add that what the body calls "a reference to a deploy-time fact" is a provided value; replace "create a persisted resource for a value" with "store the value in a platform variable the deploy owns, as `generatedParam` does today"; add "`fn` must be a pure function of its dependencies: a deploy Loads in two processes". The index line in `docs/design/90-decisions/README.md` says `Value`.
-- **ADR-0060** amendment note (already written; D4 edits it): the attribution "ADR-0013, which said a resource takes no wiring" becomes "the resource decision (ADR-0013), which modelled a resource as a producer only, with no dependency slots of its own"; add the kind-and-role sentence from § 6.1; name `wiring` and `props`. ADR-0020's Related line gains "a public URL is a resource by kind and a driver by role (ADR-0060, amended 2026-10-29)". Index lines for ADR-0013, ADR-0020 and ADR-0060 gain `*(Amended by ADR-0060, 2026-10-29: …)*` notes in the house form.
-- **ADR-0013** amendment note (already written; D4 edits it): add "and may carry plain-data props that Load resolves", and the answer to § 14's `provides` question once Will gives it.
+- **ADR-0060** amendment note (already written; D4 edits it): the attribution "ADR-0013, which said a resource takes no wiring" becomes "the resource decision (ADR-0013), which modelled a resource as a producer only, with no dependency slots of its own"; add the kind-and-role sentence from § 6.1; name `deps` (the producers, as at `provision()`) and `props`. ADR-0020's Related line gains "a public URL is a resource by kind and a driver by role (ADR-0060, amended 2026-10-29)". Index lines for ADR-0013, ADR-0020 and ADR-0060 gain `*(Amended by ADR-0060, 2026-10-29: …)*` notes in the house form.
+- **ADR-0013** amendment note (already written; D4 edits it): add "and may carry plain-data props that Load resolves", and "a resource's contract may be consumed outside the graph, as a public URL's ingress point is".
 - **Glossary**: `### Value` (already written; D4 rewrites its lead paragraph to § 2's wording, adds the lower-case sentence and the `RealValuesOf` name). `### Resource` adds: "A resource may also declare Inputs, wired when it is constructed, so it can depend on the service it serves (a public URL). A resource node that is wired carries references from the module body that built it, so it can only be provisioned there. A resource's configuration that may hold a value goes in `props`; Load resolves values there and nowhere else on a resource." `### Ingress / Egress`: "a driver" becomes "a resource, a driver by role,". `### Load / Hydrate`: "with nothing executed" becomes "with nothing executed but module bodies and `resolve()` functions". `### Environment`: one sentence that `environment` in a module body holds the deploy's facts as values and never environment variables.
-- **`core-model.md`**: the `resource()` factory signature in "Node factories" gains `inputs`, `wiring`, `props`; the "Graph and Load" section describes the second pass (one paragraph: provision sealed, values resolved dependency-first, results substituted, the errors), replaces "resources take no wiring, so only service-to-service edges can cycle" with "a resource may declare slots wired at construction, so its edges take part in the cycle check like any other", and "Load executes nothing of the user's" with "Load executes nothing of the user's beyond module bodies and `resolve()` functions"; the `LowerOptions` block loses `stage` and gains `environment`.
+- **`core-model.md`**: the `resource()` factory signature in "Node factories" gains `inputs`, `deps`, `props`; the "Graph and Load" section describes the second pass (one paragraph: provision sealed, values resolved dependency-first, results substituted, the errors), replaces "resources take no wiring, so only service-to-service edges can cycle" with "a resource may declare slots wired at construction, so its edges take part in the cycle check like any other", and "Load executes nothing of the user's" with "Load executes nothing of the user's beyond module bodies and `resolve()` functions"; the `LowerOptions` block loses `stage` and gains `environment`.
 - **`module-composition.md`**: `ModuleContext` in "The authoring surface" gains `environment`, with one sentence on `resolve()`.
 - **`docs/guides/building-an-app.md`**: a new section `## Values that differ per environment` directly before `## Builds`, with the § 1 example, the rule that a value is opaque and `provision` inside `fn` fails, the purity rule and that `destroy` runs every `fn` for the environment it removes, and the error cases an author can hit (a thrown error, `undefined`, a value or a source returned, a cycle). `## Reusable Modules` lists `environment` beside `provision` in what the builder receives.
 - **`docs/guides/deploying.md`**: the `## Environments` section ends with two sentences pointing at the new guide section.
@@ -587,7 +587,7 @@ Each test below is one `test()` with the given title. Runtime tests use `bun tes
 29. `the resource's slot is an in port and $out stays its out port` — `graph.ports` holds `{ node: 'shop.site', direction: 'in', name: 'target', contractKind: 'fake/http', style: undefined }` and the `$out` port.
 30. `the authored edge runs from the producer's out port to the resource's in port`.
 31. `a forwarded module input wired into a resource's slot counts as used and authors the edge from the module's in port`.
-32. `resource() rejects a declared input with no wiring, an extra wiring, and a value in the wiring` — exact messages.
+32. `resource() rejects a declared input with no deps entry, an extra deps entry, and a value in deps` — exact messages.
 33. `provision(resource, { deps }) is still rejected`.
 34. `a resource slot wired to a ref that does not satisfy the required contract fails` — through `validateWiring`, with the existing message.
 35. `a resource that depends on a service that depends on it is a dependency cycle` — the service's untyped slot is wired to the forged ref `{ id: 'shop.site' }`, because a resource's wiring needs the producer's ref first; the existing cycle message names both.
@@ -609,7 +609,7 @@ Each test below is one `test()` with the given title. Runtime tests use `bun tes
 - `{ greeting: Value<string> }` is an `InputBinding`; `{ when: Value<Date> }` is not; a `Value<SecretSource>` is not.
 - `Value<number>` is refused for a string param in `ParamBindings`; accepted for a number param.
 - `Value<string>` is refused as `provision()`'s `id`.
-- `resource({ inputs: { target: dep }, wiring: { target: ref } })` compiles; `wiring: {}` with a declared input is an error; a ref of the wrong contract on a declared slot is an error.
+- `resource({ inputs: { target: dep }, deps: { target: ref } })` compiles; `deps: {}` with a declared input is an error; a ref of the wrong contract on a declared slot is an error.
 - `ModuleContext['environment']['name']` is `Value<string>`.
 
 ### 11.6 CLI (`packages/0-framework/3-tooling/cli`)
@@ -636,7 +636,7 @@ Each test below is one `test()` with the given title. Runtime tests use `bun tes
 1. One type, `Value<T>`, provided or computed, deploy-time or runtime (§ 2). Settled with Will.
 2. `environment.name` is a value, not a computation with no dependencies (§ 3.3). Settled with Will.
 3. Sources (`envParam()`, `envSecret()`) stay what they are in this slice (§ 2, § 10). Settled with Will.
-4. The public URL node is a resource; a resource may declare slots wired at construction and carry props (§ 6). Settled with Will; names pending, § 14.
+4. The public URL node is a resource that provides its ingress contract; a resource may declare slots wired at construction (`inputs` and `deps`) and carry `props` (§ 6). Settled with Will on 2026-10-29, after the design review.
 5. `Load`'s `environment` and `LowerOptions.environment` are both optional and never defaulted (§ 5.1, § 7.1). Orchestrator's decision after review: the commands always pass it, programmatic callers that bind no value need none, and Load never guesses.
 6. `fn` returning `undefined`, anywhere in its result, is an error (§ 5.3). From ADR-0062: a function that returns nothing for some environment fails the deploy rather than silently picking a default.
 7. A cycle is checked although a frozen dependency tuple makes one unconstructible without forging (§ 5.2). The check costs one array and turns a stack overflow into a named error.
@@ -645,11 +645,13 @@ Each test below is one `test()` with the given title. Runtime tests use `bun tes
 10. `fn` is pure (§ 5.2). A deploy Loads in two processes; this is a documented constraint, which is the cheapest fix; passing the parent's results to the child was considered and rejected because values have no identity across processes.
 11. An error thrown by `fn` is wrapped once in a `LoadError` with the thrown value as `cause` (§ 5.3). From ADR-0044: an unwrapped foreign error at the process boundary is reported as a Composer bug.
 
-## 14. Pending Will
+## 14. Settled after the review
 
-Each of these is written into the spec with the recommended answer; a different answer changes only the sections named.
+Each of these was put to Will on 2026-10-29 after the architect and principal-engineer reviews.
 
-1. **May a resource provide nothing?** Today every resource provides a contract, gets a `$out` port on the topology, and `provision()` returns a ref a consumer could wire. The public URL decision says a public URL exposes nothing because nothing in the graph consumes it. Recommendation: `provides` becomes optional on `resource()` and `ResourceNodeBase`; a resource without it has `type` given explicitly (`def.type`, required when `provides` is omitted), no `$out` port, and `provision()` returns `{ id }` only. Changes § 6.2, § 6.3, § 6.4, test 29, and the ADR-0013 note. The alternative is that a public URL provides a named contract nobody consumes, recorded in the ADR-0013 note.
-2. **`wiring`, not `deps`, for a resource's bound producers** (§ 6.2). Recommendation: `wiring`. The alternative keeps `deps` and accepts that it means declared slots on a module and bound producers on a resource.
-3. **`props`, not `options`, for a resource's configuration** (§ 6.2). Recommendation: `props`. The alternative is `options`.
-4. **A computed value may not return a secret or param source** (§ 5.3). Recommendation: refuse, for the two reasons given there. The alternative allows a `SecretSource` or `ParamSource` in the result, with the usage-marking defect fixed by marking usage after the second pass.
+1. **A resource keeps `provides`.** A public URL provides an HTTP ingress point as its own contract; nothing inside the graph wires to it. No change to the resource model beyond the slot wired at construction (§ 6.2).
+2. **`deps`, not `wiring`, for a resource's bound producers** (§ 6.2). `wiring` was rejected; `deps` carries the meaning it has at `provision()`.
+3. **`props` for a resource's configuration** (§ 6.2). Decided by the orchestrator so the build could start.
+4. **A computed value may not return a secret or param source** (§ 5.3). Decided by the orchestrator so the build could start, for the two reasons given there.
+
+**Open beside this slice, not in it:** the port vocabulary. Will, 2026-10-29: the glossary's Input and Output are inverted against the ports-and-adapters model. What a node is called through (today `expose`) is its input port; what it calls (today `deps`, stored as `inputs`) is its output port; a public URL is an ingress adapter wired to the service's input HTTP port. C1 keeps today's names in code; the rename is its own decision record, written beside this slice, and P1 uses the words it settles.
