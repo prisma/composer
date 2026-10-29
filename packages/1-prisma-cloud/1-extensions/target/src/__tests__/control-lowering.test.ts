@@ -191,7 +191,7 @@ mock.module('alchemy/Prisma', () => ({
     return Effect.succeed({
       customDomainId: `${id}#cloud-id`,
       hostname: props.hostname,
-      status: 'pending',
+      status: 'pending_dns',
     });
   },
   Database: (id: string, props: unknown) => {
@@ -3650,7 +3650,7 @@ describe("prismaCloud().nodes['public-url'] — the public URL descriptor", () =
           kind: 'public-url',
           id: 'shop.site.domain.shop.com#cloud-id',
           url: 'https://shop.com',
-          details: { hostname: 'shop.com', status: 'pending' },
+          details: { hostname: 'shop.com', status: 'pending_dns' },
         },
       ],
     });
