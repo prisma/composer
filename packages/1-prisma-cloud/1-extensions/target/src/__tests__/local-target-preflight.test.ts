@@ -3,13 +3,14 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Load, module, type ServiceNode } from '@internal/core';
+import { Load, module, resolve, type ServiceNode } from '@internal/core';
 import { preflightEnv } from '@internal/core/config';
 import { SecretBox } from '@internal/foundation/secret';
+import { rawHttpContract } from '@internal/http';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
 import { decodePreflightPayload, transportedPreflight } from '../control/preflight-payload.ts';
-import { compute } from '../exports/index.ts';
+import { compute, publicUrl } from '../exports/index.ts';
 import { runDevPreflight } from '../local-target/preflight.ts';
 import { envParam } from '../param.ts';
 import { envSecret } from '../secret.ts';
@@ -109,6 +110,42 @@ const sharedGraph = () =>
       });
     }),
   );
+
+const webService = compute({ name: 'web', deps: {}, build, expose: { http: rawHttpContract } });
+
+const publicUrlGraph = (environment: string) =>
+  Load(
+    module('shop', ({ provision }) => {
+      const web = provision(webService);
+      provision(publicUrl({ name: 'site', url: 'shop.com', target: web.http }));
+      provision(
+        publicUrl({ name: 'api', url: publicUrl.hostname('api.shop.com'), target: web.http }),
+      );
+      provision(publicUrl({ name: 'preview', url: publicUrl.prismaBuild(), target: web.http }));
+    }),
+    { environment: { name: environment } },
+  );
+
+const badPublicUrlGraph = () =>
+  Load(
+    module('shop', ({ environment, provision }) => {
+      const web = provision(webService);
+      const url = resolve([environment.name], () => 42) as unknown as string;
+      provision(publicUrl({ name: 'site', url, target: web.http }));
+    }),
+    { environment: { name: 'dev' } },
+  );
+
+const devPreflightWarnings = async (graph: ReturnType<typeof Load>, environment: string) => {
+  const warnings: string[] = [];
+  await runDevPreflight({
+    graph,
+    container: fakeContainer(environment),
+    environment,
+    warn: (message) => warnings.push(message),
+  });
+  return warnings;
+};
 
 const NAMES = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'APP_PORT'];
 
@@ -400,5 +437,21 @@ describe('prisma dev preflight', () => {
     for (const folder of ['dev', 'test', 'feature%2Fx']) {
       expect(fs.existsSync(path.join(environmentDir(cwd, folder), 'fingerprint.key'))).toBe(true);
     }
+  });
+
+  test('warns once per public URL that names a hostname, in any environment, and never for a prisma-build one', async () => {
+    for (const environment of ['dev', 'staging']) {
+      expect(await devPreflightWarnings(publicUrlGraph(environment), environment)).toEqual([
+        'shop.site names the hostname shop.com. prisma dev ignores it and serves the service on its local URL.',
+        'shop.api names the hostname api.shop.com. prisma dev ignores it and serves the service on its local URL.',
+      ]);
+    }
+  });
+
+  test('a url that resolves to neither a hostname nor a strategy stops dev, naming the public URL', async () => {
+    await expect(devPreflightWarnings(badPublicUrlGraph(), 'dev')).rejects.toThrow(
+      'shop.site: url resolved to 42, which is not a hostname or a public URL strategy.',
+    );
+    expect(fs.existsSync(path.join(cwd, '.prisma-composer'))).toBe(false);
   });
 });

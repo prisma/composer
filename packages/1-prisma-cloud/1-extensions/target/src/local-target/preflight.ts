@@ -21,6 +21,7 @@ import {
 } from '@internal/local-target';
 import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
 import { collectPreflightNames, inputSecretNames, type PreflightName } from '../preflight-names.ts';
+import { publicUrlStrategies } from '../public-url.ts';
 import { inputValidationFailure } from '../serializer.ts';
 
 interface MissingSecrets {
@@ -98,6 +99,13 @@ async function fingerprint(key: CryptoKey, value: string): Promise<string> {
 }
 
 export async function runDevPreflight(input: PreflightInput): Promise<PreflightPayload> {
+  for (const { address, strategy } of publicUrlStrategies(input.graph)) {
+    if (strategy.strategy === 'hostname') {
+      input.warn?.(
+        `${address} names the hostname ${strategy.hostname}. prisma dev ignores it and serves the service on its local URL.`,
+      );
+    }
+  }
   // No `node:path` import (invariant 5) — local dev is POSIX-only (spec's
   // Windows note), so a plain `/`-join is exact, not an approximation.
   movePreEnvironmentDevState(process.cwd());
