@@ -1,96 +1,54 @@
 # Public URLs — plan
 
-**Spec:** [spec.md](spec.md) · **Decisions:** ADR-0059 to ADR-0062, `docs/design/05-prisma-cloud/public-urls/composer-to-platform.md`, pdp-control-plane ADR 015 · **Execution decisions:** [design-notes.md](design-notes.md)
+**Spec:** [spec.md](spec.md) · **Decisions:** ADR-0059 to ADR-0062, `docs/design/05-prisma-cloud/public-urls/composer-to-platform.md`, pdp-control-plane ADR 015 and the data-plane consistency proposal · **Execution decisions:** [design-notes.md](design-notes.md)
 
-Eight slices in four tracks across four repositories. Eight is above the usual limit of four. The tracks share no code; what they share is the design, which is already recorded, so they run in parallel with no coordination beyond the Management API routes ADR 015 defines. Splitting them into one project per repository would add bookkeeping without removing a dependency. The module-input work that would have made eleven is a follow-on project (`.drive/deferred.md`).
+Four increments, each something a user can do that they could not before, across four repositories. Each increment carries the internal work it needs; nothing ships as foundation alone. Will and this session drive all of it: the platform increments may be split off to another agent or run as sessions this one starts in the platform clone. Will tracks the work outside Linear.
 
-Owners: Will and the orchestrating agent designed D1 together and drive U1 and C2 through their own sessions; D1's implementation goes to the control-plane team under another agent. Every other slice is dispatched to its own session. Will tracks this work outside Linear, so no Linear issues are created.
+Already done or running: the upstream Alchemy fix that lets a custom domain attach on any Branch (merged); the environment decision record (prisma/composer#385, merged); the two slices that rename stage to environment, C2 and C3, in their own sessions.
 
-## Track U — upstream Alchemy (alchemy-run/alchemy, `src/Prisma/`)
+## Increment 1. An author declares in code which service is public, and at which hostname in each environment
 
-### U1. `Prisma.CustomDomain` works on any Branch
+`publicUrl()` with a named hostname or `publicUrl.prismaBuild()`, and `resolve()` over the environment name so the hostname differs per environment. A named hostname still needs its DNS and ownership records in place before the deploy, as today.
 
-Remove `ensureDefaultBranchApp` from `src/Prisma/CustomDomain.ts` and the test that asserts the refusal. PDP doesn't enforce the rule, so the check only blocks named hostnames on `staging` and preview environments.
+- **C1. `resolve()` and the second evaluation pass.** `resolve(deps, fn)` returning `ResolvedValue<T>`, accepted wherever a `T` is; `fn` receives the dependencies' values as one tuple; dependencies are `environment.name` and other resolved values. Resolved values are ordered before they run and a cycle is an error. After Load, `provision` is disabled, every resolved value runs and is validated, and only the resolved graph reaches lowering. A node may be constructed with its edge already set. Builds on nothing; starts now.
+- **P1. `publicUrl()` with both strategies.** `publicUrl({ name, url, target })`, a bare string as shorthand for a named hostname, an error when `url` is omitted. `prismaBuild()` lowers to nothing and reports the service's existing `*.prisma.build` URL. A named hostname lowers to `Prisma.CustomDomain`; a hostname whose DNS or ownership record is missing fails the deploy naming the hostname and the missing record. One `DeployedEntity` per public URL with the node's address as its `logicalId`. The local target's stand-in creates nothing and warns once. Builds on C1.
+- **Demo:** the test app deploys with one public service on production and on a preview; the topology names only that service as public; `prisma dev` warns once and runs.
 
-- **Builds on:** nothing. Starts immediately. Will and the orchestrating agent.
-- **Hands to:** P1 can attach a hostname on any environment.
-- **Done when:** a live test, written to Alchemy's own conventions (AGENTS.md "Resource and runtime testing conventions"), deploys a site with a custom domain on a Branch that is not the default; the change is in an Alchemy release; and Composer's pin moves to it. Live credentials are confirmed before dispatch.
+## Increment 2. A Console user adds a hostname before its DNS exists, is told what is missing, and it goes live with no further action from us
 
-### U2. A RoutingUrl resource over PDP's new routes
+The platform's own project, `projects/routing-urls/` in pdp-control-plane, slices 0 to 3: the consistency proposal as a decision record; the RoutingUrl and domain ownership records, routes and backfill; the mechanism's shared parts with RoutingUrl as the first kind on them; the Console's hostnames section and Domains page, with the old domain paths retired. A promote, rollback or stop re-points every hostname or shows the failure on the hostname.
 
-A `Prisma.RoutingUrl` resource: create (no DNS needed), read conditions, update hostname or service, delete; found by `logicalId`; adopts a live row on the same service with the same hostname and no `logicalId` by writing the `logicalId` on it. Replaces `Prisma.CustomDomain` for Composer.
+- **Demo:** in the Console, add `shop.com` before DNS and see "DNS is the next step"; add the record, press check, watch it go active; force a re-point failure and see it on the hostname and repaired on retry.
+- Builds on nothing; starts now, in parallel with increment 1.
 
-- **Builds on:** D1 deployed.
-- **Hands to:** P2.
-- **Done when:** a hostname with no DNS creates a record whose conditions the resource reports on later reads, written to Alchemy's own testing conventions with live credentials confirmed before dispatch, and the change is in an Alchemy release.
+## Increment 3. A Composer author deploys before DNS, finishes DNS later, and never redeploys for it
 
-## Track C — Composer core (prisma/composer)
+- **U2. The Alchemy RoutingUrl resource.** Create with no DNS, read conditions, update hostname or service, delete; found by `logicalId`; adopts a live row on the same service with the same hostname and no `logicalId` by writing the `logicalId` on it. Written to Alchemy's own testing conventions with live credentials confirmed before dispatch, and released. Builds on the platform's slice 1 deployed.
+- **P2. Pending hostnames.** A named hostname lowers to `Prisma.RoutingUrl`; the deploy output names the first unmet condition and prints the Console link; `origin()` is unchanged. Builds on P1 and U2.
+- **Demo:** the spec's example app deploys production before `shop.com`'s DNS exists and succeeds; the hostname goes active after DNS and one press of the Console's check button, with no further deploy.
 
-### C1. `resolve()` and the second evaluation pass
+## Increment 4. A service nobody declared public has no public hostname
 
-`resolve(deps, fn)` returning `ResolvedValue<T>`, accepted wherever a value of type `T` is; `fn` receives the dependencies' values as one tuple. This version accepts two kinds of dependency: the `environment` references handed to the module body (`environment.name` only) and other `ResolvedValue`s; module input references arrive with the follow-on project. Resolved values are ordered before they run and a cycle is an error. After Load, `provision` is disabled and every `ResolvedValue` is run and validated; only the resolved graph reaches lowering. Also: a node may be constructed with its edge already set, which `publicUrl`'s `target` needs.
+- **Platform slice 4.** The `prisma.build` endpoint becomes a RoutingUrl a service can lack, with the backfill of existing endpoints into rows with no `logicalId`.
+- **P3. `publicUrl.prismaBuild()` lowers to that RoutingUrl**, and U2's adoption takes over the row the backfill made for an existing service. Specified against [step-two-migration-scenarios.md](../../../docs/design/05-prisma-cloud/public-urls/step-two-migration-scenarios.md) once increment 2 has landed.
+- **Demo:** a new service with no `publicUrl()` answers on no hostname; an existing app's services keep their addresses through the upgrade; every migration scenario holds against a real Branch.
 
-- **Builds on:** nothing. Starts immediately.
-- **Hands to:** P1 (per-environment `url`).
-- **Done when:** a service input bound to a `resolve()` value differs between two environments of a test app, `provision` inside `fn` fails with an error naming the structure rule, and a `fn` that returns an invalid value fails the deploy before anything is created.
+## Enablers, not increments
 
-### C2. The term is environment
-
-`--environment` on `prisma deploy` and `prisma dev` (`--stage` removed); `destroy` targets an environment by name and `{ kind: 'production' }` is retired; local dev runs as the environment the user names, `dev` by default. Guides, error messages, the agent skill and public types follow. Breaking, so it ships as one release.
-
-- **Builds on:** ADR-0059 (prisma/composer#385) merged.
-- **Done when:** no public surface says "stage", and the examples' CI deploys with `--environment`.
-
-## Track P — Composer, Prisma Cloud extension (prisma/composer)
-
-### P1. `publicUrl()` with both strategies
-
-`publicUrl({ name, url, target })` with `publicUrl.hostname()` and `publicUrl.prismaBuild()`, a bare string as shorthand for a named hostname, and an error when `url` is omitted. `prismaBuild()` lowers to nothing on the platform and reports the service's existing `*.prisma.build` URL. `hostname()` lowers to `Prisma.CustomDomain`; a hostname whose DNS isn't ready fails the deploy naming the hostname and the DNS step. One `DeployedEntity` per public URL, with the node's address as its `logicalId` in the topology. The local target's stand-in creates nothing and warns once that a named hostname is ignored.
-
-- **Builds on:** C1, U1.
-- **Hands to:** P2.
-- **Done when:** a test app with one public service shows that service alone as public in the topology; a named hostname with its ownership TXT record and DNS in place serves on production and on a preview; a named hostname without either fails the deploy naming the hostname and the missing record; `prisma dev` warns once and runs.
-
-### P2. Pending hostnames
-
-`hostname()` lowers to `Prisma.RoutingUrl`; `prismaBuild()` still lowers to nothing. A hostname without DNS deploys with its unmet conditions reported, the deploy output names the first one and prints the Console link, and finishing DNS needs no redeploy. `origin()` is unchanged. The scenarios doc gains the slice that made each scenario true.
-
-- **Builds on:** P1, U2.
-- **Done when:** the spec's "At a glance" app deploys production before `shop.com`'s DNS exists, succeeds, and the hostname goes active after DNS is added and one press of the Console's check button, with no further deploy.
-
-### P3. The endpoint as a routing URL (step two)
-
-`publicUrl.prismaBuild()` lowers to the platform's `prisma.build` RoutingUrl once the platform offers it, and U2's adoption takes over the row the backfill made for an existing service. Specified when D1's step one has landed, against [step-two-migration-scenarios.md](../../../docs/design/05-prisma-cloud/public-urls/step-two-migration-scenarios.md).
-
-- **Builds on:** P2, D1's slice 5.
-- **Done when:** every scenario in migration-scenarios.md holds against a real Branch.
-
-## Track D — PDP (prisma/pdp-control-plane)
-
-### D1. RoutingUrl and domain ownership records, routes, repository
-
-The control plane's own project, `projects/routing-urls/` in pdp-control-plane, with its own spec and plan: step one in four slices (the two tables, routes and backfill; the repository operation, lifecycle interactors and retry queue; retiring the old domain paths; the Console) and step two as a fifth (the endpoint as a RoutingUrl). Its first two slices are what U2 and P2 build on; its fifth is what P3 builds on. No Foundry change.
-
-- **Builds on:** pdp-control-plane's ADR 015 agreed. Designed with Will on 2026-10-27; implementation is handed to the control-plane team, managed by another agent.
-- **Hands to:** U2 after its first slice is deployed; P2 after its second.
-- **Done when:** its own project's acceptance criteria pass.
-
-### D2. Console: custom hostnames on the service page, Domains in workspace settings
-
-The fourth slice of the control plane's project, listed here because the Composer project's DoD depends on it.
-
-- **Builds on:** D1's second slice.
-- **Done when:** the Console page for a service in the test project shows its custom hostnames with conditions, and the workspace's Domains page shows the ownership claims, verified with screenshots in the PR.
+- The requests to the Metal team: creates that take the control plane's id or an idempotency key, and list routes. Will opens the conversation; the design does not wait for them.
+- A second kind of object on the consistency mechanism is the first follow-on project, not part of this one.
 
 ## Order
 
-| Slice | Starts when |
+| Work | Starts when |
 | --- | --- |
-| U1, C1, D1 | at once |
-| C2 | prisma/composer#385 is merged |
-| P1 | C1 has merged and the Alchemy release carrying U1 is pinned |
-| U2, D2 | D1 is deployed |
-| P2 | U2 and P1 have merged |
+| C1, platform slices 0 and 1 | now |
+| P1 | C1 has merged |
+| platform slice 2 | slice 1 has merged |
+| U2 | platform slice 1 is deployed |
+| platform slice 3 | slice 2 has merged |
+| P2 | P1 and U2 have merged |
+| platform slice 4, then P3 | increment 2 has landed |
 
 ## Close-out
 
