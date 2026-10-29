@@ -666,6 +666,7 @@ function main(): void {
       } catch (err) {
         for (const port of auxPorts) startingPorts.delete(port);
         if (isFreshAllocation) startingPorts.delete(dbPort);
+        await portClaims.publish(claimedHere());
         if (isNameAlreadyTaken(err) && alreadyRunningRetries < MAX_ALREADY_RUNNING_RETRIES) {
           alreadyRunningRetries += 1;
           // A refusal on a name THIS process leaked with no record behind it
@@ -1054,7 +1055,7 @@ function main(): void {
     .then((loaded) => {
       state = loaded;
       schedulePersist();
-      return portClaims.publish(heldPorts());
+      return portClaims.allocate(async () => undefined, heldPorts);
     })
     .then(() => {
       // Without this, the uncaughtException handler above takes a failed bind

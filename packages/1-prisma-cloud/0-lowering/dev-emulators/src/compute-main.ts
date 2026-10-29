@@ -1139,7 +1139,7 @@ function main(): void {
         }
         state = loaded;
       }
-      return portClaims.publish(heldPorts());
+      return portClaims.allocate(async () => undefined, heldPorts);
     })
     .then(() => {
       // A single, unambiguous line into the daemon's own stdio log once
