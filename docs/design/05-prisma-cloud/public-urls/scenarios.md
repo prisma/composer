@@ -48,7 +48,7 @@ provision(publicUrl({
 
 **Topology:** identical in every environment (one `shop.site` node). Only the resolved value of `url` differs.
 
-**Production Branch:** named public RoutingUrl `shop.site` = `shop.com` → `shop.web`. Receives traffic once the workspace has a verified domain ownership claim for `shop.com` and DNS points at the service's region (Foundry: a Custom domain, registered by the control plane once every condition holds). Until then the deploy succeeds and `web` still answers on its `*.prisma.build` hostname. The deploy output says which step is outstanding (ownership claim, DNS, or the certificate) and prints the Console link to finish it. The user can also claim and verify `shop.com` in Console before this deploy ever runs; neither order is required. Finishing DNS never needs another deploy.
+**Production Branch:** named public RoutingUrl `shop.site` = `shop.com` → `shop.web`. Receives traffic once the workspace has a verified domain ownership claim for `shop.com` and DNS points at the service's region (Foundry: a Custom domain, registered by the control plane once every condition holds). Until then the deploy succeeds and `web` still answers on its `*.prisma.build` hostname. The deploy output says which step is outstanding (ownership claim, DNS, or the certificate) and prints every record still to publish, with name, type and value. The user can also claim and verify `shop.com` in Console before this deploy ever runs; neither order is required. Finishing DNS never needs another deploy.
 
 **Any other Branch:** no record; `web` answers at its `*.prisma.build` hostname, which the deploy output reports for `shop.site`.
 
