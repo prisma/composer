@@ -1,5 +1,7 @@
 # ADR-0049: Composer's configuration is the `composer` section of `prisma.config.ts`
 
+Amended by [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): the section gains `config` (and later `secrets`), each an array of adapters.
+
 Amended after acceptance: the Alternatives section adds four rejected ways to keep a Composer-owned effect check, and the Consequences state the exit code of `CLI.CONFIG_UNREADABLE`. The decision is unchanged.
 
 Amended 2026-10-23: the section takes an optional `entry`, the path to the module whose default export is the application root. It is an input to the tool, like the ORM section's schema path, not an application fact. The validator checks that it is a non-empty string, and it resolves against the directory of the declaring file. `--entry <path>` on `prisma deploy` and `prisma dev`, or an operation's `entry` input, overrides it and resolves against the working directory. With neither, the command fails with `CONFIG.ENTRY_MISSING`.

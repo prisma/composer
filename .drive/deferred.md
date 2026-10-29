@@ -248,6 +248,15 @@ ADR-0053 (the commands). What we deliberately didn't do:
 - **Stage removal through the platform: a cascading Branch delete in the Management API and `prisma branch delete`.** Canceled by Will, 2026-10-27: it is not about addresses. pdp-control-plane's Branch spec also records a decision against a cascading Branch delete. Removing one environment stays the `destroy` operation. Origin: node-addressing plan.
 - **Remove CI's `deleteProjectDeep` workaround** in `scripts/ci-cleanup-utils.ts`. It retries `project delete` after a 409 caused by live compute, which the platform no longer returns: `project delete` succeeded while services ran in the node-addressing QA. Not done because it is CI cleanup, not addressing. Origin: node-addressing plan.
 
+
+# Public URLs — deferred at project planning (2026-10-27)
+
+- **Follow-on project `module-input`.** The second half of ADR-0061 and ADR-0062, left out of the public-URLs project because none of its scenarios need it: a spike proving a module body can hold `input.someKey` as an opaque typed reference, pass it where a value is accepted, and get a clear error on reading or branching on it; `module()` taking `input` in place of `params` and `secrets`, the root declaring it, `paramNeed()` and the module form of `secret()` going, the shipped `auth()` and `email()` modules and the examples migrating; `resolve([input.a, environment.name], ([a, name]) => …)` with `a` typed from the schema; the `config` field on the `composer` section with adapters merged by top-level key, later wins, and `dotenv()` first. Builds on the public-URLs project's `resolve()`. Origin: public-URLs design discussion; Will put config adapters off the critical path.
+
+## Public URLs — deferred, 2026-10-28
+
+- **An environment named `main` resolves to the production Branch.** `production` finds the Project's default Branch by its flag; any other name finds a Branch by git name, and the default Branch's git name is `main`. So `--environment main` and `production` share one Branch and one deploy state. This predates the public-URL work (it exists today with `--stage main`) and is left as it is; a fix would refuse an environment name whose Branch is the default Branch and point at `production`.
+
 # dev-secrets-from-env — deferred (2026-10-23)
 
 - **Deploy fails when an optional secret is missing on the platform.** ADR-0042 says an env-bound leaf whose variable is unset resolves to "key omitted" and the schema decides whether that is legal. For `envSecret` leaves this is not implemented in deploy: the serializer always writes a `$secret` pointer, and deploy preflight fails when a bound secret is missing on both the platform and the shell, even when the schema marks the field optional. Fix inside deploy's own preflight: leave the field out when the schema accepts its absence. Origin: Will scoped the `prisma dev` secrets change (prisma/composer#379) to dev only.
@@ -260,3 +269,7 @@ ADR-0053 (the commands). What we deliberately didn't do:
 - **Tag the deploy preflight payload too** (for example `deploy:`), so both kinds are explicit on the wire. Do it with the deploy optional-secret fix above, which changes deploy anyway.
 - **Rename the persisted `<name>:updatedAt` trigger member** to match `pointerVersion`. It redeploys every hosted deployment once, so do it only together with a deploy change that already accepts one redeploy.
 - **Remove `removeRetiredSecretsFile`** (it deletes the `secrets.json` older `prisma dev` versions wrote) once no supported `@prisma/composer` release older than the one shipping this slice is in use: at the next major release, or three minor releases after this one, whichever comes first.
+
+## Public URLs — deferred, 2026-10-29
+
+- **Composer publishes a hostname's DNS records through an adapter.** An option on the Prisma Cloud extension naming a DNS provider, lowered to the Alchemy DNS adapter, publishes the ownership TXT record and the CNAME the deploy would otherwise print. The records are already outputs of the Alchemy RoutingUrl resource and of the `DeployedEntity`. Origin: public-URLs design discussion with Will, prompted by alchemy-run/alchemy#2701.

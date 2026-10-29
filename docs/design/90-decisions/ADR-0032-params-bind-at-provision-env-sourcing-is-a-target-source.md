@@ -1,5 +1,7 @@
 # ADR-0032: Params bind at provision; env-sourcing is a target-owned source
 
+Amended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module no longer declares `paramNeed()` slots; values reach a module through its `input`. `envParam` is unchanged.
+
 ## Decision
 
 A config param can be bound at `provision()` time — to a literal value or to a

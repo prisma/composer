@@ -1,5 +1,7 @@
 # ADR-0020: Scheduled work is a driver, not a resource
 
+Related: [ADR-0060](ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md) models a public URL as a driver with the same shape.
+
 ## Decision
 
 Cron is modelled as a **driver**: a scheduler service that *depends on* the

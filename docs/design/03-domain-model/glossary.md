@@ -194,7 +194,11 @@ A Module consuming a Postgres Resource.
 ### Ingress / Egress
 
 **Ingress** = a request/response Output exposed to the public (e.g. the website) —
-a real edge at the topology's public boundary. **Egress** = a Service's declared
+a real edge at the topology's public boundary. It is authored as a `publicUrl()`
+node: a driver wired to the HTTP connection a service exposes, serving a named
+hostname or one the platform generates
+([ADR-0060](../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md)).
+**Egress** = a Service's declared
 **outbound dependency** on something outside the topology (an external URL/API).
 Egress is *not* an edge to a node — the far end isn't in the graph; it's a property
 of the Service plus the Configuration (URL + credentials) it carries. To represent

@@ -1,5 +1,7 @@
 # ADR-0050: Composer runs as `prisma deploy` and `prisma dev`; it has no binary of its own
 
+Amended by [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): the flag is `--environment`, defaulting to `production` on `prisma deploy` and to `dev` on `prisma dev`, which gains it; `destroy` targets an environment by name only.
+
 Amended by [ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md): the family also ships `dev url`, `dev stop` and `emulator list`, so `prisma dev` is both a command and a group.
 
 Amended 2026-10-27: the family also ships `deploy list`, so `prisma deploy` is both a command and a group too ([ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md)).

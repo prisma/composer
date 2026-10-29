@@ -1,5 +1,7 @@
 # ADR-0042: Service input is one standard schema; the binding carries the sourcing
 
+Extended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): modules declare `input` the same way.
+
 ## Decision
 
 A compute service declares its entire incoming configuration — plain values
