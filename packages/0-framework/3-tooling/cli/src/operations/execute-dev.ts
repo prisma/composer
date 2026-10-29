@@ -224,7 +224,12 @@ export async function executeDev(
     for (const [id, dev] of resolved) {
       if (dev.preflight === undefined) continue;
       try {
-        const payload = await dev.preflight({ graph, container: containers.get(id), environment });
+        const payload = await dev.preflight({
+          graph,
+          container: containers.get(id),
+          environment,
+          warn: (message) => emit({ kind: 'target-warning', message }),
+        });
         if (payload !== undefined) preflightPayloads.set(id, payload);
       } catch (error) {
         throw toStructured('DEV.PREFLIGHT_FAILED', error);
