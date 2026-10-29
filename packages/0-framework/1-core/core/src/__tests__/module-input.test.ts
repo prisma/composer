@@ -649,9 +649,8 @@ describe('errors', () => {
     expect(
       loadError(() => Load(shopWith(email, { key: secretSource({ name: 'EMAIL_KEY' }) }))).message,
     ).toBe(
-      'input.key.payload of module "shop.email" does not exist: input.key is a secret, not a ' +
-        'plain object, so it has no fields. To compute with it, list it: ' +
-        'resolve([input.key], ([v]) => …).',
+      'input.key.payload of module "shop.email" does not exist: input.key stands for a value ' +
+        'only the platform has at boot, so it has no fields and can only be passed on unchanged.',
     );
   });
 

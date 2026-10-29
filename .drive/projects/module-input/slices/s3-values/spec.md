@@ -396,7 +396,7 @@ The sentinels the Prisma Cloud target names are in § 6.
 
 ### 4.8 Reading a path through a pointer
 
-S2's review fix made `readPath` refuse a path through a secret source. That check becomes `if (!isPlainObject(current) || isSecretSource(current) || isParamSource(current))`, and `describeData` gains `if (isParamSource(value)) return 'a value known only at boot';` after its secret line. So `input.returnUrl.x`, with `returnUrl` bound to `serviceOrigin()`, reports `input.returnUrl.x of module "shop.billing" does not exist: input.returnUrl is a value known only at boot, not a plain object, so it has no fields. …`.
+S2's review fix made `readPath` refuse a path through a secret source. That check now covers a param source too, and for either it reports a message of its own, without the `resolve()` hint the other cases give, because a function that lists a pointer cannot read it. So `input.returnUrl.x`, with `returnUrl` bound to `serviceOrigin()`, reports `input.returnUrl.x of module "shop.billing" does not exist: input.returnUrl stands for a value only the platform has at boot, so it has no fields and can only be passed on unchanged.` A path through a field bound to `envSecret()` reports the same.
 
 ### 4.9 A resource's props take no pointer
 
