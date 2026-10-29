@@ -2,7 +2,8 @@
 /**
  * Verifies a DEPLOYED env-param example: resolves the echo service's URL via
  * the Management API (state is hosted, not local files), polls it until it
- * responds, and asserts three things about what arrived:
+ * serves the expected greeting and environment (an older revision may still
+ * serve for a while after deploy), and asserts three things about what arrived:
  *
  * - the greeting it serves is exactly the value the target environment's platform
  *   var carries (the param round trip),
@@ -97,6 +98,7 @@ const assetUrl = new URL('/logo.svg', url).href;
 // Poll: a version cold-starts after deploy (PRO-200).
 const deadline = Date.now() + 180_000;
 let last = '';
+let mismatchedEnvironment: { value: string | undefined } | undefined;
 while (Date.now() < deadline) {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
@@ -105,15 +107,10 @@ while (Date.now() < deadline) {
       { greeting?: string; environment?: string },
       'the echo service serves { greeting, environment }'
     >(JSON.parse(last));
-    if (res.ok && body.greeting === expected) {
+    if (res.ok && body.greeting === expected && body.environment !== `deployed to ${environment}`) {
+      mismatchedEnvironment = { value: body.environment };
+    } else if (res.ok && body.greeting === expected) {
       console.log(`ok - ${environment} serves greeting ${JSON.stringify(expected)}`);
-
-      if (body.environment !== `deployed to ${environment}`) {
-        console.error(
-          `FAIL - ${environment} serves environment ${JSON.stringify(body.environment)}, expected "deployed to ${environment}"`,
-        );
-        process.exit(1);
-      }
       console.log(`ok - ${environment} serves environment "deployed to ${environment}"`);
 
       // The tree, not just the entry: fetch the entry's sibling asset. Only
@@ -136,6 +133,12 @@ while (Date.now() < deadline) {
     // not up yet — retry
   }
   await Bun.sleep(6_000);
+}
+if (mismatchedEnvironment !== undefined) {
+  console.error(
+    `FAIL - ${environment} serves environment ${JSON.stringify(mismatchedEnvironment.value)}, expected "deployed to ${environment}"`,
+  );
+  process.exit(1);
 }
 console.error(
   `FAIL - never served greeting ${JSON.stringify(expected)} within the deadline. Last body: ${last.slice(0, 500)}`,
