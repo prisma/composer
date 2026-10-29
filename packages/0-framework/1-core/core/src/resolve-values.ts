@@ -1,4 +1,5 @@
 import { blindCast } from '@internal/foundation/casts';
+import { describeKind } from '@internal/foundation/errors';
 import { isSecretString, SecretBox } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import {
@@ -36,6 +37,8 @@ export interface ProvisionedModuleInput {
   readonly schema: StandardSchemaV1;
   /** The binding the provision() call supplied, values in place. */
   readonly binding: unknown;
+  /** True for the root, whose binding is the config pool. */
+  readonly fromConfigPool: boolean;
 }
 
 export interface ValueBindingSite {
@@ -271,7 +274,11 @@ function readPath(data: unknown, origin: InputOrigin): unknown {
   return current;
 }
 
-function validateModuleInput(entry: ProvisionedModuleInput, resolved: unknown): unknown {
+function validateModuleInput(
+  entry: ProvisionedModuleInput,
+  resolved: unknown,
+  environment: EnvironmentRealValues | undefined,
+): unknown {
   const address = entry.moduleAddress;
   const textPointers = new Map<string, ParamSource>();
   const taggedBox = (source: SecretSource | ParamSource): SecretBox<string> => {
@@ -318,6 +325,13 @@ function validateModuleInput(entry: ProvisionedModuleInput, resolved: unknown): 
   }
   if (result.issues !== undefined) {
     const messages = result.issues.map((issue) => issue.message).join('; ');
+    if (entry.fromConfigPool) {
+      const forEnvironment =
+        environment === undefined ? '' : ` for the environment "${environment.name}"`;
+      throw new LoadError(
+        `The input of root module "${address}" does not match its input schema: ${messages}. A root's input is the config pool: the values the \`config\` adapters in prisma.config.ts return${forEnvironment}.`,
+      );
+    }
     throw new LoadError(
       `The input binding of module "${address}" does not match the module's input schema: ${messages}`,
     );
@@ -481,7 +495,15 @@ export function resolveValues(input: {
           );
         } else {
           const raw = configPool[origin.poolKey];
-          result = raw === undefined || raw === '' ? undefined : raw;
+          if (raw === undefined || raw === '') {
+            result = undefined;
+          } else if (typeof raw === 'string') {
+            result = raw;
+          } else {
+            throw new LoadError(
+              `${describeSite(site)} depends on ${origin.label}, which reads "${origin.poolKey}" from the config pool, but the pool holds ${describeKind(raw)} there, not text. A source with a pool key reads text; to pass other data, declare it in the root module's input.`,
+            );
+          }
         }
         break;
       }
@@ -535,7 +557,7 @@ export function resolveValues(input: {
     collect(entry.binding, site, values, new WeakSet(), recordSecret);
     for (const { value, site: valueSite } of values) resolveOne(value, valueSite);
     const resolved = substitute(entry.binding, results, new WeakSet(), 'resolve');
-    const validated = validateModuleInput(entry, resolved);
+    const validated = validateModuleInput(entry, resolved, environment);
     validating.delete(entry.moduleAddress);
     validatedInputs.set(entry.moduleAddress, validated);
     return validated;

@@ -727,6 +727,7 @@ function flatten(
         moduleAddress: fullAddress,
         schema: childInputSchema,
         binding: provisionInput,
+        fromConfigPool: false,
       });
     }
     // Secrets: validate every declared module slot is bound to a real secret
@@ -898,11 +899,21 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
         'params directly on each provision() call, it does not declare param-forwarding slots of its own.',
     );
   }
+  const moduleInputs: ProvisionedModuleInput[] = [];
   if (root.inputSchema !== undefined) {
-    throw new LoadError(
-      `Module "${root.name}" declares input but is being deployed as the root. Composer cannot ` +
-        `fill a root's input yet; provision "${root.name}" from another module and bind its input there.`,
-    );
+    if (opts?.configPool === undefined) {
+      throw new LoadError(
+        `Module "${root.name}" declares input and is being deployed as the root, but Load was given ` +
+          'no config pool to fill it from. Pass { configPool } to Load; prisma deploy and prisma dev ' +
+          'pass the values the `config` adapters return.',
+      );
+    }
+    moduleInputs.push({
+      moduleAddress: rootId,
+      schema: root.inputSchema,
+      binding: opts.configPool,
+      fromConfigPool: true,
+    });
   }
 
   const nodes: GraphNode[] = [];
@@ -910,7 +921,6 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   const pending: PendingWiring[] = [];
   const inputBindings: ServiceInputBinding[] = [];
   const paramBindings: ParamBinding[] = [];
-  const moduleInputs: ProvisionedModuleInput[] = [];
   const byId = new Map<string, ServiceNode | ResourceNode | ModuleNode>();
   const ports: BoundaryPort[] = [];
   const authoredEdges: AuthoredEdge[] = [];

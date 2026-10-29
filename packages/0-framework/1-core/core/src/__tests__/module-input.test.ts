@@ -582,15 +582,6 @@ describe('errors', () => {
     );
   });
 
-  test('a root that declares input fails', () => {
-    const shop = module('shop', { input: anyInputSchema }, () => {});
-
-    expect(loadError(() => Load(shop)).message).toBe(
-      'Module "shop" declares input but is being deployed as the root. Composer cannot fill a ' +
-        'root\'s input yet; provision "shop" from another module and bind its input there.',
-    );
-  });
-
   test('module() refuses an input that is not a Standard Schema', () => {
     expect(() => module('email', { input: {} as never }, () => {})).toThrow(
       'module() `input` must be a Standard Schema (an object with a "~standard".validate ' +

@@ -533,7 +533,7 @@ export interface ModuleContext<
   readonly secrets: { readonly [K in keyof S]: SecretSource };
   /** The module's declared param-forwarding slots as forwardable sources — pass them into a child's `params`. */
   readonly params: { readonly [K in keyof PN]: ParamSource };
-  /** The module's input: one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. Pass a field into a provision() binding or list it as a resolve() dependency. */
+  /** The module's input: one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. A root's input is the config pool, validated by its schema. Pass a field into a provision() binding or list it as a resolve() dependency. */
   readonly input: I extends StandardSchemaV1 ? ModuleInput<I> : undefined;
   /** The deploy-time facts of the environment, each a value (ADR-0062). List `environment.name` as a `resolve()` dependency. Never environment variables: user code never reads those. */
   readonly environment: EnvironmentFacts;
