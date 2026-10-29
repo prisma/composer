@@ -4,13 +4,13 @@ What changes a RoutingUrl's conditions, who notices, and what reaches Foundry. C
 
 ## One operation behind the repository
 
-The RoutingUrl repository has one operation that takes a row, computes its six conditions, and makes the Foundry call the row needs, if any. It is the first place the control plane keeps a system below it consistent the way [the proposal for keeping the data plane consistent with the control plane](https://github.com/prisma/pdp-control-plane/blob/main/docs/data-plane-consistency/README.md) describes, and that document works the RoutingUrl through as its example. Every path that can change a condition ends by calling it: the interactors that write RoutingUrls, the lifecycle interactors that change a service's live deployment or delete a service or Branch, the Management API's verify route, the Console's check button, and the Worker queue consumer that retries a failed Foundry call. None of the callers knows what it does. It is the only code that creates, reassigns or deletes a Foundry custom domain.
+The RoutingUrl repository has one operation that takes a row, computes its six conditions, and makes the Foundry call the row needs, if any. It is the first place the control plane keeps a system below it consistent the way [the proposal for keeping the data plane consistent with the control plane](https://github.com/prisma/pdp-control-plane/blob/main/docs/data-plane-consistency/README.md) describes, and that document works the RoutingUrl through as its example. Every path that can change a condition ends by calling it: the interactors that write RoutingUrls, the lifecycle interactors that change a service's live deployment or delete a service or Branch, the claim interactor when it creates a domain ownership, the Console's check button, and the Worker queue consumer that retries a failed Foundry call. None of the callers knows what it does. It is the only code that creates, reassigns or deletes a Foundry custom domain.
 
 ```mermaid
 flowchart LR
   Ops["RoutingUrl interactors: create, update, delete"] --> Repo["RoutingUrl repository: bring the row's Foundry custom domain in line"]
   Hooks["lifecycle interactors: promote, rollback, stop, delete deployment, delete App, delete Branch"] --> Repo
-  Verify["verify DomainOwnership"] --> Repo
+  Verify["claim DomainOwnership"] --> Repo
   Check["Console check button"] --> Repo
   Retry["Worker queue consumer: delayed retry after a failed Foundry call"] --> Repo
   Repo -- "enqueues on failure" --> Retry
