@@ -7,6 +7,7 @@
  * entry must never import it statically.
  */
 import * as path from 'node:path';
+import type { ConfigPools } from '@internal/core/config';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import { devEnvironmentDir, resolveLocalTargets } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
@@ -17,6 +18,9 @@ import { requireDevEnvironmentName } from './dev-environment-name.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import type { LogAttached, LogDeps, LogEvent, LogInput, LogLine } from './log.ts';
 import { DEV_ENVIRONMENT, toStructured } from './shared.ts';
+
+/** `log` only follows output, so it reads no adapter; nothing it attaches for runs a service. */
+const NO_POOLS: ConfigPools = Object.freeze({ config: {}, secrets: {} });
 
 function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -169,7 +173,9 @@ export async function executeLog(
           appName: name,
           environment,
         });
-        attachments.push(await withEmulatorRetry(() => target.attach({ container, devDir })));
+        attachments.push(
+          await withEmulatorRetry(() => target.attach({ container, devDir, pools: NO_POOLS })),
+        );
       } catch (error) {
         throw toStructured('LOG.ATTACH_FAILED', error);
       }

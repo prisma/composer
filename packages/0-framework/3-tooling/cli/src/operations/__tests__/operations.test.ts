@@ -20,7 +20,11 @@ import type {
   PrismaAppConfig,
   RunOutcome,
 } from '@internal/core/config';
-import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
+import type {
+  LocalTargetAttachment,
+  LocalTargetCurrentApp,
+  LocalTargetDescriptor,
+} from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import * as Layer from 'effect/Layer';
 import type { ComposerConfigSource } from '../../composer-config.ts';
@@ -35,6 +39,7 @@ import { RUN_REPORT_VERSION } from '../../run-report.ts';
 import { type DeployEvent, deployWithDeps } from '../deploy.ts';
 import { type DestroyInput, destroyWithDeps } from '../destroy.ts';
 import { type DevEvent, devWithDeps } from '../dev.ts';
+import { devStop, devUrl } from '../dev-current.ts';
 import { LOG_QUEUE_LIMIT } from '../execute-log.ts';
 import { type LogLine, logWithDeps } from '../log.ts';
 import { executionDiagnostics, executorLoadFailure } from '../shared.ts';
@@ -3447,3 +3452,371 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
     expect(stops).toBe(1);
   }, 15_000);
 });
+
+const arktypeEntry = Bun.resolveSync('arktype', path.resolve(path.dirname(coreIndex), '..', '..'));
+
+/** An app whose root declares `input: type({ GREETING: 'string' })` and forwards it to the service as `greeting`. */
+function makeInputAppDir(): { dir: string; entryPath: string } {
+  const app = makeAppDir('hello-input');
+  fs.writeFileSync(
+    app.entryPath,
+    [
+      `import { module, service } from ${JSON.stringify(coreIndex)};`,
+      `import { type } from ${JSON.stringify(arktypeEntry)};`,
+      '',
+      'const app = service({',
+      "  name: 'app',",
+      "  extension: 'fixture-extension',",
+      "  type: 'fixture/compute',",
+      '  inputs: {},',
+      '  params: {},',
+      "  input: { '~standard': { version: 1, vendor: 'fixture', validate: (value) => ({ value }) } },",
+      "  build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
+      '});',
+      '',
+      "export default module('hello-input', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {",
+      "  provision(app, { id: 'app', input: { greeting: input.GREETING } });",
+      '});',
+      '',
+    ].join('\n'),
+  );
+  return app;
+}
+
+const throwingAdapter = (message: string) => () => {
+  throw new Error(message);
+};
+
+describe('the operations read the pools from the config adapters', () => {
+  test("deploy fills the root's input from the config adapters", async () => {
+    const app = makeInputAppDir();
+    const bindings: unknown[] = [];
+    let stackFileSeen = false;
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig({
+            ...fakeConfig({
+              preflight: async (input) => {
+                bindings.push(input.graph.inputBindings[0]?.binding);
+                return undefined;
+              },
+            }),
+            config: [() => ({ GREETING: 'from-adapter' })],
+          }),
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async (invocation) => {
+            stackFileSeen = fs.existsSync(path.join(app.dir, invocation.stackFileRelativePath));
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(stackFileSeen).toBe(true);
+    expect(bindings).toEqual([{ greeting: 'from-adapter' }]);
+  });
+
+  test("deploy hands every extension's preflight both pools", async () => {
+    const app = makeAppDir();
+    const seen: unknown[] = [];
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig({
+            ...fakeConfig({
+              preflight: async (input) => {
+                seen.push(input.pools);
+                return undefined;
+              },
+            }),
+            config: [() => ({ A: 'a', B: 'b' }), () => ({ B: 'later' })],
+            secrets: [() => ({ S: 's' })],
+          }),
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(seen).toEqual([{ config: { A: 'a', B: 'later' }, secrets: { S: 's' } }]);
+  });
+
+  test('destroy reads no secrets', async () => {
+    const app = makeAppDir();
+    fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
+    fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
+    let alchemyRan = false;
+
+    const result = await silently(() =>
+      destroyWithDeps(
+        {
+          config: composerConfig({
+            ...fakeConfig(),
+            secrets: [throwingAdapter('destroy must not read secrets')],
+          }),
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => {
+            alchemyRan = true;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(alchemyRan).toBe(true);
+  });
+
+  test('a secrets pool value appears in no event, result or report', async () => {
+    const app = makeAppDir();
+    const sentinel = 'never-printed-7f3a';
+    const events: DeployEvent[] = [];
+    const received: string[] = [];
+    const reportPath = path.join(app.dir, 'run.json');
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig({
+            ...fakeConfig({
+              preflight: async (input) => {
+                const value = input.pools.secrets['S4_SENTINEL'];
+                if (value !== undefined) received.push(value);
+                input.report?.({ checked: 1, filled: 1, missing: 0 });
+                return undefined;
+              },
+            }),
+            secrets: [() => ({ S4_SENTINEL: sentinel })],
+          }),
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+          reportPath,
+          onEvent: (event) => events.push(event),
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(received).toEqual([sentinel]);
+    expect(events.length).toBeGreaterThan(0);
+    for (const event of events) expect(JSON.stringify(event)).not.toContain(sentinel);
+    expect(JSON.stringify(result)).not.toContain(sentinel);
+    expect(fs.readFileSync(reportPath, 'utf8')).not.toContain(sentinel);
+  });
+
+  test('an adapter that fails stops deploy with CONFIG.ADAPTER_FAILED before any container is resolved', async () => {
+    const app = makeAppDir();
+    const containerCalls: ContainerCall[] = [];
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig({
+            ...fakeConfig({}, { calls: containerCalls }),
+            config: [throwingAdapter('vault down')],
+          }),
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('CONFIG.ADAPTER_FAILED');
+    expect(containerCalls).toEqual([]);
+  });
+});
+
+describe.skipIf(process.platform === 'win32')(
+  'the local operations and the config adapters',
+  () => {
+    const throwingLists = {
+      config: [throwingAdapter('config must not be read')],
+      secrets: [throwingAdapter('secrets must not be read')],
+    };
+
+    test('log, devUrl and devStop run no adapter', async () => {
+      const app = makeAppDir('app');
+      const attachment = linesAttachment([{ address: 'a', url: 'http://a' }], []);
+      const recorded: LocalTargetCurrentApp = {
+        app: 'app',
+        addresses: ['app.app'],
+        locate: async () => ({
+          address: 'app.app',
+          kind: 'service',
+          emulator: 'running',
+          url: 'http://localhost:3001',
+          state: 'running',
+          condition: 'running',
+        }),
+        stop: async () => [{ address: 'app.app', kind: 'service' }],
+      };
+      const base = configWith([attachment]);
+      const [extension] = base.extensions;
+      if (extension?.localTarget === undefined) throw new Error('the fixture has a local target');
+      const localTarget = extension.localTarget;
+      const config: PrismaAppConfig = {
+        ...base,
+        ...throwingLists,
+        extensions: [
+          {
+            ...extension,
+            localTarget: async () => ({ ...(await localTarget()), current: async () => recorded }),
+          },
+        ],
+      };
+
+      const log = await silently(() =>
+        logWithDeps({ entry: app.entryPath, cwd: app.dir, config: composerConfig(config) }, {}),
+      );
+      const url = await devUrl({
+        config: composerConfig(config),
+        address: 'app.app',
+        cwd: app.dir,
+      });
+      const stop = await devStop({
+        config: composerConfig(config),
+        entry: app.entryPath,
+        cwd: app.dir,
+      });
+
+      expect(log.ok).toBe(true);
+      expect(url.ok).toBe(true);
+      expect(stop.ok).toBe(true);
+    });
+
+    const runningAttachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+
+    test('dev hands both pools to preflight and attach', async () => {
+      const app = makeAppDir('hello-dev');
+      const seen: { preflight?: unknown; attach?: unknown } = {};
+      const base = devConfigWith(runningAttachment, [], localContainer, async (input) => {
+        seen.preflight = input.pools;
+        return undefined;
+      });
+      const [extension, build] = base.extensions;
+      if (extension?.localTarget === undefined || build === undefined) {
+        throw new Error('the fixture has a local target and a build extension');
+      }
+      const localTarget = extension.localTarget;
+      const config: PrismaAppConfig = {
+        ...base,
+        config: [() => ({ A: 'a' })],
+        secrets: [() => ({ S: 's' })],
+        extensions: [
+          {
+            ...extension,
+            localTarget: async () => {
+              const descriptor = await localTarget();
+              return {
+                ...descriptor,
+                attach: (input) => {
+                  seen.attach = input.pools;
+                  return descriptor.attach(input);
+                },
+              };
+            },
+          },
+          build,
+        ],
+      };
+
+      const result = await silently(() =>
+        devWithDeps(
+          { config: composerConfig(config), entry: app.entryPath, cwd: app.dir, detach: true },
+          { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+        ),
+      );
+
+      expect(result.ok).toBe(true);
+      const pools = { config: { A: 'a' }, secrets: { S: 's' } };
+      expect(seen).toEqual({ preflight: pools, attach: pools });
+    }, 15_000);
+
+    test('a value an adapter returns differently at a rebuild is reported, and rebuilds stop until dev restarts', async () => {
+      const app = makeAppDir('hello-dev');
+      const buildOutput = path.join(app.dir, 'built.txt');
+      fs.writeFileSync(buildOutput, 'v1');
+      const stackFile = path.join(app.dir, '.prisma-composer', 'dev', 'dev', 'alchemy.run.ts');
+      const events: DevEvent[] = [];
+      let converges = 0;
+      let assembles = 0;
+      let value = 'v1';
+      const until = async (done: () => boolean) => {
+        for (let waited = 0; !done() && waited < 5_000; waited += 50) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+      };
+      const valuesChanges = () => events.filter((event) => event.kind === 'values-changed');
+
+      await silently(async () => {
+        const start = await devWithDeps(
+          {
+            config: composerConfig({
+              ...devConfigWith(runningAttachment),
+              config: [() => ({ VALUE: value })],
+            }),
+            entry: app.entryPath,
+            cwd: app.dir,
+            onEvent: (event) => void events.push(event),
+          },
+          {
+            runAssembler: async (node: ServiceNode) => {
+              assembles += 1;
+              return { ...(await fakeAssembler(node)), watch: [buildOutput] };
+            },
+            alchemy: async () => {
+              converges += 1;
+              return { exitCode: 0, signal: null };
+            },
+          },
+        );
+        if (!start.ok) throw new Error('expected a started session');
+        fs.rmSync(stackFile);
+
+        value = 'v2';
+        fs.writeFileSync(buildOutput, 'v2');
+        await until(() => valuesChanges().length >= 1);
+        const assemblesAfterPause = assembles;
+
+        fs.writeFileSync(buildOutput, 'v3');
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        await start.value.stop();
+        await start.value.closed;
+        expect(assembles).toBe(assemblesAfterPause);
+      });
+
+      expect(valuesChanges()).toEqual([{ kind: 'values-changed' }]);
+      expect(fs.existsSync(stackFile)).toBe(false);
+      expect(converges).toBe(1);
+    }, 20_000);
+  },
+);

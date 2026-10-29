@@ -388,6 +388,7 @@ async function runStackPipelineInner(
     // name resolution, assemble.
     const pipelineDeps: PipelineDeps = {
       runAssembler: deps.runAssembler,
+      readSecrets: action === 'deploy',
       onEvent: (event) => {
         switch (event.kind) {
           case 'loaded':
@@ -523,6 +524,7 @@ async function runStackPipelineInner(
             graph,
             container: containers.get(extension.id),
             environment,
+            pools: pipeline.pools,
             credentials: deps.credentials,
             report,
           });
