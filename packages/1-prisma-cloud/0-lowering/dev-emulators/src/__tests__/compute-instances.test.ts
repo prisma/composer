@@ -358,7 +358,9 @@ describe('the emulator never interprets Composer data', () => {
 
 describe('emulators in different emulators directories', () => {
   test("a stopped instance's port is not given to another emulator's instance until it is deleted", async () => {
-    const held = await client.createInstance({ labels: {} });
+    // Far above the ports other suites' emulators hand out, so none takes it after the delete.
+    const requested = await getPort({ port: portNumbers(58_000, 59_000) });
+    const held = await client.createInstance({ labels: {}, port: requested });
     const otherRoot = tempDir('compute-instances-other-registry');
     await ensureFreshDaemon('compute', otherRoot);
     const other = computeClient({ registryRoot: otherRoot });
