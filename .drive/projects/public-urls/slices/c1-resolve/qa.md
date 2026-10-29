@@ -12,7 +12,7 @@
 | `pnpm smoke:deployed` against `c1-qa` | `ok - c1-qa serves environment "deployed to c1-qa"`, greeting and asset ok |
 | `provision()` inside `fn`, then `pnpm run deploy` | Fails at "load config and app", before "connect to project and branch": `[COMPOSE.GRAPH_INVALID] provision() was called after module "env-param-example" was loaded, from inside a resolve() function. resolve() computes values, never structure: …` |
 | `fn` returning `undefined` for production, then `pnpm run deploy` | Fails at the same step: `[COMPOSE.GRAPH_INVALID] The resolve() function for input key "environment" of service "env-param-example.echo" returned undefined. Return a result for every environment; Composer never picks a default.` |
-| `pnpm run destroy:environment` for `c1-qa` | Torn down after QA; production left deployed. |
+| `pnpm run destroy:environment` for `c1-qa` | `Destroyed.` Production left deployed. The first attempt failed with `DEPLOY.ENGINE_FAILED`: the destroy evaluates the stack, so the `envParam('ENV_PARAM_GREETING')` leaf must be set in the destroying shell too; with it set, the teardown succeeded. Pre-existing behaviour of `destroy`, not this slice's. |
 
 Found during QA and fixed on the branch (commit 42bc0185): the smoke script looked for the app under its old short name `echo`; every platform name is the node's address, so the app is `env-param-example.echo`. The script found nothing on main before this change.
 
