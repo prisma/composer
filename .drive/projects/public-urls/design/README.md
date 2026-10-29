@@ -105,7 +105,7 @@ A RoutingUrl is the control plane's record that a custom hostname should reach a
 
 ### The domain ownership claim and its verification
 
-A DomainOwnership record is a workspace's claim that it controls a domain: either an exact hostname such as `shop.com`, or a wildcard one label deep such as `*.preview.shop.com`. The claim starts unverified. It becomes verified when the platform sees a TXT record at `_prisma-verification.shop.com` carrying a value derived from the workspace's id. This is the same TXT record the platform asks for today; a workspace that has published it once needs nothing new.
+A DomainOwnership record is a workspace's claim that it controls a domain: either an exact hostname such as `shop.com`, or a wildcard one label deep such as `*.preview.shop.com`. It exists only once the platform has seen a TXT record at `_prisma-verification.shop.com` carrying a value derived from the workspace's id; there is no unverified claim. This is the same TXT record the platform asks for today; a workspace that has published it once needs nothing new.
 
 Ownership and routing are separate questions. Ownership asks whether this workspace may use this domain. Routing asks which service a hostname reaches. A RoutingUrl can exist without a verified claim; it just cannot serve traffic until one exists.
 
@@ -143,15 +143,17 @@ sequenceDiagram
   participant CP as Control plane
   participant DNS as the user's DNS provider
   User->>Console: claim shop.com
-  Console->>CP: POST /v1/workspaces/ws_42/domains { domain: shop.com }
-  CP-->>Console: claim unverified, publish TXT _prisma-verification.shop.com = prisma-verification=hash
+  Console->>CP: GET the verification record for shop.com
+  CP-->>Console: publish TXT _prisma-verification.shop.com = prisma-verification=hash
   User->>DNS: adds the TXT record
-  Note over CP: the verify route, pressed in the Console
+  Note over Console: once a minute
+  Console->>CP: POST /v1/workspaces/ws_42/domain-ownerships { domain: shop.com }
   CP->>DNS: look up TXT _prisma-verification.shop.com
-  CP->>CP: set verifiedAt on the claim
+  CP-->>Console: 422 with the record, until the record is found
+  CP-->>Console: 201 the domain ownership, verified
 ```
 
-Nothing reaches Metal. Verification is entirely a control-plane matter. If another workspace later claims a domain that this verified claim covers, the control plane re-verifies this claim first, so a workspace that no longer controls a domain loses its standing at the moment it matters.
+Nothing reaches Metal. Verification is entirely a control-plane matter. If another workspace later claims a domain that this claim covers, the control plane re-verifies this claim first and deletes it if its record is gone, so a workspace that no longer controls a domain loses its standing at the moment it matters.
 
 ### Creating a RoutingUrl from a deploy, and getting it to serve
 

@@ -1,10 +1,10 @@
 # Routing URLs — operations and lifecycle
 
-What changes a RoutingUrl's conditions, who notices, and what reaches Foundry. Companion to [RoutingUrls.md](platform-routing-urls.md), which holds the records and rules, and [ADR 015](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/architecture/adrs/ADR-015-routing-urls-and-domain-ownership.md). Function names are today's, in `packages/interactors/src/compute/` and `packages/interactors/src/branch/`.
+What changes a RoutingUrl's conditions, who notices, and what reaches Foundry. Companion to [RoutingUrls.md](platform-routing-urls.md), which holds the records and rules, and [ADR 015](https://github.com/prisma/pdp-control-plane/blob/main/docs/architecture/adrs/ADR-015-routing-urls-and-domain-ownership.md). Function names are today's, in `packages/interactors/src/compute/` and `packages/interactors/src/branch/`.
 
 ## One operation behind the repository
 
-The RoutingUrl repository has one operation that takes a row, computes its six conditions, and makes the Foundry call the row needs, if any. It is the first place the control plane keeps a system below it consistent the way [the proposal for keeping the data plane consistent with the control plane](https://github.com/prisma/pdp-control-plane/blob/chore/adr-ingress-entity/docs/data-plane-consistency/README.md) describes, and that document works the RoutingUrl through as its example. Every path that can change a condition ends by calling it: the interactors that write RoutingUrls, the lifecycle interactors that change a service's live deployment or delete a service or Branch, the Management API's verify route, the Console's check button, and the Worker queue consumer that retries a failed Foundry call. None of the callers knows what it does. It is the only code that creates, reassigns or deletes a Foundry custom domain.
+The RoutingUrl repository has one operation that takes a row, computes its six conditions, and makes the Foundry call the row needs, if any. It is the first place the control plane keeps a system below it consistent the way [the proposal for keeping the data plane consistent with the control plane](https://github.com/prisma/pdp-control-plane/blob/main/docs/data-plane-consistency/README.md) describes, and that document works the RoutingUrl through as its example. Every path that can change a condition ends by calling it: the interactors that write RoutingUrls, the lifecycle interactors that change a service's live deployment or delete a service or Branch, the Management API's verify route, the Console's check button, and the Worker queue consumer that retries a failed Foundry call. None of the callers knows what it does. It is the only code that creates, reassigns or deletes a Foundry custom domain.
 
 ```mermaid
 flowchart LR
@@ -26,8 +26,8 @@ flowchart LR
 | Update a RoutingUrl: hostname, service, `logicalId` | `PATCH /v1/urls/{id}` | update | the changed columns. A new hostname clears the Foundry columns; the old custom domain is deleted | repository operation on the row |
 | Delete a RoutingUrl | `DELETE /v1/urls/{id}` | delete | `deletedAt` | the custom domain is deleted, or moved to a waiting row for the same hostname and service |
 | Read a RoutingUrl | `GET /v1/urls/{id}`, the list routes | none; a route over the repository | nothing | nothing |
-| Claim a domain explicitly | `POST /v1/workspaces/{id}/domain-ownerships` | create DomainOwnership | row with `verifiedAt` null | verify runs once at once, and other workspaces' verified claims covering the domain are re-verified |
-| Verify a claim | `POST /v1/domain-ownerships/{id}/verify` | verify DomainOwnership | `verifiedAt` set or cleared from the TXT lookup | repository operation on every RoutingUrl the claim covers |
+| Claim a domain | `POST /v1/workspaces/{id}/domain-ownerships` | claim DomainOwnership | the row, with `verifiedAt` now, when the TXT record is found; nothing otherwise, and the 422 carries the record | other workspaces' claims covering the domain are re-verified first, and one whose record is gone is deleted; then the repository operation on every RoutingUrl the new claim covers |
+| Read the record to publish | `GET /v1/workspaces/{id}/domain-ownerships/verification?domain=…` | none; a route that computes the record | nothing | nothing |
 | Delete a claim | `DELETE /v1/domain-ownerships/{id}` | delete DomainOwnership | `deletedAt` | repository operation on every RoutingUrl no other claim covers; their custom domains are deleted |
 
 ## Lifecycle events that reach a RoutingUrl

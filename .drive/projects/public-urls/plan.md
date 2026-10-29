@@ -16,7 +16,7 @@ Already done or running: the upstream Alchemy fix that lets a custom domain atta
 
 ## Increment 2. A Console user adds a hostname before its DNS exists, is told what is missing, and it goes live with no further action from us
 
-The platform's own project, `projects/routing-urls/` in pdp-control-plane, slices 0 to 3: the consistency proposal as a decision record; the RoutingUrl and domain ownership records, routes and backfill; the mechanism's shared parts with RoutingUrl as the first kind on them; the Console's hostnames section and Domains page, with the old domain paths retired. A promote, rollback or stop re-points every hostname or shows the failure on the hostname.
+The platform's own project, `projects/routing-urls/` in pdp-control-plane, slices 0 to 3: the consistency proposal as a decision record; the RoutingUrl and domain ownership records, the RoutingUrl routes and the backfill; the domain ownership routes and the Domains page behind a feature flag, which Søren owns, from the platform's Console brief; the mechanism's shared parts with RoutingUrl as the first kind on them; the service page's hostnames section, with the old domain paths retired. A promote, rollback or stop re-points every hostname or shows the failure on the hostname.
 
 - **Demo:** in the Console, add `shop.com` before DNS and see "DNS is the next step"; add the record, press check, watch it go active; force a re-point failure and see it on the hostname and repaired on retry.
 - Builds on nothing; starts now, in parallel with increment 1.
