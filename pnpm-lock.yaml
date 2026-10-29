@@ -821,6 +821,9 @@ importers:
       cross-spawn:
         specifier: ^7.0.6
         version: 7.0.6
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
     devDependencies:
       '@internal/tsdown-config':
         specifier: workspace:0.36.0
@@ -1353,6 +1356,9 @@ importers:
       cross-spawn:
         specifier: ^7.0.6
         version: 7.0.6
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
       effect:
         specifier: 4.0.3
         version: 4.0.3
