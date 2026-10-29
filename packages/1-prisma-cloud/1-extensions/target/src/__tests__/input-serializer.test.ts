@@ -539,13 +539,19 @@ describe('a secret forwarded through a module input', () => {
 });
 
 describe('an ArkType schema with a morph', () => {
-  test('a secret field survives an ArkType morph elsewhere in the schema', () => {
-    const row = serializeInput(
-      svc(type({ key: secretString(), count: 'string.integer.parse' })),
-      'web',
-      { key: envSecret('KEY'), count: '4' },
-      { env: {} },
+  test('a secret field beside an ArkType morph is refused at deploy, naming the copied secret', () => {
+    expect(() =>
+      serializeInput(
+        svc(type({ key: secretString(), name: 'string.trim' })),
+        'web',
+        { key: envSecret('KEY'), name: ' shop ' },
+        { env: {} },
+      ),
+    ).toThrow(
+      'input key "key" of service "web" validated to a copy of its secret, and the copy has lost ' +
+        "the secret's value: the schema copies its input (for example an ArkType morph elsewhere " +
+        'in the schema), so the service would fail to read the secret at boot. Move the transform ' +
+        'into the service code, or keep the schema free of transforms.',
     );
-    expect(JSON.parse(row?.value ?? '')).toEqual({ key: { $secret: 'KEY' }, count: 4 });
   });
 });

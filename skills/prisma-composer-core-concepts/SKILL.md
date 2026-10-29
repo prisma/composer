@@ -143,7 +143,10 @@ Rules that bite:
 
 1. **Secretness is enforced by validation.** A literal bound where the schema
    expects `SecretString` fails the deploy; `envSecret` bound to a plain
-   string field fails the same way.
+   string field fails the same way. A schema with a `SecretString` field
+   cannot also transform its input: an ArkType morph anywhere in it
+   (`'string.trim'`, `.pipe()`) copies the input, the copied secret loses its
+   value, and the deploy refuses it. Transform in the service code instead.
 2. **`envParam` values arrive as raw strings**; bind them to string fields.
    The environment's platform variable is the store; the deploying shell only seeds
    a missing name (and the deploy fails early, naming the variable, when both

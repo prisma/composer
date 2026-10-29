@@ -632,6 +632,13 @@ credential almost landed in plain config), and binding `envSecret` where the
 schema expects a string fails the same way. Neither side can silently
 misclassify a credential.
 
+A schema with a `SecretString` field cannot also transform its input. An
+ArkType morph anywhere in the schema, such as `'string.trim'` or `.pipe()`,
+makes ArkType copy the whole input, and a copied `SecretString` loses its
+value, so the service could not read the secret at boot. The deploy refuses
+such a schema and names the secret field. Do the transform in the service
+code instead.
+
 **`envParam('NAME')`** is for plain values the code *can't* know. An app
 origin is the canonical case: it's different on production and on every
 preview environment, and an environment's public URL doesn't exist until that
