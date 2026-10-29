@@ -7,6 +7,7 @@ export default defineConfig({
   entry: {
     'app-identity': 'src/exports/app-identity.ts',
     report: 'src/exports/render-deployment.ts',
+    config: 'src/exports/config.ts',
     control: 'src/exports/control.ts',
     family: 'src/exports/family.ts',
     testing: 'src/exports/testing.ts',
