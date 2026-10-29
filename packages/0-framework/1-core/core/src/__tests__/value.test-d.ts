@@ -1,13 +1,15 @@
 import { expectTypeOf, test } from 'vitest';
-import type { number, string } from '../config.ts';
+import { type number, string } from '../config.ts';
 import type {
   InputBinding,
   ModuleContext,
   ParamBindings,
+  RefPort,
   SecretSource,
   Value,
 } from '../exports/index.ts';
-import { module, resolve, service } from '../exports/index.ts';
+import { dependency, module, resolve, resource, service } from '../exports/index.ts';
+import { conn, providerContract } from './helpers.ts';
 
 let name!: Value<string>;
 let count!: Value<number>;
@@ -76,4 +78,23 @@ test('the module context carries environment.name as a value', () => {
   expectTypeOf<ModuleContext<Record<never, never>>['environment']['name']>().toEqualTypeOf<
     Value<string>
   >();
+});
+
+test('a resource declares its slots and wires them at construction, checked against each contract', () => {
+  const http = providerContract('fake/http', { url: '' });
+  const db = providerContract('fake/db', { url: '' });
+  const target = dependency({
+    type: 'fake/http',
+    connection: conn({ url: string() }, (v) => ({ url: v.url })),
+    required: http,
+  });
+  let httpRef!: RefPort<typeof http>;
+  let dbRef!: RefPort<typeof db>;
+  const base = { name: 'site', extension: 'test/pack', provides: providerContract('fake/url', {}) };
+
+  resource({ ...base, inputs: { target }, deps: { target: httpRef } });
+  // @ts-expect-error a declared input must be wired in deps
+  resource({ ...base, inputs: { target }, deps: {} });
+  // @ts-expect-error the ref does not provide the slot's required contract
+  resource({ ...base, inputs: { target }, deps: { target: dbRef } });
 });

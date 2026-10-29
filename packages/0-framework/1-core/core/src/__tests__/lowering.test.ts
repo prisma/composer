@@ -15,6 +15,7 @@ import {
   type Artifact,
   type Bundle,
   buildConfig,
+  connectionInputs,
   joinDeployment,
   type LowerContext,
   LowerError,
@@ -609,6 +610,99 @@ describe('lowering a module root — a single service', () => {
 
     const serialize = calls.find((c) => c.phase === 'serialize');
     expect(serialize).toMatchObject({ config: { service: { label: 'test' } } });
+  });
+
+  test("lowering() hands a resource descriptor its resolved props and its producer's outputs through connectionInputs", () => {
+    const { descriptor } = fakeExtension();
+    const seen: { url: unknown; inputs: unknown }[] = [];
+    const config: PrismaAppConfig = {
+      extensions: [
+        {
+          ...descriptor,
+          nodes: {
+            ...descriptor.nodes,
+            'fake/url': Object.assign(
+              (ctx: LowerContext): Effect.Effect<LoweredResult, unknown, unknown> => {
+                const { url } = ctx.node.kind === 'resource' ? ctx.node.props : {};
+                seen.push({
+                  url,
+                  inputs: connectionInputs(
+                    ctx.node,
+                    ctx.id,
+                    ctx.graph,
+                    ctx.lowered,
+                    ctx.provisioned,
+                  ),
+                });
+                return Effect.succeed({ outputs: {}, entities: [] });
+              },
+              { kind: 'resource' as const },
+            ),
+          },
+        },
+      ],
+      state: { extension: descriptor.id, create: () => stateSentinel('config-default') },
+    };
+    const root = module('hello', ({ environment, provision }) => {
+      const web = provision(app('fake/compute', {}), { id: 'web' });
+      provision(
+        resource({
+          name: 'site',
+          extension: 'test/pack',
+          provides: providerContract('fake/url', { url: '' }),
+          inputs: { target: httpEnd() },
+          deps: { target: web },
+          props: { url: resolve([environment.name], ([name]) => `https://${name}.shop.example`) },
+        }),
+        { id: 'site' },
+      );
+    });
+
+    run(
+      lowering(
+        root,
+        config,
+        opts({
+          bundles: { 'hello.web': { dir: 'dist/bundle', entry: 'server.js' } },
+          environment: 'test',
+        }),
+      ),
+    );
+
+    expect(seen).toEqual([
+      {
+        url: 'https://test.shop.example',
+        inputs: { target: { url: 'https://hello.web.example' } },
+      },
+    ]);
+  });
+
+  test('connectionInputs fails when a producer does not supply a param a resource slot declares', () => {
+    const root = module('hello', ({ provision }) => {
+      const web = provision(app('fake/compute', {}), { id: 'web' });
+      provision(
+        resource({
+          name: 'site',
+          extension: 'test/pack',
+          provides: providerContract('fake/url', { url: '' }),
+          inputs: { target: httpEnd() },
+          deps: { target: web },
+        }),
+        { id: 'site' },
+      );
+    });
+    const graph = Load(root);
+    const site = graph.nodes.find((n) => n.id === 'hello.site')?.node;
+    if (site?.kind !== 'resource') throw new Error('expected the site resource');
+    const lowered = new Map<string, Outputs>([['hello.web', { host: 'web.internal' }]]);
+
+    expect(() => connectionInputs(site, 'hello.site', graph, lowered, new Map())).toThrow(
+      new LowerError(
+        'Connection input "hello.site.target" declares param "url", but its producer "hello.web" ' +
+          'did not supply it — the producer\'s outputs carry [host]. Add "url" to the outputs the ' +
+          'producer returns from its lowering, or declare the param optional on the connection.',
+      ),
+    );
   });
 
   test('package receives the build adapter output dir/entry and the same address serialize used', () => {
