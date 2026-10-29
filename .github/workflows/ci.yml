@@ -99,13 +99,16 @@ jobs:
       - name: Test
         env:
           STATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
-        run: pnpm turbo run test --filter='!@internal/local-target'
-      # local-target's drift suite talks to the machine-global postgres emulator, the
-      # same daemon the dev-emulators suite restarts, so it runs alone after the rest.
-      - name: Test local-target
+        run: pnpm turbo run test --filter='!@internal/dev-emulators' --filter='!@internal/prisma-cloud' --filter='!@prisma/integration-tests' --filter='!@internal/local-target'
+      # These suites start real local emulators. Each emulator gives ports from
+      # the same machine-wide ranges (daemons from 4300, services from 3000,
+      # databases from 51300), and a stopped instance holds its port only inside
+      # its own emulator, so two suites running at once take each other's ports.
+      # They run one at a time, after the rest.
+      - name: Test the suites that run local emulators
         env:
           STATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
-        run: pnpm turbo run test --filter=@internal/local-target
+        run: pnpm turbo run test --concurrency=1 --filter=@internal/dev-emulators --filter=@internal/prisma-cloud --filter=@prisma/integration-tests --filter=@internal/local-target
       - name: Type-only tests (vitest --typecheck)
         run: pnpm turbo run test:types
       - name: Test scripts (cast-ratchet unit tests)
@@ -144,13 +147,13 @@ jobs:
         if: runner.os != 'Windows'
         env:
           STATE_TEST_DATABASE_URL: ${{ steps.postgres.outputs.connection-uri }}
-        run: pnpm turbo run test --filter='!@internal/local-target'
-      # Same daemon-sharing reason as the Linux job: local-target runs alone after the rest.
-      - name: Test local-target
+        run: pnpm turbo run test --filter='!@internal/dev-emulators' --filter='!@internal/prisma-cloud' --filter='!@prisma/integration-tests' --filter='!@internal/local-target'
+      # Same port-sharing reason as the Linux job: these run one at a time, after the rest.
+      - name: Test the suites that run local emulators
         if: runner.os != 'Windows'
         env:
           STATE_TEST_DATABASE_URL: ${{ steps.postgres.outputs.connection-uri }}
-        run: pnpm turbo run test --filter=@internal/local-target
+        run: pnpm turbo run test --concurrency=1 --filter=@internal/dev-emulators --filter=@internal/prisma-cloud --filter=@prisma/integration-tests --filter=@internal/local-target
       # Local dev/log are not supported on Windows.
       - name: Test changed packages on Windows
         if: runner.os == 'Windows'

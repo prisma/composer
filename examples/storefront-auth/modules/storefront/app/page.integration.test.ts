@@ -25,7 +25,13 @@ import { bootstrapService } from '@prisma/composer-prisma-cloud/testing';
 import fakeAuthHandler from '@storefront-auth/auth/fake';
 import storefrontService from '../src/service.ts';
 
-const PORT = 4310;
+/** A loopback port free right now. Next's standalone server binds `process.env.PORT` and cannot report a port the OS chose. */
+async function freePort(): Promise<number> {
+  const probe = Bun.serve({ port: 0, fetch: () => new Response() });
+  const { port } = probe;
+  await probe.stop(true);
+  return port;
+}
 
 function isNextjsBuild(build: BuildAdapter): build is NextjsBuildAdapter {
   return build.type === 'nextjs' && 'appDir' in build && typeof build.appDir === 'string';
@@ -49,7 +55,7 @@ describe('storefront -> auth round trip, driven over real HTTP (bootstrapService
 
     const app = await bootstrapService(
       storefrontService,
-      { service: { port: PORT }, inputs: { auth: { url: fake.url.href } } },
+      { service: { port: await freePort() }, inputs: { auth: { url: fake.url.href } } },
       bootStandaloneNext(storefrontService.build),
     );
 
