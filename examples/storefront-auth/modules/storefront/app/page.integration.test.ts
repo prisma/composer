@@ -28,7 +28,7 @@ import storefrontService from '../src/service.ts';
 /** A loopback port free right now. Next's standalone server binds `process.env.PORT` and cannot report a port the OS chose. */
 async function freePort(): Promise<number> {
   const probe = Bun.serve({ port: 0, fetch: () => new Response() });
-  const { port } = probe;
+  const port = Number(probe.url.port);
   await probe.stop(true);
   return port;
 }
