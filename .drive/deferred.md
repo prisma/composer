@@ -282,3 +282,10 @@ ADR-0053 (the commands). What we deliberately didn't do:
 
 - **Rename `Values<P>` to `ParamValues<P>` at the next breaking release.** `Values<P>` is the hydrated data of a node's params, exported from `@prisma/composer`. Since `Value<T>` became the type `resolve()` returns, the two names read as related when they are not. Renaming a public type breaks callers, so it waits for a release that already breaks them. Origin: public-URLs slice C1.
 - **Move `PostgresResourceNode`'s `config` and `targetRef` into `props`.** A resource's configuration now has one home, `props`, which is the only place on a resource where Load resolves a value. The Prisma Cloud Postgres resource still carries its own fields, so a value cannot configure it. Origin: public-URLs slice C1.
+
+# Module input — deferred (2026-10-29)
+
+- **Deprecate `envParam()`.** Once a root declares `input` from config adapters, `envParam('NAME')` in a binding is the same as `input.NAME`. Deprecate it in a later step. Origin: module-input design discussion with Will.
+- **A run-time config source.** Like `envSecret()`, but it provisions a plain platform variable and keeps its value in Alchemy state, so a service reads it at boot. Fills the empty run-time config cell. Origin: module-input design discussion with Will.
+- **`doppler()` and other secrets adapters.** `secrets: [doppler()]` beside `config: [dotenv()]`; only the default `environmentVariables()` ships with module-input.
+- **Route run-time secrets to a secret store such as Doppler.** A source whose pointer names a Doppler key, dereferenced at boot by the target, with preflight checking and filling it. Core does not change.
