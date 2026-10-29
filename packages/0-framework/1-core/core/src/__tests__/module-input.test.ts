@@ -328,6 +328,7 @@ describe('forwarding and the second pass', () => {
 
     const graph = Load(shopWith(email, { from: 'shop@example.com' }));
 
+    expect('host' in bindingOf(graph)).toBe(false);
     expect(bindingOf(graph)).toEqual({ from: 'shop@example.com' });
   });
 
