@@ -16,7 +16,6 @@ import {
   entryFor,
   SERVING_BOOTSTRAP,
   servingBootstrapEnv,
-  skipContendedServicePorts,
   tempDir,
   waitForHttp,
   writeBootstrap,
@@ -29,7 +28,6 @@ beforeEach(async () => {
   registryRoot = tempDir('compute-instances-registry');
   await ensureFreshDaemon('compute', registryRoot);
   client = computeClient({ registryRoot });
-  await skipContendedServicePorts(client);
 });
 
 afterEach(async () => {

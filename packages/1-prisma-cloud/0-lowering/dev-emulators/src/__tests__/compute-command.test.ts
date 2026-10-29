@@ -15,7 +15,6 @@ import {
   NEVER_LISTENING_BOOTSTRAP,
   SERVING_BOOTSTRAP,
   servingBootstrapEnv,
-  skipContendedServicePorts,
   tempDir,
   waitFor,
   waitForHttp,
@@ -32,7 +31,6 @@ async function startDaemon(entry?: string): Promise<ComputeClient> {
   registryRoot = tempDir('compute-command-registry');
   const { url } = await ensureFreshDaemon('compute', registryRoot, entry);
   const client = computeClient({ registryRoot });
-  await skipContendedServicePorts(client);
   return Object.assign(client, { url });
 }
 
