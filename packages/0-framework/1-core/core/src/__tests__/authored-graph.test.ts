@@ -54,8 +54,8 @@ function shopGraph() {
   const auth = module(
     'auth',
     { deps: { db: dbEnd() }, expose: { verify: verifyContract } },
-    ({ inputs, provision }) => {
-      const ref = provision(api, { id: 'api', deps: { db: inputs.db } });
+    ({ deps, provision }) => {
+      const ref = provision(api, { id: 'api', deps: { db: deps.db } });
       return { verify: ref.verify };
     },
   );
@@ -212,7 +212,7 @@ describe('authored (pre-dereference) edges', () => {
     const passThrough = module(
       'relay',
       { deps: { db: dbEnd() }, expose: { db: dbContract } },
-      ({ inputs }) => ({ db: inputs.db }),
+      ({ deps }) => ({ db: deps.db }),
     );
     const root = module('shop', {}, ({ provision }) => {
       const db = provision(

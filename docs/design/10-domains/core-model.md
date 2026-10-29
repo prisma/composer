@@ -328,7 +328,7 @@ type Deps = Record<string, DependencyEnd<any, any>>
 
 // A Module: transparent wiring, no code of its own. The body runs at Load (it is
 // wiring, not user code) and provisions the services it owns, supplying a
-// producer for every dependency input. Minimal form — boundary ports and
+// producer for every dependency. Minimal form — boundary interfaces and
 // nesting arrive with full Module composition (see § Extension points).
 interface ModuleNode {
   readonly [NODE]: true
@@ -1351,7 +1351,7 @@ producer from a resource — one mechanism.
   [`connection-contracts.md`](connection-contracts.md); this document's type
   sketches predate it and show the pre-contract shapes.
 - **Full Module composition** — the minimal module wires services; boundary ports
-  (a module's own Inputs/Outputs), nesting, and forwarding per the authoring-surface
+  (a module's own dependencies and exposed interfaces), nesting, and forwarding per the authoring-surface
   design come next. Services stay opaque leaves.
 - **Runtime name lookup** — if the platform gains service-name resolution, the
   pack's `serialize` becomes a no-op and its connection hydrate resolves by name;

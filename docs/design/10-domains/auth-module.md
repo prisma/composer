@@ -3,7 +3,7 @@
 The `auth` module (`packages/1-prisma-cloud/2-shared-modules/auth`) provides
 signup, login, sessions and JWT verification by hosting
 [Better Auth](https://www.better-auth.com/) in a Compute service. It exposes a
-public HTTP surface (`api`) and two rpc ports (`session` and `admin`), plus a
+public HTTP surface (`api`) and two rpc interfaces (`session` and `admin`), plus a
 stateless `jwtVerifier()` dependency.
 
 How to use it is in the package
@@ -82,7 +82,7 @@ your process
 So running Better Auth inside the consumer's own service is designed as a
 plain library export (`./embedded`) that shares `buildAuthOptions()` with the
 service, which keeps the two shapes behaving the same. It is not a module and
-has no ports. The consumer lists the same pack in their own config.
+exposes nothing. The consumer lists the same pack in their own config.
 
 This export has not shipped yet; see [`.drive/deferred.md`](../../../.drive/deferred.md).
 
@@ -101,7 +101,7 @@ Verification checks signature and `exp`/`nbf` only, not `iss`/`aud`. The
 verifier only trusts keys fetched from the instance it is wired to, and
 instances never share keys.
 
-## The session and admin ports query the database directly
+## The session and admin interfaces query the database directly
 
 The `session` and `admin` handlers read and write the auth tables with SQL,
 instead of calling Better Auth's admin plugin. The plugin authorizes by an
@@ -115,9 +115,9 @@ Where a handler writes what Better Auth would write (for example
 ## Admin-port conventions
 
 These came from the auth and email modules and should carry over to other
-modules' admin ports:
+modules' admin interfaces:
 
-- **Method names are unique across a service's ports.** rpc dispatch is flat
+- **Method names are unique across a service's exposed interfaces.** rpc dispatch is flat
   (`POST /rpc/<method>`), so `session.getUser` and `admin.getUser` would
   collide when `serve()` is constructed. The admin lookup is called `findUser`
   for this reason.

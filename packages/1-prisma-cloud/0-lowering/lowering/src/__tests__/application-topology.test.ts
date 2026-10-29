@@ -54,8 +54,8 @@ function shopGraph() {
   const auth = module(
     'auth',
     { deps: { db: dbEnd() }, expose: { verify } },
-    ({ inputs, provision }) => ({
-      verify: provision(api, { id: 'api', deps: { db: inputs.db } }).verify,
+    ({ deps, provision }) => ({
+      verify: provision(api, { id: 'api', deps: { db: deps.db } }).verify,
     }),
   );
   const web = service({

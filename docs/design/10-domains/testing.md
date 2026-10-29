@@ -49,7 +49,7 @@ expands on this one move.
 
 ## Why one function is enough
 
-A service declares the dependencies it needs and the ports it exposes. Its code
+A service declares the dependencies it needs and the interfaces it exposes. Its code
 — a page, a server action, an RPC handler, a plain function — never receives
 those dependencies as arguments and never reaches for a global. It calls
 `service.load()`.

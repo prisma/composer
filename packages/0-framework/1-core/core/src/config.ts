@@ -112,7 +112,7 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
 
   for (const [input, value] of Object.entries(root.inputs)) {
     if (typeof value !== 'object' || value === null) continue;
-    // Every dependency input declares `connection.params` in the same shape
+    // Every dependency declares `connection.params` in the same shape
     // (Connection<Params, C>) — nothing to narrow before reading it.
     for (const [name, param] of Object.entries(value.connection.params)) {
       entries.push({

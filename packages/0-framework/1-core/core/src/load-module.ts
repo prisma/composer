@@ -110,7 +110,7 @@ function producerIdOf(ref: unknown): string | undefined {
 }
 
 /**
- * Brands each `ctx.inputs` entry with the input key it stands for (see
+ * Brands each `ctx.deps` entry with the input key it stands for (see
  * flatten): diagnostic only — usage attribution relies on the per-key object
  * identity the branding copy creates, never on reading this back.
  */
@@ -211,7 +211,7 @@ function validateWiring(
     if (!isNode(value) || wiring[input] !== undefined) continue;
     if (value.kind === 'dependency') {
       throw new LoadError(
-        `Dependency input "${input}" of provisioned ${targetKind} "${targetId}" is not wired to a ` +
+        `Dependency "${input}" of provisioned ${targetKind} "${targetId}" is not wired to a ` +
           `producer (module "${enclosingModuleName}").`,
       );
     }
@@ -403,7 +403,7 @@ function flatten(
   const usedSecrets = new Set<string>();
   const usedParams = new Set<string>();
 
-  // Each ctx.inputs entry gets its OWN object identity: a shallow copy of the
+  // Each ctx.deps entry gets its OWN object identity: a shallow copy of the
   // wired producer ref, branded (symbol-keyed) with the input key it stands
   // for. Without the copy, wiring ONE producer ref into TWO inputs would
   // alias both entries to the same object, and forwarding one would falsely
@@ -417,7 +417,7 @@ function flatten(
       typeof wired === 'object' && wired !== null ? { ...wired, [MODULE_INPUT_KEY]: key } : wired;
   }
 
-  // An input counts as USED when its per-key ctx.inputs value shows up in a
+  // An input counts as USED when its per-key ctx.deps value shows up in a
   // provision's wiring (forwarded down) — or, below, in the body's returned
   // outputs (passed through). Identity comparison is key-precise because each
   // entry is its own object.
@@ -430,7 +430,7 @@ function flatten(
   };
 
   // The authored SOURCE endpoint a wiring value stands for: this module's own
-  // `in` port when the value is one of its forwarded ctx.inputs (identity,
+  // `in` port when the value is one of its forwarded ctx.deps (identity,
   // like markUsed — and checked FIRST, because a forwarded copy still carries
   // the original producer's authored brand), else the producer `out` port the
   // ref-port was built for. A whole ref wired wholesale into an untyped slot
@@ -455,7 +455,7 @@ function flatten(
     }
   };
 
-  // The secrets forwarding channel mirrors ctx.inputs: each declared secret slot
+  // The secrets forwarding channel mirrors ctx.deps: each declared secret slot
   // gets its OWN branded copy of the source bound to it, so forwarding one down a
   // provision counts precisely (identity), and `name` reads through unchanged.
   const ctxSecrets: Record<string, unknown> = {};
@@ -739,7 +739,7 @@ function flatten(
     nodes.push({ id: fullAddress, parent: selfId, node: child });
     byId.set(fullAddress, child);
     // Each returned output gets its OWN shallow copy branded as THIS module's
-    // out port — the same per-key copy trick ctx.inputs uses — so wiring it
+    // out port — the same per-key copy trick ctx.deps uses — so wiring it
     // into a sibling authors an edge from the module boundary, not from the
     // inner producer the flat view resolves to. `__providerId` and
     // `satisfies` read through unchanged.
@@ -760,7 +760,7 @@ function flatten(
     ModuleContext<Deps>,
     "ctxInputs/ctxSecrets/ctxParams hold one resolved ref per moduleNode.deps/secrets/paramSlots key (the same shapes a producer port, an envSecret source, and an envParam source carry), and provision is exactly ModuleBuilder['provision'] — together they satisfy ModuleContext<D, S, PN> structurally for whatever D/S/PN this moduleNode declares"
   >({
-    inputs: ctxInputs,
+    deps: ctxInputs,
     secrets: ctxSecrets,
     params: ctxParams,
     environment: environmentFacts,
@@ -784,7 +784,7 @@ function flatten(
   for (const key of Object.keys(moduleNode.deps)) {
     if (!used.has(key)) {
       throw new LoadError(
-        `Module "${moduleNode.name}" declares input "${key}" but never forwards it into a provision nor returns it as an output.`,
+        `Module "${moduleNode.name}" declares dependency "${key}" but never forwards it into a provision nor returns it as an exposed interface.`,
       );
     }
   }
@@ -838,7 +838,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   if (rootDepKeys.length > 0) {
     const names = rootDepKeys.map((k) => `"${k}"`).join(', ');
     throw new LoadError(
-      `Module "${root.name}" declares input${rootDepKeys.length > 1 ? 's' : ''} ${names} but is being ` +
+      `Module "${root.name}" declares ${rootDepKeys.length > 1 ? 'dependencies' : 'dependency'} ${names} but is being ` +
         'deployed as the root — a root has no enclosing scope to wire them; compose ' +
         `"${root.name}" from another module that provisions and wires it instead.`,
     );

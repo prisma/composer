@@ -16,7 +16,7 @@ resource graph, which deploys to the cloud.
 ## The three planes
 
 - **Authoring plane (Prisma Composer)** — what the developer writes.
-  Nouns: **Module**, **Service**, **Resource**, **Input**, **Output**,
+  Nouns: **Module**, **Service**, **Resource**, **Dependency**, **Exposed interface**,
   **Data Contract**, **Topology**. Statically analyzable; this is the
   ubiquitous language (see `glossary.md`).
 - **Provisioning plane (Alchemy / Effect)** — how the framework represents,
@@ -34,12 +34,12 @@ resource graph, which deploys to the cloud.
 
 | Authoring (Prisma Composer) | Provisioning (Alchemy/Effect) | Hosting (Prisma Cloud) |
 | --- | --- | --- |
-| **Module** (bounded context) | a subgraph: Resources/Platforms + a Layer exposing its ports | **no single object** — spans Compute services + a DB schema slice + streams + endpoints |
+| **Module** (bounded context) | a subgraph: Resources/Platforms + a Layer exposing its interfaces | **no single object** — spans Compute services + a DB schema slice + streams + endpoints |
 | **Service** (your code; entrypoint + ingress) | App + Deployment (ordinary Resources) | App → Deployment (tar.gz bundle + manifest + endpoint) |
 | **Resource** (managed lifecycle, state-first) | Alchemy Resource + Provider (`reconcile`/`delete`/…); Postgres via the Prisma Postgres provider | a Database (1:1 in an Environment), bucket, cache, or provisioned third-party |
-| **Input/Output — communication** (request/response, stream) | Binding (RPC/HTTP client; stream pub/sub) | endpoint URL + injected client; stream |
-| **Data Input** (method TCP/HTTP + contract) | data binding to a Postgres Resource | connection injected, scoped by contract |
-| **Data Output** (offered contract hashes) | the Postgres Resource's provided data | the DB schema satisfying the aggregate contract |
+| **Dependency / exposed interface — communication** (request/response, stream) | Binding (RPC/HTTP client; stream pub/sub) | endpoint URL + injected client; stream |
+| **Data dependency** (method TCP/HTTP + contract) | data binding to a Postgres Resource | connection injected, scoped by contract |
+| **Exposed data interface** (offered contract hashes) | the Postgres Resource's provided data | the DB schema satisfying the aggregate contract |
 | **Configuration** (per-env values, secrets) | `effect/Config` (`Config.redacted`), bound to the Platform env | env var / secret on the running compute — not a node |
 | **Topology** (graph of Modules/Resources) | Stack(s) **+ the framework's emit step** (which Alchemy lacks) | the provisioned set + injected wiring |
 
@@ -88,8 +88,8 @@ discontinued.
 ## Resources: first-class vs BYO
 
 In Prisma Composer, a Resource is an Alchemy resource surfaced as a
-typed **capability**. A Module's Input requires a capability; a Resource's
-Output provides one (via an Alchemy
+typed **capability**. A Module's dependency requires a capability; a Resource
+exposes one (via an Alchemy
 Layer); the wire is valid iff the provided capability satisfies the required one —
 Alchemy type-checks it.
 

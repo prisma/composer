@@ -159,7 +159,7 @@ path; the structured one just exercises more of it.)
 
 **Deploy — build the Config.** The deploy loads the root module into the graph
 and, per service node, assembles its typed `Config`: the service's own params from
-their declared values, each dependency input's params from its producer's lowered
+their declared values, each dependency's params from its producer's lowered
 outputs (the runner's URL, a database's connection string). `Config` values are
 structurally untouched — the `Job[]` rides through as an array:
 
@@ -249,7 +249,7 @@ constructor that names and validates a platform variable — is the target's, fr
 The round trip carries only the name, never the value:
 
 1. **Bind + forward.** The root binds each need to a platform name and wires it
-   down the module topology (the same rail dependency inputs use). Load records
+   down the module topology (the same rail dependencies use). Load records
    one binding per resolved service secret slot: `{ serviceAddress, slot, name }`.
 2. **Preflight.** Before Alchemy runs, the deploy verifies every bound name
    exists on the platform for the target environment's class/branch, filling a name
@@ -293,7 +293,7 @@ Three lines the model holds everywhere:
   it never stringifies a value, never chooses a medium, and never reads storage.
   Serialization — logic, encoding, and medium — is wholly the target's.
 - **Params are static data.** A value that must come from another node — an
-  address, a URL, credentials a resource mints — is a dependency input, never a
+  address, a URL, credentials a resource mints — is a dependency, never a
   field inside a param value.
 - **Secrets are not params.** A secret is a distinct forwardable slot (§ Secrets,
   ADR-0029), read through `secrets()` as a `SecretBox` — sensitivity is carried by

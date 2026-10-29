@@ -2,7 +2,7 @@ import { test } from 'vitest';
 import { string } from '../config.ts';
 /**
  * Type-level tests for the module boundary (ADR-0016): the body's `ModuleOutputs`
- * return type checked against `expose`, `ctx.inputs`' `InputRef` brand
+ * return type checked against `expose`, `ctx.deps`' `InputRef` brand
  * assignable wherever a `DepBindings<D>` slot is (the same check a producer's
  * ref-port gets), and that inference survives 3 levels of nesting without
  * degrading to `any`/`unknown`. Typechecked only (this package's `typecheck`
@@ -64,7 +64,7 @@ test('module composition preserves declared and inferred contracts', () => {
     return {};
   });
 
-  // ---- forwarding: ctx.inputs is a DepBindings<D>-assignable value, same as a producer's ref-port ----
+  // ---- forwarding: ctx.deps is a DepBindings<D>-assignable value, same as a producer's ref-port ----
   //
   // Under the unified model (ADR-0016) EVERY dependency slot — resource-backed
   // or service-backed — is the same `DependencyEnd<C, Req>`, so there is no
@@ -85,15 +85,15 @@ test('module composition preserves declared and inferred contracts', () => {
   });
 
   // MUST compile: forwarding a same-contract input into a matching slot.
-  module('forward-ok', { deps: { pay: chargeEnd() } }, ({ inputs, provision }) => {
-    provision(chargeConsumer, { id: 'consumer', deps: { pay: inputs.pay } });
+  module('forward-ok', { deps: { pay: chargeEnd() } }, ({ deps, provision }) => {
+    provision(chargeConsumer, { id: 'consumer', deps: { pay: deps.pay } });
     return {};
   });
 
   // MUST be rejected: forwarding a wrong-contract input into a typed slot.
-  module('forward-bad', { deps: { verify: verifyEnd() } }, ({ inputs, provision }) => {
-    // @ts-expect-error inputs.verify carries verifyContract, not the chargeContract "pay" requires
-    provision(chargeConsumer, { id: 'consumer', deps: { pay: inputs.verify } });
+  module('forward-bad', { deps: { verify: verifyEnd() } }, ({ deps, provision }) => {
+    // @ts-expect-error deps.verify carries verifyContract, not the chargeContract "pay" requires
+    provision(chargeConsumer, { id: 'consumer', deps: { pay: deps.verify } });
     return {};
   });
 
@@ -116,8 +116,8 @@ test('module composition preserves declared and inferred contracts', () => {
 
   // MUST compile: an untyped input forwards into ANY slot — typed or untyped —
   // with no compile-time rejection possible.
-  module('untyped-forward', { deps: { anything: untypedEnd() } }, ({ inputs, provision }) => {
-    provision(chargeConsumer, { id: 'typed', deps: { pay: inputs.anything } });
+  module('untyped-forward', { deps: { anything: untypedEnd() } }, ({ deps, provision }) => {
+    provision(chargeConsumer, { id: 'typed', deps: { pay: deps.anything } });
     return {};
   });
 
@@ -149,8 +149,8 @@ test('module composition preserves declared and inferred contracts', () => {
   const innerModule = module(
     'inner',
     { deps: { verify: verifyEnd() }, expose: { verify: verifyContract } },
-    ({ inputs, provision }) => {
-      const leaf = provision(verifyConsumer(), { id: 'leaf', deps: { verify: inputs.verify } });
+    ({ deps, provision }) => {
+      const leaf = provision(verifyConsumer(), { id: 'leaf', deps: { verify: deps.verify } });
       // leaf has no expose — prove `leaf.id` (the wholesale ref) is still usable at this depth.
       void leaf.id;
       const producer = provision(verifyProvider(), { id: 'leafProvider' });
@@ -162,8 +162,8 @@ test('module composition preserves declared and inferred contracts', () => {
   const midModule = module(
     'mid',
     { deps: { verify: verifyEnd() }, expose: { verify: verifyContract } },
-    ({ inputs, provision }) => {
-      const inner = provision(innerModule, { id: 'inner', deps: { verify: inputs.verify } });
+    ({ deps, provision }) => {
+      const inner = provision(innerModule, { id: 'inner', deps: { verify: deps.verify } });
       return { verify: inner.verify };
     },
   );

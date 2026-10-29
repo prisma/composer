@@ -124,8 +124,8 @@ describe('a resource with a slot wired at construction', () => {
   });
 
   test("a forwarded module input wired into a resource's slot counts as used and authors the edge from the module's in port", () => {
-    const gateway = module('gateway', { deps: { api: httpDep() } }, ({ inputs, provision }) => {
-      provision(siteFor(inputs.api), { id: 'site' });
+    const gateway = module('gateway', { deps: { api: httpDep() } }, ({ deps, provision }) => {
+      provision(siteFor(deps.api), { id: 'site' });
     });
     const root = module('shop', ({ provision }) => {
       const web = provision(webService(), { id: 'web' });
@@ -155,7 +155,7 @@ describe('a resource with a slot wired at construction', () => {
         resource({ ...base, inputs: { target: httpDep() }, deps: {} as never }),
       ).message,
     ).toBe(
-      'resource() declares input "target" but its deps leave it unwired. A resource is wired when it is constructed.',
+      'resource() declares dependency "target" but its deps leave it unwired. A resource is wired when it is constructed.',
     );
     expect(
       constructionError(() =>

@@ -15,8 +15,8 @@ flowchart TB
   Service["Service — your code (compute)"]
   Resource["Resource — managed lifecycle (Postgres + BYO)"]
   Config["Configuration — per-env, not a node"]
-  Input["Input — requires"]
-  Output["Output — provides"]
+  Dep["Dependency — requires an interface"]
+  Exposed["Exposed interface — offered"]
   Conn["Connection"]
   DC["Data Contract — Prisma ORM"]
 
@@ -27,19 +27,20 @@ flowchart TB
   Module -->|wraps| Service
   Module -->|wraps or uses| Resource
   Module -->|nests| Module
-  Module -->|has| Input
-  Module -->|has| Output
-  Service -->|has| Input
-  Service -->|has| Output
-  Resource -->|has| Output
+  Module -->|depends on| Dep
+  Module -->|exposes| Exposed
+  Service -->|depends on| Dep
+  Service -->|exposes| Exposed
+  Resource -->|depends on| Dep
+  Resource -->|exposes| Exposed
 
-  Conn -->|from| Output
-  Conn -->|to| Input
+  Conn -->|from| Exposed
+  Conn -->|to| Dep
 
   Conn -.->|communication style| CS["request/response · stream"]
   Conn -.->|data method| DM["TCP · HTTP"]
-  Input -.->|data: must satisfy| DC
-  Output -.->|data: offers hashes of| DC
+  Dep -.->|data: must satisfy| DC
+  Exposed -.->|data: offers hashes of| DC
 
   Service -.->|configured by| Config
   Resource -.->|configured by| Config
@@ -48,18 +49,20 @@ flowchart TB
 ## How to read it
 
 - **A Module wraps Services and Resources** and is reachable from the outside *only*
-  through its Inputs and Outputs. That boundary is what makes the topology
+  through its dependencies and exposed interfaces. That boundary is what makes the topology
   truthful — every cross-Module dependency is an edge.
 - **Nesting isn't a special case.** A Module behaves like a Service — stateless, with
-  typed I/O — so a nested Module is wired exactly as a Service is. A wrapped node's
-  Inputs/Outputs connect to the parent Module's boundary or to a sibling inside the
-  Module; it reaches outside only through the parent's Inputs/Outputs.
-- **Every node — Module, Service, or Resource — carries typed Inputs and Outputs.** A
-  connection wires an Output to an Input, and the rule is uniform at every level: an
-  Input is satisfied by a sibling's Output, a Resource's Output, or the enclosing
-  Module's boundary Input.
+  typed dependencies and exposed interfaces — so a nested Module is wired exactly as a
+  Service is. A wrapped node's dependencies and exposed interfaces connect to the parent
+  Module's boundary or to a sibling inside the Module; it reaches outside only through the
+  parent's boundary.
+- **Every node — Module, Service, or Resource — depends on interfaces and exposes
+  interfaces.** A connection wires a dependency to an exposed interface, and the rule is
+  uniform at every level: a dependency is satisfied by a sibling's exposed interface, a
+  Resource's, or one the enclosing Module forwards in from its own boundary. A node may
+  expose nothing, as a public URL does.
 - **Leaf vs composite; the outermost Module.** A Service is a *leaf* — the
-  framework sees only its ports. A Module is a *composite* — it owns the wiring
+  framework sees only its boundary. A Module is a *composite* — it owns the wiring
   among what it contains. The whole module is the **outermost Module**, owning
   the top-level Module-to-Module wiring and any shared Resources. *Who owns the
   wiring owns the migration:* a shared database is owned and migrated by the
@@ -77,8 +80,8 @@ flowchart TB
     `request/response` or `stream`. The style is a property of the connection; no
     Resource sits "in" it.
   - **data** (Module → Postgres Resource) with a **method** (`TCP` / `HTTP`) and a
-    **Data Contract**. The Postgres exposes a **Data Output** (the contract hashes
-    it satisfies); the Module's **Data Input** requires a contract; the wire is valid
+    **Data Contract**. The Postgres exposes a data interface (the contract hashes
+    it satisfies); the Module's data dependency requires a contract; the wire is valid
     iff the offered hashes satisfy it.
 - **The Topology is the artifact.** The framework infers the graph from TypeScript and
   emits it.
@@ -86,7 +89,7 @@ flowchart TB
 ## Dependency direction
 
 The clean-architecture intent carries over: low-level Resources don't depend on
-Modules; Modules depend on Resources and on each other's Outputs. Composition (the
+Modules; Modules depend on Resources and on each other's exposed interfaces. Composition (the
 wiring) is explicit and lives in the topology, not in ambient/global state.
 
 ## Open questions

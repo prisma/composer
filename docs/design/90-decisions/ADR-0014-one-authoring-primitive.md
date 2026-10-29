@@ -1,5 +1,7 @@
 # ADR-0014: One authoring primitive — the App is the outermost Module
 
+Amended by [ADR-0063](ADR-0063-a-node-depends-on-an-interface-or-exposes-one.md): the port words Input and Output used below are retired; a node depends on an interface or exposes one.
+
 ## Decision
 
 There is exactly one authoring primitive: `module()`. It wraps services,

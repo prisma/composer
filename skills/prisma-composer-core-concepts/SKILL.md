@@ -45,12 +45,12 @@ app, executing nothing when imported. Three node kinds exist:
 
 | Kind | Declared with | Purpose |
 | --- | --- | --- |
-| Service | `compute()` | A running unit of your code; atomic, Composer sees only its ports |
+| Service | `compute()` | A running unit of your code; atomic, Composer sees only its boundary |
 | Resource | `rawPostgres()`, `bucket()` | A stateful managed dependency |
-| Module | `module()` | A grouping boundary; runs no code of its own, exposes typed ports |
+| Module | `module()` | A grouping boundary; runs no code of its own, depends on and exposes typed interfaces; its builder receives `deps`, `secrets`, `params`, `environment` and `provision` |
 
-Nodes connect through **ports**: `deps` declares what a node requires,
-`expose` declares what it offers. Wiring happens in a Module's builder via
+Nodes connect through typed **interfaces**: `deps` declares what a node depends on,
+`expose` declares what it exposes. Wiring happens in a Module's builder via
 `provision()`, and the root Module, handed to the CLI, is the App:
 
 ```ts
@@ -63,7 +63,7 @@ export default module('store', ({ provision }) => {
 });
 ```
 
-Because ports are typed, **the compiler verifies every wire**. A dependency
+Because interfaces are typed, **the compiler verifies every wire**. A dependency
 wired to the wrong producer, a missing RPC handler, a literal input value of
 the wrong shape: all of it fails `tsc`, not the deploy. Env-bound input is
 the exception: those values exist only at deploy, so secret-binding
