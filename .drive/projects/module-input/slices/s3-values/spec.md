@@ -287,7 +287,7 @@ if (isValue(value)) {
 
 So a source in a service's input binding or params is a leaf Load leaves alone, and its real value is never computed. A source in a module's input binding or a resource's props is collected as a value. A source from another installed copy of core, which is not a value, is a leaf everywhere, as today.
 
-`recordSecret` is defined in `resolveValues`. It takes the source's canonical object, `sourceOriginOf(source)?.source ?? source`, so a `ctx.secrets` copy and its original count as one. It skips one it has already recorded. Otherwise it pushes `{ source: canonical, address: site.address, nodeKind: site.kind === 'moduleInput' ? 'module' : 'service' }`. The list keeps the order of first recording.
+`recordSecret` is defined in `resolveValues`. It takes the source's canonical object, `sourceOriginOf(source)?.source ?? source`, so a `ctx.secrets` copy and its original count as one. It skips one it has already recorded. Otherwise it records `{ source: canonical, address: site.address, nodeKind }`, with `nodeKind` `'service'` for a service input or param site, `'module'` for a module input site and `'resource'` for a props site. After the final service bindings are built, a source that a service's final input binding or param holds is recorded under that service instead, so a module is named only when no service receives the source. The list keeps the order of first recording.
 
 ### 4.4 Resolving a source
 
@@ -411,10 +411,10 @@ After the props are substituted, `resolveValues` walks each resource's substitut
 export interface SecretSourceUse {
   /** The source, as its target built it. Core never reads its payload. */
   readonly source: SecretSource;
-  /** The node whose binding names it, directly or through a resolve() dependency: the first place Load met it. */
+  /** A service whose final binding holds it, if one does. Otherwise the first node whose binding names it, directly or through a resolve() dependency: a module whose input holds it, or a resource whose props list it in a resolve(). */
   readonly address: NodeId;
   /** That node's kind. */
-  readonly nodeKind: 'service' | 'module';
+  readonly nodeKind: 'service' | 'module' | 'resource';
 }
 ```
 
@@ -540,9 +540,9 @@ export function serviceOrigin(address: string): ParamSource<OriginParamPayload> 
 ```ts
 export interface PreflightName {
   readonly name: string;
-  /** The node that uses the name: a service, or a module whose input holds a secret no service receives. */
+  /** The node that uses the name: a service whose binding holds it, or, when no service receives it, the module whose input holds it or the resource whose props list it in a resolve(). */
   readonly address: string;
-  readonly nodeKind: 'service' | 'module';
+  readonly nodeKind: 'service' | 'module' | 'resource';
 }
 ```
 
@@ -601,7 +601,7 @@ All in the same pull request, per `.agents/rules/user-facing-surface-changes.mdc
   - The index line in `docs/design/90-decisions/README.md` gains, after the existing note: ``*(Amended 2026-10-29, third slice: the sources are values; `envParam()` is deploy-time, `envSecret()` a runtime pointer; neither stores a value in a platform variable the deploy owns.)*``
 - **The secrets decision**, `ADR-0029-…md`, an amendment note after the existing one, verbatim:
 
-  > Amended 2026-10-29 (module-input project, third slice): `envSecret('NAME')` returns a value, `SecretSource & Value<SecretString>`, that is also the source. Wherever a binding took the source, the target receives the same object, so the pointer, preflight and boot are unchanged. Its real value at deploy is a pointer: a `resolve()` function that lists it receives the source itself, which throws when turned into text or a number, and may return it. Deploy preflight checks every `envSecret()` the graph names, including one a function lists but does not return and one in a module's input that no service receives. `secretSource()` takes an optional `label`, the name errors use.
+  > Amended 2026-10-29 (module-input project, third slice): `envSecret('NAME')` returns a value, `SecretSource & Value<SecretString>`, that is also the source. Wherever a binding took the source, the target receives the same object, so the pointer and boot are unchanged. Its real value at deploy is a pointer: a `resolve()` function that lists it receives the source itself, which throws when turned into text or a number, and may return it. Deploy preflight checks every `envSecret()` the graph names, including one a function lists but does not return, one in a module's input that no service receives, and one a function in a resource's props lists. `secretSource()` takes an optional `label`, the name errors use.
 
   Index line gains: ``*(Amended 2026-10-29: `envSecret()` returns a value whose real value is a pointer; preflight checks every `envSecret()` the graph names.)*``
 - **The provision-time params decision**, `ADR-0032-…md`, an amendment note after the existing one, verbatim:
@@ -731,7 +731,7 @@ Runtime tests use `bun test`; type tests use vitest `expectTypeOf` and `@ts-expe
 
 ### 11.5 CLI and lowering
 
-41. `pipeline.test.ts`: `runPipeline passes the process environment to Load as the config pool` — new fixture `cli/src/__tests__/fixtures/pipeline-config-pool/` (a copy of `fixtures/pipeline/prisma.config.ts`, and a `module.ts` whose root binds `paramSource({ name: 'S3_PIPELINE_PROBE' }, { poolKey: 'S3_PIPELINE_PROBE' })` into a child module's input, forwarded to the `echo` service's `greeting`); with `S3_PIPELINE_PROBE=probe` set for the test, `graph.inputBindings[0].binding` equals `{ greeting: 'probe' }`.
+41. `pipeline.test.ts`: `runPipeline passes the process environment to Load as the config pool` — new fixture `cli/src/__tests__/fixtures/pipeline-config-pool/` (a copy of `fixtures/pipeline/prisma.config.ts`, and a `module.ts` whose root binds `paramSource({ name: 'CONFIG_POOL_PROBE' }, { poolKey: 'CONFIG_POOL_PROBE' })` into a child module's input, forwarded to the `echo` service's `greeting`); with `CONFIG_POOL_PROBE=probe` set for the test, `graph.inputBindings[0].binding` equals `{ greeting: 'probe' }`.
 42. `generate-stack.test.ts` and `generate-dev-stack.test.ts`: the rendered file contains `  configPool: process.env,` directly after the `environment` line.
 43. `stack-file-import.test.ts`: the stub `lower` records `opts.configPool === process.env`, and the evaluated stack file makes it `true`.
 44. `lowering.test.ts`: `lowering() passes opts.configPool to Load` — a module forwarding a pool-key source into the service's `label` param through its input; the fake descriptor's `serialize` sees `config.service.label === 'probe'`.
@@ -789,3 +789,21 @@ Where the code, the design notes, the decision records or the docs disagree, and
 8. **The service input decision promises a deploy report that lists every key that resolved absent.** An `envParam()` in a module's input that resolves absent leaves its key out silently. This spec records it as deferred (§ 9) rather than adding a graph field and a report change to this slice.
 9. **S2's review fix of `readPath` is uncommitted on the branch** at the time of writing. § 4.8 builds on it. If it has not landed, or landed in a different form, the implementer stops and reports.
 10. **C1 refused a source returned from a function, for two reasons.** A forwarded slot ref used only in a function was reported as never forwarded; decision 11 fixes that. A function choosing a platform variable per environment would fix a meaning for sources before this project; design note 4 now settles that a function may return a pointer it received.
+
+## 16. Changes after review
+
+The code review and the system design review ([reviews/](reviews/)) led to these changes. The sections above are updated to match.
+
+- `ParamSourceOptions.configKey` and `SourceOrigin.configKey` are renamed `poolKey`, because "config key" already names the platform variable key derived from a node's address.
+- `SecretSourceUse.nodeKind` gains `'resource'`: a secret a `resolve()` lists in a resource's props is recorded under the resource, and deploy preflight says `used by resource "…"`.
+- A secret a service receives through a module's input is recorded under the service. A module is named only when no service receives the secret.
+- A path through a field bound to a runtime source reports that the field stands for a value only the platform has at boot, so it can only be passed on unchanged (§ 4.8). It no longer suggests `resolve()`.
+- The CLI fixture variable is `CONFIG_POOL_PROBE`.
+- Documents: an amendment note on the module input decision says `paramSource()` and `secretSource()` return values and take options; the secrets decision's note no longer says preflight is unchanged; the glossary gains a "Config pool" entry; the glossary and the skill say where an `envParam()` value goes in a service's input and as a service param.
+
+Tests added:
+
+45. `source-load.test.ts`: `a secret source a service receives through a module's input is listed under the service` — `address: 'shop.email.echo'`, `nodeKind: 'service'`.
+46. `source-load.test.ts`: `a secret source a resolve() in a resource's props lists is listed under the resource` — `address: 'shop.site'`, `nodeKind: 'resource'`.
+47. `preflight.test.ts`: `a secret a service receives through a module's input is named as used by the service` — `used by service "app.mail.sender"`.
+48. `preflight.test.ts`: `a secret a resolve() in a resource's props lists is named as used by the resource` — `used by resource "app.site"`.
