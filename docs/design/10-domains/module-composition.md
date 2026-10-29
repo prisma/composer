@@ -138,9 +138,9 @@ validated input, which is the module's binding with its values replaced by
 their real values and passed through the module's schema. A real value is the
 schema's output, so a field typed `number` by a `string.integer.parse` schema
 receives `4`, not `'4'`. An input field is deploy-time: its real value is known
-by the end of Load. A field bound to `envSecret()` has the `SecretSource` as its
-real value, the pointer and never the secret, although its type says
-`SecretString`, because that is the schema's output type.
+by the end of Load. A field bound to `envSecret()`, `generatedParam()` or
+`serviceOrigin()` has a pointer as its real value, never a value, although its
+type is the schema's output type.
 
 The body can only pass an input field on. Turning one into text or a number,
 serializing it, listing its keys, iterating it, testing it with `in`,
@@ -158,7 +158,8 @@ An input field is accepted in four places:
 - **a service's `input` binding**, at any depth, including the whole binding;
 - **a module's `input` binding**, at any depth, including the whole binding;
 - **a `resolve()` dependency**: `fn` receives the real value. For a field
-  bound to `envSecret()`, that is the `SecretSource`, and returning it fails;
+  bound to a runtime value, that is a pointer, which the function may return
+  unchanged;
 - **a service param or a resource prop**, when its real-value type is plain
   data: not optional, and not a secret.
 
@@ -172,13 +173,14 @@ read from its parent's validated output, so the parent's schema runs first; an
 async schema fails the Load. Each module's binding is validated once per Load,
 whether or not the body uses any field. A secret source reaches the schema as
 an empty `SecretString` box and is put back in the validated output, as the
-Prisma Cloud serializer does for a service. An optional field the binding left
+Prisma Cloud serializer does for a service. A param source known only at boot
+reaches the schema as the sentinel its target names, an empty `SecretString`
+box when it is redacted, and is put back at its path; a schema that changes
+such a field fails the Load. An optional field the binding left
 out has no real value, and a binding that forwards it leaves the key out.
 
 **Not supported yet.** A root cannot declare `input` until the config adapters
-fill it; Load refuses one. A module's binding does not take a param source
-such as `envParam()` until `envParam()` becomes a value; bind it on the
-service inside the module, or forward it through the module's `params` slot.
+fill it; Load refuses one.
 
 **Not detected.** Load cannot list a schema's keys, because Standard Schema
 exposes only `validate`. So a declared input field the body never uses is not

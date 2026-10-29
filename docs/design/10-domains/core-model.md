@@ -429,6 +429,7 @@ interface Graph {
 interface LoadOptions {
   readonly id?: NodeId                              // the root's address; defaults to its name
   readonly environment?: { readonly name: string }  // required by any value over environment.name
+  readonly configPool?: Readonly<Record<string, unknown>>  // what a source's config key reads; the commands pass the process environment
 }
 function Load(root: ServiceNode | ModuleNode, opts?: LoadOptions): Graph   // throws LoadError
 class LoadError extends Error {}  // code COMPOSE.GRAPH_INVALID; optional `cause`
@@ -473,9 +474,13 @@ dependencies' real values. A resource whose `props` held a value appears in
 the graph as a copy that keeps its prototype. The errors name the binding the
 value sits in: no `environment` was given, a cycle, `fn` threw (wrapped once,
 with the thrown error as `cause`), or `fn` returned a Promise, `undefined`, a
-value, a secret or param source, or anything else that is not plain data. A
-value as a `provision()` id, in a `deps` entry, or as a module's `secrets` or
-`params` binding is a LoadError too.
+value, a source it did not receive, or anything else that is neither plain
+data nor a pointer it received. A value as a `provision()` id or in a `deps`
+entry, or a value that is not a source as a module's `secrets` or `params`
+binding, is a LoadError too. A source is a value too. Load leaves one in place
+in a service's input binding and params, and computes its real value only
+where a module's input, a resolve() function or a resource's props needs it.
+The graph lists every secret source it names in `secretSources`.
 
 Load executes nothing of the user's beyond module bodies and `resolve()` functions — the graph is data
 in memory to inspect or hand to `lower` (or the node's `run`). A **topology view** — nodes as `{ id, kind, type }`
@@ -677,6 +682,7 @@ interface LowerOptions {
   readonly name: string                                  // stack name (+ Load's root id override)
   readonly environment?: string                          // the environment being deployed, as --environment gave it;
                                                          // Load's environment.name. The generated stack files always pass it.
+  readonly configPool?: Readonly<Record<string, unknown>>       // passed to Load; the generated stack files pass process.env
   // `prisma deploy` runs each service's build-adapter assembler and writes
   // the resulting bundle dirs here, into the generated stack file it hands to
   // `lower()` — one bundle per provision id (the deploy root is always a

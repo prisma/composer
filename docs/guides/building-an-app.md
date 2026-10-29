@@ -427,9 +427,13 @@ envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
   service's input has no `replyTo` key.
 - The module's schema checks the binding when the deploy loads the graph, so
   a mistake fails before anything reaches the platform.
-- A root module cannot declare `input` yet, and a module's `input` does not
-  take `envParam()` yet. Bind `envParam()` on the service inside the module,
-  or forward it through the module's `params` slot.
+- A root module cannot declare `input` yet.
+- A module's `input` takes every source a service's does. Its schema checks
+  `envParam()`'s value. It checks a stand-in for the three whose value exists
+  only at boot: an empty `SecretString` for `envSecret()` and a redacted
+  `generatedParam()`, `''` for a plain `generatedParam()`, and
+  `https://origin.invalid` for `serviceOrigin()`. A schema that transforms
+  such a field fails the deploy.
 - A body reaches only the keys every member of a union schema has, and has no
   element access into an array field. To narrow, forward the whole `input`,
   or narrow inside a `resolve()` function.
@@ -651,25 +655,21 @@ code instead.
 
 **`envParam('NAME')`** is for plain values the code *can't* know. An app
 origin is the canonical case: it's different on production and on every
-preview environment, and an environment's public URL doesn't exist until that
-environment first deploys. Each environment keeps its own copy of the
-variable, so one topology serves them all. How the value travels: **the
-environment's platform variable is the store; the deploying shell only seeds
-it.** At deploy, preflight checks the name exists for the target environment
-— a name the environment is missing is copied up from the deploying shell's
-environment. Once the environment has it, your shell
-no longer matters. The variable's value arrives as a raw string, so bind
-`envParam` to string fields. To change the value later, set it on the
-platform and redeploy; a running instance's environment is frozen when the
-instance is created.
-[`examples/env-param`](../../examples/env-param/) is the minimal working
+preview environment. The deploy reads the variable from the environment of
+the shell that runs `prisma deploy` or `prisma dev`, and writes its value into
+the service's input. So set it in that shell for every deploy; in CI, export
+it per environment. An unset or empty variable leaves the key out, and the
+schema decides ([below](#absence-is-the-schemas-call)). The value is a string,
+so bind `envParam` to string fields. To change it, deploy again with the new
+value. [`examples/env-param`](../../examples/env-param/) is the minimal working
 version, including a smoke script that proves the per-environment split.
 
 **`envSecret('NAME')`** is for credentials, with one rule: **the value never
-enters framework config**. The platform variable is seeded exactly the way
-an `envParam` one is — preflight copies it from the deploying shell when the
-environment doesn't have it yet, so CI (or you) exports `STRIPE_SECRET_KEY` for a
-first deploy. The framework carries only the variable's *name*; the platform
+enters framework config**. Each environment keeps its own copy of the
+platform variable, and that copy is the store: at deploy, preflight checks
+that the environment has the variable, and copies a missing one up from the
+deploying shell, so CI (or you) exports `STRIPE_SECRET_KEY` for a first
+deploy. The framework carries only the variable's *name*; the platform
 injects the value straight into the running instance. What your code gets is
 a `SecretString` box that redacts on logging, rendering, and
 JSON-serialization — leaking it takes a deliberate `.expose()`:
@@ -741,7 +741,7 @@ one of a `resource()` node's `props`, or as a
 [public URL's `url`](#a-hostname-per-environment). A field of a module's
 `input` is a value too ([A module's input](#a-modules-input)). A value cannot
 be a provision id or a `deps` entry, and a module's `secrets` and `params`
-bindings take sources, not values.
+bindings take only sources, which are values too.
 
 `resolve(dependencies, fn)` lists the values it depends on, and `fn`
 receives their real values as one tuple, in the same order. After every
@@ -774,8 +774,10 @@ the platform, with a message that names the binding the value sits in, such as
   a result for every environment; Composer never picks a default.
 - `fn` returns a value. List that value as a dependency instead; `fn`
   receives its real value.
-- `fn` returns `envParam()` or `envSecret()`. Bind those directly, not
-  through `resolve()`.
+- `fn` returns a source it did not receive, such as `envSecret()` called
+  inside `fn`. It may return a pointer it received
+  ([below](#sources-in-resolve)).
+- `fn` lists `envParam('NAME')` and the variable is unset or empty.
 - `fn` returns a Promise, a function, a class instance or anything else
   that is not plain data.
 - A value depends on itself.
@@ -784,6 +786,69 @@ When a dependency's `fn` is the one that failed, the message says so: it
 starts `A resolve() function that … depends on`.
 [`examples/env-param`](../../examples/env-param/) serves a value computed
 from the environment's name.
+
+### Sources in resolve()
+
+`envParam()`, `envSecret()`, `generatedParam()` and `serviceOrigin()` are
+values too, so `resolve()` can list them. For `envParam('NAME')`, `fn`
+receives the variable's value at deploy, read from the deploying shell. For
+the other three, `fn` receives a **pointer**, although the type says
+`SecretString` or `string`, because their value exists only at boot: the
+deploy never holds a secret, and it creates a generated value or a service's
+origin after it has run `fn`. A pointer throws when code turns it into text or
+a number. `fn` may return it, or put it in its result, unchanged, and the
+service then receives the source as if it had been bound directly.
+`isRuntimeValue(x)` from `@prisma/composer` is true for a pointer.
+
+```ts
+import { module, resolve } from '@prisma/composer';
+import { secretString } from '@prisma/composer/arktype';
+import { envParam, envSecret, serviceOrigin } from '@prisma/composer-prisma-cloud';
+import { type } from 'arktype';
+
+const billing = module(
+  'billing',
+  { input: type({ greeting: 'string', stripeKey: secretString(), returnUrl: 'string' }) },
+  ({ input, provision }) => {
+    provision(billingService, {
+      id: 'service',
+      input: { greeting: input.greeting, stripeKey: input.stripeKey, returnUrl: input.returnUrl },
+    });
+  },
+);
+
+export default module('shop', ({ environment, provision }) => {
+  const stripeKey = resolve(
+    [envSecret('STRIPE_LIVE_KEY'), envSecret('STRIPE_TEST_KEY'), environment.name],
+    ([live, test, name]) => (name === 'production' ? live : test),
+  );
+  provision(billing, {
+    input: {
+      greeting: resolve([envParam('GREETING')], ([greeting]) => greeting.toUpperCase()),
+      stripeKey,
+      returnUrl: serviceOrigin('shop.web'),
+    },
+  });
+  // … shop.web
+});
+```
+
+`GREETING=hi prisma deploy --environment staging` gives `shop.billing.service`
+the input binding `{ greeting: 'HI', stripeKey: envSecret('STRIPE_TEST_KEY'),
+returnUrl: serviceOrigin('shop.web') }`, exactly as if the root had bound those
+sources on the service directly. Turning the
+pointer into text fails the deploy, naming the binding and the source:
+`` resolve([envSecret('STRIPE_TEST_KEY')], ([key]) => `Bearer ${key}`) ``
+stops with `envSecret('STRIPE_TEST_KEY') is known only at boot`.
+
+Deploy preflight checks every `envSecret()` that `resolve()` lists, in every
+environment, whichever one `fn` returns. So the example above needs both
+`STRIPE_LIVE_KEY` and `STRIPE_TEST_KEY` on every environment. One variable
+name with a different value per environment is simpler.
+
+Turning `envParam()` itself into text in a module body, such as
+`` `${envParam('GREETING')}` ``, fails the deploy, as reading an input field
+does. List it in `resolve()` to compute with its value.
 
 ## Making a service public
 
