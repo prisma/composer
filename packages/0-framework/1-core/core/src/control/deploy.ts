@@ -369,6 +369,32 @@ export function buildConfig(
   lowered: ReadonlyMap<NodeId, Outputs>,
   provisioned: ReadonlyMap<string, unknown>,
 ): Config {
+  const inputs = connectionInputs(node, id, graph, lowered, provisioned);
+
+  const boundParams = new Map(
+    graph.params.filter((binding) => binding.serviceAddress === id).map((b) => [b.slot, b.binding]),
+  );
+  const service: Record<string, unknown> = {};
+  for (const [name, param] of Object.entries(node.params)) {
+    const value = resolveParam(node, id, name, param, boundParams.get(name));
+    if (value !== undefined) service[name] = value;
+  }
+
+  return { service, inputs };
+}
+
+/**
+ * The connection params of each of a service's or resource's dependency
+ * slots, resolved against the producer's lowered outputs or the minted
+ * `provisioned` value, with the connection contract enforced (see `buildConfig`).
+ */
+export function connectionInputs(
+  node: ServiceNode | ResourceNode,
+  id: NodeId,
+  graph: Graph,
+  lowered: ReadonlyMap<NodeId, Outputs>,
+  provisioned: ReadonlyMap<string, unknown>,
+): Readonly<Record<string, Readonly<Record<string, unknown>>>> {
   const inputs: Record<string, Record<string, unknown>> = {};
 
   for (const [inputName, inputNode] of Object.entries(node.inputs)) {
@@ -414,17 +440,7 @@ export function buildConfig(
     }
     inputs[inputName] = values;
   }
-
-  const boundParams = new Map(
-    graph.params.filter((binding) => binding.serviceAddress === id).map((b) => [b.slot, b.binding]),
-  );
-  const service: Record<string, unknown> = {};
-  for (const [name, param] of Object.entries(node.params)) {
-    const value = resolveParam(node, id, name, param, boundParams.get(name));
-    if (value !== undefined) service[name] = value;
-  }
-
-  return { service, inputs };
+  return inputs;
 }
 
 /**
@@ -679,7 +695,9 @@ export function lowering(
     for (const edge of graph.edges) {
       if (edge.kind !== 'dependency') continue;
       const consumer = graph.nodes.find((n) => n.id === edge.to)?.node;
-      if (consumer === undefined || consumer.kind !== 'service') continue;
+      if (consumer === undefined || (consumer.kind !== 'service' && consumer.kind !== 'resource')) {
+        continue;
+      }
       const slot = consumer.inputs[edge.input];
       if (slot === undefined) continue;
       const provisionedParams = Object.entries(slot.connection.params).filter(
