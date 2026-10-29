@@ -1,6 +1,6 @@
 # C1 — Values, `resolve()` and the second pass of Load
 
-Parent: [public-urls spec](../../spec.md). Decisions: ADR-0062 (`resolve()`), ADR-0060 (a node with its edge already set) and ADR-0013 (resources), each amended by this slice as recorded in § 9. Design settled with Will on 2026-10-29; see [design-notes.md](../../design-notes.md) entries 9 to 11. Reviewed on 2026-10-29 by the architect and principal-engineer passes in [reviews/](reviews/); every finding is folded in below, and § 14 lists the ones that are Will's to decide.
+Parent: [public-urls spec](../../spec.md). Decisions: ADR-0062 (`resolve()`), ADR-0060 (a node with its edge already set) and ADR-0013 (resources), each amended by this slice as recorded in § 9. Design settled with Will on 2026-10-29; see [design-notes.md](../../design-notes.md) entries 9 to 11. Reviewed on 2026-10-29 by the architect and principal-engineer passes in [reviews/design/](reviews/design/); every finding is folded in below, and § 14 lists the ones that are Will's to decide.
 
 This spec leaves nothing to the implementer's judgement. Every type, signature, name, error message, file and test is pinned. Where the implementer finds the spec and the code in conflict, the implementer stops and reports; it does not choose.
 
