@@ -2,16 +2,22 @@ import { describe, expect, test } from 'bun:test';
 import { string } from '../config.ts';
 import { Load, LoadError } from '../graph.ts';
 import {
+  type AnyContract,
   dependency,
+  freezeNode,
+  isNode,
   type ModuleBuilder,
   module,
   paramNeed,
+  ResourceNodeBase,
+  type ResourceProps,
+  resource,
   secret,
   secretSource,
   service,
 } from '../node.ts';
 import { resolve, type Value } from '../value.ts';
-import { anyInputSchema, conn } from './helpers.ts';
+import { anyInputSchema, conn, providerContract } from './helpers.ts';
 
 const build = {
   extension: '@prisma/composer/node',
@@ -40,6 +46,8 @@ const plainService = () =>
     params: {},
     build,
   });
+
+const urlContract = () => providerContract('fake/url', { url: '' });
 
 const staging = { environment: { name: 'staging' } };
 
@@ -381,6 +389,58 @@ describe("Load's second pass", () => {
     });
   });
 
+  class SiteNode<C extends AnyContract, P extends ResourceProps> extends ResourceNodeBase<
+    C,
+    Record<never, never>,
+    P
+  > {
+    constructor(def: { provides: C; props: P }) {
+      super({ name: 'site', extension: 'test/pack', provides: def.provides, props: def.props });
+      freezeNode(this);
+    }
+
+    describe(): string {
+      return `site ${this.name}`;
+    }
+  }
+
+  test("a value in a resource's props is substituted and the graph holds a copy with the prototype kept", () => {
+    const url = resolve([], () => 'https://shop.example');
+    const authored = new SiteNode({ provides: urlContract(), props: { url } });
+    const root = module('shop', ({ provision }) => {
+      provision(authored, { id: 'site' });
+    });
+
+    const graph = Load(root);
+
+    const node = graph.nodes.find((n) => n.id === 'shop.site')?.node;
+    if (!(node instanceof SiteNode))
+      throw new Error('expected the copy to keep the SiteNode prototype');
+    expect(node.props.url).toBe('https://shop.example');
+    expect(node.describe()).toBe('site site');
+    expect(isNode(node)).toBe(true);
+    expect(node).not.toBe(authored);
+    expect(authored.props.url).toBe(url);
+  });
+
+  test('a resource whose props hold no value appears in the graph as the authored object', () => {
+    const authored = resource({
+      name: 'site',
+      extension: 'test/pack',
+      provides: urlContract(),
+      props: { url: 'https://shop.example' },
+    });
+    const root = module('shop', ({ provision }) => {
+      provision(authored, { id: 'site' });
+    });
+
+    const graph = Load(root);
+
+    expect(graph.nodes.find((n) => n.id === 'shop.site')?.node).toBe(authored);
+  });
+});
+
+describe('where a value is refused', () => {
   test('a value as provision() id fails', () => {
     const root = module('shop', ({ environment, provision }) => {
       provision(plainService(), { id: resolve([environment.name], ([name]) => name) as never });
