@@ -253,8 +253,10 @@ describe("Load's second pass", () => {
       });
 
     expect(loadError(() => Load(returning(secretSource({ name: 'X' })), staging)).message).toBe(
-      'The resolve() function for input key "greeting" of service "shop.echo" returned a secret or ' +
-        'param source. Bind envSecret() or envParam() directly; resolve() returns plain data.',
+      'The resolve() function for input key "greeting" of service "shop.echo" returned a source ' +
+        'it did not receive, such as envSecret() or envParam() called inside the function. A ' +
+        'resolve() function may return a pointer it received from a dependency, unchanged; bind ' +
+        'any other source directly.',
     );
     expect(
       loadError(() =>

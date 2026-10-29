@@ -15,7 +15,15 @@ export type {
   Params,
   Values,
 } from '../config.ts';
-export { configOf, inputManifest, number, param, paramManifest, string } from '../config.ts';
+export {
+  configOf,
+  inputManifest,
+  number,
+  param,
+  paramManifest,
+  secretSourceManifest,
+  string,
+} from '../config.ts';
 export type { Contract, ContractStyle } from '../contract.ts';
 export type {
   AuthoredEdge,
@@ -27,6 +35,7 @@ export type {
   NodeId,
   ParamBinding,
   PortEndpoint,
+  SecretSourceUse,
   ServiceInputBinding,
 } from '../graph.ts';
 export { assertAppName, Load, LoadError, RESOURCE_OUT_PORT } from '../graph.ts';
@@ -55,6 +64,7 @@ export type {
   ParamNeedBindings,
   ParamNeeds,
   ParamSource,
+  ParamSourceOptions,
   ProvisionedRef,
   ProvisionNeed,
   RefPort,
@@ -67,6 +77,7 @@ export type {
   SecretSource,
   Secrets,
   ServiceNode,
+  SourceOptions,
 } from '../node.ts';
 export {
   dependency,
@@ -74,6 +85,7 @@ export {
   isNode,
   isParamSource,
   isProvisionNeed,
+  isRuntimeValue,
   isSecretSource,
   module,
   paramNeed,

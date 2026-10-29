@@ -13,6 +13,7 @@ export type {
   NodeId,
   ParamBinding,
   PortEndpoint,
+  SecretSourceUse,
   ServiceInputBinding,
 } from './graph-types.ts';
 export { LoadError, RESOURCE_OUT_PORT } from './graph-types.ts';
