@@ -242,7 +242,9 @@ describe('a hostname public URL under the Alchemy apply engine', () => {
     );
 
     expect(Exit.isFailure(moved)).toBe(true);
-    expect(failureText(moved)).toContain("Prisma cannot atomically replace custom domain 'shop.com'");
+    expect(failureText(moved)).toContain(
+      "Prisma cannot atomically replace custom domain 'shop.com'",
+    );
     expect(platform.requests.filter((r) => !r.startsWith('GET'))).toEqual([]);
     expect([...platform.domains.values()].map((d) => [d.hostname, d.appId])).toEqual([
       ['shop.com', APP_ID],

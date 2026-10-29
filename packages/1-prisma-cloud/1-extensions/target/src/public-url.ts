@@ -120,7 +120,9 @@ export function publicUrlStrategies(
   graph: Graph,
 ): { readonly address: string; readonly strategy: PublicUrlStrategy }[] {
   return graph.nodes.flatMap(({ id, node }) =>
-    node.kind === 'resource' && node.extension === PRISMA_CLOUD_EXTENSION_ID && node.type === 'public-url'
+    node.kind === 'resource' &&
+    node.extension === PRISMA_CLOUD_EXTENSION_ID &&
+    node.type === 'public-url'
       ? [{ address: id, strategy: resolvedStrategy(node.props['url'], id) }]
       : [],
   );
