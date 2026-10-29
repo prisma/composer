@@ -1,8 +1,8 @@
-# C1 — Values, `resolve()` and the second evaluation pass
+# C1 — Values, `resolve()` and the second pass of Load
 
-Parent: [public-urls spec](../../spec.md). Decisions: ADR-0062 (`resolve()`), ADR-0060 (a node with its edge already set), both amended by this slice as recorded below. Design settled with Will on 2026-10-29; see [design-notes.md](../../design-notes.md) entries 9 to 11. Builds on main at 26a403b1 and the design-docs branch at 5454abc2, both merged into this branch.
+Parent: [public-urls spec](../../spec.md). Decisions: ADR-0062 (`resolve()`), ADR-0060 (a node with its edge already set) and ADR-0013 (resources), each amended by this slice as recorded in § 9. Design settled with Will on 2026-10-29; see [design-notes.md](../../design-notes.md) entries 9 to 11. Reviewed on 2026-10-29 by the architect and principal-engineer passes in [reviews/](reviews/); every finding is folded in below, and § 14 lists the ones that are Will's to decide.
 
-This spec leaves nothing to the implementer's judgement. Every type, signature, name, error message, file and test is pinned here. Where the implementer finds the spec and the code in conflict, the implementer stops and reports; it does not choose.
+This spec leaves nothing to the implementer's judgement. Every type, signature, name, error message, file and test is pinned. Where the implementer finds the spec and the code in conflict, the implementer stops and reports; it does not choose.
 
 ## 1. At a glance
 
@@ -34,35 +34,44 @@ resolve([environment.name], ([name]) => {
 
 The terms below are the ubiquitous language for this slice. The glossary gains an entry for them (§ 9).
 
-- **A value** is an opaque handle in a module body for something that has a real value once the graph is fully evaluated. The body can pass a value wherever a value of its type is accepted, and can do nothing else with it: it cannot read it, compare it or branch on it. This is what keeps the graph's structure the same whatever inputs Composer is given.
-- **A value is provided or computed.** A provided value is handed to the module body; `environment.name` is one. A computed value is the result of `resolve(dependencies, fn)`: Load runs `fn` with its dependencies' values, after every module body has run.
-- **A value is deploy-time or runtime.** A deploy-time value holds its real value by the end of Load. A runtime value is known only on the deployment system; its deploy-time form is a pointer to it. Every value in this slice is deploy-time. The runtime axis is recorded in the model so that `envSecret()` and `envParam()` can become values later without a redesign; they are not values in this slice.
-- `resolve()` accepts values as dependencies, provided or computed, and returns a computed value.
+- **A value** is an opaque stand-in, in a module body, for data that is known later: by the end of Load for a deploy-time value, or only on the platform for a runtime value. The body can pass a value wherever data of its type is accepted, and can do nothing else with it: it cannot read it, compare it or branch on it. This is what keeps the graph's structure the same whatever inputs Composer is given.
+- **The real value** is the data a value stands for. "Real value" is the one term for it, in the glossary, in doc comments and in error texts. Elsewhere in the glossary "value" in lower case keeps its ordinary meaning, plain data such as a param's value.
+- **A value is provided or computed.** A provided value is handed to the module body; `environment.name` is one, a deploy-time fact of the environment. A computed value is the result of `resolve(dependencies, fn)`: Load runs `fn` with its dependencies' real values after every module body has run. What the `resolve()` decision calls "a reference to a deploy-time fact" is a provided value.
+- **A value is deploy-time or runtime.** A deploy-time value has its real value by the end of Load. A runtime value is known only to the platform the app is deployed to; at deploy time it is a pointer to it. Every value in this slice is deploy-time. The runtime axis is recorded so that `envSecret()` and `envParam()` can become values later without a redesign; they are not values in this slice.
+- `resolve()` accepts values as dependencies, provided or computed, and returns a computed value. `resolve()` declares a computed value; Load resolves every value. Those are the two verbs, and "resolve" is the only one used for the act.
 
-Why one type and not two (a computed value and a reference): the prior art, Gradle's `Provider<T>`, Pulumi's `Output<T>` and CDK's `Token`, uses one type for a handle whose real value comes later, whether supplied or derived, and nothing that consumes a value cares which it is. The provided-or-computed difference is a discriminant on the value that Load reads and the body never sees.
+Why one type and not two (a computed value and a reference): the prior art, Gradle's `Provider<T>`, Pulumi's `Output<T>` and CDK's `Token`, uses one type for a stand-in whose real value comes later, whether supplied or derived, and nothing that consumes a value cares which it is. In code, `origin.kind` says where Load gets the real value: from a deploy-time fact of the environment, or by running a computation. Facts, and later module input references, are the provided values.
 
-Why the word "value": "lazy" puts the emphasis on evaluation on demand, which is not the point; the point is that the thing depends on a calculation over its inputs, and the simplest word for a calculated or supplied quantity is value. The repo already has a type `Values<P>` (the hydrated param values a connection receives, `config.ts`); the two do not collide in code because one is `Value<T>` and the other `Values<P>`, and the glossary entry defines the term by its opacity and its evaluation time.
+Why the word "value": "lazy" puts the emphasis on evaluation on demand, which is not the point; the point is that the thing depends on a calculation over its inputs, and the simplest word for a calculated or supplied quantity is value. The public barrel already has `Values<P>` (hydrated param data, `config.ts`) and `InputValueOf<I>` (validated input data). Those use the ordinary word for real data; this slice does not rename them. Renaming `Values<P>` to `ParamValues<P>` is recorded as debt for the next breaking release (§ 9, `.drive/deferred.md`).
 
 ## 3. Core: the value type and `resolve()`
 
 ### 3.1 File
 
-New file `packages/0-framework/1-core/core/src/value.ts`. It imports nothing from `load-module.ts` or `node.ts`; `node.ts` and `load-module.ts` import from it.
+New file `packages/0-framework/1-core/core/src/value.ts`. It imports only `blindCast` from `@internal/foundation/casts`; `node.ts` and `load-module.ts` import from it.
 
 ### 3.2 Types, verbatim
 
 ```ts
+// Brands, Symbol.for so a check survives duplicated module instances (as NODE in node.ts).
 const VALUE: unique symbol = blindCast<never, 'unique-symbol brand for a value'>(
   Symbol.for('prisma:value'),
 );
+// Core-only: where Load gets a value's real value. Symbol-keyed so a module body sees no member it could read.
+const VALUE_ORIGIN: unique symbol = blindCast<never, 'unique-symbol key for a value origin'>(
+  Symbol.for('prisma:value-origin'),
+);
+// Type-only, never assigned: carries T so Value<number> is not a Value<string>.
+declare const VALUE_TYPE: unique symbol;
 
-/** How a value gets its real value: handed to the module body, or computed by `resolve()`. */
+export type { VALUE, VALUE_ORIGIN, VALUE_TYPE };
+
+/** Where Load gets a value's real value. Internal to core; not re-exported from the public barrel. */
 export type ValueOrigin<T> =
   | {
       readonly kind: 'environment';
       /** Which deploy-time fact of the environment this is. Only the name exists today. */
       readonly fact: 'name';
-      readonly __type?: T;
     }
   | {
       readonly kind: 'computed';
@@ -71,34 +80,45 @@ export type ValueOrigin<T> =
     };
 
 /**
- * An opaque handle a module body can pass wherever a `T` is accepted. It has
- * its real value once Load has run every module body (ADR-0062). `environment.name`
- * is one; `resolve()` returns one computed from others.
+ * An opaque stand-in a module body can pass wherever a `T` is accepted; its
+ * real value is known by the end of Load (ADR-0062). `environment.name` is one;
+ * `resolve()` returns one computed from others.
  */
 export interface Value<T> {
   readonly [VALUE]: true;
-  readonly origin: ValueOrigin<T>;
+  readonly [VALUE_TYPE]?: T;
+  readonly [VALUE_ORIGIN]: ValueOrigin<T>;
 }
 
-/** The tuple of value types a dependency tuple stands for: what `resolve()`'s `fn` receives. */
-export type ValuesOf<D extends readonly Value<unknown>[]> = {
+/** The tuple of real-value types a dependency tuple stands for: what `resolve()`'s `fn` receives. */
+export type RealValuesOf<D extends readonly Value<unknown>[]> = {
   readonly [K in keyof D]: D[K] extends Value<infer T> ? T : never;
 };
+
+/** Plain data: what a `resolve()` function may return, and the only thing a value may stand for in a binding. */
+export type PlainValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly PlainValue[]
+  | { readonly [key: string]: PlainValue };
 ```
 
-`__type` is a phantom member, never assigned: it makes `Value<T>` covariant in `T` for the environment branch, so a `Value<number>` is not assignable to a `Value<string>` and a `Value<string>` is assignable to a `Value<unknown>`. The `__` prefix follows `Contract.__cmp` and `RefPort.__providerId`. The computed branch gets its variance from `compute`'s return type. Both facts were checked with a probe compiled under `tsconfig.base.json` with TypeScript 6.0.3 on 2026-10-29; the probe is reproduced in § 11 as the type test.
+`VALUE_TYPE` is a phantom: `declare const` gives it no runtime existence, and the member is never assigned. It carries `T` on the interface itself, so `Value<number>` is not assignable to `Value<string>` and `Value<string>` is assignable to `Value<unknown>`. The repo's precedent for a phantom is `OrmCmp._contract?: C` in the Prisma Cloud extension. The three symbols are exported as types only, the way `NODE` is, so declaration emit works and nothing outside core can build or read a value by name. Checked on 2026-10-29 with a probe compiled under `tsconfig.base.json` with TypeScript 6.0.3: tuple inference, variance on both branches, the recursive `InputBinding` alias, and that `value.origin` is a type error; the probe is the type test in § 11.5.
 
 ### 3.3 Functions, verbatim
 
 ```ts
 /**
  * A value computed from other values. `fn` receives the dependencies' real
- * values as one tuple, in order, and returns the value. Load runs it after
- * every module body, with `provision` disabled (ADR-0062).
+ * values as one tuple, in order, and returns plain data. Load runs it after
+ * every module body, with `provision` disabled (ADR-0062). `fn` must be a pure
+ * function of its dependencies: a deploy runs it in two processes.
  */
 export function resolve<const D extends readonly Value<unknown>[], T>(
   dependencies: D,
-  fn: (values: ValuesOf<D>) => T,
+  fn: (values: RealValuesOf<D>) => T,
 ): Value<T>;
 ```
 
@@ -109,7 +129,7 @@ Implementation rules:
   - a member of `dependencies` is not a value (`isValue` false), naming its index: `resolve() dependency at index 1 is not a value — list environment.name or another resolve() result.`
   - `fn` is not a function: `resolve() requires a function as its second argument.`
 - The dependency tuple is copied and frozen: `Object.freeze([...dependencies])`.
-- The result is `Object.freeze({ [VALUE]: true as const, origin: Object.freeze({ kind: 'computed' as const, dependencies, compute }) })` where `compute` is `fn` cast to `(values: readonly unknown[]) => T` with `blindCast<..., 'fn is typed against ValuesOf<D>; Load supplies exactly that tuple'>`.
+- The result is `Object.freeze({ [VALUE]: true as const, [VALUE_ORIGIN]: Object.freeze({ kind: 'computed' as const, dependencies, compute }) })` where `compute` is `fn` cast with `blindCast<(values: readonly unknown[]) => T, 'fn is typed against RealValuesOf<D>; Load supplies exactly that tuple'>`.
 
 ```ts
 /** True if `value` is a `Value` (checks the brand only, never a prototype). */
@@ -119,17 +139,17 @@ export function isValue(value: unknown): value is Value<unknown>;
 Same shape as `isSecretSource`: `typeof value === 'object' && value !== null && blindCast<Record<PropertyKey, unknown>, 'reading the value brand off an unknown object'>(value)[VALUE] === true`.
 
 ```ts
-/** The deploy-time facts a module body receives as values. */
-export interface EnvironmentValues {
+/** The deploy-time facts a module body receives, each as a value (ADR-0062). */
+export interface EnvironmentFacts {
   /** The environment's name, as `--environment` gave it. */
   readonly name: Value<string>;
 }
 
 /** The one `environment` object every module body receives. */
-export const environmentValues: EnvironmentValues = Object.freeze({
+export const environmentFacts: EnvironmentFacts = Object.freeze({
   name: Object.freeze({
     [VALUE]: true as const,
-    origin: Object.freeze({ kind: 'environment' as const, fact: 'name' as const }),
+    [VALUE_ORIGIN]: Object.freeze({ kind: 'environment' as const, fact: 'name' as const }),
   }),
 });
 ```
@@ -140,10 +160,10 @@ One frozen constant, shared by every Load and every module body. There is nothin
 
 `packages/0-framework/1-core/core/src/exports/index.ts` adds, keeping the existing alphabetical grouping:
 
-- types: `EnvironmentValues`, `Value`, `ValueOrigin`, `ValuesOf`;
+- types: `DepBindings`, `EnvironmentFacts`, `LoadOptions`, `PlainValue`, `RealValuesOf`, `ResourceProp`, `ResourceProps`, `Value`;
 - values: `isValue`, `resolve`.
 
-`environmentValues` is not exported: the body reaches it through the module context. `@prisma/composer`'s index re-exports `@internal/core` wholesale, so nothing changes in `packages/9-public/composer`.
+Not exported from the barrel: `ValueOrigin`, the three symbols, `environmentFacts` (the body reaches it through the module context). `@prisma/composer`'s index re-exports `@internal/core` wholesale, so nothing changes in `packages/9-public/composer`.
 
 ## 4. Core: where a value is accepted
 
@@ -152,11 +172,11 @@ One frozen constant, shared by every Load and every module body. There is nothin
 `ModuleContext` in `node.ts` gains, after `params` and before `provision`:
 
 ```ts
-  /** The deploy-time facts of the environment, as values (ADR-0062). List `environment.name` as a `resolve()` dependency. */
-  readonly environment: EnvironmentValues;
+  /** The deploy-time facts of the environment, each a value (ADR-0062). List `environment.name` as a `resolve()` dependency. Never environment variables: user code never reads those. */
+  readonly environment: EnvironmentFacts;
 ```
 
-`flatten` in `load-module.ts` sets `environment: environmentValues` on the `ctx` object it builds.
+`flatten` in `load-module.ts` sets `environment: environmentFacts` on the `ctx` object it builds.
 
 ### 4.2 A service input binding
 
@@ -170,12 +190,12 @@ export type InputBinding =
   | null
   | ParamSource
   | SecretSource
-  | Value<InputBinding>
+  | Value<PlainValue>
   | readonly InputBinding[]
   | { readonly [key: string]: InputBinding };
 ```
 
-A value may sit at the root of the binding or at any depth inside objects and arrays. Its type parameter must itself be an `InputBinding`, so `Value<Date>` is refused by the compiler and `Value<string>` is accepted (probe § 11).
+A value may sit at the root of the binding or at any depth inside objects and arrays. Its type parameter must be `PlainValue`, so `Value<Date>` is refused by the compiler, and so is a value standing for a `SecretSource` or `ParamSource` (§ 5.3 refuses the same at runtime).
 
 ### 4.3 A service param binding
 
@@ -190,7 +210,7 @@ export type ParamBindings<P extends Params> = {
 };
 ```
 
-### 4.4 A resource's options and dependency slots
+### 4.4 A resource's props and dependency slots
 
 See § 6.
 
@@ -202,9 +222,9 @@ The following never accept a value. The compiler refuses the first three outrigh
 - A node's `name` (typed `string`).
 - A module's `secrets` binding (typed `SecretSource`).
 - A module's `params` binding (typed `ParamSource`).
-- A `deps` entry, of a service, a module or a resource (§ 6).
+- A `deps` entry of a service or a module, and a resource's `wiring` (§ 6).
 
-## 5. Core: the second evaluation pass
+## 5. Core: the second pass of Load
 
 ### 5.1 `Load`'s option
 
@@ -214,110 +234,132 @@ The following never accept a value. The compiler refuses the first three outrigh
 export interface LoadOptions {
   /** The root's address: the app name. Defaults to the root's `name`. */
   readonly id?: NodeId;
-  /** The name of the environment being loaded, as `--environment` gave it. Required by any value over `environment.name`. */
-  readonly environment?: string;
+  /** The facts of the environment being loaded. `name` is what `--environment` gave. Required by any value over `environment.name`. */
+  readonly environment?: { readonly name: string };
 }
 
 export function Load(root: ServiceNode | ModuleNode, opts?: LoadOptions): Graph;
 ```
 
-`LoadOptions` is exported from `graph.ts` and from `exports/index.ts` (types). `loadModule(root, opts)` receives the same object. `loadService` is unchanged: a service root takes no bindings, so it has no values to run.
+The option has the shape of `ctx.environment`: one key per fact, so a second fact is a second key, never a second option. `LoadOptions` is exported from `graph.ts` and from the barrel. `loadModule(root, opts)` receives the same object. `loadService` is unchanged: a service root takes no bindings, so it has no values to resolve.
 
-`environment` is optional because a graph that binds no value needs none, and every test that loads a graph today passes none. It is not defaulted: Load never invents an environment name.
+`environment` is optional because a graph that binds no value needs none, and every test that loads a graph today passes none. It is not defaulted: Load never invents an environment name. The commands always pass it (§ 7); the error for its absence (§ 5.3) is reachable only from a direct `Load(root)` call, for example an author's own test, and its text is written for that caller.
+
+`Load`'s doc comment in `graph.ts` changes "Executes nothing of the user's own code beyond module bodies" to "Executes nothing of the user's own code beyond module bodies and `resolve()` functions".
 
 ### 5.2 Where the pass runs
 
-In `loadModule`, after `for (const entry of pending) validateWiring(entry, byId);` and `assertDependencyDag(edges);`, and before the `Graph` is assembled. The pass is one function in a new file `packages/0-framework/1-core/core/src/evaluate-values.ts`:
+In `loadModule`, after `for (const entry of pending) validateWiring(entry, byId);` and `assertDependencyDag(edges);`, and before the `Graph` is assembled. The pass is one function in a new file `packages/0-framework/1-core/core/src/resolve-values.ts`:
 
 ```ts
 export interface ValueBindingSite {
   /** The address of the node the binding belongs to. */
   readonly address: NodeId;
-  /** `input` for a service input binding, `param` for a service param, `options` for a resource's options. */
-  readonly channel: 'input' | 'param' | 'options';
-  /** The param name for `param`; the dotted path inside the document for `input` and `options` (`''` at the root). */
+  /** `input` for a service input binding, `param` for a service param, `props` for a resource's props. */
+  readonly channel: 'input' | 'param' | 'props';
+  /** The param name for `param`; the dotted path inside the document for `input` and `props` (`''` at the root). Array members by index: `hosts.0`. */
   readonly path: string;
 }
 
 /**
- * Runs every value the graph binds, dependency-first, once each, and returns
- * each binding with its values replaced by their real values.
+ * Resolves every value the graph binds, dependency-first, once each, and
+ * returns each binding with its values replaced by their real values.
  */
-export function evaluateValues(input: {
-  readonly environment: string | undefined;
+export function resolveValues(input: {
+  readonly environment: { readonly name: string } | undefined;
   readonly inputBindings: readonly ServiceInputBinding[];
   readonly params: readonly ParamBinding[];
   readonly resources: ReadonlyMap<NodeId, ResourceNode>;
 }): {
   readonly inputBindings: readonly ServiceInputBinding[];
   readonly params: readonly ParamBinding[];
-  readonly resourceOptions: ReadonlyMap<NodeId, Readonly<Record<string, unknown>>>;
+  readonly resourceProps: ReadonlyMap<NodeId, ResourceProps>;
 };
 ```
 
+D1 builds it with `inputBindings` and `params` only; D2 adds `resources` and `resourceProps` (plan).
+
+**One predicate for plain data**, pinned here and used by the walk, the substitution and the result check: `isPlainObject(value)` is true when `typeof value === 'object'`, `value !== null`, and `Object.getPrototypeOf(value)` is `Object.prototype` or `null`. The walk descends into arrays and plain objects only. It stops at a `Value`, a `SecretSource` and a `ParamSource`, and does not descend into any other object. `deepValues` in `load-module.ts` is not reused: it descends into every object, and a value found inside a class instance could not be substituted.
+
 The algorithm:
 
-1. **Collect.** Walk every input binding, every param binding and every resource's `options` (§ 6.3) with the same walker `deepValues` already uses (arrays by index, plain objects by key, stopping at a `SecretSource`, a `ParamSource` or a `Value`). Each `Value` found is recorded with its binding site. The walk guards cycles in plain data with a `WeakSet`, as `deepValues` does.
-2. **Evaluate**, with `const results = new Map<Value<unknown>, unknown>()` and `const visiting: Value<unknown>[] = []`:
+1. **Collect.** Walk every input binding (`channel: 'input'`), every param binding (`channel: 'param'`, path `''`) and every resource's `props` (`channel: 'props'`) with the predicate above, guarding plain-data cycles with a `WeakSet` as `deepValues` does. Record each `Value` found with its binding site.
+2. **Resolve**, with `const results = new Map<Value<unknown>, unknown>()` and `const visiting: Value<unknown>[] = []`:
 
    ```
-   evaluate(value, site):
+   resolveOne(value, site):
      if results.has(value): return results.get(value)
-     if visiting includes value: throw cycle error (5.3)
+     if visiting includes value: throw the cycle error (5.3)
      visiting.push(value)
-     switch value.origin.kind:
+     origin = value[VALUE_ORIGIN]
+     switch origin.kind:
        'environment':
-         if environment === undefined: throw no-environment error (5.3)
-         result = environment            // the only fact today is 'name'
+         if environment === undefined: throw the no-environment error (5.3)
+         result = environment[origin.fact]
        'computed':
-         args = value.origin.dependencies.map(d => evaluate(d, site))
-         result = value.origin.compute(args)
-         check result (5.3): undefined, a Value anywhere inside, a Promise
+         args = origin.dependencies.map(d => resolveOne(d, site))
+         try: result = origin.compute(args)
+         catch (thrown): if thrown is a LoadError rethrow it; else throw the fn-threw error (5.3) with cause thrown
+         check result (5.3): a Promise; then, walking it with the predicate, undefined, a Value, a SecretSource or ParamSource, or anything that is not plain data
      visiting.pop()
      results.set(value, result)
      return result
    ```
 
-   `site` is the binding site the walk started from; a dependency reached through another value is reported under the same site, because the dependency has no site of its own.
-3. **Substitute.** Rebuild each binding with every `Value` replaced by `results.get(value)`. Plain objects are rebuilt as plain objects, arrays as arrays, everything else kept by reference. A binding that contained no value is returned by reference, unchanged. The substituted bindings replace `inputBindings`, `paramBindings` and each resource's options before the `Graph` is built (§ 6.4 says how a resource's options reach the graph).
+   `site` is the binding site the walk started from; a dependency reached through another value is reported under the same site, because the dependency has no site of its own. `visiting.length > 1` at the time of an error means a dependency's `fn` failed, and the message says so (§ 5.3), so the author opens the right function.
+3. **Substitute.** Rebuild each binding with every `Value` replaced by `results.get(value)`. Plain objects are rebuilt as plain objects, arrays as arrays, everything else kept by reference. A binding that contained no value is returned by reference, unchanged. The substituted bindings replace `inputBindings`, `paramBindings` and each resource's props before the `Graph` is built (§ 6.4 says how a resource's props reach the graph).
 
-`fn` runs synchronously. An exception thrown by `fn` propagates out of `Load` unchanged: it is the author's own error and Load adds nothing to it.
+`fn` runs synchronously. **`fn` is a pure function of its dependencies.** Load runs each `fn` once per Load, and a deploy Loads twice: in the CLI, whose graph the preflight, the coverage check and the topology submission read, and in the deploy engine's process, whose graph deploys. `destroy` Loads too, so every `fn` runs for the environment being removed; and every `prisma dev` rebuild Loads again. A `fn` that reads the clock, a random source, a file or an environment variable deploys a graph nobody checked. The guide says this (§ 9).
 
 ### 5.3 Errors, verbatim
 
-Every error below is a `LoadError` (code `COMPOSE.GRAPH_INVALID`, the one code Load uses until a finer taxonomy is carved out, per ADR-0044). `<site>` is rendered by one function `describeSite(site)`:
+Every error below is a `LoadError` (code `COMPOSE.GRAPH_INVALID`, the one code Load uses until a finer taxonomy is carved out, per ADR-0044). `LoadError` gains an optional cause: `constructor(message: string, options?: { readonly cause?: unknown })`, forwarded to `CliStructuredError`, so a user's thrown error is wrapped exactly once at the site that understands it, as ADR-0044 requires.
+
+`<site>` is rendered by one function `describeSite(site)`:
 
 - channel `input`, path `''`: `the input binding of service "shop.echo"`
 - channel `input`, path `greeting`: `input key "greeting" of service "shop.echo"`
 - channel `param`: `param "port" of service "shop.echo"`
-- channel `options`, path `url`: `option "url" of resource "shop.site"`
-- channel `options`, path `''`: `the options of resource "shop.site"`
+- channel `props`, path `url`: `prop "url" of resource "shop.site"`
+- channel `props`, path `''`: `the props of resource "shop.site"`
 
-Paths inside arrays use the index: `hosts.0`.
+`<fn>` is `The resolve() function for <site>` when `visiting.length === 1` at the error, and `A resolve() function that <site> depends on` otherwise. `<at path>` is empty for a result's root and ` at "hosts.0"` inside it.
 
 | Condition | Message |
 | --- | --- |
 | `provision()` called after the first pass finished | `provision() was called after module "shop" was loaded, from inside a resolve() function. resolve() computes values, never structure: the graph is the same whatever inputs Composer is given (ADR-0062). Provision the node in the module body and pass the value into it.` |
-| A value over `environment.name` when `Load` got no `environment` | `<site> depends on environment.name, but Load was given no environment — pass { environment } to Load (the deploy and dev commands do).` |
-| A cycle | `<site> depends on itself: a resolve() value's dependencies lead back to it. Remove the cycle.` |
-| `fn` returned `undefined` | `The resolve() function for <site> returned undefined. A value that does not exist for this environment must be expressed in the schema, not left undefined.` |
-| `fn` returned a `Value`, or a plain object or array containing one | `The resolve() function for <site> returned a value instead of a plain result. List that value as a dependency and return its real value.` |
-| `fn` returned a `Promise` | `The resolve() function for <site> returned a Promise. resolve() runs synchronously at Load.` |
-| A `Value` found as `provision()`'s `id` | `provision() received a resolve() value as its id (module "shop"). A value computes a node's configuration, never its address: the graph is the same whatever inputs Composer is given (ADR-0062).` |
-| A `Value` found in a `deps` entry | `The deps for "shop.web.db" are bound to a resolve() value. A value computes a node's configuration, never its edges: the graph is the same whatever inputs Composer is given (ADR-0062).` |
-| A `Value` found in a module's `secrets` or `params` binding | `The secrets for "shop.auth" bind "signingKey" to a resolve() value. A value is not a secret source; bind envSecret('NAME') or a forwarded ctx.secrets ref.` and `The params for "shop.auth" bind "region" to a resolve() value. A module param slot takes a param source; bind envParam('NAME') or a forwarded ctx.params ref.` |
+| A value over `environment.name` when `Load` got no `environment` | `<site> depends on environment.name, but Load was given no environment. Pass { environment: { name } } to Load; the deploy and dev commands do.` |
+| A cycle | `<site> depends on itself: a computed value's dependencies lead back to it. Remove the cycle.` |
+| `fn` threw | `<fn> threw: <thrown.message, or String(thrown) when it is not an Error>` with `cause` set to the thrown value. A `LoadError` thrown inside `fn` (the sealed `provision` error) propagates as it is. |
+| `fn` returned a `Promise` (an object with a callable `then`) | `<fn> returned a Promise. resolve() runs synchronously at Load.` |
+| `undefined` at the root or anywhere inside the result | `<fn> returned undefined<at path>. Return a result for every environment; Composer never picks a default.` |
+| A `Value` anywhere inside the result | `<fn> returned a value<at path>, not a real value. List that value as a dependency; fn receives its real value.` |
+| A `SecretSource` or `ParamSource` anywhere inside the result | `<fn> returned a secret or param source<at path>. Bind envSecret() or envParam() directly; resolve() returns plain data.` |
+| Anything else that is not plain data (a function, a non-plain object, a symbol, a bigint, a non-finite number) | `<fn> returned <a function \| an object that is not plain data \| a symbol \| a bigint \| a non-finite number><at path>. resolve() returns plain data: strings, finite numbers, booleans, null, arrays and plain objects.` |
+| A `Value` as `provision()`'s `id` | `provision() received a value as its id (module "shop"). A value can configure a node, never decide its address: the graph is the same whatever inputs Composer is given (ADR-0062).` |
+| A `Value` in a `deps` entry | `The deps for "shop.web.db" are bound to a value. A value can configure a node, never decide its edges: the graph is the same whatever inputs Composer is given (ADR-0062).` |
+| A `Value` in a module's `secrets` binding | `The secrets for "shop.auth" bind "signingKey" to a value. A value is not a secret source; bind envSecret('NAME') or a forwarded ctx.secrets ref.` |
+| A `Value` in a module's `params` binding | `The params for "shop.auth" bind "region" to a value. A module param slot takes a param source; bind envParam('NAME') or a forwarded ctx.params ref.` |
 
-The `id` and `deps` checks run inside `provision()` at the top of the existing validation (before the `isConfigKeySegment` check for `id`; before `markUsed` for `deps`). The `secrets`/`params` checks run inside `validateSecretBinding` and `validateParamNeedBinding`, before their existing "non-secret value" / "non-source value" checks, so a value gets its own message.
+Where the checks run:
+
+- The `id` check is the first statement of `provision()` after the sealed check, before the existing `typeof id !== 'string'` check (which would otherwise report "requires a non-empty id" for an object).
+- The `deps` check runs at the top of the `provision()` closure's handling of `opts.deps`, before `markUsed`.
+- The `secrets` and `params` checks run inside `validateSecretBinding` and `validateParamNeedBinding`, before their existing "non-secret value" / "non-source value" checks.
+
+Why a computed value may not return a secret or param source in this slice: a forwarded `ctx.secrets` ref returned from `fn` would fail with "declares secret but never forwards it", because usage is marked at `provision()` time, before `fn` runs; and letting `fn` choose a platform variable's name per environment would fix a meaning for sources that the module-input project redesigns (design note 10). Pending Will's confirmation, § 14.
 
 ### 5.4 Sealing `provision`
 
-`flatten` declares `let sealed = false;` beside `localIds`. The first statement of the `provision` closure is `if (sealed) throw new LoadError(<the provision-after-load message>)`. `flatten` returns a `seal(): void` beside its outputs, and `loadModule` keeps every `seal` from every flattened module (the root's and every nested module's) in an array and calls them all after `assertDependencyDag(edges)` and before `evaluateValues`. The change to `flatten`'s return type is internal; `flatten` is not exported.
+`loadModule` creates `const loading = { sealed: false };` and passes it to `flatten` as a new last parameter, which every recursive `flatten` call forwards. The first statement of the `provision` closure is `if (loading.sealed) throw new LoadError(<the provision-after-load message, with this module's name>)`. `loadModule` sets `loading.sealed = true` after `assertDependencyDag(edges)` and before `resolveValues`. One flag, one write; `flatten`'s return type does not change; a `provision` a nested module leaked to the root through a closure is sealed by the same flag.
 
 ## 6. Core: a resource with its edge already set
 
 ### 6.1 Why
 
-`publicUrl({ name, url, target })` (ADR-0060) is a resource: a RoutingUrl whose lifecycle Alchemy manages. It depends on the service it serves, and the dependency is known when the node is constructed, not at `provision()`. Today a resource declares no dependency slots and carries no options, so core must let a resource declare slots, wire them at construction, and carry options that the second pass resolves. Nothing here is specific to public URLs.
+`publicUrl({ name, url, target })` (ADR-0060) is a resource: a RoutingUrl whose lifecycle Alchemy manages. It depends on the service it serves, and the dependency is known when the node is constructed, not at `provision()`. Today a resource declares no dependency slots and carries no configuration core can resolve, so core must let a resource declare slots, wire them at construction, and carry props that the second pass resolves. Nothing here is specific to public URLs.
+
+A public URL is a resource by kind, because a provider manages its lifecycle, and a driver by role, because it depends on what it sends traffic to and nothing calls it. The scheduled-work decision (ADR-0020) contrasted a driver with a resource a consumer loads; it does not rule out a driver whose lifecycle is managed. The amendment notes (§ 9) say so.
 
 ### 6.2 The node
 
@@ -327,7 +369,7 @@ The `id` and `deps` checks run inside `provision()` at the top of the existing v
 export interface ResourceNode<
   C extends AnyContract = AnyContract,
   D extends Deps = Deps,
-  O extends ResourceOptions = ResourceOptions,
+  P extends ResourceProps = ResourceProps,
 > {
   readonly [NODE]: true;
   readonly kind: 'resource';
@@ -335,27 +377,31 @@ export interface ResourceNode<
   readonly extension: string;
   readonly type: C['kind'];
   readonly provides: C;
-  /** Dependency slots, as a service's `inputs`; empty for a resource that depends on nothing. */
+  /** Dependency slots, as a service's `inputs`. Empty for a resource that depends on nothing. */
   readonly inputs: D;
-  /** One wired producer ref per slot, fixed at construction. */
-  readonly deps: DepBindings<D>;
-  /** Plain data the factory records; Load resolves any value inside it. Empty for a resource with none. */
-  readonly options: O;
+  /** The producer wired to each slot. A resource is wired when it is constructed, a service at `provision()`. */
+  readonly wiring: DepBindings<D>;
+  /** Plain data the factory records, the resource's configuration. Load resolves any value inside it; nowhere else on a resource is a value resolved. Empty for a resource with none. */
+  readonly props: P;
 }
 
-/** The plain-data options a resource carries: literals and values, nested in objects and arrays. */
-export type ResourceOptions = { readonly [key: string]: ResourceOption };
-export type ResourceOption =
+/** A resource's configuration: plain data and values, nested in objects and arrays. */
+export type ResourceProps = { readonly [key: string]: ResourceProp };
+export type ResourceProp =
   | string
   | number
   | boolean
   | null
-  | Value<ResourceOption>
-  | readonly ResourceOption[]
-  | { readonly [key: string]: ResourceOption };
+  | Value<PlainValue>
+  | readonly ResourceProp[]
+  | { readonly [key: string]: ResourceProp };
 ```
 
-`DepBindings<D>` is the existing unexported type in `node.ts`; it is exported now, since it appears in a public interface. The existing generic parameter `C` keeps its position so every current `ResourceNode<C>` still compiles; `D` and `O` default to the widest shapes.
+Why `wiring` and not `deps`: on a module node, in `compute({ deps })` and in `module({ deps })`, `deps` is the map of slots a node declares; only a `provision()` call's `deps` is the producers bound to them, and the code calls that wiring (`PendingWiring.wiring`, `recordAuthoredWiring`). A resource fixes its wiring at construction, which is a real difference from a service, and the field name makes it visible. Why `props`: the glossary's provisioning-plane entry uses "props" for the desired configuration passed at declare time, which is what a resource descriptor turns these into; "options" in this codebase means a function's options argument (`LoadOptions`, `LowerOptions`), and in Pulumi `ResourceOptions` means meta-settings such as `dependsOn`. Both names pending Will, § 14.
+
+`DepBindings<D>` is the existing unexported type in `node.ts`; it is exported now, since it appears in a public interface. The existing generic parameter `C` keeps its position so every current `ResourceNode<C>` still compiles; `D` and `P` default to the widest shapes.
+
+Every resource still provides a contract and gets the `$out` port. Whether a resource may provide nothing, which the public URL decision requires of a public URL, is pending Will, § 14; this spec builds the mechanism either way, and the answer changes § 6.3's `provides` rule and § 6.4's `$out` line only.
 
 ### 6.3 The factory and the base class
 
@@ -363,73 +409,91 @@ export type ResourceOption =
 export function resource<
   C extends AnyContract,
   D extends Deps = Record<never, never>,
-  O extends ResourceOptions = Record<never, never>,
+  P extends ResourceProps = Record<never, never>,
 >(def: {
   name: string;
   extension: string;
   provides: C;
   inputs?: D;
-  deps?: DepBindings<D>;
-  options?: O;
-}): ResourceNode<C, D, O>;
+  wiring?: DepBindings<D>;
+  props?: P;
+}): ResourceNode<C, D, P>;
 ```
 
 Rules, in order after the existing name, extension and `provides` checks:
 
 - `inputs` keys pass `requireConfigKeySegmentNames(…, 'input', 'resource')`, as a service's do.
 - Every `inputs` entry must be a branded dependency end; otherwise `Error`: `resource() input "target" is not a branded dependency end (construct it with the dependency() factory).`
-- `deps` must name exactly the keys of `inputs`: a missing one is `Error`: `resource() declares input "target" but its deps do not wire it — a resource's slots are wired at construction.`; an extra one is `Error`: `resource() deps name "extra", which is not a declared input.`
-- A `deps` entry that is a `Value` is `Error`: `resource() deps wire "target" to a resolve() value. A value computes a node's configuration, never its edges (ADR-0062).`
-- `options`, when given, must be a plain object (prototype `Object.prototype` or `null`); otherwise `Error`: `resource() options must be a plain object.` Its contents are not validated at construction: a function or a class instance inside is rejected by the deploy target that reads it, as an input binding's is today.
-- The node is frozen with `inputs: frozenShallowCopy(def.inputs ?? {})`, `deps: frozenShallowCopy(def.deps ?? {})`, `options: frozenShallowCopy(def.options ?? {})`.
+- `wiring` must name exactly the keys of `inputs`: a missing one is `Error`: `resource() declares input "target" but its wiring leaves it unwired. A resource is wired when it is constructed.`; an extra one is `Error`: `resource() wiring names "extra", which is not a declared input.`
+- A `wiring` entry that is a `Value` is `Error`: `resource() wires "target" to a value. A value can configure a node, never decide its edges (ADR-0062).`
+- `props`, when given, must satisfy `isPlainObject` (§ 5.2); otherwise `Error`: `resource() props must be a plain object.` Its contents are not validated at construction: a function or a class instance inside is rejected by the deploy target that reads it, as an input binding's is today.
+- The node is frozen with three pinned casts, because `frozenShallowCopy(def.inputs ?? {})` is `D | {}` and TypeScript refuses to assign it to `D`:
+  - `inputs: blindCast<D, 'an omitted inputs map is the empty Deps; the wiring-match check above guarantees the keys agree at runtime'>(frozenShallowCopy(def.inputs ?? {}))`
+  - `wiring: blindCast<DepBindings<D>, 'an omitted wiring is the empty bindings of the empty Deps; the wiring-match check above guarantees the keys agree at runtime'>(frozenShallowCopy(def.wiring ?? {}))`
+  - `props: blindCast<P, 'omitted props are the empty props; the plain-object check above is the runtime guard'>(frozenShallowCopy(def.props ?? {}))`
 
-`ResourceNodeBase<C, D, O>` takes the same three optional fields in its constructor `def`, runs the same checks, and assigns `inputs`, `deps`, `options`. `PostgresResourceNode` in the Prisma Cloud extension passes none and compiles unchanged.
+`ResourceNodeBase<C, D, P>` takes the same three optional fields in its constructor `def`, runs the same checks, and assigns `inputs`, `wiring`, `props` with the same casts. Its doc comment adds: `A class built on this base must not use #private fields: Load copies a node whose props hold a value, and a copy carries own properties only.` `PostgresResourceNode` in the Prisma Cloud extension passes none of the three and compiles unchanged. Moving its `config` and `targetRef` into `props` is recorded as debt in `.drive/deferred.md`, not done here.
 
 ### 6.4 Load
 
 In `flatten`'s `provision` closure, the `child.kind === 'resource'` branch changes as follows. The four existing rejections stay (deps, secrets, input, params supplied at `provision()` are still errors; the wiring is the node's own). Then:
 
 ```
-const localWiring = { ...child.deps };
+const localWiring = { ...child.wiring };
 markUsed(Object.values(localWiring));
 byId.set(fullAddress, child);
-const inputs = dependencySlots(child, fullAddress);
-nodes.push(...inputs.nodes, { id: fullAddress, parent: selfId, node: child });
-edges.push(...inputs.edges, ...wiringEdges(localWiring, fullAddress));
-ports.push(...boundaryPortsOf(fullAddress, child));    // in ports for the slots
+const slots = dependencySlots(child, fullAddress);
+nodes.push(...slots.nodes, { id: fullAddress, parent: selfId, node: child });
+edges.push(...slots.edges, ...wiringEdges(localWiring, fullAddress));
+ports.push(...boundaryPortsOf(fullAddress, child));    // the in ports for the slots
 ports.push({ node: fullAddress, direction: 'out', name: RESOURCE_OUT_PORT, contractKind: child.provides.kind, style: contractStyleOf(child.provides) });
 recordAuthoredWiring(fullAddress, localWiring);
 pending.push({ deps: child.inputs, wiring: localWiring, targetId: fullAddress, targetKind: 'resource', enclosingModuleName: moduleNode.name });
 return refForResource(fullAddress, child);
 ```
 
-- `serviceInputs(service, serviceId)` in `load-service.ts` is renamed `dependencySlots(node: ServiceNode | ResourceNode, id: NodeId)`; its body is unchanged except the error texts say `Input "x" of "id"` as today (they do not name the kind). `loadService` calls it under the new name.
+- `serviceInputs(service, serviceId)` in `load-service.ts` is renamed `dependencySlots(node: ServiceNode | ResourceNode, id: NodeId)`; its body is unchanged except that it reads `node.inputs` and its error texts keep saying `Input "x" of "id"` (they do not name the kind). `loadService` calls it under the new name.
 - `boundaryPortsOf(id, node)` in `load-service.ts` accepts `ModuleNode | ServiceNode | ResourceNode`; for a resource it reads `node.inputs` for the `in` ports and emits no `out` ports (the `$out` port is pushed by `flatten`, as today, so the port order on the wire is unchanged for a resource with no slots).
 - `PendingWiring.targetKind` gains `'resource'`; `validateWiring`'s messages already interpolate `targetKind`, so no text changes.
 - `assertDependencyDag` is unchanged: it walks every `dependency` edge. Its doc comment, which says only service and module edges can cycle, is rewritten: `A resource with dependency slots can take part in a cycle too.`
 - `topoSort` is unchanged.
-- In `evaluateValues` (§ 5.2), `resources` is every resource node in `byId` keyed by address. A resource whose `options` contain no value appears in the graph as the authored object. A resource whose `options` contain a value appears as a copy: `const copy = Object.create(Object.getPrototypeOf(node)); Object.defineProperties(copy, Object.getOwnPropertyDescriptors(node)); copy.options = resolvedOptions; Object.freeze(copy)`. The copy keeps the prototype, so a class built on `ResourceNodeBase` with methods still works, and keeps the brand, which is an own property. `loadModule` replaces the `GraphNode.node` for that address and the `byId` entry with the copy before building the `Graph`.
+- In `resolveValues` (§ 5.2), `resources` is every resource node in `byId` keyed by address. A resource whose `props` contain no value appears in the graph as the authored object. A resource whose `props` contain a value appears as a copy that keeps the prototype (so a class built on `ResourceNodeBase` keeps its methods) and the brand (an own property):
+
+  ```ts
+  const copy = Object.freeze(
+    Object.create(Object.getPrototypeOf(node), {
+      ...Object.getOwnPropertyDescriptors(node),
+      props: { value: Object.freeze(resolvedProps), enumerable: true, writable: false, configurable: false },
+    }),
+  );
+  ```
+
+  The descriptor for `props` is given to `Object.create` because the authored node is frozen, so its own descriptor is non-writable and an assignment after the fact would throw. `loadModule` replaces the `GraphNode.node` for that address with the copy before building the `Graph`. `byId` is not touched: nothing reads it after `resolveValues`.
 
 ### 6.5 Lowering
 
-`deploy.ts` is unchanged for resources: a resource descriptor receives `ctx.node` (the resolved copy when there was a value), `ctx.graph` and `ctx.lowered`, and finds its producers through `graph.edges` entries whose `to` is its address and `kind` is `'dependency'`. `buildConfig` stays service-only.
+`deploy.ts`:
+
+- The lowering loop is unchanged for resources: a resource descriptor receives `ctx.node` (the resolved copy when there was a value), `ctx.graph` and `ctx.lowered`. Topological order places a resource after the service it depends on, and `lowered` holds that service's outputs by the time the resource lowers (the hoisted `provision()` loop touches services only and does not change this).
+- The inputs half of `buildConfig` is split out as `export function connectionInputs(node: ServiceNode | ResourceNode, id: NodeId, graph: Graph, lowered: ReadonlyMap<NodeId, Outputs>, provisioned: ReadonlyMap<string, unknown>): Readonly<Record<string, Readonly<Record<string, unknown>>>>`, which `buildConfig` calls for the `inputs` part of its `Config`, and which a resource descriptor calls to read its slots' connection params with the same "did not supply it" check a service gets. `buildConfig` itself stays service-only.
+- The ADR-0031 minting loop (`for (const edge of graph.edges)`) accepts a consumer of kind `'resource'` as well as `'service'`, reading `consumer.inputs[edge.input]` the same way, so a `provision` need on a resource slot is minted.
 
 ### 6.6 The application topology
 
-`composeApplicationTopology` in `packages/1-prisma-cloud/0-lowering/lowering/src/builds/application-topology.ts` needs no change: it maps every `graph.ports` entry and every `graph.authoredEdges` entry. A resource with a slot submits an `in` port and an edge into it. The platform's `replaceApplicationTopology` interactor (pdp-control-plane, `packages/interactors/src/application-topology/replaceApplicationTopology.ts`, read 2026-10-29) checks only that ports are unique by node, direction and name, that every edge endpoint names a submitted port, and that a consuming endpoint has one incoming edge. It does not restrict which kinds carry `in` ports. The edge's `family` is `communication` when the producer is a service, which is what a public URL's edge is.
+`composeApplicationTopology` in `packages/1-prisma-cloud/0-lowering/lowering/src/builds/application-topology.ts` needs no change: it maps every `graph.ports` entry and every `graph.authoredEdges` entry. A resource with a slot submits an `in` port and an edge into it; the topology's content hash changes for such a graph, which the platform stores opaquely. The platform's `replaceApplicationTopology` interactor (pdp-control-plane, `packages/interactors/src/application-topology/replaceApplicationTopology.ts`, read 2026-10-29) checks only that ports are unique by node, direction and name, that every edge endpoint names a submitted port, and that a consuming endpoint has one incoming edge. It does not restrict which kinds carry `in` ports. The edge's `family` is `communication` when the producer is a service, which is what a public URL's edge is.
 
 ## 7. The environment name's path into Load
 
 ### 7.1 Lowering options
 
-`LowerOptions` in `deploy.ts`: remove `readonly stage?: string;` and add, directly after `name`:
+`LowerOptions` in `deploy.ts`: remove `readonly stage?: string;` (nothing reads it; the Alchemy stage rides on the `alchemy --stage` flag, and a state container may pin a different Alchemy stage from the environment name, so the two are not the same thing) and add, directly after `name`:
 
 ```ts
-  /** The environment being deployed, as `--environment` gave it. Passed to Load for every value over `environment.name`. */
-  readonly environment: string;
+  /** The environment being deployed, as `--environment` gave it. Required by any value over `environment.name`; the generated stack files always pass it. */
+  readonly environment?: string;
 ```
 
-It is required. `lowering()` calls `Load(root, { id: opts.name, environment: opts.environment })`. Every `lowering()` and `lower()` call in tests gains `environment: 'test'`.
+It is optional for the same reason `LoadOptions.environment` is: `lowering()` and `lower()` are public through `@prisma/composer/deploy`, a hand-composed stack whose graph binds no value needs none, and a required field would break those callers' typecheck for nothing. `lowering()` calls `Load(root, { id: opts.name, ...(opts.environment !== undefined ? { environment: { name: opts.environment } } : {}) })`. The `LowerOptions` block in `core-model.md` (which still lists `stage`) is updated (§ 9). Every `lowering()` and `lower()` call in tests that needs a value resolved passes `environment: 'test'`; the rest are untouched. The test file `packages/1-prisma-cloud/1-extensions/target/src/__tests__/control-lowering.test.ts` is checked by D1 for `stage:` and left as it is if it passes none.
 
 ### 7.2 The generated stack files
 
@@ -438,9 +502,9 @@ It is required. `lowering()` calls `Load(root, { id: opts.name, environment: opt
 
 ### 7.3 The CLI's own Load
 
-`runPipeline` in `pipeline.ts` gains a parameter `environment: string` directly after `overrideName`, and calls `Load(entryModule.root, { id: name, environment })`. Its three callers pass the environment they already hold: `execute-deploy-destroy.ts` line 417 (`environment`), `execute-dev.ts` lines 177 and 480 (`environment`). `resolveAppIdentity` is unchanged: it does not Load.
+`runPipeline` in `pipeline.ts` gains a parameter `environment: string` directly after `overrideName`, and calls `Load(entryModule.root, { id: name, environment: { name: environment } })`. Its three callers pass the environment they already hold: in `execute-deploy-destroy.ts` the call `runPipeline(entry, name, cwd, composerConfig, pipelineDeps, onAssembleError)`, and in `execute-dev.ts` the two calls `runPipeline(input.entry, input.name, cwd, input.config, …)` (the first run and the rebuild on a watched change). `resolveAppIdentity` is unchanged: it does not Load. A missed caller fails to typecheck, because the parameter after `environment` is an object.
 
-With this, the graph the deploy target's preflight receives is the resolved graph, and `validateRegistryCoverage` sees resolved resource options.
+With this, the graph the deploy target's preflight receives is the resolved graph, and `validateRegistryCoverage` sees resolved resource props.
 
 ## 8. The example app
 
@@ -457,114 +521,135 @@ With this, the graph the deploy target's preflight receives is the resolved grap
   ```
 
 - `src/server.ts`: `Response.json({ greeting, environment })`.
-- `scripts/smoke.ts`: beside `EXPECTED_GREETING`, asserts `body.environment === \`deployed to ${environment}\``.
+- `scripts/smoke.ts`: after the greeting matches (inside the existing `if (res.ok && body.greeting === expected)` branch, before the asset check), check `body.environment`; on a mismatch print `FAIL - ${environment} serves environment ${JSON.stringify(body.environment)}, expected "deployed to ${environment}"` and `process.exit(1)`. The `body` cast gains `environment?: string`.
+
+No integration test deploys this example; the smoke script and § 12's QA are its proof.
 
 ## 9. Documentation
 
 All in the same pull request, per `.agents/rules/user-facing-surface-changes.mdc`.
 
-- **ADR-0062** gets an amendment note under its title, in the house form (`Amended 2026-10-29: …`): the type is `Value<T>`, not `ResolvedValue<T>`; a value is provided or computed, and deploy-time or runtime; `environment.name` is a provided deploy-time value; `envParam()` and `envSecret()` will become values in the module-input project, with the special handling of environment variables replaced by config and secret adapters, and the two functions then creating a persisted resource for a value. The index line in `docs/design/90-decisions/README.md` changes `ResolvedValue` to `Value`.
-- **ADR-0060** gets an amendment note: core builds the public URL node as a resource with a dependency slot wired at construction and options the second pass resolves; the resource decision (ADR-0013) is amended by the same note to say a resource may declare dependency slots.
-- **ADR-0013** gets the matching amendment note.
-- **Glossary**: a new entry `### Value` under "Core nouns", after "Configuration — params and their sources", with the four paragraphs of § 2 in glossary register, plus one sentence that `envParam()` and `envSecret()` are not values yet.
-- **`core-model.md`**: the `resource()` factory signature in "Node factories" gains `inputs`, `deps`, `options`; the "Graph and Load" section describes the second pass (one paragraph: provision sealed, values run dependency-first, results substituted, the errors) and replaces "resources take no wiring, so only service-to-service edges can cycle" with "a resource may declare slots wired at construction, so its edges take part in the cycle check like any other".
+- **ADR-0062** amendment note (already written, 2026-10-29; D4 edits it): add that what the body calls "a reference to a deploy-time fact" is a provided value; replace "create a persisted resource for a value" with "store the value in a platform variable the deploy owns, as `generatedParam` does today"; add "`fn` must be a pure function of its dependencies: a deploy Loads in two processes". The index line in `docs/design/90-decisions/README.md` says `Value`.
+- **ADR-0060** amendment note (already written; D4 edits it): the attribution "ADR-0013, which said a resource takes no wiring" becomes "the resource decision (ADR-0013), which modelled a resource as a producer only, with no dependency slots of its own"; add the kind-and-role sentence from § 6.1; name `wiring` and `props`. ADR-0020's Related line gains "a public URL is a resource by kind and a driver by role (ADR-0060, amended 2026-10-29)". Index lines for ADR-0013, ADR-0020 and ADR-0060 gain `*(Amended by ADR-0060, 2026-10-29: …)*` notes in the house form.
+- **ADR-0013** amendment note (already written; D4 edits it): add "and may carry plain-data props that Load resolves", and the answer to § 14's `provides` question once Will gives it.
+- **Glossary**: `### Value` (already written; D4 rewrites its lead paragraph to § 2's wording, adds the lower-case sentence and the `RealValuesOf` name). `### Resource` adds: "A resource may also declare Inputs, wired when it is constructed, so it can depend on the service it serves (a public URL). A resource node that is wired carries references from the module body that built it, so it can only be provisioned there. A resource's configuration that may hold a value goes in `props`; Load resolves values there and nowhere else on a resource." `### Ingress / Egress`: "a driver" becomes "a resource, a driver by role,". `### Load / Hydrate`: "with nothing executed" becomes "with nothing executed but module bodies and `resolve()` functions". `### Environment`: one sentence that `environment` in a module body holds the deploy's facts as values and never environment variables.
+- **`core-model.md`**: the `resource()` factory signature in "Node factories" gains `inputs`, `wiring`, `props`; the "Graph and Load" section describes the second pass (one paragraph: provision sealed, values resolved dependency-first, results substituted, the errors), replaces "resources take no wiring, so only service-to-service edges can cycle" with "a resource may declare slots wired at construction, so its edges take part in the cycle check like any other", and "Load executes nothing of the user's" with "Load executes nothing of the user's beyond module bodies and `resolve()` functions"; the `LowerOptions` block loses `stage` and gains `environment`.
 - **`module-composition.md`**: `ModuleContext` in "The authoring surface" gains `environment`, with one sentence on `resolve()`.
-- **`docs/guides/building-an-app.md`**: a new section `## Values that differ per environment` directly before `## Builds`, with the § 1 example, the rule that a value is opaque and `provision` inside `fn` fails, and the four error cases an author can hit (no environment is not one of them: the commands always pass it). `## Reusable Modules` lists `environment` beside `provision` in what the builder receives.
+- **`docs/guides/building-an-app.md`**: a new section `## Values that differ per environment` directly before `## Builds`, with the § 1 example, the rule that a value is opaque and `provision` inside `fn` fails, the purity rule and that `destroy` runs every `fn` for the environment it removes, and the error cases an author can hit (a thrown error, `undefined`, a value or a source returned, a cycle). `## Reusable Modules` lists `environment` beside `provision` in what the builder receives.
 - **`docs/guides/deploying.md`**: the `## Environments` section ends with two sentences pointing at the new guide section.
-- **`skills/prisma-composer-core-concepts/SKILL.md`**: a subsection under "Two channels: dependencies and input" titled `### Values that differ per environment`, five lines: `environment.name`, `resolve([deps], ([values]) => …)`, accepted as an input leaf or a param, opaque in the body, `provision` inside fails. Written to the rules in `skills/README.md`.
-- **`.drive/projects/public-urls/design/scenarios.md`**: the table row that says `ResolvedValue` says `Value`.
+- **`skills/prisma-composer-core-concepts/SKILL.md`**: a subsection under "Two channels: dependencies and input" titled `### Values that differ per environment`, six lines: `environment.name`, `resolve([deps], ([values]) => …)`, accepted as an input leaf or a param, opaque in the body, `provision` inside fails, `fn` is pure and returns plain data. Written to the rules in `skills/README.md`.
+- **`.drive/projects/public-urls/design/scenarios.md`**: the table row says `Value` (done).
+- **`.drive/deferred.md`**: two entries under a `# Values — deferred (2026-10-29)` heading: `Values<P>` → `ParamValues<P>` at the next breaking release; `PostgresResourceNode.config` and `targetRef` into `props`.
 
 ## 10. Scope
 
 In: everything above, in `packages/0-framework/1-core/core`, `packages/0-framework/3-tooling/cli`, `examples/env-param`, `docs/`, `skills/`.
 
-Out: module input references and `resolve()` over them (the `module-input` project); config and secret adapters; `envParam()` and `envSecret()` as values; `publicUrl()` (P1); a `Value` as a module `secrets` or `params` binding; async `fn`; a value that reads a deploy result; a second environment fact.
+Out: module input references and `resolve()` over them (the `module-input` project); config and secret adapters; `envParam()` and `envSecret()` as values; `publicUrl()` (P1); a `Value` as a module `secrets` or `params` binding; async `fn`; a value that reads a deploy result; a second environment fact; a finer error code than `COMPOSE.GRAPH_INVALID` (needs an ADR-0044 registry amendment); an older CLI loading an app that uses `resolve()` (belongs with the extension-compatibility check, `DEPS.EXTENSION_INCOMPATIBLE`).
 
 ## 11. Tests
 
-Each test below is one `test()` with the given title. Runtime tests use `bun test` in `packages/0-framework/1-core/core/src/__tests__/`; type tests use vitest `expectTypeOf` and `@ts-expect-error` in a `.test-d.ts` file. Fixtures follow `module.test.ts`: a `fake/compute` service with `input: anyInputSchema` from `helpers.ts`, and a string param where a param is needed.
+Each test below is one `test()` with the given title. Runtime tests use `bun test` in `packages/0-framework/1-core/core/src/__tests__/`; type tests use vitest `expectTypeOf` and `@ts-expect-error` in a `.test-d.ts` file. Fixtures follow `module.test.ts`: a `fake/compute` service with `input: anyInputSchema` from `helpers.ts`, and a string param where a param is needed. A test that needs a forged value builds one from the public brand: `const v = { [Symbol.for('prisma:value')]: true, [Symbol.for('prisma:value-origin')]: { kind: 'computed', dependencies: [] as unknown[], compute: () => 'x' } }`.
 
 ### 11.1 `value.test.ts`
 
-1. `resolve() returns a frozen computed value whose dependencies are a frozen copy` — mutate the array passed in afterwards; the value's `dependencies` are unchanged.
+1. `resolve() returns a frozen computed value whose dependencies are a frozen copy` — mutate the array passed in afterwards; the value's dependencies (read through the origin symbol) are unchanged.
 2. `resolve() rejects a non-array, a non-value dependency and a non-function` — the three construction errors by exact message.
 3. `isValue() recognises environment.name and a resolve() result and nothing else` — a plain object, `null`, a secret source return false.
 
-### 11.2 `evaluate.test.ts` (Load's second pass)
+### 11.2 `resolve-values.test.ts` (Load's second pass)
 
-4. `a value over environment.name is substituted into a service input binding` — `Load(root, { environment: 'staging' })`; `graph.inputBindings[0].binding` equals `{ greeting: 'hello from staging' }`.
+4. `a value over environment.name is substituted into a service input binding` — `Load(root, { environment: { name: 'staging' } })`; `graph.inputBindings[0].binding` equals `{ greeting: 'hello from staging' }`.
 5. `a value over environment.name is substituted into a service param binding` — `graph.params[0].binding` is the computed string.
 6. `a value nested inside objects and arrays in an input binding is substituted` — `{ hosts: [value], nested: { label: value } }`.
-7. `a value bound in two places runs once` — a counter in `fn`; both bindings carry the result; counter is 1.
-8. `a value's dependencies run before it, through two levels` — `shout` over `greeting` over `environment.name`; the result is `HELLO FROM STAGING`.
-9. `a binding with no value is returned by reference` — `graph.inputBindings[0].binding === original`.
-10. `Load without an environment loads a graph that binds no value` — as today.
-11. `Load without an environment fails on a value over environment.name` — exact message.
-12. `fn returning undefined fails naming the binding` — exact message with `input key "greeting" of service "shop.echo"`.
-13. `fn returning a value fails naming the binding` — top-level and nested.
-14. `fn returning a Promise fails naming the binding`.
-15. `an error thrown by fn propagates unchanged` — a custom `Error` subclass instance is what `Load` throws.
-16. `a cycle between values fails naming the binding` — build with `resolve([], …)`, then `blindCast` to a mutable origin and push the value into its own `dependencies` (test code is exempt from the cast rule).
-17. `provision() inside fn fails with the structure error` — exact message; the graph has no extra node afterwards is not asserted because Load throws.
-18. `provision() inside fn of a nested module fails the same way` — the nested module's name in the message.
-19. `a value as provision() id fails`, 20. `a value in a service's deps fails` (an untyped slot, so the compiler lets it through; see § 4.5), 21. `a value as a module secrets binding fails`, 22. `a value as a module params binding fails` — exact messages.
+7. `a value inside a class instance in a binding is left where it is` — the instance is the same object after Load and still holds the value.
+8. `a value bound in two places runs once` — a counter in `fn`; both bindings carry the result; counter is 1.
+9. `a value's dependencies run before it, through two levels` — `shout` over `greeting` over `environment.name`; the result is `HELLO FROM STAGING`.
+10. `a binding with no value is returned by reference` — `graph.inputBindings[0].binding === original`.
+11. `Load without an environment loads a graph that binds no value` — as today.
+12. `Load without an environment fails on a value over environment.name` — exact message.
+13. `fn returning undefined fails naming the binding` — exact message with `input key "greeting" of service "shop.echo"`; and nested, `{ a: undefined }`, with ` at "a"`.
+14. `fn returning a value fails naming the binding` — top-level and nested.
+15. `fn returning a Promise fails naming the binding`.
+16. `fn returning a secret source, a function, or a class instance fails naming the binding` — three cases, exact messages.
+17. `an error thrown by fn is wrapped once with the thrown error as cause` — a custom `Error` subclass instance; the `LoadError`'s message is `The resolve() function for … threw: <message>` and `error.cause` is the instance.
+18. `a failing dependency's fn is named as a dependency` — a two-level chain whose inner `fn` returns `undefined`; the message starts `A resolve() function that input key "greeting" of service "shop.echo" depends on returned undefined`.
+19. `a cycle between values fails naming the binding` — a forged value pushed into its own dependencies (see the preamble).
+20. `provision() inside fn fails with the structure error` — exact message.
+21. `provision() inside fn of a nested module fails the same way` — the nested module's name in the message.
+22. `a nested module's provision leaked to the root through a closure is sealed too` — the nested body stores `ctx.provision` in an outer variable; a root-level `fn` calls it; Load throws the sealed message naming the nested module.
+23. `Loading the same root twice resolves values both times` — the seal does not leak across Loads.
+24. `a value as provision() id fails`, 25. `a value in a service's deps fails` (an untyped slot, so the compiler lets it through; see § 4.5), 26. `a value as a module secrets binding fails`, 27. `a value as a module params binding fails` — exact messages.
 
 ### 11.3 `resource-slots.test.ts`
 
-23. `a resource with a slot wired at construction loads with the slot node, the input edge and the dependency edge` — nodes include `shop.site.target` of kind `dependency`; edges include `{ from: 'shop.site.target', to: 'shop.site', input: 'target', kind: 'input' }` and `{ from: 'shop.web', to: 'shop.site', input: 'target', kind: 'dependency' }`; `shop.site` comes after `shop.web` in `graph.nodes`.
-24. `the resource's slot is an in port and $out stays its out port` — `graph.ports` holds `{ node: 'shop.site', direction: 'in', name: 'target', contractKind: 'fake/http', style: undefined }` and the `$out` port.
-25. `the authored edge runs from the producer's out port to the resource's in port`.
-26. `a forwarded module input wired into a resource's slot counts as used and authors the edge from the module's in port`.
-27. `resource() rejects a declared input with no wiring, an extra wiring, and a value in the wiring` — exact messages.
-28. `provision(resource, { deps }) is still rejected`.
-29. `a resource slot wired to a ref that does not satisfy the required contract fails` — through `validateWiring`, with the existing message.
-30. `a resource that depends on a service that depends on it is a dependency cycle` — the existing cycle message names both.
-31. `a value in a resource's options is substituted and the graph holds a copy with the prototype kept` — a class on `ResourceNodeBase` with a method; `graph.nodes` entry's `node.options.url` is the string, `node.describe()` still works, `isNode(node)` is true, and the authored node object is unchanged.
-32. `a resource whose options hold no value appears in the graph as the authored object` — `toBe`.
+28. `a resource with a slot wired at construction loads with the slot node, the input edge and the dependency edge` — nodes include `shop.site.target` of kind `dependency`; edges include `{ from: 'shop.site.target', to: 'shop.site', input: 'target', kind: 'input' }` and `{ from: 'shop.web', to: 'shop.site', input: 'target', kind: 'dependency' }`; `shop.site` comes after `shop.web` in `graph.nodes`.
+29. `the resource's slot is an in port and $out stays its out port` — `graph.ports` holds `{ node: 'shop.site', direction: 'in', name: 'target', contractKind: 'fake/http', style: undefined }` and the `$out` port.
+30. `the authored edge runs from the producer's out port to the resource's in port`.
+31. `a forwarded module input wired into a resource's slot counts as used and authors the edge from the module's in port`.
+32. `resource() rejects a declared input with no wiring, an extra wiring, and a value in the wiring` — exact messages.
+33. `provision(resource, { deps }) is still rejected`.
+34. `a resource slot wired to a ref that does not satisfy the required contract fails` — through `validateWiring`, with the existing message.
+35. `a resource that depends on a service that depends on it is a dependency cycle` — the service's untyped slot is wired to the forged ref `{ id: 'shop.site' }`, because a resource's wiring needs the producer's ref first; the existing cycle message names both.
+36. `a value in a resource's props is substituted and the graph holds a copy with the prototype kept` — a class on `ResourceNodeBase` with a method, calling `freezeNode(this)` in its constructor; `graph.nodes` entry's `node.props.url` is the string, `node.describe()` still works, `isNode(node)` is true, and the authored node object is unchanged.
+37. `a resource whose props hold no value appears in the graph as the authored object` — `toBe`.
 
 ### 11.4 `lowering.test.ts` (additions)
 
-33. `lowering() passes opts.environment to Load, so a computed param reaches buildConfig resolved` — the fake descriptor's `serialize` sees `config.service.label === 'test'`.
-34. `lowering() hands a resource descriptor its resolved options and its producer's outputs` — a `fake/url` resource descriptor with a slot on `fake/compute` reads `ctx.node.options.url` and `ctx.lowered.get(producer)`.
+38. `lowering() passes opts.environment to Load, so a computed param reaches buildConfig resolved` — the fake descriptor's `serialize` sees `config.service.label === 'test'`.
+39. `lowering() hands a resource descriptor its resolved props and its producer's outputs through connectionInputs` — a `fake/url` resource descriptor with a slot on `fake/compute` reads `ctx.node.props.url` and `connectionInputs(...)`.
+40. `connectionInputs fails when a producer does not supply a param a resource slot declares` — the existing "did not supply it" message.
 
 ### 11.5 `value.test-d.ts`
-
-The probe from § 3.2, as `expectTypeOf` assertions and `@ts-expect-error` lines:
 
 - `fn` receives `readonly [string]` for `[environment.name]`; `readonly [string, number]` for two dependencies; destructuring a second member of a one-member tuple is an error.
 - `resolve()` over `[]` returns `Value<T>` of `fn`'s return.
 - `Value<number>` is not assignable to `Value<string>`; `Value<string>` is assignable to `Value<unknown>`.
-- `{ greeting: Value<string> }` is an `InputBinding`; `{ when: Value<Date> }` is not.
+- `value.origin` is a type error: the type exposes no readable member.
+- `{ greeting: Value<string> }` is an `InputBinding`; `{ when: Value<Date> }` is not; a `Value<SecretSource>` is not.
 - `Value<number>` is refused for a string param in `ParamBindings`; accepted for a number param.
 - `Value<string>` is refused as `provision()`'s `id`.
-- `resource({ inputs: { target: dep }, deps: { target: ref } })` compiles; `deps: {}` with a declared input is an error; `deps: { target: ref }` with no `inputs` is an error.
+- `resource({ inputs: { target: dep }, wiring: { target: ref } })` compiles; `wiring: {}` with a declared input is an error; a ref of the wrong contract on a declared slot is an error.
 - `ModuleContext['environment']['name']` is `Value<string>`.
 
 ### 11.6 CLI (`packages/0-framework/3-tooling/cli`)
 
-35. `generate-stack.test.ts`: the rendered file contains `environment: "staging"` and no `stage:` (replace the existing assertion's comment).
-36. `generate-dev-stack.test.ts`: the rendered file contains `environment: "test"`.
-37. `pipeline` tests: `runPipeline` passes the environment into Load; a fixture module binding a value over `environment.name` loads with the name in its binding.
+41. `generate-stack.test.ts`: the rendered file contains `environment: "staging"` and no `stage:` (replace the existing assertion's comment).
+42. `generate-dev-stack.test.ts`: the rendered file contains `environment: "test"`.
+43. `stack-file-import.test.ts`: the stub `lower` echoes `opts.environment`, and the evaluated stack file passes the environment given to the renderer.
+44. New `cli/src/__tests__/pipeline.test.ts`: `runPipeline` passes the environment into Load. Fixture: a `prisma.config.ts` and a module under `cli/src/__tests__/fixtures/pipeline/` whose service input binds a value over `environment.name`; a stub `runAssembler` passed through `PipelineDeps` that returns an empty bundle; the returned `graph.inputBindings[0].binding` carries the name.
+45. `execute-deploy-destroy` tests: `destroy` passes the environment into `runPipeline` (assert through the existing pipeline stubbing in that file's tests).
 
 ### 11.7 Example
 
-38. `examples/env-param/scripts/smoke.ts` asserts the `environment` field, as § 8 says. The integration suite that deploys the example, if any references `greeting` only, is extended the same way.
+46. `examples/env-param/scripts/smoke.ts` asserts the `environment` field, as § 8 says.
 
 ## 12. Done when
 
-- Tests 1 to 38 pass; `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm lint:casts`, `pnpm test` are green at the root.
-- `prisma dev` of `examples/env-param` as `dev` and as `test` serve `deployed to dev` and `deployed to test`; `prisma deploy` of it to `production` and to a second environment serve each name (QA, recorded in `qa.md`).
+- Tests 1 to 46 pass; `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm lint:casts`, `pnpm test` are green at the root.
+- With `ENV_PARAM_GREETING=hi` set, `prisma dev` of `examples/env-param` then `curl "$(prisma dev url env-param-example.echo)"` prints `"environment":"deployed to dev"`; after `prisma dev stop`, the same with `--environment test` on both commands prints `deployed to test`. `prisma deploy` of it to `production` and to a second environment, with the deploy credentials, serve each name through `pnpm smoke:deployed`. Recorded in `qa.md`.
 - A scratch copy of the example with `provision` inside `fn` fails `prisma deploy` with the § 5.3 message before any platform call; one whose `fn` returns `undefined` fails the same way.
-- Every document in § 9 is updated, and a grep over `docs/`, `skills/`, `.drive/projects/public-urls/` for `ResolvedValue` finds nothing.
+- Every document in § 9 is updated, and `grep -rn ResolvedValue docs/guides docs/design/03-domain-model docs/design/10-domains skills .drive/projects/public-urls/design` finds nothing (the `resolve()` decision keeps the old name in its amendment note, as amended records do).
 
 ## 13. Decisions this spec records, for the review
 
 1. One type, `Value<T>`, provided or computed, deploy-time or runtime (§ 2). Settled with Will.
 2. `environment.name` is a value, not a computation with no dependencies (§ 3.3). Settled with Will.
 3. Sources (`envParam()`, `envSecret()`) stay what they are in this slice (§ 2, § 10). Settled with Will.
-4. The public URL node is a resource; a resource may declare slots wired at construction and carry options (§ 6). Settled with Will.
-5. `Load`'s `environment` is optional and never defaulted; `LowerOptions.environment` is required and `stage` goes (§ 5.1, § 7.1). Orchestrator's decision: the commands always know the name, tests and programmatic callers that bind no value need none, and Load never guesses.
-6. `fn` returning `undefined` is an error (§ 5.3). From ADR-0062: a function that returns nothing for some environment fails the deploy rather than silently picking a default.
-7. A cycle is checked although a frozen dependency tuple makes one unconstructible without a cast (§ 5.2). Orchestrator's decision: the check costs one array and turns a stack overflow into a named error.
-8. The resolved resource is a prototype-preserving copy (§ 6.4). Orchestrator's decision: a node is frozen, so substitution needs a new object, and a class-built node must keep its methods and brand.
-9. The second pass lives in Load, not in `lowering()` (§ 5.2). From ADR-0062 ("Composer runs the module code and builds the graph … It then disables provision. It then runs each function") and because the CLI's preflight and coverage checks need the resolved graph.
+4. The public URL node is a resource; a resource may declare slots wired at construction and carry props (§ 6). Settled with Will; names pending, § 14.
+5. `Load`'s `environment` and `LowerOptions.environment` are both optional and never defaulted (§ 5.1, § 7.1). Orchestrator's decision after review: the commands always pass it, programmatic callers that bind no value need none, and Load never guesses.
+6. `fn` returning `undefined`, anywhere in its result, is an error (§ 5.3). From ADR-0062: a function that returns nothing for some environment fails the deploy rather than silently picking a default.
+7. A cycle is checked although a frozen dependency tuple makes one unconstructible without forging (§ 5.2). The check costs one array and turns a stack overflow into a named error.
+8. The resolved resource is a prototype-preserving copy built with `Object.create` and descriptors (§ 6.4). A node is frozen, so substitution needs a new object, and a class-built node must keep its methods and brand.
+9. The second pass lives in Load, not in `lowering()` (§ 5.2). From ADR-0062 and because the CLI's preflight, coverage check and topology submission need the resolved graph.
+10. `fn` is pure (§ 5.2). A deploy Loads in two processes; this is a documented constraint, which is the cheapest fix; passing the parent's results to the child was considered and rejected because values have no identity across processes.
+11. An error thrown by `fn` is wrapped once in a `LoadError` with the thrown value as `cause` (§ 5.3). From ADR-0044: an unwrapped foreign error at the process boundary is reported as a Composer bug.
+
+## 14. Pending Will
+
+Each of these is written into the spec with the recommended answer; a different answer changes only the sections named.
+
+1. **May a resource provide nothing?** Today every resource provides a contract, gets a `$out` port on the topology, and `provision()` returns a ref a consumer could wire. The public URL decision says a public URL exposes nothing because nothing in the graph consumes it. Recommendation: `provides` becomes optional on `resource()` and `ResourceNodeBase`; a resource without it has `type` given explicitly (`def.type`, required when `provides` is omitted), no `$out` port, and `provision()` returns `{ id }` only. Changes § 6.2, § 6.3, § 6.4, test 29, and the ADR-0013 note. The alternative is that a public URL provides a named contract nobody consumes, recorded in the ADR-0013 note.
+2. **`wiring`, not `deps`, for a resource's bound producers** (§ 6.2). Recommendation: `wiring`. The alternative keeps `deps` and accepts that it means declared slots on a module and bound producers on a resource.
+3. **`props`, not `options`, for a resource's configuration** (§ 6.2). Recommendation: `props`. The alternative is `options`.
+4. **A computed value may not return a secret or param source** (§ 5.3). Recommendation: refuse, for the two reasons given there. The alternative allows a `SecretSource` or `ParamSource` in the result, with the usage-marking defect fixed by marking usage after the second pass.

@@ -1,6 +1,6 @@
 # ADR-0020: Scheduled work is a driver, not a resource
 
-Related: [ADR-0060](ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md) models a public URL as a driver with the same shape.
+Related: [ADR-0060](ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md) models a public URL as a driver with the same shape; amended 2026-10-29, a public URL is a resource by kind and a driver by role, and a resource may declare dependency slots.
 
 ## Decision
 

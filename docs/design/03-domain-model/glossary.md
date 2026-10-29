@@ -73,6 +73,14 @@ its lifecycle, not whether it's first-party.
   third-party) exposed through a capability Layer. The Module depends on the
   capability, not the vendor — swap R2 for S3 by swapping the Layer.
 
+A Resource may also declare Inputs, wired when it is constructed, so it can
+depend on the Service it serves: a public URL is one, a Resource by kind and a
+driver by role ([ADR-0060](../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md),
+amended 2026-10-29). A Resource node that is wired carries references from the
+module body that built it, so it can only be provisioned there. A Resource's
+configuration that may hold a Value goes in `props`; Load resolves Values there
+and nowhere else on a Resource.
+
 Not Resources: **Compute** is what a Service lowers to (one per deployment target
 — Prisma Compute on Prisma Cloud); a **Stream** is a connection style; a service
 you call but don't provision is **Configuration**, not a Resource.
@@ -129,23 +137,29 @@ interface.
 
 ### Value
 
-An opaque handle in a module body for something that has a real value once the
-graph is fully evaluated. The body can pass a value wherever a value of its type
-is accepted, and can do nothing else with it: it cannot read it, compare it or
-branch on it. That is what keeps the graph's structure the same whatever inputs
-Composer is given ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
+An opaque stand-in, in a module body, for data that is known later: by the end
+of Load for a deploy-time value, or only on the platform for a runtime value.
+The body can pass a value wherever data of its type is accepted, and can do
+nothing else with it: it cannot read it, compare it or branch on it. That is
+what keeps the graph's structure the same whatever inputs Composer is given
+([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
+The data a value stands for is its **real value**.
 
 - **Provided or computed.** A provided value is handed to the module body:
-  `environment.name` is one. A computed value is what `resolve(dependencies, fn)`
-  returns; Load runs `fn` with its dependencies' real values after every module
-  body has run, with `provision` disabled.
-- **Deploy-time or runtime.** A deploy-time value holds its real value by the end
-  of Load. A runtime value is known only on the deployment system; its
-  deploy-time form is a pointer to it. Today every value is deploy-time.
+  `environment.name` is one, a deploy-time fact of the environment. A computed
+  value is what `resolve(dependencies, fn)` returns; Load runs `fn` with its
+  dependencies' real values after every module body has run, with `provision`
+  disabled. `resolve()` declares a computed value; Load resolves every value.
+- **Deploy-time or runtime.** A deploy-time value has its real value by the end
+  of Load. A runtime value is known only to the platform the app is deployed
+  to; at deploy time it is a pointer to it (the decision's table calls this
+  "held by the platform"). Today every value is deploy-time.
 
 In code the type is `Value<T>`. `envParam()` and `envSecret()` are not values
 yet; they become values, with config and secret adapters, in the module-input
-project. A value is not a node: it has no lifecycle and no address.
+project. A value is not a node: it has no lifecycle and no address. Elsewhere
+in this glossary "value" in lower case keeps its ordinary meaning, plain data
+such as a param's value.
 
 ### Topology
 
@@ -215,7 +229,7 @@ A Module consuming a Postgres Resource.
 
 **Ingress** = a request/response Output exposed to the public (e.g. the website) —
 a real edge at the topology's public boundary. It is authored as a `publicUrl()`
-node: a driver wired to the HTTP connection a service exposes, serving a named
+node: a resource, a driver by role, wired to the HTTP connection a service exposes, serving a named
 hostname or one the platform generates
 ([ADR-0060](../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md)).
 **Egress** = a Service's declared
@@ -297,7 +311,7 @@ Cloud's; Composer uses neither
 ([ADR-0059](../90-decisions/ADR-0059-a-deployment-environment-is-called-an-environment.md)). See
 [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)
 and
-[ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md).
+[ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md). In a module body, `environment` holds the deploy's facts as Values (`environment.name`) and never environment variables, which user code never reads.
 
 ### Container — Project / Branch
 
@@ -393,7 +407,7 @@ but **terminate at hydration** — user code is dependency-injection only.
 The two-phase lifecycle. Running a `define` **Loads** an in-memory graph (a graph of
 streams, request/response being the bounded case) and the framework validates its
 integrity — every Input satisfied, interfaces compatible, nothing dangling — with
-nothing executed. **Hydrate** attaches adapters and pushes data through the Inputs
+nothing executed but module bodies and `resolve()` functions. **Hydrate** attaches adapters and pushes data through the Inputs
 and out of the Outputs. One graph serves both a test harness (a fake Output
 substituted at any Input) and a real deployment.
 

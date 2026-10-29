@@ -1,6 +1,6 @@
 # ADR-0013: Resources are provisioned by modules; dependencies are uniform contract-checked slots
 
-Amended by [ADR-0060](ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md) (2026-10-29): a resource may declare dependency slots, wired at construction rather than at `provision()`, so a resource such as a public URL can depend on the service it serves. Everything else here stands: a resource is still provisioned in exactly one place, a service still cannot create one by mentioning it, and the slot is the same contract-checked `DependencyEnd` a service declares.
+Amended by [ADR-0060](ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md) (2026-10-29): a resource may declare dependency slots, wired at construction rather than at `provision()`, so a resource such as a public URL can depend on the service it serves, and may carry plain-data `props` that Load resolves. Everything else here stands: a resource is still provisioned in exactly one place, a service still cannot create one by mentioning it, and the slot is the same contract-checked `DependencyEnd` a service declares.
 
 ## Decision
 
