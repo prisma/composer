@@ -2,10 +2,12 @@
 /**
  * Verifies a DEPLOYED env-param example: resolves the echo service's URL via
  * the Management API (state is hosted, not local files), polls it until it
- * responds, and asserts two things about what arrived:
+ * responds, and asserts three things about what arrived:
  *
  * - the greeting it serves is exactly the value the target environment's platform
- *   var carries (the param round trip), and
+ *   var carries (the param round trip),
+ * - the environment it serves is "deployed to <environment>", which Load
+ *   computed from the environment's name, and
  * - GET /logo.svg serves the asset that sits beside the entry in the built
  *   directory (the build adapter's directory form — proving assemble copied
  *   the whole tree, not just the entry).
@@ -99,11 +101,20 @@ while (Date.now() < deadline) {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     last = await res.text();
-    const body = blindCast<{ greeting?: string }, 'the echo service serves { greeting }'>(
-      JSON.parse(last),
-    );
+    const body = blindCast<
+      { greeting?: string; environment?: string },
+      'the echo service serves { greeting, environment }'
+    >(JSON.parse(last));
     if (res.ok && body.greeting === expected) {
       console.log(`ok - ${environment} serves greeting ${JSON.stringify(expected)}`);
+
+      if (body.environment !== `deployed to ${environment}`) {
+        console.error(
+          `FAIL - ${environment} serves environment ${JSON.stringify(body.environment)}, expected "deployed to ${environment}"`,
+        );
+        process.exit(1);
+      }
+      console.log(`ok - ${environment} serves environment "deployed to ${environment}"`);
 
       // The tree, not just the entry: fetch the entry's sibling asset. Only
       // checked once the service is up, so a cold start can't read as a
