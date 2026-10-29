@@ -43,23 +43,30 @@ function runStack(stackFile: string) {
 }
 
 describe('the generated stack files, evaluated', () => {
-  test('the deploy stack passes the composer export of prisma.config.ts, the environment, and the process environment as the config pool, to lower()', () => {
+  const configPool = {
+    read: 'config',
+    environment: 'staging',
+    configFile: path.join(fixtureDir, 'prisma.config.ts'),
+  };
+
+  test('the deploy stack passes the composer export of prisma.config.ts, the environment, and the config pool it reads, to lower(), and reads no secrets', () => {
     expect(runStack(writeStackFile(stackInput))).toEqual({
       app: 'fixture-module',
       extensions: ['fixture-extension'],
       state: 'fixture-extension',
       environment: 'staging',
-      configPool: true,
+      configPool,
     });
   });
 
-  test('the dev stack passes the composer export of prisma.config.ts, the environment, and the process environment as the config pool, to lower()', () => {
+  test('the dev stack passes the composer export of prisma.config.ts, the environment, and the config pool it reads, to lower(), and both pools to the local providers', () => {
     expect(runStack(writeDevStackFile(stackInput))).toEqual({
       app: 'fixture-module',
       extensions: ['fixture-extension'],
       state: 'fixture-extension',
       environment: 'staging',
-      configPool: true,
+      configPool,
+      pools: { config: configPool, secrets: { read: 'secrets' } },
     });
   });
 

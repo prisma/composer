@@ -40,7 +40,7 @@ describe('renderStackFile() — a module root', () => {
     expect(content).not.toContain('stage:');
   });
 
-  test('passes the process environment to lower() as the config pool, directly after the environment', () => {
+  test('reads the config pool from the adapters and passes it to lower(), directly after the environment, and never reads the secrets pool', () => {
     const content = renderStackFile({
       entryPath: '/app/module.ts',
       cwd: '/app',
@@ -50,7 +50,12 @@ describe('renderStackFile() — a module root', () => {
       assembled: { devServers: {}, bundles: {} },
     });
 
-    expect(content).toContain('  environment: "staging",\n  configPool: process.env,\n');
+    expect(content).toContain("import { readConfigPool } from '@prisma/composer/config';");
+    expect(content).toContain(
+      'const configPool = await readConfigPool(config, { environment: "staging", configFile: "/app/prisma.config.ts" });',
+    );
+    expect(content).toContain('  environment: "staging",\n  configPool,\n');
+    expect(content).not.toContain('readSecretsPool');
   });
 
   test('imports alchemy only through @prisma/composer, which the app can resolve under pnpm', () => {

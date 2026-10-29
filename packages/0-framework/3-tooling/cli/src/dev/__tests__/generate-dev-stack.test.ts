@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
+import { renderStackFile } from '../../generate-stack.ts';
 import { renderDevStackFile } from '../generate-dev-stack.ts';
 
 describe('renderDevStackFile()', () => {
@@ -19,7 +20,9 @@ describe('renderDevStackFile()', () => {
     });
 
     expect(content).toContain("import { lower } from '@prisma/composer/deploy';");
-    expect(content).toContain("import { deserializeContainers } from '@prisma/composer/config';");
+    expect(content).toContain(
+      "import { deserializeContainers, readConfigPool, readSecretsPool } from '@prisma/composer/config';",
+    );
     expect(content).toContain(
       "import { devEnvironmentDir, devState, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
     );
@@ -40,7 +43,9 @@ describe('renderDevStackFile()', () => {
     expect(content).toContain('const devDir = path.join(process.cwd(), devEnvironmentDir("dev"));');
     expect(content).toContain('lower(app, config, {');
     expect(content).toContain('name: "app"');
-    expect(content).toContain('providers: localTargetProviders(resolved, containers, devDir)');
+    expect(content).toContain(
+      'providers: localTargetProviders(resolved, containers, devDir, pools)',
+    );
     expect(content).toContain('state: devState()');
     expect(content).not.toContain('dev: true');
     expect(content).toContain(
@@ -85,7 +90,7 @@ describe('renderDevStackFile() — the environment', () => {
     expect(content).toContain('  name: "app",\n  environment: "test",\n');
   });
 
-  test('passes the process environment to lower() as the config pool, directly after the environment', () => {
+  test('reads both pools from the adapters, passes the config pool to lower() directly after the environment, and both pools to the local providers', () => {
     const content = renderDevStackFile({
       entryPath: '/repo/app/module.ts',
       cwd: '/repo/app',
@@ -95,7 +100,33 @@ describe('renderDevStackFile() — the environment', () => {
       assembled: { devServers: {}, bundles: {} },
     });
 
-    expect(content).toContain('  environment: "test",\n  configPool: process.env,\n');
+    expect(content).toContain(
+      'const poolInput = { environment: "test", configFile: "/repo/app/prisma.config.ts" };',
+    );
+    expect(content).toContain(
+      'const pools = { config: await readConfigPool(config, poolInput), secrets: await readSecretsPool(config, poolInput) };',
+    );
+    expect(content).toContain('  environment: "test",\n  configPool: pools.config,\n');
+    expect(content).toContain('localTargetProviders(resolved, containers, devDir, pools)');
+  });
+
+  test('no secret value in the process environment reaches either rendered stack file', () => {
+    process.env['S4_SECRET_SENTINEL'] = 'never-in-the-stack-file';
+    try {
+      const input = {
+        entryPath: '/repo/app/module.ts',
+        cwd: '/repo/app',
+        configFile: '/repo/app/prisma.config.ts',
+        name: 'app',
+        environment: 'test',
+        assembled: { devServers: {}, bundles: {} },
+      };
+
+      expect(renderDevStackFile(input)).not.toContain('never-in-the-stack-file');
+      expect(renderStackFile(input)).not.toContain('never-in-the-stack-file');
+    } finally {
+      delete process.env['S4_SECRET_SENTINEL'];
+    }
   });
 });
 
