@@ -41,5 +41,8 @@ A `resolve()` function receives each dependency's real value. For a field bound 
 - `input` can be forwarded whole: `provision(child, { input })`.
 - An optional field the binding leaves out has no real value; a child bound to it sees the key omitted, and the child's schema decides.
 - Load cannot list a module's input keys (Standard Schema exposes only `validate`), so an input field the body never uses is not an error, unlike an unused `deps` entry.
-- A module's binding is validated by its schema at deploy, after Load's second pass, and the value is validated again by each child's schema.
+- A module's binding is validated by its schema during Load's second pass, synchronously, because a child's real value is read from the parent's validated output. An async schema fails the Load. The value is validated again by each child's schema.
+- A real value is the schema's output, so a field typed `number` from `string.integer.parse` receives `4`, not `'4'`.
+- A discriminated union's body reaches only the keys every member has; to narrow, forward the whole `input` or narrow inside a `resolve()` function. Array fields have no element access.
+- Proven by the S1 spike: [slices/s1-spike/report.md](slices/s1-spike/report.md).
 - `ParamSource` and `SecretSource` become the target's payload inside a value; `isValue()` is true for `envParam()` and `envSecret()` results.

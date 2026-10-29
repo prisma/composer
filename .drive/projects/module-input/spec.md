@@ -50,7 +50,7 @@ The decisions are ADR-0061 and ADR-0062. What the discussion with Will settled b
 
 # Cross-cutting requirements
 
-- **The graph's structure is the same whatever inputs Composer is given.** A module body cannot read, compare or branch on an input field.
+- **The graph's structure is the same whatever inputs Composer is given.** A module body never sees an input field's real value, so nothing it branches on can vary per environment.
 - **Existing projects behave exactly as today.** A project with no `config` or `secrets` key gets `[environmentVariables()]` for both, so `envParam()` and preflight's fill of `envSecret()` still read the shell.
 - **A secret's value never enters deploy state.** `envSecret()` stays a pointer the service dereferences at boot.
 - **Recorded decisions are amended in the same PR as the code that depends on them**: ADR-0061, ADR-0062 (its 2026-10-29 amendment about storing `envParam()` and `envSecret()` values is corrected), ADR-0016, ADR-0029, ADR-0032, ADR-0049, the glossary, `module-composition.md`, `config-params.md`, the guides and the agent skill.
@@ -59,7 +59,7 @@ The decisions are ADR-0061 and ADR-0062. What the discussion with Will settled b
 # Definition of done
 
 1. `module()` takes `input`; `provision(module, { input })` binds it; `params`, `paramNeed()`, `secrets` and the module form of `secret()` are gone.
-2. A module body holds each input field as a value typed from the schema, passes it on, and lists it in `resolve()`; reading, comparing or branching on one fails with an error naming the field.
+2. A module body holds each input field as a value typed from the schema, passes it on, and lists it in `resolve()`. Turning one into text or a number, serializing it, listing its keys or iterating it fails with an error naming the field; comparing one with `===` or `switch` fails to compile. A truthiness check sees an object and always passes, so it cannot vary the graph.
 3. The root declares `input`; the deploy fills it from the `config` pool and validates it with the root's schema, before anything is created.
 4. `config` and `secrets` on the `composer` section default to `[environmentVariables()]`; `dotenv()` ships.
 5. `envParam()` reads the `config` pool; preflight fills a missing `envSecret()` variable from the `secrets` pool; both are values.
