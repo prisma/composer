@@ -173,7 +173,9 @@ export type ParamBindings<P extends Params> = {
   readonly [K in keyof P]?:
     | StandardSchemaV1.InferOutput<P[K]['schema']>
     | ParamSource
-    | Value<StandardSchemaV1.InferOutput<P[K]['schema']>>;
+    | (StandardSchemaV1.InferOutput<P[K]['schema']> extends PlainData
+        ? Value<StandardSchemaV1.InferOutput<P[K]['schema']>>
+        : never);
 };
 
 /** What `provision(moduleChild, { params })` accepts per declared `ParamNeed`: a `ParamSource` only — a need carries no schema to validate a literal against. */

@@ -1,5 +1,6 @@
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { expectTypeOf, test } from 'vitest';
-import { type number, string } from '../config.ts';
+import { type ConfigParam, type number, string } from '../config.ts';
 import type {
   InputBinding,
   ModuleContext,
@@ -57,6 +58,11 @@ test("a param binding accepts a value of the param's own type only", () => {
   expectTypeOf({ label: count }).not.toExtend<Bindings>();
   expectTypeOf({ port: count }).toExtend<Bindings>();
   expectTypeOf({ label: name }).toExtend<Bindings>();
+});
+
+test("a param binding refuses a value when the param's type is not plain data", () => {
+  type Bindings = ParamBindings<{ when: ConfigParam<StandardSchemaV1<Date>> }>;
+  expectTypeOf({ when: date }).not.toExtend<Bindings>();
 });
 
 test("provision() refuses a value as the node's id", () => {
