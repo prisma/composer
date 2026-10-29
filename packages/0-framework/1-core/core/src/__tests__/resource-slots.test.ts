@@ -155,7 +155,7 @@ describe('a resource with a slot wired at construction', () => {
         resource({ ...base, inputs: { target: httpDep() }, deps: {} as never }),
       ).message,
     ).toBe(
-      'resource() declares input "target" but its deps leave it unwired. A resource is wired when it is constructed.',
+      'resource() declares dependency "target" but its deps leave it unwired. A resource is wired when it is constructed.',
     );
     expect(
       constructionError(() =>

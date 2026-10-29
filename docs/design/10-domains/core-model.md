@@ -328,7 +328,7 @@ type Deps = Record<string, DependencyEnd<any, any>>
 
 // A Module: transparent wiring, no code of its own. The body runs at Load (it is
 // wiring, not user code) and provisions the services it owns, supplying a
-// producer for every dependency input. Minimal form — boundary ports and
+// producer for every dependency. Minimal form — boundary interfaces and
 // nesting arrive with full Module composition (see § Extension points).
 interface ModuleNode {
   readonly [NODE]: true

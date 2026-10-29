@@ -106,7 +106,7 @@ describe('Load', () => {
     expect(() => Load(root)).toThrow(/empty node type/);
   });
 
-  test('rejects a root service with an unwired dependency input, naming the input and pointing at the composing module (ADR-0003)', () => {
+  test('rejects a root service with an unwired dependency, naming it and pointing at the composing module (ADR-0003)', () => {
     const auth = dependency({
       name: 'auth',
       type: 'fake/http',
@@ -123,16 +123,16 @@ describe('Load', () => {
 
     expect(() => Load(root, { id: 'storefront' })).toThrow(LoadError);
     expect(() => Load(root, { id: 'storefront' })).toThrow(
-      /Service "storefront" has an unwired dependency input "auth" — this service is composed by a module; deploy the module instead of loading "storefront" directly\./,
+      /Service "storefront" has an unwired dependency "auth" — this service is composed by a module; deploy the module instead of loading "storefront" directly\./,
     );
   });
 
-  test('the lone-root rule is uniform — a resource-requiring dependency input reads the same way', () => {
+  test('the lone-root rule is uniform — a resource-requiring dependency reads the same way', () => {
     const root = app({ db: dbDep() });
 
     expect(() => Load(root, { id: 'hello' })).toThrow(LoadError);
     expect(() => Load(root, { id: 'hello' })).toThrow(
-      /Service "hello" has an unwired dependency input "db" — this service is composed by a module; deploy the module instead of loading "hello" directly\./,
+      /Service "hello" has an unwired dependency "db" — this service is composed by a module; deploy the module instead of loading "hello" directly\./,
     );
   });
 
@@ -141,7 +141,7 @@ describe('Load', () => {
 
     expect(() => Load(root, { id: 'hello' })).toThrow(LoadError);
     expect(() => Load(root, { id: 'hello' })).toThrow(
-      /Input "db" of "hello" is a resource node — a resource is provisioned by the composing module, never created for a service that mentions it\./,
+      /Dependency "db" of "hello" is a resource node — a resource is provisioned by the composing module, never created for a service that mentions it\./,
     );
   });
 });

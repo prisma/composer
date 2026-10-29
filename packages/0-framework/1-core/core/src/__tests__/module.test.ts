@@ -165,7 +165,7 @@ describe('Load of a module root', () => {
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      /Dependency input "auth" of provisioned service "shop.storefront" is not wired/,
+      /Dependency "auth" of provisioned service "shop.storefront" is not wired/,
     );
   });
 
@@ -289,7 +289,7 @@ describe('Load of a module root', () => {
 
     expect(() => Load(lone, { id: 'storefront' })).toThrow(LoadError);
     expect(() => Load(lone, { id: 'storefront' })).toThrow(
-      /"storefront" has an unwired dependency input "auth".*composed by a module.*deploy the module/s,
+      /"storefront" has an unwired dependency "auth".*composed by a module.*deploy the module/s,
     );
   });
 });
@@ -381,7 +381,7 @@ describe('Load of a module root — provisioned resources', () => {
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      /Dependency input "db" of provisioned service "shop.auth" is not wired/,
+      /Dependency "db" of provisioned service "shop.auth" is not wired/,
     );
   });
 

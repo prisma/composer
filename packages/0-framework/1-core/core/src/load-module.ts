@@ -211,7 +211,7 @@ function validateWiring(
     if (!isNode(value) || wiring[input] !== undefined) continue;
     if (value.kind === 'dependency') {
       throw new LoadError(
-        `Dependency input "${input}" of provisioned ${targetKind} "${targetId}" is not wired to a ` +
+        `Dependency "${input}" of provisioned ${targetKind} "${targetId}" is not wired to a ` +
           `producer (module "${enclosingModuleName}").`,
       );
     }
@@ -784,7 +784,7 @@ function flatten(
   for (const key of Object.keys(moduleNode.deps)) {
     if (!used.has(key)) {
       throw new LoadError(
-        `Module "${moduleNode.name}" declares input "${key}" but never forwards it into a provision nor returns it as an output.`,
+        `Module "${moduleNode.name}" declares dependency "${key}" but never forwards it into a provision nor returns it as an exposed interface.`,
       );
     }
   }
@@ -838,7 +838,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   if (rootDepKeys.length > 0) {
     const names = rootDepKeys.map((k) => `"${k}"`).join(', ');
     throw new LoadError(
-      `Module "${root.name}" declares input${rootDepKeys.length > 1 ? 's' : ''} ${names} but is being ` +
+      `Module "${root.name}" declares ${rootDepKeys.length > 1 ? 'dependencies' : 'dependency'} ${names} but is being ` +
         'deployed as the root — a root has no enclosing scope to wire them; compose ' +
         `"${root.name}" from another module that provisions and wires it instead.`,
     );

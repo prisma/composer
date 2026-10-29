@@ -65,7 +65,7 @@ describe('a module with a declared dep that is never forwarded (Load error a)', 
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      'Module "auth" declares input "db" but never forwards it into a provision nor returns it as an output.',
+      'Module "auth" declares dependency "db" but never forwards it into a provision nor returns it as an exposed interface.',
     );
   });
 
@@ -96,7 +96,7 @@ describe('a module with a declared dep that is never forwarded (Load error a)', 
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      'Module "aliased" declares input "b" but never forwards it into a provision nor returns it as an output.',
+      'Module "aliased" declares dependency "b" but never forwards it into a provision nor returns it as an exposed interface.',
     );
   });
 
@@ -201,7 +201,7 @@ describe('a module with non-empty deps Loaded as root (Load error c)', () => {
 
     expect(() => Load(rootWithDeps)).toThrow(LoadError);
     expect(() => Load(rootWithDeps)).toThrow(
-      'Module "auth" declares input "db" but is being deployed as the root — a root has no enclosing ' +
+      'Module "auth" declares dependency "db" but is being deployed as the root — a root has no enclosing ' +
         'scope to wire them; compose "auth" from another module that provisions and wires it instead.',
     );
   });
@@ -216,7 +216,9 @@ describe('a module with non-empty deps Loaded as root (Load error c)', () => {
       },
     );
 
-    expect(() => Load(rootWithDeps)).toThrow(/declares inputs "db", "cache" but is being deployed/);
+    expect(() => Load(rootWithDeps)).toThrow(
+      /declares dependencies "db", "cache" but is being deployed/,
+    );
   });
 });
 
@@ -437,7 +439,7 @@ describe('pass-through: an expose may return a boundary input directly', () => {
       svc: deps.svc,
     }));
 
-  test('Loads clean — returning an input as an output counts as using it', () => {
+  test('Loads clean — returning a dependency as an exposed interface counts as using it', () => {
     const root = module('shop', {}, ({ provision }) => {
       const origin = provision(rpcProvider(), { id: 'origin' });
       const pass = provision(passModule(), { id: 'pass', deps: { svc: origin.rpc } });

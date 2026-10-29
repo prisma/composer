@@ -68,7 +68,7 @@ export function slotNodesAndEdges(
     const kind: string | undefined = isNode(value) ? value.kind : undefined;
     if (kind === 'resource') {
       throw new LoadError(
-        `Input "${input}" of "${nodeId}" is a resource node — a resource is provisioned by ` +
+        `Dependency "${input}" of "${nodeId}" is a resource node — a resource is provisioned by ` +
           'the composing module, never created for a service that mentions it. Declare the input ' +
           "as a dependency (the pack's dependency factory) and wire the module-provisioned " +
           "resource's ref into it.",
@@ -76,12 +76,12 @@ export function slotNodesAndEdges(
     }
     if (kind !== 'dependency') {
       throw new LoadError(
-        `Input "${input}" of "${nodeId}" is not a branded dependency end ` +
+        `Dependency "${input}" of "${nodeId}" is not a branded dependency end ` +
           '(construct it with the dependency() factory).',
       );
     }
     if (value.type.length === 0) {
-      throw new LoadError(`Input "${input}" of "${nodeId}" has an empty node type.`);
+      throw new LoadError(`Dependency "${input}" of "${nodeId}" has an empty node type.`);
     }
     const id = `${nodeId}.${input}`;
     nodes.push({ id, parent: nodeId, node: value });
@@ -94,7 +94,7 @@ export function loadService(root: ServiceNode, rootId: NodeId): Graph {
   for (const [input, value] of Object.entries(root.inputs)) {
     if (isNode(value) && value.kind === 'dependency') {
       throw new LoadError(
-        `Service "${rootId}" has an unwired dependency input "${input}" — this service is composed ` +
+        `Service "${rootId}" has an unwired dependency "${input}" — this service is composed ` +
           `by a module; deploy the module instead of loading "${rootId}" directly.`,
       );
     }

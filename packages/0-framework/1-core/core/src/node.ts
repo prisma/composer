@@ -613,14 +613,14 @@ function requireResourceWiring(def: {
     const declared: unknown = slot;
     if (!isNode(declared) || declared.kind !== 'dependency') {
       throw new Error(
-        `resource() input "${input}" is not a branded dependency end (construct it with the dependency() factory).`,
+        `resource() dependency "${input}" is not a branded dependency end (construct it with the dependency() factory).`,
       );
     }
   }
   for (const input of Object.keys(inputs)) {
     if (deps[input] === undefined) {
       throw new Error(
-        `resource() declares input "${input}" but its deps leave it unwired. A resource is wired when it is constructed.`,
+        `resource() declares dependency "${input}" but its deps leave it unwired. A resource is wired when it is constructed.`,
       );
     }
   }

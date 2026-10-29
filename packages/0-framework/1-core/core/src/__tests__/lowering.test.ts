@@ -247,7 +247,7 @@ const runError = (eff: ReturnType<typeof lowering>): LowerError =>
   Effect.runSync(Effect.flip(eff as Effect.Effect<undefined, LowerError>));
 
 describe('buildConfig', () => {
-  test("matches a dependency input's params by name to the wired producer's lowered outputs, via its dependency edge", () => {
+  test("matches a dependency's params by name to the wired producer's lowered outputs, via its dependency edge", () => {
     const auth = app('fake/compute', { db: dbEnd() }, { port: number({ default: 3000 }) });
     const root = module('shop', {}, (h) => {
       const db = h.provision(dbResource(), { id: 'db' });
