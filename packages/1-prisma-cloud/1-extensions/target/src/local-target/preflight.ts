@@ -21,7 +21,7 @@ import {
 } from '@internal/local-target';
 import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
 import { collectPreflightNames, inputSecretNames, type PreflightName } from '../preflight-names.ts';
-import { publicUrlStrategies } from '../public-url.ts';
+import { checkPublicUrls, publicUrlStrategies } from '../public-url.ts';
 import { inputValidationFailure } from '../serializer.ts';
 
 interface MissingSecrets {
@@ -99,6 +99,7 @@ async function fingerprint(key: CryptoKey, value: string): Promise<string> {
 }
 
 export async function runDevPreflight(input: PreflightInput): Promise<PreflightPayload> {
+  checkPublicUrls(input.graph);
   for (const { address, strategy } of publicUrlStrategies(input.graph)) {
     if (strategy.strategy === 'hostname') {
       input.warn?.(

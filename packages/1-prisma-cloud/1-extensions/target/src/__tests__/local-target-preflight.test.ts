@@ -136,6 +136,16 @@ const badPublicUrlGraph = () =>
     { environment: { name: 'dev' } },
   );
 
+const sharedHostnameGraph = () =>
+  Load(
+    module('shop', ({ provision }) => {
+      const web = provision(webService);
+      provision(publicUrl({ name: 'site', url: 'shop.com', target: web.http }));
+      provision(publicUrl({ name: 'www', url: publicUrl.hostname('Shop.COM.'), target: web.http }));
+    }),
+    { environment: { name: 'dev' } },
+  );
+
 const devPreflightWarnings = async (graph: ReturnType<typeof Load>, environment: string) => {
   const warnings: string[] = [];
   await runDevPreflight({
@@ -451,6 +461,13 @@ describe('prisma dev preflight', () => {
   test('a url that resolves to neither a hostname nor a strategy stops dev, naming the public URL', async () => {
     await expect(devPreflightWarnings(badPublicUrlGraph(), 'dev')).rejects.toThrow(
       'shop.site: url resolved to 42, which is not a hostname or a public URL strategy.',
+    );
+    expect(fs.existsSync(path.join(cwd, '.prisma-composer'))).toBe(false);
+  });
+
+  test('two public URLs that name the same hostname stop dev, naming both and the hostname', async () => {
+    await expect(devPreflightWarnings(sharedHostnameGraph(), 'dev')).rejects.toThrow(
+      'shop.site and shop.www both name the hostname shop.com. One hostname serves one public URL.',
     );
     expect(fs.existsSync(path.join(cwd, '.prisma-composer'))).toBe(false);
   });

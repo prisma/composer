@@ -125,6 +125,21 @@ export function publicUrlStrategies(
   );
 }
 
+/** Throws unless every public URL's resolved `url` names a strategy and no two name the same hostname. */
+export function checkPublicUrls(graph: Graph): void {
+  const owners = new Map<string, string>();
+  for (const { address, strategy } of publicUrlStrategies(graph)) {
+    if (strategy.strategy !== 'hostname') continue;
+    const owner = owners.get(strategy.hostname);
+    if (owner !== undefined) {
+      throw new Error(
+        `${owner} and ${address} both name the hostname ${strategy.hostname}. One hostname serves one public URL.`,
+      );
+    }
+    owners.set(strategy.hostname, address);
+  }
+}
+
 /**
  * Makes a service reachable from the internet. `target` is the service's
  * exposed HTTP interface; `url` is a hostname, `publicUrl.hostname(…)`,

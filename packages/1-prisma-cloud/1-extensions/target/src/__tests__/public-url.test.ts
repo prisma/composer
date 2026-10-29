@@ -153,17 +153,32 @@ describe('resolvedStrategy()', () => {
 });
 
 describe('the deploy preflight', () => {
-  test('fails on a url that resolves to neither a hostname nor a strategy, before calling the platform', async () => {
-    const calls: string[] = [];
-    const client = new Proxy(
-      {},
-      {
-        get: (_, method) => () => {
-          calls.push(String(method));
-          throw new Error('the preflight must not reach the platform');
-        },
+  const calls: string[] = [];
+  const client = new Proxy(
+    {},
+    {
+      get: (_, method) => () => {
+        calls.push(String(method));
+        throw new Error('the preflight must not reach the platform');
       },
-    ) as ManagementApiClient;
+    },
+  ) as ManagementApiClient;
+  const preflight = (graph: ReturnType<typeof Load>) =>
+    runPreflight(
+      {
+        graph,
+        container: new PrismaCloudContainer(
+          { appName: 'shop', environment: 'production' },
+          'proj_1',
+          undefined,
+        ),
+        environment: 'production',
+      },
+      { client },
+    );
+
+  test('fails on a url that resolves to neither a hostname nor a strategy, before calling the platform', async () => {
+    calls.length = 0;
     const graph = Load(
       module('shop', ({ environment, provision }) => {
         const svc = provision(web);
@@ -173,21 +188,27 @@ describe('the deploy preflight', () => {
       { environment: { name: 'production' } },
     );
 
-    await expect(
-      runPreflight(
-        {
-          graph,
-          container: new PrismaCloudContainer(
-            { appName: 'shop', environment: 'production' },
-            'proj_1',
-            undefined,
-          ),
-          environment: 'production',
-        },
-        { client },
-      ),
-    ).rejects.toThrow(
+    await expect(preflight(graph)).rejects.toThrow(
       'shop.site: url resolved to 42, which is not a hostname or a public URL strategy.',
+    );
+    expect(calls).toEqual([]);
+  });
+
+  test('fails when two public URLs on different services name the same hostname, before calling the platform', async () => {
+    calls.length = 0;
+    const other = compute({ name: 'other', deps: {}, build, expose: { http: rawHttpContract } });
+    const graph = Load(
+      module('shop', ({ provision }) => {
+        const a = provision(web);
+        const b = provision(other);
+        provision(publicUrl({ name: 'site', url: 'shop.com', target: a.http }));
+        provision(publicUrl({ name: 'www', url: publicUrl.hostname('Shop.COM.'), target: b.http }));
+      }),
+      { environment: { name: 'production' } },
+    );
+
+    await expect(preflight(graph)).rejects.toThrow(
+      'shop.site and shop.www both name the hostname shop.com. One hostname serves one public URL.',
     );
     expect(calls).toEqual([]);
   });
