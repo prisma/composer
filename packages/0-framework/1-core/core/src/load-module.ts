@@ -562,7 +562,7 @@ function flatten(
     if (child.kind === 'resource') {
       if (provisionWiring !== undefined) {
         throw new LoadError(
-          `provision("${id}") received deps for a resource — a resource has no dependency slots to satisfy.`,
+          `provision("${id}") received deps for a resource — a resource's slots are wired when it is constructed, not at provision().`,
         );
       }
       if (provisionSecrets !== undefined) {

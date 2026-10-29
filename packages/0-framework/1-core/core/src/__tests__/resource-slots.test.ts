@@ -196,7 +196,7 @@ describe('a resource with a slot wired at construction', () => {
     });
 
     expect(loadError(() => Load(root)).message).toBe(
-      'provision("site") received deps for a resource — a resource has no dependency slots to satisfy.',
+      'provision("site") received deps for a resource — a resource\'s slots are wired when it is constructed, not at provision().',
     );
   });
 
