@@ -375,6 +375,39 @@ describe("Load's second pass", () => {
     );
   });
 
+  test('a provision leaked from a Load that failed before sealing is sealed too', () => {
+    let leaked: ModuleBuilder['provision'] | undefined;
+    const web = service({
+      name: 'web',
+      extension: 'test/pack',
+      type: 'fake/compute',
+      inputs: {
+        db: dependency({ type: 'fake/db', connection: conn({ url: string() }, () => ({})) }),
+      },
+      params: {},
+      build,
+    });
+    const broken = module('broken', ({ provision }) => {
+      leaked = provision;
+      provision(web, { deps: {} as never });
+    });
+    expect(() => Load(broken, staging)).toThrow(LoadError);
+
+    const root = module('shop', ({ environment, provision }) => {
+      const greeting = resolve([environment.name], ([name]) => {
+        leaked?.(plainService());
+        return name;
+      });
+      provision(echoService(), { input: { greeting } });
+    });
+
+    expect(loadError(() => Load(root, staging)).message).toBe(
+      'provision() was called after module "broken" was loaded, from inside a resolve() function. ' +
+        'resolve() computes values, never structure: the graph is the same whatever inputs ' +
+        'Composer is given (ADR-0062). Provision the node in the module body and pass the value into it.',
+    );
+  });
+
   test('Loading the same root twice resolves values both times', () => {
     const root = module('shop', ({ environment, provision }) => {
       const greeting = resolve([environment.name], ([name]) => `hello from ${name}`);

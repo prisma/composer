@@ -865,26 +865,28 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   const authoredEdges: AuthoredEdge[] = [];
   const loading = { sealed: false };
 
-  flatten(
-    root,
-    rootId,
-    {},
-    {},
-    {},
-    nodes,
-    edges,
-    pending,
-    inputBindings,
-    paramBindings,
-    byId,
-    ports,
-    authoredEdges,
-    loading,
-  );
-
-  for (const entry of pending) validateWiring(entry, byId);
-  assertDependencyDag(edges);
-  loading.sealed = true;
+  try {
+    flatten(
+      root,
+      rootId,
+      {},
+      {},
+      {},
+      nodes,
+      edges,
+      pending,
+      inputBindings,
+      paramBindings,
+      byId,
+      ports,
+      authoredEdges,
+      loading,
+    );
+    for (const entry of pending) validateWiring(entry, byId);
+    assertDependencyDag(edges);
+  } finally {
+    loading.sealed = true;
+  }
   const resources = new Map<NodeId, ResourceNode>();
   for (const [address, node] of byId) {
     if (node.kind === 'resource') resources.set(address, node);
