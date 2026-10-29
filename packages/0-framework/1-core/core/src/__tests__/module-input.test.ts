@@ -441,6 +441,44 @@ describe('forwarding and the second pass', () => {
     const key = bindingOf(graph)['key'] as SecretSource;
     expect(key.payload).toBe(source.payload);
   });
+
+  test('the whole input forwarded into a child module reaches its service', () => {
+    const email = module('email', { input: type({ from: 'string' }) }, ({ input, provision }) => {
+      provision(echoService(), { input: { from: input.from } });
+    });
+    const relay = module('relay', { input: type({ from: 'string' }) }, ({ input, provision }) => {
+      provision(email, { input });
+    });
+
+    const graph = Load(
+      module('shop', ({ provision }) => {
+        provision(relay, { input: { from: 'shop@example.com' } });
+      }),
+    );
+
+    expect(graph.inputBindings[0]?.serviceAddress).toBe('shop.relay.email.echo');
+    expect(bindingOf(graph)).toEqual({ from: 'shop@example.com' });
+  });
+
+  test('a service param bound to an input field with no real value is left unbound', () => {
+    const email = module('email', { input: anyInputSchema }, ({ input, provision }) => {
+      provision(echoService(), { input: {}, params: { label: (input as never)['missing'] } });
+    });
+
+    const graph = Load(shopWith(email, {}));
+
+    expect(graph.params).toEqual([]);
+  });
+
+  test('an array member bound to an input field with no real value is kept as undefined', () => {
+    const email = module('email', { input: anyInputSchema }, ({ input, provision }) => {
+      provision(echoService(), { input: { list: [(input as never)['missing']] } });
+    });
+
+    const graph = Load(shopWith(email, {}));
+
+    expect(bindingOf(graph)).toStrictEqual({ list: [undefined] });
+  });
 });
 
 describe('errors', () => {
