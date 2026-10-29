@@ -127,7 +127,7 @@ describe('cron()', () => {
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      'Dependency input "worker" of provisioned module "root.cron" is not wired to a producer (module "root").',
+      'Dependency "worker" of provisioned module "root.cron" is not wired to a producer (module "root").',
     );
   });
 });

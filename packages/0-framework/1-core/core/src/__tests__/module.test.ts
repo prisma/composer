@@ -284,7 +284,7 @@ describe('Load of a module root', () => {
     expect(authIndex).toBeLessThan(storefrontIndex);
   });
 
-  test('a lone service Loaded directly with an unwired dependency input is a LoadError naming the input and pointing at the composing module', () => {
+  test('a lone service Loaded directly with an unwired dependency is a LoadError naming the input and pointing at the composing module', () => {
     const lone = makeStorefrontService();
 
     expect(() => Load(lone, { id: 'storefront' })).toThrow(LoadError);
