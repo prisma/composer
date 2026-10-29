@@ -130,6 +130,23 @@ function isThenable(value: unknown): boolean {
   );
 }
 
+function canonicalSecret(source: SecretSource): SecretSource {
+  const original = sourceOriginOf(source)?.source;
+  return isSecretSource(original) ? original : source;
+}
+
+function nodeKindOf(site: ValueBindingSite): SecretSourceUse['nodeKind'] {
+  switch (site.kind) {
+    case 'serviceInput':
+    case 'param':
+      return 'service';
+    case 'moduleInput':
+      return 'module';
+    case 'props':
+      return 'resource';
+  }
+}
+
 function pointersIn(values: unknown): ReadonlySet<object> {
   const pointers = new Set<object>();
   const seen = new WeakSet<object>();
@@ -374,18 +391,33 @@ export function resolveValues(input: {
   readonly secretSources: readonly SecretSourceUse[];
 } {
   const { environment, configPool } = input;
-  const secretSources: SecretSourceUse[] = [];
-  const recorded = new Set<SecretSource>();
+  const secretUses = new Map<SecretSource, SecretSourceUse>();
   const recordSecret = (source: SecretSource, site: ValueBindingSite): void => {
-    const original = sourceOriginOf(source)?.source;
-    const canonical = isSecretSource(original) ? original : source;
-    if (recorded.has(canonical)) return;
-    recorded.add(canonical);
-    secretSources.push({
+    const canonical = canonicalSecret(source);
+    if (secretUses.has(canonical)) return;
+    secretUses.set(canonical, {
       source: canonical,
       address: site.address,
-      nodeKind: site.kind === 'moduleInput' ? 'module' : 'service',
+      nodeKind: nodeKindOf(site),
     });
+  };
+  const secretSourcesReceivedBy = (
+    inputBindings: readonly ServiceInputBinding[],
+    params: readonly ParamBinding[],
+  ): readonly SecretSourceUse[] => {
+    for (const { serviceAddress, binding } of [...inputBindings, ...params]) {
+      for (const pointer of pointersIn(binding)) {
+        if (!isSecretSource(pointer)) continue;
+        const canonical = canonicalSecret(pointer);
+        if (secretUses.get(canonical)?.nodeKind === 'service') continue;
+        secretUses.set(canonical, {
+          source: canonical,
+          address: serviceAddress,
+          nodeKind: 'service',
+        });
+      }
+    }
+    return [...secretUses.values()];
   };
 
   const found: { value: Value<unknown>; site: ValueBindingSite }[] = [];
@@ -517,7 +549,7 @@ export function resolveValues(input: {
       inputBindings: input.inputBindings,
       params: input.params,
       resourceProps: authoredProps,
-      secretSources,
+      secretSources: secretSourcesReceivedBy(input.inputBindings, input.params),
     };
   }
 
@@ -535,25 +567,27 @@ export function resolveValues(input: {
           >(substituted);
     resourceProps.set(address, resolvedProps);
   }
+  const inputBindings = input.inputBindings.map((entry) => {
+    const binding = substitute(entry.binding, results, inProgress, 'keep');
+    return binding === entry.binding
+      ? entry
+      : {
+          serviceAddress: entry.serviceAddress,
+          binding: blindCast<
+            ServiceInputBinding['binding'],
+            'substitution replaces each value with its real value and keeps every source in place: an environment or computed value is plain data or a pointer it received, which checkResult checked, and an input field is its module schema output with each pointer put back; the service schema validates the whole binding again when the target serializes it'
+          >(binding),
+        };
+  });
+  const params = input.params.flatMap((entry) => {
+    const binding = substitute(entry.binding, results, inProgress, 'keep');
+    if (binding === undefined && isValue(entry.binding)) return [];
+    return [binding === entry.binding ? entry : { ...entry, binding }];
+  });
   return {
     resourceProps,
-    secretSources,
-    inputBindings: input.inputBindings.map((entry) => {
-      const binding = substitute(entry.binding, results, inProgress, 'keep');
-      return binding === entry.binding
-        ? entry
-        : {
-            serviceAddress: entry.serviceAddress,
-            binding: blindCast<
-              ServiceInputBinding['binding'],
-              'substitution replaces each value with its real value and keeps every source in place: an environment or computed value is plain data or a pointer it received, which checkResult checked, and an input field is its module schema output with each pointer put back; the service schema validates the whole binding again when the target serializes it'
-            >(binding),
-          };
-    }),
-    params: input.params.flatMap((entry) => {
-      const binding = substitute(entry.binding, results, inProgress, 'keep');
-      if (binding === undefined && isValue(entry.binding)) return [];
-      return [binding === entry.binding ? entry : { ...entry, binding }];
-    }),
+    inputBindings,
+    params,
+    secretSources: secretSourcesReceivedBy(inputBindings, params),
   };
 }
