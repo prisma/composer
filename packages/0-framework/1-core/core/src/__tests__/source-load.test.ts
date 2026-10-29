@@ -313,9 +313,8 @@ describe("a module's input and runtime param sources", () => {
     });
 
     expect(loadError(() => Load(shopWith(email, { base: origin() }))).message).toBe(
-      'input.base.x of module "shop.email" does not exist: input.base is a value known only at ' +
-        'boot, not a plain object, so it has no fields. To compute with it, list it: ' +
-        'resolve([input.base], ([v]) => …).',
+      'input.base.x of module "shop.email" does not exist: input.base stands for a value only ' +
+        'the platform has at boot, so it has no fields and can only be passed on unchanged.',
     );
   });
 });
