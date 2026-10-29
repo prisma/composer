@@ -24,7 +24,7 @@ architecture/design phase that comes *after* the high-level model is settled.
   ADR-0050.
 - [`email-module.md`](email-module.md) — why the `email` module is a
   separate service with consumer-side templates and separate `send`/`outbox`
-  ports.
+  interfaces.
 - [`auth-module.md`](auth-module.md) — why the `auth` module ships its schema
   as a Prisma ORM extension pack, checks it at deploy time, proxies browsers
   through the app's origin, and uses stateless JWTs.

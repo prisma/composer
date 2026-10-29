@@ -21,36 +21,37 @@ lifecycle — an API key, an external URL — is **Configuration**, not a node.
 ### Module
 
 The unit of composition: a **bounded context** that wraps some Services,
-Resources, and other Modules, exposes **Inputs** and **Outputs**, and is connected to
-other Modules only through them. A Module runs **no code of its own** — its behaviour is
+Resources, and other Modules, **depends on** interfaces and **exposes** interfaces, and is
+connected to other Modules only through them. A Module runs **no code of its own** — its behaviour is
 the composition of what it wraps.
 
 A Module **behaves like a Service**: stateless, reprovisionable, and equivalent to its
-past incarnations, with typed Inputs and Outputs. That shared behaviour is what
+past incarnations, with typed dependencies and exposed interfaces. That shared behaviour is what
 makes nesting work — a nested Module is wired exactly as a Service is. It stays a
 distinct type, with composition behaviours a Service doesn't have.
 
 - A Module is an *authoring/reasoning* unit. It is not a single deployed object — it
   lowers to a subgraph of hosting primitives (see `layering.md`).
-- **Nesting.** A wrapped node's Inputs/Outputs connect either to the parent Module's
-  Inputs/Outputs or to a sibling (Service, Resource, or Module) inside the same Module; a
+- **Nesting.** A wrapped node's dependencies and exposed interfaces connect either to the
+  parent Module's own or to a sibling (Service, Resource, or Module) inside the same Module; a
   wrapped node reaches outside the Module only through the parent's boundary.
 - **Composite, not atomic.** Where a Service is a leaf (opaque), a Module is
-  transparent: the framework sees its ports *and* the internal topology it owns. The
+  transparent: the framework sees its dependencies and exposed interfaces *and* the internal topology it owns. The
   Module decides how the Services, Resources, and Modules it wraps connect; its
   knowledge ends at its boundary.
 - **The App is the outermost Module.** The whole application is itself a Module —
   the outermost one, and what you deploy — owning the top-level topology: the
   Module-to-Module wiring and any shared Resources. A shared database, for instance,
-  is owned by the outermost Module, which wires it to each consumer's Data Input (and
+  is owned by the outermost Module, which wires it to each consumer's data dependency (and
   owns its migration — see Aggregate Contract). There is no separate root construct;
   "App" names the outermost Module, it is not a distinct kind of node.
 
 ### Service
 
 A **provisioned compute unit that runs your code** — an HTTP API, a web app, a
-worker. It exposes typed **Inputs** and **Outputs** — the same ports a Module has —
-but it is **atomic**: the framework sees those ports and nothing inside. Lowers to a
+worker. It **depends on** typed interfaces and **exposes** typed interfaces — the same
+boundary a Module has — but it is **atomic**: the framework sees that boundary and nothing
+inside. Lowers to a
 compute unit on the chosen deployment target — Prisma Compute on Prisma Cloud, or
 another target's equivalent (Alchemy calls it a Platform).
 
@@ -58,9 +59,9 @@ another target's equivalent (Alchemy calls it a Platform).
 
 A **node whose lifecycle a provider manages**: the framework can create, update and
 delete it. Most Resources hold **state**, such as a database, a bucket or a cache.
-Surfaced as a typed **capability** (via an Alchemy Layer): a Resource's Output
-provides it, a Module's Input requires one, and the wire is valid iff provided
-satisfies required. A Resource may expose nothing: a public URL offers a hostname
+Surfaced as a typed **capability** (via an Alchemy Layer): the Resource exposes it as
+an interface, a Module depends on one, and the wire is valid iff the exposed interface
+satisfies the dependency. A Resource may expose nothing: a public URL offers a hostname
 to the internet, which is outside the graph, so no node can depend on it.
 
 The lifecycle can be implemented by cloud APIs *or* third-party/partner APIs, so a
@@ -171,7 +172,7 @@ such as a param's value.
 
 ### Topology
 
-The graph of Modules and Resources wired together through their Inputs and Outputs.
+The graph of Modules and Resources wired together through their dependencies and exposed interfaces.
 The framework infers it from TypeScript and emits it as a static artifact for the
 platform to provision.
 
@@ -186,36 +187,49 @@ A node's **address** is its identity: the path of provision IDs starting at the 
 
 ## Connections
 
-A **connection** is an edge that wires one node's **Output** to another node's
-**Input**. Every node — Module, Service, or Resource — carries typed Inputs and
-Outputs, and the wiring rule is uniform at every level: an Input must be connected
-to something that satisfies it — a sibling's Output, a Resource's Output, or the
-enclosing Module's boundary Input. There are two families of connection.
+A **connection** is an edge that wires one node's **dependency** to another node's
+**exposed interface**. Every node — Module, Service, or Resource — depends on
+interfaces and exposes interfaces, and the wiring rule is uniform at every level: a
+dependency must be connected to an exposed interface that satisfies it — a
+sibling's, a Resource's, or one the enclosing Module forwards in from its own
+boundary. There are two families of connection.
 
-### Input
+### Interface
 
-A connection point where a node **requires** something. Either a *communication*
-Input (consumes another node's Output) or a *Data* Input (consumes a Resource's
-Data Output).
+The typed thing a connection carries: an RPC contract, a raw HTTP connection, a
+data contract. In code it is a `Contract`, a value with a `kind` and a
+`satisfies()` check. An interface in Composer's terms is what the ports-and-adapters
+literature calls a port: it can be exposed, or required as a dependency, by any
+node. That is the one place the word is used; Composer does not say "port" for
+an interface, because it has HTTP and TCP ports too
+([ADR-0063](../90-decisions/ADR-0063-a-node-depends-on-an-interface-or-exposes-one.md)).
 
-### Output
+### Dependency
 
-A connection point where a node **provides** something. Communication Outputs are
-served by Services and Modules; Data Outputs are served by Resources.
+A node's need for an interface, declared with `deps`. Either a *communication*
+dependency (on another node's exposed interface) or a *data* dependency (on a
+Resource's exposed data contract). A dependency is wired at `provision()` for a
+service or a module, and at construction for a resource that has one.
+
+### Exposed interface
+
+An interface a node offers for others to depend on, declared with `expose` on a
+service or a module; a Resource exposes the one interface it `provides`.
+Communication interfaces are exposed by Services and Modules; data interfaces by
+Resources. A node may expose nothing.
 
 ### Communication connection — style: request/response | stream
 
 A Module-to-Module connection — or, at the boundary, public **ingress**. Its **style**
 is declared by its contract: a contract may declare `style`, and a connection's style
-is the style of the contract on the port that produces it. A contract may also
-declare none.
+is the style of the exposed interface's contract. A contract may also declare none.
 
 - **request-response** — synchronous. Service RPC declares it.
 - **stream** — asynchronous, durable events.
 - **none** — raw HTTP declares no style, because an arbitrary HTTP server may do
   either.
 
-The application topology labels each communication edge with its producer's
+The application topology labels each communication edge with the exposed interface's
 declared style, and leaves the style off when there is none.
 
 The communication style is *not* mediated by a Resource; the underlying transport
@@ -225,19 +239,20 @@ The communication style is *not* mediated by a Resource; the underlying transpor
 
 A Module consuming a Postgres Resource.
 
-- A **Data Input** (on a Module) = a **connection method** (`TCP` — direct Postgres
+- A **data dependency** (on a Module) = a **connection method** (`TCP` — direct Postgres
   wire; `HTTP` — PostgREST-style) plus a **Data Contract** it must satisfy.
-- A **Data Output** (on a Postgres Resource) = the set of **contract hashes** the
+- A Postgres Resource's **exposed data interface** = the set of **contract hashes** the
   Resource is provisioned (and verifiable) to satisfy.
-- The wire is valid iff the Output's offered hashes satisfy the Input's contract.
+- The wire is valid iff the exposed interface's offered hashes satisfy the dependency's contract.
 - The concrete connection (URL) is injected when wired — never embedded in the Module
   (no-globals).
 
 ### Ingress / Egress
 
-**Ingress** = a request/response Output exposed to the public (e.g. the website) —
-a real edge at the topology's public boundary. It is authored as a `publicUrl()`
-node: a resource, a driver by role, wired to the HTTP connection a service exposes, serving a named
+**Ingress** = a service's exposed HTTP interface made reachable from the public (e.g.
+the website) — a real edge at the topology's public boundary. It is authored as a
+`publicUrl()` node: a resource, a driver by role, that depends on the HTTP interface
+a service exposes and exposes nothing, serving a named
 hostname or one the platform generates
 ([ADR-0060](../90-decisions/ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md)).
 **Egress** = a Service's declared
@@ -251,7 +266,7 @@ that external thing as a node, provision it (a Resource) or wrap it in a Service
 ### Data Contract
 
 A **Prisma ORM** contract — a deterministic, hashable description of the schema
-slice a Module may access (identified by its `storageHash`). A Module's Data Input
+slice a Module may access (identified by its `storageHash`). A Module's data dependency
 declares the contract it requires; this is also the per-Module least-privilege scope.
 
 Whoever **owns** a database owns the migration that makes it satisfy the contract —
@@ -263,7 +278,7 @@ implicit root Module when it is shared; see Aggregate Contract).
 
 A database has exactly **one owning Module** — the Module it lives inside, or, when it is
 shared, the enclosing **implicit root Module** that wires it to its consumers. The
-owner owns the schema and the migration; each consumer connects via a Data Input
+owner owns the schema and the migration; each consumer connects via a data dependency
 declaring the contract slice it needs. The owner's schema must satisfy the
 **aggregate** — the union of every consumer's contract — and consumer slices must
 not overlap (a Prisma ORM concept). The cloud can verify the live DB satisfies the
@@ -302,7 +317,7 @@ outgrows the core root.
 ### Entrypoint
 
 An addressable unit the platform can execute (by id/kind), defined by an artifact
-reference plus its declared required Inputs. The execution-plane handle for a
+reference plus its declared dependencies. The execution-plane handle for a
 Service.
 
 ### Environment (formerly Stage)
@@ -358,9 +373,9 @@ references the target handed it. See [`core-and-targets.md`](core-and-targets.md
 
 The abstract **Service** kind. The concrete constructor is target-provided —
 `compute(deps, handler)` on Prisma Cloud — and returns a plain data object (the
-manifest): inspectable (the control plane reads its ports) and runnable (the runtime
+manifest): inspectable (the control plane reads its dependencies and exposed interfaces) and runnable (the runtime
 invokes it), but importing runs nothing. The Service body is opaque to the framework (a
-**black box**); the framework sees only its ports.
+**black box**); the framework sees only its boundary.
 
 ### module
 
@@ -370,14 +385,14 @@ The library function that defines a **Module** — the same wiring surface as
 It is the single authoring primitive; the App is the outermost `module()`, picked
 out only by being the one you deploy.
 
-### Port — Input / Output by position
+### Direction by position
 
-The single wiring mechanic. Every node declares typed **Input** and **Output**
-ports (see [Connections](#connections)); direction is inferred from **position** —
-a [connection type](#connection-type) named as a dependency is an **Input** (arrives
-hydrated as an argument), one that is returned is an **Output** (the body
-implements it). No explicit direction markers. `Input → arguments, Output → return`
-holds for both Services and Modules.
+The single wiring mechanic. A node declares what it depends on and what it exposes
+(see [Connections](#connections)), and the authoring surface infers which is which
+from **position** — a [connection type](#connection-type) named in `deps` is a
+dependency (it arrives hydrated), one named in `expose` is an exposed interface
+(the body implements it). No explicit direction markers; the same rule holds for
+Services and Modules.
 
 ### Connection type
 
@@ -392,8 +407,8 @@ conform (dependency inversion).
 The Module-scoped operator that turns a dependency descriptor into an **owned
 Resource** (`provision(rawPostgres())`) or instantiates and wires an owned node
 (`provision(svc, { db })`). Ownership and provisioning are a Module concern; a
-Service only *requires*. Forwarding is just passing a Module's Inputs down and
-returning owned nodes' Outputs up.
+Service only *requires*. Forwarding is just passing a Module's dependencies down and
+returning owned nodes' exposed interfaces up.
 
 ### run — the boot loop
 
@@ -403,10 +418,10 @@ structure, the pack owns encoding.** Core enumerates the config shape (semantic
 names + type tags — no platform keys in the graph) via `configOf`; the pack's
 `run` **deserializes** the platform environment into a typed `Config` by its own
 serializer (keyed from the address), the single sanctioned environment read; then
-core's `hydrate` turns each Input's typed values into a client — with the
+core's `hydrate` turns each dependency's typed values into a client — with the
 app-supplied driver factory — and calls the handler. Config validation is the
 pack reversing its own serialization (present, right type), failing loudly. A
-framework server (Next.js) is wired in as an HTTP Output, its deps reached via a
+framework server (Next.js) is wired in as an exposed HTTP interface, its deps reached via a
 DI accessor (`use(…)`), never the environment. Env vars carry config into the VM
 but **terminate at hydration** — user code is dependency-injection only.
 
@@ -414,10 +429,10 @@ but **terminate at hydration** — user code is dependency-injection only.
 
 The two-phase lifecycle. Running a `define` **Loads** an in-memory graph (a graph of
 streams, request/response being the bounded case) and the framework validates its
-integrity — every Input satisfied, interfaces compatible, nothing dangling — with
-nothing executed but module bodies and `resolve()` functions. **Hydrate** attaches adapters and pushes data through the Inputs
-and out of the Outputs. One graph serves both a test harness (a fake Output
-substituted at any Input) and a real deployment.
+integrity — every dependency satisfied, interfaces compatible, nothing dangling — with
+nothing executed but module bodies and `resolve()` functions. **Hydrate** attaches adapters and pushes data through the dependencies
+and out of the exposed interfaces. One graph serves both a test harness (a fake
+substituted at any dependency) and a real deployment.
 
 ## Provisioning plane — the compile target (Alchemy / Effect)
 
@@ -442,12 +457,12 @@ is in `layering.md`; this is the term-by-term catalogue.
   first-class **Resource** (Postgres) lowers to `Database` + `Connection`.
 - **Props** — the desired configuration passed at declare time; diffed against
   the last deploy to detect change. (A rebuild registers as a change because the
-  artifact is content-addressed: new bytes, new `artifactPath`.) `→` a node's **Inputs** +
+  artifact is content-addressed: new bytes, new `artifactPath`.) `→` a node's **dependencies** +
   **Configuration**.
 - **Attributes / Output\<T>** — values the cloud returns (`appEndpointDomain`,
   `deploymentId`, ids); lazy references that flow into other Resources' Props.
-  Resource-to-resource wiring is Output → Props. `→` a node's **Outputs**; a
-  **connection** (Output→Input) lowers to Output→Props, plus an
+  Resource-to-resource wiring is Output → Props. `→` a node's **exposed interfaces**; a
+  **connection** (exposed interface→dependency) lowers to Output→Props, plus an
   `EnvironmentVariable` when the consumer reads it at runtime (what `AUTH_URL`
   does today).
 - **Provider** — implements a Resource type's lifecycle; an Effect `Layer`. We
@@ -491,9 +506,9 @@ is where the framework's own binding layer gets built.
   Every term above is expressed as Effects.
 - **Layer\<ROut, E, RIn>** — builds services; both Providers and capabilities are
   Layers (`Layer.effect`, `mergeAll`, `provide`, `provideMerge`, `orDie`).
-  `→` a **capability provider** (a Resource's Output) is a Layer.
+  `→` a **capability provider** (a Resource's exposed interface) is a Layer.
 - **Context.Tag** — the typed service key that names a capability. `→` a
-  **capability** (`Database`, `AuthApi`); a Service's **Input** is a Tag in its
+  **capability** (`Database`, `AuthApi`); a Service's **dependency** is a Tag in its
   `R` channel; a **connection** type-checks as "provided Layer satisfies required
   Tag".
 - **Config** (`effect/Config`) — reads env/secret values at the boundary. `→`
@@ -519,11 +534,16 @@ is where the framework's own binding layer gets built.
   it behind communication)" is a *convention/policy* we may layer on, not an
   enforced primitive. (That every database has exactly one owning Module is now
   settled, driven by migration ownership — see Aggregate Contract.)
-- **Input/Output type set** — deliberate and curated, added consciously; not an
+- **The set of interface kinds** — deliberate and curated, added consciously; not an
   open plugin surface, but not sealed forever either.
 
 ## Superseded terms
 
+- **Input** and **Output** (as the two ends of a connection) → **dependency** and
+  **exposed interface**. The dataflow and ports-and-adapters traditions give the
+  same two ends opposite names, so the words were ambiguous; see
+  [ADR-0063](../90-decisions/ADR-0063-a-node-depends-on-an-interface-or-exposes-one.md).
+  "Input" still names a service's or module's configuration document (`input`).
 - **System** (and its predecessor **Hex**) → use **Module** (the unit of
   composition). "System" and "Hex" were earlier working names; see
   [ADR-0025](../90-decisions/ADR-0025-name-the-unit-of-composition-module.md),

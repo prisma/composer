@@ -1,7 +1,7 @@
 # The `email` module — why it is shaped the way it is
 
 The `email` module (`packages/1-prisma-cloud/2-shared-modules/email`) sends
-transactional email. A Compute service exposes two rpc ports: `send` delivers
+transactional email. A Compute service exposes two rpc interfaces: `send` delivers
 a rendered email, and `outbox` reads back every email the module has handled.
 Delivery goes to Resend, to an SMTP server, or nowhere (`none`), chosen per
 environment. Every email is stored in the module's own Postgres first.
@@ -16,7 +16,7 @@ Email is a module with its own service rather than a library each consumer
 links in. Anything that satisfies the contract can stand in for it, and the
 delivery provider's credential lives in one service instead of in every
 consumer. This is the general rule that a module has the same boundary as a
-service: dependencies in, exposed ports out
+service: dependencies in, exposed interfaces out
 ([ADR-0016](../90-decisions/ADR-0016-a-module-has-the-same-boundary-as-a-service.md)).
 
 ## Templates render on the consumer side
@@ -39,9 +39,9 @@ template, and each method's `data` argument is typechecked against that
 template's schema. The template declarations define the client's shape; that
 was the design goal.
 
-## Separate `send` and `outbox` ports
+## Separate `send` and `outbox` interfaces
 
-Sending and reading are two ports so they can be wired separately. A consumer
+Sending and reading are two interfaces so they can be wired separately. A consumer
 that can send must not automatically be able to read every email ever sent:
 the outbox holds verification and magic links, and those are live
 credentials. Each rpc binding carries its own service key
@@ -74,7 +74,7 @@ rather than solved in the framework.
 
 ## No custom contract kinds
 
-Both ports use the ordinary `rpc` contract kind. There are no `email-send` or
+Both interfaces use the ordinary `rpc` contract kind. There are no `email-send` or
 `email-outbox` kind strings. rpc contracts satisfy each other by identity, so
 two distinct contract objects are already two distinct wiring targets; a new
 kind string would add nothing.

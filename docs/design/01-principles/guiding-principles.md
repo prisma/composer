@@ -19,14 +19,14 @@ genuinely missing.
 
 ## Thin core, fat targets
 
-Keep the core small and stable — the Module/Input/Output model, the topology, the
+Keep the core small and stable — the model of Modules, dependencies and exposed interfaces, the topology, the
 lowering machinery. Target specifics (resource types, providers) live in extension
 packs and are swappable without touching the core.
 
 ## Agnostic of deployment targets
 
 The core knows nothing about any specific deployment target. The framework provides
-the affordances — Module, Inputs/Outputs, Resource, the lowering SPI — and a target's
+the affordances — Module, dependencies and exposed interfaces, Resource, the lowering SPI — and a target's
 specifics (Prisma Cloud's resource types, or another cloud's) come *only* from an
 extension pack. The framework never branches on target identity.
 

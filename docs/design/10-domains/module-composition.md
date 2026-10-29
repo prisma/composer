@@ -19,8 +19,8 @@ export function module<D extends Deps, E extends Expose>(
 ): ModuleNode<D, E>;
 
 interface ModuleContext<D extends Deps> {
-  /** The module's declared inputs as wiring values — pass them into provision(). */
-  readonly inputs: { [K in keyof D]: InputRef<D[K]> };
+  /** The module's declared dependencies as wiring values — pass them into provision(). */
+  readonly deps: { [K in keyof D]: InputRef<D[K]> };
   /** The deploy-time facts of the environment, each a value: today only `environment.name`. */
   readonly environment: EnvironmentFacts;
   /** Registers an owned child (service or module) under a stable id. */
@@ -34,9 +34,9 @@ type ModuleOutputs<E extends Expose> = { [P in keyof E]: RefPort<E[P]> };
 - `deps` and `expose` are the *same types services declare* — `Deps` and
   `Expose` — so a `ModuleNode<D, E>` is wireable exactly where a
   `ServiceNode<D, _, E>` is. That interchangeability is the composition
-  property: an enclosing scope wires "a thing with typed inputs and outputs"
+  property: an enclosing scope wires "a thing with typed dependencies and exposed interfaces"
   without knowing which kind of thing it is.
-- The body receives `inputs` (the declared deps as forwardable wiring values)
+- The body receives `deps` (the declared dependencies as forwardable wiring values)
   and `provision`, and must return one ref-port per `expose` key. TypeScript
   checks the return against `E` (each returned `RefPort`'s contract must be
   assignable to the declared output contract); Load re-checks via
@@ -62,13 +62,13 @@ Forwarding is data flow through the body — no primitive of its own:
 
 ```ts
 export default module("auth", { deps: { db }, expose: { verify: authContract } },
-  ({ inputs, provision }) => {
-    const svc = provision("api", authService, { db: inputs.db }); // input flows DOWN
+  ({ deps, provision }) => {
+    const svc = provision("api", authService, { db: deps.db }); // the dependency flows DOWN
     return { verify: svc.verify };                                 // output flows UP
   });
 ```
 
-- **Down**: an entry of `ctx.inputs` is valid anywhere a `provision()` wiring
+- **Down**: an entry of `ctx.deps` is valid anywhere a `provision()` wiring
   value is — it stands for "whatever the enclosing scope wires here". Type
   checking is the existing `Wiring<D>` contract-assignability. A boundary
   input is a `DependencyEnd` carrying a required contract; forwarding treats
@@ -81,7 +81,7 @@ export default module("auth", { deps: { db }, expose: { verify: authContract } }
   see a boundary.
 - **Up**: the value returned for an expose key is any `RefPort` whose contract
   satisfies the declared one — a child service's exposed port, a nested
-  module's own output port, or one of the module's own boundary inputs returned
+  module's own exposed interface, or one of the module's own dependencies returned
   directly (a pass-through: the module re-offers what it was wired, and a
   consumer of that output still resolves to the original producer).
 - An untyped input (a dependency end with no required contract) has no
