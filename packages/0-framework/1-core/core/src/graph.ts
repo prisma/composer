@@ -16,6 +16,13 @@ export type {
 } from './graph-types.ts';
 export { LoadError, RESOURCE_OUT_PORT } from './graph-types.ts';
 
+export interface LoadOptions {
+  /** The root's address: the app name. Defaults to the root's `name`. */
+  readonly id?: NodeId;
+  /** The facts of the environment being loaded. `name` is what `--environment` gave. Required by any value over `environment.name`. */
+  readonly environment?: { readonly name: string };
+}
+
 const APP_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 /**
@@ -38,9 +45,10 @@ export function assertAppName(name: string): void {
  * module it provisions into one graph of hierarchical addresses. A malformed
  * graph is a `LoadError` that names its fix; the individual validation rules
  * live with `loadService` / `loadModule` and are covered by name in the Load
- * tests. Executes nothing of the user's own code beyond module bodies.
+ * tests. Executes nothing of the user's own code beyond module bodies and `resolve()`
+ * functions.
  */
-export function Load(root: ServiceNode | ModuleNode, opts?: { id?: NodeId }): Graph {
+export function Load(root: ServiceNode | ModuleNode, opts?: LoadOptions): Graph {
   // Brand-check the untrusted root once (a user default-export could be junk
   // TypeScript believes is a node), then route by its discriminant.
   if (!isNode(root)) {

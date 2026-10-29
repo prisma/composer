@@ -6,6 +6,7 @@ import { blindCast } from '@internal/foundation/casts';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { ConfigParam, Connection, Params } from './config.ts';
 import type { Contract } from './contract.ts';
+import type { EnvironmentFacts, PlainValue, Value } from './value.ts';
 
 // Brand — set by the factories below; how Load tells a node from junk.
 // Symbol.for so the check survives duplicated module instances in a workspace.
@@ -163,7 +164,10 @@ export function paramNeed(): ParamNeed {
 
 /** What `provision(service, { params })` accepts per declared param: a literal (schema-validated when config is built) or an opaque `ParamSource`, taking precedence over `param.default`. Every entry is optional — an unbound param falls back to its `default`. */
 export type ParamBindings<P extends Params> = {
-  readonly [K in keyof P]?: StandardSchemaV1.InferOutput<P[K]['schema']> | ParamSource;
+  readonly [K in keyof P]?:
+    | StandardSchemaV1.InferOutput<P[K]['schema']>
+    | ParamSource
+    | Value<StandardSchemaV1.InferOutput<P[K]['schema']>>;
 };
 
 /** What `provision(moduleChild, { params })` accepts per declared `ParamNeed`: a `ParamSource` only — a need carries no schema to validate a literal against. */
@@ -186,6 +190,7 @@ export type InputBinding =
   | null
   | ParamSource
   | SecretSource
+  | Value<PlainValue>
   | readonly InputBinding[]
   | { readonly [key: string]: InputBinding };
 
@@ -323,6 +328,8 @@ export interface ModuleContext<
   readonly secrets: { readonly [K in keyof S]: SecretSource };
   /** The module's declared param-forwarding slots as forwardable sources — pass them into a child's `params`. */
   readonly params: { readonly [K in keyof PN]: ParamSource };
+  /** The deploy-time facts of the environment, each a value (ADR-0062). List `environment.name` as a `resolve()` dependency. Never environment variables: user code never reads those. */
+  readonly environment: EnvironmentFacts;
   /** Registers an owned child (service or module) under a stable id. */
   readonly provision: ModuleBuilder['provision'];
 }
@@ -365,7 +372,7 @@ type ReqOf<DE> = DE extends DependencyEnd<any, infer Req> ? Req : never;
  * into a nested `provision()` call — the same value shape a producer's own
  * exposed port carries.
  */
-type DepBindings<D extends Deps> = {
+export type DepBindings<D extends Deps> = {
   [K in keyof D]: NoInfer<ReqOf<D[K]>> | InputRef<D[K]>;
 };
 

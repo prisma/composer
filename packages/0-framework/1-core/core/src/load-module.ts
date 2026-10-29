@@ -1,5 +1,6 @@
 import { blindCast } from '@internal/foundation/casts';
 import { contractStyleOf } from './contract.ts';
+import type { LoadOptions } from './graph.ts';
 import {
   type AuthoredEdge,
   type BoundaryPort,
@@ -28,7 +29,9 @@ import {
   type ResourceNode,
   type ServiceNode,
 } from './node.ts';
+import { resolveValues } from './resolve-values.ts';
 import { topoSort } from './toposort.ts';
+import { environmentFacts, isValue } from './value.ts';
 
 /**
  * Brands a ref-port with the AUTHORED endpoint it stands for — which port of
@@ -251,6 +254,7 @@ function wiringEdges(wiring: Record<string, unknown>, targetId: string): Edge[] 
 function validateSecretBinding(
   child: ModuleNode,
   id: string,
+  address: NodeId,
   secretWiring: Record<string, unknown>,
   enclosingModuleName: string,
 ): void {
@@ -261,6 +265,12 @@ function validateSecretBinding(
       throw new LoadError(
         `Secret slot "${slot}" of provisioned ${kind} "${id}" is not bound (module ` +
           `"${enclosingModuleName}") — bind it with envSecret('NAME') or forward ctx.secrets.`,
+      );
+    }
+    if (isValue(bound)) {
+      throw new LoadError(
+        `The secrets for "${address}" bind "${slot}" to a value. A value is not a secret source; ` +
+          "bind envSecret('NAME') or a forwarded ctx.secrets ref.",
       );
     }
     if (!isSecretSource(bound)) {
@@ -311,6 +321,7 @@ function validateServiceParamBinding(
 function validateParamNeedBinding(
   child: ModuleNode,
   id: string,
+  address: NodeId,
   paramWiring: Record<string, unknown>,
   enclosingModuleName: string,
 ): void {
@@ -321,6 +332,12 @@ function validateParamNeedBinding(
         `Param slot "${slot}" of provisioned module "${id}" is not bound (module ` +
           `"${enclosingModuleName}") — bind it with a param source (e.g. envParam('NAME')) or ` +
           'forward ctx.params.',
+      );
+    }
+    if (isValue(bound)) {
+      throw new LoadError(
+        `The params for "${address}" bind "${slot}" to a value. A module param slot takes a param ` +
+          "source; bind envParam('NAME') or a forwarded ctx.params ref.",
       );
     }
     if (!isParamSource(bound)) {
@@ -373,6 +390,7 @@ function flatten(
   byId: Map<string, ServiceNode | ResourceNode | ModuleNode>,
   ports: BoundaryPort[],
   authoredEdges: AuthoredEdge[],
+  loading: { sealed: boolean },
 ): Record<string, unknown> {
   ports.push(...boundaryPortsOf(selfId, moduleNode));
   const localIds = new Set<string>();
@@ -477,6 +495,14 @@ function flatten(
     },
     // biome-ignore lint/suspicious/noExplicitAny: ModuleBuilder's real overload set is checked at the call site; the collector implementation is untyped by design.
   ): any => {
+    if (loading.sealed) {
+      throw new LoadError(
+        `provision() was called after module "${moduleNode.name}" was loaded, from inside a ` +
+          'resolve() function. resolve() computes values, never structure: the graph is the same ' +
+          'whatever inputs Composer is given (ADR-0062). Provision the node in the module body and ' +
+          'pass the value into it.',
+      );
+    }
     // The id defaults to the node's own `name`; `opts.deps`/`opts.secrets`/
     // `opts.input`/`opts.params` carry the producers, secret sources, input
     // binding, and param bindings that satisfy its slots. The "_"/"." and
@@ -487,6 +513,13 @@ function flatten(
     const provisionSecrets = opts?.secrets;
     const provisionInput = opts?.input;
     const provisionParams = opts?.params;
+    if (isValue(id)) {
+      throw new LoadError(
+        `provision() received a value as its id (module "${moduleNode.name}"). A value can ` +
+          'configure a node, never decide its address: the graph is the same whatever inputs ' +
+          'Composer is given (ADR-0062).',
+      );
+    }
     if (typeof id !== 'string' || id.length === 0) {
       throw new LoadError(`provision() requires a non-empty id (module "${moduleNode.name}").`);
     }
@@ -561,6 +594,15 @@ function flatten(
       return refForResource(fullAddress, child);
     }
 
+    for (const [input, ref] of Object.entries(provisionWiring ?? {})) {
+      if (isValue(ref)) {
+        throw new LoadError(
+          `The deps for "${fullAddress}.${input}" are bound to a value. A value can configure a ` +
+            'node, never decide its edges: the graph is the same whatever inputs Composer is given ' +
+            '(ADR-0062).',
+        );
+      }
+    }
     const localWiring = { ...(provisionWiring ?? {}) };
     markUsed(Object.values(localWiring));
 
@@ -641,12 +683,12 @@ function flatten(
     // source, reject extras. No `pending` deferral — a source carries its own
     // name, so nothing needs the whole graph to resolve (unlike a
     // dependency's producer).
-    validateSecretBinding(child, id, localSecrets, moduleNode.name);
+    validateSecretBinding(child, id, fullAddress, localSecrets, moduleNode.name);
 
     // A module's param-forwarding slots have no schema of their own: every
     // declared one must be bound to a real ParamSource, the same requirement
     // secrets place on a module's secret slots.
-    validateParamNeedBinding(child, id, localParams, moduleNode.name);
+    validateParamNeedBinding(child, id, fullAddress, localParams, moduleNode.name);
 
     edges.push(...wiringEdges(localWiring, fullAddress));
     recordAuthoredWiring(fullAddress, localWiring);
@@ -671,6 +713,7 @@ function flatten(
       byId,
       ports,
       authoredEdges,
+      loading,
     );
     nodes.push({ id: fullAddress, parent: selfId, node: child });
     byId.set(fullAddress, child);
@@ -699,6 +742,7 @@ function flatten(
     inputs: ctxInputs,
     secrets: ctxSecrets,
     params: ctxParams,
+    environment: environmentFacts,
     provision: blindCast<
       ModuleBuilder['provision'],
       'single implementation behind the provision() overloads — returns the contract-carrying ref for a resource, a ProvisionedRef for a service, and a ProvisionedRef for a nested module, exactly what each overload pins, but an object property cannot carry an overloaded implementation signature'
@@ -767,7 +811,7 @@ function flatten(
   return outputs;
 }
 
-export function loadModule(root: ModuleNode, opts?: { id?: NodeId }): Graph {
+export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   const rootId = opts?.id ?? root.name;
   const rootDepKeys = Object.keys(root.deps);
   if (rootDepKeys.length > 0) {
@@ -805,6 +849,7 @@ export function loadModule(root: ModuleNode, opts?: { id?: NodeId }): Graph {
   const byId = new Map<string, ServiceNode | ResourceNode | ModuleNode>();
   const ports: BoundaryPort[] = [];
   const authoredEdges: AuthoredEdge[] = [];
+  const loading = { sealed: false };
 
   flatten(
     root,
@@ -820,10 +865,17 @@ export function loadModule(root: ModuleNode, opts?: { id?: NodeId }): Graph {
     byId,
     ports,
     authoredEdges,
+    loading,
   );
 
   for (const entry of pending) validateWiring(entry, byId);
   assertDependencyDag(edges);
+  loading.sealed = true;
+  const resolved = resolveValues({
+    environment: opts?.environment,
+    inputBindings,
+    params: paramBindings,
+  });
 
   const rootGraphNode: GraphNode = { id: rootId, parent: undefined, node: root };
   return {
@@ -832,8 +884,8 @@ export function loadModule(root: ModuleNode, opts?: { id?: NodeId }): Graph {
     edges,
     ports,
     authoredEdges,
-    inputBindings,
-    params: paramBindings,
+    inputBindings: resolved.inputBindings,
+    params: resolved.params,
   };
 }
 

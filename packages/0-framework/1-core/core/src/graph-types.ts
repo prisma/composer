@@ -119,7 +119,7 @@ export interface Graph {
  * `CliStructuredError` — structural recognition depends on it.
  */
 export class LoadError extends CliStructuredError {
-  constructor(message: string) {
-    super('COMPOSE.GRAPH_INVALID', message);
+  constructor(message: string, options?: { readonly cause?: unknown }) {
+    super('COMPOSE.GRAPH_INVALID', message, options);
   }
 }
