@@ -332,13 +332,15 @@ type ModuleInputOf<I extends StandardSchemaV1 | undefined> = StandardSchemaV1.In
 /**
  * `T` with every pointer removed, at any depth: what a service reads at boot,
  * when each pointer has been replaced by the text of the variable it names.
+ * Only arrays and plain object types are walked; a class instance such as a
+ * `Date` or a `SecretString` is kept as it is.
  */
 type WithoutPointers<T> =
   T extends Pointer<unknown>
     ? never
-    : T extends SecretString
-      ? T
-      : T extends object
+    : T extends readonly unknown[]
+      ? { [K in keyof T]: WithoutPointers<T[K]> }
+      : T extends Record<PropertyKey, unknown>
         ? { [K in keyof T]: WithoutPointers<T[K]> }
         : T;
 

@@ -294,3 +294,23 @@ test('a secretString() field of a module takes a secret runtime value, and the b
     expectTypeOf(input.key).toEqualTypeOf<ModuleInputField<SecretString | Pointer<SecretString>>>();
   });
 });
+
+const arkDated = type({ when: 'string.date.parse', from: arkField(type('string')) });
+const zodDated = z.object({
+  when: z.coerce.date(),
+  seen: z.map(z.string(), z.number()),
+  from: zodField(z.string()),
+});
+declare const arkDatedInput: InputValueOf<typeof arkDated>;
+declare const zodDatedInput: InputValueOf<typeof zodDated>;
+
+test('service.input() keeps a class instance in the output, such as a Date or a Map', () => {
+  expectTypeOf<InputValueOf<typeof arkDated>>().toEqualTypeOf<{ when: Date; from: string }>();
+  expectTypeOf<InputValueOf<typeof zodDated>>().toEqualTypeOf<{
+    when: Date;
+    seen: Map<string, number>;
+    from: string;
+  }>();
+  expectTypeOf(arkDatedInput.when.getTime()).toEqualTypeOf<number>();
+  expectTypeOf(zodDatedInput.when.getTime()).toEqualTypeOf<number>();
+});
