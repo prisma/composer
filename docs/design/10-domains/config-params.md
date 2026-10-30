@@ -15,7 +15,7 @@ deploy target owns serialization),
 [ADR-0021](../90-decisions/ADR-0021-params-are-read-through-config-not-load.md)
 (params are read through `config()`),
 [ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md) (a secret
-is a distinct forwardable slot, read through `secrets()`), and
+is carried by name only, never by value), and
 [ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)
 (a param binds at provision — a literal or an env source).
 
@@ -58,7 +58,7 @@ compute({
 
 The facets are `default` (used when no value is stored) and `optional`. They
 describe how a value is *handled*, not what it *is*. (A secret is not a param
-facet — it is its own slot, see § Secrets.) `string()`/`number()` are one-word helpers
+facet — it is a `secretString()` input field, see § Secrets.) `string()`/`number()` are one-word helpers
 for the common scalars; `param(schema)` wraps any other schema. There is no
 framework enum of permitted types.
 
@@ -292,13 +292,14 @@ The round trip carries only the name, never the value:
 
 1. **Bind.** The root binds each secret field to a platform name, and each
    module on the way passes it on as a field of its input. Load records
-   one binding per resolved service secret slot: `{ serviceAddress, slot, name }`.
+   each service's input binding, and preflight collects every `envSecret()` it
+   names.
 2. **Preflight.** Before Alchemy runs, the deploy verifies every bound name
    exists on the platform for the target environment's class/branch, filling a name
    from the secrets pool when the platform lacks it (a direct write-only POST,
    never an Alchemy resource, never overwriting an existing value). A name
    missing from both fails the deploy, listing exactly what's absent.
-3. **Pointer row.** The target writes a pointer per slot — the generated key
+3. **Pointer row.** The target writes a pointer per secret field — the generated key
    (`COMPOSER_`-prefixed, like every generated key) maps to the bound name, not a
    value:
    ```
@@ -322,8 +323,8 @@ alternatives.
 
 A service's config surface is enumerable from the graph alone, nothing booted:
 every param lists its owner, facets, and **schema**, so a structured param reports
-its real shape rather than "a string". Secrets are not params — they are a
-separate slot (§ Secrets) whose value never enters this surface at all. This is
+its real shape rather than "a string". Secrets are not params — a secret is a
+`secretString()` input field (§ Secrets) whose value never enters this surface at all. This is
 what keeps topology tooling and agents able to answer "what is this service
 configured with?" truthfully.
 
