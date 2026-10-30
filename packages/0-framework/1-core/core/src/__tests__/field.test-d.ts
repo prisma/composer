@@ -1,4 +1,5 @@
 import { field as arkField, secretString as arkSecretString } from '@internal/foundation/arktype';
+import { POINTER } from '@internal/foundation/pointer';
 import { field as zodField, secretString as zodSecretString } from '@internal/foundation/zod';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
@@ -208,4 +209,17 @@ test('the two kinds of pointer do not fit each other', () => {
   // @ts-expect-error a plain pointer is not a secret pointer
   const b: Pointer<SecretString> = {} as Pointer<string>;
   void [a, b];
+});
+
+test("a pointer's kind follows its type", () => {
+  expectTypeOf<Pointer<string>[typeof POINTER]>().toEqualTypeOf<'plain'>();
+  expectTypeOf<Pointer<number>[typeof POINTER]>().toEqualTypeOf<'plain'>();
+  expectTypeOf<Pointer<SecretString>[typeof POINTER]>().toEqualTypeOf<'secret'>();
+  expectTypeOf<Pointer<unknown>[typeof POINTER]>().toEqualTypeOf<'secret' | 'plain'>();
+  // @ts-expect-error a Pointer<string> cannot say its variable holds a secret
+  const plain: Pointer<string> = { [POINTER]: 'secret' };
+  // @ts-expect-error a Pointer<SecretString> cannot say its variable holds plain text
+  const secret: Pointer<SecretString> = { [POINTER]: 'plain' };
+  const either: Pointer<unknown> = {} as Pointer<SecretString>;
+  void [plain, secret, either];
 });
