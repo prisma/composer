@@ -135,7 +135,7 @@ client back from `load()`.
 The service declares its whole incoming configuration, plain values and
 credentials together, as **one [Standard Schema](https://standardschema.dev)**
 (arktype is the house choice). A credential is a field typed as
-`secretString()` from `@prisma/composer/arktype` (or `@prisma/composer/zod` for a Zod schema); conditional legality ("no
+`secretString()` from `@prisma/composer/arktype` (or `@prisma/composer/zod` for a Zod schema; the app installs `arktype` 2 or `zod` 4 itself, and Composer uses that copy); conditional legality ("no
 stripe key unless billing is on") is an ordinary schema union. The binding at
 `provision()` mirrors the schema's shape; `envSecret('NAME')` names the
 platform variable and never carries the value.
