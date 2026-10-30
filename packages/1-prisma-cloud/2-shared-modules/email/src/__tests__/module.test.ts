@@ -1,33 +1,19 @@
 /**
  * The `email()` module Loads into a wired graph: it owns a Postgres `db`
- * resource and the `email` service wired to it, forwards its boundary
- * `deliveryMode`/`from` params and `deliveryCredential` secret down to the
+ * resource and the `email` service wired to it, passes its input on to the
  * service, and its two ports (`send`, `outbox`) wire to two different
  * consumers independently. Mirrors storage's module.test.ts — this is the
  * first shipped module using boundary params (spec §"Module factory").
  */
 import { describe, expect, test } from 'bun:test';
-import {
-  isParamSource,
-  isSecretSource,
-  Load,
-  module,
-  paramSource,
-  secretSource,
-} from '@internal/core';
+import { Load, module, type SecretSource } from '@internal/core';
 import node from '@internal/node';
-import { compute } from '@internal/prisma-cloud';
+import { compute, envParam, envSecret, secretName } from '@internal/prisma-cloud';
 import { rpc } from '@internal/service-rpc';
 import { emailOutboxContract, emailSender } from '../contract.ts';
 import { email } from '../email-module.ts';
 
 const build = node({ module: import.meta.url, entry: '../dist/x.mjs' });
-
-/** The env var name a `paramSource`/`secretSource` binding carries — asserting the identity, not just that a slot got bound to something. */
-function sourcePayload(binding: unknown): unknown {
-  if (isParamSource(binding) || isSecretSource(binding)) return binding.payload;
-  throw new Error('expected a ParamSource or SecretSource binding');
-}
 
 /** The email service's recorded input binding, as the plain object it is. */
 function serviceBindingOf(
@@ -45,20 +31,24 @@ const senderConsumer = () =>
 const outboxConsumer = () =>
   compute({ name: 'outboxConsumer', deps: { outbox: rpc(emailOutboxContract) }, build });
 
+const configPool = { EMAIL_DELIVERY_MODE: 'none', EMAIL_FROM: 'shop@example.com' };
+
+const emailInput = () => ({
+  deliveryMode: envParam('EMAIL_DELIVERY_MODE'),
+  from: envParam('EMAIL_FROM'),
+  deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
+});
+
 function rootWithEmail() {
   return module('root', {}, ({ provision }) => {
-    provision(email(), {
-      id: 'email',
-      params: { deliveryMode: paramSource('EMAIL_DELIVERY_MODE'), from: paramSource('EMAIL_FROM') },
-      secrets: { deliveryCredential: secretSource('EMAIL_DELIVERY_CREDENTIAL') },
-    });
+    provision(email(), { id: 'email', input: emailInput() });
     return {};
   });
 }
 
 describe('email()', () => {
   test('Loads the db resource and the email service, wired to each other', () => {
-    const graph = Load(rootWithEmail());
+    const graph = Load(rootWithEmail(), { configPool });
     const byId = new Map(graph.nodes.map((n) => [n.id, n.node]));
     const typeOf = (id: string): string | undefined => {
       const n = byId.get(id);
@@ -76,7 +66,7 @@ describe('email()', () => {
   });
 
   test('the db resource is not exposed to a consumer — only send/outbox are', () => {
-    const graph = Load(rootWithEmail());
+    const graph = Load(rootWithEmail(), { configPool });
     // No edge targets anything outside "root.email.*" from "root.email.db" directly —
     // the only consumer of the db is the service itself.
     const dbEdges = graph.edges.filter((e) => e.from === 'root.email.db');
@@ -85,28 +75,47 @@ describe('email()', () => {
     ]);
   });
 
-  test("boundary params and secret forward into the service's input binding, mapped to their bound env sources (ADR-0042)", () => {
-    const graph = Load(rootWithEmail());
+  test("the module's input reaches the service's input: envParam() fields as their values, envSecret() as its source", () => {
+    const graph = Load(rootWithEmail(), { configPool });
     const binding = serviceBindingOf(graph.inputBindings);
-    expect(sourcePayload(binding['deliveryMode'])).toBe('EMAIL_DELIVERY_MODE');
-    expect(sourcePayload(binding['from'])).toBe('EMAIL_FROM');
-    expect(sourcePayload(binding['deliveryCredential'])).toBe('EMAIL_DELIVERY_CREDENTIAL');
+    expect(binding['deliveryMode']).toBe('none');
+    expect(binding['from']).toBe('shop@example.com');
+    expect(secretName(binding['deliveryCredential'] as SecretSource, 'deliveryCredential')).toBe(
+      'EMAIL_DELIVERY_CREDENTIAL',
+    );
     expect(binding['deliveryUrl']).toBe('https://api.resend.com');
+  });
+
+  test("a literal binds a field, as in a service's input", () => {
+    const root = module('root', {}, ({ provision }) => {
+      provision(email(), { id: 'email', input: { ...emailInput(), deliveryMode: 'smtp' } });
+      return {};
+    });
+    const graph = Load(root, { configPool });
+    expect(serviceBindingOf(graph.inputBindings)['deliveryMode']).toBe('smtp');
+  });
+
+  test("the module's schema refuses a missing from before the service's does", () => {
+    let message: string | undefined;
+    try {
+      Load(rootWithEmail(), { configPool: { EMAIL_DELIVERY_MODE: 'none' } });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toBe(
+      'The input binding of module "root.email" does not match the module\'s input schema: from must be a string (was missing)',
+    );
   });
 
   test('opts.deliveryUrl overrides the literal deliveryUrl leaf of the input binding', () => {
     const root = module('root', {}, ({ provision }) => {
       provision(email({ deliveryUrl: 'http://localhost:8025' }), {
         id: 'email',
-        params: {
-          deliveryMode: paramSource('EMAIL_DELIVERY_MODE'),
-          from: paramSource('EMAIL_FROM'),
-        },
-        secrets: { deliveryCredential: secretSource('EMAIL_DELIVERY_CREDENTIAL') },
+        input: emailInput(),
       });
       return {};
     });
-    const graph = Load(root);
+    const graph = Load(root, { configPool });
     expect(serviceBindingOf(graph.inputBindings)['deliveryUrl']).toBe('http://localhost:8025');
   });
 
@@ -114,17 +123,13 @@ describe('email()', () => {
     const root = module('root', {}, ({ provision }) => {
       const mail = provision(email(), {
         id: 'email',
-        params: {
-          deliveryMode: paramSource('EMAIL_DELIVERY_MODE'),
-          from: paramSource('EMAIL_FROM'),
-        },
-        secrets: { deliveryCredential: secretSource('EMAIL_DELIVERY_CREDENTIAL') },
+        input: emailInput(),
       });
       provision(senderConsumer(), { id: 'sender', deps: { email: mail.send } });
       return {};
     });
 
-    const graph = Load(root);
+    const graph = Load(root, { configPool });
     expect(graph.edges).toContainEqual({
       from: 'root.email.service',
       to: 'root.sender',
@@ -137,18 +142,14 @@ describe('email()', () => {
     const root = module('root', {}, ({ provision }) => {
       const mail = provision(email(), {
         id: 'email',
-        params: {
-          deliveryMode: paramSource('EMAIL_DELIVERY_MODE'),
-          from: paramSource('EMAIL_FROM'),
-        },
-        secrets: { deliveryCredential: secretSource('EMAIL_DELIVERY_CREDENTIAL') },
+        input: emailInput(),
       });
       provision(senderConsumer(), { id: 'sender', deps: { email: mail.send } });
       provision(outboxConsumer(), { id: 'reader', deps: { outbox: mail.outbox } });
       return {};
     });
 
-    const graph = Load(root);
+    const graph = Load(root, { configPool });
     expect(graph.edges).toContainEqual({
       from: 'root.email.service',
       to: 'root.sender',
@@ -170,16 +171,12 @@ describe('email()', () => {
     const root = module('root', {}, ({ provision }) => {
       provision(email({ name: 'mailerModule' }), {
         id: 'mailInstance',
-        params: {
-          deliveryMode: paramSource('EMAIL_DELIVERY_MODE'),
-          from: paramSource('EMAIL_FROM'),
-        },
-        secrets: { deliveryCredential: secretSource('EMAIL_DELIVERY_CREDENTIAL') },
+        input: emailInput(),
       });
       return {};
     });
 
-    const graph = Load(root);
+    const graph = Load(root, { configPool });
     const byId = new Map(graph.nodes.map((n) => [n.id, n.node]));
     // Address generation is driven by the provision id.
     expect([...byId.keys()]).toContain('root.mailInstance.service');

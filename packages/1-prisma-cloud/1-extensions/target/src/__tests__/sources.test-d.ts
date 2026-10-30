@@ -1,12 +1,12 @@
 import {
   module,
   type ParamSource,
-  paramNeed,
   type SecretSource,
   type SecretString,
-  secret,
   type Value,
 } from '@internal/core';
+import { secretString } from '@internal/foundation/arktype';
+import { type } from 'arktype';
 import { expectTypeOf, test } from 'vitest';
 import { compute } from '../exports/index.ts';
 import {
@@ -42,23 +42,27 @@ test('each source constructor returns its source and a value of the type it stan
   >();
 });
 
-test("each source still fits a module's params or secrets slot, and envParam() a number param", () => {
+test("each source fits a module's input field of its type, and envParam() a service param", () => {
   const relay = module(
     'relay',
     {
-      params: { origin: paramNeed(), token: paramNeed(), base: paramNeed() },
-      secrets: { key: secret() },
+      input: type({
+        origin: 'string',
+        token: secretString(),
+        base: 'string',
+        key: secretString(),
+      }),
     },
     () => {},
   );
   module('shop', ({ provision }) => {
     provision(relay, {
-      params: {
+      input: {
         origin: envParam('ORIGIN'),
         token: generatedParam(),
         base: serviceOrigin('shop.web'),
+        key: envSecret('KEY'),
       },
-      secrets: { key: envSecret('KEY') },
     });
     provision(compute({ name: 'web', deps: {}, build }), {
       id: 'web',

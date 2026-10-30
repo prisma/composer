@@ -1,19 +1,20 @@
 /**
  * Type-level surface (spec § Test plan): the factory shapes (`auth()`'s
- * deps/expose/params), the binding types each dependency hydrates to, the
+ * deps/expose/input), the binding types each dependency hydrates to, the
  * wire record types, and the port-to-slot wiring assignability. Type-only
  * (vitest --typecheck via tsc, never executed) — mirrors email's
  * module.test-d.ts.
  */
-import type { DependencyEnd, ModuleNode, ParamNeed, RefPort } from '@internal/core';
-import { module, paramSource } from '@internal/core';
+import type { DependencyEnd, ModuleNode, RefPort } from '@internal/core';
+import { module } from '@internal/core';
 import { emailSendContract, type emailSender } from '@internal/email';
 import { type RawHttpClient, rawHttp, type rawHttpContract } from '@internal/http';
 import node from '@internal/node';
-import { compute, type rawPostgresContract } from '@internal/prisma-cloud';
+import { compute, envParam, type rawPostgresContract, serviceOrigin } from '@internal/prisma-cloud';
 import type { PostgresContract } from '@internal/prisma-cloud/orm';
 import { dataContract, postgres } from '@internal/prisma-cloud/orm';
 import { type Client, rpc } from '@internal/service-rpc';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { expectTypeOf, test } from 'vitest';
 import { auth } from '../auth-module.ts';
 import {
@@ -35,7 +36,7 @@ const build = node({ module: import.meta.url, entry: '../dist/x.mjs' });
 const mailProvider = () =>
   compute({ name: 'mailProvider', deps: {}, build, expose: { send: emailSendContract } });
 
-test('auth() is a ModuleNode with the db + email boundary deps, three ports, and the baseUrl param need', () => {
+test('auth() is a ModuleNode with the db + email boundary deps, three ports, and an input schema', () => {
   const m = auth();
   const asModule: ModuleNode<
     { db: ReturnType<typeof authDb>; email: ReturnType<typeof emailSender<AuthTemplates>> },
@@ -44,10 +45,15 @@ test('auth() is a ModuleNode with the db + email boundary deps, three ports, and
       session: typeof authSessionContract;
       admin: typeof authAdminContract;
     },
-    Record<never, never>,
-    { baseUrl: ParamNeed }
+    StandardSchemaV1
   > = m;
   void asModule;
+});
+
+test("auth()'s input is baseUrl, a string", () => {
+  expectTypeOf<
+    StandardSchemaV1.InferInput<NonNullable<ReturnType<typeof auth>['inputSchema']>>
+  >().toEqualTypeOf<{ baseUrl: string }>();
 });
 
 test('the dependency factories hydrate to their pinned binding types', () => {
@@ -87,7 +93,7 @@ test('the module ports wire into their consumer slots; a wrong-kind port is reje
     const identity = provision(auth(), {
       id: 'auth',
       deps: { db, email: mail.send },
-      params: { baseUrl: paramSource('AUTH_BASE_URL') },
+      input: { baseUrl: serviceOrigin('root.app') },
     });
     provision(
       compute({
@@ -132,4 +138,32 @@ test("auth() accepts signUp: 'open' | 'closed' and nothing else", () => {
   auth({ signUp: 'open' });
   // @ts-expect-error — only the two literals are accepted.
   auth({ signUp: 'invite-only' });
+});
+
+test('auth() takes baseUrl as serviceOrigin(), envParam() or a literal, and nothing else', () => {
+  module('root', {}, ({ provision }) => {
+    const db = provision(
+      postgres({
+        name: 'database',
+        contract: dataContract(packContractJson),
+        config: './prisma.config.ts',
+      }),
+      { id: 'database' },
+    );
+    const mail = provision(mailProvider(), { id: 'mail' });
+    const deps = { db, email: mail.send };
+    provision(auth(), { id: 'origin', deps, input: { baseUrl: serviceOrigin('root.app') } });
+    provision(auth(), { id: 'variable', deps, input: { baseUrl: envParam('AUTH_BASE_URL') } });
+    provision(auth(), { id: 'literal', deps, input: { baseUrl: 'https://app.example' } });
+    // @ts-expect-error baseUrl is a string
+    provision(auth(), { id: 'number', deps, input: { baseUrl: 4 } });
+    provision(auth(), {
+      id: 'retired',
+      deps,
+      input: { baseUrl: 'https://app.example' },
+      // @ts-expect-error a module takes no params map
+      params: { baseUrl: envParam('AUTH_BASE_URL') },
+    });
+    return {};
+  });
 });
