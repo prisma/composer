@@ -1,0 +1,8 @@
+{
+  "extends": "../../../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["bun-types"]
+  },
+  "include": ["*.ts"],
+  "exclude": ["types.errors.ts", "serializer-morph.ts"]
+}

@@ -241,7 +241,7 @@ describe('Load validates input bindings and secret forwarding', () => {
     ).toThrow(/resource declares no input schema/);
   });
 
-  test('a module may not receive an input binding — the service that declares the schema binds it', () => {
+  test('a module that declares no input schema may not receive an input binding', () => {
     const m = module('child', {}, ({ provision }) => {
       provision(plainSvc('plain'), { id: 'plain' });
     });
@@ -252,12 +252,12 @@ describe('Load validates input bindings and secret forwarding', () => {
             m,
             blindCast<
               { id: string },
-              'a module takes no input binding — inject one to hit the runtime check'
+              'a module that declares no input takes no input binding — inject one to hit the runtime check'
             >({ id: 'child', input: {} }),
           );
         }),
       ),
-    ).toThrow(/input binding for a module/);
+    ).toThrow(/received an input binding, but the module declares no input schema/);
   });
 
   test('a non-secret value wired into a module secret slot is rejected', () => {

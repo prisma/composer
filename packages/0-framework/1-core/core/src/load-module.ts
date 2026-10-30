@@ -1,4 +1,5 @@
 import { blindCast } from '@internal/foundation/casts';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { contractStyleOf } from './contract.ts';
 import {
   type AuthoredEdge,
@@ -15,6 +16,7 @@ import {
   type ServiceInputBinding,
 } from './graph-types.ts';
 import { boundaryPortsOf, slotNodesAndEdges } from './load-service.ts';
+import { buildModuleInput } from './module-input.ts';
 import {
   type AnyContract,
   type DependencyEnd,
@@ -31,7 +33,7 @@ import {
   type ResourceProps,
   type ServiceNode,
 } from './node.ts';
-import { resolveValues } from './resolve-values.ts';
+import { type ProvisionedModuleInput, resolveValues } from './resolve-values.ts';
 import { topoSort } from './toposort.ts';
 import { environmentFacts, isValue } from './value.ts';
 
@@ -222,16 +224,16 @@ function validateWiring(
  * Flattens a value into itself plus every nested object/array member value —
  * identity fodder for the ctx.secrets/ctx.params usage marking, which must
  * see a forwarded source wherever it sits inside an input binding (ADR-0042).
- * A secret/param source is an opaque leaf: it is pushed (a forwarded ref IS
- * such a source, so identity-matching still needs it) but never descended
- * into, so a ref buried in an unrelated source's payload is not falsely seen
- * as used. `seen` guards object cycles so a self-referential binding cannot
+ * A value or a secret/param source is an opaque leaf: it is pushed (a
+ * forwarded ref IS such a source, so identity-matching still needs it) but
+ * never descended into, so a ref buried in an unrelated source's payload is
+ * not falsely seen as used. `seen` guards object cycles so a self-referential binding cannot
  * recurse forever.
  */
 function deepValues(value: unknown, out: unknown[], seen: WeakSet<object> = new WeakSet()): void {
   out.push(value);
   if (typeof value !== 'object' || value === null) return;
-  if (isSecretSource(value) || isParamSource(value)) return;
+  if (isValue(value) || isSecretSource(value) || isParamSource(value)) return;
   if (seen.has(value)) return;
   seen.add(value);
   const members = Array.isArray(value) ? value : Object.values(value);
@@ -392,6 +394,7 @@ function flatten(
   pending: PendingWiring[],
   inputBindings: ServiceInputBinding[],
   paramBindings: ParamBinding[],
+  moduleInputs: ProvisionedModuleInput[],
   byId: Map<string, ServiceNode | ResourceNode | ModuleNode>,
   ports: BoundaryPort[],
   authoredEdges: AuthoredEdge[],
@@ -694,11 +697,29 @@ function flatten(
       return refFor(fullAddress, child);
     }
 
-    if (provisionInput !== undefined) {
+    const childInputSchema: StandardSchemaV1 | undefined = child.inputSchema;
+    if (childInputSchema === undefined && provisionInput !== undefined) {
       throw new LoadError(
-        `provision("${id}") received an input binding for a module — a module has no input schema; ` +
-          'bind the input on the service that declares it.',
+        `provision("${id}") received an input binding, but the module declares no input schema ` +
+          `(module "${moduleNode.name}").`,
       );
+    }
+    if (childInputSchema !== undefined && provisionInput === undefined) {
+      throw new LoadError(
+        `Input of provisioned module "${id}" is not bound (module "${moduleNode.name}") — the ` +
+          'module declares an input schema; bind it with `input: { … }` on its provision() call.',
+      );
+    }
+    if (childInputSchema !== undefined) {
+      const leaves: unknown[] = [];
+      deepValues(provisionInput, leaves);
+      markSecretsUsed(leaves);
+      markParamsUsed(leaves);
+      moduleInputs.push({
+        moduleAddress: fullAddress,
+        schema: childInputSchema,
+        binding: provisionInput,
+      });
     }
     // Secrets: validate every declared module slot is bound to a real secret
     // source, reject extras. No `pending` deferral — a source carries its own
@@ -731,6 +752,7 @@ function flatten(
       pending,
       inputBindings,
       paramBindings,
+      moduleInputs,
       byId,
       ports,
       authoredEdges,
@@ -758,11 +780,12 @@ function flatten(
 
   const ctx = blindCast<
     ModuleContext<Deps>,
-    "ctxInputs/ctxSecrets/ctxParams hold one resolved ref per moduleNode.deps/secrets/paramSlots key (the same shapes a producer port, an envSecret source, and an envParam source carry), and provision is exactly ModuleBuilder['provision'] — together they satisfy ModuleContext<D, S, PN> structurally for whatever D/S/PN this moduleNode declares"
+    "ctxInputs/ctxSecrets/ctxParams hold one resolved ref per moduleNode.deps/secrets/paramSlots key (the same shapes a producer port, an envSecret source, and an envParam source carry), input is buildModuleInput(selfId) exactly when the node declares an input schema, and provision is exactly ModuleBuilder['provision'] — together they satisfy ModuleContext<D, S, PN, I> structurally for whatever D/S/PN/I this moduleNode declares"
   >({
     deps: ctxInputs,
     secrets: ctxSecrets,
     params: ctxParams,
+    input: moduleNode.inputSchema === undefined ? undefined : buildModuleInput(selfId),
     environment: environmentFacts,
     provision: blindCast<
       ModuleBuilder['provision'],
@@ -816,6 +839,12 @@ function flatten(
         `Module "${moduleNode.name}" declares expose "${key}" but its body did not return a port for it.`,
       );
     }
+    if (isValue(port)) {
+      throw new LoadError(
+        `Module "${moduleNode.name}" returned a value for expose "${key}". A value can configure a ` +
+          'node, never decide its edges: return a port of a node the body provisions.',
+      );
+    }
     if (!satisfiesRequired(port, contract)) {
       throw new LoadError(
         `Module "${moduleNode.name}"'s returned port for expose "${key}" does not satisfy its declared contract.`,
@@ -861,12 +890,19 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
         'params directly on each provision() call, it does not declare param-forwarding slots of its own.',
     );
   }
+  if (root.inputSchema !== undefined) {
+    throw new LoadError(
+      `Module "${root.name}" declares input but is being deployed as the root. Composer cannot ` +
+        `fill a root's input yet; provision "${root.name}" from another module and bind its input there.`,
+    );
+  }
 
   const nodes: GraphNode[] = [];
   const edges: Edge[] = [];
   const pending: PendingWiring[] = [];
   const inputBindings: ServiceInputBinding[] = [];
   const paramBindings: ParamBinding[] = [];
+  const moduleInputs: ProvisionedModuleInput[] = [];
   const byId = new Map<string, ServiceNode | ResourceNode | ModuleNode>();
   const ports: BoundaryPort[] = [];
   const authoredEdges: AuthoredEdge[] = [];
@@ -884,6 +920,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
       pending,
       inputBindings,
       paramBindings,
+      moduleInputs,
       byId,
       ports,
       authoredEdges,
@@ -902,6 +939,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
     environment: opts?.environment,
     inputBindings,
     params: paramBindings,
+    moduleInputs,
     resources,
   });
   const resolvedNodes = nodes.map((entry): GraphNode => {

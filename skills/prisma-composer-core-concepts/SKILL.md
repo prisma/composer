@@ -144,7 +144,10 @@ Rules that bite:
 
 1. **Secretness is enforced by validation.** A literal bound where the schema
    expects `SecretString` fails the deploy; `envSecret` bound to a plain
-   string field fails the same way.
+   string field fails the same way. A schema with a `SecretString` field
+   cannot also transform its input: an ArkType morph anywhere in it
+   (`'string.trim'`, `.pipe()`) copies the input, the copied secret loses its
+   value, and the deploy refuses it. Transform in the service code instead.
 2. **`envParam` values arrive as raw strings**; bind them to string fields.
    The environment's platform variable is the store; the deploying shell only seeds
    a missing name (and the deploy fails early, naming the variable, when both
@@ -160,7 +163,8 @@ Rules that bite:
 5. **A Module forwards a secret need without learning the platform name.**
    Declare `secrets: { signingKey: secret() }` on the Module boundary and
    pass the forwarded ref as a binding leaf; the parent binds the real
-   source.
+   source. A module can instead declare `input` with a `secretString()`
+   field and pass that field on.
 6. `input.apiKey.expose()` is the only way to a secret's value; the box
    redacts everywhere else (logs, JSON, errors).
 
@@ -168,9 +172,12 @@ Rules that bite:
 
 The graph is the same in every environment; only configuration may differ.
 
+- A module declares `input` (one Standard Schema) as a service does; `provision(module, { input })` binds it, and the body receives each field as a value it can pass into a binding or list in `resolve()`. A root cannot declare `input` yet, and a module's `input` takes no `envParam()` yet.
+- A field exists only under a plain object: a path into a string, an array or a secret, such as `input.tags[0]`, fails the deploy naming the path.
+- A truthiness check such as `if (input.enabled)` is not caught: the field is an object, so the branch always runs, in every environment. A module's structure cannot depend on its input; to provision something only sometimes, let the parent decide whether to provision it.
 - The module body receives `environment`; `environment.name` is a value standing for the name `--environment` gave (`production` for `prisma deploy`, `dev` for `prisma dev` by default).
 - `resolve([deps], ([values]) => …)` from `@prisma/composer` returns a computed value; `fn` receives the dependencies' real values as one tuple.
-- A value is accepted as a leaf of a service's `input` binding, at any depth, as a service param, or as a public URL's `url`. Never as a provision id, a `deps` entry, or a module's `secrets` or `params` binding.
+- A value is accepted as a leaf of a service's or a module's `input` binding, at any depth, as a service param, as one of a `resource()` node's `props`, or as a public URL's `url`. Never as a provision id, a `deps` entry, or a module's `secrets` or `params` binding.
 - A value is opaque in the body: you cannot read, compare or branch on it. List it as a `resolve()` dependency instead.
 - Calling `provision()` inside `fn` fails the load: `fn` computes configuration, never graph structure.
 - `fn` is pure and synchronous and returns plain data (no `undefined`, Promise, value, `envParam()` or `envSecret()`); a deploy and `destroy` both run it, in two processes. To retire an environment, keep its case in every `fn` until `destroy` for it has finished.

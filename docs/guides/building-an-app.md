@@ -313,8 +313,9 @@ sees, and can never reach, the database inside.
 A Module declares its boundary (what it depends on, what it exposes) in the second
 argument, wires its internals in the builder function, and returns the exposed
 interfaces it promised. The builder function receives `provision`, the boundary's
-forwarded `deps`, `secrets` and `params`, and `environment`, whose
-`name` is a value ([below](#values-that-differ-per-environment)):
+forwarded `deps`, `secrets` and `params`, the module's `input`
+([below](#a-modules-input)), and `environment`, whose `name` is a value
+([below](#values-that-differ-per-environment)):
 
 ```ts
 import { module, secret } from '@prisma/composer';
@@ -362,8 +363,8 @@ outermost Module, with no boundary at all.
   module named `auth` would read as `auth.auth`).
 - `deps` — a value for each declared dependency slot: another provision, or
   an exposed port.
-- `input` — the service's input binding ([below](#service-input)); required
-  exactly when the service declares an input schema.
+- `input` — the service's or module's input binding; required exactly when
+  the node declares an input schema.
 - `secrets` — for a module boundary: a binding for each forwarded secret
   need.
 
@@ -371,6 +372,67 @@ Two naming rules the platform enforces: provision names must be at least
 three characters (call a database `'database'`, not `'db'` — the wiring key
 on the service side can still be `db`), and ids must be unique within their
 module.
+
+### A module's input
+
+A module declares its configuration as one `input` schema, as a service does
+([below](#service-input)), and whoever provisions it binds `input`:
+
+```ts
+import { module, resolve } from '@prisma/composer';
+import { secretString } from '@prisma/composer/arktype';
+import { envSecret } from '@prisma/composer-prisma-cloud';
+import { type } from 'arktype';
+
+const email = module(
+  'email',
+  { input: type({ from: 'string', deliveryCredential: secretString(), 'replyTo?': 'string' }) },
+  ({ input, environment, provision }) => {
+    const sender = resolve([input.from, environment.name], ([from, name]) =>
+      name === 'production' ? from : `${name}+${from}`);
+    provision(emailService, {
+      id: 'service',
+      input: { from: sender, replyTo: input.replyTo, deliveryCredential: input.deliveryCredential },
+    });
+  },
+);
+
+export default module('shop', ({ provision }) => {
+  provision(email, {
+    input: { from: 'shop@example.com', deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') },
+  });
+});
+```
+
+`prisma deploy --environment staging` gives `shop.email.service` the input
+`{ from: 'staging+shop@example.com', deliveryCredential:
+envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
+
+- The body receives each field as a [value](#values-that-differ-per-environment).
+  It can pass a field into a `provision()` binding, or list it as a
+  `resolve()` dependency to compute with it.
+- Reading a field in the body fails the deploy with a message naming the
+  field: a template literal, `String()`, arithmetic, `JSON.stringify` or
+  `Object.keys` on `input.domain` reports that `input.domain` of the module is
+  a value, not its real value.
+- A field exists only under a plain object. A path into a string, an array or
+  a secret, such as `input.domain.length` or `input.tags[0]`, fails the deploy
+  with a message saying that `input.domain` has no fields.
+- A truthiness check such as `if (input.enabled)` is not caught. The field is
+  an object, so the check always passes and the branch always runs:
+  `if (input.enabled) provision(extra)` provisions `extra` in every
+  environment. A module's structure cannot depend on its input; to provision
+  something only sometimes, let the parent decide whether to provision it.
+- An optional field the binding leaves out is a key left out: above, the
+  service's input has no `replyTo` key.
+- The module's schema checks the binding when the deploy loads the graph, so
+  a mistake fails before anything reaches the platform.
+- A root module cannot declare `input` yet, and a module's `input` does not
+  take `envParam()` yet. Bind `envParam()` on the service inside the module,
+  or forward it through the module's `params` slot.
+- A body reaches only the keys every member of a union schema has, and has no
+  element access into an array field. To narrow, forward the whole `input`,
+  or narrow inside a `resolve()` function.
 
 ## Object Storage
 
@@ -580,6 +642,13 @@ credential almost landed in plain config), and binding `envSecret` where the
 schema expects a string fails the same way. Neither side can silently
 misclassify a credential.
 
+A schema with a `SecretString` field cannot also transform its input. An
+ArkType morph anywhere in the schema, such as `'string.trim'` or `.pipe()`,
+makes ArkType copy the whole input, and a copied `SecretString` loses its
+value, so the service could not read the secret at boot. The deploy refuses
+such a schema and names the secret field. Do the transform in the service
+code instead.
+
 **`envParam('NAME')`** is for plain values the code *can't* know. An app
 origin is the canonical case: it's different on production and on every
 preview environment, and an environment's public URL doesn't exist until that
@@ -667,10 +736,12 @@ prisma dev                             # "HELLO FROM DEV"
 for data that is known only once the deploy knows which environment it is
 deploying. The module body cannot read a value, compare it or branch on it.
 It can only pass it on: as a dependency of another `resolve()`, as a leaf of
-a service's input binding at any depth, as a service param, or as a
-[public URL's `url`](#a-hostname-per-environment). A value
-cannot be a provision id or a `deps` entry, and a module's `secrets` and
-`params` bindings take sources, not values.
+a service's or a module's input binding at any depth, as a service param, as
+one of a `resource()` node's `props`, or as a
+[public URL's `url`](#a-hostname-per-environment). A field of a module's
+`input` is a value too ([A module's input](#a-modules-input)). A value cannot
+be a provision id or a `deps` entry, and a module's `secrets` and `params`
+bindings take sources, not values.
 
 `resolve(dependencies, fn)` lists the values it depends on, and `fn`
 receives their real values as one tuple, in the same order. After every

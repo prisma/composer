@@ -35,6 +35,10 @@ distinct type, with composition behaviours a Service doesn't have.
 - **Nesting.** A wrapped node's dependencies and exposed interfaces connect either to the
   parent Module's own or to a sibling (Service, Resource, or Module) inside the same Module; a
   wrapped node reaches outside the Module only through the parent's boundary.
+- **Input.** A Module declares its configuration as one `input` Standard Schema,
+  as a Service does, and whoever provisions it binds it. Its body receives one
+  [value](#value) per input field and can only pass it on: into a `provision()`
+  binding or as a `resolve()` dependency.
 - **Composite, not atomic.** Where a Service is a leaf (opaque), a Module is
   transparent: the framework sees its dependencies and exposed interfaces *and* the internal topology it owns. The
   Module decides how the Services, Resources, and Modules it wraps connect; its
@@ -154,14 +158,18 @@ what keeps the graph's structure the same whatever inputs Composer is given
 The data a value stands for is its **real value**.
 
 - **Provided or computed.** A provided value is handed to the module body:
-  `environment.name` is one, a deploy-time fact of the environment. A computed
+  `environment.name` is one, a deploy-time fact of the environment, and each
+  field of a module's `input` is another, whose real value is read from the
+  module's input after its schema has validated it. A computed
   value is what `resolve(dependencies, fn)` returns; Load runs `fn` with its
   dependencies' real values after every module body has run, with `provision`
   disabled. `resolve()` declares a computed value; Load resolves every value.
 - **Deploy-time or runtime.** A deploy-time value has its real value by the end
   of Load. A runtime value is known only to the platform the app is deployed
   to; at deploy time it is a pointer to it (the decision's table calls this
-  "held by the platform"). Today every value is deploy-time.
+  "held by the platform"). Today every value is deploy-time. A module input
+  field bound to `envSecret()` is deploy-time: its real value is the pointer,
+  never the secret.
 
 In code the type is `Value<T>`, and `RealValuesOf<D>` is the tuple of
 real-value types `fn` receives for a dependency tuple `D`. `envParam()` and `envSecret()` are not values
@@ -430,7 +438,7 @@ but **terminate at hydration** — user code is dependency-injection only.
 The two-phase lifecycle. Running a `define` **Loads** an in-memory graph (a graph of
 streams, request/response being the bounded case) and the framework validates its
 integrity — every dependency satisfied, interfaces compatible, nothing dangling — with
-nothing executed but module bodies and `resolve()` functions. **Hydrate** attaches adapters and pushes data through the dependencies
+nothing executed but module bodies, `resolve()` functions and module input schemas. **Hydrate** attaches adapters and pushes data through the dependencies
 and out of the exposed interfaces. One graph serves both a test harness (a fake
 substituted at any dependency) and a real deployment.
 

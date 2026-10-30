@@ -2,7 +2,7 @@
 
 Amended by [ADR-0063](ADR-0063-a-node-depends-on-an-interface-or-exposes-one.md): the words below for the two ends of a connection, inputs and outputs, are replaced by **dependencies** and **exposed interfaces**; the body receives `deps`, not `inputs`. The boundary itself is unchanged.
 
-Amended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares its configuration as one `input` schema, as a compute service does; its per-key `params` and `secrets` slots are removed. A root may declare `input`, bound by the deploy.
+Amended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares its configuration as one `input` schema, as a compute service does; its per-key `params` and `secrets` slots are removed. A root may declare `input`, bound by the deploy. Load validates a module's input binding with its schema; a declared input field the body never uses is not an error, unlike an unused dependency, because Load cannot list a schema's keys.
 
 ## Decision
 

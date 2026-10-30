@@ -3,9 +3,11 @@
  * data objects. A node's `extension` + `type` form its deploy-time registry key (ADR-0017).
  */
 import { blindCast } from '@internal/foundation/casts';
+import type { SecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { ConfigParam, Connection, Params } from './config.ts';
 import type { Contract } from './contract.ts';
+import type { ModuleInput } from './module-input.ts';
 import {
   type EnvironmentFacts,
   isPlainObject,
@@ -183,6 +185,17 @@ export type ParamNeedBindings<PN extends ParamNeeds> = {
   readonly [K in keyof PN]?: ParamSource;
 };
 
+/** What a value in a service's input binding may stand for: plain data, a `SecretString` at any depth (a forwarded secret field), and `undefined` (an optional field the binding left out). */
+export type InputBindingData =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | SecretString
+  | readonly InputBindingData[]
+  | { readonly [key: string]: InputBindingData };
+
 /**
  * What `provision(service, { input })` accepts (ADR-0042): a plain object
  * mirroring the service's input schema, whose leaves are literals,
@@ -198,9 +211,34 @@ export type InputBinding =
   | null
   | ParamSource
   | SecretSource
-  | Value<PlainData>
+  | Value<InputBindingData>
   | readonly InputBinding[]
   | { readonly [key: string]: InputBinding };
+
+/**
+ * What `provision(module, { input })` accepts where the module's input schema
+ * expects `T` (its Standard Schema input type): the data, a value standing for
+ * it, or, for a `SecretString` field, a secret source. An optional key also
+ * takes a value that may stand for `undefined`.
+ */
+export type ModuleInputBinding<T> =
+  | Value<T>
+  | (T extends SecretString
+      ? SecretSource
+      : T extends readonly (infer E)[]
+        ? T | readonly ModuleInputBinding<E>[]
+        : T extends { readonly [key: string]: unknown }
+          ? {
+              readonly [K in keyof T]:
+                | ModuleInputBinding<T[K]>
+                | (Record<never, never> extends Pick<T, K> ? Value<T[K] | undefined> : never);
+            }
+          : T);
+
+/** A module input schema's Standard Schema input type. */
+type ModuleInputOf<I extends StandardSchemaV1 | undefined> = StandardSchemaV1.InferInput<
+  NonNullable<I>
+>;
 
 /** What `input()` returns: the schema's validated output type; `never` on a service that declares no input schema. */
 export type InputValueOf<I> = I extends StandardSchemaV1 ? StandardSchemaV1.InferOutput<I> : never;
@@ -328,6 +366,7 @@ export interface ModuleNode<
   E extends Expose = Expose,
   S extends Secrets = Secrets,
   PN extends ParamNeeds = ParamNeeds,
+  I extends StandardSchemaV1 | undefined = StandardSchemaV1 | undefined,
 > {
   readonly [NODE]: true;
   readonly kind: 'module';
@@ -338,9 +377,11 @@ export interface ModuleNode<
   readonly secretSlots: S;
   /** Declared param-forwarding slots (authored as `params`) — forwarded to internals via `ctx.params`, the same rail secrets ride on. */
   readonly paramSlots: PN;
+  /** The module's whole incoming configuration as one Standard Schema (authored as `input`, ADR-0061), or `undefined` when it takes none. Load only calls its `~standard.validate`. */
+  readonly inputSchema: I;
   readonly expose: E;
   // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
-  body(ctx: ModuleContext<D, S, PN>): ModuleOutputs<E> | void;
+  body(ctx: ModuleContext<D, S, PN, I>): ModuleOutputs<E> | void;
 }
 
 /**
@@ -351,6 +392,7 @@ export interface ModuleContext<
   D extends Deps,
   S extends Secrets = Secrets,
   PN extends ParamNeeds = ParamNeeds,
+  I extends StandardSchemaV1 | undefined = StandardSchemaV1 | undefined,
 > {
   /** The module's declared dependencies as wiring values — pass them into provision(). */
   readonly deps: { [K in keyof D]: InputRef<D[K]> };
@@ -358,6 +400,8 @@ export interface ModuleContext<
   readonly secrets: { readonly [K in keyof S]: SecretSource };
   /** The module's declared param-forwarding slots as forwardable sources — pass them into a child's `params`. */
   readonly params: { readonly [K in keyof PN]: ParamSource };
+  /** The module's input: one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. Pass a field into a provision() binding or list it as a resolve() dependency. */
+  readonly input: I extends StandardSchemaV1 ? ModuleInput<I> : undefined;
   /** The deploy-time facts of the environment, each a value (ADR-0062). List `environment.name` as a `resolve()` dependency. Never environment variables: user code never reads those. */
   readonly environment: EnvironmentFacts;
   /** Registers an owned child (service or module) under a stable id. */
@@ -425,17 +469,34 @@ type ServiceProvisionArgs<D extends Deps, I extends StandardSchemaV1 | undefined
     : [opts: { id?: string; deps: DepBindings<D>; input: InputBinding; params?: PB }];
 
 /**
- * A child-MODULE provision's trailing options: `deps`/`secrets` required
- * exactly when the module declares the slots; a declared param-forwarding
- * slot may be bound to a `ParamSource`.
+ * A child-MODULE provision's trailing options: `deps`, `secrets` and `input`
+ * each required exactly when the module declares them; a declared
+ * param-forwarding slot may be bound to a `ParamSource`.
  */
-type ModuleProvisionArgs<D extends Deps, S extends Secrets, PB> = [keyof D] extends [never]
+type ModuleProvisionOptions<
+  D extends Deps,
+  S extends Secrets,
+  I extends StandardSchemaV1 | undefined,
+  PB,
+> = { id?: string; params?: PB } & ([keyof D] extends [never]
+  ? unknown
+  : { deps: DepBindings<D> }) &
+  ([keyof S] extends [never] ? unknown : { secrets: SecretBindings<S> }) &
+  ([I] extends [StandardSchemaV1] ? { input: ModuleInputBinding<ModuleInputOf<I>> } : unknown);
+
+/** The options are optional exactly when nothing is required. */
+type ModuleProvisionArgs<
+  D extends Deps,
+  S extends Secrets,
+  I extends StandardSchemaV1 | undefined,
+  PB,
+> = [keyof D] extends [never]
   ? [keyof S] extends [never]
-    ? [opts?: { id?: string; params?: PB }]
-    : [opts: { id?: string; secrets: SecretBindings<S>; params?: PB }]
-  : [keyof S] extends [never]
-    ? [opts: { id?: string; deps: DepBindings<D>; params?: PB }]
-    : [opts: { id?: string; deps: DepBindings<D>; secrets: SecretBindings<S>; params?: PB }];
+    ? [I] extends [StandardSchemaV1]
+      ? [opts: ModuleProvisionOptions<D, S, I, PB>]
+      : [opts?: ModuleProvisionOptions<D, S, I, PB>]
+    : [opts: ModuleProvisionOptions<D, S, I, PB>]
+  : [opts: ModuleProvisionOptions<D, S, I, PB>];
 
 export interface ModuleBuilder {
   /** Provisions an owned resource; its id defaults to the node's `name`. */
@@ -473,19 +534,32 @@ export interface ModuleBuilder {
       params?: ParamBindings<P>;
     },
   ): ProvisionedRef<E>;
-  /** Registers an owned child module; its id defaults to the node's `name`; `deps`/`secrets` are required iff it declares them; a declared param-forwarding slot may be bound to a `ParamSource`. */
-  provision<D extends Deps, E extends Expose, S extends Secrets, PN extends ParamNeeds>(
-    child: ModuleNode<D, E, S, PN>,
-    ...args: ModuleProvisionArgs<D, S, ParamNeedBindings<PN>>
+  /** Registers an owned child module; its id defaults to the node's `name`; `deps`, `secrets` and `input` are required iff it declares them; a declared param-forwarding slot may be bound to a `ParamSource`. */
+  provision<
+    D extends Deps,
+    E extends Expose,
+    S extends Secrets,
+    PN extends ParamNeeds,
+    I extends StandardSchemaV1 | undefined,
+  >(
+    child: ModuleNode<D, E, S, PN, I>,
+    ...args: ModuleProvisionArgs<D, S, I, ParamNeedBindings<PN>>
   ): ProvisionedRef<E>;
-  /** The child-module call with `deps`/`secrets` spelled out — the same generic-wrapper escape as the service overload above. */
-  provision<D extends Deps, E extends Expose, S extends Secrets, PN extends ParamNeeds>(
-    child: ModuleNode<D, E, S, PN>,
+  /** The child-module call with `deps` spelled out — the same generic-wrapper escape as the service overload above. */
+  provision<
+    D extends Deps,
+    E extends Expose,
+    S extends Secrets,
+    PN extends ParamNeeds,
+    I extends StandardSchemaV1 | undefined,
+  >(
+    child: ModuleNode<D, E, S, PN, I>,
     opts: {
       id?: string;
       deps: DepBindings<D>;
       secrets?: SecretBindings<S>;
       params?: ParamNeedBindings<PN>;
+      input?: ModuleInputBinding<ModuleInputOf<I>>;
     },
   ): ProvisionedRef<E>;
 }
@@ -855,13 +929,14 @@ export function dependency<P extends Params, C, Req = unknown>(def: {
 export function module(
   name: string,
   body: (
-    ctx: ModuleContext<Record<never, never>, Record<never, never>, Record<never, never>>,
+    ctx: ModuleContext<Record<never, never>, Record<never, never>, Record<never, never>, undefined>,
   ) => void,
 ): ModuleNode<
   Record<never, never>,
   Record<never, never>,
   Record<never, never>,
-  Record<never, never>
+  Record<never, never>,
+  undefined
 >;
 /**
  * A module with a boundary: `deps` and/or `expose` declare what wires in and
@@ -872,12 +947,13 @@ export function module<
   E extends Expose = Record<never, never>,
   S extends Secrets = Record<never, never>,
   PN extends ParamNeeds = Record<never, never>,
+  I extends StandardSchemaV1 | undefined = undefined,
 >(
   name: string,
-  boundary: { deps?: D; secrets?: S; params?: PN; expose?: E },
+  boundary: { deps?: D; secrets?: S; params?: PN; input?: I; expose?: E },
   // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
-  body: (ctx: ModuleContext<D, S, PN>) => ModuleOutputs<E> | void,
-): ModuleNode<D, E, S, PN>;
+  body: (ctx: ModuleContext<D, S, PN, I>) => ModuleOutputs<E> | void,
+): ModuleNode<D, E, S, PN, I>;
 /**
  * Constructs a branded, frozen Module node. Construction is INERT — the body is
  * wiring, not user code, and runs only when the module is Loaded.
@@ -885,8 +961,14 @@ export function module<
 export function module(
   name: string,
   boundaryOrBody:
-    | { deps?: Deps; secrets?: Secrets; params?: ParamNeeds; expose?: Expose }
-    | ((ctx: ModuleContext<Deps>) => void),
+    | {
+        deps?: Deps;
+        secrets?: Secrets;
+        params?: ParamNeeds;
+        input?: StandardSchemaV1;
+        expose?: Expose;
+      }
+    | ((ctx: ModuleContext<Deps, Secrets, ParamNeeds, undefined>) => void),
   // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
   maybeBody?: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose> | void,
 ): ModuleNode {
@@ -895,6 +977,12 @@ export function module(
   const boundary = closedRoot ? {} : boundaryOrBody;
   requireNotReservedPortNames(Object.keys(boundary.deps ?? {}), 'module');
   requireNotReservedPortNames(Object.keys(boundary.expose ?? {}), 'module');
+  if (boundary.input !== undefined && typeof boundary.input['~standard']?.validate !== 'function') {
+    throw new Error(
+      'module() `input` must be a Standard Schema (an object with a "~standard".validate ' +
+        'function) — see https://standardschema.dev (ADR-0061).',
+    );
+  }
   const deps = frozenShallowCopy(boundary.deps ?? {});
   const secretSlots = frozenShallowCopy(boundary.secrets ?? {});
   const paramSlots = frozenShallowCopy(boundary.params ?? {});
@@ -902,7 +990,7 @@ export function module(
   // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
   const body: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose> | void = closedRoot
     ? (ctx) => {
-        boundaryOrBody(ctx);
+        boundaryOrBody({ ...ctx, input: undefined });
         return {};
       }
     : // biome-ignore lint/style/noNonNullAssertion: the non-function overload always passes a third argument.
@@ -914,6 +1002,7 @@ export function module(
     deps,
     secretSlots,
     paramSlots,
+    inputSchema: boundary.input,
     expose,
     body,
   });

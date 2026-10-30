@@ -11,7 +11,8 @@ const VALUE_ORIGIN: unique symbol = blindCast<never, 'unique-symbol key for a va
 // Type-only, never assigned: carries T so Value<number> is not a Value<string>.
 declare const VALUE_TYPE: unique symbol;
 
-export type { VALUE, VALUE_ORIGIN, VALUE_TYPE };
+export type { VALUE_TYPE };
+export { VALUE, VALUE_ORIGIN };
 
 /** Where Load gets a value's real value. Internal to core; not re-exported from the public barrel. */
 export type ValueOrigin<T> =
@@ -24,12 +25,22 @@ export type ValueOrigin<T> =
       readonly kind: 'computed';
       readonly dependencies: readonly Value<unknown>[];
       readonly compute: (values: readonly unknown[]) => T;
+    }
+  | {
+      readonly kind: 'input';
+      /** The address of the module whose input this field is. */
+      readonly module: string;
+      /** The key path inside that module's input; `[]` is the whole input. */
+      readonly path: readonly string[];
     };
+
+/** The origin of a module input field. Internal to core. */
+export type InputOrigin = Extract<ValueOrigin<unknown>, { readonly kind: 'input' }>;
 
 /**
  * An opaque stand-in a module body can pass wherever a `T` is accepted; its
  * real value is known by the end of Load (ADR-0062). `environment.name` is one;
- * `resolve()` returns one computed from others.
+ * each field of a module's `input` is one; `resolve()` returns one computed from others.
  */
 export interface Value<T> {
   readonly [VALUE]: true;
@@ -42,7 +53,7 @@ export type RealValuesOf<D extends readonly Value<unknown>[]> = {
   readonly [K in keyof D]: D[K] extends Value<infer T> ? T : never;
 };
 
-/** Plain data: what a `resolve()` function may return, and the only thing a value may stand for in a binding. */
+/** Plain data: what a `resolve()` function may return. */
 export type PlainData =
   | string
   | number
