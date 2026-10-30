@@ -72,6 +72,32 @@ export type RealValuesOf<D extends readonly Value<unknown>[]> = {
   readonly [K in keyof D]: D[K] extends Value<infer T> ? T : never;
 };
 
+/** `true` when `T` is a `Pointer` or holds one, through arrays and plain object types. */
+type HoldsPointer<T> =
+  T extends Pointer<unknown>
+    ? true
+    : T extends readonly (infer E)[]
+      ? HoldsPointer<E>
+      : T extends Record<PropertyKey, unknown>
+        ? HoldsPointer<T[keyof T]>
+        : false;
+
+/** `true` for a real-value type a `resolve()` function can compute with: one that holds no pointer. `any` and `unknown` pass; Load checks those. */
+type IsDeployTime<T> = 0 extends 1 & T ? true : true extends HoldsPointer<T> ? false : true;
+
+/** The type error an author sees for a dependency that is not a deploy-time value. */
+type NotDeployTime =
+  'a resolve() dependency must be a deploy-time value, never a value known only at boot or a field wrapped with field(); to compute with an input field, declare it plain';
+
+/** `D` with each dependency that is not a deploy-time value replaced by the message saying so. */
+type DeployTimeDependencies<D extends readonly Value<unknown>[]> = {
+  readonly [K in keyof D]: D[K] extends Value<infer T>
+    ? IsDeployTime<T> extends true
+      ? D[K]
+      : NotDeployTime
+    : D[K];
+};
+
 /** Plain data: what a `resolve()` function may return. */
 export type PlainData =
   | string
@@ -83,28 +109,32 @@ export type PlainData =
 
 /**
  * A value computed from other values. `fn` receives the dependencies' real
- * values as one tuple, in order, and returns plain data. Load runs it after
- * every module body, with `provision` disabled (ADR-0062). `fn` must be a pure
- * function of its dependencies: a deploy runs it in two processes.
+ * values as one tuple, in order, and returns plain data. Each dependency must
+ * be a deploy-time value: listing a runtime value or a field wrapped with
+ * `field()` fails to compile, and Load refuses a dependency whose real value
+ * holds a pointer. Load runs `fn` after every module body, with `provision`
+ * disabled (ADR-0062). `fn` must be a pure function of its dependencies: a
+ * deploy runs it in two processes.
  */
 export function resolve<const D extends readonly Value<unknown>[], T>(
-  dependencies: D,
+  dependencies: DeployTimeDependencies<D>,
   fn: (values: RealValuesOf<D>) => T,
 ): Value<T> {
   if (!Array.isArray(dependencies)) {
     throw new Error('resolve() requires a tuple of values as its first argument.');
   }
-  dependencies.forEach((dependency: unknown, index) => {
+  const checked = dependencies.map((dependency: unknown, index): Value<unknown> => {
     if (!isValue(dependency)) {
       throw new Error(
         `resolve() dependency at index ${index} is not a value — list environment.name or another resolve() result.`,
       );
     }
+    return dependency;
   });
   if (typeof fn !== 'function') {
     throw new Error('resolve() requires a function as its second argument.');
   }
-  const frozenDependencies: readonly Value<unknown>[] = Object.freeze([...dependencies]);
+  const frozenDependencies: readonly Value<unknown>[] = Object.freeze(checked);
   const compute = blindCast<
     (values: readonly unknown[]) => T,
     'fn is typed against RealValuesOf<D>; Load supplies exactly that tuple'

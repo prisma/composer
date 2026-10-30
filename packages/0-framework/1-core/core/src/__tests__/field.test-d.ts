@@ -13,7 +13,7 @@ import type {
   SecretString,
   Value,
 } from '../exports/index.ts';
-import { isPlainPointer, isSecretPointer, module, service } from '../exports/index.ts';
+import { isPlainPointer, isSecretPointer, module, resolve, service } from '../exports/index.ts';
 import type { LoadOverrides } from '../exports/testing.ts';
 
 declare const plainRuntime: RuntimeValue<string>;
@@ -313,4 +313,63 @@ test('service.input() keeps a class instance in the output, such as a Date or a 
   }>();
   expectTypeOf(arkDatedInput.when.getTime()).toEqualTypeOf<number>();
   expectTypeOf(zodDatedInput.when.getTime()).toEqualTypeOf<number>();
+});
+
+const NOT_DEPLOY_TIME =
+  'a resolve() dependency must be a deploy-time value, never a value known only at boot or a field wrapped with field(); to compute with an input field, declare it plain' as const;
+
+/** The type `resolve()` requires of the dependency tuple `D`. */
+type Dependencies<D extends readonly Value<unknown>[]> = Parameters<typeof resolve<D, string>>[0];
+
+test('resolve() lists deploy-time values: a plain field, a computed value, and a field typed unknown or any', () => {
+  const untyped = z.object({ meta: z.unknown(), loose: z.any() });
+  module('m', { input: arkSchema }, ({ input, environment }) => {
+    resolve([input.host, environment.name, text], (values) => {
+      expectTypeOf(values).toEqualTypeOf<readonly [string, string, string]>();
+      return values[0];
+    });
+  });
+  module('m', { input: untyped }, ({ input }) => {
+    resolve([input.meta, input.loose], ([meta, loose]) => {
+      expectTypeOf(meta).toEqualTypeOf<unknown>();
+      expectTypeOf(loose).toBeAny();
+      return 'x';
+    });
+  });
+});
+
+test('listing a runtime value or a wrapped field in resolve() fails to compile', () => {
+  // @ts-expect-error a plain runtime value is not a deploy-time value
+  resolve([plainRuntime], () => 'x');
+  // @ts-expect-error a secret runtime value is not a deploy-time value
+  resolve([secretRuntime], () => 'x');
+  module('m', { input: arkSchema }, ({ input }) => {
+    // @ts-expect-error a wrapped field may hold a pointer
+    resolve([input.from], () => 'x');
+    // @ts-expect-error a wrapped transforming field may hold a pointer
+    resolve([input.port], () => 'x');
+    // @ts-expect-error a secretString() field may hold a secret pointer
+    resolve([input.key], () => 'x');
+  });
+  module('m', { input: zodSchema }, ({ input }) => {
+    // @ts-expect-error a wrapped field may hold a pointer
+    resolve([input.from], () => 'x');
+    // @ts-expect-error a secretString() field may hold a secret pointer
+    resolve([input.key], () => 'x');
+  });
+  module('m', { input: arkNested }, ({ input }) => {
+    // @ts-expect-error an object field whose leaves are wrapped may hold a pointer
+    resolve([input.smtp], () => 'x');
+    // @ts-expect-error an array of wrapped fields may hold a pointer
+    resolve([input.tags], () => 'x');
+  });
+});
+
+test('the type error says a dependency must be a deploy-time value', () => {
+  expectTypeOf<Dependencies<readonly [Value<string>, RuntimeValue<string>]>>().toEqualTypeOf<
+    readonly [Value<string>, typeof NOT_DEPLOY_TIME]
+  >();
+  expectTypeOf<
+    Dependencies<readonly [Value<{ smtp: { user: string | Pointer<string> } }>]>
+  >().toEqualTypeOf<readonly [typeof NOT_DEPLOY_TIME]>();
 });

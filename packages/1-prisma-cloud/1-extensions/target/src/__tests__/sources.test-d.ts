@@ -2,6 +2,7 @@ import {
   module,
   type ParamSource,
   type RuntimeValue,
+  resolve,
   type SecretSource,
   type SecretString,
   type Value,
@@ -88,4 +89,16 @@ test('a runtime value does not fit a plain field, and a secret one does not fit 
     // @ts-expect-error envSecret() is a secret runtime value; a wrapped text field takes a plain pointer only
     provision(relay, { input: { host: 'h', from: envSecret('KEY') } });
   });
+});
+
+test('resolve() lists envParam(), and refuses envSecret(), generatedParam() and serviceOrigin()', () => {
+  resolve([envParam('GREETING')], ([greeting]) => greeting.toUpperCase());
+  // @ts-expect-error envSecret() is known only at boot; a resolve() dependency must be a deploy-time value
+  resolve([envSecret('KEY')], () => 'x');
+  // @ts-expect-error generatedParam() is known only at boot; a resolve() dependency must be a deploy-time value
+  resolve([generatedParam()], () => 'x');
+  // @ts-expect-error a plain generatedParam() is known only at boot; a resolve() dependency must be a deploy-time value
+  resolve([generatedParam({ redacted: false })], () => 'x');
+  // @ts-expect-error serviceOrigin() is known only at boot; a resolve() dependency must be a deploy-time value
+  resolve([serviceOrigin('shop.web')], () => 'x');
 });
