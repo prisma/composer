@@ -135,7 +135,7 @@ registry). What we deliberately didn't do:
   App's deployments before deleting it.** It retries for about 3.75 seconds in
   total; Composer's old provider retried for up to 5 minutes. See
   `docs/design/05-prisma-cloud/alchemy-lowering.md`.
-- **Export `PrismaUploadClient` / open `alchemy/Prisma/Internal/*`.** The
+- **Export `PrismaUploadClient` / open `@alchemy.run/prisma`'s `internal/*`.** The
   package export is `null`, so an outside stack cannot compose the scoped
   upload client; the only alternative is overriding the ambient
   `HttpClient`.
@@ -285,3 +285,8 @@ ADR-0053 (the commands). What we deliberately didn't do:
 
 - **Rename `Values<P>` to `ParamValues<P>` at the next breaking release.** `Values<P>` is the hydrated data of a node's params, exported from `@prisma/composer`. Since `Value<T>` became the type `resolve()` returns, the two names read as related when they are not. Renaming a public type breaks callers, so it waits for a release that already breaks them. Origin: public-URLs slice C1.
 - **Move `PostgresResourceNode`'s `config` and `targetRef` into `props`.** A resource's configuration now has one home, `props`, which is the only place on a resource where Load resolves a value. The Prisma Cloud Postgres resource still carries its own fields, so a value cannot configure it. Origin: public-URLs slice C1.
+
+# Alchemy footprint — deferred (2026-10-30)
+
+- **`@alchemy.run/prisma` still installs `@distilled.cloud/aws` (143 MB).** Only its S3 bucket bindings (`ReadBucket`, `WriteBucket`) use it, and Composer never calls them. Composer cannot remove it for users. The fix is upstream: a small Prisma Cloud bucket client in `@alchemy.run/prisma`, being prepared in a local Alchemy clone at `/Users/wmadden/Projects/alchemy-run/alchemy` (brief: `wip/drive/prisma-bucket-client/brief.md`). When it ships, bump `alchemy` and `@alchemy.run/prisma` together. Expected result: a Composer app installs about 370 MB instead of 512 MB.
+- **`@prisma/composer-prisma-cloud` ships 28 MB of source maps and a 24 MB `auth/testing` bundle.** Of the package's 45 MB, `dist/auth/testing.mjs` is 9 MB and its map 15 MB. The `./auth/testing` export is a test helper that inlines a large dependency tree. Find what it inlines, and decide whether test helpers and source maps belong in the published package. This is Composer's own packaging, not Alchemy's.

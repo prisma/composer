@@ -95,7 +95,7 @@ install never gets there.
    done
    ```
 
-   alchemy's floor is not a compatibility promise. alchemy 2.0.0-beta.75 to beta.77 accept `effect` rc.112 and later, but call `Config.string`, which rc.113 removed, so they crash on it. Pin the `effect` release alchemy was built against: the newest one published before that alchemy release (`npm view effect time`). Check the new alchemy's `alchemy/Prisma` still loads from a plain npm install: in beta.79 it imports the optional peer `@alchemy.run/frontend-frameworks` and fails.
+   alchemy's floor is not a compatibility promise. alchemy 2.0.0-beta.75 to beta.77 accept `effect` rc.112 and later, but call `Config.string`, which rc.113 removed, so they crash on it. Pin the `effect` release alchemy was built against: the newest one published before that alchemy release (`npm view effect time`). Check the new alchemy's Prisma provider still loads from a plain npm install: in beta.79 it imports the optional peer `@alchemy.run/frontend-frameworks` and fails. Since beta.84 each provider is its own package, versioned in lockstep with `alchemy`: the Prisma provider is `@alchemy.run/prisma` (formerly the `alchemy/Prisma` module), and only `@prisma/composer-prisma-cloud` and the Prisma Cloud internals depend on it. Bump it with `alchemy`.
 
 2. **Find every pin.** They are spread across public packages, framework
    packages, examples, `test/integration`, and `website`:
@@ -131,9 +131,9 @@ instead of an error (2026-09-11: `@effect/*@4.0.0-rc.114` published ahead of
 pin, in `dependencies`, every package alchemy declares with a floating range
 so a consumer's npm resolves our copy:
 
-- `@prisma/composer` — alchemy's regular dependencies: `@effect/sql-d1`,
-  `@effect/sql-sqlite-do`, `@effect/vitest`.
-- `@prisma/composer-prisma-cloud` — the optional platform peers: `@effect/platform-bun`, `@effect/platform-node`, `@effect/platform-node-shared`. It also depends on `@distilled.cloud/prisma`, whose `Credentials` the provider wiring imports; keep it at the exact version alchemy depends on so npm installs one copy.
+- `@prisma/composer-prisma-cloud` — the optional platform peers: `@effect/platform-bun`, `@effect/platform-node`, `@effect/platform-node-shared`. Alchemy loads them at runtime (`alchemy/Util/PlatformServices`, `alchemy/Http`), so they must be installed. It also depends on `@distilled.cloud/prisma`, whose `Credentials` the provider wiring imports; keep it at the exact version `@alchemy.run/prisma` depends on so npm installs one copy.
+
+Pin only what Composer or alchemy actually loads. Since beta.84, alchemy's other `effect`-family packages are optional peers, and npm installs an optional peer only when something else asks for it. `@prisma/composer` pinned `@effect/sql-d1`, `@effect/sql-sqlite-do` and `@effect/vitest` while beta.83 depended on them; the pins were dropped with the beta.84 bump, which also removed `vitest` and `vite` from every consumer's install. Before adding a pin, check that `alchemy/package.json` lists the package in `dependencies`, or that Composer's code imports it.
 
 When alchemy adds a floating `effect`-family dependency, add its pin next to these; `check-npm-effect-resolution` installs the tarballs bare and fails when the install backtracks or resolves a second `effect`. It installs once more with npm 10, the npm that Node 22 bundles: npm 10 crashes on `vitest@4.1.x`, which `@effect/vitest` rc.112 and earlier pull in. The only case left to a consumer's own `overrides` is an app that pins a different `effect` itself (documented in `docs/guides/deploying.md`).
 

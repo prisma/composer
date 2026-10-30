@@ -1335,15 +1335,6 @@ importers:
 
   packages/9-public/composer:
     dependencies:
-      '@effect/sql-d1':
-        specifier: 4.0.5
-        version: 4.0.5(effect@4.0.5)
-      '@effect/sql-sqlite-do':
-        specifier: 4.0.5
-        version: 4.0.5(effect@4.0.5)
-      '@effect/vitest':
-        specifier: 4.0.5
-        version: 4.0.5(effect@4.0.5)(vitest@5.0.4(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))
       '@prisma/management-api-sdk':
         specifier: ^1.80.0
         version: 1.80.0
@@ -2021,16 +2012,6 @@ packages:
     peerDependencies:
       effect: ^4.0.5
       redis: '>=5.0.0 <7.0.0'
-
-  '@effect/sql-d1@4.0.5':
-    resolution: {integrity: sha512-ERArvCS/qOHx52yKFePc8v5qs0y18Ld+Ha6Xkkm/I1R+zTf+flfWpsuxlxkPKlwQCqB9K+yfU6Kw1gshKGRCPQ==}
-    peerDependencies:
-      effect: ^4.0.5
-
-  '@effect/sql-sqlite-do@4.0.5':
-    resolution: {integrity: sha512-TGlU65ZJJMa81I7EoicQXxhRsJDxDPz6A/PNOPzMYRgmCdLs6EsTTXIkKZ+8apb7pl2o0OKVcrT6i6mGlluyLg==}
-    peerDependencies:
-      effect: ^4.0.5
 
   '@effect/vitest@4.0.5':
     resolution: {integrity: sha512-q64paZ/i4V2NiRhTyqCmT2KiDbFjlxc2EZrZca8GGt+Nf8844946HyJM5bPk/q+YeRkFSxIrlCs+J+LSfky/wA==}
@@ -6115,7 +6096,8 @@ snapshots:
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
 
-  '@cloudflare/workers-types@5.20261013.1': {}
+  '@cloudflare/workers-types@5.20261013.1':
+    optional: true
 
   '@distilled.cloud/aws4signer@1.0.0-rc.17(effect@4.0.5)':
     dependencies:
@@ -6194,19 +6176,11 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@effect/sql-d1@4.0.5(effect@4.0.5)':
-    dependencies:
-      '@cloudflare/workers-types': 5.20261013.1
-      effect: 4.0.5
-
-  '@effect/sql-sqlite-do@4.0.5(effect@4.0.5)':
-    dependencies:
-      effect: 4.0.5
-
   '@effect/vitest@4.0.5(effect@4.0.5)(vitest@5.0.4(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))':
     dependencies:
       effect: 4.0.5
       vitest: 5.0.4(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+    optional: true
 
   '@effect/vitest@4.0.5(effect@4.0.5)(vitest@5.0.4(@types/node@26.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))':
     dependencies:

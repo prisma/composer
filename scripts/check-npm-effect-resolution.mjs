@@ -71,11 +71,10 @@ if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(pinnedEffect)) {
   fail(`@prisma/composer's effect dependency must be an exact version, got "${pinnedEffect}"`);
 }
 
-// alchemy's own `effect`-family ranges float (`@effect/sql-d1`,
-// `@effect/sql-sqlite-do`, `@effect/vitest` as dependencies, the platform
-// adapters as optional peers, all `>=4.0.0-rc.110 || >=4.0.0`). The public
-// packages pin every one of them exactly in `dependencies`, so a consumer's
-// npm resolves our copy instead of the newest on the registry. The healthy
+// alchemy's `effect`-family ranges float (`effect` itself and the optional
+// platform peers it loads at runtime). The public packages pin every one of
+// them exactly in `dependencies`, so a consumer's npm resolves our copy
+// instead of the newest on the registry. The healthy
 // shapes below install bare — no overrides — because that is how the unified
 // `prisma` CLI and anyone who follows the guide installs us. They run under a
 // timeout: when a floater's newest release names an `effect` peer no published
@@ -268,9 +267,9 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
         'backtracking over an effect-family package alchemy declares with a floating range: ' +
         'a dependency alchemy pulls in resolves to a version whose `effect` peer no published ' +
         '`effect` satisfies. Pin that package exactly where Composer pins its siblings: ' +
-        "alchemy's regular dependencies in @prisma/composer's `dependencies` (next to " +
-        '@effect/sql-d1), the optional platform peers (@effect/platform-*) in ' +
-        "@prisma/composer-prisma-cloud's `dependencies`. See skills-contrib/upgrade-alchemy-effect.",
+        "alchemy's regular dependencies in @prisma/composer's `dependencies`, the optional " +
+        "platform peers (@effect/platform-*) in @prisma/composer-prisma-cloud's `dependencies`. " +
+        'See skills-contrib/upgrade-alchemy-effect.',
     );
   }
   if (installStatus !== 0) {
