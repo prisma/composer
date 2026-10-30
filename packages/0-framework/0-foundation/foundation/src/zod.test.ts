@@ -21,11 +21,18 @@ const inners = {
   min: () => z.string().min(3),
 };
 
-const seen: string[] = [];
+const wrongTypes = [3, true, { a: 1 }, new SecretBox('x'), secret];
+const refused: [() => z.ZodType, string][] = [
+  [inners.url, 'no'],
+  [inners.mode, 'smpt'],
+  [inners.min, 'no'],
+];
+
+const wrappedMessages = (inner: () => z.ZodType, value: unknown) =>
+  messages(z.object({ u: field(inner()) }), value);
+
 const compare = (inner: () => z.ZodType, value: unknown) => {
-  const wrapped = messages(z.object({ u: field(inner()) }), value);
-  seen.push(...wrapped);
-  expect(wrapped).toEqual(messages(z.object({ u: inner() }), value));
+  expect(wrappedMessages(inner, value)).toEqual(messages(z.object({ u: inner() }), value));
 };
 
 describe('secretString', () => {
@@ -68,16 +75,14 @@ describe('field', () => {
 
   test("a value of the wrong type gets the plain field's error", () => {
     for (const inner of Object.values(inners)) {
-      for (const value of [3, true, { a: 1 }, new SecretBox('x'), secret]) {
+      for (const value of wrongTypes) {
         compare(inner, { u: value });
       }
     }
   });
 
   test("a value the inner schema refuses gets the plain field's error", () => {
-    compare(inners.url, { u: 'no' });
-    compare(inners.mode, { u: 'smpt' });
-    compare(inners.min, { u: 'no' });
+    for (const [inner, value] of refused) compare(inner, { u: value });
     expect(messages(z.object({ u: field(inners.url()) }), { u: 'no' })).toEqual(['Invalid URL']);
   });
 
@@ -95,7 +100,13 @@ describe('field', () => {
   });
 
   test('no message names a Composer class', () => {
-    expect(seen.length).toBeGreaterThan(0);
+    const seen: string[] = [];
+    for (const inner of Object.values(inners)) {
+      for (const value of wrongTypes) seen.push(...wrappedMessages(inner, { u: value }));
+      seen.push(...wrappedMessages(inner, {}));
+    }
+    for (const [inner, value] of refused) seen.push(...wrappedMessages(inner, { u: value }));
+    expect(seen.length).toBeGreaterThan(30);
     for (const message of seen) {
       expect(message).not.toContain('Pointer');
       expect(message).not.toContain('Source');
