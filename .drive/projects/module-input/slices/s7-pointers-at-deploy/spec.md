@@ -230,7 +230,7 @@ What this changes at Load:
 
 - A module's schema receives the binding with every source in place. `withSentinels` threw for a raw `paramSource()` with neither `sentinel` nor `redacted`; such a source is now a plain pointer, checked like `serviceOrigin()`.
 - `restore` puts the original source back wherever the output holds a source or a copy of one, by its brands. A copy shares its original's origin object (S6), so `origin.source` is the original.
-- The check that a module's schema left a runtime value's field unchanged goes, with its error (`The input schema of module … changed input key …`). § 18, decision 7 says why.
+- The check that a module's schema left a runtime value's field unchanged stays, rewritten for pointers (§ 18, decision 7): Load records the source the binding put at each path, and `restore` fails when the output holds another value at such a path, or holds a source at a path the binding did not put it at. Its old message (`The input schema of module … changed input key …`) becomes the two Load messages in § 10. *(Corrected after the code review: the first version of this spec removed the check.)*
 
 ## 6. Prisma Cloud target: the source constructors
 
@@ -650,6 +650,8 @@ New messages:
 | `substitutePointers` | a param source in the output at a path with no generated leaf | `input key "<path>" of service "<address>" validated to a value known only at boot that its binding did not put there: the schema moved it. A schema may check such a field, never move or transform it.` |
 | `substitutePointers` | a path with a generated leaf whose output is defined and not a param source | `input key "<path>" of service "<address>" is bound to a value known only at boot, but the schema replaced it. A schema may check such a field, never move or transform it.` |
 | `paramSource()` | `poolKey` with `redacted: true` | `paramSource() takes poolKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.` |
+| Load's `restore` | a defined value that is not a source at a path the binding bound to a source | `The input schema of module "<address>" replaced input key "<path>", which is bound to <label>. Its value is known only at boot, so a module's schema may check the field but never replace or move it.` |
+| Load's `restore` | a source at a path where the binding put no source, or another source | `The input schema of module "<address>" moved <label> to input key "<path>". Its value is known only at boot, so a module's schema may check the field but never replace or move it.` |
 
 Changed messages:
 
@@ -658,7 +660,7 @@ Changed messages:
 | `serializeInput`, the note after a schema failure | `(Deploy-time validation sees each envSecret leaf as an opaque, empty SecretString box. A failure naming …` | `(Deploy-time validation sees each value known only at boot, envSecret() included, as a pointer to its platform variable, never its value. A failure naming …` (the rest unchanged) |
 | the copied-secret refusal | raised by `substitutePointers`, for `envSecret()` only | the same text, raised by `refuseLostSecrets`, for `envSecret()` and a redacted `generatedParam()` |
 
-Removed messages: `paramSource() takes poolKey, for a value known at deploy, or sentinel or redacted, for one known only at boot, not both.`; `paramSource() takes sentinel or redacted, not both.`; Load's `… is bound to a param source a module's input cannot take: it names no sentinel …`; Load's `The input schema of module "<address>" changed input key "<path>", which is bound to <label>. …`.
+Removed messages: `paramSource() takes poolKey, for a value known at deploy, or sentinel or redacted, for one known only at boot, not both.`; `paramSource() takes sentinel or redacted, not both.`; Load's `… is bound to a param source a module's input cannot take: it names no sentinel …`; Load's `The input schema of module "<address>" changed input key "<path>", which is bound to <label>. …`, replaced by the two `restore` messages above.
 
 What a user sees now for a runtime value in the wrong field, each the schema library's own message (tests 7, 8, 10 to 12 and 22):
 
@@ -899,7 +901,7 @@ Each change is the whole change to that test; its title is kept unless a new one
     ```
 
   - `a redacted param source is checked as a SecretString and reaches the service as the same source` is retitled `a redacted param source is checked as a secret pointer and reaches the service as the same source`.
-  - `a module schema that changes a field bound to a sentinel fails` is removed (§ 18, decision 7).
+  - `a module schema that changes a field bound to a sentinel fails` is removed; two tests at the end of `pointer.test.ts`, `a module schema that replaces a field bound to a runtime value fails at Load` and `a module schema that moves a runtime value to another key fails at Load`, take its place (§ 18, decision 7).
   - `a param source with no sentinel in a module's input fails` becomes:
 
     ```ts
@@ -1120,7 +1122,7 @@ Two scratch worktrees of this branch, detached, under its git-ignored `wip/`, re
 4. **`auth()` and `email()` wrap their fields** (§ 8). The design shows `email()`'s `from` wrapped (section 1) and asks for every leaf of a reusable module's schema to be wrapped unless a `resolve()` needs it (section 3). A wrapped module field forwarded to a plain service field would fail at deploy, so each service field the module forwards is wrapped too. `email()`'s `deliveryUrl` and `auth()`'s `signUp` stay plain: only a factory option binds them, with a literal. The cost is ArkType's union wording for a missing wrapped key (§ 9, item 5), which S6 recorded.
 5. **`paramSource()` has no run-time check for a leftover `sentinel`** (§ 5.2). TypeScript refuses it, and the foundation and core helpers check no unknown options anywhere. A source built with it is a plain pointer, which is what a param source with a sentinel was.
 6. **Load puts back the original source by its origin** (§ 5.3), as the S6 tests require (`a copy … reaches the service as the original`). That keeps one object per source downstream, so `graph.secretSources` and the identity tests hold.
-7. **Load stops refusing a module schema that changes a runtime value's field** (§ 5.3). The design says a field's real value is read from the schema's output, and lists no such check for modules. With pointers in place, the check would be: "is the output at this path a pointer of the same source", which a wrapped field always passes. A schema that replaces the pointer gives the child what the schema returned, as for any field, and the service's own deploy check then sees no pointer where it expected one. The serializer keeps an equivalent check (§ 7.6), because there a missing pointer would write the wrong document.
+7. **Load keeps refusing a module schema that replaces or moves a runtime value's field** (§ 5.3). *(Corrected after the code review. The first version of this spec removed the check, arguing that the service's own deploy check would then see no pointer where it expected one. That is wrong: the service's binding is built from the module schema's output, so a replaced pointer reaches the service's binding as the replacement, and the serializer has no generated leaf at that path to compare against. The replacement would pass on silently.)* With pointers in place, the check is: "is the output at this path the source the binding put there", which a wrapped field always passes, and only a hand-written schema can fail. The serializer keeps the same check for a service's schema (§ 7.6).
 8. **The second check uses one fixed stand-in text, `'composer-stand-in-not-a-secret'`** (§ 7.5). The design asks for a known text that is not a secret. One constant makes the test that the stand-in never reaches the document exact.
 9. **The second check names the field by its path in the output** (§ 7.5). The copied box is found in the output; the binding path is the same unless the schema renames keys, which the design does not cover.
 10. **The second check runs only in `serializeInput`** (§ 7.5), the path of every deploy and every `prisma dev` stack. `inputValidationFailure` answers a different question for dev preflight, whether the schema accepts a binding with some secrets left out.

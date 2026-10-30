@@ -194,7 +194,10 @@ the schema as its pointer, the source itself: `secretString()` accepts a
 secret pointer, a wrapped field a plain one, and a plain field neither.
 Wherever the schema's output holds a pointer, Load passes on the original
 source, so a copy the schema made, as ArkType does when a transform runs,
-reaches the child as the source the binding named. An optional field the
+reaches the child as the source the binding named. A schema may check such a
+field but never replace or move it: a schema whose output holds another value
+at that path, or holds the pointer at another path, fails the Load. An
+optional field the
 binding left out has no real value, and a binding that forwards it leaves the
 key out.
 
