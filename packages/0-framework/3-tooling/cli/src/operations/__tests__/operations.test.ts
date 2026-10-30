@@ -28,6 +28,7 @@ import type {
 import { CliStructuredError } from '@internal/foundation/errors';
 import * as Layer from 'effect/Layer';
 import type { ComposerConfigSource } from '../../composer-config.ts';
+import { dotenv } from '../../config-adapters.ts';
 import {
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
@@ -840,6 +841,54 @@ describe('deploy()', () => {
     expect(result.failure.meta?.['exitCode']).toBe(1);
     expect(executionDiagnostics(result.failure)?.exitCode).toBe(1);
     expect(fs.existsSync(failureFile ?? '')).toBe(false);
+  });
+
+  test('an engine failure cause never carries a value the pools read from a dotenv file', async () => {
+    const app = makeAppDir();
+    const onlyInDotenvFile = 'dotenv-only-SENTINEL-4f1c';
+    const inBothPools = 'shared-name-SENTINEL-77ab';
+    const secretNamedConfigValue = 'secret-named-SENTINEL-90cd';
+    fs.writeFileSync(
+      path.join(app.dir, '.env.ci-7.local'),
+      `SIGNING_SALT=${onlyInDotenvFile}\nWEBHOOK_SIG=${inBothPools}\n`,
+    );
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+          config: {
+            value: {
+              ...fakeConfig(),
+              config: [() => ({ WEBHOOK_SIG: inBothPools, STRIPE_KEY: secretNamedConfigValue })],
+              secrets: [dotenv()],
+            },
+            file: path.join(app.dir, 'prisma.config.ts'),
+          },
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async (input) => {
+            const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
+            if (resultFile === undefined) throw new Error('the result-file env var must be set');
+            fs.writeFileSync(
+              engineFailureFilePath(resultFile),
+              `error: rejected ${onlyInDotenvFile}, ${inBothPools} and ${secretNamedConfigValue}`,
+            );
+            return { exitCode: 1, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.meta?.['engineCause']).toBe(
+      'error: rejected [redacted], [redacted] and [redacted]',
+    );
+    expect(JSON.stringify(result.failure)).not.toContain('SENTINEL');
   });
 
   test('an engine failure with no recorded cause keeps the bare status sentence and no engineCause', async () => {
