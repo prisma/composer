@@ -48,7 +48,7 @@ app, executing nothing when imported. Three node kinds exist:
 | Service | `compute()` | A running unit of your code; atomic, Composer sees only its boundary |
 | Resource | `rawPostgres()`, `bucket()` | A stateful managed dependency |
 | Resource: public URL | `publicUrl()` | Makes one service reachable from the internet at one hostname; depends on the service's exposed HTTP interface and exposes nothing |
-| Module | `module()` | A grouping boundary; runs no code of its own, depends on and exposes typed interfaces; its builder receives `deps`, `secrets`, `params`, `environment` and `provision` |
+| Module | `module()` | A grouping boundary; runs no code of its own, depends on and exposes typed interfaces; its builder receives `deps`, `input`, `environment` and `provision` |
 
 Nodes connect through typed **interfaces**: `deps` declares what a node depends on,
 `expose` declares what it exposes. Wiring happens in a Module's builder via
@@ -163,11 +163,11 @@ Rules that bite:
 4. **The reserved `port` is outside the schema.** Read it through
    `service.port()`, never `process.env`. The framework also exports `PORT`
    for Next.js standalone, which binds it itself.
-5. **A Module forwards a secret need without learning the platform name.**
-   Declare `secrets: { signingKey: secret() }` on the Module boundary and
-   pass the forwarded ref as a binding leaf; the parent binds the real
-   source. A module can instead declare `input` with a `secretString()`
-   field and pass that field on.
+5. **A Module passes a secret on without learning the platform name.**
+   Declare a `secretString()` field in the Module's `input` and pass
+   `input.<field>` on as a binding leaf; the parent binds `envSecret('NAME')`.
+   A module has no `params` or `secrets` slots: `module()` and `provision()`
+   refuse both, naming `input`. A service's `params` stay.
 6. `input.apiKey.expose()` is the only way to a secret's value; the box
    redacts everywhere else (logs, JSON, errors).
 
@@ -181,7 +181,7 @@ The graph is the same in every environment; only configuration may differ.
 - A truthiness check such as `if (input.enabled)` is not caught: the field is an object, so the branch always runs, in every environment. A module's structure cannot depend on its input; to provision something only sometimes, let the parent decide whether to provision it.
 - The module body receives `environment`; `environment.name` is a value standing for the name `--environment` gave (`production` for `prisma deploy`, `dev` for `prisma dev` by default).
 - `resolve([deps], ([values]) => …)` from `@prisma/composer` returns a computed value; `fn` receives the dependencies' real values as one tuple.
-- A value is accepted as a leaf of a service's or a module's `input` binding, at any depth, as a service param, as one of a `resource()` node's `props`, or as a public URL's `url`. Never as a provision id or a `deps` entry; a module's `secrets` and `params` bindings take only sources.
+- A value is accepted as a leaf of a service's or a module's `input` binding, at any depth, as a service param, as one of a `resource()` node's `props`, or as a public URL's `url`. Never as a provision id or a `deps` entry.
 - A value is opaque in the body: you cannot read, compare or branch on it. List it as a `resolve()` dependency instead.
 - Calling `provision()` inside `fn` fails the load: `fn` computes configuration, never graph structure.
 - `fn` is pure and synchronous and returns plain data (no `undefined`, Promise or value, and no source it did not receive); a deploy and `destroy` both run it, in two processes. To retire an environment, keep its case in every `fn` until `destroy` for it has finished.
@@ -707,8 +707,8 @@ provision exactly like your own:
 | `cron` from `/cron` | An always-on scheduler (it holds Compute's keep-awake guard) firing your schedule at your runner service; `input` on `cron()` binds the runner's input schema | nothing |
 | `storage` from `/storage` | An S3-backed blob store (own Postgres + minted credentials) | `store` |
 | `streams` from `/streams` | Durable append-only event streams over a `store` | `streams` |
-| `auth` from `/auth` | Signup, login, sessions, and JWT verification (Better Auth in one service, own database). `auth({ signUp: 'closed' })` makes Better Auth refuse self-service sign-up; operator-created accounts go through `admin.createUser({ email, name, password?, emailVerified? })` from a service wired to `admin` (it throws on a duplicate email and sends no mail); a signed-in user deletes their own account with Better Auth's `POST /api/auth/delete-user` through the proxy (password, or a session < 24 h old); operators delete with `admin.removeUser({ userId })`; either way your own rows follow your `auth:User` FK's `onDelete` (`Cascade` deletes them, `Restrict` refuses the deletion) | `api`, `session`, `admin` |
-| `email` from `/email` | Transactional email with a stored outbox (own service and database) | `send`, `outbox` |
+| `auth` from `/auth` | Signup, login, sessions, and JWT verification (Better Auth in one service, own database). `auth({ signUp: 'closed' })` makes Better Auth refuse self-service sign-up; operator-created accounts go through `admin.createUser({ email, name, password?, emailVerified? })` from a service wired to `admin` (it throws on a duplicate email and sends no mail); a signed-in user deletes their own account with Better Auth's `POST /api/auth/delete-user` through the proxy (password, or a session < 24 h old); operators delete with `admin.removeUser({ userId })`; either way your own rows follow your `auth:User` FK's `onDelete` (`Cascade` deletes them, `Restrict` refuses the deletion). Bind `input: { baseUrl }`, the public app origin: `serviceOrigin('<app>.<service>')`, `envParam(...)` or a literal. | `api`, `session`, `admin` |
+| `email` from `/email` | Transactional email with a stored outbox (own service and database). Bind `input: { deliveryMode, from, deliveryCredential }`; the credential with `envSecret(...)`, required even when `deliveryMode` is `none`. | `send`, `outbox` |
 
 `bucket()` (imported alongside `rawPostgres`) is a raw S3-compatible bucket:
 the dependency end receives `{ url, bucket, accessKeyId, secretAccessKey }`,

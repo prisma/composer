@@ -313,40 +313,38 @@ sees, and can never reach, the database inside.
 A Module declares its boundary (what it depends on, what it exposes) in the second
 argument, wires its internals in the builder function, and returns the exposed
 interfaces it promised. The builder function receives `provision`, the boundary's
-forwarded `deps`, `secrets` and `params`, the module's `input`
-([below](#a-modules-input)), and `environment`, whose `name` is a value
+forwarded `deps`, the module's `input` ([below](#a-modules-input)), and `environment`, whose `name` is a value
 ([below](#values-that-differ-per-environment)):
 
 ```ts
-import { module, secret } from '@prisma/composer';
-import { postgres } from '@prisma/composer-prisma-cloud';
+import { module } from '@prisma/composer';
+import { secretString } from '@prisma/composer/arktype';
+import { rawPostgres } from '@prisma/composer-prisma-cloud';
+import { type } from 'arktype';
 
 export default module(
   'auth',
-  { secrets: { signingKey: secret() }, expose: { rpc: authContract } },
-  ({ secrets, provision }) => {
+  { input: type({ signingKey: secretString() }), expose: { rpc: authContract } },
+  ({ input, provision }) => {
     const db = provision(rawPostgres({ name: 'database' }));
     const service = provision(authService, {
       id: 'service',
       deps: { db },
-      input: { signingKey: secrets.signingKey },
+      input: { signingKey: input.signingKey },
     });
     return { rpc: service.rpc };
   },
 );
 ```
 
-The boundary still declares `secrets: { signingKey: secret() }` — a nameless
-need the module forwards without ever learning the platform variable's name.
-Inside, the forwarded ref is just another leaf of the service's input binding
-([below](#service-input)).
+The module declares `signingKey` as a `secretString()` field of its input and
+passes it on without learning the platform variable's name. Inside, the field
+is just another leaf of the service's input binding ([below](#service-input)).
 
 The root then treats it like any other node:
 
 ```ts
-const auth = provision(authModule, {
-  secrets: { signingKey: envSecret('AUTH_SIGNING_SECRET') },
-});
+const auth = provision(authModule, { input: { signingKey: envSecret('AUTH_SIGNING_SECRET') } });
 provision(storefrontService, { deps: { auth: auth.rpc } });
 ```
 
@@ -365,8 +363,6 @@ outermost Module, with no boundary at all.
   an exposed port.
 - `input` — the service's or module's input binding; required exactly when
   the node declares an input schema.
-- `secrets` — for a module boundary: a binding for each forwarded secret
-  need.
 
 Two naming rules the platform enforces: provision names must be at least
 three characters (call a database `'database'`, not `'db'` — the wiring key
@@ -437,6 +433,13 @@ envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
 - A body reaches only the keys every member of a union schema has, and has no
   element access into an array field. To narrow, forward the whole `input`,
   or narrow inside a `resolve()` function.
+- Before Composer 0.37, a module declared per-key `params` with `paramNeed()`
+  and `secrets` with `secret()`, bound with
+  `provision(module, { params, secrets })`. Both are gone, and `module()` and
+  `provision()` refuse them with an error naming `input`. Declare each one as a
+  field of the module's `input` schema, a secret as a `secretString()` field,
+  and bind them all with `input`; `auth()` and `email()` take `input` the same
+  way. A service's `params` do not change.
 
 ## Object Storage
 
@@ -678,8 +681,9 @@ const input = service.input();
 if (input.stripeEnabled) stripe(input.stripeSecretKey.expose());
 ```
 
-A reusable Module forwards a secret need up to its parent without ever
-learning the platform name ([above](#reusable-modules)), which is what lets
+A reusable Module takes a secret as a `secretString()` field of its `input`
+and passes it on without ever learning the platform name
+([above](#reusable-modules)), which is what lets
 a Module require credentials without dictating your naming.
 
 ### Absence is the schema's call
@@ -739,8 +743,7 @@ a service's or a module's input binding at any depth, as a service param, as
 one of a `resource()` node's `props`, or as a
 [public URL's `url`](#a-hostname-per-environment). A field of a module's
 `input` is a value too ([A module's input](#a-modules-input)). A value cannot
-be a provision id or a `deps` entry, and a module's `secrets` and `params`
-bindings take only sources, which are values too.
+be a provision id or a `deps` entry.
 
 `resolve(dependencies, fn)` lists the values it depends on, and `fn`
 receives their real values as one tuple, in the same order. After every
@@ -1174,7 +1177,7 @@ The design record explains *why* the model is shaped this way:
 - [ADR-0042](../design/90-decisions/ADR-0042-service-input-is-one-standard-schema.md)
   — why the service input is one schema and the binding carries the sourcing;
   [ADR-0029](../design/90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md)
-  for the forwardable secret need, and
+  for secrets, which the deploy carries by name only, and
   [ADR-0032](../design/90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)
   for provision-time binding and env sourcing.
 - [ADR-0030](../design/90-decisions/ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md)
