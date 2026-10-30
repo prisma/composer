@@ -270,10 +270,7 @@ export async function executeDev(
 
     for (const [id, dev] of resolved) {
       try {
-        attachmentsById.set(
-          id,
-          await dev.attach({ container: containers.get(id), devDir, pools: pipeline.pools }),
-        );
+        attachmentsById.set(id, await dev.attach({ container: containers.get(id), devDir }));
       } catch (error) {
         throw toStructured('DEV.ATTACH_FAILED', error);
       }
@@ -371,7 +368,9 @@ export async function executeDev(
       const serve = attachment.serve.bind(attachment);
       let restarted: boolean;
       try {
-        ({ restarted } = await withEmulatorRetry(() => serve({ address, node, server })));
+        ({ restarted } = await withEmulatorRetry(() =>
+          serve({ address, node, server, pools: pipeline.pools }),
+        ));
       } catch (error) {
         throw toStructured('DEV.SERVICE_START_FAILED', error);
       }

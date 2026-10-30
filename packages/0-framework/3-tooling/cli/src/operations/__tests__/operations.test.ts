@@ -3714,13 +3714,17 @@ describe.skipIf(process.platform === 'win32')(
       logs: async function* () {},
     };
 
-    test('dev hands both pools to preflight and attach', async () => {
+    test('dev hands both pools to preflight and to a dev server', async () => {
       const app = makeAppDir('hello-dev');
-      const seen: { preflight?: unknown; attach?: unknown } = {};
-      const base = devConfigWith(runningAttachment, [], localContainer, async (input) => {
-        seen.preflight = input.pools;
-        return undefined;
-      });
+      const seen: { preflight?: unknown; serve?: unknown } = {};
+      const serving: LocalTargetAttachment = {
+        ...runningAttachment,
+        serve: async ({ pools }) => {
+          seen.serve = pools;
+          return { restarted: false };
+        },
+      };
+      const base = devServerConfigWith(serving);
       const [extension, build] = base.extensions;
       if (extension?.localTarget === undefined || build === undefined) {
         throw new Error('the fixture has a local target and a build extension');
@@ -3733,16 +3737,13 @@ describe.skipIf(process.platform === 'win32')(
         extensions: [
           {
             ...extension,
-            localTarget: async () => {
-              const descriptor = await localTarget();
-              return {
-                ...descriptor,
-                attach: (input) => {
-                  seen.attach = input.pools;
-                  return descriptor.attach(input);
-                },
-              };
-            },
+            localTarget: async () => ({
+              ...(await localTarget()),
+              preflight: async (input) => {
+                seen.preflight = input.pools;
+                return undefined;
+              },
+            }),
           },
           build,
         ],
@@ -3757,7 +3758,7 @@ describe.skipIf(process.platform === 'win32')(
 
       expect(result.ok).toBe(true);
       const pools = { config: { A: 'a' }, secrets: { S: 's' } };
-      expect(seen).toEqual({ preflight: pools, attach: pools });
+      expect(seen).toEqual({ preflight: pools, serve: pools });
     }, 15_000);
 
     test('a value an adapter returns differently at a rebuild is reported, and rebuilds stop until dev restarts', async () => {
