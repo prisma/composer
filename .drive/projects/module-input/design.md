@@ -284,13 +284,12 @@ The release note shows each change before and after.
 
 ## 11. Later
 
-- `secretString()` follows the `field()` pattern and becomes `secret(schema)`, such as `secret(type('string'))`, so a secret field can state what its content must be. The wrapped schema checks the content at boot. The name is settled in its slice (plan S17).
-
 Slices of this project, designed with Will after the others ([plan.md](plan.md)):
 
 - A slice that watches every input in `prisma dev`, `.env` files and other adapters alike, and applies new values instead of pausing.
 - A slice that designs protection against a developer's local secret reaching another environment: deploying production from a machine whose `.env.local` holds a test key fills a missing production variable with that key.
 - A slice that gives secrets a home distinct from plain values, so that redaction stops covering the plain values that share a `.env` file with secrets.
+- `secretString()` follows the `field()` pattern and becomes `secret(schema)`, such as `secret(type('string'))`, so a secret field can state what its content must be. The wrapped schema checks the content at boot. The name is settled in its slice (plan S17).
 
 Outside this project:
 
