@@ -1,5 +1,5 @@
+import { CustomDomain } from '@alchemy.run/prisma';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
-import { CustomDomain } from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';

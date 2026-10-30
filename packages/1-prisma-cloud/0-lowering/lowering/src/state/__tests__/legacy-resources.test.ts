@@ -16,7 +16,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import * as Prisma from 'alchemy/Prisma';
+import * as Prisma from '@alchemy.run/prisma';
 import type * as Provider from 'alchemy/Provider';
 import { ResourceContext } from 'alchemy/ResourceContext';
 import { Stack } from 'alchemy/Stack';

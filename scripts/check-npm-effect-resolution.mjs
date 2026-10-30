@@ -311,7 +311,7 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
     const providers = importAlchemy(
       label,
       appDir,
-      "await import('alchemy/Prisma'); await import('@prisma/composer-prisma-cloud/control');",
+      "await import('@alchemy.run/prisma'); await import('@prisma/composer-prisma-cloud/control');",
     );
     if (providers.status !== 0) {
       fail(`[${label}] Prisma Cloud providers did not import:\n${providers.output}`);
