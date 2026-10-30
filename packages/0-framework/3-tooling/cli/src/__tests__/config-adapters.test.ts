@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { dotenv, environmentVariables } from '../config-adapters.ts';
+import { alchemyInvocation } from '../run-alchemy.ts';
 
 const freshDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'config-adapters-'));
 
@@ -10,10 +11,46 @@ const write = (dir: string, files: Record<string, string>): void => {
   for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), text);
 };
 
+const TOUCHED = [
+  'S4_LATE',
+  'S4_PROBE',
+  'PRISMA_BUILD_ID',
+  'PRISMA_COMPOSER_CONTAINER_X',
+  'PRISMA_COMPOSER_PREFLIGHT_X',
+  'PRISMA_COMPOSER_DEPLOYMENT_RESULT_FILE',
+  'PRISMA_COMPOSER_PARENT_VALUES',
+];
+
 afterEach(() => {
-  delete process.env['S4_LATE'];
-  delete process.env['S4_PROBE'];
+  for (const name of TOUCHED) delete process.env[name];
 });
+
+/** Sets `env` on this process, as a child started with it would see it, for the duration of `fn`. */
+async function asChild<T>(env: Readonly<Record<string, string | undefined>>, fn: () => Promise<T>) {
+  const before = { ...process.env };
+  Object.assign(process.env, env);
+  try {
+    return await fn();
+  } finally {
+    for (const name of Object.keys(env)) {
+      if (before[name] === undefined) delete process.env[name];
+      else process.env[name] = before[name];
+    }
+  }
+}
+
+const adapterInput = { environment: 'staging', configDirectory: '/app' };
+
+const deployInvocation = () =>
+  alchemyInvocation({
+    command: 'deploy',
+    stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
+    cwd: '/app',
+    stage: 'staging',
+    containerEnv: { PRISMA_COMPOSER_CONTAINER_X: 'container' },
+    preflightEnv: { PRISMA_COMPOSER_PREFLIGHT_X: 'payload' },
+    env: { PRISMA_BUILD_ID: 'bld_new', PRISMA_COMPOSER_DEPLOYMENT_RESULT_FILE: '/tmp/r.json' },
+  });
 
 describe('environmentVariables()', () => {
   test('environmentVariables() reads the process environment when called, not when created', async () => {
@@ -23,6 +60,40 @@ describe('environmentVariables()', () => {
     const values = await adapter({ environment: 'staging', configDirectory: '/app' });
 
     expect(values['S4_LATE']).toBe('late');
+  });
+
+  test("environmentVariables() leaves out Composer's own PRISMA_COMPOSER_ variables", async () => {
+    process.env['PRISMA_COMPOSER_PREFLIGHT_X'] = 'payload';
+    process.env['S4_PROBE'] = 'kept';
+
+    const values = await environmentVariables()(adapterInput);
+
+    expect(values['PRISMA_COMPOSER_PREFLIGHT_X']).toBeUndefined();
+    expect(values['S4_PROBE']).toBe('kept');
+  });
+
+  test('the deploy child reads the same values from the environment as the CLI', async () => {
+    process.env['S4_PROBE'] = 'shell';
+    const inCli = await environmentVariables()(adapterInput);
+
+    const inChild = await asChild(deployInvocation().env, () =>
+      environmentVariables()(adapterInput),
+    );
+
+    expect(inChild).toEqual(inCli);
+    expect(inChild['PRISMA_BUILD_ID']).toBeUndefined();
+  });
+
+  test("a variable Composer changes for the child reads as the CLI's own value there", async () => {
+    process.env['PRISMA_BUILD_ID'] = 'bld_from_shell';
+    const inCli = await environmentVariables()(adapterInput);
+
+    const inChild = await asChild(deployInvocation().env, () =>
+      environmentVariables()(adapterInput),
+    );
+
+    expect(inChild['PRISMA_BUILD_ID']).toBe('bld_from_shell');
+    expect(inChild).toEqual(inCli);
   });
 });
 

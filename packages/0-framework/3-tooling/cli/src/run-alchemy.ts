@@ -18,6 +18,7 @@ import * as path from 'node:path';
 import { CliStructuredError } from '@internal/foundation/errors';
 import spawn from 'cross-spawn';
 import { resolveAlchemyBin } from './alchemy-bin.ts';
+import { childEnvironment } from './config-adapters.ts';
 
 /** The runtime facts that decide which Node starts Alchemy; injectable for tests. */
 export interface HostRuntime {
@@ -174,7 +175,7 @@ export function alchemyInvocation(input: AlchemyInvocationInput): AlchemyInvocat
     stackFileRelativePath: input.stackFileRelativePath,
     cwd: input.cwd,
     stage: input.stage,
-    env: { ...input.containerEnv, ...input.preflightEnv, ...input.env },
+    env: childEnvironment({ ...input.containerEnv, ...input.preflightEnv, ...input.env }),
   };
 }
 
