@@ -149,9 +149,7 @@ export function generatedParam(
   }
   return paramSource<GeneratedParamPayload, SecretString | string>(
     { [PRISMA_CLOUD_GENERATED_PARAM_SOURCE]: true, bytes, redacted },
-    redacted
-      ? { label: 'generatedParam()', redacted: true }
-      : { label: 'generatedParam()', sentinel: '' },
+    { label: 'generatedParam()', redacted },
   );
 }
 
@@ -199,7 +197,7 @@ export function serviceOrigin(address: string): ParamSource<OriginParamPayload> 
   }
   return paramSource<OriginParamPayload, string>(
     { [PRISMA_CLOUD_ORIGIN_PARAM_SOURCE]: true, address },
-    { label: `serviceOrigin('${address}')`, sentinel: ORIGIN_SENTINEL },
+    { label: `serviceOrigin('${address}')` },
   );
 }
 

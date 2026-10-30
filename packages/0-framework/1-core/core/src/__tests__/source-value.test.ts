@@ -72,13 +72,9 @@ describe('building a source', () => {
     expect(copy.payload).toEqual({ name: 'X' });
   });
 
-  test('paramSource() refuses a pool key beside a sentinel or redacted, a sentinel beside redacted, and an empty label or pool key', () => {
-    const both =
-      'paramSource() takes poolKey, for a value known at deploy, or sentinel or redacted, for one known only at boot, not both.';
-    expect(() => paramSource({}, { poolKey: 'X', sentinel: '' })).toThrow(both);
-    expect(() => paramSource({}, { poolKey: 'X', redacted: true })).toThrow(both);
-    expect(() => paramSource({}, { sentinel: '', redacted: true })).toThrow(
-      'paramSource() takes sentinel or redacted, not both.',
+  test('paramSource() refuses a pool key beside redacted, and an empty label or pool key', () => {
+    expect(() => paramSource({}, { poolKey: 'X', redacted: true })).toThrow(
+      'paramSource() takes poolKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.',
     );
     expect(() => paramSource({}, { label: '' })).toThrow(
       'paramSource() label must be a non-empty string.',
@@ -93,7 +89,7 @@ describe('building a source', () => {
 
   test('isRuntimeValue() is true for a secret source and a param source without a pool key, and false otherwise', () => {
     expect(isRuntimeValue(pointer('X'))).toBe(true);
-    expect(isRuntimeValue(paramSource({}, { sentinel: '' }))).toBe(true);
+    expect(isRuntimeValue(paramSource({}, { redacted: true }))).toBe(true);
     expect(isRuntimeValue(paramSource({ name: 'X' }))).toBe(true);
     expect(isRuntimeValue(variable('X'))).toBe(false);
     expect(isRuntimeValue(environmentFacts.name)).toBe(false);

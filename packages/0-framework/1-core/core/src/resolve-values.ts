@@ -1,6 +1,6 @@
 import { blindCast } from '@internal/foundation/casts';
 import { describeKind } from '@internal/foundation/errors';
-import { isSecretString, SecretBox } from '@internal/foundation/secret';
+import { isSecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import {
   LoadError,
@@ -14,7 +14,6 @@ import {
   isParamSource,
   isSecretSource,
   isSourceMisuse,
-  type ParamSource,
   type ResourceNode,
   type ResourceProps,
   type SecretSource,
@@ -49,8 +48,6 @@ export interface ValueBindingSite {
   /** The param name for `param`; the dotted path inside the document for `serviceInput`, `moduleInput` and `props` (`''` at the root). Array members by index: `hosts.0`. */
   readonly path: string;
 }
-
-const SENTINEL_SOURCE = Symbol('prisma:module-input-sentinel');
 
 function joinPath(path: string, key: string | number): string {
   return path === '' ? String(key) : `${path}.${key}`;
@@ -274,50 +271,34 @@ function readPath(data: unknown, origin: InputOrigin): unknown {
   return current;
 }
 
+function refuseSecretBoxes(address: NodeId, value: unknown, path: string): void {
+  if (isSecretSource(value) || isParamSource(value)) return;
+  if (isSecretString(value)) {
+    throw new LoadError(
+      `${describeSite({ address, kind: 'moduleInput', path })} is bound to a SecretString. A secret's value never appears in the code; bind envSecret('NAME'), or pass on an input field typed secretString().`,
+    );
+  }
+  if (Array.isArray(value)) {
+    for (const [index, member] of value.entries()) {
+      refuseSecretBoxes(address, member, joinPath(path, index));
+    }
+    return;
+  }
+  if (isPlainObject(value)) {
+    for (const [key, member] of Object.entries(value)) {
+      refuseSecretBoxes(address, member, joinPath(path, key));
+    }
+  }
+}
+
 function validateModuleInput(
   entry: ProvisionedModuleInput,
   resolved: unknown,
   environment: EnvironmentRealValues | undefined,
 ): unknown {
   const address = entry.moduleAddress;
-  const textPointers = new Map<string, ParamSource>();
-  const taggedBox = (source: SecretSource | ParamSource): SecretBox<string> => {
-    const sentinel = new SecretBox('');
-    Object.defineProperty(sentinel, SENTINEL_SOURCE, { value: source });
-    return sentinel;
-  };
-  const withSentinels = (value: unknown, path: string): unknown => {
-    if (isSecretSource(value)) return taggedBox(value);
-    if (isParamSource(value)) {
-      const origin = sourceOriginOf(value);
-      if (origin?.redacted) return taggedBox(value);
-      if (origin?.sentinel !== undefined) {
-        textPointers.set(path, value);
-        return origin.sentinel;
-      }
-      throw new LoadError(
-        `${describeSite({ address, kind: 'moduleInput', path })} is bound to a param source a module's input cannot take: it names no sentinel for the module's schema to check in its place, as a raw paramSource() does. Bind envParam(), generatedParam() or serviceOrigin(), or a value.`,
-      );
-    }
-    if (isSecretString(value)) {
-      throw new LoadError(
-        `${describeSite({ address, kind: 'moduleInput', path })} is bound to a SecretString. A secret's value never appears in the code; bind envSecret('NAME'), or pass on an input field typed secretString().`,
-      );
-    }
-    if (Array.isArray(value)) {
-      return value.map((member, index) => withSentinels(member, joinPath(path, index)));
-    }
-    if (isPlainObject(value)) {
-      return Object.fromEntries(
-        Object.entries(value).map(([key, member]) => [
-          key,
-          withSentinels(member, joinPath(path, key)),
-        ]),
-      );
-    }
-    return value;
-  };
-  const result = entry.schema['~standard'].validate(withSentinels(resolved, ''));
+  refuseSecretBoxes(address, resolved, '');
+  const result = entry.schema['~standard'].validate(resolved);
   if (result instanceof Promise) {
     throw new LoadError(
       `The input schema of module "${address}" returned a Promise from validate(). A module's input is validated synchronously at Load; use a schema with no asynchronous checks.`,
@@ -337,20 +318,10 @@ function validateModuleInput(
     );
   }
   const restore = (value: unknown, path: string): unknown => {
-    const pointer = textPointers.get(path);
-    if (pointer !== undefined) {
-      const origin = sourceOriginOf(pointer);
-      if (origin !== undefined && value === origin.sentinel) return pointer;
-      throw new LoadError(
-        `The input schema of module "${address}" changed input key "${path}", which is bound to ${origin?.label}. Its value is known only at boot, so a module's schema may check the field but never transform it.`,
-      );
+    if (isSecretSource(value) || isParamSource(value)) {
+      return sourceOriginOf(value)?.source ?? value;
     }
     if (isSecretString(value)) {
-      const tag = blindCast<
-        Record<PropertyKey, unknown>,
-        'reading the sentinel tag a module input validation put on its own SecretString box'
-      >(value)[SENTINEL_SOURCE];
-      if (isSecretSource(tag) || isParamSource(tag)) return tag;
       const atPath = path === '' ? '' : ` at "${path}"`;
       throw new LoadError(
         `The input schema of module "${address}" produced a SecretString${atPath} that its binding did not supply. A module's schema may check a secret field, never create one.`,

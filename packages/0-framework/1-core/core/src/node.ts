@@ -54,9 +54,7 @@ export interface SourceOptions {
 export interface ParamSourceOptions extends SourceOptions {
   /** The config pool key whose value at deploy is the source's real value, as for `envParam()`. Without one the source is known only at boot, and its real value is the source itself, a pointer. */
   readonly poolKey?: string;
-  /** For a source known only at boot: the string a module's input schema checks in its place, because the deploy has no value for it. */
-  readonly sentinel?: string;
-  /** For a source known only at boot whose value is redacted: a module's input schema checks an empty `SecretString` in its place, as for a secret, and the source is a secret pointer. */
+  /** For a source known only at boot: `true` makes the source a secret pointer, whose variable holds a secret; otherwise it is a plain pointer. */
   readonly redacted?: boolean;
 }
 
@@ -77,8 +75,6 @@ export function secretSource<P, T = unknown>(
         kind: 'source',
         label,
         poolKey: undefined,
-        sentinel: undefined,
-        redacted: true,
       },
       'secret',
     ),
@@ -154,15 +150,11 @@ export function paramSource<P, T = unknown>(
   if (poolKey !== undefined && (typeof poolKey !== 'string' || poolKey.length === 0)) {
     throw new Error('paramSource() poolKey must be a non-empty string.');
   }
-  const sentinel = options?.sentinel;
   const redacted = options?.redacted === true;
-  if (poolKey !== undefined && (sentinel !== undefined || redacted)) {
+  if (poolKey !== undefined && redacted) {
     throw new Error(
-      'paramSource() takes poolKey, for a value known at deploy, or sentinel or redacted, for one known only at boot, not both.',
+      'paramSource() takes poolKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.',
     );
-  }
-  if (sentinel !== undefined && redacted) {
-    throw new Error('paramSource() takes sentinel or redacted, not both.');
   }
   return blindCast<
     ParamSource<P> & Value<T>,
@@ -171,7 +163,7 @@ export function paramSource<P, T = unknown>(
     buildSource(
       PARAM_SOURCE,
       payload,
-      { kind: 'source', label, poolKey, sentinel, redacted },
+      { kind: 'source', label, poolKey },
       poolKey !== undefined ? undefined : redacted ? 'secret' : 'plain',
     ),
   );
