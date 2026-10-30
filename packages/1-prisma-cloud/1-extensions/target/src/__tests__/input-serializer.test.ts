@@ -862,4 +862,11 @@ describe('schemas see pointers at deploy', () => {
       'input key "other" of service "web" validated to a value known only at boot that its binding did not put there: the schema moved it. A schema may check such a field, never move or transform it.',
     );
   });
+
+  test('a schema that mints its own secret box beside a secret pointer is refused for minting, not for copying', () => {
+    const minting = svc(returning((value) => ({ ...value, other: new SecretBox('minted') })));
+    expect(() => serializeInput(minting, 'web', { key: envSecret('KEY') }, { env: {} })).toThrow(
+      'input key "other" of service "web" validated to a SecretString the binding did not supply',
+    );
+  });
 });

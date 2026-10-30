@@ -603,27 +603,35 @@ export function serializeInput(
  * pointer, and fails naming the first field whose box no longer gives back
  * the stand-in's text. A schema that copies its input (an ArkType transform,
  * or deleting undeclared keys) copies a box without its value, so at boot the
- * service could not read the secret. Does nothing when `resolved` holds no
- * secret pointer.
+ * service could not read the secret. Only the paths that held a stand-in are
+ * judged: a box anywhere else came from the schema, and `substitutePointers`
+ * refuses it. Does nothing when `resolved` holds no secret pointer.
  */
 function refuseLostSecrets(node: ServiceNode, address: string, resolved: unknown): void {
-  let found = false;
-  const withStandIns = (value: unknown): unknown => {
+  const standInPaths = new Set<string>();
+  const withStandIns = (value: unknown, path: string): unknown => {
     if (isSecretPointer(value)) {
-      found = true;
+      standInPaths.add(path);
       return new SecretBox(STAND_IN_TEXT);
     }
     if (isSecretSource(value) || isParamSource(value)) return value;
-    if (Array.isArray(value)) return value.map(withStandIns);
+    if (Array.isArray(value)) {
+      return value.map((member, index) =>
+        withStandIns(member, path === '' ? String(index) : `${path}.${index}`),
+      );
+    }
     if (isPlainObject(value)) {
       return Object.fromEntries(
-        Object.entries(value).map(([key, member]) => [key, withStandIns(member)]),
+        Object.entries(value).map(([key, member]) => [
+          key,
+          withStandIns(member, path === '' ? key : `${path}.${key}`),
+        ]),
       );
     }
     return value;
   };
-  const standIns = withStandIns(resolved);
-  if (!found || node.inputSchema === undefined) return;
+  const standIns = withStandIns(resolved, '');
+  if (standInPaths.size === 0 || node.inputSchema === undefined) return;
   const result = standardValidate(node.inputSchema, standIns);
   if ('issues' in result) {
     throw new Error(
@@ -632,6 +640,7 @@ function refuseLostSecrets(node: ServiceNode, address: string, resolved: unknown
   }
   const walk = (value: unknown, path: string): void => {
     if (value instanceof SecretBox) {
+      if (!standInPaths.has(path)) return;
       let text: unknown;
       try {
         text = value.expose();
