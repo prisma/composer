@@ -350,7 +350,7 @@ The return type's last two arguments, `Record<never, never>, { baseUrl: ParamNee
 
 ### 4.3 `storage` and `streams`
 
-`storage/src/storage-module.ts`: the return type `ModuleNode<Record<never, never>, { store: typeof s3Contract }, Record<never, never>>` becomes `ModuleNode<Record<never, never>, { store: typeof s3Contract }>`. `streams/src/streams-module.ts`: the return type's third argument, `Record<never, never>`, is removed. Both third arguments were the old secret slots, which those modules never declared.
+`storage/src/storage-module.ts`: the return type `ModuleNode<Record<never, never>, { store: typeof s3Contract }, Record<never, never>>` becomes `ModuleNode<Record<never, never>, { store: typeof s3Contract }, undefined>`. `streams/src/streams-module.ts`: the return type's third argument, `Record<never, never>`, becomes `undefined`. Both third arguments were the old secret slots, which those modules never declared; the third argument is now the input schema, and `undefined` says the module declares none. Leaving it out would give `ModuleNode`'s wide default, `StandardSchemaV1 | undefined`.
 
 ### 4.4 READMEs
 
@@ -789,7 +789,7 @@ Core, `packages/0-framework/1-core/core/src/__tests__/`:
 Prisma Cloud target, `packages/1-prisma-cloud/1-extensions/target/src/__tests__/`:
 
 - `sources.test-d.ts`: `each source still fits a module's params or secrets slot, and envParam() a number param` becomes `each source fits a module's input field of its type, and envParam() a service param`: `relay` declares `input: type({ origin: 'string', token: secretString(), base: 'string', key: secretString() })` (`secretString` from `@internal/foundation/arktype`, `type` from `arktype`) and the root binds `input: { origin: envParam('ORIGIN'), token: generatedParam(), base: serviceOrigin('shop.web'), key: envSecret('KEY') }`; the `compute` provision with `params: { port: envParam('PORT') }` stays. The `paramNeed` and `secret` imports are removed.
-- `env-key-clash.test.ts`: `EmptyModule` becomes `ModuleNode<Record<never, never>, Record<never, never>>`.
+- `env-key-clash.test.ts`: `EmptyModule` becomes `ModuleNode<Record<never, never>, Record<never, never>, undefined>`.
 
 ## 11. Done when
 
@@ -812,7 +812,7 @@ Each decision in § 13 has a test that fails when the behavior breaks: decision 
 ## 13. Decisions this spec records, for the review
 
 1. **The retired keys are refused with an error naming `input`, not ignored** (§ 3.3, § 3.5). Without the checks, a JavaScript caller, or one that casts, would lose its bindings silently: a `secrets` map would vanish and the service would fail later with a schema message that does not say why. This follows the `composer` section decision's precedent, which refuses retired fields with `CONFIG.FIELD_RETIRED` and never migrates them. The brief asked to remove the Load checks for the slots; those are removed, and these four errors replace them.
-2. **`ModuleNode<D, E, I>` and `ModuleContext<D, I>`** (§ 3.2). Leaving `S` and `PN` in place as unused parameters would keep a type surface for slots that no longer exist. `module-composition.md` already documents `ModuleNode<D, E, I>`. Two shared modules, `storage` and `streams`, wrote `Record<never, never>` as the third argument for the empty secret slots; that argument is now `I`, so they drop it.
+2. **`ModuleNode<D, E, I>` and `ModuleContext<D, I>`** (§ 3.2). Leaving `S` and `PN` in place as unused parameters would keep a type surface for slots that no longer exist. `module-composition.md` already documents `ModuleNode<D, E, I>`. Two shared modules, `storage` and `streams`, wrote `Record<never, never>` as the third argument for the empty secret slots; that argument is now `I`, so they pass `undefined` there.
 3. **`email()`'s schema types `deliveryMode` as `'string'`, not as the three modes** (§ 4.1). `envParam()` is typed `Value<string>`, and a value of type `string` does not fit a field typed `'resend' | 'smtp' | 'none'` (`ModuleInputBinding` follows the field's type, as S3's `{ n: number }` test shows). The narrow type would make the before/after migration of § 7 fail to compile. The module input decision says a module that only forwards a value can use a permissive schema; the email service's own schema still checks the mode before anything is created. A root that wants an earlier check types its own field narrowly, as the email example does, and a value of the narrow type fits the module's `string` field.
 4. **Each module's input schema is a module-level constant that is not exported** (§ 4.1, § 4.2). The return type names it with `typeof`, so the declaration file carries its type; exporting it would add public surface no one asked for.
 5. **The examples, per example** (§ 5.1). `email` shows the new root surface: `input` from `[dotenv(), environmentVariables()]` and a committed `.env.example`. `auth` shows an `envParam()` and a `serviceOrigin()` in a module's input, the two sources the brief names for `baseUrl`, and also moves to `dotenv()`. `storefront-auth` keeps its root's `envSecret()`, because a root's input takes no secret (S4), and keeps its config, because CI sets `AUTH_SIGNING_SECRET` in the runner's environment. `env-param` is unchanged: it binds a service, not a module, and it is the guide's example of `envParam()`.
