@@ -456,10 +456,15 @@ async function main(): Promise<void> {
     // (unrelated) proofs keep passing regardless of shell state.
     process.env['LOCALDEV_FIXTURE_API_KEY'] = 'test-api-key';
     process.env['LOCALDEV_FIXTURE_GREETING'] = 'hello';
+    // What the default adapters return: the generated stack file reads the same variables.
+    const pools = {
+      config: { LOCALDEV_FIXTURE_GREETING: 'hello' },
+      secrets: { LOCALDEV_FIXTURE_API_KEY: 'test-api-key' },
+    };
     const preflightPayload =
       dev.preflight === undefined
         ? undefined
-        : await dev.preflight({ graph, container: devContainer, environment: 'dev' });
+        : await dev.preflight({ graph, container: devContainer, environment: 'dev', pools });
     process.chdir(originalCwd);
 
     // 6. Emulators — ensures compute always, buckets because the graph has
@@ -495,7 +500,7 @@ async function main(): Promise<void> {
     // deployed child needs a moment to start listening, so both the health
     // round-trip and the emulator's own "running" status are polled with a
     // bounded deadline rather than asserted on the very first attempt.
-    attachment = await dev.attach({ container: devContainer, devDir });
+    attachment = await dev.attach({ container: devContainer, devDir, pools });
     const endpoints = await attachment.endpoints();
     const web = endpoints.find((e) => e.address === WEB);
     assert(web !== undefined, 'the web service must appear in attach().endpoints()');
