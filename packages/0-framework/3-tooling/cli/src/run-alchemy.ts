@@ -1,5 +1,5 @@
 /**
- * Pipeline step 7 (deploy-cli.md § The pipeline; design-notes.md's "Driving
+ * Pipeline step 9 (deploy-cli.md § The pipeline; design-notes.md's "Driving
  * Alchemy" call): hand the terminal to the generated stack file.
  *
  * Runs the bin of the `alchemy` the app's `@prisma/composer` depends on
