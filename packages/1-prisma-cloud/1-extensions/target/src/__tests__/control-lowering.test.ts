@@ -13,7 +13,7 @@ import type { LowerContext, LoweredResult, Outputs } from '@internal/core/deploy
 // Static-importing the real module here forces the survivable patch-in-place
 // mode regardless of the (filesystem-dependent) test-file order.
 import * as RealDevEmulators from '@internal/dev-emulators';
-import { secretString } from '@internal/foundation/arktype';
+import { field, secretString } from '@internal/foundation/arktype';
 import * as RealLocalTarget from '@internal/local-target';
 import * as RealPrismaAlchemy from '@internal/lowering';
 import { AdoptPolicy } from 'alchemy/AdoptPolicy';
@@ -1374,7 +1374,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       const node = compute({
         name: 'login',
         deps: {},
-        input: type({ baseUrl: 'string' }),
+        input: type({ baseUrl: field(type('string')) }),
         build: {
           extension: '@prisma/composer/node',
           type: 'node',
@@ -1448,7 +1448,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       const node = compute({
         name: 'login',
         deps: {},
-        input: type({ baseUrl: 'string' }),
+        input: type({ baseUrl: field(type('string')) }),
         build: {
           extension: '@prisma/composer/node',
           type: 'node',

@@ -3,9 +3,9 @@ import { createHash, createHmac } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Load, module, resolve, type ServiceNode } from '@internal/core';
+import { isSecretPointer, Load, module, resolve, type ServiceNode } from '@internal/core';
 import { preflightEnv } from '@internal/core/config';
-import { SecretBox } from '@internal/foundation/secret';
+import { isSecretString } from '@internal/foundation/secret';
 import { rawHttpContract } from '@internal/http';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
@@ -26,16 +26,17 @@ const build = {
 const fakeContainer = (environment = 'dev') =>
   new PrismaCloudContainer({ appName: 'app', environment }, 'local', undefined, undefined, true);
 
-/** Passes when every field named in `required` holds a secret. */
+/** Passes when every field named in `required` holds a secret: a secret box or a secret pointer. */
 const requiresSecrets = (...required: string[]): StandardSchemaV1<unknown, unknown> => ({
   '~standard': {
     version: 1,
     vendor: 'test',
     validate: (value) => {
       const record = typeof value === 'object' && value !== null ? value : {};
-      const missing = required.filter(
-        (key) => !(Object.getOwnPropertyDescriptor(record, key)?.value instanceof SecretBox),
-      );
+      const missing = required.filter((key) => {
+        const field = Object.getOwnPropertyDescriptor(record, key)?.value;
+        return !(isSecretString(field) || isSecretPointer(field));
+      });
       return missing.length === 0
         ? { value }
         : { issues: missing.map((key) => ({ message: `${key} is required` })) };
