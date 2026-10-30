@@ -147,6 +147,18 @@ by the end of Load. A field bound to `envSecret()`, `generatedParam()` or
 `serviceOrigin()` has a pointer as its real value, never a value, although its
 type is the schema's output type.
 
+A leaf field can be **wrapped**: its schema is `field(inner)`, from
+`@prisma/composer/arktype` or `@prisma/composer/zod`
+([glossary](../03-domain-model/glossary.md#field)). A wrapped field's schema
+accepts what `inner` accepts and a plain pointer, so its value in the body is
+typed `Value<Out | Pointer<In>>`: for `from: field(type('string'))`,
+`input.from` is `Value<string | Pointer<string>>`. Its binding takes a
+literal, a value of `inner`'s input type, or a `RuntimeValue<string>`; a
+`RuntimeValue<SecretString>` there fails to compile, and so does a
+`RuntimeValue<string>` in a plain field. At deploy a module's schema still
+checks the stand-ins described below, so a wrapped and a plain field check
+the same data.
+
 The body can only pass an input field on. Turning one into text or a number,
 serializing it, listing its keys, iterating it, testing it with `in`,
 assigning to it or freezing it throws a Load error naming the field. `===`,
