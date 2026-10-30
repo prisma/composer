@@ -34,14 +34,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/sql-d1": "4.0.3",
-    "@effect/sql-sqlite-do": "4.0.3",
-    "@effect/vitest": "4.0.3",
+    "@effect/sql-d1": "4.1.0",
+    "@effect/sql-sqlite-do": "4.1.0",
+    "@effect/vitest": "4.1.0",
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "2.0.0-beta.83",
+    "alchemy": "https://pkg.alchemy.run/alchemy/972f294ae0c7982a8ebcb551fadd07d29c9c0fca",
     "arktype": "^2.2.3",
     "cross-spawn": "^7.0.6",
-    "effect": "4.0.3",
+    "effect": "4.1.0",
     "esbuild": "^0.28.1",
     "@prisma/management-api-sdk": "^1.80.0"
   },

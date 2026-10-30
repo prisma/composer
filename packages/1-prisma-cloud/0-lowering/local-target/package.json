@@ -13,14 +13,15 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@alchemy.run/prisma": "https://pkg.alchemy.run/@alchemy.run/prisma/972f294ae0c7982a8ebcb551fadd07d29c9c0fca",
     "@internal/bundle-paths": "workspace:0.36.0",
     "@internal/core": "workspace:0.36.0",
     "@internal/dev-emulators": "workspace:0.36.0",
     "@internal/lowering": "workspace:0.36.0",
     "@internal/s3-protocol": "workspace:0.36.0",
     "@prisma/dev": "^0.25.2",
-    "alchemy": "2.0.0-beta.83",
-    "effect": "4.0.3",
+    "alchemy": "https://pkg.alchemy.run/alchemy/972f294ae0c7982a8ebcb551fadd07d29c9c0fca",
+    "effect": "4.1.0",
     "tar": "^7.5.21"
   },
   "devDependencies": {

@@ -476,8 +476,8 @@ resolves a single `effect`.
 The fix is to use the same `effect` as Composer. Match your own `effect`
 dependency to `@prisma/composer`'s exact pin (see its `dependencies.effect`),
 or, when a dependency you cannot change pins another version, force
-Composer's. `<pin>` below stands for that exact version (`4.0.3` in
-Composer 0.29.1). With npm, in your app's `package.json`:
+Composer's. `<pin>` below stands for that exact version (`4.1.0` at the time of
+writing). With npm, in your app's `package.json`:
 
 ```json
 "overrides": {

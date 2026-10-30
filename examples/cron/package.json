@@ -13,12 +13,12 @@
     "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts --environment production ${CRON_STACK_NAME:+--name \"$CRON_STACK_NAME\"} )"
   },
   "dependencies": {
-    "@effect/platform-bun": "4.0.3",
+    "@effect/platform-bun": "4.1.0",
     "@prisma/composer": "workspace:0.36.0",
     "@prisma/composer-prisma-cloud": "workspace:0.36.0",
-    "alchemy": "2.0.0-beta.83",
+    "alchemy": "https://pkg.alchemy.run/alchemy/972f294ae0c7982a8ebcb551fadd07d29c9c0fca",
     "arktype": "^2.2.3",
-    "effect": "4.0.3"
+    "effect": "4.1.0"
   },
   "devDependencies": {
     "@prisma/composer": "workspace:0.36.0",

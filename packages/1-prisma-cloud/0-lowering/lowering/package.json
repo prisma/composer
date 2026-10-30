@@ -8,6 +8,7 @@
     "./compute": "./dist/compute.mjs",
     "./deployed": "./dist/deployed.mjs",
     "./state": "./dist/state.mjs",
+    "./testing": "./dist/testing.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -17,14 +18,15 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@distilled.cloud/prisma": "1.0.0-rc.15",
-    "@effect/platform-node": "4.0.3",
+    "@alchemy.run/prisma": "https://pkg.alchemy.run/@alchemy.run/prisma/972f294ae0c7982a8ebcb551fadd07d29c9c0fca",
+    "@distilled.cloud/prisma": "https://pkg.alchemy.run/@distilled.cloud/prisma/-/1bdab345e743ea72b7d076d0a31aa81a474cfd4986450cd74590ef61e13e9da6.tgz",
+    "@effect/platform-node": "4.1.0",
     "@internal/bundle-paths": "workspace:0.36.0",
     "@internal/core": "workspace:0.36.0",
     "@internal/foundation": "workspace:0.36.0",
     "@prisma/management-api-sdk": "^1.80.0",
-    "alchemy": "2.0.0-beta.83",
-    "effect": "4.0.3"
+    "alchemy": "https://pkg.alchemy.run/alchemy/972f294ae0c7982a8ebcb551fadd07d29c9c0fca",
+    "effect": "4.1.0"
   },
   "devDependencies": {
     "@internal/tsdown-config": "workspace:0.36.0",

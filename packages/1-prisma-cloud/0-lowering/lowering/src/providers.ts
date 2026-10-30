@@ -1,6 +1,6 @@
+import * as Prisma from '@alchemy.run/prisma';
 import { Credentials } from '@distilled.cloud/prisma';
 import * as NodeHttpClient from '@effect/platform-node/NodeHttpClient';
-import * as Prisma from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import * as HttpClient from 'effect/http/HttpClient';

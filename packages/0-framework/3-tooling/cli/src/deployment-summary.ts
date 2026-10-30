@@ -119,6 +119,10 @@ const ALCHEMY_ADOPT_ADVICE: readonly (readonly [RegExp, string])[] = [
     /Re-run with `--adopt` \(or wrap the effect in `adopt\(true\)`\) to take it over\./g,
     'Something other than this app holds it. Remove that resource, then deploy again.',
   ],
+  [
+    /Re-run with `--adopt` \(or wrap the effect in `adopt\(true\)`\) to replace it anyway\./g,
+    'Remove that resource, then deploy again.',
+  ],
   [/\(re-deploy with --adopt to take ownership, then destroy\)/g, '(remove it by hand)'],
 ];
 

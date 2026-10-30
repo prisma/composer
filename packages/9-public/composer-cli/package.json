@@ -21,9 +21,9 @@
   "dependencies": {
     "@prisma/composer": "workspace:0.36.0",
     "@prisma/management-api-sdk": "^1.80.0",
-    "alchemy": "2.0.0-beta.83",
+    "alchemy": "https://pkg.alchemy.run/alchemy/972f294ae0c7982a8ebcb551fadd07d29c9c0fca",
     "cross-spawn": "^7.0.6",
-    "effect": "4.0.3",
+    "effect": "4.1.0",
     "esbuild": "^0.28.1"
   },
   "peerDependencies": {

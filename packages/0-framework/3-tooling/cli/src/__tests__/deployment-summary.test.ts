@@ -214,6 +214,7 @@ describe('withComposerAdvice', () => {
       "OwnedBySomeoneElse: Cannot adopt resource 'auth.database-conn' (Prisma.Connection): it exists in the cloud but is not owned by this stack/stage/logical-id. Re-run with `--adopt` (or wrap the effect in `adopt(true)`) to take it over.",
       "OwnedBySomeoneElse: Cannot resume creating resource 'storefront-svc' (Prisma.App): a resource with its physical identity exists in the cloud but is not owned by this stack/stage/logical-id. Re-run with `--adopt` (or wrap the effect in `adopt(true)`) to take it over.",
       'Resource exists in the cloud but is not owned by this stack — leaving it in place (re-deploy with --adopt to take ownership, then destroy).',
+      "Cannot replace resource 'storefront-svc' (Prisma.App): it must be deleted before its replacement is pre-created, but the replacement's identity depends on outputs that are not resolved yet, so its ownership cannot be checked first. Re-run with `--adopt` (or wrap the effect in `adopt(true)`) to replace it anyway.",
     ];
     for (const line of upstream) {
       const shown = withComposerAdvice(line);

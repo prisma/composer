@@ -293,6 +293,17 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
     );
   }
 
+  const alchemyCopies = new Set(
+    JSON.parse(
+      execFileSync(command, [...npmArgs, 'query', '#alchemy'], { cwd: appDir, encoding: 'utf-8' }),
+    ).map((node) => node.path),
+  );
+  if (alchemyCopies.size !== 1) {
+    fail(
+      `[${label}] expected exactly one alchemy in the npm tree, got: ${[...alchemyCopies].join(', ')}`,
+    );
+  }
+
   const { version: resolvedVersion, entry: effectEntry } = effectSeenByAlchemy(label, appDir);
   process.stderr.write(`[${label}] alchemy resolves effect@${resolvedVersion} (${effectEntry})\n`);
   if (resolvedVersion !== pinnedEffect) {
@@ -311,7 +322,7 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
     const providers = importAlchemy(
       label,
       appDir,
-      "await import('alchemy/Prisma'); await import('@prisma/composer-prisma-cloud/control');",
+      "await import('@alchemy.run/prisma'); await import('@prisma/composer-prisma-cloud/control');",
     );
     if (providers.status !== 0) {
       fail(`[${label}] Prisma Cloud providers did not import:\n${providers.output}`);
@@ -321,7 +332,7 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
   assertFamilyImports(label, appDir, 'a healthy tree');
 
   process.stderr.write(
-    `[${label}] OK — single effect@${pinnedEffect}, resolved by alchemy, alchemy imports, the family imports\n`,
+    `[${label}] OK — single effect@${pinnedEffect} and single alchemy, alchemy resolves that effect and imports, the family imports\n`,
   );
 }
 

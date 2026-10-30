@@ -7,9 +7,9 @@
  */
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
+import * as Prisma from '@alchemy.run/prisma';
 import type { LowerContext, LoweredResult } from '@internal/core/deploy';
 import * as Output from 'alchemy/Output';
-import * as Prisma from 'alchemy/Prisma';
 import { Stack } from 'alchemy/Stack';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
