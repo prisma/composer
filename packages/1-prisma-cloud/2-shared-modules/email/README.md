@@ -50,11 +50,11 @@ import { envParam, envSecret } from '@prisma/composer-prisma-cloud';
 export default module('app', ({ provision }) => {
   const mail = provision(email(), {
     id: 'email',
-    params: {
+    input: {
       deliveryMode: envParam('EMAIL_DELIVERY_MODE'),
       from: envParam('EMAIL_FROM'),
+      deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
     },
-    secrets: { deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') },
   });
   provision(appService, { deps: { email: mail.send } });
   provision(adminService, { deps: { outbox: mail.outbox } });
@@ -157,11 +157,7 @@ does (see the matching `gotchas.md` entry).
 
 ## Platform env vars (per environment)
 
-`deliveryMode` and `from` are module-boundary params — the app binds a
-source (`envParam`), so both vary per environment. `deliveryUrl` is a factory
-option (`email({ deliveryUrl })`), static per app — it defaults to
-`https://api.resend.com` and follows the mode, which already varies per
-environment.
+`deliveryMode`, `from` and `deliveryCredential` are the module's `input`. Bind `deliveryMode` and `from` to a literal, an `envParam(...)` or a field of your root's input, so they can vary per environment. `deliveryCredential` is a `secretString()` field: bind it with `envSecret(...)`. The module's schema checks only that `deliveryMode` is a string; the service checks that it is `resend`, `smtp` or `none` before anything is created. `deliveryUrl` is a factory option (`email({ deliveryUrl })`), static per app: it defaults to `https://api.resend.com` and follows the mode.
 
 | Var | Production | Preview |
 | --- | --- | --- |
@@ -169,10 +165,11 @@ environment.
 | `EMAIL_FROM` | `noreply@myapp.com` | anything (unused when `none`) |
 | `EMAIL_DELIVERY_CREDENTIAL` | Resend API key / SMTP password | **any non-empty junk** — required by preflight even though never read |
 
-The junk-credential row on preview is a known wart: the framework has no
-optional/conditional secrets (every wired secret is required, ADR-0029), so
-an environment that never delivers still has to set a non-empty value. See
-`gotchas.md` for the filed friction finding.
+The junk-credential row on preview is a known wart: the email service's input
+schema requires the credential in every mode, so an environment that never
+delivers still has to set a non-empty value. A schema can make a secret field
+optional (ADR-0042); this one does not. See `gotchas.md` for the filed friction
+finding.
 
 ## Delivery policy
 

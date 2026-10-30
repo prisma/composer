@@ -18,7 +18,7 @@ root module
 └─ streams()                        ← this module
    └─ service (compute)             ← @prisma/streams-server behind the boundary
       ├─ deps.store: s3()           ← wired from storage's `store` port
-      └─ secrets.apiKey: secret()   ← bearer key, root-bound (ADR-0029)
+      └─ apiKey                     ← bearer key, provisioned by the target
 ```
 
 ## Contract

@@ -1,18 +1,22 @@
 /**
- * The `email()` module (spec §"Module factory"): a self-contained,
- * deployable email service. It owns its Postgres `db` and the `service`
- * wired to it, and exposes two independent ports (`send`, `outbox`) — the
- * least-privilege split (a consumer that can send must not
- * automatically read every email ever sent). `deliveryMode` and `from` are
- * module-boundary param slots: the enclosing app must bind a source
- * (`envParam(...)`), so both vary per environment. The db is invisible to
- * consumers, exactly like storage's.
+ * The `email()` module: an email service with its own Postgres `db`, exposing
+ * `send` and `outbox` as separate ports, so a consumer that can send cannot
+ * read every email ever sent. Its input is `deliveryMode`, `from` and the
+ * secret `deliveryCredential`; `deliveryUrl` is a factory option.
  */
-import type { ModuleNode, ParamNeed, SecretNeed } from '@internal/core';
-import { module, paramNeed, secret } from '@internal/core';
+import type { ModuleNode } from '@internal/core';
+import { module } from '@internal/core';
+import { secretString } from '@internal/foundation/arktype';
 import { rawPostgres } from '@internal/prisma-cloud';
+import { type } from 'arktype';
 import { emailOutboxContract, emailSendContract } from './contract.ts';
 import { emailService } from './email-service.ts';
+
+const emailModuleInput = type({
+  deliveryMode: 'string',
+  from: 'string',
+  deliveryCredential: secretString(),
+});
 
 export function email(opts?: {
   name?: string;
@@ -20,29 +24,21 @@ export function email(opts?: {
 }): ModuleNode<
   Record<never, never>,
   { send: typeof emailSendContract; outbox: typeof emailOutboxContract },
-  { deliveryCredential: SecretNeed },
-  { deliveryMode: ParamNeed; from: ParamNeed }
+  typeof emailModuleInput
 > {
   return module(
     opts?.name ?? 'email',
-    {
-      params: { deliveryMode: paramNeed(), from: paramNeed() },
-      secrets: { deliveryCredential: secret() },
-      expose: { send: emailSendContract, outbox: emailOutboxContract },
-    },
-    ({ params, secrets, provision }) => {
+    { input: emailModuleInput, expose: { send: emailSendContract, outbox: emailOutboxContract } },
+    ({ input, provision }) => {
       const db = provision(rawPostgres({ name: 'db' }), { id: 'db' });
       const service = provision(emailService(), {
         id: 'service',
         deps: { db },
-        // The service takes ONE input binding (ADR-0042); the module's
-        // forwarded boundary params/secret are its env-sourced leaves, and
-        // deliveryUrl (a static factory option) is a literal.
         input: {
-          deliveryMode: params.deliveryMode,
+          deliveryMode: input.deliveryMode,
           deliveryUrl: opts?.deliveryUrl ?? 'https://api.resend.com',
-          from: params.from,
-          deliveryCredential: secrets.deliveryCredential,
+          from: input.from,
+          deliveryCredential: input.deliveryCredential,
         },
       });
       return { send: service.send, outbox: service.outbox };
