@@ -5,7 +5,7 @@ Amended by [ADR-0057](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-nam
 
 ## Decision
 
-Composer does not implement Alchemy resources for Prisma Cloud's Management API. It composes the official `alchemy/Prisma` provider's resources and providers, and defines its own resources only where the upstream provider has no support yet (buckets, whose routes upstream deferred) or where no Management API exists behind them (local mechanisms like migration steps).
+Composer does not implement Alchemy resources for Prisma Cloud's Management API. It composes the official upstream Prisma provider's (`@alchemy.run/prisma`, formerly `alchemy/Prisma`) resources and providers, and defines its own resources only where the upstream provider has no support yet (buckets, whose routes upstream deferred) or where no Management API exists behind them (local mechanisms like migration steps).
 
 The live wiring is composition, not implementation:
 
@@ -85,6 +85,6 @@ No plaintext reaches state: members are `Redacted` in props, and only the salted
 ## References
 
 - ADR-0005 (the framework never builds or bundles user code), ADR-0034 (hosted deploy state), ADR-0039 (a service's origin is a target-resolved property), ADR-0041 (local dev runs the deploy pipeline against local providers).
-- The provider: the `alchemy/Prisma` module of the `alchemy` package, 2.0.0-beta.74 or later (buckets and `Deployment.triggers` first ship there).
+- The provider: the `alchemy/Prisma` module of the `alchemy` package, 2.0.0-beta.74 or later (buckets and `Deployment.triggers` first ship there). From 2.0.0-beta.84 it is the separate `@alchemy.run/prisma` package, with the same resources.
 - `docs/design/05-prisma-cloud/alchemy-lowering.md` — the current resource-by-resource lowering map.
 - `docs/guides/deploying.md` — operator-facing upgrade notes (one-time deployment reship, branch-database renames, leftover placeholder rows).

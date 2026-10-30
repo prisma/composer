@@ -1,9 +1,7 @@
 import { expect, test } from 'bun:test';
+import * as Prisma from '@alchemy.run/prisma';
 import * as Output from 'alchemy/Output';
-import * as Prisma from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
-import { inMemoryState } from 'alchemy/State/InMemoryState';
-import * as Core from 'alchemy/Test/Core';
 import * as Deferred from 'effect/Deferred';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
@@ -11,6 +9,7 @@ import * as Fiber from 'effect/Fiber';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
 import { data, fakeManagementApi, page } from '../../__tests__/fake-management-api.ts';
+import { runScratch, scratchStack } from '../../scratch-stack.ts';
 import { appAfterEnvironment } from '../deployment-edge.ts';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -190,8 +189,8 @@ test.each(scenarios)(
       ),
       Layer.provideMerge(api),
     );
-    const options = { providers, state: inMemoryState(), dev: false };
-    const stack = Core.scratchStack(options, 'deployment-input-order');
+    const options = { providers, dev: false };
+    const stack = scratchStack(options, 'deployment-input-order');
 
     const program = (inputValue: string, release: number, includeNewVariable: boolean) =>
       Effect.gen(function* () {
@@ -228,7 +227,7 @@ test.each(scenarios)(
         return { deployment };
       });
 
-    await Core.run(
+    await runScratch(
       Effect.gen(function* () {
         yield* stack.deploy(program('{"required":"old"}', 1, false));
         if (repairDrift) values.set('COMPOSER_INPUT', 'out-of-band-drift');

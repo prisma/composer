@@ -1,13 +1,12 @@
 /** A hostname public URL under the real Alchemy apply engine and the real `Prisma.CustomDomain` provider, against a fake Management API. */
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
+import * as Prisma from '@alchemy.run/prisma';
+import type { CustomDomain } from '@alchemy.run/prisma/Types';
 import { Load, module } from '@internal/core';
 import type { LowerContext } from '@internal/core/deploy';
 import { rawHttpContract } from '@internal/http';
-import * as Prisma from 'alchemy/Prisma';
-import type { CustomDomain } from 'alchemy/Prisma/Types';
+import { runScratch, scratchStack } from '@internal/lowering/scratch-stack';
 import * as Provider from 'alchemy/Provider';
-import { inMemoryState } from 'alchemy/State/InMemoryState';
-import * as Core from 'alchemy/Test/Core';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
 import * as HttpClient from 'effect/http/HttpClient';
@@ -17,6 +16,14 @@ import * as Redacted from 'effect/Redacted';
 import { compute } from '../compute.ts';
 import { publicUrlDescriptor } from '../descriptors/public-url.ts';
 import { publicUrl } from '../public-url.ts';
+
+// The provider waits for the hostname's CNAME on its authoritative nameservers before it registers a domain. No nameservers means no wait and no network.
+const realDns = await import('node:dns/promises');
+mock.module('node:dns/promises', () => ({
+  ...realDns,
+  resolveNs: () => Promise.reject(new Error('no DNS in this test')),
+  resolve4: () => Promise.reject(new Error('no DNS in this test')),
+}));
 
 const APP_ID = 'app_1';
 const OTHER_APP_ID = 'app_2';
@@ -144,7 +151,7 @@ function fakePlatform(refuse: readonly string[]) {
     ),
     Layer.provideMerge(Layer.succeed(HttpClient.HttpClient, http)),
   );
-  return { platform, options: { providers, state: inMemoryState(), dev: false } };
+  return { platform, options: { providers, dev: false } };
 }
 
 const build = {
@@ -183,9 +190,9 @@ function failureText(exit: Exit.Exit<unknown, unknown>): string {
 describe('a hostname public URL under the Alchemy apply engine', () => {
   test('a hostname the platform refuses fails the deploy with the upstream error unchanged', async () => {
     const { platform, options } = fakePlatform(['shop.com']);
-    const stack = Core.scratchStack(options, 'public-url-refused');
+    const stack = scratchStack(options, 'public-url-refused');
 
-    const exit = await Core.run(Effect.exit(stack.deploy(program('shop.com'))), options);
+    const exit = await runScratch(Effect.exit(stack.deploy(program('shop.com'))), options);
 
     expect(Exit.isFailure(exit)).toBe(true);
     expect(failureText(exit)).toContain(
@@ -197,14 +204,14 @@ describe('a hostname public URL under the Alchemy apply engine', () => {
 
   test('changing to a hostname the platform refuses fails and never deletes the serving custom domain', async () => {
     const { platform, options } = fakePlatform(['new.shop.com']);
-    const stack = Core.scratchStack(options, 'public-url-change');
+    const stack = scratchStack(options, 'public-url-change');
 
-    const first = await Core.run(Effect.exit(stack.deploy(program('shop.com'))), options);
+    const first = await runScratch(Effect.exit(stack.deploy(program('shop.com'))), options);
     expect(Exit.isSuccess(first)).toBe(true);
     expect([...platform.domains.values()].map((d) => d.hostname)).toEqual(['shop.com']);
     platform.requests.length = 0;
 
-    const second = await Core.run(Effect.exit(stack.deploy(program('new.shop.com'))), options);
+    const second = await runScratch(Effect.exit(stack.deploy(program('new.shop.com'))), options);
 
     expect(Exit.isFailure(second)).toBe(true);
     expect(failureText(second)).toContain(
@@ -217,11 +224,11 @@ describe('a hostname public URL under the Alchemy apply engine', () => {
 
   test('changing to a hostname the platform accepts creates the new custom domain, then deletes the old', async () => {
     const { platform, options } = fakePlatform([]);
-    const stack = Core.scratchStack(options, 'public-url-replace');
+    const stack = scratchStack(options, 'public-url-replace');
 
-    await Core.run(stack.deploy(program('shop.com')), options);
+    await runScratch(stack.deploy(program('shop.com')), options);
     platform.requests.length = 0;
-    await Core.run(stack.deploy(program('new.shop.com')), options);
+    await runScratch(stack.deploy(program('new.shop.com')), options);
 
     const create = platform.requests.indexOf(`POST /v1/apps/${APP_ID}/domains`);
     const remove = platform.requests.indexOf('DELETE /v1/domains/dom_1');
@@ -232,11 +239,11 @@ describe('a hostname public URL under the Alchemy apply engine', () => {
 
   test('moving a hostname to another service is refused and leaves the serving custom domain alone', async () => {
     const { platform, options } = fakePlatform([]);
-    const stack = Core.scratchStack(options, 'public-url-move');
+    const stack = scratchStack(options, 'public-url-move');
 
-    await Core.run(stack.deploy(program('shop.com')), options);
+    await runScratch(stack.deploy(program('shop.com')), options);
     platform.requests.length = 0;
-    const moved = await Core.run(
+    const moved = await runScratch(
       Effect.exit(stack.deploy(program('shop.com', OTHER_APP_ID))),
       options,
     );

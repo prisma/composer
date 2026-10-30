@@ -5,7 +5,7 @@
  * surface is its own entrypoint. The postgres family (Project, Database,
  * Connection), the compute family (App, Deployment, EnvironmentVariable), and
  * the bucket family (Bucket, BucketAccessKey) are upstream alchemy's —
- * consumers import them via `import * as Prisma from 'alchemy/Prisma'`. What
+ * consumers import them via `import * as Prisma from '@alchemy.run/prisma'`. What
  * stays here is Composer's own: the artifact packager and `ServiceKey`.
  */
 export {

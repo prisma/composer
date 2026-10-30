@@ -10,3 +10,13 @@ packages:
 # that every manifest uses it and that the host shares the workspace engine.
 catalog:
   prisma: 8.0.0-rc.26
+  # alchemy and every @alchemy.run/* package move together, at one commit or
+  # one release; @distilled.cloud/prisma is the exact tarball
+  # @alchemy.run/prisma depends on. See the upgrade-alchemy-effect skill.
+  alchemy: https://pkg.alchemy.run/alchemy/972f294ae0c7982a8ebcb551fadd07d29c9c0fca
+  '@alchemy.run/prisma': https://pkg.alchemy.run/@alchemy.run/prisma/972f294ae0c7982a8ebcb551fadd07d29c9c0fca
+  '@distilled.cloud/prisma': https://pkg.alchemy.run/@distilled.cloud/prisma/-/1bdab345e743ea72b7d076d0a31aa81a474cfd4986450cd74590ef61e13e9da6.tgz
+  effect: 4.1.0
+  '@effect/platform-bun': 4.1.0
+  '@effect/platform-node': 4.1.0
+  '@effect/platform-node-shared': 4.1.0

@@ -1,10 +1,9 @@
 /** A `Prisma.CustomDomain` under the local providers and the real Alchemy apply engine. */
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
+import * as Prisma from '@alchemy.run/prisma';
 import type { ContainerInstance, LocalTargetProvidersInput } from '@internal/core/config';
-import * as Prisma from 'alchemy/Prisma';
+import { runScratch, scratchStack } from '@internal/lowering/scratch-stack';
 import * as State from 'alchemy/State';
-import { inMemoryState } from 'alchemy/State/InMemoryState';
-import * as Core from 'alchemy/Test/Core';
 import * as Effect from 'effect/Effect';
 import { localTargetProviders } from '../providers.ts';
 
@@ -31,11 +30,11 @@ describe('a custom domain under the local providers', () => {
 
   test('calls nothing, records the hostname as active with no DNS records, and converges on a second deploy', async () => {
     const fetch = spyOn(globalThis, 'fetch');
-    const options = { providers: localTargetProviders(input), state: inMemoryState(), dev: false };
-    const stack = Core.scratchStack(options, 'local-custom-domain');
+    const options = { providers: localTargetProviders(input), dev: false };
+    const stack = scratchStack(options, 'local-custom-domain');
 
-    const first = await Core.run(stack.deploy(program), options);
-    const second = await Core.run(stack.deploy(program), options);
+    const first = await runScratch(stack.deploy(program), options);
+    const second = await runScratch(stack.deploy(program), options);
 
     expect(first).toMatchObject({
       customDomainId: 'local-shop.site.domain.shop.com',
@@ -50,11 +49,11 @@ describe('a custom domain under the local providers', () => {
 
   test('a hostname change creates the new custom domain and removes the old one, calling nothing', async () => {
     const fetch = spyOn(globalThis, 'fetch');
-    const options = { providers: localTargetProviders(input), state: inMemoryState(), dev: false };
-    const stack = Core.scratchStack(options, 'local-custom-domain-change');
+    const options = { providers: localTargetProviders(input), dev: false };
+    const stack = scratchStack(options, 'local-custom-domain-change');
 
-    await Core.run(stack.deploy(programFor('shop.com')), options);
-    const changed = await Core.run(stack.deploy(programFor('new.shop.com')), options);
+    await runScratch(stack.deploy(programFor('shop.com')), options);
+    const changed = await runScratch(stack.deploy(programFor('new.shop.com')), options);
 
     expect(changed).toMatchObject({
       customDomainId: 'local-shop.site.domain.new.shop.com',

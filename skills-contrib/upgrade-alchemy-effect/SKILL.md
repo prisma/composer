@@ -95,13 +95,12 @@ install never gets there.
    done
    ```
 
-   alchemy's floor is not a compatibility promise. alchemy 2.0.0-beta.75 to beta.77 accept `effect` rc.112 and later, but call `Config.string`, which rc.113 removed, so they crash on it. Pin the `effect` release alchemy was built against: the newest one published before that alchemy release (`npm view effect time`). Check the new alchemy's `alchemy/Prisma` still loads from a plain npm install: in beta.79 it imports the optional peer `@alchemy.run/frontend-frameworks` and fails.
+   alchemy's floor is not a compatibility promise. alchemy 2.0.0-beta.75 to beta.77 accept `effect` rc.112 and later, but call `Config.string`, which rc.113 removed, so they crash on it. Pin the `effect` release alchemy was built against: the newest one published before that alchemy release (`npm view effect time`). Check the new alchemy's Prisma provider (`@alchemy.run/prisma` since beta.84) still loads from a plain npm install: in beta.79 it imports the optional peer `@alchemy.run/frontend-frameworks` and fails.
 
-2. **Find every pin.** They are spread across public packages, framework
-   packages, examples, `test/integration`, and `website`:
+2. **Find every pin.** `alchemy`, `@alchemy.run/prisma`, `@distilled.cloud/prisma`, `effect` and the `@effect/platform-*` packages are pinned once, in the `catalog:` block of `pnpm-workspace.yaml`; every manifest says `catalog:`, and `pnpm pack` writes the resolved version into the published manifest. Check nothing outside the catalog pins them:
 
    ```bash
-   grep -rln '"alchemy"\|@effect/\|"effect"' --include=package.json . | grep -v node_modules
+   grep -rln '"alchemy"\|"@alchemy.run/\|"@distilled.cloud/\|@effect/\|"effect"' --include=package.json . | grep -v node_modules
    ```
 
 3. **Clear the patch key first.** `pnpm.patchedDependencies` is keyed by the
@@ -121,6 +120,25 @@ install never gets there.
 8. **The E2E deploy jobs are the real bar.** An alchemy upgrade changes the
    deploy engine; a green typecheck says very little about it.
 
+## Pinning an unreleased alchemy build
+
+alchemy publishes a preview of every commit on `main`. Pin it by commit, never by branch, in the `catalog:` block of `pnpm-workspace.yaml`:
+
+```yaml
+alchemy: https://pkg.alchemy.run/alchemy/<commit sha>
+'@alchemy.run/prisma': https://pkg.alchemy.run/@alchemy.run/prisma/<commit sha>
+```
+
+- **No release while a pin is a URL.** `check:publish-deps` (run by the publish workflow on every push to `main`) fails on any URL, git or `file:` dependency in a published package. Swap the pins for a registry release before merging to `main` expecting a publish.
+
+- **The commit URL is immutable.** It redirects to a content-addressed tarball (`/alchemy/-/<sha256>.tgz`). The lockfile records the commit URL and the tarball's integrity.
+- **Pin `alchemy` and every `@alchemy.run/*` package at the same commit.** They are built together.
+- **A preview's own dependencies are content-addressed URLs too.** `@alchemy.run/prisma` depends on `@distilled.cloud/prisma` by a `/-/<sha256>.tgz` URL. Pin our `@distilled.cloud/prisma` to that exact URL (read it from the tarball's `package.json`), or pnpm and npm install a second copy and `Credentials` stops matching. The commit URL for the same package does not dedupe with it.
+- **The `alchemy` peer of `@alchemy.run/prisma` names a different tarball hash than the commit URL resolves to.** The two differ only in an embedded URL in `package.json`; the code is identical. Both pnpm and npm accept our copy and install one `alchemy`; `check:npm-effect-resolution` asserts that.
+- **Not every package has a preview.** `@alchemy.run/test` returns 404 at every commit, so nothing may depend on it (see the breakage classes).
+- **Read the source at the commit**, not the docs: `git clone https://github.com/alchemy-run/alchemy && git checkout <sha>`, or extract the tarball into a gitignored `wip/` folder.
+- **Move back to a registry version** once a release contains the commit: `npm view alchemy dist-tags`, then compare the release date with the commit date.
+
 ## alchemy's floating dependencies are pinned in the public packages
 
 alchemy's `effect`-family ranges float past what its code supports (the
@@ -131,9 +149,8 @@ instead of an error (2026-09-11: `@effect/*@4.0.0-rc.114` published ahead of
 pin, in `dependencies`, every package alchemy declares with a floating range
 so a consumer's npm resolves our copy:
 
-- `@prisma/composer` — alchemy's regular dependencies: `@effect/sql-d1`,
-  `@effect/sql-sqlite-do`, `@effect/vitest`.
-- `@prisma/composer-prisma-cloud` — the optional platform peers: `@effect/platform-bun`, `@effect/platform-node`, `@effect/platform-node-shared`. It also depends on `@distilled.cloud/prisma`, whose `Credentials` the provider wiring imports; keep it at the exact version alchemy depends on so npm installs one copy.
+- `@prisma/composer` pinned `@effect/sql-d1`, `@effect/sql-sqlite-do` and `@effect/vitest` while alchemy depended on them; beta.84 dropped them, and so did we.
+- `@prisma/composer-prisma-cloud` — the optional platform peers: `@effect/platform-bun`, `@effect/platform-node`, `@effect/platform-node-shared`. It also depends on `@distilled.cloud/prisma`, whose `Credentials` the provider wiring imports; keep it at the exact version `@alchemy.run/prisma` depends on (a tarball URL for a preview) so npm installs one copy.
 
 When alchemy adds a floating `effect`-family dependency, add its pin next to these; `check-npm-effect-resolution` installs the tarballs bare and fails when the install backtracks or resolves a second `effect`. It installs once more with npm 10, the npm that Node 22 bundles: npm 10 crashes on `vitest@4.1.x`, which `@effect/vitest` rc.112 and earlier pull in. The only case left to a consumer's own `overrides` is an app that pins a different `effect` itself (documented in `docs/guides/deploying.md`).
 
@@ -146,6 +163,10 @@ When alchemy adds a floating `effect`-family dependency, add its pin next to the
 - **Stable Effect HTTP imports.** Effect 4 uses `effect/http/*`, replacing `effect/unstable/http/*`.
 - **Alchemy lifecycle identity.** Since beta.82, provider fixtures supply `ResourceContext` (`logicalId`, `fqn`, `instanceId`, `type`) instead of `InstanceId`. Local Database, App and Bucket attributes also need `logicalId`; use `null` because local dev creates no platform rows.
 - **Vitest 5 type tests.** Stable `@effect/vitest` requires Vitest 5. Type-only files need a registered test; keep ambient declarations outside its callback or use definite-assignment fixtures inside it.
+- **Providers moved out of `alchemy` (2.0.0-beta.84).** `alchemy/Prisma` is now the separate package `@alchemy.run/prisma` (`alchemy/Prisma/Types` becomes `@alchemy.run/prisma/Types`). Add it to every package that imports it, including `@prisma/composer-prisma-cloud`, which bundles them. `alchemy` itself no longer depends on `@distilled.cloud/*` or the `@effect/sql-*` packages.
+- **`alchemy/Test/Core` is gone (2.0.0-beta.84).** It moved to `@alchemy.run/test`, which is not published. Provider tests use `scratchStack` and `runScratch` from `@internal/lowering/scratch-stack`, a port of the parts we used.
+- **Real network calls in provider tests.** At the 2.0.0-beta.84 preview, `Prisma.CustomDomain` waits for the hostname's CNAME on its authoritative nameservers before it registers a domain. Tests stub `node:dns/promises` so the wait is skipped.
+- **New adoption advice in engine or provider messages.** `withComposerAdvice` in the CLI rewrites Alchemy's `--adopt` and "explicit adoption" advice; its tests read every such message from the installed `alchemy` (`Plan.ts`, `Apply.ts`) and `@alchemy.run/prisma` sources and fail on one it does not rewrite. Add the new message to the rewrite list.
 - **New required fields on alchemy's resource-handler context** (e.g. `fqn`).
   These surface only in the test fixtures that build the context by hand.
 - **`exactOptionalPropertyTypes` vs alchemy's types.** See the patch section.
@@ -214,7 +235,7 @@ On every alchemy bump, re-run the standing check (the CLI's signal-listeners
 test suite runs the same probe):
 
 ```bash
-node -e 'const c=()=>process.listenerCount("SIGINT")+process.listenerCount("SIGTERM");const b=c();import("alchemy").then(()=>console.log(c(),"listeners registered by a bare import (must be 0)"))'
+cd packages/9-public/composer-prisma-cloud && node --input-type=module -e 'const c=()=>process.listenerCount("SIGINT")+process.listenerCount("SIGTERM");const b=c();await import("alchemy");await import("@alchemy.run/prisma");console.log(c()-b,"listeners registered by a bare import (must be 0)")'
 ```
 
 ## Keeping the regression check honest

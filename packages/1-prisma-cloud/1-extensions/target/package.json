@@ -20,6 +20,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@alchemy.run/prisma": "catalog:",
     "@internal/core": "workspace:0.36.0",
     "@internal/dev-emulators": "workspace:0.36.0",
     "@internal/foundation": "workspace:0.36.0",
@@ -32,15 +33,15 @@
     "@prisma/orm-postgres": "8.0.0-rc.20",
     "@prisma/orm-toolchain": "8.0.0-rc.20",
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "2.0.0-beta.83",
+    "alchemy": "catalog:",
     "arktype": "^2.2.3",
-    "effect": "4.0.3",
+    "effect": "catalog:",
     "pathe": "^2.0.3",
     "pg": "8.22.0"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1085.0",
-    "@distilled.cloud/prisma": "1.0.0-rc.15",
+    "@distilled.cloud/prisma": "catalog:",
     "@internal/tsdown-config": "workspace:0.36.0",
     "@prisma/cli-engine": "0.9.0",
     "@types/bun": "^1.3.13",

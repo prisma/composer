@@ -7,6 +7,7 @@
     "./builds": "./dist/builds.mjs",
     "./compute": "./dist/compute.mjs",
     "./deployed": "./dist/deployed.mjs",
+    "./scratch-stack": "./dist/scratch-stack.mjs",
     "./state": "./dist/state.mjs",
     "./package.json": "./package.json"
   },
@@ -17,14 +18,15 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@distilled.cloud/prisma": "1.0.0-rc.15",
-    "@effect/platform-node": "4.0.3",
+    "@alchemy.run/prisma": "catalog:",
+    "@distilled.cloud/prisma": "catalog:",
+    "@effect/platform-node": "catalog:",
     "@internal/bundle-paths": "workspace:0.36.0",
     "@internal/core": "workspace:0.36.0",
     "@internal/foundation": "workspace:0.36.0",
     "@prisma/management-api-sdk": "^1.80.0",
-    "alchemy": "2.0.0-beta.83",
-    "effect": "4.0.3"
+    "alchemy": "catalog:",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@internal/tsdown-config": "workspace:0.36.0",
