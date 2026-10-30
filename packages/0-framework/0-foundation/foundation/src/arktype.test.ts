@@ -147,4 +147,22 @@ describe('field', () => {
       'An unordered union of a type including a morph and a type with overlapping input is indeterminate',
     );
   });
+
+  test('a wrapped object schema reports where inside it the error is', () => {
+    const inner = () => type({ a: 'string', 'b?': { c: 'number' }, 'l?': 'number[]' });
+    expect(messages(type({ u: field(inner()) }), { u: { a: 1 } })).toEqual([
+      'u.a must be a string (was a number)',
+    ]);
+    expect(
+      messages(type({ x: { u: field(inner()) } }), { x: { u: { a: 'y', l: [1, 'z'] } } }),
+    ).toEqual(['x.u.l[1] must be a number (was a string)']);
+    expect(messages(type({ u: field(inner()) }), { u: { a: 1, b: { c: 'x' } } })).toEqual([
+      'u.a must be a string (was a number); u.b.c must be a number (was a string)',
+    ]);
+    for (const value of [{ u: { a: 1 } }, { u: 3 }, {}]) {
+      expect(messages(type({ u: field(inner()) }), value)).toEqual(
+        messages(type({ u: inner() }), value),
+      );
+    }
+  });
 });
