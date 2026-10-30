@@ -23,7 +23,7 @@ A module declares its configuration as one Standard Schema, `input`, exactly as 
 | --- | --- | --- |
 | S1 | Spike on typed input values | Done (report in `slices/s1-spike/`) |
 | S2 | `module()` takes `input` | **Merged**: prisma/composer#401 (0b4297a6) |
-| S3–S8 | Sources are values; config/secrets adapters and root input; old slots removed; `field()` and pointer kinds; schemas see pointers at deploy; `resolve()` deploy-time only | **One PR, prisma/composer#403**, branch `claude/module-input-s8`. Will **approved** it and said to merge it once CI passes. When this was written, 14 checks passed and 5 were still running (the Test jobs and the deploy check). |
+| S3–S8 | Sources are values; config/secrets adapters and root input; old slots removed; `field()` and pointer kinds; schemas see pointers at deploy; `resolve()` deploy-time only | **Merged**: prisma/composer#403 (f74efef7), one PR for all six. |
 | S9 | `input` is a dictionary: no module may pass its whole `input` on | Not specified. Branch `claude/module-input-s9`, stacked on #403's branch, holds one commit: the design and plan rename to "app configuration". |
 | S10 | A service's `input` binding typed from its schema | Not started |
 | S11 | `dotenv()` delegates to `dotenv-flow` | Not started |
@@ -31,7 +31,7 @@ A module declares its configuration as one Standard Schema, `input`, exactly as 
 | S13 | Redact every known secret value, at any length | Not started |
 | S14–S17 | `prisma dev` watches inputs; local secrets never reach another environment; secrets get their own home; `secretString()` becomes `secret(schema)` | Each is designed **with Will** before it is specified |
 
-**Your first job:** check #403. If every check passes, squash-merge it with `gh pr merge 403 --repo prisma/composer --squash` and a hand-written subject and body that contain **no Co-Authored-By lines** (many commits on the branch carry them; the squash message must not). If a check fails, fix it on `claude/module-input-s8` and push. Will said to stop after that merge; continue with S9 only when he tells you to.
+**Your first job:** nothing is in flight. #403 is merged. Will said to stop after that merge, so continue with S9 only when he tells you to. Then rebase `claude/module-input-s9` onto main and specify S9.
 
 **After that,** each slice follows the same loop:
 1. Write its spec with an Opus agent, verified by probes on a scratch copy.
@@ -41,7 +41,7 @@ A module declares its configuration as one Standard Schema, `input`, exactly as 
 5. Do manual QA, against Prisma Cloud where the slice touches deploys.
 6. Open a PR.
 
-Rebase S9's branch onto main after #403 merges. Pass `model: opus` explicitly on every agent.
+Pass `model: opus` explicitly on every agent.
 
 ## Decisions Will made that are easy to get wrong
 
@@ -59,7 +59,7 @@ Rebase S9's branch onto main after #403 merges. Pass `model: opus` explicitly on
 
 ## Branches and worktrees
 
-All worktrees live under `/Users/will/Projects/prisma/composer/.claude/worktrees/composer-destroy-discussion-56c939/`. `wip/s3`–`wip/s9` hold the slice branches. `claude/module-input-s3` to `-s7` are superseded by `claude/module-input-s8` (#403); delete them after #403 merges. `claude/module-input` is merged.
+All worktrees live under `/Users/will/Projects/prisma/composer/.claude/worktrees/composer-destroy-discussion-56c939/`. `wip/s3`–`wip/s9` hold the slice branches. `claude/module-input`, and `claude/module-input-s3` to `-s8`, are all merged into main through #401 and #403; they can be deleted.
 
 Credentials for deploy QA are in `~/.config/prisma-compose/deploy.env`. Print only variable names, never values; use `PRISMA_REGION=us-east-1`. Machine-wide emulators live in `~/.prisma-composer/emulators/`. Never start one from a scratch folder that gets deleted.
 
