@@ -4,12 +4,14 @@
  * module imports arktype, so an app that uses Zod never loads it.
  */
 import { type } from 'arktype';
+import { describeKind } from './describe-kind.ts';
 import { isSecretString, type SecretString } from './secret.ts';
 
 /**
  * A schema leaf that accepts only a redacting `SecretString` box, so
  * `input().<field>.expose()` type-checks and binding a plain literal there
- * fails the deploy (ADR-0042).
+ * fails the deploy (ADR-0042). Its error names the refused value's kind,
+ * never the value.
  *
  * ```ts
  * input: type({ signingKey: secretString() })
@@ -18,5 +20,9 @@ import { isSecretString, type SecretString } from './secret.ts';
 export const secretString = () =>
   type('unknown').narrow(
     (value, ctx): value is SecretString =>
-      isSecretString(value) || ctx.mustBe('a SecretString box — bind this field to a secret'),
+      isSecretString(value) ||
+      ctx.reject({
+        expected: 'a SecretString box — bind this field to a secret',
+        actual: describeKind(value),
+      }),
   );

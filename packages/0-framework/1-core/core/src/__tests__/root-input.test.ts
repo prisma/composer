@@ -139,9 +139,14 @@ describe("a root's input is the config pool", () => {
   test("a root's secretString() field refuses a plain string from the pool", () => {
     const root = shopBinding(type({ KEY: secretString() }), 'key', 'KEY');
 
-    expect(loadError(() => Load(root, { configPool: { KEY: 'x' } })).message).toStartWith(
+    const message = loadError(() =>
+      Load(root, { configPool: { KEY: 'sk_live_SENTINEL' } }),
+    ).message;
+
+    expect(message).toStartWith(
       'The input of root module "shop" does not match its input schema: ',
     );
+    expect(message).not.toContain('sk_live_SENTINEL');
   });
 
   test("the root's schema runs before any other module's", () => {
