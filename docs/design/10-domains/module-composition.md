@@ -1,6 +1,8 @@
 # Module composition
 
 > Amended by [ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares one `input` schema, as a compute service does, and a root may declare one too. A module's input fields are values (`Value<T>`), and its binding is validated during Load's second pass; see [§ Input](#input).
+>
+> Amended by the module-input project (2026-10-30): the module `params` and `secrets` slots are removed; `module()` and `provision()` refuse them.
 
 How a module declares a boundary, forwards through it, nests, and is consumed
 from another module. The decision this design rests on is
@@ -44,7 +46,9 @@ type ModuleOutputs<E extends Expose> = { [P in keyof E]: RefPort<E[P]> };
   assignable to the declared output contract); Load re-checks via
   `satisfies()` — the same two-layer check all wiring uses.
 - The body also receives `environment`, whose `name` is a value: an opaque
-  stand-in the body cannot read or branch on. The body lists it as a
+  stand-in whose data the body cannot read. A truthiness check or `typeof` on
+  it always goes the same way, because the body sees an object, so the body
+  cannot vary the graph by environment. The body lists it as a
   dependency of `resolve(dependencies, fn)`, which returns a computed value it
   can bind to a service's input or params; Load runs `fn` after every module
   body has run
@@ -57,6 +61,9 @@ type ModuleOutputs<E extends Expose> = { [P in keyof E]: RefPort<E[P]> };
   wiring)` — and defaults to the node's own `name`. Pass an explicit id only
   when the name is not a valid id (contains `_`/`.`) or two provisioned nodes
   share a name.
+- `module()` refuses a `params` or `secrets` key when it is called, before Load
+  starts, with an error naming `input`: a module takes its configuration only
+  through `input`.
 
 ## Forwarding
 
@@ -137,10 +144,25 @@ handed it. Its real value is the data at that key path in the module's
 validated input, which is the module's binding with its values replaced by
 their real values and passed through the module's schema. A real value is the
 schema's output, so a field typed `number` by a `string.integer.parse` schema
-receives `4`, not `'4'`. An input field is deploy-time: its real value is known
-by the end of Load. A field bound to `envSecret()` has the `SecretSource` as its
-real value, the pointer and never the secret, although its type says
-`SecretString`, because that is the schema's output type.
+receives `4`, not `'4'`. An input field bound to a deploy-time value is
+deploy-time: its real value is known by the end of Load. A field bound to
+`envSecret()`, `generatedParam()` or `serviceOrigin()` is a runtime value: the
+data is known only at boot, so its real value is a pointer, and its type says
+so: a
+wrapped field's type includes `Pointer<In>`, and a `secretString()` field's
+includes `Pointer<SecretString>`.
+
+A leaf field can be **wrapped**: its schema is `field(inner)`, from
+`@prisma/composer/arktype` or `@prisma/composer/zod`
+([glossary](../03-domain-model/glossary.md#field)). A wrapped field's schema
+accepts what `inner` accepts and a plain pointer, so its value in the body is
+typed `Value<Out | Pointer<In>>`: for `from: field(type('string'))`,
+`input.from` is `Value<string | Pointer<string>>`. Its binding takes a
+literal, a value of `inner`'s input type, or a `RuntimeValue<string>`; a
+`RuntimeValue<SecretString>` there fails to compile, and so does a
+`RuntimeValue<string>` in a plain field. At deploy a module's schema checks
+each runtime value as its pointer, so a plain field bound to one fails the
+deploy, as below.
 
 The body can only pass an input field on. Turning one into text or a number,
 serializing it, listing its keys, iterating it, testing it with `in`,
@@ -150,35 +172,44 @@ overlap. A truthiness check (`if`, `!`, `&&`, `||`, `? :`, `??`) and `typeof`
 cannot be caught: the body sees an object, so such a branch always goes the
 same way, and the graph's structure still cannot vary. A body reaches only the
 keys every member of a union schema has, and an array field has no element
-access; to narrow, forward the whole `input` or narrow inside a `resolve()`
-function.
+access; to narrow, declare a flat schema and pass its fields on by name, or
+narrow inside a `resolve()` function.
 
 An input field is accepted in four places:
 
 - **a service's `input` binding**, at any depth, including the whole binding;
 - **a module's `input` binding**, at any depth, including the whole binding;
-- **a `resolve()` dependency**: `fn` receives the real value. For a field
-  bound to `envSecret()`, that is the `SecretSource`, and returning it fails;
+- **a `resolve()` dependency**, for a plain field: `fn` receives the real
+  value. Listing a field wrapped with `field()` or typed `secretString()`
+  fails to compile, and Load refuses a listed field whose real value holds a
+  pointer, naming it and saying what to do instead: declare a wrapped field
+  plain, or pass a secret field on into a binding and read it in the service.
+  A source listed directly is refused too, with advice to bind it into the
+  service's input;
 - **a service param or a resource prop**, when its real-value type is plain
   data: not optional, and not a secret.
 
-Nowhere else: not as a `provision()` id, not in `deps`, not in a module's
-`secrets` or `params` binding, and not as an `expose` return. Load refuses each.
+Nowhere else: not as a `provision()` id, not in `deps`, and not as an `expose`
+return. Load refuses each.
 
 **How Load validates.** Load records each module's input binding at its
 `provision()` call and validates it with the module's schema during the second
 pass, synchronously, after every module body has run. A child's real value is
 read from its parent's validated output, so the parent's schema runs first; an
 async schema fails the Load. Each module's binding is validated once per Load,
-whether or not the body uses any field. A secret source reaches the schema as
-an empty `SecretString` box and is put back in the validated output, as the
-Prisma Cloud serializer does for a service. An optional field the binding left
-out has no real value, and a binding that forwards it leaves the key out.
+whether or not the body uses any field. A value known only at boot reaches
+the schema as its pointer, the source itself: `secretString()` accepts a
+secret pointer, a wrapped field a plain one, and a plain field neither.
+Wherever the schema's output holds a pointer, Load passes on the original
+source, so a copy the schema made, as ArkType does when a transform runs,
+reaches the child as the source the binding named. A schema may check such a
+field but never replace or move it: a schema whose output holds another value
+at that path, or holds the pointer at another path, fails the Load. An
+optional field the
+binding left out has no real value, and a binding that forwards it leaves the
+key out.
 
-**Not supported yet.** A root cannot declare `input` until the config adapters
-fill it; Load refuses one. A module's binding does not take a param source
-such as `envParam()` until `envParam()` becomes a value; bind it on the
-service inside the module, or forward it through the module's `params` slot.
+A root's input is the config pool, validated by its schema before any other module's binding.
 
 **Not detected.** Load cannot list a schema's keys, because Standard Schema
 exposes only `validate`. So a declared input field the body never uses is not
@@ -229,7 +260,9 @@ everything downstream consumes:
   - a cycle through forwarding edges — expressible only once boundaries
     exist, so composition brings the check with it;
   - a module's input binding the module's schema refuses — validated in the
-    second pass, after every module body has run.
+    second pass, after every module body has run;
+  - a `params` or `secrets` map on a module's `provision()`: a module takes its
+    configuration only through `input`.
 
 The boundary is a wiring-time contract, checked at compile time and re-checked
 at Load. It is not enforced against a body that captures a sibling scope's ref

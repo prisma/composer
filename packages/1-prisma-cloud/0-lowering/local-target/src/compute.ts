@@ -11,7 +11,7 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { LocalTargetProvidersInput } from '@internal/core/config';
+import type { ConfigPools, LocalTargetProvidersInput } from '@internal/core/config';
 import { computeClient } from '@internal/dev-emulators';
 import { App, Deployment, EnvironmentVariable, Project } from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
@@ -137,22 +137,23 @@ function collectSecretPointers(value: unknown, out: Set<string>): void {
   for (const member of Object.values(value)) collectSecretPointers(member, out);
 }
 
-/** The variables this service's own rows point at: its input document's `$secret` pointers and its param pointer rows. */
-export function pointedVariableNames(
+/** The variables this service's own rows point at: its param pointer rows, and its input document's `$secret` pointers. */
+export function pointedVariables(
   rows: Readonly<Record<string, string>>,
   address: string,
-): ReadonlySet<string> {
+): { readonly params: ReadonlySet<string>; readonly secrets: ReadonlySet<string> } {
   const ownPrefix = ownEnvKeyPrefix(address);
-  const names = new Set<string>();
+  const params = new Set<string>();
+  const secrets = new Set<string>();
   for (const [key, value] of Object.entries(rows)) {
     if (!key.startsWith(ownPrefix)) continue;
     if (value.startsWith(PARAM_POINTER_PREFIX)) {
-      names.add(value.slice(PARAM_POINTER_PREFIX.length));
+      params.add(value.slice(PARAM_POINTER_PREFIX.length));
     } else if (key === `${ownPrefix}${INPUT_KEY_NAME}`) {
-      collectSecretPointers(JSON.parse(value), names);
+      collectSecretPointers(JSON.parse(value), secrets);
     }
   }
-  return names;
+  return { params, secrets };
 }
 
 function manifestMissingAddressError(): Error {
@@ -216,13 +217,18 @@ export async function materializeEnv(
   devDir: string,
   address: string,
   port: number,
+  pools: ConfigPools,
 ): Promise<Record<string, string>> {
   const rows = await envStore(devDir).read();
   const env: Record<string, string> = scopedEnvRows(rows, address);
   env[servicePortEnvKey(address)] = JSON.stringify(port);
-  for (const name of pointedVariableNames(rows, address)) {
-    const value = process.env[name];
-    if (value !== undefined && value.length > 0) env[name] = value;
+  const pointed = pointedVariables(rows, address);
+  const setIfText = (name: string, value: unknown): void => {
+    if (typeof value === 'string' && value.length > 0) env[name] = value;
+  };
+  for (const name of pointed.secrets) setIfText(name, pools.secrets[name]);
+  for (const name of pointed.params) {
+    if (!pointed.secrets.has(name)) setIfText(name, pools.config[name]);
   }
   if (process.env['PATH'] !== undefined) env['PATH'] = process.env['PATH'];
   if (process.env['HOME'] !== undefined) env['HOME'] = process.env['HOME'];
@@ -364,7 +370,7 @@ export function LocalDeploymentProvider(
           const { address, listens } = readComputeManifest(artifactDir);
 
           const { instance } = await ensureServiceInstance(appScopeOf(input), appId);
-          const env = await materializeEnv(input.devDir, address, instance.port);
+          const env = await materializeEnv(input.devDir, address, instance.port, input.pools);
           try {
             await computeClient().putDeployment(instance.id, {
               artifactDir,

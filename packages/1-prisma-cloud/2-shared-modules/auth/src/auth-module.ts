@@ -1,23 +1,23 @@
 /**
- * The `auth()` module (spec § Module factory): a dedicated service wrapping
- * Better Auth. The database and the email sender are BOUNDARY dependencies —
- * the root decides dedicated vs shared for the database and wires the email
- * module's `send` port; the instance secret rides the service's `input`
- * document, bound to `generatedParam()` here so the target generates a stable
- * value at deploy and it is invisible to consumers. `baseUrl` is the PUBLIC
- * origin of the consumer app (scheme+host, no trailing slash, no path); roots
- * bind it `serviceOrigin('<app>.<service>')` or `envParam('AUTH_BASE_URL')`.
- * `signUp` is a static factory option forwarded into the same input as a
- * literal (email's `deliveryUrl` pattern).
+ * The `auth()` module: Better Auth in one service. The database and the email
+ * sender are dependencies the parent wires. Its input is `baseUrl`, the public
+ * origin of the consumer app (scheme and host, no trailing slash, no path),
+ * bound with `serviceOrigin('<app>.<service>')`, `envParam(...)` or a literal.
+ * The instance secret is a `generatedParam()` the module binds itself; `signUp`
+ * is a factory option.
  */
-import type { ModuleNode, ParamNeed } from '@internal/core';
-import { module, paramNeed } from '@internal/core';
+import type { ModuleNode } from '@internal/core';
+import { module } from '@internal/core';
 import { emailSender } from '@internal/email';
+import { field } from '@internal/foundation/arktype';
 import { rawHttpContract } from '@internal/http';
 import { generatedParam } from '@internal/prisma-cloud';
+import { type } from 'arktype';
 import { authService } from './auth-service.ts';
 import { authAdminContract, authDb, authSessionContract, type SignUpMode } from './contract.ts';
 import { type AuthTemplates, authTemplates } from './templates.ts';
+
+const authModuleInput = type({ baseUrl: field(type('string')) });
 
 export interface AuthModuleOptions {
   readonly name?: string;
@@ -36,26 +36,25 @@ export function auth(opts?: AuthModuleOptions): ModuleNode<
     session: typeof authSessionContract;
     admin: typeof authAdminContract;
   },
-  Record<never, never>,
-  { baseUrl: ParamNeed }
+  typeof authModuleInput
 > {
   return module(
     opts?.name ?? 'auth',
     {
       deps: { db: authDb(), email: emailSender(authTemplates) },
-      params: { baseUrl: paramNeed() },
+      input: authModuleInput,
       expose: {
         api: rawHttpContract,
         session: authSessionContract,
         admin: authAdminContract,
       },
     },
-    ({ deps, params, provision }) => {
+    ({ deps, input, provision }) => {
       const service = provision(authService(), {
         id: 'service',
         deps: { db: deps.db, email: deps.email },
         input: {
-          baseUrl: params.baseUrl,
+          baseUrl: input.baseUrl,
           secret: generatedParam(),
           signUp: opts?.signUp ?? 'open',
         },

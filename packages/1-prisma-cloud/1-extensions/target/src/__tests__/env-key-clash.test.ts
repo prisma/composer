@@ -12,12 +12,7 @@ const build = {
 
 const service = (name: string) => compute({ name, deps: {}, build });
 
-type EmptyModule = ModuleNode<
-  Record<never, never>,
-  Record<never, never>,
-  Record<never, never>,
-  Record<never, never>
->;
+type EmptyModule = ModuleNode<Record<never, never>, Record<never, never>, undefined>;
 
 /** Modules with these ids, each inside the one before, the last holding a service `x`. */
 const xInside = (id: string, ...inner: string[]): EmptyModule =>

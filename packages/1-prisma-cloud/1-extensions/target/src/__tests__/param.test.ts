@@ -1,6 +1,22 @@
 import { describe, expect, test } from 'bun:test';
-import { isParamSource, paramSource } from '@internal/core';
-import { envParam, isEnvParamSource, paramBindingFor, paramName } from '../param.ts';
+import {
+  isParamSource,
+  isPlainPointer,
+  isSecretPointer,
+  Load,
+  module,
+  paramSource,
+  service,
+} from '@internal/core';
+import { type } from 'arktype';
+import {
+  envParam,
+  generatedParam,
+  isEnvParamSource,
+  paramBindingFor,
+  paramName,
+  serviceOrigin,
+} from '../param.ts';
 
 describe('envParam (Prisma Cloud param source)', () => {
   test('builds an opaque param source; paramName reads its env-var name back', () => {
@@ -50,5 +66,48 @@ describe('envParam (Prisma Cloud param source)', () => {
     expect(() => paramBindingFor([], 'web', 'appOrigin')).toThrow(
       /param slot "appOrigin" of "web" resolved to a source but has no bound entry/,
     );
+  });
+});
+
+describe('envParam() in a module input', () => {
+  test("envParam() in a module's input is the variable's value in the config pool", () => {
+    const web = service({
+      name: 'web',
+      extension: '@prisma/composer-prisma-cloud',
+      type: 'compute',
+      inputs: {},
+      params: {},
+      input: type({ appOrigin: 'string' }),
+      build: {
+        extension: '@prisma/composer/node',
+        type: 'node',
+        module: 'file:///test/service.ts',
+        entry: 'server.js',
+      },
+    });
+    const site = module(
+      'site',
+      { input: type({ appOrigin: 'string' }) },
+      ({ input, provision }) => {
+        provision(web, { input: { appOrigin: input.appOrigin } });
+      },
+    );
+    const root = module('shop', ({ provision }) => {
+      provision(site, { input: { appOrigin: envParam('APP_ORIGIN') } });
+    });
+
+    const graph = Load(root, { configPool: { APP_ORIGIN: 'https://shop.example' } });
+
+    expect(graph.inputBindings[0]?.binding).toEqual({ appOrigin: 'https://shop.example' });
+  });
+});
+
+describe('the kind of pointer each source is', () => {
+  test('serviceOrigin() and a plain generatedParam() are plain pointers, a redacted generatedParam() is a secret pointer, and envParam() is no pointer', () => {
+    expect(isPlainPointer(serviceOrigin('shop.web'))).toBe(true);
+    expect(isPlainPointer(generatedParam({ redacted: false }))).toBe(true);
+    expect(isSecretPointer(generatedParam())).toBe(true);
+    expect(isPlainPointer(envParam('X'))).toBe(false);
+    expect(isSecretPointer(envParam('X'))).toBe(false);
   });
 });

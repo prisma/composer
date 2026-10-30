@@ -155,9 +155,9 @@ export async function devAttach(input: LocalTargetAttachInput): Promise<LocalTar
     // ADR-0056: the dev server runs on the service's instance as a command
     // deployment, with the environment the artifact's deployment would get,
     // stashed address-free as run() would, laid over the shell's own.
-    serve: async ({ address, node, server }) => {
+    serve: async ({ address, node, server, pools }) => {
       const { instance } = await ensureServiceInstance(scope, address);
-      const materialized = await materializeEnv(input.devDir, address, instance.port);
+      const materialized = await materializeEnv(input.devDir, address, instance.port, pools);
       const stashed = stashRows(node, address, materialized);
       const env: Record<string, string> = {};
       for (const layer of [shellEnv(), materialized, stashed]) {

@@ -29,7 +29,7 @@ export interface BootstrappedService {
  * `input` binding (ADR-0042) — required exactly when the service declares an
  * input schema, exactly like `provision()`. The binding rides the same
  * deploy-side path a real deploy takes (`serializeInput`: resolve, validate
- * with sentinel boxes, one `$secret`-pointer document row), so `input()` in
+ * with pointers in place, one document row of markers), so `input()` in
  * the booted entry reads it identically to a deployed process.
  */
 export interface BootstrapConfig extends Config {

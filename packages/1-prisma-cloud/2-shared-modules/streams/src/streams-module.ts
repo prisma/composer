@@ -21,7 +21,7 @@ export function streams(opts?: {
 }): ModuleNode<
   { store: DependencyEnd<S3Config, S3Contract> },
   { streams: Contract<'streams', StreamDefs> },
-  Record<never, never>
+  undefined
 > {
   return module(
     opts?.name ?? 'streams',

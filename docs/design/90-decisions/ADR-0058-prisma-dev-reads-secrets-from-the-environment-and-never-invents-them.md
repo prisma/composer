@@ -1,5 +1,7 @@
 # ADR-0058: `prisma dev` reads secrets from the environment and never invents them
 
+Amended 2026-10-30 (module-input project, fourth slice): under `prisma dev`, a secret comes from the secrets pool and an env-sourced param from the config pool, in the CLI and in the local `Deployment` provider, in place of `process.env`. Both pools default to the process environment, so `import 'dotenv/config'` still works. `dotenv()` is now the documented way to load `.env` files. This partly revisits the rejected "Load `.env` in Composer itself": Composer ships the loader, but the user still names it in `prisma.config.ts`, so the user still chooses where values come from. Listing `.env.<environment>` files per environment also removes this decision's warning for those files: a value in `.env.dev` is never read by `prisma deploy` to `production`. A value in `.env` or `.env.local` still is. When an adapter returns different values at a rebuild than at start, `prisma dev` pauses rebuilds until it is restarted.
+
 ## Decision
 
 Under `prisma dev`, a secret's value comes only from the environment variables of the current run: the shell, or a `.env` file that `prisma.config.ts` loads into `process.env`. Composer never makes up a value and never reads one back from an earlier run.

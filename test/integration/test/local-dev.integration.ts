@@ -456,10 +456,15 @@ async function main(): Promise<void> {
     // (unrelated) proofs keep passing regardless of shell state.
     process.env['LOCALDEV_FIXTURE_API_KEY'] = 'test-api-key';
     process.env['LOCALDEV_FIXTURE_GREETING'] = 'hello';
+    // What the default adapters return: the generated stack file reads the same variables.
+    const pools = {
+      config: { LOCALDEV_FIXTURE_GREETING: 'hello' },
+      secrets: { LOCALDEV_FIXTURE_API_KEY: 'test-api-key' },
+    };
     const preflightPayload =
       dev.preflight === undefined
         ? undefined
-        : await dev.preflight({ graph, container: devContainer, environment: 'dev' });
+        : await dev.preflight({ graph, container: devContainer, environment: 'dev', pools });
     process.chdir(originalCwd);
 
     // 6. Emulators — ensures compute always, buckets because the graph has

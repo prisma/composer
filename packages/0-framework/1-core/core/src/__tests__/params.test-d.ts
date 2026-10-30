@@ -1,14 +1,14 @@
 /**
  * Type-level rules for provision-time param binding (env-sourced config
- * params): `paramSource()` is a `ParamSource`, `paramNeed()`
- * is a nameless `ParamNeed`, and `provision()` accepts a literal typed by the
- * param's own schema OR a `ParamSource` — never a value the schema doesn't
- * produce. Type-only (vitest `--typecheck`, never executed).
+ * params): `paramSource()` is a `ParamSource`, and `provision()` accepts a
+ * literal typed by the param's own schema OR a `ParamSource` — never a value
+ * the schema doesn't produce. Type-only (vitest `--typecheck`, never executed).
  */
 import { expectTypeOf, test } from 'vitest';
 import { number, string } from '../config.ts';
-import type { BuildAdapter, ParamNeed, ParamSource } from '../node.ts';
-import { module, paramNeed, paramSource, service } from '../node.ts';
+import type { BuildAdapter, ParamSource } from '../node.ts';
+import { module, paramSource, service } from '../node.ts';
+import type { Value } from '../value.ts';
 
 const build: BuildAdapter = {
   extension: '@prisma/composer/node',
@@ -17,9 +17,8 @@ const build: BuildAdapter = {
   entry: 'server.js',
 };
 
-test('paramSource() is a ParamSource; paramNeed() is a ParamNeed', () => {
-  expectTypeOf(paramSource('APP_ORIGIN')).toEqualTypeOf<ParamSource<string>>();
-  expectTypeOf(paramNeed()).toEqualTypeOf<ParamNeed>();
+test('paramSource() is a ParamSource and a value', () => {
+  expectTypeOf(paramSource('APP_ORIGIN')).toEqualTypeOf<ParamSource<string> & Value<unknown>>();
 });
 
 test('provisioning a service accepts a literal typed by the param schema, or a ParamSource — never an unrelated value', () => {
@@ -44,29 +43,5 @@ test('provisioning a service accepts a literal typed by the param schema, or a P
     provision(svc, { id: 'app', params: { origin: 123 } });
     // @ts-expect-error a number param rejects a string literal
     provision(svc, { id: 'app', params: { port: 'nope' } });
-  });
-});
-
-test('a module param-forwarding slot accepts only a ParamSource, never a literal — it carries no schema to validate one against', () => {
-  const inner = service({
-    name: 'inner',
-    extension: 'test/pack',
-    type: 'fake/app',
-    inputs: {},
-    params: { origin: string() },
-    build,
-  });
-  const wrapper = module(
-    'wrapper',
-    { params: { origin: paramNeed() } },
-    ({ params, provision }) => {
-      provision(inner, { id: 'inner', params: { origin: params.origin } });
-    },
-  );
-
-  module('root', ({ provision }) => {
-    provision(wrapper, { id: 'wrapper', params: { origin: paramSource('APP_ORIGIN') } });
-    // @ts-expect-error a module param-forwarding slot must be bound with a ParamSource, not a literal
-    provision(wrapper, { id: 'wrapper', params: { origin: 'https://example.com' } });
   });
 });

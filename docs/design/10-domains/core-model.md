@@ -65,11 +65,12 @@ is small and pure and still sits on `.`; the config *types* (`defineConfig`,
 
 | Entry | Exports | Imports (weight) |
 | --- | --- | --- |
-| `@prisma/composer` | node factories (`service`, `resource`, `dependency`, `module`), `Load`, `configOf`, `hydrate`, `BuildAdapter` type, model types (incl. `Config`) | nothing |
+| `@prisma/composer` | node factories (`service`, `resource`, `dependency`, `module`), `Load`, `configOf`, `hydrate`, `BuildAdapter` type, model types (incl. `Config`), and the pointer checks `isPlainPointer()` and `isSecretPointer()` with the `Pointer` and `RuntimeValue` types | nothing |
 | `@prisma/composer/config` | `defineConfig`, `PrismaAppConfig`, `ExtensionDescriptor`, `NodeDescriptor`, `PreflightInput`, `TeardownInput` — the types the `composer` section of `prisma.config.ts` is checked against (ADR-0017, ADR-0049) | nothing (types + one identity function) |
 | `@prisma/composer/deploy` | `lower()`, `lowering()`, the SPI types (`ServiceLowering`, `Lowering`, `ApplicationDescriptor`, `ProvisionerDescriptor`, `LowerContext`, `Outputs`, `LoweredResult`, `DeployedEntity`), `Bundle`/`AssembleInput` (the assembler's contract, defined once here) | `alchemy`, `effect` |
 | `@prisma/composer-prisma-cloud` | `compute()` (declares a service; carries `run`/`load`), `rawPostgres()` (`{ name }` identity or `{ client }` dependency, by argument shape) + `rawPostgresContract` | `@prisma/composer` only |
-| `@prisma/composer/arktype` | `secretString()` — the arktype spelling of a `SecretString` input leaf (ADR-0042). Opt-in: no other entry imports it, so a Zod app never loads arktype | `arktype` |
+| `@prisma/composer/arktype` | `secretString()` and `field()` — the arktype spellings of a `SecretString` input leaf and of a wrapped leaf field (ADR-0042). Opt-in: no other entry imports it, so a Zod app never loads arktype | `arktype` |
+| `@prisma/composer/zod` | `secretString()` and `field()` — the Zod spellings of the same two (ADR-0042). Opt-in: no other entry imports it, so an ArkType app never loads Zod | `zod` |
 | `@prisma/composer/service-rpc` | the RPC Contract kind — `contract()`, `rpc()`, `serve()`, the typed client binding (see [`connection-contracts.md`](connection-contracts.md)) | `@prisma/composer` + a Standard Schema validator |
 | `@prisma/composer/http` | raw HTTP, the untyped service-to-service kind — `rawHttp()`, `rawHttpContract`, the `RawHttpClient` binding (see [ADR-0054](../90-decisions/ADR-0054-raw-http-is-the-untyped-tier-of-service-connections.md)) | `@prisma/composer` only |
 | `@prisma/composer-prisma-cloud/cron` | cron as a driver (see [ADR-0020](../90-decisions/ADR-0020-scheduled-work-is-a-driver-not-a-resource.md)) — `defineSchedule`, `serveSchedule`, `cronScheduler`, `cron()`, `triggerContract` | `@prisma/composer` + `app-node` + `app-rpc` |
@@ -225,8 +226,8 @@ interface ExtensionAuthoredNode extends NodeBase {
 // (ADR-0018) plus a few framework facets. The pack validates raw values
 // against `schema` at boot, and TypeScript infers the hydrate/load input types
 // from it — there is no framework enum of permitted types. A param is never
-// secret — a secret is its own forwardable slot, declared with secret() and
-// read with secrets() (ADR-0029).
+// secret: a secret is a secretString() field of an input schema, bound with
+// envSecret() (ADR-0029, ADR-0042).
 interface ConfigParam<S extends StandardSchemaV1 = StandardSchemaV1> {
   readonly schema: S
   readonly optional?: boolean
@@ -429,6 +430,7 @@ interface Graph {
 interface LoadOptions {
   readonly id?: NodeId                              // the root's address; defaults to its name
   readonly environment?: { readonly name: string }  // required by any value over environment.name
+  readonly configPool?: Readonly<Record<string, unknown>>  // what a source's pool key reads, and the root's input; the commands pass what the config adapters return
 }
 function Load(root: ServiceNode | ModuleNode, opts?: LoadOptions): Graph   // throws LoadError
 class LoadError extends Error {}  // code COMPOSE.GRAPH_INVALID; optional `cause`
@@ -472,10 +474,14 @@ from `opts.environment`; a computed value runs its `fn` with its
 dependencies' real values. A resource whose `props` held a value appears in
 the graph as a copy that keeps its prototype. The errors name the binding the
 value sits in: no `environment` was given, a cycle, `fn` threw (wrapped once,
-with the thrown error as `cause`), or `fn` returned a Promise, `undefined`, a
-value, a secret or param source, or anything else that is not plain data. A
-value as a `provision()` id, in a `deps` entry, or as a module's `secrets` or
-`params` binding is a LoadError too.
+with the thrown error as `cause`), `fn` returned a Promise, `undefined`, a
+value, a source, or anything else that is not plain data, or a dependency's
+real value is a pointer or holds one. A value as a `provision()` id or in a `deps`
+entry, or a value that is not a source as a module's `secrets` or `params`
+binding, is a LoadError too. A source is a value too. Load leaves one in place
+in a service's input binding and params, and computes its real value only
+where a module's input, a resolve() function or a resource's props needs it.
+The graph lists every secret source it names in `secretSources`.
 
 Load executes nothing of the user's beyond module bodies and `resolve()` functions — the graph is data
 in memory to inspect or hand to `lower` (or the node's `run`). A **topology view** — nodes as `{ id, kind, type }`
@@ -677,6 +683,7 @@ interface LowerOptions {
   readonly name: string                                  // stack name (+ Load's root id override)
   readonly environment?: string                          // the environment being deployed, as --environment gave it;
                                                          // Load's environment.name. The generated stack files always pass it.
+  readonly configPool?: Readonly<Record<string, unknown>>       // passed to Load and the serializer; the generated stack files pass readConfigPool()
   // `prisma deploy` runs each service's build-adapter assembler and writes
   // the resulting bundle dirs here, into the generated stack file it hands to
   // `lower()` — one bundle per provision id (the deploy root is always a
@@ -775,7 +782,7 @@ material Composer's rows carry (ADR-0042 pointers) and platform metadata. The
 long-term carrier is the deployment resource itself (inputs it must be
 recreated for), tracked as an upstream follow-up.
 Secrets are platform-sourced and rotate through the platform, not this edge (see
-the [config/secret glossary](../03-domain-model/glossary.md#configuration--config-and-secrets)).
+the [input glossary entry](../03-domain-model/glossary.md#input)).
 
 **Deployment identity — address, bootstrap, and why.** A node's identity is its **address**: the path of provision ids starting at the root, assigned by Load from graph position. The root's address is the deployed app name, so every address starts with it (`shop`, `shop.catalog`, `shop.auth.api`). A provision id is the node's name unless `provision()` sets an `id`, and the path qualifies it, so registry modules with common internal names (`db`, `service`) cannot collide. Identity cannot travel through the environment: every App in a Project boots a byte-identical env (ConfigVariables are project+branch-scoped and snapshotted at version create — see the [PDP data model](../05-prisma-cloud/pdp-data-model.md)), so any "who am I" variable is one shared key, last write wins. The only per-service channel is the artifact itself. Hence the bootstrap: the artifact's entrypoint takes identity as a parameter, and deploy is the caller. The Compute artifact the pack assembles:
 
@@ -833,7 +840,7 @@ At boot, the deployed artifact runs the bootstrap, which calls the node's
 // `schema` is a data-only projection of the param's Standard Schema (its vendor
 // tag, never the schema's own `validate`) — a structured param reports its real
 // shape instead of a `type` enum. Physical locations are the pack's business.
-// Secrets are not here — they live on their own slot (ADR-0029).
+// Secrets are not here: they are secretString() fields of a service's input (ADR-0029).
 interface ConfigDeclaration {
   readonly owner: "service" | { readonly input: string }
   readonly name: string              // "url" · "port"

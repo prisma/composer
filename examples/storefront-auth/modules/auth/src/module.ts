@@ -13,26 +13,26 @@
  *
  * The auth service keeps an explicit "service" id: its own name is "auth", the
  * same as this enclosing module, so a defaulted id would read as "auth.auth".
+ *
+ * The signing key is a secretString() field of the module's input. The root
+ * binds it to a platform variable; this module never learns the name.
  */
-import { module, secret } from '@prisma/composer';
+import { module } from '@prisma/composer';
+import { secretString } from '@prisma/composer/arktype';
 import { rawPostgres } from '@prisma/composer-prisma-cloud';
+import { type } from 'arktype';
 import { authContract } from './contract.ts';
 import authService from './service.ts';
 
 export default module(
   'auth',
-  // Declare the secret NEED as a forwardable module input; the root binds it to
-  // a platform name. This module never learns the name (ADR-0029) — that is the
-  // point of the forwarding model.
-  { secrets: { signingKey: secret() }, expose: { rpc: authContract } },
-  ({ secrets, provision }) => {
+  { input: type({ signingKey: secretString() }), expose: { rpc: authContract } },
+  ({ input, provision }) => {
     const db = provision(rawPostgres({ name: 'database' }));
     const service = provision(authService, {
       id: 'service',
       deps: { db },
-      // The service takes ONE input binding (ADR-0042); the forwarded
-      // boundary secret is its one leaf.
-      input: { signingKey: secrets.signingKey },
+      input: { signingKey: input.signingKey },
     });
     return { rpc: service.rpc };
   },

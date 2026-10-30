@@ -7,6 +7,8 @@ export default defineConfig({
     result: 'src/exports/result.ts',
     assertions: 'src/exports/assertions.ts',
     secret: 'src/exports/secret.ts',
+    pointer: 'src/exports/pointer.ts',
     arktype: 'src/exports/arktype.ts',
+    zod: 'src/exports/zod.ts',
   },
 });

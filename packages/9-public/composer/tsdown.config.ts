@@ -14,6 +14,7 @@ export default defineConfig({
   entry: {
     index: 'src/exports/index.ts',
     config: 'src/exports/config.ts',
+    'internal-pools': 'src/exports/internal-pools.ts',
     control: 'src/exports/control.ts',
     deploy: 'src/exports/deploy.ts',
     'local-target': 'src/exports/local-target.ts',
@@ -22,6 +23,7 @@ export default defineConfig({
     casts: 'src/exports/casts.ts',
     assertions: 'src/exports/assertions.ts',
     arktype: 'src/exports/arktype.ts',
+    zod: 'src/exports/zod.ts',
     'service-rpc': 'src/exports/service-rpc.ts',
     http: 'src/exports/http.ts',
     node: 'src/exports/node.ts',

@@ -4,6 +4,8 @@ Amended by [ADR-0063](ADR-0063-a-node-depends-on-an-interface-or-exposes-one.md)
 
 Amended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares its configuration as one `input` schema, as a compute service does; its per-key `params` and `secrets` slots are removed. A root may declare `input`, bound by the deploy. Load validates a module's input binding with its schema; a declared input field the body never uses is not an error, unlike an unused dependency, because Load cannot list a schema's keys.
 
+Amended 2026-10-30 (module-input project, fifth slice): the module `params` and `secrets` slots are removed from the code, with `paramNeed()` and the module form of `secret()`. `module()` refuses a `params` or `secrets` key, and `provision()` of a module refuses a `params` or `secrets` map, each with an error that names `input`. A module's boundary is `deps` and `expose`; its configuration is `input`.
+
 ## Decision
 
 A module declares the same boundary a service does: a `Deps` map of typed

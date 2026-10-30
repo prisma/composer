@@ -5,17 +5,8 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { string } from '../config.ts';
 import { type Graph, Load, LoadError } from '../graph.ts';
-import {
-  dependency,
-  type ModuleNode,
-  module,
-  paramSource,
-  type SecretSource,
-  secret,
-  secretSource,
-  service,
-} from '../node.ts';
-import { isValue, resolve } from '../value.ts';
+import { dependency, type ModuleNode, module, secretSource, service } from '../node.ts';
+import { isValue, resolve, type Value } from '../value.ts';
 import { anyInputSchema, conn, providerContract } from './helpers.ts';
 
 const build = {
@@ -129,8 +120,8 @@ describe("the body's input", () => {
     expect(loadError(() => Load(shopWith(email, { domain: 'shop.com' }))).message).toBe(
       'input.domain of module "shop.email" is a value, not its real value, and it was turned ' +
         'into text (a template literal or String()). A module body can only pass an input field ' +
-        'on: into a provision() binding or as a resolve() dependency. To compute with it, list ' +
-        'it: resolve([input.domain], ([v]) => …).',
+        'on: into a provision() binding or as a resolve() dependency. To compute with it, ' +
+        'it must be a plain field, not a wrapped or secret one; list it: resolve([input.domain], ([v]) => …).',
     );
   });
 
@@ -363,24 +354,28 @@ describe('forwarding and the second pass', () => {
     expect(bindingOf(graph)).toEqual({ url: 'staging.shop.com' });
   });
 
-  test('resolve() over a secret field receives the secret source', () => {
-    let received: unknown;
+  test('resolve() over a secret field fails at Load, saying a secret has no deploy-time value', () => {
+    const ran: boolean[] = [];
     const email = module(
       'email',
       { input: type({ key: secretString() }) },
       ({ input, provision }) => {
-        const marker = resolve([input.key], ([key]) => {
-          received = key;
+        const marker = resolve([input.key as Value<unknown>], () => {
+          ran.push(true);
           return 'x';
         });
         provision(echoService(), { input: { marker } });
       },
     );
-    const source = secretSource({ name: 'EMAIL_KEY' });
+    const key = secretSource({ name: 'EMAIL_KEY' }, { label: "envSecret('EMAIL_KEY')" });
 
-    Load(shopWith(email, { key: source }));
-
-    expect(received).toBe(source);
+    expect(loadError(() => Load(shopWith(email, { key }))).message).toBe(
+      'The resolve() function for input key "marker" of service "shop.email.echo" lists ' +
+        `input.key of module "shop.email", whose real value is envSecret('EMAIL_KEY'), a value ` +
+        'known only at boot. A resolve() dependency must be a deploy-time value. A secret has ' +
+        'no deploy-time value: pass input.key on into a binding, and read it in the service.',
+    );
+    expect(ran).toEqual([]);
   });
 
   test('a resolve() function that returns an input field fails as returning a value', () => {
@@ -428,33 +423,6 @@ describe('forwarding and the second pass', () => {
     expect(loadError(() => Load(shopWith(email, {}))).message).toBe(
       'The input binding of module "shop.email" does not match the module\'s input schema: nope',
     );
-  });
-
-  test("a forwarded secrets slot inside a module's input binding counts as used", () => {
-    const email = module(
-      'email',
-      { input: type({ from: 'string', key: secretString() }) },
-      ({ input, provision }) => {
-        provision(echoService(), { input: { from: input.from, key: input.key } });
-      },
-    );
-    const relay = module(
-      'relay',
-      { secrets: { key: secret() }, input: type({ from: 'string' }) },
-      ({ input, secrets, provision }) => {
-        provision(email, { input: { from: input.from, key: secrets.key } });
-      },
-    );
-    const source = secretSource({ name: 'EMAIL_KEY' });
-
-    const graph = Load(
-      module('shop', ({ provision }) => {
-        provision(relay, { input: { from: 'shop@example.com' }, secrets: { key: source } });
-      }),
-    );
-
-    const key = bindingOf(graph)['key'] as SecretSource;
-    expect(key.payload).toBe(source.payload);
   });
 
   test('the whole input forwarded into a child module reaches its service', () => {
@@ -526,18 +494,6 @@ describe('errors', () => {
     );
   });
 
-  test("a param source in a module's input binding fails naming the key", () => {
-    const email = module('email', { input: anyInputSchema }, () => {});
-
-    expect(
-      loadError(() => Load(shopWith(email, { from: paramSource({ name: 'X' }) }))).message,
-    ).toBe(
-      'input key "from" of module "shop.email" is bound to a param source, such as envParam(). ' +
-        "A module's input does not take a param source yet; bind it on the service's input " +
-        "inside the module, or forward it through the module's params slot.",
-    );
-  });
-
   test("a SecretString in a module's input binding fails naming the key", () => {
     const email = module('email', { input: anyInputSchema }, () => {});
 
@@ -582,15 +538,6 @@ describe('errors', () => {
     );
   });
 
-  test('a root that declares input fails', () => {
-    const shop = module('shop', { input: anyInputSchema }, () => {});
-
-    expect(loadError(() => Load(shop)).message).toBe(
-      'Module "shop" declares input but is being deployed as the root. Composer cannot fill a ' +
-        'root\'s input yet; provision "shop" from another module and bind its input there.',
-    );
-  });
-
   test('module() refuses an input that is not a Standard Schema', () => {
     expect(() => module('email', { input: {} as never }, () => {})).toThrow(
       'module() `input` must be a Standard Schema (an object with a "~standard".validate ' +
@@ -617,8 +564,8 @@ describe('errors', () => {
 
     expect(loadError(() => Load(shopWith(email, { from: 'a' }))).message).toBe(
       'input.from.trim of module "shop.email" does not exist: input.from is a string, not a ' +
-        'plain object, so it has no fields. To compute with it, list it: ' +
-        'resolve([input.from], ([v]) => …).',
+        'plain object, so it has no fields. To compute with it, it must be a plain field, not ' +
+        'a wrapped or secret one; list it: resolve([input.from], ([v]) => …).',
     );
   });
 
@@ -631,8 +578,8 @@ describe('errors', () => {
 
     expect(loadError(() => Load(shopWith(email, { tags: ['a'] }))).message).toBe(
       'input.tags.0 of module "shop.email" does not exist: input.tags is an array, not a ' +
-        'plain object, so it has no fields. To compute with it, list it: ' +
-        'resolve([input.tags], ([v]) => …).',
+        'plain object, so it has no fields. To compute with it, it must be a plain field, not ' +
+        'a wrapped or secret one; list it: resolve([input.tags], ([v]) => …).',
     );
   });
 
@@ -649,9 +596,8 @@ describe('errors', () => {
     expect(
       loadError(() => Load(shopWith(email, { key: secretSource({ name: 'EMAIL_KEY' }) }))).message,
     ).toBe(
-      'input.key.payload of module "shop.email" does not exist: input.key is a secret, not a ' +
-        'plain object, so it has no fields. To compute with it, list it: ' +
-        'resolve([input.key], ([v]) => …).',
+      'input.key.payload of module "shop.email" does not exist: input.key stands for a value ' +
+        'only the platform has at boot, so it has no fields and can only be passed on unchanged.',
     );
   });
 
@@ -694,26 +640,6 @@ describe('errors', () => {
     expect(loadError(() => Load(shopWith(email, { from: 'a' }))).message).toBe(
       'The deps for "shop.email.svc.target" are bound to a value. A value can configure a node, ' +
         'never decide its edges: the graph is the same whatever inputs Composer is given (ADR-0062).',
-    );
-  });
-
-  test("an input field bound to a module's secrets slot fails with the existing message", () => {
-    const auth = module('auth', { secrets: { key: secret() } }, ({ secrets, provision }) => {
-      provision(echoService(), { input: { key: secrets.key } });
-    });
-    const email = module(
-      'email',
-      { input: type({ key: secretString() }) },
-      ({ input, provision }) => {
-        provision(auth, { secrets: { key: input.key as never } });
-      },
-    );
-
-    expect(
-      loadError(() => Load(shopWith(email, { key: secretSource({ name: 'K' }) }))).message,
-    ).toBe(
-      'The secrets for "shop.email.auth" bind "key" to a value. A value is not a secret source; ' +
-        "bind envSecret('NAME') or a forwarded ctx.secrets ref.",
     );
   });
 });

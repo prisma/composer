@@ -1,6 +1,8 @@
 # Local dev (`prisma dev`)
 
 > Amended by [ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): local dev runs as an environment the user names, `dev` by default; "Stages do not apply" below no longer holds.
+>
+> Amended by the module-input project (2026-10-30): secrets and env-sourced params come from the secrets and config pools, which the `composer` section's adapters fill and which default to the process environment.
 
 The local dev loop: one command brings up the whole topology from the root
 module, credential-free, with deploy parity everywhere above the Alchemy
@@ -137,7 +139,7 @@ does not run that command: its Postgres emulator daemon calls `@prisma/dev`'s
 
 Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
 
-1. **Import + Load** — identical, same errors.
+1. **Import + Load** — identical, same errors; the CLI reads both pools first.
 2. **Config** — identical, except: every extension that owns resources must
    carry a `localTarget` descriptor; a missing one fails naming the extension
    ("extension `<id>` has no dev support — it declares no `localTarget`
@@ -165,7 +167,7 @@ Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
    `localTarget.providers()` layer and `devState()` (Alchemy's built-in file store, exported by `@prisma/composer/local-target`),
    with the environment name as Alchemy's stage. Providers provision emulator instances (a running
    service, a database, a bucket) by talking to the emulators; converge
-   terminates as always, and the Compute emulator keeps serving.
+   terminates as always, and the Compute emulator keeps serving. The dev stack file reads both pools again and passes them to the local providers.
 6. **Attach** — new, dev-only: through `localTarget.attach`, render the front
    door (every service's endpoint) and watch for rebuilds, loop. Ctrl-C,
    SIGTERM or a failure stops the app's service processes and database
@@ -543,14 +545,14 @@ The same table the port's hand-rolled script implemented, now standard:
 | --- | --- |
 | dependency connection values (URLs) | the local provider's resolved value, through the normal lowering |
 | service params | bound literals / defaults, identical to deploy |
-| `envParam` sources (ADR-0032) | the dev shell's environment, same names; missing → a hard error listing the names (params feed boot-time schema validation — junk there is a confusing crash, not a legible degraded mode) |
-| secrets (ADR-0029, ADR-0058) | the run's environment variables: the shell, or a `.env` that `prisma.config.ts` loads. Unset or empty counts as missing. A missing secret the service's schema requires is a hard error naming the variable, the service and both ways to set it; a missing optional secret is left out of the service's input. No value is reused from an earlier run. |
+| `envParam` sources (ADR-0032) | the config pool, same names; missing → a hard error listing the names (params feed boot-time schema validation — junk there is a confusing crash, not a legible degraded mode) |
+| secrets (ADR-0029, ADR-0058) | the secrets pool: by default the shell, or `dotenv()` in the `secrets` list. Unset or empty counts as missing. A missing secret the service's schema requires is a hard error naming the variable, the service and both ways to set it; a missing optional secret is left out of the service's input. No value is reused from an earlier run. |
 | minted needs (ADR-0030/0031: service keys, streams keys) | minted locally by the unchanged provisioners |
 | origin (ADR-0039) | `http://localhost:<port>` via the unchanged origin channel |
 
-Whether a missing secret is required is decided by validation, not by reading the schema (ADR-0042): the dev preflight validates each service's input with every missing secret left out, and then with each one left out alone, and names as required only the secrets whose absence alone fails. The preflight sends the alchemy process, on the preflight transport, the names of the absent secrets and an HMAC-SHA256 fingerprint of the value of each variable that a service's input or params point at, keyed by the environment's own `.prisma-composer/dev/<environment>/fingerprint.key`. The serializer leaves out the absent secrets, and the fingerprint fills each deployment's `<name>:updatedAt` trigger member, so a value changed between two runs redeploys exactly the services that read it. The local `Deployment` provider reads current values from `process.env` and gives each service only the variables its own input and params point at.
+Whether a missing secret is required is decided by validation, not by reading the schema (ADR-0042): the dev preflight validates each service's input with every missing secret left out, and then with each one left out alone, and names as required only the secrets whose absence alone fails. The preflight sends the alchemy process, on the preflight transport, the names of the absent secrets and an HMAC-SHA256 fingerprint of the value of each variable that a service's input or params point at, keyed by the environment's own `.prisma-composer/dev/<environment>/fingerprint.key`. The serializer leaves out the absent secrets, and the fingerprint fills each deployment's `<name>:updatedAt` trigger member, so a value changed between two runs redeploys exactly the services that read it. The local `Deployment` provider reads current values from the pools the dev stack file read and gives each service only the variables its own input and params point at.
 
-To load a `.env`, install the `dotenv` package in the app and put `import 'dotenv/config'` as the first line of `prisma.config.ts`. `process.loadEnvFile('.env')` works only when the CLI runs under Node: when the CLI was started through Bun, the converge runs under Bun, which does not implement it. A `.env` loaded this way is read by every `prisma` command, including `prisma deploy`, whose preflight uploads any secret the target environment does not have yet: keep local-only values out of it before deploying, or deploy from a shell where it is not loaded.
+To load `.env` files, list `dotenv()` in `config` and `secrets`, with `environmentVariables()` after it to keep the shell. It reads `.env`, `.env.local`, `.env.<environment>` and `.env.<environment>.local` beside `prisma.config.ts`. Values in `.env.dev` are read only by the environment `dev`; values in `.env` and `.env.local` are read by every environment, `prisma deploy` to `production` included, whose preflight uploads any secret the environment does not have yet. `import 'dotenv/config'` at the top of `prisma.config.ts` still works with the default lists.
 
 ## Scheduled work
 
@@ -574,8 +576,9 @@ Deploy's rule holds: every failure names its fix.
 | the bucket emulator fails to start or report healthy | the instance name, its log file path, and the port it tried |
 | a `@prisma/dev` server fails to start | the underlying error, sanitized — connection-URL credentials are masked before embedding |
 | port conflict on a persisted allocation | which service, which port, and how to free or re-allocate (`--fresh`) |
-| required secret unset or empty | hard error listing every missing variable, the service that needs it, the schema's message, and both ways to set it (shell, or a `.env` loaded by `prisma.config.ts`); an optional one is not an error |
+| required secret unset or empty | hard error listing every missing variable, the service that needs it, the schema's message, and where an adapter in `secrets` reads it; an optional one is not an error |
 | env-sourced param unbound | hard error listing the missing names, deploy-preflight style |
+| an adapter returns different values at a rebuild than at start | that the values changed and rebuilds are paused until dev restarts |
 | a service exits before it listens, or does not listen within the readiness timeout | the address, the port, the exit code if it exited, and the log path; `dev` stops the app's services before it returns the failure |
 | an emulator does not accept connections (retried briefly; an error response from the emulator is never retried) | `DEV.EMULATOR_UNREACHABLE`, with the emulator's URL, from `dev` and `log` alike |
 | `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` is not a positive whole number | `DEV.SERVICE_READY_TIMEOUT_INVALID`, with the value |

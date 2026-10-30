@@ -55,6 +55,7 @@ function renderOptions(input: DevStackFileInput): string {
   const lines: string[] = [];
   lines.push(`  name: ${quote(input.name)},`);
   lines.push(`  environment: ${quote(input.environment)},`);
+  lines.push('  configPool: pools.config,');
 
   lines.push('  bundles: {');
   for (const [id, bundle] of Object.entries(input.assembled.bundles)) {
@@ -69,7 +70,7 @@ function renderOptions(input: DevStackFileInput): string {
     lines.push(`  unassembled: [${unassembled.map(quote).join(', ')}],`);
   }
 
-  lines.push('  providers: localTargetProviders(resolved, containers, devDir),');
+  lines.push('  providers: localTargetProviders(resolved, containers, devDir, pools),');
   lines.push('  state: devState(),');
 
   return lines.join('\n');
@@ -86,6 +87,7 @@ export function renderDevStackFile(input: DevStackFileInput): string {
   const imports = [
     "import * as path from 'node:path';",
     "import { deserializeContainers } from '@prisma/composer/config';",
+    "import { readConfigPool, readSecretsPool } from '@prisma/composer/internal/pools';",
     "import { lower } from '@prisma/composer/deploy';",
     "import { devEnvironmentDir, devState, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
     `import prismaConfig from ${quote(configImport)};`,
@@ -99,6 +101,7 @@ export function renderDevStackFile(input: DevStackFileInput): string {
 //   <node> <bin of the alchemy @prisma/composer depends on> deploy ${devStackRelativePath(input.environment)} --yes --stage ${input.environment}
 //
 // bisects a CLI bug from an Alchemy bug (deploy-cli.md § Implementation decisions).
+// It reads the config and secrets pools again here, from the same adapters, so an adapter must return the same values for the same environment every time.
 ${imports}
 
 const config = prismaConfig.composer;
@@ -109,6 +112,8 @@ if (config === undefined) {
 const containers = deserializeContainers(config.extensions, process.env);
 const resolved = await resolveLocalTargets(config);
 const devDir = path.join(process.cwd(), devEnvironmentDir(${quote(input.environment)}));
+const poolInput = { environment: ${quote(input.environment)}, configFile: ${quote(input.configFile)} };
+const pools = { config: await readConfigPool(config, poolInput), secrets: await readSecretsPool(config, poolInput) };
 
 export default lower(app, config, {
 ${renderOptions(input)}
