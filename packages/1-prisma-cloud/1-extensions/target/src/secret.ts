@@ -27,12 +27,12 @@ const PLATFORM_OWNED_SECRET_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Binds a secret slot to a named Prisma Cloud platform env var (ADR-0029). The
- * value is provisioned out-of-band; only the name is carried. The name may not
- * use the framework's reserved `COMPOSER_` prefix or the platform-owned
- * `DATABASE_URL(_POOLED)` keys. It returns a value known only at boot: a
- * resolve() function that lists it receives a pointer, which throws when
- * turned into text.
+ * A value pointing at a named Prisma Cloud platform secret variable (ADR-0029),
+ * dereferenced at boot. Only the name is carried; the value is provisioned
+ * out-of-band. The name may not use the framework's reserved `COMPOSER_` prefix
+ * or the platform-owned `DATABASE_URL(_POOLED)` keys. It returns a value known
+ * only at boot: a resolve() function that lists it receives a pointer, which
+ * throws when turned into text.
  */
 export function envSecret(name: string): SecretSource<EnvSecretPayload> & Value<SecretString> {
   if (typeof name !== 'string' || name.length === 0) {
