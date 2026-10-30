@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { isSecretSource, LoadError, secretSource } from '@internal/core';
+import {
+  isPlainPointer,
+  isSecretPointer,
+  isSecretSource,
+  LoadError,
+  secretSource,
+} from '@internal/core';
 import { envSecret, secretName } from '../secret.ts';
 
 describe('envSecret (Prisma Cloud secret source)', () => {
@@ -44,5 +50,10 @@ describe('envSecret() as a value', () => {
         'function may return the pointer, or put it in its result, unchanged; to compute with ' +
         'the value, do it in the service that reads it.',
     );
+  });
+
+  test('envSecret() is a secret pointer', () => {
+    expect(isSecretPointer(envSecret('X'))).toBe(true);
+    expect(isPlainPointer(envSecret('X'))).toBe(false);
   });
 });

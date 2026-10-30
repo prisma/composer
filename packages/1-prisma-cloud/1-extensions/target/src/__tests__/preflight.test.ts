@@ -9,7 +9,15 @@ import { PrismaCloudContainer } from '../container.ts';
 import { compute } from '../exports/index.ts';
 import { envParam, generatedParam } from '../param.ts';
 import { type PrismaCloudPreflightInput, runPreflight } from '../preflight.ts';
+import { inputSecretNames } from '../preflight-names.ts';
 import { envSecret } from '../secret.ts';
+
+/** An ArkType copy of `value`: a transform elsewhere in the schema makes ArkType copy its whole input. */
+const copyOf = <T>(value: T): T => {
+  const out = type({ value: 'object', n: 'string.integer.parse' })({ value, n: '1' });
+  if (out instanceof type.errors) throw new Error(out.summary);
+  return out.value as T;
+};
 
 /** A resolved container matching `input.container` after the boundary move — preflight narrows it with `prismaCloudContainerOf`. */
 const fakeContainer = (projectId: string, branchId: string | undefined) =>
@@ -1179,5 +1187,13 @@ describe('runPreflight — values come from the pools, never the shell', () => {
       'The config pool holds a number at "APP_ORIGIN", not text, so preflight cannot set the platform variable envParam(\'APP_ORIGIN\') of service "app.web" reads. Make the adapter return a string.',
     );
     expect(state.posts).toEqual([]);
+  });
+});
+
+describe('preflight names', () => {
+  test('an envSecret() and its ArkType copy are one name to check', () => {
+    const key = envSecret('STRIPE_SECRET_KEY');
+
+    expect(inputSecretNames({ a: key, b: copyOf(key) }, 'app.web')).toEqual(['STRIPE_SECRET_KEY']);
   });
 });
