@@ -174,7 +174,7 @@ describe('real values', () => {
     expect(loadError(() => Load(root)).message).toBe(
       `input key "greeting" of module "shop.email" depends on envParam('G'), but Load was given ` +
         'no config pool to read "G" from. Pass { configPool } to Load; the deploy and dev ' +
-        'commands pass the process environment.',
+        'commands pass the values the `config` adapters return.',
     );
   });
 

@@ -87,6 +87,13 @@ const fakeClient = (state: FakeState): ManagementApiClient =>
     },
     POST: async (_path: string, init: { body: Record<string, unknown> }) => {
       state.posts.push(init.body);
+      if (state.postStatus === 500) {
+        return {
+          data: undefined,
+          error: { code: 'internal', message: 'boom' },
+          response: new Response(null, { status: 500 }),
+        };
+      }
       if (state.postStatus === 409) {
         return {
           data: undefined,
@@ -443,6 +450,27 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toHaveLength(1);
     // The other deploy's row won, so this run filled nothing.
     expect(reports).toEqual([{ checked: 1, filled: 0, missing: 0 }]);
+  });
+
+  test('a failed fill names the key and its pool, never the value', async () => {
+    state.postStatus = 500;
+
+    const run = withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_SENTINEL' } }, () =>
+      preflightWith(
+        {
+          graph: secretGraph(),
+          container: fakeContainer('proj', undefined),
+          environment: 'production',
+          report: () => {},
+        },
+        { client: fakeClient(state) },
+      ),
+    );
+
+    await expect(run).rejects.toThrow(
+      'deploy preflight: failed to set "STRIPE_SECRET_KEY" on the platform from its pool: ' +
+        '{"code":"internal","message":"boom"}.',
+    );
   });
 
   test('follows pagination — a present name on a later page is not reported missing', async () => {

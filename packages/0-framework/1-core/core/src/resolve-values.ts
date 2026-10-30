@@ -491,7 +491,7 @@ export function resolveValues(input: {
           result = origin.source;
         } else if (configPool === undefined) {
           throw new LoadError(
-            `${describeSite(site)} depends on ${origin.label}, but Load was given no config pool to read "${origin.poolKey}" from. Pass { configPool } to Load; the deploy and dev commands pass the process environment.`,
+            `${describeSite(site)} depends on ${origin.label}, but Load was given no config pool to read "${origin.poolKey}" from. Pass { configPool } to Load; the deploy and dev commands pass the values the \`config\` adapters return.`,
           );
         } else {
           const raw = configPool[origin.poolKey];
