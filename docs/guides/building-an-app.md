@@ -427,7 +427,7 @@ envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
   service's input has no `replyTo` key.
 - The module's schema checks the binding when the deploy loads the graph, so
   a mistake fails before anything reaches the platform.
-- A root module cannot declare `input` yet.
+- A root module's input is filled from the config adapters ([Values from outside the code](#values-from-outside-the-code)).
 - A module's `input` takes every source a service's does. Its schema checks
   `envParam()`'s value. It checks a stand-in for the three whose value exists
   only at boot: an empty `SecretString` for `envSecret()` and a redacted
@@ -655,8 +655,7 @@ code instead.
 
 **`envParam('NAME')`** is for plain values the code *can't* know. An app
 origin is the canonical case: it's different on production and on every
-preview environment. The deploy reads the variable from the environment of
-the shell that runs `prisma deploy` or `prisma dev`, and writes its value into
+preview environment. The deploy reads the variable from the config pool: by default the shell that runs `prisma deploy` or `prisma dev`, or the `config` adapters you list ([Values from outside the code](#values-from-outside-the-code)), and writes its value into
 the service's input. So set it in that shell for every deploy; in CI, export
 it per environment. An unset or empty variable leaves the key out, and the
 schema decides ([below](#absence-is-the-schemas-call)). The value is a string,
@@ -668,7 +667,7 @@ version, including a smoke script that proves the per-environment split.
 enters framework config**. Each environment keeps its own copy of the
 platform variable, and that copy is the store: at deploy, preflight checks
 that the environment has the variable, and copies a missing one up from the
-deploying shell, so CI (or you) exports `STRIPE_SECRET_KEY` for a first
+secrets pool: by default the deploying shell, so CI (or you) exports `STRIPE_SECRET_KEY` for a first
 deploy. The framework carries only the variable's *name*; the platform
 injects the value straight into the running instance. What your code gets is
 a `SecretString` box that redacts on logging, rendering, and
@@ -685,7 +684,7 @@ a Module require credentials without dictating your naming.
 
 ### Absence is the schema's call
 
-An env-bound field whose variable is unset (or empty) in the deploy shell
+An env-bound field whose variable is unset (or empty) in the config pool
 resolves to *key omitted*; whether that is legal is the schema's call — an
 optional field, a union arm, or a validation error that fails the deploy. A
 credential for an off-by-default feature is an ordinary optional
@@ -791,7 +790,7 @@ from the environment's name.
 
 `envParam()`, `envSecret()`, `generatedParam()` and `serviceOrigin()` are
 values too, so `resolve()` can list them. For `envParam('NAME')`, `fn`
-receives the variable's value at deploy, read from the deploying shell. For
+receives the variable's value at deploy, read from the config pool. For
 the other three, `fn` receives a **pointer**, although the type says
 `SecretString` or `string`, because their value exists only at boot: the
 deploy never holds a secret, and it creates a generated value or a service's
@@ -849,6 +848,78 @@ name with a different value per environment is simpler.
 Turning `envParam()` itself into text in a module body, such as
 `` `${envParam('GREETING')}` ``, fails the deploy, as reading an input field
 does. List it in `resolve()` to compute with its value.
+
+## Values from outside the code
+
+```ts
+// prisma.config.ts
+import { defineConfig as composer, dotenv, environmentVariables } from '@prisma/composer/config';
+import { nodeBuild } from '@prisma/composer/node/control';
+import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control';
+import { definePrismaConfig } from 'prisma/config';
+
+export default definePrismaConfig({
+  composer: composer({
+    entry: './module.ts',
+    extensions: [prismaCloud(), nodeBuild()],
+    state: prismaState(),
+    config: [dotenv(), environmentVariables()],
+    secrets: [dotenv(), environmentVariables()],
+  }),
+});
+```
+
+```ts
+// module.ts: the root declares its input; the deploy fills it from the config pool
+export default module(
+  'shop',
+  { input: type({ EMAIL_FROM: 'string', 'SITE_HOSTNAME?': 'string' }) },
+  ({ input, environment, provision }) => {
+    const web = provision(webService, {
+      input: { from: input.EMAIL_FROM, stripeKey: envSecret('STRIPE_KEY') },
+    });
+    const url = resolve([input.SITE_HOSTNAME, environment.name], ([hostname, name]) =>
+      hostname !== undefined ? publicUrl.hostname(hostname) : publicUrl.prismaBuild());
+    provision(publicUrl({ name: 'site', url, target: web.http }));
+  },
+);
+```
+
+A root module declares `input` like any other module, and the deploy fills it
+from the `config` adapters.
+
+Each adapter receives the environment's name and returns values. When two
+adapters return the same top-level key, the later one in the list wins.
+
+Without `config` or `secrets`, both read the process environment. A list you
+write replaces that default, so list `environmentVariables()` to keep reading
+the shell.
+
+`dotenv()` reads `.env`, `.env.local`, `.env.<environment>` and
+`.env.<environment>.local` beside `prisma.config.ts`, in that order, and a
+later file wins. An environment name with `/` is encoded in the file name:
+the environment `feature/x` reads `.env.feature%2Fx`.
+
+`envParam('NAME')` reads `NAME` from the config pool.
+
+The `secrets` adapters fill a missing `envSecret()` platform variable at
+deploy, and give `prisma dev` its secrets.
+
+A root's input takes no secret, so bind `envSecret()` inside the body, as
+`stripeKey` is above.
+
+The root's schema checks the config pool before anything is created, so a
+missing value fails with the schema's message.
+
+A value in `.env` or `.env.local` is read by every environment, including a
+`prisma deploy` to `production` from your machine.
+
+Composer reads the adapters in the CLI and again in the deploy engine's
+process, so an adapter must return the same values both times.
+
+`PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` still come from the shell.
+
+An adapter is any function, so a project can write its own.
 
 ## Making a service public
 
