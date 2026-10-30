@@ -175,7 +175,7 @@ describe('dotenv()', () => {
       message = error instanceof Error ? error.message : String(error);
     }
 
-    expect(message).toStartWith(`dotenv() could not read ${dir}/.env: `);
+    expect(message).toStartWith(`dotenv() could not read ${path.join(dir, '.env')}: `);
   });
 
   const reference = ['$', '{A}'].join('');
