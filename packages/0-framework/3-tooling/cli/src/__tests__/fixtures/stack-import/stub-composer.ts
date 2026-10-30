@@ -23,8 +23,12 @@ plugin({
     );
     build.module(
       '@prisma/composer/config',
+      js('export const deserializeContainers = () => new Map();'),
+    );
+    build.module(
+      '@prisma/composer/internal/pools',
       js(
-        "export const deserializeContainers = () => new Map(); export const readConfigPool = async (section, input) => ({ read: 'config', environment: input.environment, configFile: input.configFile }); export const readSecretsPool = async () => ({ read: 'secrets' });",
+        "export const readConfigPool = async (section, input) => ({ read: 'config', environment: input.environment, configFile: input.configFile }); export const readSecretsPool = async () => ({ read: 'secrets' });",
       ),
     );
     build.module(

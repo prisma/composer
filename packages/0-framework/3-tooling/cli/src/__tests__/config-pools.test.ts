@@ -3,6 +3,8 @@ import type { ConfigAdapter, PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { dotenv } from '../config-adapters.ts';
 import { readConfigPool, readSecretsPool } from '../config-pools.ts';
+import * as configEntry from '../exports/config.ts';
+import * as poolsEntry from '../exports/pools.ts';
 
 const base: PrismaAppConfig = {
   extensions: [],
@@ -200,5 +202,12 @@ describe('readConfigPool and readSecretsPool', () => {
     expect(Object.keys(pool)).toEqual(['__proto__', 'constructor', 'prototype']);
     expect(pool['constructor']).toBe('c');
     expect(pool['prototype']).toBe('p');
+  });
+});
+
+describe('where the pool readers are published', () => {
+  test('the public config entry exports the adapters only; the pool readers are on the internal pools entry', () => {
+    expect(Object.keys(configEntry).sort()).toEqual(['dotenv', 'environmentVariables']);
+    expect(Object.keys(poolsEntry).sort()).toEqual(['readConfigPool', 'readSecretsPool']);
   });
 });
