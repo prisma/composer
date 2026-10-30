@@ -38,7 +38,7 @@ A `resolve()` function receives each dependency's real value. For a field bound 
 
 ## 5. Settled by the orchestrator
 
-- `input` can be forwarded whole: `provision(child, { input })`.
+- `input` can be forwarded whole: `provision(child, { input })`, except the root's. The root's input is the whole config pool, which by default holds every variable of the process environment, secrets included, so Load refuses it whole and the root passes on its fields one by one.
 - An optional field the binding leaves out has no real value; a child bound to it sees the key omitted, and the child's schema decides.
 - Load cannot list a module's input keys (Standard Schema exposes only `validate`), so an input field the body never uses is not an error, unlike an unused `deps` entry.
 - A module's binding is validated by its schema during Load's second pass, synchronously, because a child's real value is read from the parent's validated output. An async schema fails the Load. The value is validated again by each child's schema.

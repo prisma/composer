@@ -908,6 +908,11 @@ deploy, and give `prisma dev` its secrets.
 A root's input takes no secret, so bind `envSecret()` inside the body, as
 `stripeKey` is above.
 
+Pass the root's input fields on one by one, as `from: input.EMAIL_FROM` is
+above. The root's whole `input` is the whole config pool, which by default
+holds every variable of the shell, secrets included, so Load refuses it in a
+binding or a `resolve()` dependency.
+
 The root's schema checks the config pool before anything is created, so a
 missing value fails with the schema's message.
 
