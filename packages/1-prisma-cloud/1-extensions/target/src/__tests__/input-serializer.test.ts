@@ -105,6 +105,32 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
   });
 });
 
+describe('resolveInputBinding — envParam() reads the config pool', () => {
+  test('an envParam() leaf reads the env it is given', async () => {
+    const row = await withEnv({ G: 'shell' }, () =>
+      serializeInput(
+        svc(type({ greeting: 'string' })),
+        'web',
+        { greeting: envParam('G') },
+        { env: { G: 'pool' } },
+      ),
+    );
+
+    expect(JSON.parse(row?.value ?? 'null')).toEqual({ greeting: 'pool' });
+  });
+
+  test('an envParam() leaf whose value is not text fails naming the key and its kind', () => {
+    expect(() =>
+      resolveInputBinding({ nested: { greeting: envParam('G') } }, 'web', { env: { G: 4 } }),
+    ).toThrow(
+      'input binding key "nested.greeting" is bound to envParam(\'G\'), but the config pool holds a number at "G", not text. envParam() reads text; to pass other data, declare it in the root module\'s input.',
+    );
+    expect(() => resolveInputBinding(envParam('G'), 'web', { env: { G: ['x'] } })).toThrow(
+      'input binding is bound to envParam(\'G\'), but the config pool holds an array at "G", not text.',
+    );
+  });
+});
+
 describe('serializeInput — validate with sentinels, serialize the validated output', () => {
   const conditional = type({ stripeEnabled: 'false' }).or({
     stripeEnabled: 'true',

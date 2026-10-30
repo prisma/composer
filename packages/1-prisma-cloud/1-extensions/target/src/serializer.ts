@@ -36,6 +36,7 @@ import {
   ORIGIN_SENTINEL,
 } from './param.ts';
 import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
+import { poolText } from './pool-text.ts';
 import { secretName } from './secret.ts';
 
 export { addressKeySegments, configKey, ORIGIN_KEY_NAME };
@@ -379,8 +380,8 @@ const NO_ABSENT_SECRETS: ReadonlySet<string> = new Set();
 
 /** How `resolveInputBinding`, `serializeInput` and `inputValidationFailure` read the environment and which secrets they leave out. */
 export interface SerializeInputOptions {
-  /** Where `envParam` leaves are read; the process environment by default. */
-  readonly env?: Record<string, string | undefined>;
+  /** Where `envParam` leaves are read: the config pool. The process environment when not given. */
+  readonly env?: Readonly<Record<string, unknown>>;
   /** `envSecret` names to leave out of the document; only `prisma dev` passes any. */
   readonly absentSecrets?: ReadonlySet<string>;
 }
@@ -486,8 +487,16 @@ export function resolveInputBinding(
             '@prisma/composer-prisma-cloud.',
         );
       }
-      const raw = env[value.payload.name];
-      if (raw === undefined || raw === '') {
+      const name = value.payload.name;
+      const raw = poolText(
+        env,
+        name,
+        (kind) =>
+          new Error(
+            `input binding${path === '' ? '' : ` key "${path}"`} is bound to envParam('${name}'), but the config pool holds ${kind} at "${name}", not text. envParam() reads text; to pass other data, declare it in the root module's input.`,
+          ),
+      );
+      if (raw === undefined) {
         absent.push(
           path === '' ? `(root) → ${value.payload.name}` : `${path} → ${value.payload.name}`,
         );

@@ -256,7 +256,10 @@ export function computeDescriptor(
           svc,
           address,
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
-          { absentSecrets: o().preflight.absentSecrets },
+          {
+            absentSecrets: o().preflight.absentSecrets,
+            ...(ctx.opts.configPool !== undefined ? { env: ctx.opts.configPool } : {}),
+          },
         );
         if (inputRow !== undefined) {
           // Each `$secret` pointer in the document names an OPERATOR-owned
