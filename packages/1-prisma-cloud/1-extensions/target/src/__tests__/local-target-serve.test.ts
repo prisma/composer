@@ -133,7 +133,7 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
         address: 'gateway',
         node: gateway,
         server: server(['bun', 'server.js']),
-      pools: { config: {}, secrets },
+        pools: { config: {}, secrets },
       });
 
     await serve();
