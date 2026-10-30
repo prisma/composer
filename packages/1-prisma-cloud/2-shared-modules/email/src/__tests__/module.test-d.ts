@@ -4,7 +4,7 @@
  * `rpc(emailOutboxContract)`), and a wrong-kind port is rejected. Type-only
  * (vitest --typecheck, never executed) — mirrors storage's module.test-d.ts.
  */
-import type { ModuleNode, RefPort, SecretString, Value } from '@internal/core';
+import type { ModuleNode, Pointer, RefPort, SecretString, Value } from '@internal/core';
 import { module } from '@internal/core';
 import node from '@internal/node';
 import { compute, envParam, envSecret, type rawPostgresContract } from '@internal/prisma-cloud';
@@ -29,7 +29,11 @@ test('email() is a ModuleNode exposing send and outbox, with an input schema', (
 test("email()'s input is deliveryMode, from and a secret deliveryCredential", () => {
   expectTypeOf<
     StandardSchemaV1.InferInput<NonNullable<ReturnType<typeof email>['inputSchema']>>
-  >().toEqualTypeOf<{ deliveryMode: string; from: string; deliveryCredential: SecretString }>();
+  >().toEqualTypeOf<{
+    deliveryMode: string;
+    from: string;
+    deliveryCredential: SecretString | Pointer<SecretString>;
+  }>();
 });
 
 test("the module's send port wires into a consumer's emailSender() slot", () => {
