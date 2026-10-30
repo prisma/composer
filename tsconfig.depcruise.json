@@ -52,6 +52,7 @@
       "@internal/cli/app-identity": [
         "./packages/0-framework/3-tooling/cli/src/exports/app-identity.ts"
       ],
+      "@internal/cli/config": ["./packages/0-framework/3-tooling/cli/src/exports/config.ts"],
       "@internal/cli/control": ["./packages/0-framework/3-tooling/cli/src/exports/control.ts"],
       "@internal/cli/family": ["./packages/0-framework/3-tooling/cli/src/exports/family.ts"],
       "@internal/cli/testing": ["./packages/0-framework/3-tooling/cli/src/exports/testing.ts"],
