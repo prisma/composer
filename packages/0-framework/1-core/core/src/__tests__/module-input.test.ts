@@ -120,8 +120,8 @@ describe("the body's input", () => {
     expect(loadError(() => Load(shopWith(email, { domain: 'shop.com' }))).message).toBe(
       'input.domain of module "shop.email" is a value, not its real value, and it was turned ' +
         'into text (a template literal or String()). A module body can only pass an input field ' +
-        'on: into a provision() binding or as a resolve() dependency. To compute with it, list ' +
-        'it: resolve([input.domain], ([v]) => …).',
+        'on: into a provision() binding or as a resolve() dependency. To compute with it, ' +
+        'declare it plain and list it: resolve([input.domain], ([v]) => …).',
     );
   });
 
@@ -564,8 +564,8 @@ describe('errors', () => {
 
     expect(loadError(() => Load(shopWith(email, { from: 'a' }))).message).toBe(
       'input.from.trim of module "shop.email" does not exist: input.from is a string, not a ' +
-        'plain object, so it has no fields. To compute with it, list it: ' +
-        'resolve([input.from], ([v]) => …).',
+        'plain object, so it has no fields. To compute with it, declare it plain and list ' +
+        'it: resolve([input.from], ([v]) => …).',
     );
   });
 
@@ -578,8 +578,8 @@ describe('errors', () => {
 
     expect(loadError(() => Load(shopWith(email, { tags: ['a'] }))).message).toBe(
       'input.tags.0 of module "shop.email" does not exist: input.tags is an array, not a ' +
-        'plain object, so it has no fields. To compute with it, list it: ' +
-        'resolve([input.tags], ([v]) => …).',
+        'plain object, so it has no fields. To compute with it, declare it plain and list ' +
+        'it: resolve([input.tags], ([v]) => …).',
     );
   });
 
