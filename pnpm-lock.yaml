@@ -1362,6 +1362,9 @@ importers:
       esbuild:
         specifier: ^0.28.1
         version: 0.28.2
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@internal/assemble':
         specifier: workspace:0.36.0

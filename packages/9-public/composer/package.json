@@ -15,6 +15,7 @@
     "./casts": "./dist/casts.mjs",
     "./assertions": "./dist/assertions.mjs",
     "./arktype": "./dist/arktype.mjs",
+    "./zod": "./dist/zod.mjs",
     "./service-rpc": "./dist/service-rpc.mjs",
     "./http": "./dist/http.mjs",
     "./node": "./dist/node.mjs",
@@ -45,7 +46,8 @@
     "dotenv": "^17.4.2",
     "effect": "4.0.3",
     "esbuild": "^0.28.1",
-    "@prisma/management-api-sdk": "^1.80.0"
+    "@prisma/management-api-sdk": "^1.80.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@internal/assemble": "workspace:0.36.0",
