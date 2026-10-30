@@ -1,6 +1,8 @@
 # Module composition
 
-> Amended by [ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares one `input` schema, as a compute service does, and a root may declare one too. This settles the "Module-level params" extension point listed below.
+> Amended by [ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares one `input` schema, as a compute service does, and a root may declare one too. A module's input fields are values (`Value<T>`), and its binding is validated during Load's second pass; see [§ Input](#input).
+>
+> Amended by the module-input project (2026-10-30): the module `params` and `secrets` slots are removed; `module()` and `provision()` refuse them.
 
 How a module declares a boundary, forwards through it, nests, and is consumed
 from another module. The decision this design rests on is
@@ -12,15 +14,17 @@ realizes is described in
 ## The authoring surface
 
 ```ts
-export function module<D extends Deps, E extends Expose>(
+export function module<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
   name: string,
-  boundary: { deps?: D; expose?: E },
-  body: (ctx: ModuleContext<D>) => ModuleOutputs<E>,
-): ModuleNode<D, E>;
+  boundary: { deps?: D; input?: I; expose?: E },
+  body: (ctx: ModuleContext<D, I>) => ModuleOutputs<E>,
+): ModuleNode<D, E, I>;
 
-interface ModuleContext<D extends Deps> {
+interface ModuleContext<D extends Deps, I extends StandardSchemaV1 | undefined> {
   /** The module's declared dependencies as wiring values — pass them into provision(). */
   readonly deps: { [K in keyof D]: InputRef<D[K]> };
+  /** The module's input: one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. Pass a field into a provision() binding or list it as a resolve() dependency. */
+  readonly input: I extends StandardSchemaV1 ? ModuleInput<I> : undefined;
   /** The deploy-time facts of the environment, each a value: today only `environment.name`. */
   readonly environment: EnvironmentFacts;
   /** Registers an owned child (service or module) under a stable id. */
@@ -42,7 +46,9 @@ type ModuleOutputs<E extends Expose> = { [P in keyof E]: RefPort<E[P]> };
   assignable to the declared output contract); Load re-checks via
   `satisfies()` — the same two-layer check all wiring uses.
 - The body also receives `environment`, whose `name` is a value: an opaque
-  stand-in the body cannot read or branch on. The body lists it as a
+  stand-in whose data the body cannot read. A truthiness check or `typeof` on
+  it always goes the same way, because the body sees an object, so the body
+  cannot vary the graph by environment. The body lists it as a
   dependency of `resolve(dependencies, fn)`, which returns a computed value it
   can bind to a service's input or params; Load runs `fn` after every module
   body has run
@@ -55,6 +61,9 @@ type ModuleOutputs<E extends Expose> = { [P in keyof E]: RefPort<E[P]> };
   wiring)` — and defaults to the node's own `name`. Pass an explicit id only
   when the name is not a valid id (contains `_`/`.`) or two provisioned nodes
   share a name.
+- `module()` refuses a `params` or `secrets` key when it is called, before Load
+  starts, with an error naming `input`: a module takes its configuration only
+  through `input`.
 
 ## Forwarding
 
@@ -90,15 +99,134 @@ export default module("auth", { deps: { db }, expose: { verify: authContract } }
 - A module that re-exports one child's whole face is both moves at once — a
   wrapper module is a few lines.
 
+## Input
+
+A module declares its configuration as one `input` Standard Schema, as a
+service does, and whoever provisions it binds that input
+([ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)):
+
+```ts
+import { module, resolve } from '@prisma/composer';
+import { secretString } from '@prisma/composer/arktype';
+import { envSecret } from '@prisma/composer-prisma-cloud';
+import { type } from 'arktype';
+
+const email = module(
+  'email',
+  { input: type({ from: 'string', deliveryCredential: secretString(), 'replyTo?': 'string' }) },
+  ({ input, environment, provision }) => {
+    const sender = resolve([input.from, environment.name], ([from, name]) =>
+      name === 'production' ? from : `${name}+${from}`);
+    provision(emailService, {
+      id: 'service',
+      input: { from: sender, replyTo: input.replyTo, deliveryCredential: input.deliveryCredential },
+    });
+  },
+);
+
+export default module('shop', ({ provision }) => {
+  provision(email, {
+    input: { from: 'shop@example.com', deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') },
+  });
+});
+```
+
+`prisma deploy --environment staging` gives `shop.email.service` the input
+binding `{ from: 'staging+shop@example.com', deliveryCredential:
+envSecret('EMAIL_DELIVERY_CREDENTIAL') }`. The binding has no `replyTo` key,
+because the root left that optional field out.
+
+The body holds one value for each key of the schema: `input.from`,
+`input.smtp.host`, or `input` itself for the whole input. Each is a
+[value](../03-domain-model/glossary.md#value), the same kind as
+`environment.name` and a `resolve()` result, and a provided one: the body is
+handed it. Its real value is the data at that key path in the module's
+validated input, which is the module's binding with its values replaced by
+their real values and passed through the module's schema. A real value is the
+schema's output, so a field typed `number` by a `string.integer.parse` schema
+receives `4`, not `'4'`. An input field bound to a deploy-time value is
+deploy-time: its real value is known by the end of Load. A field bound to
+`envSecret()`, `generatedParam()` or `serviceOrigin()` is a runtime value: the
+data is known only at boot, so its real value is a pointer, and its type says
+so: a
+wrapped field's type includes `Pointer<In>`, and a `secretString()` field's
+includes `Pointer<SecretString>`.
+
+A leaf field can be **wrapped**: its schema is `field(inner)`, from
+`@prisma/composer/arktype` or `@prisma/composer/zod`
+([glossary](../03-domain-model/glossary.md#field)). A wrapped field's schema
+accepts what `inner` accepts and a plain pointer, so its value in the body is
+typed `Value<Out | Pointer<In>>`: for `from: field(type('string'))`,
+`input.from` is `Value<string | Pointer<string>>`. Its binding takes a
+literal, a value of `inner`'s input type, or a `RuntimeValue<string>`; a
+`RuntimeValue<SecretString>` there fails to compile, and so does a
+`RuntimeValue<string>` in a plain field. At deploy a module's schema checks
+each runtime value as its pointer, so a plain field bound to one fails the
+deploy, as below.
+
+The body can only pass an input field on. Turning one into text or a number,
+serializing it, listing its keys, iterating it, testing it with `in`,
+assigning to it or freezing it throws a Load error naming the field. `===`,
+`!==` and `switch` against a literal fail to compile, because the types do not
+overlap. A truthiness check (`if`, `!`, `&&`, `||`, `? :`, `??`) and `typeof`
+cannot be caught: the body sees an object, so such a branch always goes the
+same way, and the graph's structure still cannot vary. A body reaches only the
+keys every member of a union schema has, and an array field has no element
+access; to narrow, declare a flat schema and pass its fields on by name, or
+narrow inside a `resolve()` function.
+
+An input field is accepted in four places:
+
+- **a service's `input` binding**, at any depth, including the whole binding;
+- **a module's `input` binding**, at any depth, including the whole binding;
+- **a `resolve()` dependency**, for a plain field: `fn` receives the real
+  value. Listing a field wrapped with `field()` or typed `secretString()`
+  fails to compile, and Load refuses a listed field whose real value holds a
+  pointer, naming it and saying what to do instead: declare a wrapped field
+  plain, or pass a secret field on into a binding and read it in the service.
+  A source listed directly is refused too, with advice to bind it into the
+  service's input;
+- **a service param or a resource prop**, when its real-value type is plain
+  data: not optional, and not a secret.
+
+Nowhere else: not as a `provision()` id, not in `deps`, and not as an `expose`
+return. Load refuses each.
+
+**How Load validates.** Load records each module's input binding at its
+`provision()` call and validates it with the module's schema during the second
+pass, synchronously, after every module body has run. A child's real value is
+read from its parent's validated output, so the parent's schema runs first; an
+async schema fails the Load. Each module's binding is validated once per Load,
+whether or not the body uses any field. A value known only at boot reaches
+the schema as its pointer, the source itself: `secretString()` accepts a
+secret pointer, a wrapped field a plain one, and a plain field neither.
+Wherever the schema's output holds a pointer, Load passes on the original
+source, so a copy the schema made, as ArkType does when a transform runs,
+reaches the child as the source the binding named. A schema may check such a
+field but never replace or move it: a schema whose output holds another value
+at that path, or holds the pointer at another path, fails the Load. An
+optional field the
+binding left out has no real value, and a binding that forwards it leaves the
+key out.
+
+A root's input is the config pool, validated by its schema before any other module's binding.
+
+**Not detected.** Load cannot list a schema's keys, because Standard Schema
+exposes only `validate`. So a declared input field the body never uses is not
+an error, unlike an unused `deps` entry.
+
 ## `provision()` accepts modules
 
 A module overload mirrors the service forms:
 
 ```ts
-provision<D extends Deps, E extends Expose>(
-  id: string,
-  child: ModuleNode<D, E>,
-  wiring: Wiring<D>,        // omitted when D is empty
+provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
+  child: ModuleNode<D, E, I>,
+  opts: {
+    id?: string;
+    deps: DepBindings<D>;                                      // omitted when D is empty
+    input: ModuleInputBinding<StandardSchemaV1.InferInput<I>>; // required when the module declares an input schema
+  },
 ): ProvisionedRef<E>;
 ```
 
@@ -130,7 +258,11 @@ everything downstream consumes:
   - a module with non-empty `deps` deployed as root — the same "wire this from a
     composing scope" error a service with unwired dependency inputs gets;
   - a cycle through forwarding edges — expressible only once boundaries
-    exist, so composition brings the check with it.
+    exist, so composition brings the check with it;
+  - a module's input binding the module's schema refuses — validated in the
+    second pass, after every module body has run;
+  - a `params` or `secrets` map on a module's `provision()`: a module takes its
+    configuration only through `input`.
 
 The boundary is a wiring-time contract, checked at compile time and re-checked
 at Load. It is not enforced against a body that captures a sibling scope's ref
@@ -194,8 +326,6 @@ const auth = provision("auth", fakeAuthService);   // same contract, no database
   consumers turns the topology from a tree into a DAG (single provisioning,
   per-consumer config), and pairs with data contracts to bound what each
   consumer may touch.
-- **Module-level params** — configuration declarations on the module boundary
-  itself, beyond what its deps carry.
 
 ## Related
 

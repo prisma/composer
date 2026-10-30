@@ -17,6 +17,7 @@
     "@types/cross-spawn": "^6.0.6",
     "@types/node": "^26.0.1",
     "alchemy": "catalog:",
+    "arktype": "^2.2.3",
     "cross-spawn": "^7.0.6",
     "prisma": "catalog:",
     "typescript": "^6.0.3"

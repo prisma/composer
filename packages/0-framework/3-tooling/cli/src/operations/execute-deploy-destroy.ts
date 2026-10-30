@@ -23,6 +23,7 @@ import {
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
   engineFailureFilePath,
+  poolSecrets,
   readDeploymentSummary,
   readEngineFailureCause,
 } from '../deployment-summary.ts';
@@ -388,6 +389,7 @@ async function runStackPipelineInner(
     // name resolution, assemble.
     const pipelineDeps: PipelineDeps = {
       runAssembler: deps.runAssembler,
+      readSecrets: action === 'deploy',
       onEvent: (event) => {
         switch (event.kind) {
           case 'loaded':
@@ -523,6 +525,7 @@ async function runStackPipelineInner(
             graph,
             container: containers.get(extension.id),
             environment,
+            pools: pipeline.pools,
             credentials: deps.credentials,
             report,
           });
@@ -662,7 +665,10 @@ async function runStackPipelineInner(
       // The cause the child recorded on its way out, appended after the status
       // sentence so searches for that sentence still match. A signal-killed
       // child never runs its exit hook, so only this branch can have one.
-      const engineCause = readEngineFailureCause(resultFilePath);
+      const engineCause = readEngineFailureCause(
+        resultFilePath,
+        poolSecrets(pipeline.pools, pipeline.configSource.value.secrets !== undefined),
+      );
       const withCause = (sentence: string) =>
         engineCause === undefined ? sentence : `${sentence}\n${engineCause}`;
       return notOk(

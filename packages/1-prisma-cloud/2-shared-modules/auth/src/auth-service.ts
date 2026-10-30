@@ -13,7 +13,7 @@
  * entrypoint pass in the same dist directory.
  */
 import { emailSender } from '@internal/email';
-import { secretString } from '@internal/foundation/arktype';
+import { field, secretString } from '@internal/foundation/arktype';
 import { rawHttpContract } from '@internal/http';
 import node from '@internal/node';
 import { compute } from '@internal/prisma-cloud';
@@ -30,7 +30,11 @@ export function authService() {
     // redaction facet in an ADR-0041 schema (boot hands the field a redacting
     // box). `port` stays compute()'s RESERVED service param — the entrypoint
     // reads it from `service.port()`, never the input.
-    input: type({ baseUrl: 'string', secret: secretString(), signUp: "'open' | 'closed'" }),
+    input: type({
+      baseUrl: field(type('string')),
+      secret: secretString(),
+      signUp: "'open' | 'closed'",
+    }),
     expose: { api: rawHttpContract, session: authSessionContract, admin: authAdminContract },
     build: node({
       module: new URL('./auth-service.mjs', import.meta.url).href,

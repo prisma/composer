@@ -5,8 +5,9 @@
  * `--typecheck`, never executed).
  */
 import { expectTypeOf, test } from 'vitest';
-import type { BuildAdapter, SecretNeed, SecretSource } from '../node.ts';
-import { module, secret, secretSource, service } from '../node.ts';
+import type { BuildAdapter, SecretSource } from '../node.ts';
+import { module, secretSource, service } from '../node.ts';
+import type { Value } from '../value.ts';
 import { anyInputSchema } from './helpers.ts';
 
 const build: BuildAdapter = {
@@ -16,9 +17,10 @@ const build: BuildAdapter = {
   entry: 'server.js',
 };
 
-test('secret() is a SecretNeed; secretSource() is a SecretSource', () => {
-  expectTypeOf(secret()).toEqualTypeOf<SecretNeed>();
-  expectTypeOf(secretSource('AUTH_SIGNING_KEY')).toEqualTypeOf<SecretSource<string>>();
+test('secretSource() is a SecretSource and a value', () => {
+  expectTypeOf(secretSource('AUTH_SIGNING_KEY')).toEqualTypeOf<
+    SecretSource<string> & Value<unknown>
+  >();
 });
 
 test('provisioning a service with an input schema requires the input binding', () => {

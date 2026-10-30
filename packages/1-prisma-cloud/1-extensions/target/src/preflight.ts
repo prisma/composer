@@ -4,7 +4,7 @@
  * app's manifests (each a platform env-var NAME) exists on Prisma Cloud for
  * the target environment. A literal-bound param never touches the platform — only
  * `envParam(...)` sources are checked here.
- * A name absent on the platform but present in the deploy shell is provisioned
+ * A name absent on the platform but present in its pool (the secrets pool for a secret, the config pool for an env-sourced param) is provisioned
  * via a direct Management API POST — NEVER an Alchemy resource, so the value
  * never lands in hosted deploy state. A name absent from both fails the deploy,
  * listing exactly what is missing and where to set it.
@@ -21,7 +21,7 @@
  * out of band ships a new deployment. A timestamp, never a value: env-var
  * values are write-only and the API never returns one.
  */
-import type { Graph } from '@internal/core';
+import type { Graph, SecretSourceUse } from '@internal/core';
 import type { PreflightInput } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import {
@@ -37,7 +37,8 @@ import { prismaCloudContainerOf } from './container.ts';
 import { type EnvKeyClash, findEnvKeyClashes } from './env-key-clash.ts';
 import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
-import { collectPreflightNames } from './preflight-names.ts';
+import { poolText } from './pool-text.ts';
+import { collectPreflightNames, envParamNotTextError } from './preflight-names.ts';
 import { checkPublicUrls } from './public-url.ts';
 
 type EnvClass = 'production' | 'preview';
@@ -252,7 +253,8 @@ async function fillMissing(
 
 interface MissingBinding {
   readonly name: string;
-  readonly serviceAddress: string;
+  readonly address: string;
+  readonly nodeKind: SecretSourceUse['nodeKind'];
 }
 
 /** The preflight input typed against this extension's own client — the concrete form of the framework's erased `PreflightInput<unknown>`. */
@@ -270,7 +272,7 @@ const listFailedError = (key: string, error: unknown): Error =>
 
 const fillFailedError = (key: string, error: unknown): Error =>
   new Error(
-    `deploy preflight: failed to provision "${key}" from the deploy shell: ${JSON.stringify(error)}.`,
+    `deploy preflight: failed to set "${key}" on the platform from its pool: ${JSON.stringify(error)}.`,
   );
 
 /** `value` as one POSIX shell word: single-quoted, each embedded `'` written as `'\''`. */
@@ -282,7 +284,7 @@ function missingError(
   branchId: string | undefined,
   environment: string,
 ): Error {
-  const lines = missing.map((m) => `  - ${m.name}  (used by service "${m.serviceAddress}")`);
+  const lines = missing.map((m) => `  - ${m.name}  (used by ${m.nodeKind} "${m.address}")`);
   const countPhrase =
     missing.length === 1 ? '1 required setting has' : `${missing.length} required settings have`;
   const scopeFlag =
@@ -350,13 +352,17 @@ async function managementClient(): Promise<ManagementApiClient> {
 }
 
 /**
- * The Prisma Cloud extension's `preflight`. Uses the shared name collector
- * (`collectPreflightNames`, ADR-0042) — every service's input-binding
- * `envSecret` leaf, plus `paramManifest` filtered to env-sourced reserved
- * params — checks each platform name against the platform, fills from the
- * shell where possible, and fails loudly on anything absent from both.
+ * The Prisma Cloud extension's `preflight`. Every secret source the graph
+ * names is checked, including one in a module's input that no service
+ * receives. Uses the shared name collector (`collectPreflightNames`,
+ * ADR-0042): every secret
+ * source in a service's input binding or in `graph.secretSources`, deduped by
+ * name with the first entry winning the reported address, plus
+ * `paramManifest` filtered to env-sourced reserved params. It checks each
+ * platform name against the platform, fills from the
+ * pools where possible, and fails loudly on anything absent from both.
  * `envParam` leaves of an input binding are NOT checked here — they resolve
- * from the deploy shell at serialize, and an unset one is an omitted key the
+ * from the config pool at serialize, and an unset one is an omitted key the
  * schema arbitrates. Uses the caller's client (`input.credentials`), then an
  * injected one for tests, then a client built from env.
  */
@@ -375,8 +381,20 @@ export async function runPreflight(
   // secrets first.
   const collected = collectPreflightNames(input.graph);
   const names = new Map<string, MissingBinding>();
-  for (const meta of [...collected.secrets, ...collected.envParams]) {
-    if (!names.has(meta.name)) names.set(meta.name, meta);
+  const poolValue = new Map<string, () => string | undefined>();
+  for (const meta of collected.secrets) {
+    if (names.has(meta.name)) continue;
+    names.set(meta.name, meta);
+    poolValue.set(meta.name, () => input.pools.secrets[meta.name]);
+  }
+  for (const meta of collected.envParams) {
+    if (names.has(meta.name)) continue;
+    names.set(meta.name, meta);
+    poolValue.set(meta.name, () =>
+      poolText(input.pools.config, meta.name, (kind) =>
+        envParamNotTextError(meta.name, meta.address, kind),
+      ),
+    );
   }
   const clashes = findEnvKeyClashes(input.graph);
   if (names.size === 0 && clashes.length === 0) {
@@ -396,9 +414,9 @@ export async function runPreflight(
       if (platform.updatedAt !== undefined) updatedAt.set(meta.name, platform.updatedAt);
       continue;
     }
-    const shellValue = process.env[meta.name];
-    if (shellValue !== undefined && shellValue.length > 0) {
-      const filledAt = await fillMissing(client, projectId, branchId, meta.name, shellValue);
+    const value = poolValue.get(meta.name)?.();
+    if (value !== undefined && value.length > 0) {
+      const filledAt = await fillMissing(client, projectId, branchId, meta.name, value);
       if (filledAt !== undefined) {
         updatedAt.set(meta.name, filledAt);
         filled += 1;

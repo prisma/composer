@@ -8,6 +8,7 @@ import {
   DEPLOYMENT_RESULT_FILE_ENV,
   engineFailureCause,
   engineFailureFilePath,
+  poolSecrets,
   readEngineFailureCause,
   redactSecrets,
   withComposerAdvice,
@@ -89,6 +90,23 @@ describe('engineFailureCause', () => {
     const token = `tok_${'s'.repeat(1200)}`;
     const cause = engineFailureCause(`error: ${token}`, { PRISMA_SERVICE_TOKEN: token });
     expect(cause).toBe('error: [redacted]');
+  });
+});
+
+describe('poolSecrets', () => {
+  const pools = {
+    config: { STRIPE_KEY: 'sk_config', WEBHOOK_SIG: 'sig_shared', HOME: '/Users/someone', N: 4 },
+    secrets: { WEBHOOK_SIG: 'sig_shared', SIGNING_SALT: 'salt_value' },
+  };
+
+  test('with a secrets list the author wrote, every secrets pool value and the config values under its keys', () => {
+    expect(poolSecrets(pools, true).sort()).toEqual(
+      ['salt_value', 'sig_shared', 'sig_shared', 'sk_config'].sort(),
+    );
+  });
+
+  test('with the default secrets list, the whole environment, only secret-named config values', () => {
+    expect(poolSecrets(pools, false)).toEqual(['sk_config']);
   });
 });
 

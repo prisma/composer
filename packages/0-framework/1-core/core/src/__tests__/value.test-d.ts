@@ -44,7 +44,7 @@ test('a value exposes no readable member', () => {
   void name.origin;
 });
 
-test('a value standing for plain data is an input binding leaf; any other value is not', () => {
+test('a value standing for input data is an input binding leaf; a Date or a source is not', () => {
   expectTypeOf({ greeting: name }).toExtend<InputBinding>();
   expectTypeOf({ when: date }).not.toExtend<InputBinding>();
   expectTypeOf(secretValue).not.toExtend<InputBinding>();

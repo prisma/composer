@@ -6,6 +6,8 @@ Amended after acceptance: the Alternatives section adds four rejected ways to ke
 
 Amended 2026-10-23: the section takes an optional `entry`, the path to the module whose default export is the application root. It is an input to the tool, like the ORM section's schema path, not an application fact. The validator checks that it is a non-empty string, and it resolves against the directory of the declaring file. `--entry <path>` on `prisma deploy` and `prisma dev`, or an operation's `entry` input, overrides it and resolves against the working directory. With neither, the command fails with `CONFIG.ENTRY_MISSING`.
 
+Amended 2026-10-30 (module-input project, fourth slice): the section takes two optional lists, `config` and `secrets`. The validator checks that each is an array of functions, passes the arrays through as the file's own objects, and never calls an adapter. Both default to `[environmentVariables()]`, applied when the pools are read, not by the validator. The generated stack files import `readConfigPool` (and, for `prisma dev`, `readSecretsPool`) from `@prisma/composer/internal/pools`, an entry that is not public API, and read the pools again in the child, from the same `prisma.config.ts`, so an adapter must return the same values for the same environment in both processes. `environmentVariables()` leaves out Composer's own `PRISMA_COMPOSER_` variables, and in the child it reads the CLI's own value of any other variable Composer sets there, so it does. New codes: `CONFIG.ADAPTER_FAILED` and `CONFIG.ADAPTER_INVALID`.
+
 ## Decision
 
 Composer reads its configuration from one place: the `composer` section of the app's `prisma.config.ts`, the file every Prisma CLI command family already shares. There is no separate Composer config file.

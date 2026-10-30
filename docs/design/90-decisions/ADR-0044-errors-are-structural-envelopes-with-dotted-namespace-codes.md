@@ -4,6 +4,8 @@ Amended 2026-10-23: the `CONFIG` registry gains ENTRY_MISSING, for a command or 
 
 Amended 2026-10-27: the `DEPLOY` registry follows [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md), which calls a place the app runs an environment. It gains ENVIRONMENT_INVALID, ENVIRONMENT_UNVALIDATABLE and ENVIRONMENT_REQUIRED, and retires STAGE_INVALID, STAGE_UNVALIDATABLE and SCOPE_MISSING. The `DEPS` registry gains EXTENSION_INCOMPATIBLE.
 
+Amended 2026-10-30: `CONFIG.ADAPTER_FAILED` and `CONFIG.ADAPTER_INVALID` are added.
+
 ## The shape of a failure, end to end
 
 The site that detects a failure builds the complete error, because it is the only place that knows the context:

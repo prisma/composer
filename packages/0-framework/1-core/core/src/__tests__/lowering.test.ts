@@ -43,7 +43,7 @@ import {
   service,
 } from '../node.ts';
 import { resolve } from '../value.ts';
-import { conn, providerContract } from './helpers.ts';
+import { anyInputSchema, conn, providerContract } from './helpers.ts';
 
 const dbResource = () =>
   resource({
@@ -610,6 +610,23 @@ describe('lowering a module root — a single service', () => {
 
     const serialize = calls.find((c) => c.phase === 'serialize');
     expect(serialize).toMatchObject({ config: { service: { label: 'test' } } });
+  });
+
+  test('lowering() passes opts.configPool to Load', () => {
+    const { config, calls } = fakeExtension();
+    const relay = module('relay', { input: anyInputSchema }, ({ input, provision }) => {
+      const label = (input as never as { label: never }).label;
+      provision(app('fake/compute', {}, { label: string() }), { id: 'svc', params: { label } });
+    });
+    const root = module('hello', ({ provision }) => {
+      provision(relay, { input: { label: paramSource({ name: 'X' }, { poolKey: 'X' }) } });
+    });
+    const bundles = { 'hello.relay.svc': { dir: 'dist/bundle', entry: 'server.js' } };
+
+    run(lowering(root, config, opts({ bundles, configPool: { X: 'probe' } })));
+
+    const serialize = calls.find((c) => c.phase === 'serialize');
+    expect(serialize).toMatchObject({ config: { service: { label: 'probe' } } });
   });
 
   test("lowering() hands a resource descriptor its resolved props and its producer's outputs through connectionInputs", () => {

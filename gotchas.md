@@ -31,7 +31,7 @@ The capture workflow is the Ignite `product-record-gotcha` skill.
 - [Service-to-service HTTP gets ECONNRESET while the target cold-starts from scale-to-zero](#service-to-service-http-gets-econnreset-while-the-target-cold-starts-from-scale-to-zero)
 - [Compute ingress buffers streaming responses until completion — an open SSE tail delivers nothing and 504s at 60s](#compute-ingress-buffers-streaming-responses-until-completion--an-open-sse-tail-delivers-nothing-and-504s-at-60s)
 - [planLimitReached is masked by the cold-start "not configured correctly yet" message](#planlimitreached-is-masked-by-the-cold-start-not-configured-correctly-yet-message)
-- [Composer's secret model has no optional/conditional secrets — every "off" environment still needs a junk credential](#composers-secret-model-has-no-optionalconditional-secrets--every-off-environment-still-needs-a-junk-credential)
+- [The email service requires its delivery credential in every mode — every "off" environment still needs a junk credential](#the-email-service-requires-its-delivery-credential-in-every-mode--every-off-environment-still-needs-a-junk-credential)
 - [Module-boundary param slots admit only sources, never a literal — a static-per-app value forces a platform env var or a factory option](#module-boundary-param-slots-admit-only-sources-never-a-literal--a-static-per-app-value-forces-a-platform-env-var-or-a-factory-option)
 - [prisma dev fetches its implementation at run time — a broken @prisma/cli-dev publish fails every cold-cache invocation, regardless of the pinned CLI version](#prisma-dev-fetches-its-implementation-at-run-time--a-broken-prismacli-dev-publish-fails-every-cold-cache-invocation-regardless-of-the-pinned-cli-version)
 - [prisma dev shares one Postgres session across all connections — a restarted Bun.SQL client crash-loops on 42P05](#prisma-dev-shares-one-postgres-session-across-all-connections--a-restarted-bunsql-client-crash-loops-on-42p05)
@@ -500,9 +500,9 @@ The Management API is no help: the project and database both read `status: "read
 
 ---
 
-## Composer's secret model has no optional/conditional secrets — every "off" environment still needs a junk credential
+## The email service requires its delivery credential in every mode — every "off" environment still needs a junk credential
 
-**Filed upstream:** not filed — a recorded framework design tradeoff ([ADR-0029](docs/design/90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md): "every wired secret is required"), not a product bug.
+**Filed upstream:** not filed — a choice in the email service's input schema, not a product bug.
 **Product:** Prisma Compute (deploy preflight / secret provisioning)
 **Version:** Prisma Composer framework, observed 2026-07-21
 **First hit:** the email module (`packages/1-prisma-cloud/2-shared-modules/email`) — its `deliveryCredential` secret is only ever read when `deliveryMode` is `resend`/`smtp`; mode `none` (the local-dev/preview story) never reads it
@@ -510,14 +510,14 @@ The Management API is no help: the project and database both read `status: "read
 
 **Symptom.** An environment that will never deliver email (preview, `EMAIL_DELIVERY_MODE=none`) still must set a non-empty `EMAIL_DELIVERY_CREDENTIAL`, or the deploy preflight rejects the app before it ever boots — even though the running service provably never calls `.expose()` on that secret in `none` mode (`delivery.ts`'s `noneDelivery` placeholder throws if it is ever invoked, and it never is).
 
-**Cause.** Prisma Composer's secret model has no "optional" or "conditional on another param's value" secret: every secret slot a service or module declares is required, unconditionally, the same way every declared dependency is required. There is no way to say "this secret is required only when `deliveryMode !== 'none'`" — the framework has no notion of one param's value gating whether another slot must be bound.
+**Cause.** The email service's input schema types `deliveryCredential` as a required `secretString()` field in every mode, and preflight requires every `envSecret()` the graph names. A schema can make a secret field optional, or required only in some modes, since services moved to one input schema ([ADR-0042](docs/design/90-decisions/ADR-0042-service-input-is-one-standard-schema.md)); the email service's schema does not.
 
 **Workaround.** Set any non-empty junk value for `EMAIL_DELIVERY_CREDENTIAL` in environments where `deliveryMode` is `none` (documented in the module README's table of env vars per environment). The value is never read in that mode.
 
 **Reproduction.**
 
-1. Provision `email()` with `params: { deliveryMode: envParam('EMAIL_DELIVERY_MODE') }` and leave `EMAIL_DELIVERY_CREDENTIAL` unset in an environment where `EMAIL_DELIVERY_MODE=none`.
-2. Deploy → preflight fails before the service ever boots: the secret slot is unbound.
+1. Provision `email()` with `input: { deliveryMode: envParam('EMAIL_DELIVERY_MODE'), from: envParam('EMAIL_FROM'), deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') }` and leave `EMAIL_DELIVERY_CREDENTIAL` unset in an environment where `EMAIL_DELIVERY_MODE=none`.
+2. Deploy → preflight fails before the service ever boots: the platform variable is missing.
 3. Set `EMAIL_DELIVERY_CREDENTIAL` to any non-empty string → deploy succeeds; the value is never read (verified: `none` mode never constructs a `Delivery` backing).
 
 **References.**
@@ -534,6 +534,7 @@ The Management API is no help: the project and database both read `status: "read
 **Version:** Prisma Composer framework, observed 2026-07-21
 **First hit:** the email module's `deliveryUrl` — a value that is almost always static per app (it follows `deliveryMode`, which already varies per environment) but has nowhere to be bound as a plain literal at the module boundary
 **Cost:** no time lost — designed around at spec time — recorded per spec's friction-finding requirement
+**Fixed in Prisma Composer** (module-input project, 2026-10-30): a module takes its configuration through one `input` schema, and its input binding takes a literal as well as a source. `paramNeed()` and `ParamNeedBindings` are removed. `email()` keeps `deliveryUrl` as a factory option.
 
 **Symptom.** A module boundary's `params` (`ParamNeedBindings<PN>`) accepts only a `ParamSource` (e.g. `envParam(...)`) for each declared `paramNeed()` slot — never a plain literal value — even for a param whose value is genuinely constant across every deploy of every app that provisions the module. The only way to make a value vary per app while staying literal (not a platform env var) is to keep it OUT of the module boundary entirely and pass it as a plain factory option instead.
 
