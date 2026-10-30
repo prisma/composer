@@ -3,14 +3,13 @@ import { string } from '../config.ts';
 import { Load, LoadError } from '../graph.ts';
 import {
   isParamSource,
-  isRuntimeValue,
   isSecretSource,
   module,
   paramSource,
   secretSource,
   service,
 } from '../node.ts';
-import { environmentFacts, isValue, resolve } from '../value.ts';
+import { isValue } from '../value.ts';
 import { anyInputSchema } from './helpers.ts';
 
 const build = {
@@ -85,18 +84,6 @@ describe('building a source', () => {
     expect(() => paramSource({}, { poolKey: '' })).toThrow(
       'paramSource() poolKey must be a non-empty string.',
     );
-  });
-
-  test('isRuntimeValue() is true for a secret source and a param source without a pool key, and false otherwise', () => {
-    expect(isRuntimeValue(pointer('X'))).toBe(true);
-    expect(isRuntimeValue(paramSource({}, { redacted: true }))).toBe(true);
-    expect(isRuntimeValue(paramSource({ name: 'X' }))).toBe(true);
-    expect(isRuntimeValue(variable('X'))).toBe(false);
-    expect(isRuntimeValue(environmentFacts.name)).toBe(false);
-    expect(isRuntimeValue(resolve([environmentFacts.name], ([name]) => name))).toBe(false);
-    expect(isRuntimeValue('X')).toBe(false);
-    expect(isRuntimeValue(null)).toBe(false);
-    expect(isRuntimeValue({ payload: { name: 'X' } })).toBe(false);
   });
 });
 

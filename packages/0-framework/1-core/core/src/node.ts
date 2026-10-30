@@ -239,19 +239,6 @@ export function sourceOriginOf(source: ParamSource | SecretSource): SourceOrigin
   return origin.kind === 'source' ? origin : undefined;
 }
 
-/**
- * True when `value` is a pointer: the real value at deploy of a value known
- * only at boot, such as `envSecret()`, `generatedParam()` or `serviceOrigin()`.
- * A resolve() function receives one in place of such a value; it may return it
- * unchanged, but cannot read it (ADR-0062). `envParam()` is not one: it is known
- * at deploy. A module input field is never one in the body, because Load reads
- * its binding only after the body has run.
- */
-export function isRuntimeValue(value: unknown): value is ParamSource | SecretSource {
-  if (!isSecretSource(value) && !isParamSource(value)) return false;
-  return sourceOriginOf(value)?.poolKey === undefined;
-}
-
 /** True if `value` is a param source, such as an `envParam()` result. */
 export function isParamSource(value: unknown): value is ParamSource {
   return (

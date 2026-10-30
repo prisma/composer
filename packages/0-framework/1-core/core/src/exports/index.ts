@@ -81,7 +81,6 @@ export {
   isNode,
   isParamSource,
   isProvisionNeed,
-  isRuntimeValue,
   isSecretSource,
   module,
   paramSource,

@@ -7,18 +7,14 @@ import type {
   SecretSource,
   Value,
 } from '../exports/index.ts';
-import { isRuntimeValue, paramSource, resolve, secretSource } from '../exports/index.ts';
+import { paramSource, secretSource } from '../exports/index.ts';
 
 const secretValue = secretSource<{ name: string }, SecretString>({ name: 'K' });
 const paramValue = paramSource<{ name: string }, string>({ name: 'G' }, { poolKey: 'G' });
 
-test('a secret source is a SecretSource and a Value of its type, and resolve() receives that type', () => {
+test('a secret source is a SecretSource and a Value of its type', () => {
   expectTypeOf(secretValue).toExtend<SecretSource>();
   expectTypeOf(secretValue).toExtend<Value<SecretString>>();
-  resolve([secretValue], ([v]) => {
-    expectTypeOf(v).toEqualTypeOf<SecretString>();
-    return 'x';
-  });
 });
 
 test('a param source fits a module input field of its type, and a bare ParamSource fits none', () => {
@@ -36,9 +32,4 @@ test('a Value<SecretString> that is not a source is not a SecretSource', () => {
 test("a resource's props take a param source of a plain type, never a secret source", () => {
   expectTypeOf(paramValue).toExtend<ResourcePropsMember>();
   expectTypeOf(secretValue).not.toExtend<ResourcePropsMember>();
-});
-
-test('isRuntimeValue() narrows to a source', () => {
-  const x: unknown = secretValue;
-  if (isRuntimeValue(x)) expectTypeOf(x).toEqualTypeOf<ParamSource | SecretSource>();
 });
