@@ -23,9 +23,7 @@ export interface Pointer<T> {
 
 function kindOf(value: unknown): unknown {
   if (typeof value !== 'object' || value === null) return undefined;
-  return blindCast<Record<PropertyKey, unknown>, 'reading the pointer brand off an unknown object'>(
-    value,
-  )[POINTER];
+  return Reflect.get(value, POINTER);
 }
 
 /** True for a plain pointer: a value known only at boot whose variable holds plain text. */
