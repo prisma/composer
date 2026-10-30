@@ -90,7 +90,7 @@ z.object({ from: field(z.string()), baseUrl: field(z.string().url()), deliveryCr
 
 - **Types.** `field(inner)` accepts `In | Pointer<In>` and outputs `Out | Pointer<In>`, where `In` and `Out` are the inner schema's input and output types. The pointer is typed by `In` because it stands for the variable's text, before the inner schema runs. So `port` above accepts `Pointer<string>`, and the service receives a number. Every plain pointer is a `Pointer<string>`, so binding a runtime value to `field(type('number'))` fails to compile. Neither library infers the pointer's type parameter through a union, so `field()` casts its result to these types.
 - **Checking.** `field(inner)` is a union that the schema library checks itself: a plain pointer, or a value the inner schema accepts. So the deploy check runs the author's whole schema, with pointers in place. For a field bound to a runtime value, the inner schema's check happens only at boot, when the service's schema sees the variable's text.
-- **Leaves only.** `field()` wraps a leaf. An object field stays a plain object schema, and its leaves are wrapped, as `smtp`'s are above. Wrapping an object schema fails three ways. At boot the pointer becomes text, which an object schema refuses. In the body, `input.smtp.host` stops type-checking. And ArkType cannot build the union around an object schema that has a transform anywhere inside it. A root's fields stay plain too, because the configuration never holds a pointer (section 7).
+- **Leaves only.** `field()` wraps a leaf. An object field stays a plain object schema, and its leaves are wrapped, as `smtp`'s are above. Wrapping an object schema fails three ways. At boot the pointer becomes text, which an object schema refuses. In the body, `input.smtp.host` stops type-checking. And ArkType cannot build the union around an object schema that has a transform anywhere inside it. A root's fields stay plain too, because the app configuration never holds a pointer (section 7).
 - **Secrets.** `secretString()` accepts a secret box or a secret pointer, so a secret field needs no `field()`. `field()` accepts only plain pointers, and `secretString()` only secret ones. So an `envSecret()` bound to a wrapped text field fails the deploy check, and so does a `serviceOrigin()` bound to a `secretString()` field.
 - **Error messages.** When the value is not a pointer, a wrapped field reports the error the plain field would. A missing required field and a value of the wrong type keep the inner schema's message, and no message names a Composer class. For Zod, the union's error function reports the inner schema's issue. For ArkType, a configured problem message reports the inner schema's message for every present value. A missing key is the one exception: ArkType builds that message from the union's branches, so it reads, for example, `from must be a string or an object (was missing)`. It still names no Composer class, and a missing key in a typed module binding already fails to compile. Tests compare each wrapped field's messages with the plain field's.
 - **ArkType.** The pointer branch checks that the value is an object before it checks for a pointer. Otherwise a union with a transforming inner schema throws when the schema is defined. A default goes outside the wrapper, `field(type('string')).default('x')`, because `type('string').default('x')` is not a type that can be wrapped.
@@ -159,7 +159,7 @@ A **value** is an opaque stand-in, in a module body, for data known later. Its *
 | **Deploy-time:** the deploy has the real value | a literal; a `resolve()` result; a configuration value | none yet (section 11) |
 | **Runtime:** only the platform has it; the service reads it at boot | `generatedParam()`, `serviceOrigin()` | `envSecret('NAME')`, a redacted `generatedParam()` |
 
-A **configuration value** is a value whose real value is read from the configuration (section 8): a field of the root's input, or `envParam('NAME')` in a binding.
+A **configuration value** is a value whose real value is read from the app configuration (section 8): a field of the root's input, or `envParam('NAME')` in a binding.
 
 A runtime value's real value at deploy is a pointer (section 3). The service reads the variable the pointer names at boot, as today.
 
@@ -167,9 +167,9 @@ A runtime value's real value at deploy is a pointer (section 3). The service rea
 
 `envParam()`, `envSecret()`, `generatedParam()` and `serviceOrigin()` each return one object that is both the target's source and a value. The serializer, preflight and boot receive the same objects as before, so the format the deploy writes does not change.
 
-- **`envParam('NAME')`** in a binding is a deploy-time configuration value. Its real value is `NAME` in the configuration. In a service's input, the deploy writes that text into the input document, as today. An unset or empty `NAME` gives no real value: in a binding the key is left out; listed in `resolve()`, the Load fails naming the variable. Once a root can declare `input`, `envParam()` is redundant, and a later step deprecates it.
-- **`envParam('NAME')` in a service's per-key params**, the older form of input, behaves as today. It is not a value there. The deploy writes a pointer row, deploy preflight fills a missing platform variable from the configuration (section 8), and the service reads the variable at boot.
-- **`envSecret('NAME')`** is a runtime secret. Its real value is a secret pointer. Preflight fills a missing platform variable from the secrets (section 8).
+- **`envParam('NAME')`** in a binding is a deploy-time configuration value. Its real value is `NAME` in the app configuration. In a service's input, the deploy writes that text into the input document, as today. An unset or empty `NAME` gives no real value: in a binding the key is left out; listed in `resolve()`, the Load fails naming the variable. Once a root can declare `input`, `envParam()` is redundant, and a later step deprecates it.
+- **`envParam('NAME')` in a service's per-key params**, the older form of input, behaves as today. It is not a value there. The deploy writes a pointer row, deploy preflight fills a missing platform variable from the app configuration (section 8), and the service reads the variable at boot.
+- **`envSecret('NAME')`** is a runtime secret. Its real value is a secret pointer. Preflight fills a missing platform variable from the app secrets (section 8).
 - **`generatedParam()`** and **`serviceOrigin()`** are runtime values the framework itself produces. Their real value at deploy is a pointer: a secret pointer for a redacted `generatedParam()`, and a plain pointer otherwise. A field bound to one must be a wrapped field, or a `secretString()` field for a redacted `generatedParam()`.
 
 ## 6. `resolve()` over input
@@ -184,22 +184,22 @@ A runtime value's real value at deploy is a pointer (section 3). The service rea
 
 ## 7. The root's input
 
-The root may declare `input`. Nothing provisions the root, so the deploy binds it: the root's binding is **the configuration** (section 8). The root's schema checks it before anything is created, and a mismatch fails the deploy with the schema's message and the environment's name. A refused secret field never echoes its value.
+The root may declare `input`. Nothing provisions the root, so the deploy binds it: the root's binding is **the app configuration** (section 8). The root's schema checks it before anything is created, and a mismatch fails the deploy with the schema's message and the environment's name. A refused secret field never echoes its value.
 
 The root meets the first requirement in section 2 the same way as any other module. Its body names the fields it needs. Nothing stands for the whole configuration, which by default holds every variable of the process environment.
 
-A root's fields stay plain. The configuration never holds a pointer, so wrapping a root field would only stop a `resolve()` from using it.
+A root's fields stay plain. The app configuration never holds a pointer, so wrapping a root field would only stop a `resolve()` from using it.
 
-A root's input cannot hold a secret yet: the configuration is plain, and a `secretString()` field refuses a plain value. A root binds `envSecret()` where it provisions a child.
+A root's input cannot hold a secret yet: the app configuration is plain, and a `secretString()` field refuses a plain value. A root binds `envSecret()` where it provisions a child.
 
 ## 8. Config adapters and secrets adapters
 
-The `composer` section of `prisma.config.ts` gains two lists: `config`, a list of **config adapters**, and `secrets`, a list of **secrets adapters**. The terms follow .NET's configuration system, where configuration providers are merged in order into one configuration.
+The `composer` section of `prisma.config.ts` gains two lists: `config`, a list of **config adapters**, and `secrets`, a list of **secrets adapters**. The terms follow .NET's configuration system, where configuration providers are merged in order into one configuration. The merged values are the app configuration and the app secrets: "app" is what Composer calls the application, the outermost module, whose input they fill.
 
 - An adapter receives the environment's name and the folder of the declaring `prisma.config.ts`, and returns an object, possibly asynchronously.
 - The adapters of a list run one at a time, in order. Their results merge by top-level key; a later adapter wins. A key whose value is `undefined` does not hide an earlier adapter's value.
-- The merged result of the config adapters is **the configuration**. It is the root's binding, and `envParam()` reads it. Deploy preflight also fills a missing platform variable for an `envParam()` in a service's per-key params from it.
-- The merged result of the secrets adapters is **the secrets**. Every value in it must be text; an adapter that returns anything else fails the command with `CONFIG.ADAPTER_INVALID`. Deploy preflight and dev preflight fill a missing `envSecret()` platform variable from the secrets, by name. A name no adapter supplies fails as today.
+- The merged result of the config adapters is **the app configuration**. It is the root's binding, and `envParam()` reads it. Deploy preflight also fills a missing platform variable for an `envParam()` in a service's per-key params from it.
+- The merged result of the secrets adapters is **the app secrets**. Every value in it must be text; an adapter that returns anything else fails the command with `CONFIG.ADAPTER_INVALID`. Deploy preflight and dev preflight fill a missing `envSecret()` platform variable from the app secrets, by name. A name no adapter supplies fails as today.
 - Preflight fills only a platform variable that does not exist yet. Editing a value in `.env.production` and deploying again does not change a variable the platform already holds. To change one, change it on the platform.
 - An adapter that throws fails the command with `CONFIG.ADAPTER_FAILED`. Its message is redacted like any other output (section 9).
 - Both lists default to **`[environmentVariables()]`**. A project with neither key reads its values where it did before. A list the author writes replaces the default; to keep reading the shell, include `environmentVariables()`.
@@ -215,7 +215,7 @@ The `composer` section of `prisma.config.ts` gains two lists: `config`, a list o
 
 - `prisma deploy` runs both lists, in its first process.
 - `prisma dev` runs both lists, in its first process, at start and at each rebuild.
-- `destroy` runs only the config adapters. It loads the graph, so the configuration must satisfy the root's schema. It runs no preflight, so it does not need the secrets, and an unreachable secrets manager cannot block a teardown.
+- `destroy` runs only the config adapters. It loads the graph, so the app configuration must satisfy the root's schema. It runs no preflight, so it does not need the app secrets, and an unreachable secrets manager cannot block a teardown.
 - No second process runs an adapter (see below), and no other command runs one. So `dev url`, `dev stop`, `log` and `deploy list` keep working when a `.env` file is broken or a secrets manager is unreachable.
 
 In `prisma dev`, a changed adapter value pauses rebuilds until dev is restarted, as an edit to `prisma.config.ts` does today. A later slice watches every input and applies new values (section 11).
@@ -224,30 +224,30 @@ In `prisma dev`, a changed adapter value pauses rebuilds until dev is restarted,
 
 `prisma deploy` runs the adapters in its own process, to check the root's input and run preflight. It then starts a second process, which loads `prisma.config.ts` and the graph again, and runs Alchemy to do the deploy. The second process runs no adapter.
 
-Instead, the first process writes a **configuration file** beside the generated stack file, in `.prisma-composer/`. It holds only the values the graph reads from the configuration:
+Instead, the first process writes a **configuration file** beside the generated stack file, in `.prisma-composer/`. It holds only the values the graph reads from the app configuration:
 
 - for each path of the root's input that the root's body names, the real value the first process's check produced;
-- for each name an `envParam()` in the graph reads, that name's value in the configuration.
+- for each name an `envParam()` in the graph reads, that name's value in the app configuration.
 
 The second process takes the root's real values from the file and does not run the root's schema again. It could not: the file lacks the fields the body never names, and a required one among them would fail the check. The first process has already checked the whole configuration.
 
 - The file is JSON. A root field whose real value JSON cannot hold exactly, such as a `Date` a transform produced, fails the deploy in the first process, naming the field.
 - The file is readable only by its owner (mode 0600). The first process deletes it when the deploy ends, whether the deploy succeeds or fails.
-- The second process never needs the secrets, so the file holds none. It inherits the shell's environment, as today, so a secret in the shell is present in it; it reads none.
+- The second process never needs the app secrets, so the file holds none. It inherits the shell's environment, as today, so a secret in the shell is present in it; it reads none.
 - The second process reads the values the first process checked, so a `.env` file edited during the deploy, or an adapter that would return something else a second time, cannot change what is deployed.
 - The first process also passes the second the list of node addresses it checked, in a `PRISMA_COMPOSER_` environment variable, as it passes the preflight payload. The second process refuses to deploy a graph whose list differs. A body that reads `process.env` directly is the way this can still happen (section 2).
 
-`destroy`'s second process receives the configuration through the same file.
+`destroy`'s second process receives the app configuration through the same file.
 
 ### `prisma dev`'s two processes
 
-`prisma dev` starts a second process at start and at each rebuild. That process receives the configuration through the same kind of file, which `prisma dev` deletes when it stops. Unlike the deploy's second process, it needs the secrets, because the local services run with them. The first process passes the value of each name an `envSecret()` in the graph names through the second process's environment, in memory. Neither process writes a secret to a file for this.
+`prisma dev` starts a second process at start and at each rebuild. That process receives the app configuration through the same kind of file, which `prisma dev` deletes when it stops. Unlike the deploy's second process, it needs the app secrets, because the local services run with them. The first process passes the value of each name an `envSecret()` in the graph names through the second process's environment, in memory. Neither process writes a secret to a file for this.
 
 ## 9. Keeping secret values out
 
 - A secret's value enters no file Composer writes for a deploy, no deploy state, no deploy report and no log line. An `envSecret()` reaches the service's input document as a pointer. The configuration file holds no secrets (section 8).
 - **What Composer redacts.** Everywhere it prints, Composer redacts:
-  - every value under a name that an `envSecret()` in the graph names, whether in the configuration or in the secrets;
+  - every value under a name that an `envSecret()` in the graph names, whether in the app configuration or in the app secrets;
   - every value a project's own secrets adapters return, when the project writes a `secrets` list.
 
   The default list, `[environmentVariables()]`, only supplies the values of the names `envSecret()` names, so under it only those values are redacted. Redacting every value in the shell would blank every `1` and `true` in the output.
@@ -269,7 +269,7 @@ This design also removes or replaces the following. All but the last were built 
 - **A `resolve()` function returning a pointer it received**, and Load's special case that accepts one.
 - **Forwarding a non-root module's whole `input`**, which S2 to S5 allow and test.
 - **The stand-in values** that a module's and a service's schema check in place of a runtime value. Schemas see pointers instead. `paramSource()`'s `sentinel` option goes, and its `redacted` option decides the kind of pointer the source gives.
-- **The "pool" names in code**: `LoadOptions.configPool`, `paramSource()`'s `poolKey` option, and `readConfigPool` and `readSecretsPool` on `@prisma/composer/internal/pools`, which the generated stack files import. The code takes the names "the configuration" and "the secrets", and the generated stack files read the configuration file instead.
+- **The "pool" names in code**: `LoadOptions.configPool`, `paramSource()`'s `poolKey` option, and `readConfigPool` and `readSecretsPool` on `@prisma/composer/internal/pools`, which the generated stack files import. The code takes the names "the app configuration" and "the app secrets", and the generated stack files read the configuration file instead.
 - **The second process's own run of the config adapters**, and the requirement that adapters return the same values in both processes.
 - **A service binding's loose type, `InputBinding`**, which accepts any source in any key.
 
@@ -325,6 +325,6 @@ Each amendment says plainly which recorded statement it reverses:
 ### The glossary
 
 - The entry "Configuration — params and their sources" is renamed **Input**. It says what a node's input schema declares, and the values a binding can give it: literals, values and sources. The older per-key service params get one line in it, as the older form. Other glossary text that uses "Configuration" in that sense, such as the Core nouns introduction, changes with it.
-- The entries "Config pool", "Secrets pool" and "Config adapter", which S4 adds, are replaced by four: **the configuration**, **the secrets**, **config adapter** and **secrets adapter**.
+- The entries "Config pool", "Secrets pool" and "Config adapter", which S4 adds, are replaced by four: **the app configuration**, **the app secrets**, **config adapter** and **secrets adapter**.
 - New entries: **`field()`**, which also defines a wrapped field and a plain field, and **`RuntimeValue`**, which also defines a pointer and its two kinds.
 - The **Value** entry changes. A body can branch on a value, but the branch always goes the same way, so it cannot vary the graph. `envSecret()`, `generatedParam()` and `serviceOrigin()` give runtime values. The sentence saying that `envParam()` and `envSecret()` are not values yet goes.
