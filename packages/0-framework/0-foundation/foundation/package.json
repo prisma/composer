@@ -9,6 +9,7 @@
     "./assertions": "./dist/assertions.mjs",
     "./casts": "./dist/casts.mjs",
     "./errors": "./dist/errors.mjs",
+    "./pointer": "./dist/pointer.mjs",
     "./result": "./dist/result.mjs",
     "./secret": "./dist/secret.mjs",
     "./package.json": "./package.json"
