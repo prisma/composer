@@ -3,7 +3,7 @@
  * data objects. A node's `extension` + `type` form its deploy-time registry key (ADR-0017).
  */
 import { blindCast } from '@internal/foundation/casts';
-import { POINTER, type PointerKind } from '@internal/foundation/pointer';
+import { POINTER, type Pointer, type PointerKind } from '@internal/foundation/pointer';
 import type { SecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { ConfigParam, Connection, Params } from './config.ts';
@@ -281,7 +281,7 @@ export type ParamBindings<P extends Params> = {
         : never);
 };
 
-/** What a value in a service's input binding may stand for: plain data, a `SecretString` at any depth (a forwarded secret field), and `undefined` (an optional field the binding left out). */
+/** What a value in a service's input binding may stand for: plain data, a `SecretString` at any depth (a forwarded secret field), a pointer (a forwarded wrapped field), and `undefined` (an optional field the binding left out). */
 export type InputBindingData =
   | string
   | number
@@ -289,6 +289,7 @@ export type InputBindingData =
   | null
   | undefined
   | SecretString
+  | Pointer<unknown>
   | readonly InputBindingData[]
   | { readonly [key: string]: InputBindingData };
 
