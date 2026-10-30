@@ -65,11 +65,12 @@ is small and pure and still sits on `.`; the config *types* (`defineConfig`,
 
 | Entry | Exports | Imports (weight) |
 | --- | --- | --- |
-| `@prisma/composer` | node factories (`service`, `resource`, `dependency`, `module`), `Load`, `configOf`, `hydrate`, `BuildAdapter` type, model types (incl. `Config`) | nothing |
+| `@prisma/composer` | node factories (`service`, `resource`, `dependency`, `module`), `Load`, `configOf`, `hydrate`, `BuildAdapter` type, model types (incl. `Config`), and the pointer checks `isPlainPointer()` and `isSecretPointer()` with the `Pointer` and `RuntimeValue` types | nothing |
 | `@prisma/composer/config` | `defineConfig`, `PrismaAppConfig`, `ExtensionDescriptor`, `NodeDescriptor`, `PreflightInput`, `TeardownInput` — the types the `composer` section of `prisma.config.ts` is checked against (ADR-0017, ADR-0049) | nothing (types + one identity function) |
 | `@prisma/composer/deploy` | `lower()`, `lowering()`, the SPI types (`ServiceLowering`, `Lowering`, `ApplicationDescriptor`, `ProvisionerDescriptor`, `LowerContext`, `Outputs`, `LoweredResult`, `DeployedEntity`), `Bundle`/`AssembleInput` (the assembler's contract, defined once here) | `alchemy`, `effect` |
 | `@prisma/composer-prisma-cloud` | `compute()` (declares a service; carries `run`/`load`), `rawPostgres()` (`{ name }` identity or `{ client }` dependency, by argument shape) + `rawPostgresContract` | `@prisma/composer` only |
-| `@prisma/composer/arktype` | `secretString()` — the arktype spelling of a `SecretString` input leaf (ADR-0042). Opt-in: no other entry imports it, so a Zod app never loads arktype | `arktype` |
+| `@prisma/composer/arktype` | `secretString()` and `field()` — the arktype spellings of a `SecretString` input leaf and of a wrapped leaf field (ADR-0042). Opt-in: no other entry imports it, so a Zod app never loads arktype | `arktype` |
+| `@prisma/composer/zod` | `secretString()` and `field()` — the Zod spellings of the same two (ADR-0042). Opt-in: no other entry imports it, so an ArkType app never loads Zod | `zod` |
 | `@prisma/composer/service-rpc` | the RPC Contract kind — `contract()`, `rpc()`, `serve()`, the typed client binding (see [`connection-contracts.md`](connection-contracts.md)) | `@prisma/composer` + a Standard Schema validator |
 | `@prisma/composer/http` | raw HTTP, the untyped service-to-service kind — `rawHttp()`, `rawHttpContract`, the `RawHttpClient` binding (see [ADR-0054](../90-decisions/ADR-0054-raw-http-is-the-untyped-tier-of-service-connections.md)) | `@prisma/composer` only |
 | `@prisma/composer-prisma-cloud/cron` | cron as a driver (see [ADR-0020](../90-decisions/ADR-0020-scheduled-work-is-a-driver-not-a-resource.md)) — `defineSchedule`, `serveSchedule`, `cronScheduler`, `cron()`, `triggerContract` | `@prisma/composer` + `app-node` + `app-rpc` |
@@ -781,7 +782,7 @@ material Composer's rows carry (ADR-0042 pointers) and platform metadata. The
 long-term carrier is the deployment resource itself (inputs it must be
 recreated for), tracked as an upstream follow-up.
 Secrets are platform-sourced and rotate through the platform, not this edge (see
-the [config/secret glossary](../03-domain-model/glossary.md#configuration--config-and-secrets)).
+the [input glossary entry](../03-domain-model/glossary.md#input)).
 
 **Deployment identity — address, bootstrap, and why.** A node's identity is its **address**: the path of provision ids starting at the root, assigned by Load from graph position. The root's address is the deployed app name, so every address starts with it (`shop`, `shop.catalog`, `shop.auth.api`). A provision id is the node's name unless `provision()` sets an `id`, and the path qualifies it, so registry modules with common internal names (`db`, `service`) cannot collide. Identity cannot travel through the environment: every App in a Project boots a byte-identical env (ConfigVariables are project+branch-scoped and snapshotted at version create — see the [PDP data model](../05-prisma-cloud/pdp-data-model.md)), so any "who am I" variable is one shared key, last write wins. The only per-service channel is the artifact itself. Hence the bootstrap: the artifact's entrypoint takes identity as a parameter, and deploy is the caller. The Compute artifact the pack assembles:
 

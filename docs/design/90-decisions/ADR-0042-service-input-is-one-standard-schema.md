@@ -4,6 +4,8 @@ Extended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service
 
 Amended 2026-10-30 (module-input project, fifth slice): the entry for the secrets decision below says the forwardable secret need (`secret()`) survives. It does not: a module takes a secret as a `secretString()` field of its own `input` (ADR-0061), so the one-schema model covers modules too.
 
+Amended 2026-10-30 (module-input project, sixth slice): `@prisma/composer/zod` ships beside `@prisma/composer/arktype`. Each exports `secretString()` and `field()`. Zod's `secretString()` is the `z.custom` described below. In both libraries `secretString()` also accepts a secret pointer, the real value at deploy of a secret known only at boot ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). `field(inner)` wraps the schema of one leaf field: the wrapped field accepts what `inner` accepts and a plain pointer, the real value at deploy of a plain value known only at boot, such as `serviceOrigin()`. Its input type is `In | Pointer<In>` and its output type `Out | Pointer<In>`. For a value that is not a pointer, a wrapped field reports `inner`'s error, except ArkType's message for a missing key, which names both branches (`from must be a string or an object (was missing)`). For any other Standard Schema library, `@prisma/composer` exports `Pointer`, `isPlainPointer()` and `isSecretPointer()`, beside `isSecretString()`, so an author can write the same two helpers. The deploy still checks a service's binding with the stand-ins described below, so neither change alters what a deploy accepts.
+
 ## Decision
 
 A compute service declares its entire incoming configuration — plain values
