@@ -3,8 +3,8 @@
  * dependency, ONE input schema — `deliveryMode`/`deliveryUrl`/`from` plus the
  * `deliveryCredential` secret leaf (a `SecretString`-typed field, ADR-0042) —
  * and the two exposed ports (`send`, `outbox`). The module (`email-module.ts`)
- * binds the input at provision: forwarded boundary params/secret as leaves,
- * `deliveryUrl` as a literal. Build/entry mechanics copied from storage's
+ * binds the input at provision: its own input fields as leaves, `deliveryUrl`
+ * as a literal. Build/entry mechanics copied from storage's
  * service file (`storage/src/storage-service.ts`), not re-derived:
  * `build.module` points at this file's own built output so the deploy
  * bootstrap can re-import it as `main` and call `main.run(address, boot)`;

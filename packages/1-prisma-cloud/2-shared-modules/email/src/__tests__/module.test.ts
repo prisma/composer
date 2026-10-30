@@ -2,8 +2,7 @@
  * The `email()` module Loads into a wired graph: it owns a Postgres `db`
  * resource and the `email` service wired to it, passes its input on to the
  * service, and its two ports (`send`, `outbox`) wire to two different
- * consumers independently. Mirrors storage's module.test.ts — this is the
- * first shipped module using boundary params (spec §"Module factory").
+ * consumers independently. Mirrors storage's module.test.ts.
  */
 import { describe, expect, test } from 'bun:test';
 import { Load, module, type SecretSource } from '@internal/core';
