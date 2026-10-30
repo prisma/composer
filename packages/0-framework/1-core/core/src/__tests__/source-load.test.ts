@@ -74,8 +74,7 @@ const pointer = (name: string) => secretSource({ name }, { label: `envSecret('${
 const variable = (name: string) =>
   paramSource({ name }, { label: `envParam('${name}')`, poolKey: name });
 
-const origin = () =>
-  paramSource({}, { label: "serviceOrigin('shop.web')", sentinel: 'https://origin.invalid' });
+const origin = () => paramSource({}, { label: "serviceOrigin('shop.web')" });
 
 const urlContract = () => providerContract('fake/url', { url: '' });
 
@@ -216,17 +215,17 @@ describe('real values', () => {
 });
 
 describe("a module's input and runtime param sources", () => {
-  test("a param source with a string sentinel in a module's input reaches the service as the same source", () => {
+  test("a runtime param source in a module's input is checked as its pointer and reaches the service as the same source", () => {
     const seen: unknown[] = [];
     const base = origin();
 
     const graph = Load(shopWith(forwarding(recording(seen)), { base }));
 
-    expect(seen).toEqual([{ base: 'https://origin.invalid' }]);
+    expect((seen[0] as Record<string, unknown>)['base']).toBe(base);
     expect(bindingOf(graph)['base']).toBe(base);
   });
 
-  test('a redacted param source is checked as a SecretString and reaches the service as the same source', () => {
+  test('a redacted param source is checked as a secret pointer and reaches the service as the same source', () => {
     const email = module(
       'email',
       { input: type({ key: secretString(), n: 'string.integer.parse' }) },
@@ -241,26 +240,12 @@ describe("a module's input and runtime param sources", () => {
     expect(bindingOf(graph)['key']).toBe(key);
   });
 
-  test('a module schema that changes a field bound to a sentinel fails', () => {
-    const changing: StandardSchemaV1 = {
-      '~standard': { version: 1, vendor: 'test', validate: () => ({ value: { base: 'x' } }) },
-    };
+  test("a raw param source in a module's input is a plain pointer and reaches the service as the same source", () => {
+    const from = paramSource({ name: 'X' });
 
-    expect(loadError(() => Load(shopWith(forwarding(changing), { base: origin() }))).message).toBe(
-      'The input schema of module "shop.email" changed input key "base", which is bound to ' +
-        "serviceOrigin('shop.web'). Its value is known only at boot, so a module's schema may " +
-        'check the field but never transform it.',
-    );
-  });
+    const graph = Load(shopWith(forwarding(anyInputSchema), { from }));
 
-  test("a param source with no sentinel in a module's input fails", () => {
-    const root = shopWith(forwarding(anyInputSchema), { from: paramSource({ name: 'X' }) });
-
-    expect(loadError(() => Load(root)).message).toBe(
-      'input key "from" of module "shop.email" is bound to a param source a module\'s input ' +
-        "cannot take: it names no sentinel for the module's schema to check in its place, as a " +
-        'raw paramSource() does. Bind envParam(), generatedParam() or serviceOrigin(), or a value.',
-    );
+    expect(bindingOf(graph)['from']).toBe(from);
   });
 
   test('a path through a runtime param source fails naming the path', () => {

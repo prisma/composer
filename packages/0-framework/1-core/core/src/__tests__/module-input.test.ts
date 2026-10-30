@@ -5,14 +5,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { string } from '../config.ts';
 import { type Graph, Load, LoadError } from '../graph.ts';
-import {
-  dependency,
-  type ModuleNode,
-  module,
-  paramSource,
-  secretSource,
-  service,
-} from '../node.ts';
+import { dependency, type ModuleNode, module, secretSource, service } from '../node.ts';
 import { isValue, resolve } from '../value.ts';
 import { anyInputSchema, conn, providerContract } from './helpers.ts';
 
@@ -494,18 +487,6 @@ describe('errors', () => {
 
     expect(loadError(() => Load(shopWith(email, { key: 'plain' }))).message).toStartWith(
       'The input binding of module "shop.email" does not match the module\'s input schema: ',
-    );
-  });
-
-  test("a param source in a module's input binding fails naming the key", () => {
-    const email = module('email', { input: anyInputSchema }, () => {});
-
-    expect(
-      loadError(() => Load(shopWith(email, { from: paramSource({ name: 'X' }) }))).message,
-    ).toBe(
-      'input key "from" of module "shop.email" is bound to a param source a module\'s input ' +
-        "cannot take: it names no sentinel for the module's schema to check in its place, as a " +
-        'raw paramSource() does. Bind envParam(), generatedParam() or serviceOrigin(), or a value.',
     );
   });
 

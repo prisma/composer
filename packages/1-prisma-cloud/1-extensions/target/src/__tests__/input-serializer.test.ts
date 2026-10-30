@@ -6,7 +6,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { Load, module, SecretBox, type ServiceNode, service } from '@internal/core';
-import { secretString } from '@internal/foundation/arktype';
+import { field, secretString } from '@internal/foundation/arktype';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { envParam, generatedParam, serviceOrigin } from '../param.ts';
@@ -604,7 +604,9 @@ describe('a source forwarded through a module input', () => {
   };
 
   test("serviceOrigin() forwarded through a module's input serializes to its origin pointer", () => {
-    const row = forwarded(type({ baseUrl: 'string' }), { baseUrl: serviceOrigin('shop.web') });
+    const row = forwarded(type({ baseUrl: field(type('string')) }), {
+      baseUrl: serviceOrigin('shop.web'),
+    });
 
     expect(JSON.parse(row?.value ?? '')).toEqual({
       baseUrl: { $generated: 'COMPOSER_SHOP_LOGIN_WEB_BASEURL_GENERATED', redacted: false },
