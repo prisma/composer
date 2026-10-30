@@ -105,7 +105,7 @@ A RoutingUrl is the control plane's record that a custom hostname should reach a
 
 ### The domain ownership claim and its verification
 
-A DomainOwnership record is a workspace's claim that it controls a domain: either an exact hostname such as `shop.com`, or a wildcard one label deep such as `*.preview.shop.com`. It exists only once the platform has seen a TXT record at `_prisma-verification.shop.com` carrying a value derived from the workspace's id; there is no unverified claim. This is the same TXT record the platform asks for today; a workspace that has published it once needs nothing new.
+A DomainOwnership record is a workspace's claim that it controls a domain: either an exact hostname such as `shop.com`, or a wildcard one label deep such as `*.preview.shop.com`. It can be created before its TXT record exists, and is pending until the platform finds a TXT record at `_prisma-verification.shop.com` carrying a value derived from the workspace's id; then it is verified. This is the same TXT record the platform asks for today; a workspace that has published it once needs nothing new. A custom domain attached before the TXT check shipped on 24 October 2026 has no TXT record, so the backfill gives it a third state, grandfathered. It has no end date. A missing record never revokes it; only a conflict does, when another workspace publishes its own value at the record name. It does not count as verified.
 
 Ownership and routing are separate questions. Ownership asks whether this workspace may use this domain. Routing asks which service a hostname reaches. A RoutingUrl can exist without a verified claim; it just cannot serve traffic until one exists.
 
@@ -120,7 +120,7 @@ A RoutingUrl serves traffic only when all six of these are true:
 5. A Foundry custom domain exists for the hostname, this RoutingUrl holds its id, and it is bound to the live deployment's compute version.
 6. Foundry reports the custom domain's certificate as active.
 
-There is deliberately no single status field. Each condition changes on its own: a certificate can be issuing while the service is deleted; a CNAME can be removed years later. The record reports all six, and reports the first unmet one as the next thing to do, with the exact DNS record to publish.
+A RoutingUrl has a status. It is pending until all six conditions are met, and reports the first unmet one as the next thing to do, with the exact DNS record to publish. Once they are met it is active. A change of the service's live deployment, or a service with no live deployment gaining one, does not change the status: the control plane only re-points the Foundry custom domain. Nothing is sent to Foundry for a new or changed hostname until its domain ownership is verified; a grandfathered one is not enough. The RoutingUrls the backfill creates for existing custom domains start out active.
 
 ### One custom domain per hostname
 
