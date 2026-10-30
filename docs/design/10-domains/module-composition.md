@@ -1,6 +1,8 @@
 # Module composition
 
 > Amended by [ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares one `input` schema, as a compute service does, and a root may declare one too. A module's input fields are values (`Value<T>`), and its binding is validated during Load's second pass; see [§ Input](#input).
+>
+> Amended by the module-input project (2026-10-30): the module `params` and `secrets` slots are removed; `module()` and `provision()` refuse them.
 
 How a module declares a boundary, forwards through it, nests, and is consumed
 from another module. The decision this design rests on is
@@ -163,8 +165,8 @@ An input field is accepted in four places:
 - **a service param or a resource prop**, when its real-value type is plain
   data: not optional, and not a secret.
 
-Nowhere else: not as a `provision()` id, not in `deps`, not in a module's
-`secrets` or `params` binding, and not as an `expose` return. Load refuses each.
+Nowhere else: not as a `provision()` id, not in `deps`, and not as an `expose`
+return. Load refuses each.
 
 **How Load validates.** Load records each module's input binding at its
 `provision()` call and validates it with the module's schema during the second
@@ -230,7 +232,10 @@ everything downstream consumes:
   - a cycle through forwarding edges — expressible only once boundaries
     exist, so composition brings the check with it;
   - a module's input binding the module's schema refuses — validated in the
-    second pass, after every module body has run.
+    second pass, after every module body has run;
+  - a `params` or `secrets` key on `module()`, or a `params` or `secrets` map on
+    a module's `provision()`: a module takes its configuration only through
+    `input`.
 
 The boundary is a wiring-time contract, checked at compile time and re-checked
 at Load. It is not enforced against a body that captures a sibling scope's ref

@@ -6,6 +6,8 @@ Amended 2026-10-29 (module-input project, third slice): `envParam('NAME')` retur
 
 Amended 2026-10-30 (module-input project, fourth slice): `envParam('NAME')` reads `NAME` from the config pool everywhere it read the deploy shell: in a service's input when the target serializes it, in a module's input and `resolve()`, and when preflight fills the platform variable an `envParam()` param points at. The value must be text.
 
+Amended 2026-10-30 (module-input project, fifth slice): `paramNeed()`, `ParamNeed`, `ParamNeeds` and `ParamNeedBindings` are removed, with the module `params` slot. A module takes a value as a field of its `input`, which takes a literal as well as a source, so the rule that a module param slot takes only a source is gone with the slot. A service's per-key `params`, `paramSource()` and `envParam()` are unchanged.
+
 ## Decision
 
 A config param can be bound at `provision()` time — to a literal value or to a

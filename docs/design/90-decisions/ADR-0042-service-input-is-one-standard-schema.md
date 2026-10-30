@@ -2,6 +2,8 @@
 
 Extended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): modules declare `input` the same way.
 
+Amended 2026-10-30 (module-input project, fifth slice): the entry for the secrets decision below says the forwardable secret need (`secret()`) survives. It does not: a module takes a secret as a `secretString()` field of its own `input` (ADR-0061), so the one-schema model covers modules too.
+
 ## Decision
 
 A compute service declares its entire incoming configuration — plain values

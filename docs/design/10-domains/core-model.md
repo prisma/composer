@@ -225,8 +225,8 @@ interface ExtensionAuthoredNode extends NodeBase {
 // (ADR-0018) plus a few framework facets. The pack validates raw values
 // against `schema` at boot, and TypeScript infers the hydrate/load input types
 // from it — there is no framework enum of permitted types. A param is never
-// secret — a secret is its own forwardable slot, declared with secret() and
-// read with secrets() (ADR-0029).
+// secret: a secret is a secretString() field of an input schema, bound with
+// envSecret() (ADR-0029, ADR-0042).
 interface ConfigParam<S extends StandardSchemaV1 = StandardSchemaV1> {
   readonly schema: S
   readonly optional?: boolean
@@ -839,7 +839,7 @@ At boot, the deployed artifact runs the bootstrap, which calls the node's
 // `schema` is a data-only projection of the param's Standard Schema (its vendor
 // tag, never the schema's own `validate`) — a structured param reports its real
 // shape instead of a `type` enum. Physical locations are the pack's business.
-// Secrets are not here — they live on their own slot (ADR-0029).
+// Secrets are not here: they are secretString() fields of a service's input (ADR-0029).
 interface ConfigDeclaration {
   readonly owner: "service" | { readonly input: string }
   readonly name: string              // "url" · "port"
