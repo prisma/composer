@@ -37,11 +37,19 @@ export interface DeployLease {
   readonly expiresAt: string;
 }
 
+type LeaseErrorBody =
+  | { readonly error: { readonly message: string; readonly hint?: string } }
+  | { readonly success: false; readonly error: readonly unknown[] };
+
 /** The server names the current holder in its 409 message; pass it through verbatim, hint appended. */
-const serverErrorText = (error: { error: { message: string; hint?: string } }): string =>
-  error.error.hint === undefined
-    ? error.error.message
-    : `${error.error.message} ${error.error.hint}`;
+const serverErrorText = (body: LeaseErrorBody): string => {
+  if ('success' in body) {
+    return `the server rejected the lease request: ${JSON.stringify(body.error)}`;
+  }
+  return body.error.hint === undefined
+    ? body.error.message
+    : `${body.error.message} ${body.error.hint}`;
+};
 
 const transportError = (cause: unknown): PrismaApiError =>
   new PrismaApiError({ status: 0, message: String(cause) });
