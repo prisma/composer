@@ -1,2 +1,2 @@
-export * from '@internal/core/config';
 export * from '@internal/cli/config';
+export * from '@internal/core/config';

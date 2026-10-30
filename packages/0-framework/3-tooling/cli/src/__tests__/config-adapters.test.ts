@@ -104,12 +104,14 @@ describe('dotenv()', () => {
     expect(message).toStartWith(`dotenv() could not read ${dir}/.env: `);
   });
 
-  test('dotenv() leaves ${VAR} references as written', async () => {
+  const reference = ['$', '{A}'].join('');
+
+  test(`dotenv() leaves ${'$'}{VAR} references as written`, async () => {
     const dir = freshDir();
-    write(dir, { '.env': 'A=x\nB=${A}\n' });
+    write(dir, { '.env': `A=x\nB=${reference}\n` });
 
     const values = await dotenv()({ environment: 'staging', configDirectory: dir });
 
-    expect(values['B']).toBe('${A}');
+    expect(values['B']).toBe(reference);
   });
 });

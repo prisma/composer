@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { Load, module, resolve, resource } from '@internal/core';
-import { secretString } from '@internal/foundation/arktype';
 import type { ConfigPool, ConfigPools, SecretsPool } from '@internal/core/config';
+import { secretString } from '@internal/foundation/arktype';
 import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';

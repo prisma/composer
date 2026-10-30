@@ -35,8 +35,8 @@ import {
   isOriginParamSource,
   ORIGIN_SENTINEL,
 } from './param.ts';
-import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
 import { poolText } from './pool-text.ts';
+import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
 import { secretName } from './secret.ts';
 
 export { addressKeySegments, configKey, ORIGIN_KEY_NAME };
