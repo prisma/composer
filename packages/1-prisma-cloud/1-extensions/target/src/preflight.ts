@@ -272,7 +272,7 @@ const listFailedError = (key: string, error: unknown): Error =>
 
 const fillFailedError = (key: string, error: unknown): Error =>
   new Error(
-    `deploy preflight: failed to provision "${key}" from the deploy shell: ${JSON.stringify(error)}.`,
+    `deploy preflight: failed to set "${key}" on the platform from its pool: ${JSON.stringify(error)}.`,
   );
 
 /** `value` as one POSIX shell word: single-quoted, each embedded `'` written as `'\''`. */
