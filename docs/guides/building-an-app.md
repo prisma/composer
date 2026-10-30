@@ -446,8 +446,8 @@ envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
   `Pointer`, `isPlainPointer()` and `isSecretPointer()` from
   `@prisma/composer` are what `field()` and `secretString()` check. Wrap every leaf field of a reusable module's schema other than a `secretString()` field, unless a `resolve()` lists it: the module then takes a literal, a deploy-time value or a value known only at boot, whichever its caller has. In the example above, `from` stays plain because a `resolve()` computes with it, and `replyTo` is wrapped. A root's fields stay plain too, because the config pool never holds a pointer. Never wrap a `secretString()` field: `field(secretString())` would accept a plain pointer into a secret field, and the service would then fail at boot.
 - A body reaches only the keys every member of a union schema has, and has no
-  element access into an array field. To narrow, forward the whole `input`,
-  or narrow inside a `resolve()` function.
+  element access into an array field. To narrow, declare a flat schema and
+  pass its fields on by name, or narrow inside a `resolve()` function.
 - Before Composer 0.37, a module declared per-key `params` with `paramNeed()`
   and `secrets` with `secret()`, bound with
   `provision(module, { params, secrets })`. Both are gone, and `module()` and
@@ -968,9 +968,9 @@ A root's input takes no secret, so bind `envSecret()` inside the body, as
 `stripeKey` is above.
 
 Pass the root's input fields on one by one, as `from: input.EMAIL_FROM` is
-above. The root's whole `input` is the whole config pool, which by default
-holds every variable of the shell, secrets included, so Load refuses it in a
-binding or a `resolve()` dependency.
+above. The root's whole `input` is every value the `config` adapters
+return, which by default is every variable of the shell, secrets included, so
+Load refuses it in a binding or a `resolve()` dependency.
 
 The root's schema checks the config pool before anything is created, so a
 missing value fails with the schema's message.

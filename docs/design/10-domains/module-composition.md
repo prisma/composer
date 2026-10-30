@@ -46,7 +46,9 @@ type ModuleOutputs<E extends Expose> = { [P in keyof E]: RefPort<E[P]> };
   assignable to the declared output contract); Load re-checks via
   `satisfies()` — the same two-layer check all wiring uses.
 - The body also receives `environment`, whose `name` is a value: an opaque
-  stand-in the body cannot read or branch on. The body lists it as a
+  stand-in whose data the body cannot read. A truthiness check or `typeof` on
+  it always goes the same way, because the body sees an object, so the body
+  cannot vary the graph by environment. The body lists it as a
   dependency of `resolve(dependencies, fn)`, which returns a computed value it
   can bind to a service's input or params; Load runs `fn` after every module
   body has run
@@ -142,9 +144,11 @@ handed it. Its real value is the data at that key path in the module's
 validated input, which is the module's binding with its values replaced by
 their real values and passed through the module's schema. A real value is the
 schema's output, so a field typed `number` by a `string.integer.parse` schema
-receives `4`, not `'4'`. An input field is deploy-time: its real value is known
-by the end of Load. A field bound to `envSecret()`, `generatedParam()` or
-`serviceOrigin()` has a pointer as its real value, and its type says so: a
+receives `4`, not `'4'`. An input field bound to a deploy-time value is
+deploy-time: its real value is known by the end of Load. A field bound to
+`envSecret()`, `generatedParam()` or `serviceOrigin()` is a runtime value: the
+data is known only at boot, so its real value is a pointer, and its type says
+so: a
 wrapped field's type includes `Pointer<In>`, and a `secretString()` field's
 includes `Pointer<SecretString>`.
 
@@ -168,8 +172,8 @@ overlap. A truthiness check (`if`, `!`, `&&`, `||`, `? :`, `??`) and `typeof`
 cannot be caught: the body sees an object, so such a branch always goes the
 same way, and the graph's structure still cannot vary. A body reaches only the
 keys every member of a union schema has, and an array field has no element
-access; to narrow, forward the whole `input` or narrow inside a `resolve()`
-function.
+access; to narrow, declare a flat schema and pass its fields on by name, or
+narrow inside a `resolve()` function.
 
 An input field is accepted in four places:
 
