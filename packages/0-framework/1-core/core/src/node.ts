@@ -218,7 +218,7 @@ function sourceMisuse(origin: Omit<SourceOrigin, 'source'>, what: string): LoadE
   const error = new LoadError(
     origin.poolKey === undefined
       ? `${label} is known only at boot: the deploy holds a pointer to it, never its value, and ${what}. ` +
-          'A resolve() function may return the pointer, or put it in its result, unchanged; to compute with the value, do it in the service that reads it.'
+          'A module body can only pass it on, into a provision() binding; to compute with the value, do it in the service that reads it.'
       : `${label} is a value, not its real value, and ${what}. ` +
           'A module body can only pass it on: into a provision() binding or as a resolve() dependency. ' +
           `To compute with it, list it: resolve([${label}], ([v]) => …).`,

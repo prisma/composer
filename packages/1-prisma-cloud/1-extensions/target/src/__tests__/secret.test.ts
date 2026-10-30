@@ -46,9 +46,9 @@ describe('envSecret() as a value', () => {
     expect(thrown).toBeInstanceOf(LoadError);
     expect((thrown as Error).message).toBe(
       "envSecret('STRIPE_KEY') is known only at boot: the deploy holds a pointer to it, never " +
-        'its value, and it was turned into text (a template literal or String()). A resolve() ' +
-        'function may return the pointer, or put it in its result, unchanged; to compute with ' +
-        'the value, do it in the service that reads it.',
+        'its value, and it was turned into text (a template literal or String()). A module body ' +
+        'can only pass it on, into a provision() binding; to compute with the value, do it in ' +
+        'the service that reads it.',
     );
   });
 

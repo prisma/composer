@@ -105,7 +105,7 @@ describe('reading a source', () => {
     const s = pointer('X') as never as { toString(): string; valueOf(): unknown };
     const message = (what: string) =>
       `envSecret('X') is known only at boot: the deploy holds a pointer to it, never its value, and ${what}. ` +
-      'A resolve() function may return the pointer, or put it in its result, unchanged; to compute with the value, do it in the service that reads it.';
+      'A module body can only pass it on, into a provision() binding; to compute with the value, do it in the service that reads it.';
     const text = 'it was turned into text (a template literal or String())';
     const operations: [() => unknown, string][] = [
       [() => String(s), text],

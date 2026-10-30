@@ -6,7 +6,7 @@ import { type } from 'arktype';
 import { string } from '../config.ts';
 import { type Graph, Load, LoadError } from '../graph.ts';
 import { dependency, type ModuleNode, module, secretSource, service } from '../node.ts';
-import { isValue, resolve } from '../value.ts';
+import { isValue, resolve, type Value } from '../value.ts';
 import { anyInputSchema, conn, providerContract } from './helpers.ts';
 
 const build = {
@@ -354,24 +354,28 @@ describe('forwarding and the second pass', () => {
     expect(bindingOf(graph)).toEqual({ url: 'staging.shop.com' });
   });
 
-  test('resolve() over a secret field receives the secret source', () => {
-    let received: unknown;
+  test('resolve() over a secret field fails at Load, saying a secret has no deploy-time value', () => {
+    const ran: boolean[] = [];
     const email = module(
       'email',
       { input: type({ key: secretString() }) },
       ({ input, provision }) => {
-        const marker = resolve([input.key], ([key]) => {
-          received = key;
+        const marker = resolve([input.key as Value<unknown>], () => {
+          ran.push(true);
           return 'x';
         });
         provision(echoService(), { input: { marker } });
       },
     );
-    const source = secretSource({ name: 'EMAIL_KEY' });
+    const key = secretSource({ name: 'EMAIL_KEY' }, { label: "envSecret('EMAIL_KEY')" });
 
-    Load(shopWith(email, { key: source }));
-
-    expect(received).toBe(source);
+    expect(loadError(() => Load(shopWith(email, { key }))).message).toBe(
+      'The resolve() function for input key "marker" of service "shop.email.echo" lists ' +
+        `input.key of module "shop.email", whose real value is envSecret('EMAIL_KEY'), a value ` +
+        'known only at boot. A resolve() dependency must be a deploy-time value. A secret has ' +
+        'no deploy-time value: pass input.key on into a binding, and read it in the service.',
+    );
+    expect(ran).toEqual([]);
   });
 
   test('a resolve() function that returns an input field fails as returning a value', () => {

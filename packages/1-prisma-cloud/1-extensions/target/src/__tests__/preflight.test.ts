@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { Load, module, resolve, resource } from '@internal/core';
+import { Load, module } from '@internal/core';
 import type { ConfigPool, ConfigPools, SecretsPool } from '@internal/core/config';
 import { secretString } from '@internal/foundation/arktype';
 import type { ManagementApiClient } from '@internal/lowering';
@@ -618,33 +618,6 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toEqual([]);
   });
 
-  test('a secret only a resolve() dependency lists is checked, and fails when missing', async () => {
-    state.rows = [{ projectId: 'proj', class: 'production', key: 'A', branchId: null }];
-    const graph = Load(
-      module('app', ({ environment, provision }) => {
-        const stripeKey = resolve(
-          [envSecret('A'), envSecret('B'), environment.name],
-          ([a, b, name]) => (name === 'production' ? a : b),
-        );
-        provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
-          id: 'ingest',
-          input: { stripeKey },
-        });
-      }),
-      { environment: { name: 'production' } },
-    );
-
-    const error: unknown = await preflightWith(
-      { graph, container: fakeContainer('proj', undefined), environment: 'production' },
-      { client: fakeClient(state) },
-    ).catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(Error);
-    const message = (error as Error).message;
-    expect(message).toContain('  - B  (used by service "app.ingest")');
-    expect(message).not.toContain('  - A  ');
-  });
-
   test("a secret in a module's input that no service receives is checked, named as used by the module", async () => {
     const mail = module('mail', { input: type({ 'key?': secretString() }) }, () => {});
     const graph = Load(
@@ -686,28 +659,6 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain('  - MAIL_KEY  (used by service "app.mail.sender")');
-  });
-
-  test("a secret a resolve() in a resource's props lists is named as used by the resource", async () => {
-    const site = resource({
-      name: 'site',
-      extension: 'test/pack',
-      provides: { kind: 'test/url', __cmp: {}, satisfies: () => true },
-      props: { url: resolve([envSecret('SITE_KEY')], () => 'https://shop.example') },
-    });
-    const graph = Load(
-      module('app', ({ provision }) => {
-        provision(site, { id: 'site' });
-      }),
-    );
-
-    const error: unknown = await preflightWith(
-      { graph, container: fakeContainer('proj', undefined), environment: 'production' },
-      { client: fakeClient(state) },
-    ).catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain('  - SITE_KEY  (used by resource "app.site")');
   });
 
   describe('env-var listing pagination (bounded — drivePagesAsync)', () => {

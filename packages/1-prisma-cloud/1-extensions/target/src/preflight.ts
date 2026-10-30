@@ -353,8 +353,9 @@ async function managementClient(): Promise<ManagementApiClient> {
 
 /**
  * The Prisma Cloud extension's `preflight`. Every secret source the graph
- * names is checked, including one only a resolve() dependency lists. Uses the
- * shared name collector (`collectPreflightNames`, ADR-0042): every secret
+ * names is checked, including one in a module's input that no service
+ * receives. Uses the shared name collector (`collectPreflightNames`,
+ * ADR-0042): every secret
  * source in a service's input binding or in `graph.secretSources`, deduped by
  * name with the first entry winning the reported address, plus
  * `paramManifest` filtered to env-sourced reserved params. It checks each

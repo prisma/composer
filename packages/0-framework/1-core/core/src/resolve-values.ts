@@ -1,5 +1,6 @@
 import { blindCast } from '@internal/foundation/casts';
 import { describeKind } from '@internal/foundation/errors';
+import { isSecretPointer } from '@internal/foundation/pointer';
 import { isSecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import {
@@ -165,7 +166,7 @@ function pointersIn(values: unknown): ReadonlySet<object> {
   return pointers;
 }
 
-function checkResult(result: unknown, fnLabel: string, received: ReadonlySet<object>): void {
+function checkResult(result: unknown, fnLabel: string): void {
   if (isThenable(result)) {
     throw new LoadError(`${fnLabel} returned a Promise. resolve() runs synchronously at Load.`);
   }
@@ -178,9 +179,8 @@ function checkResult(result: unknown, fnLabel: string, received: ReadonlySet<obj
       );
     }
     if (isSecretSource(value) || isParamSource(value)) {
-      if (received.has(value)) return;
       throw new LoadError(
-        `${fnLabel} returned a source${atPath} it did not receive, such as envSecret() or envParam() called inside the function. A resolve() function may return a pointer it received from a dependency, unchanged; bind any other source directly.`,
+        `${fnLabel} returned a source${atPath}, such as envSecret() or envParam() called inside the function. resolve() returns plain data; bind a source directly.`,
       );
     }
     if (isValue(value)) {
@@ -202,6 +202,49 @@ function checkResult(result: unknown, fnLabel: string, received: ReadonlySet<obj
     for (const [key, member] of entries) walk(member, joinPath(path, key));
   };
   walk(result, '');
+}
+
+/** The first pointer in `value`, at any depth through arrays and plain objects, with its key path; `undefined` when there is none. */
+function firstPointer(
+  value: unknown,
+  path: readonly string[] = [],
+  seen = new WeakSet<object>(),
+): { readonly pointer: ParamSource | SecretSource; readonly path: readonly string[] } | undefined {
+  if (isSecretSource(value) || isParamSource(value)) return { pointer: value, path };
+  if (!Array.isArray(value) && !isPlainObject(value)) return undefined;
+  if (seen.has(value)) return undefined;
+  seen.add(value);
+  const entries: [string, unknown][] = Array.isArray(value)
+    ? value.map((member, index) => [String(index), member])
+    : Object.entries(value);
+  for (const [key, member] of entries) {
+    const found = firstPointer(member, [...path, key], seen);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/** Refuses a resolve() dependency whose real value is a pointer or holds one at any depth: `fn` computes with deploy-time data only. */
+function refusePointerDependency(fnLabel: string, dependency: Value<unknown>, real: unknown): void {
+  const found = firstPointer(real);
+  if (found === undefined) return;
+  const label = sourceOriginOf(found.pointer)?.label ?? 'a value known only at boot';
+  const origin = originOf(dependency);
+  if (origin.kind !== 'input') {
+    throw new LoadError(
+      `${fnLabel} lists ${label}, which is known only at boot. A resolve() dependency must be a deploy-time value. Bind ${label} directly into the input of the service that reads it.`,
+    );
+  }
+  const listed = `${inputFieldLabel(origin)} of module "${origin.module}"`;
+  const field = inputFieldLabel({ ...origin, path: [...origin.path, ...found.path] });
+  const holds =
+    found.path.length === 0 ? `whose real value is ${label}` : `which holds ${label} at ${field}`;
+  const advice = isSecretPointer(found.pointer)
+    ? `A secret has no deploy-time value: pass ${field} on into a binding, and read it in the service.`
+    : `To compute with ${field}, declare it plain, without field(), and bind it to deploy-time data.`;
+  throw new LoadError(
+    `${fnLabel} lists ${listed}, ${holds}, a value known only at boot. A resolve() dependency must be a deploy-time value. ${advice}`,
+  );
 }
 
 function substitute(
@@ -523,6 +566,7 @@ export function resolveValues(input: {
               `${fnLabelFor(site)} lists ${source.label}, but "${source.poolKey}" is unset or empty, so it has no real value. Set "${source.poolKey}", or bind ${source.label} directly into an input binding, where an absent value leaves the key out and the schema decides.`,
             );
           }
+          refusePointerDependency(fnLabelFor(site), dependency, real);
           return real;
         });
         try {
@@ -532,7 +576,7 @@ export function resolveValues(input: {
           const message = thrown instanceof Error ? thrown.message : String(thrown);
           throw new LoadError(`${fnLabelFor(site)} threw: ${message}`, { cause: thrown });
         }
-        checkResult(result, fnLabelFor(site), pointersIn(args));
+        checkResult(result, fnLabelFor(site));
         break;
       }
       case 'input': {
@@ -601,7 +645,7 @@ export function resolveValues(input: {
         ? props
         : blindCast<
             ResourceProps,
-            'substitution rebuilds the plain props object, replacing each Value<PlainData> with its real value: an environment or computed value is plain data or a pointer it received, which checkResult checked, an input field is its module schema output, and the pointer check above refused any pointer left'
+            'substitution rebuilds the plain props object, replacing each Value<PlainData> with its real value: an environment or computed value is plain data, which checkResult checked, an input field is its module schema output, and the pointer check above refused any pointer left'
           >(substituted);
     resourceProps.set(address, resolvedProps);
   }
@@ -613,7 +657,7 @@ export function resolveValues(input: {
           serviceAddress: entry.serviceAddress,
           binding: blindCast<
             ServiceInputBinding['binding'],
-            'substitution replaces each value with its real value and keeps every source in place: an environment or computed value is plain data or a pointer it received, which checkResult checked, and an input field is its module schema output with each pointer put back; the service schema validates the whole binding again when the target serializes it'
+            'substitution replaces each value with its real value and keeps every source in place: an environment or computed value is plain data, which checkResult checked, and an input field is its module schema output with each pointer put back; the service schema validates the whole binding again when the target serializes it'
           >(binding),
         };
   });

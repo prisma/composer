@@ -10,9 +10,7 @@
  * Secrets are the `envSecret` leaves of every service's input binding
  * (ADR-0042); env-sourced params are the `envParam`-bound reserved params.
  * Secrets also include every secret source the graph names elsewhere
- * (secretSourceManifest): one a resolve() lists but does not return, one in a
- * module's input that no service receives, and one a resolve() in a
- * resource's props lists.
+ * (secretSourceManifest): one in a module's input that no service receives.
  */
 
 import type { Graph, SecretSourceUse } from '@internal/core';
@@ -27,7 +25,7 @@ import { secretName } from './secret.ts';
 
 export interface PreflightName {
   readonly name: string;
-  /** The node that uses the name: a service whose binding holds it, or, when no service receives it, the module whose input holds it or the resource whose props list it in a resolve(). */
+  /** The node that uses the name: a service whose binding holds it, or, when no service receives it, the module whose input holds it. */
   readonly address: string;
   readonly nodeKind: SecretSourceUse['nodeKind'];
 }

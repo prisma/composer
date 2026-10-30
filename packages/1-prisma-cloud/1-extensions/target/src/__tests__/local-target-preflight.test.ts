@@ -415,33 +415,6 @@ describe('prisma dev preflight', () => {
     expect(message).toContain('Delete the file or run `prisma dev --fresh`');
   });
 
-  test('prisma dev does not require a secret only a resolve() dependency lists', async () => {
-    secrets['A'] = 'sk_test_a';
-    delete secrets['B'];
-    try {
-      const graph = Load(
-        module('app', ({ environment, provision }) => {
-          const stripeKey = resolve(
-            [envSecret('A'), envSecret('B'), environment.name],
-            ([a, b, name]) => (name === 'dev' ? a : b),
-          );
-          provision(
-            compute({ name: 'billing', deps: {}, input: requiresSecrets('stripeKey'), build }),
-            {
-              id: 'billing',
-              input: { stripeKey },
-            },
-          );
-        }),
-        { environment: { name: 'dev' } },
-      );
-
-      await preflight(graph);
-    } finally {
-      delete secrets['A'];
-    }
-  });
-
   test('a secrets file left by an older prisma dev is deleted', async () => {
     const devDir = environmentDir(cwd);
     fs.mkdirSync(devDir, { recursive: true });

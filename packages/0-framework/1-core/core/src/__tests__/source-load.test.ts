@@ -153,38 +153,7 @@ describe('real values', () => {
     );
   });
 
-  test('resolve() over a secret source receives the source and may return it', () => {
-    const source = pointer('K');
-
-    const graph = Load(echoWith({ key: resolve([source], ([k]) => k) }));
-
-    expect(bindingOf(graph)['key']).toBe(source);
-  });
-
-  test('resolve() may return a pointer inside its result', () => {
-    const source = pointer('K');
-
-    const graph = Load(echoWith({ key: resolve([source], ([k]) => ({ inner: k })) }));
-
-    expect((bindingOf(graph)['key'] as Record<string, unknown>)['inner']).toBe(source);
-  });
-
-  test('resolve() may choose between two pointers it received', () => {
-    const live = pointer('LIVE');
-    const test = pointer('TEST');
-    const root = module('shop', ({ environment, provision }) => {
-      const key = resolve([live, test, environment.name], ([l, t, name]) =>
-        name === 'production' ? l : t,
-      );
-      provision(echoService(), { input: { key: key as never } });
-    });
-
-    const graph = Load(root, staging);
-
-    expect(bindingOf(graph)['key']).toBe(test);
-  });
-
-  test('a resolve() function that returns a source it did not receive fails', () => {
+  test('a resolve() function that returns a source fails', () => {
     const root = module('shop', ({ environment, provision }) => {
       const key = resolve([environment.name], () => ({ a: paramSource({ name: 'X' }) }));
       provision(echoService(), { input: { key: key as never } });
@@ -192,25 +161,9 @@ describe('real values', () => {
 
     expect(loadError(() => Load(root, staging)).message).toBe(
       'The resolve() function for input key "key" of service "shop.echo" returned a source at ' +
-        '"a" it did not receive, such as envSecret() or envParam() called inside the function. ' +
-        'A resolve() function may return a pointer it received from a dependency, unchanged; ' +
-        'bind any other source directly.',
+        '"a", such as envSecret() or envParam() called inside the function. resolve() returns ' +
+        'plain data; bind a source directly.',
     );
-  });
-
-  test('a pointer turned into text inside resolve() fails naming the binding and the pointer', () => {
-    const key = resolve([pointer('K')], ([k]) => `Bearer ${k}`);
-
-    const error = loadError(() => Load(echoWith({ key })));
-
-    expect(error.message).toBe(
-      'The resolve() function for input key "key" of service "shop.echo" threw: ' +
-        "envSecret('K') is known only at boot: the deploy holds a pointer to it, never its " +
-        'value, and it was turned into text (a template literal or String()). A resolve() ' +
-        'function may return the pointer, or put it in its result, unchanged; to compute with ' +
-        'the value, do it in the service that reads it.',
-    );
-    expect(error.cause).toBeInstanceOf(LoadError);
   });
 });
 
@@ -289,29 +242,23 @@ describe('props', () => {
     );
   });
 
-  test("a secret source a resolve() in a resource's props lists is listed under the resource", () => {
-    const key = pointer('K');
+  test("a secret source a resolve() in a resource's props lists fails at Load", () => {
+    const url = resolve([pointer('K')], () => 'https://shop.example');
 
-    const graph = Load(site({ url: resolve([key], () => 'https://shop.example') }));
-
-    expect(graph.secretSources).toEqual([
-      { source: key, address: 'shop.site', nodeKind: 'resource' },
-    ]);
+    expect(loadError(() => Load(site({ url }))).message).toBe(
+      `The resolve() function for prop "url" of resource "shop.site" lists envSecret('K'), ` +
+        'which is known only at boot. A resolve() dependency must be a deploy-time value. Bind ' +
+        "envSecret('K') directly into the input of the service that reads it.",
+    );
   });
 });
 
 describe('the secret list and forwarded slots', () => {
-  test('graph.secretSources lists every secret source a binding or a resolve() dependency names', () => {
+  test('graph.secretSources lists every secret source a binding names', () => {
     const live = pointer('LIVE');
     const test = pointer('TEST');
-    const root = module('shop', ({ environment, provision }) => {
-      const key = resolve([live, test, environment.name], ([l, t, name]) =>
-        name === 'production' ? l : t,
-      );
-      provision(echoService(), { input: { key: key as never } });
-    });
 
-    const graph = Load(root, staging);
+    const graph = Load(echoWith({ live, test }));
 
     expect(graph.secretSources).toEqual([
       { source: live, address: 'shop.echo', nodeKind: 'service' },

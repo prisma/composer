@@ -162,8 +162,8 @@ export function paramManifest(graph: Graph): readonly ParamBinding[] {
 }
 
 /**
- * Every secret source the graph names, in a binding or as a resolve()
- * dependency, wherever it sits: what a deploy target's preflight checks.
+ * Every secret source a binding in the graph names, wherever it sits: what a
+ * deploy target's preflight checks.
  * Pure graph introspection, TARGET-AGNOSTIC.
  */
 export function secretSourceManifest(graph: Graph): readonly SecretSourceUse[] {

@@ -13,7 +13,7 @@ import {
   secretSource,
   service,
 } from '../node.ts';
-import { environmentFacts, isValue, resolve } from '../value.ts';
+import { environmentFacts, isValue, resolve, type Value } from '../value.ts';
 import { anyInputSchema } from './helpers.ts';
 
 const build = {
@@ -276,5 +276,125 @@ describe("a module's schema sees pointers at Load", () => {
     expect(loadError(() => Load(shopWith(moving, { base: 'x', key: pointer('K') }))).message).toBe(
       'The input schema of module "shop.email" moved envSecret(\'K\') to input key "base". Its value is known only at boot, so a module\'s schema may check the field but never replace or move it.',
     );
+  });
+});
+
+describe('resolve() takes deploy-time values only', () => {
+  /** A root `shop` that lists `dependency` in a resolve() bound to echo's `url`, recording each run of the function. */
+  const listing = (dependency: Value<unknown>, ran: boolean[]): ModuleNode =>
+    module('shop', ({ provision }) => {
+      const url = resolve([dependency], () => {
+        ran.push(true);
+        return 'x';
+      });
+      provision(echoService(), { input: { url } });
+    });
+
+  test('a secret source listed in resolve() fails at Load, naming it, and the function never runs', () => {
+    const ran: boolean[] = [];
+
+    expect(loadError(() => Load(listing(pointer('K'), ran))).message).toBe(
+      `The resolve() function for input key "url" of service "shop.echo" lists envSecret('K'), ` +
+        'which is known only at boot. A resolve() dependency must be a deploy-time value. Bind ' +
+        "envSecret('K') directly into the input of the service that reads it.",
+    );
+    expect(ran).toEqual([]);
+  });
+
+  test('a plain runtime source listed in resolve() fails at Load the same way', () => {
+    expect(loadError(() => Load(listing(origin(), []))).message).toBe(
+      'The resolve() function for input key "url" of service "shop.echo" lists ' +
+        "serviceOrigin('shop.web'), which is known only at boot. A resolve() dependency must be a " +
+        "deploy-time value. Bind serviceOrigin('shop.web') directly into the input of the service " +
+        'that reads it.',
+    );
+  });
+
+  test('a wrapped field bound to a runtime value fails at Load, saying to declare it plain', () => {
+    const email = module(
+      'email',
+      { input: type({ from: field(type('string')) }) },
+      ({ input, provision }) => {
+        const url = resolve([input.from as Value<unknown>], () => 'x');
+        provision(echoService(), { input: { url } });
+      },
+    );
+
+    expect(loadError(() => Load(shopWith(email, { from: origin() }))).message).toBe(
+      'The resolve() function for input key "url" of service "shop.email.echo" lists ' +
+        `input.from of module "shop.email", whose real value is serviceOrigin('shop.web'), a ` +
+        'value known only at boot. A resolve() dependency must be a deploy-time value. To ' +
+        'compute with input.from, declare it plain, without field(), and bind it to deploy-time ' +
+        'data.',
+    );
+  });
+
+  test('an object field that holds a pointer fails at Load, naming the field that holds it', () => {
+    const email = module(
+      'email',
+      { input: type({ smtp: { user: field(type('string')), host: 'string' } }) },
+      ({ input, provision }) => {
+        const url = resolve([input.smtp as Value<unknown>], () => 'x');
+        provision(echoService(), { input: { url } });
+      },
+    );
+
+    expect(
+      loadError(() => Load(shopWith(email, { smtp: { user: origin(), host: 'h' } }))).message,
+    ).toBe(
+      'The resolve() function for input key "url" of service "shop.email.echo" lists ' +
+        `input.smtp of module "shop.email", which holds serviceOrigin('shop.web') at ` +
+        'input.smtp.user, a value known only at boot. A resolve() dependency must be a ' +
+        'deploy-time value. To compute with input.smtp.user, declare it plain, without ' +
+        'field(), and bind it to deploy-time data.',
+    );
+  });
+
+  test('a pointer in an array field is named by its index', () => {
+    const email = module(
+      'email',
+      { input: type({ tags: field(type('string')).array() }) },
+      ({ input, provision }) => {
+        const url = resolve([input.tags as Value<unknown>], () => 'x');
+        provision(echoService(), { input: { url } });
+      },
+    );
+
+    expect(loadError(() => Load(shopWith(email, { tags: ['a', origin()] }))).message).toContain(
+      `lists input.tags of module "shop.email", which holds serviceOrigin('shop.web') at input.tags.1,`,
+    );
+  });
+
+  test('a field typed unknown compiles in resolve(), and Load refuses it when it holds a pointer', () => {
+    const untyped: StandardSchemaV1<{ from: unknown }, { from: unknown }> = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate: (value) => ({ value: value as { from: unknown } }),
+      },
+    };
+    const email = module('email', { input: untyped }, ({ input, provision }) => {
+      const url = resolve([input.from], () => 'x');
+      provision(echoService(), { input: { url } });
+    });
+
+    expect(loadError(() => Load(shopWith(email, { from: origin() }))).message).toContain(
+      `lists input.from of module "shop.email", whose real value is serviceOrigin('shop.web'),`,
+    );
+  });
+
+  test('a wrapped field bound to deploy-time data passes Load when a cast gets it past the compiler', () => {
+    const email = module(
+      'email',
+      { input: type({ from: field(type('string')) }) },
+      ({ input, provision }) => {
+        const url = resolve([input.from as Value<unknown>], ([from]) => `${String(from)}!`);
+        provision(echoService(), { input: { url } });
+      },
+    );
+
+    const graph = Load(shopWith(email, { from: 'shop@example.com' }));
+
+    expect(bindingOf(graph)['url']).toBe('shop@example.com!');
   });
 });

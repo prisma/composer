@@ -114,11 +114,11 @@ export interface ParamBinding {
   readonly binding: unknown;
 }
 
-/** A secret source the graph names, in a binding or as a resolve() dependency, wherever it sits (ADR-0029). Deploy preflight checks every one, so the platform variables an app needs do not depend on which pointer a resolve() function returns. */
+/** A secret source a binding in the graph names, wherever it sits (ADR-0029). Deploy preflight checks every one, including one in a module's input that no service receives. */
 export interface SecretSourceUse {
   /** The source, as its target built it. Core never reads its payload. */
   readonly source: SecretSource;
-  /** A service whose final binding holds it, if one does. Otherwise the first node whose binding names it, directly or through a resolve() dependency: a module whose input holds it, or a resource whose props list it in a resolve(). */
+  /** A service whose final binding holds it, if one does. Otherwise the module whose input holds it. */
   readonly address: NodeId;
   /** That node's kind. */
   readonly nodeKind: 'service' | 'module' | 'resource';
@@ -137,7 +137,7 @@ export interface Graph {
   readonly inputBindings: readonly ServiceInputBinding[];
   /** Every service param bound at provision — literal or source; unbound params are absent here and fall back to their `default` (see `buildConfig`). */
   readonly params: readonly ParamBinding[];
-  /** Every secret source a binding or a resolve() dependency names, once each, in the order Load met them (ADR-0029). */
+  /** Every secret source a binding names, once each, in the order Load met them (ADR-0029). */
   readonly secretSources: readonly SecretSourceUse[];
 }
 
