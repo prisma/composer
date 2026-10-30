@@ -133,12 +133,21 @@ export interface ConfigPools {
   readonly pools: ConfigPools;
 ```
 
-`LocalTargetProvidersInput` and `LocalTargetAttachInput` each gain, after `devDir`:
+`LocalTargetProvidersInput` gains, after `devDir`:
 
 ```ts
   /** The pools the command read for this environment. A local deployment takes the values its rows point at from them. */
   readonly pools: ConfigPools;
 ```
+
+The input of `LocalTargetAttachment.serve` gains, after `server`:
+
+```ts
+  /** The pools the command read for this environment. The command takes the values the service's rows point at from them. */
+  readonly pools: ConfigPools;
+```
+
+`LocalTargetAttachInput` does not take the pools: `log` attaches too, and reads no adapter. (Review fix: the field first sat on the attach input, which made `log` pass made-up empty pools.)
 
 The field is required in all three. Every caller is the CLI, the generated dev stack file or a test.
 
@@ -413,7 +422,7 @@ const pools: ConfigPools = {
 ### 5.3 `operations/execute-dev.ts`
 
 - `pipelineDeps` and `watchDeps` gain `readSecrets: true`.
-- Each `dev.preflight(…)` call gains `pools: pipeline.pools`; each `dev.attach(…)` call gains `pools: pipeline.pools`.
+- Each `dev.preflight(…)` call gains `pools: pipeline.pools`; each `attachment.serve(…)` call gains `pools: pipeline.pools`.
 - **A changed value pauses rebuilds.** The session keeps `pipeline.pools`, read at start. In `rebuild`, directly after `rePipeline` is computed and before the stack file is written, if `!samePools(pipeline.pools, rePipeline.pools)`: set `valuesChanged = true`, emit `{ kind: 'values-changed' }` the first time only, and return. `samePools` is a module-private function that compares both pools with `isDeepStrictEqual` from `node:util`. `pausedForConfig` is renamed `paused` and returns `true` when `valuesChanged` is already true, before its file check, so `rebuildUntilSettled` and the watch callbacks stop rebuilding exactly as they do after a config edit.
 
 `operations/dev.ts`, `DevEvent` gains, after `config-changed`:
@@ -530,7 +539,7 @@ So the deploy and dev children read a service's `envParam()` leaves from the con
 
 - `materializeEnv` gains a fourth parameter, `pools: ConfigPools`. For each name in `secrets`, the value is `pools.secrets[name]`; for each name in `params` that is not also in `secrets`, it is `pools.config[name]` when that is a string. A value is set only when it is a non-empty string, as today. `PATH` and `HOME` still come from `process.env`.
 - `LocalDeploymentProvider` passes `input.pools`.
-- `packages/1-prisma-cloud/1-extensions/target/src/local-target/attach.ts`: `serve` passes `input.pools` to `materializeEnv`. `shellEnv()` is unchanged: a dev server keeps the developer's shell, with Composer's rows laid over it (ADR-0056).
+- `packages/1-prisma-cloud/1-extensions/target/src/local-target/attach.ts`: `serve` passes the `pools` it is given to `materializeEnv`. `shellEnv()` is unchanged: a dev server keeps the developer's shell, with Composer's rows laid over it (ADR-0056).
 
 ### 6.7 Invariants
 
@@ -700,7 +709,7 @@ The section is `{ extensions: [], state: { extension: 'x', create: () => undefin
 45. Same file: `log, devUrl and devStop run no adapter` — `config` and `secrets` adapters that throw; each operation gets past identity resolution as it does today.
 46. Same file: `a secrets pool value appears in no event, result or report` — a `secrets` adapter returning `{ S4_SENTINEL: 'never-printed-7f3a' }` and a fake preflight that receives it; `JSON.stringify` of every `DeployEvent`, the result and the `--report` file contain no `never-printed-7f3a`.
 47. Same file: `an adapter that fails stops deploy with CONFIG.ADAPTER_FAILED before any container is resolved` — the fake container's `ensure` is never called.
-48. Same file: `dev hands both pools to preflight and attach`.
+48. Same file: `dev hands both pools to preflight and to a dev server`.
 49. Same file: `a value an adapter returns differently at a rebuild is reported, and rebuilds stop until dev restarts` — a `config` adapter that reads a mutable `let value`; change it, trigger a build change; one `{ kind: 'values-changed' }` event, the stack file is not rewritten, and a second build change triggers no rebuild. Modelled on `an edit to prisma.config.ts is reported, and rebuilds stop until dev restarts`.
 50. `family/__tests__/` (the test that renders `config-changed`; locate it with `grep -rl "config-changed" family/__tests__`): `values-changed renders as a warning` — the exact § 5.3 text.
 
@@ -729,7 +738,7 @@ The section is `{ extensions: [], state: { extension: 'x', create: () => undefin
 - `section.test.ts`: `an unknown field is an error naming the fields the section takes` expects the § 4.4 text.
 - `dev-pointed-variables.test.ts`: it calls `pointedVariables` and expects `{ params, secrets }` with the same names split by kind.
 - `compute-materialize-env.test.ts`: existing calls pass a fourth argument, the pools holding the values the test put in the process environment before.
-- Every test that builds a `PreflightInput`, a `LocalTargetProvidersInput` or a `LocalTargetAttachInput` gains `pools`. A test that set `process.env[NAME]` for preflight to fill moves the value into `pools.secrets`, or `pools.config` for an env-sourced param.
+- Every test that builds a `PreflightInput` or a `LocalTargetProvidersInput`, or calls `serve`, gains `pools`. A test that set `process.env[NAME]` for preflight to fill moves the value into `pools.secrets`, or `pools.config` for an env-sourced param.
 - The target's `invariants.test.ts`, per § 6.7.
 
 ## 12. Done when

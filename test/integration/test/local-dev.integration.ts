@@ -500,7 +500,7 @@ async function main(): Promise<void> {
     // deployed child needs a moment to start listening, so both the health
     // round-trip and the emulator's own "running" status are polled with a
     // bounded deadline rather than asserted on the very first attempt.
-    attachment = await dev.attach({ container: devContainer, devDir, pools });
+    attachment = await dev.attach({ container: devContainer, devDir });
     const endpoints = await attachment.endpoints();
     const web = endpoints.find((e) => e.address === WEB);
     assert(web !== undefined, 'the web service must appear in attach().endpoints()');

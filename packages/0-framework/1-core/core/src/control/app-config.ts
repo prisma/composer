@@ -344,8 +344,6 @@ export interface LocalTargetAttachInput {
   readonly container: ContainerInstance | undefined;
   /** Absolute path of the environment's dev state directory (`devEnvironmentDir`, under the cwd). */
   readonly devDir: string;
-  /** The pools the command read for this environment. A local deployment takes the values its rows point at from them. */
-  readonly pools: ConfigPools;
 }
 
 export interface LocalTargetAttachment {
@@ -368,6 +366,8 @@ export interface LocalTargetAttachment {
     readonly address: string;
     readonly node: ServiceNode;
     readonly server: DevServer;
+    /** The pools the command read for this environment. The command takes the values the service's rows point at from them. */
+    readonly pools: ConfigPools;
   }): Promise<{ readonly restarted: boolean }>;
   /** Stop everything the target runs for the app, so nothing of it keeps running after the session (emulators and data persist). */
   stopApp(): Promise<void>;
