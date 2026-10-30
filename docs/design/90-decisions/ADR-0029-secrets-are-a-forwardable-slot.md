@@ -8,6 +8,8 @@ Amended 2026-10-30 (module-input project, fourth slice): a name missing on the p
 
 Amended 2026-10-30 (module-input project, fifth slice): `secret()`, `SecretNeed`, `Secrets` and `SecretBindings` are removed, with the module `secrets` slot. What the Decision below calls a module's secret need is now a `secretString()` field of the module's `input`, which the module passes on and the root binds with `envSecret('NAME')`. So the module still never learns the platform name. `secretSource()`, `isSecretSource()` and `envSecret()` are unchanged.
 
+Amended `2026-10-30` (module-input project, eighth slice): a `resolve()` function cannot list `envSecret()`, so two statements of the third-slice note no longer hold. A function never receives the source and cannot return it: listing it fails to compile, and Load refuses it. And deploy preflight has no secret that only a function lists, or that a function in a resource's props lists, to check: Load refuses both, so every secret preflight checks is one a binding names ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
+
 ## Decision
 
 A **secret** is one specific thing: a value the deployment reads from the

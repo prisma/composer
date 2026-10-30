@@ -38,7 +38,7 @@ distinct type, with composition behaviours a Service doesn't have.
 - **Input.** A Module declares its [Input](#input) as one `input` Standard
   Schema, as a Service does, and whoever provisions it binds it. Its body
   receives one [value](#value) per input field and can only pass it on: into a `provision()`
-  binding or as a `resolve()` dependency.
+  binding or, for a [plain field](#field), as a `resolve()` dependency.
 - **Composite, not atomic.** Where a Service is a leaf (opaque), a Module is
   transparent: the framework sees its dependencies and exposed interfaces *and* the internal topology it owns. The
   Module decides how the Services, Resources, and Modules it wraps connect; its
@@ -202,8 +202,9 @@ The data a value stands for is its **real value**.
   bound to one of these. `envSecret()`, `generatedParam()` and
   `serviceOrigin()` give [runtime values](#runtimevalue): the platform holds
   the data, or the deploy creates it later, so Load holds a pointer in its
-  place. A `resolve()` function that lists a runtime value receives the
-  pointer and may return it unchanged; `isRuntimeValue(x)` is true for it.
+  place. A `resolve()` lists deploy-time values only: listing a runtime
+  value fails to compile, and Load refuses a dependency whose real value is
+  a pointer or holds one.
 - **Sources are values.** `envParam()`, `envSecret()`, `generatedParam()` and
   `serviceOrigin()` each return one object that is a value and the deploy
   target's source. Where a service's binding takes a source, the target
@@ -240,7 +241,8 @@ A pointer is typed by the variable's text, so every plain pointer is a
 pointer: ArkType copies its input when a transform runs in it or when it
 deletes undeclared keys. The copy keeps the pointer's kind and the variable
 it names, and Composer treats it as the same pointer. A pointer throws when
-code turns it into text or a number.
+code turns it into text or a number. A `resolve()` cannot list a runtime
+value, so its function never receives a pointer.
 
 ### `field()`
 

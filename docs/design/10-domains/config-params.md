@@ -144,7 +144,7 @@ return one object that is both the target's source and a
 | A service's `input` binding | kept; read at serialize from the config pool | kept | kept | kept |
 | A service's `params` | kept; pointer row, as today | kept (fails at deploy, as today) | kept (fails at deploy, as today) | kept (fails at deploy, as today) |
 | A module's `input` binding | its string; unset or empty leaves the key out | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
-| A `resolve()` dependency | its string; unset or empty fails | its pointer | its pointer | its pointer |
+| A `resolve()` dependency | its string; unset or empty fails | refused | refused | refused |
 | A resource's `props` | its string; unset or empty leaves the key out | refused by the type | refused by the type | refused at Load |
 
 In a service's and a module's input, the schema checks each of the three
@@ -168,13 +168,12 @@ secret, so its real value at deploy is a pointer, the source itself, which the
 service dereferences at boot. `generatedParam()` and `serviceOrigin()` are
 runtime too, because the deploy creates their values after Load; their real
 value at deploy is also the pointer. A pointer cannot be read: turning it into
-text or a number throws an error that names the source. A `resolve()` function
-may return a pointer it received, at any depth of its result, and the target
-then receives it as if the source had been bound directly.
+text or a number throws an error that names the source. A `resolve()` cannot
+list any of the three: listing one fails to compile, and Load refuses a
+dependency whose real value is a pointer or holds one.
 
-Deploy preflight checks every `envSecret()` the graph names, including one that
-only a `resolve()` dependency lists and one in a module's input that no service
-receives.
+Deploy preflight checks every `envSecret()` the graph names, including one in a
+module's input that no service receives.
 
 ## Serialization belongs to the target
 

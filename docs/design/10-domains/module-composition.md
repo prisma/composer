@@ -175,9 +175,10 @@ An input field is accepted in four places:
 
 - **a service's `input` binding**, at any depth, including the whole binding;
 - **a module's `input` binding**, at any depth, including the whole binding;
-- **a `resolve()` dependency**: `fn` receives the real value. For a field
-  bound to a runtime value, that is a pointer, which the function may return
-  unchanged;
+- **a `resolve()` dependency**, for a plain field: `fn` receives the real
+  value. Listing a field wrapped with `field()` or typed `secretString()`
+  fails to compile, and Load refuses a listed field whose real value holds a
+  pointer, naming it and saying to declare it plain;
 - **a service param or a resource prop**, when its real-value type is plain
   data: not optional, and not a secret.
 

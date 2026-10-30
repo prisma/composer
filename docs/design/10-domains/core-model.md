@@ -474,9 +474,9 @@ from `opts.environment`; a computed value runs its `fn` with its
 dependencies' real values. A resource whose `props` held a value appears in
 the graph as a copy that keeps its prototype. The errors name the binding the
 value sits in: no `environment` was given, a cycle, `fn` threw (wrapped once,
-with the thrown error as `cause`), or `fn` returned a Promise, `undefined`, a
-value, a source it did not receive, or anything else that is neither plain
-data nor a pointer it received. A value as a `provision()` id or in a `deps`
+with the thrown error as `cause`), `fn` returned a Promise, `undefined`, a
+value, a source, or anything else that is not plain data, or a dependency's
+real value is a pointer or holds one. A value as a `provision()` id or in a `deps`
 entry, or a value that is not a source as a module's `secrets` or `params`
 binding, is a LoadError too. A source is a value too. Load leaves one in place
 in a service's input binding and params, and computes its real value only
