@@ -716,5 +716,5 @@ One scratch worktree of this branch, detached, under its git-ignored `wip/`, rem
 
 ## Settled by the orchestrator
 
-1. **Conflict 1 is in scope.** The body's misuse error changes its last sentence from `To compute with it, list it: resolve([…], ([v]) => …).` to `To compute with it, declare it plain and list it: resolve([…], ([v]) => …).` everywhere it is built, in its own commit placed before the docs commit. Every test that asserts the old text changes to the new one, and the guide and the agent skill quote the new text wherever they quote the old.
+1. **Conflict 1 is in scope.** The body's misuse error changes its last sentence from `To compute with it, list it: resolve([…], ([v]) => …).` to `To compute with it, it must be a plain field, not a wrapped or secret one; list it: resolve([…], ([v]) => …).` everywhere it is built, in its own commit placed before the docs commit. Every test that asserts the old text changes to the new one, and the guide and the agent skill quote the new text wherever they quote the old. (Changed after review: the first settled text, `declare it plain and list it`, was wrong for a `secretString()` field, which cannot be declared plain.)
 2. Conflicts 2 and 3 are settled as the spec writes them.

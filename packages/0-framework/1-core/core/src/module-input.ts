@@ -45,7 +45,7 @@ function misuse(origin: InputOrigin, what: string): LoadError {
   return new LoadError(
     `${field} of module "${origin.module}" is a value, not its real value, and ${what}. ` +
       'A module body can only pass an input field on: into a provision() binding or as a resolve() dependency. ' +
-      `To compute with it, declare it plain and list it: resolve([${field}], ([v]) => …).`,
+      `To compute with it, it must be a plain field, not a wrapped or secret one; list it: resolve([${field}], ([v]) => …).`,
   );
 }
 

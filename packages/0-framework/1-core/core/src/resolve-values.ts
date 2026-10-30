@@ -306,7 +306,7 @@ function readPath(data: unknown, origin: InputOrigin): unknown {
     if (!isPlainObject(current)) {
       throw new LoadError(
         `${missing}: ${parent} is ${describeData(current)}, not a plain object, so it has no ` +
-          `fields. To compute with it, declare it plain and list it: resolve([${parent}], ([v]) => …).`,
+          `fields. To compute with it, it must be a plain field, not a wrapped or secret one; list it: resolve([${parent}], ([v]) => …).`,
       );
     }
     if (!Object.hasOwn(current, key)) return undefined;
