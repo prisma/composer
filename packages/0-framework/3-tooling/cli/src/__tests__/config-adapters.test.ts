@@ -26,7 +26,10 @@ afterEach(() => {
 });
 
 /** Sets `env` on this process, as a child started with it would see it, for the duration of `fn`. */
-async function asChild<T>(env: Readonly<Record<string, string | undefined>>, fn: () => Promise<T>) {
+async function asChild<T>(
+  env: Readonly<Record<string, string | undefined>>,
+  fn: () => T | Promise<T>,
+): Promise<T> {
   const before = { ...process.env };
   Object.assign(process.env, env);
   try {
