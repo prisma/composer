@@ -26,12 +26,12 @@ test('email() is a ModuleNode exposing send and outbox, with an input schema', (
   void asModule;
 });
 
-test("email()'s input is deliveryMode, from and a secret deliveryCredential", () => {
+test("email()'s input is the wrapped fields deliveryMode and from, and a secret deliveryCredential", () => {
   expectTypeOf<
     StandardSchemaV1.InferInput<NonNullable<ReturnType<typeof email>['inputSchema']>>
   >().toEqualTypeOf<{
-    deliveryMode: string;
-    from: string;
+    deliveryMode: string | Pointer<string>;
+    from: string | Pointer<string>;
     deliveryCredential: SecretString | Pointer<SecretString>;
   }>();
 });

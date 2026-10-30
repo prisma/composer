@@ -6,15 +6,15 @@
  */
 import type { ModuleNode } from '@internal/core';
 import { module } from '@internal/core';
-import { secretString } from '@internal/foundation/arktype';
+import { field, secretString } from '@internal/foundation/arktype';
 import { rawPostgres } from '@internal/prisma-cloud';
 import { type } from 'arktype';
 import { emailOutboxContract, emailSendContract } from './contract.ts';
 import { emailService } from './email-service.ts';
 
 const emailModuleInput = type({
-  deliveryMode: 'string',
-  from: 'string',
+  deliveryMode: field(type('string')),
+  from: field(type('string')),
   deliveryCredential: secretString(),
 });
 

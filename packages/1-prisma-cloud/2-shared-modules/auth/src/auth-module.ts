@@ -9,6 +9,7 @@
 import type { ModuleNode } from '@internal/core';
 import { module } from '@internal/core';
 import { emailSender } from '@internal/email';
+import { field } from '@internal/foundation/arktype';
 import { rawHttpContract } from '@internal/http';
 import { generatedParam } from '@internal/prisma-cloud';
 import { type } from 'arktype';
@@ -16,7 +17,7 @@ import { authService } from './auth-service.ts';
 import { authAdminContract, authDb, authSessionContract, type SignUpMode } from './contract.ts';
 import { type AuthTemplates, authTemplates } from './templates.ts';
 
-const authModuleInput = type({ baseUrl: 'string' });
+const authModuleInput = type({ baseUrl: field(type('string')) });
 
 export interface AuthModuleOptions {
   readonly name?: string;
