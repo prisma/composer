@@ -137,8 +137,12 @@ code never reads the environment (no-globals). Each key of a binding takes:
     the environment being deployed, which exists only once the deploy has
     created that service.
 
-A field typed `secretString()` takes only a secret. A
-[wrapped field](#field) also takes a value known only at boot.
+A field typed `secretString()` takes only a secret: a secret box, or the
+secret pointer of `envSecret()` or a redacted `generatedParam()`. A
+[wrapped field](#field) also takes a plain pointer, from `serviceOrigin()`
+or a plain `generatedParam()`. A plain field takes neither: at deploy a
+schema checks each value known only at boot as its pointer, so a plain
+field bound to one fails the deploy.
 
 The older form of input is a service's per-key `params`, each bound to a
 literal or a source
@@ -207,7 +211,8 @@ The data a value stands for is its **real value**.
 
 In code the type is `Value<T>`, and `RealValuesOf<D>` is the tuple of
 real-value types `fn` receives for a dependency tuple `D`. A source's type is
-the source and a value at once, such as `SecretSource & Value<SecretString>`.
+the source and a value at once, such as `SecretSource & RuntimeValue<SecretString>`
+for `envSecret()`.
 A value is not a node: it has no lifecycle and no address. Elsewhere
 in this glossary "value" in lower case keeps its ordinary meaning, plain data
 such as a param's value.
@@ -251,7 +256,7 @@ wrapped field's real value may be a pointer. A secret field is
 `field()`. `field()` wraps leaves only: an object field stays a plain object
 schema whose leaves are wrapped. For another Standard Schema library,
 `@prisma/composer` exports `Pointer`, `isPlainPointer()` and
-`isSecretPointer()`, with which an author writes the same two helpers.
+`isSecretPointer()`, with which an author writes the same two helpers. A service reads a wrapped field as `Out`: `service.input()` returns the schema's output with every pointer removed, because at boot each pointer has been replaced by the text of the variable it names.
 
 ### Config pool
 
