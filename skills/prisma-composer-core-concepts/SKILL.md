@@ -149,11 +149,11 @@ Rules that bite:
    (`'string.trim'`, `.pipe()`) copies the input, the copied secret loses its
    value, and the deploy refuses it. Transform in the service code instead.
 2. **`envParam` values arrive as raw strings**; bind them to string fields. In
-   a service's `input`, the deploy reads the variable from the deploying shell
+   a service's `input`, the deploy reads the variable from the config pool
    on every deploy and writes its value into the input document. As a service
    param, the deploy writes a pointer row to a platform variable, which the
    service reads at boot. `envSecret` always lives on the platform: each
-   environment keeps its own copy, and the deploying shell only seeds a missing
+   environment keeps its own copy, and the secrets pool only seeds a missing
    name (the deploy fails early, naming the variable, when both lack it).
 3. **Absence is the schema's call.** An env-bound field whose variable is
    unset or empty resolves to *key omitted*, which is legal only if the
@@ -175,7 +175,8 @@ Rules that bite:
 
 The graph is the same in every environment; only configuration may differ.
 
-- A module declares `input` (one Standard Schema) as a service does; `provision(module, { input })` binds it, and the body receives each field as a value it can pass into a binding or list in `resolve()`. A root cannot declare `input` yet, and a module's `input` takes every source a service's does.
+- A module declares `input` (one Standard Schema) as a service does; `provision(module, { input })` binds it, and the body receives each field as a value it can pass into a binding or list in `resolve()`. A root's `input` is the config pool, and a module's `input` takes every source a service's does.
+- `composer({ config: [...], secrets: [...] })` lists config adapters; each gets the environment's name and returns values, later wins by top-level key. Both default to `[environmentVariables()]` (the shell); a list you write replaces the default. `dotenv()` reads `.env`, `.env.local`, `.env.<environment>`, `.env.<environment>.local`, later wins. The config pool is the root's input and what `envParam()` reads; the secrets pool only seeds `envSecret()` platform variables and `prisma dev`'s secrets, never the root's input. Both import from `@prisma/composer/config`. Credentials (`PRISMA_SERVICE_TOKEN`) still come from the shell.
 - A field exists only under a plain object: a path into a string, an array or a secret, such as `input.tags[0]`, fails the deploy naming the path.
 - A truthiness check such as `if (input.enabled)` is not caught: the field is an object, so the branch always runs, in every environment. A module's structure cannot depend on its input; to provision something only sometimes, let the parent decide whether to provision it.
 - The module body receives `environment`; `environment.name` is a value standing for the name `--environment` gave (`production` for `prisma deploy`, `dev` for `prisma dev` by default).
@@ -641,7 +642,7 @@ that surprise:
    build and run `prisma dev --detach` again.
 4. `dev` reads `prisma.config.ts` once, at start, and watches it: after an
    edit it says so and pauses rebuilds until you restart `dev`.
-5. `dev` reads secrets only from its environment variables: export them in the shell, or load a `.env`: install the `dotenv` package, then make `import 'dotenv/config'` the first line of `prisma.config.ts` (`process.loadEnvFile('.env')` works only under Node, not Bun). A required secret that is unset or empty stops `dev` with an error naming it; an optional one reaches the service as absent. A changed value takes effect on the next `prisma dev`. A `.env` that only the framework loads (Next.js) does not count: Composer reads secrets before the dev server starts.
+5. `dev` reads secrets only from the `secrets` adapters. Put them where a `secrets` adapter reads them: the shell by default, or `.env.dev` with `secrets: [dotenv(), environmentVariables()]`. A required secret that is unset or empty stops `dev` with an error naming it; an optional one reaches the service as absent. A changed value takes effect on the next `prisma dev`. A `.env` that only the framework loads (Next.js) does not count: Composer reads secrets before the dev server starts.
 6. The emulators are machine-wide daemons shared by every `dev`, registered
    under `~/.prisma-composer/emulators`. Set `PRISMA_COMPOSER_EMULATORS_DIR`
    to an absolute directory to give a checkout or CI job its own compute,
