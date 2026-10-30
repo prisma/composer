@@ -20,7 +20,8 @@ export function streams(opts?: {
   name?: string;
 }): ModuleNode<
   { store: DependencyEnd<S3Config, S3Contract> },
-  { streams: Contract<'streams', StreamDefs> }
+  { streams: Contract<'streams', StreamDefs> },
+  undefined
 > {
   return module(
     opts?.name ?? 'streams',
