@@ -28,9 +28,9 @@ test('provision() of a module takes no params or secrets map', () => {
 
 test('a module body has no secrets or params', () => {
   // @ts-expect-error the body receives no secrets
-  module('m', {}, ({ secrets }) => {});
+  module('m', {}, ({ secrets }) => void secrets);
   // @ts-expect-error the body receives no params
-  module('m', {}, ({ params }) => {});
+  module('m', {}, ({ params }) => void params);
 });
 
 test('ModuleNode takes three type parameters', () => {
