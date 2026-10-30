@@ -3,7 +3,7 @@
   "version": "0.36.0",
   "private": true,
   "type": "module",
-  "description": "Foundation utilities: the audited cast helpers, runtime assertions, the redacting secret box, and its opt-in arktype spelling.",
+  "description": "Foundation utilities: the audited cast helpers, runtime assertions, the redacting secret box, pointers, and their opt-in ArkType and Zod spellings.",
   "exports": {
     "./arktype": "./dist/arktype.mjs",
     "./assertions": "./dist/assertions.mjs",
@@ -12,6 +12,7 @@
     "./pointer": "./dist/pointer.mjs",
     "./result": "./dist/result.mjs",
     "./secret": "./dist/secret.mjs",
+    "./zod": "./dist/zod.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -21,7 +22,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "arktype": "^2.2.3"
+    "arktype": "^2.2.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "typescript": "^6.0.3",

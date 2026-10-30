@@ -9,5 +9,6 @@ export default defineConfig({
     secret: 'src/exports/secret.ts',
     pointer: 'src/exports/pointer.ts',
     arktype: 'src/exports/arktype.ts',
+    zod: 'src/exports/zod.ts',
   },
 });
