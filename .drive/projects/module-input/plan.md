@@ -62,7 +62,7 @@ The first process writes a configuration file beside the generated stack file, m
 
 ## S13. Composer redacts every secret it knows
 
-Everywhere Composer prints, it redacts every value under a name an `envSecret()` in the graph names, in the configuration or the secrets, and every value the secrets adapters return, at any length. That covers errors, adapter failures, the second process's failure cause, and the second process's output, which Composer now reads through a pipe, holding back enough characters to catch a secret split across two chunks. An end-to-end test searches the configuration file, the stack file, the deploy report, the errors and the second process's output for a known secret value. Manual QA of the examples against real targets, including a root `input` from `.env.<environment>` in `prisma deploy` and `prisma dev`.
+Everywhere Composer prints, it redacts every value under a name an `envSecret()` in the graph names, in the configuration or the secrets, and every value a project's own secrets adapters return when it writes a `secrets` list, at any length. That covers errors, adapter failures, the second process's failure cause, and the second process's output, which Composer now reads through a pipe, holding back enough characters to catch a secret split across two chunks. An end-to-end test searches the configuration file, the stack file, the deploy report, the errors and the second process's output for a known secret value. Manual QA of the examples against real targets, including a root `input` from `.env.<environment>` in `prisma deploy` and `prisma dev`.
 
 ## S14. `prisma dev` watches its inputs
 
