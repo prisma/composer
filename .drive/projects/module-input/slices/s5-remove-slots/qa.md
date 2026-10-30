@@ -14,7 +14,7 @@ In `examples/email`, with no `.env` and with `EMAIL_DELIVERY_MODE`, `EMAIL_FROM`
 ✔ Deployed s5qa-email to production in 45.2s.
 ```
 
-The command's plain output shows the preflight step without counts, so the fill was checked on the platform, as S4's QA did. The Management API lists one `EMAIL_DELIVERY_CREDENTIAL` row on the new Project, class `production`, created at `2026-10-30T02:13:51Z`, during this deploy. Only metadata was read.
+The spec asks for the preflight step to report one filled setting. The plain output prints the step with no count, so the fill was checked on the Management API instead, as S4's QA did. The Management API lists one `EMAIL_DELIVERY_CREDENTIAL` row on the new Project, class `production`, created at `2026-10-30T02:13:51Z`, during this deploy. Only metadata was read.
 
 `EMAIL_STACK_NAME=s5qa-email pnpm run smoke:deployed` passed, with the smoke script's fixed `s5qa-email.mailer` lookup:
 
@@ -99,3 +99,49 @@ Each destroy ran with its example's `.env` files still in place:
 - `STOREFRONT_STACK_NAME=s5qa-storefront pnpm run destroy`: `Removed the Project (proj_f9ghu1f3ig2hw9m99qr0g0dt) — nothing was left in it.` `Destroyed.`
 
 Then `examples/email/.env.production`, `.env.production.local` and `.env.dev`, and `examples/auth/.env`, were removed. The workspace's project list is the same six projects as before the run, with no `s5qa-email`, `auth-example` or `s5qa-storefront`, and `git status` was clean.
+
+## 7. `prisma dev` of the auth and storefront-auth examples
+
+Run after the review, on the same day, against the local dev target only. Neither run needed a value from Prisma Cloud.
+
+**The auth example.** `examples/auth/.env.dev` held `EMAIL_DELIVERY_MODE=none`, `EMAIL_FROM=s5-qa-auth-dev@example.com` and `EMAIL_DELIVERY_CREDENTIAL=local-dev-unused`; there was no `.env`. `prisma dev --detach` printed:
+
+```text
+Done: 46 succeeded (6.7s)
+dev: ready
+auth-example.api: http://localhost:3194
+auth-example.ops: http://localhost:3195
+auth-example.auth.service: http://localhost:3193
+auth-example.mail.service: http://localhost:3192
+```
+
+With the URLs from `prisma dev url auth-example.api` and `prisma dev url auth-example.ops`:
+
+```text
+api /health 200
+ops /health 200
+POST /api/auth/sign-up/email  200  {"token":null,"user":{"name":"QA","email":"s5-qa-dev-user@example.com","emailVerified":false,...
+POST /admin/find-sent-email   200  {"templateId":"verification",...,"from":"s5-qa-auth-dev@example.com","subject":"Verify your email address",...
+"text":"http://localhost:3194/api/auth/verify-email?token=..."
+```
+
+The sender is the `EMAIL_FROM` value from `.env.dev`, so the email module's `envParam()` input fields reached the mail service. The verification link starts with the api service's dev origin, so auth's `serviceOrigin()` input field resolved locally. `prisma dev stop` stopped the four services, and `.env.dev` was removed.
+
+**The storefront-auth example.** This example's `prisma.config.ts` loads only `.env`, so the secret came from the shell instead of a file. `AUTH_SIGNING_SECRET=sk_test_ci_storefront_auth prisma dev --detach` printed:
+
+```text
+dev: ready
+storefront-auth.storefront: http://localhost:3197
+storefront-auth.auth.service: http://localhost:3196
+```
+
+`curl` on the URL from `prisma dev url storefront-auth.storefront` rendered:
+
+```text
+Auth /verify says: true
+Secret /check says: true
+```
+
+The secret check compares the value against the CI marker `sk_test_ci_storefront_auth`, so the root's `envSecret()` binding reached the auth module's `signingKey` input field and the service read it at boot. A first run with a different local value rendered `Secret /check says: false`, as expected. `prisma dev stop` stopped the services.
+
+Afterwards `git status` was clean apart from this record.
