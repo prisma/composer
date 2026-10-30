@@ -23,11 +23,7 @@
  * and pass through untouched, so a ref keeps carrying its ordering edge.
  */
 import type { Config, ConfigParam, Params, ServiceNode } from '@internal/core';
-import {
-  isParamSource,
-  isSecretPointer as isSecretPointerValue,
-  isSecretSource,
-} from '@internal/core';
+import { isParamSource, isSecretPointer, isSecretSource } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import { SecretBox } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
@@ -309,8 +305,8 @@ const GENERATED_MARKER = '$generated';
 const ESCAPABLE_KEY = /^\$+(?:secret|generated)$/;
 const ESCAPED_KEY = /^\$\$+(?:secret|generated)$/;
 
-/** True for the framework's secret pointer: `{ "$secret": "<PLATFORM_VAR>" }` and nothing else. */
-function isSecretPointer(value: unknown): value is { readonly $secret: string } {
+/** True for a secret pointer as the deploy writes it into the input document: `{ "$secret": "<PLATFORM_VAR>" }` and nothing else. */
+function isWrittenSecretPointer(value: unknown): value is { readonly $secret: string } {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -613,7 +609,7 @@ export function serializeInput(
 function refuseLostSecrets(node: ServiceNode, address: string, resolved: unknown): void {
   let found = false;
   const withStandIns = (value: unknown): unknown => {
-    if (isSecretPointerValue(value)) {
+    if (isSecretPointer(value)) {
       found = true;
       return new SecretBox(STAND_IN_TEXT);
     }
@@ -850,7 +846,7 @@ export function readInput(node: ServiceNode, address: string): unknown {
 
 /** Reverses the document encoding: `$secret` pointers become redacting boxes; a `$generated` pointer becomes a box iff its `redacted` facet is true, a plain string otherwise; escaped reserved keys drop one "$". */
 function hydrateInputDocument(value: unknown, key: string): unknown {
-  if (isSecretPointer(value)) {
+  if (isWrittenSecretPointer(value)) {
     const name = value[SECRET_MARKER];
     const secret = process.env[name];
     if (secret === undefined || secret === '') {
