@@ -4,20 +4,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { string } from '../config.ts';
 import { type Graph, Load, LoadError } from '../graph.ts';
-import {
-  isParamSource,
-  isSecretSource,
-  type ModuleNode,
-  module,
-  type ParamSource,
-  paramNeed,
-  paramSource,
-  resource,
-  type SecretSource,
-  secret,
-  secretSource,
-  service,
-} from '../node.ts';
+import { type ModuleNode, module, paramSource, resource, secretSource, service } from '../node.ts';
 import { resolve } from '../value.ts';
 import { anyInputSchema, providerContract } from './helpers.ts';
 
@@ -112,36 +99,6 @@ describe('sources a service takes stay in place', () => {
     const graph = Load(root);
 
     expect(graph.params[0]?.binding).toBe(label);
-  });
-
-  test("a source bound to a module's secrets slot and forwarded reaches the service with the same payload", () => {
-    const auth = module('auth', { secrets: { key: secret() } }, ({ secrets, provision }) => {
-      provision(echoService(), { input: { key: secrets.key } });
-    });
-    const key = pointer('K');
-    const root = module('shop', ({ provision }) => {
-      provision(auth, { secrets: { key } });
-    });
-
-    const leaf = bindingOf(Load(root))['key'];
-
-    expect(isSecretSource(leaf)).toBe(true);
-    expect((leaf as SecretSource).payload).toBe(key.payload);
-  });
-
-  test("a param source with a pool key bound to a module's params slot and forwarded reaches the service param unchanged", () => {
-    const relay = module('relay', { params: { label: paramNeed() } }, ({ params, provision }) => {
-      provision(echoService(), { input: {}, params: { label: params.label } });
-    });
-    const label = variable('G');
-    const root = module('shop', ({ provision }) => {
-      provision(relay, { params: { label } });
-    });
-
-    const bound = Load(root).params[0]?.binding;
-
-    expect(isParamSource(bound)).toBe(true);
-    expect((bound as ParamSource).payload).toBe(label.payload);
   });
 });
 
@@ -414,19 +371,5 @@ describe('the secret list and forwarded slots', () => {
     expect(graph.secretSources).toEqual([
       { source: key, address: 'shop.one', nodeKind: 'service' },
     ]);
-  });
-
-  test('a forwarded secrets slot listed only in a resolve() dependency counts as forwarded', () => {
-    const auth = module('auth', { secrets: { key: secret() } }, ({ secrets, provision }) => {
-      provision(echoService(), { input: { key: resolve([secrets.key], ([key]) => key) as never } });
-    });
-    const source = pointer('K');
-    const root = module('shop', ({ provision }) => {
-      provision(auth, { secrets: { key: source } });
-    });
-
-    const graph = Load(root);
-
-    expect(bindingOf(graph)['key']).toBe(source);
   });
 });

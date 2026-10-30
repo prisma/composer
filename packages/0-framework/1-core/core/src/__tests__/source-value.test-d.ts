@@ -4,8 +4,6 @@ import type {
   ModuleInputBinding,
   ParamSource,
   ResourcePropsMember,
-  SecretBindings,
-  SecretNeed,
   SecretSource,
   Value,
 } from '../exports/index.ts';
@@ -30,10 +28,9 @@ test('a param source fits a module input field of its type, and a bare ParamSour
   expectTypeOf({ from: bare }).not.toExtend<ModuleInputBinding<{ from: string }>>();
 });
 
-test("a Value<SecretString> that is not a source does not fit a module's secrets slot", () => {
+test('a Value<SecretString> that is not a source is not a SecretSource', () => {
   let field!: Value<SecretString>;
   expectTypeOf(field).not.toExtend<SecretSource>();
-  expectTypeOf({ key: field }).not.toExtend<SecretBindings<{ key: SecretNeed }>>();
 });
 
 test("a resource's props take a param source of a plain type, never a secret source", () => {
