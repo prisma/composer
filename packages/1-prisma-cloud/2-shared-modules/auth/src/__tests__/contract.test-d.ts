@@ -5,7 +5,7 @@
  * (vitest --typecheck via tsc, never executed) — mirrors email's
  * module.test-d.ts.
  */
-import type { DependencyEnd, ModuleNode, RefPort } from '@internal/core';
+import type { DependencyEnd, ModuleNode, Pointer, RefPort } from '@internal/core';
 import { module } from '@internal/core';
 import { emailSendContract, type emailSender } from '@internal/email';
 import { type RawHttpClient, rawHttp, type rawHttpContract } from '@internal/http';
@@ -50,10 +50,10 @@ test('auth() is a ModuleNode with the db + email boundary deps, three ports, and
   void asModule;
 });
 
-test("auth()'s input is baseUrl, a string", () => {
+test("auth()'s input is baseUrl, a wrapped string field", () => {
   expectTypeOf<
     StandardSchemaV1.InferInput<NonNullable<ReturnType<typeof auth>['inputSchema']>>
-  >().toEqualTypeOf<{ baseUrl: string }>();
+  >().toEqualTypeOf<{ baseUrl: string | Pointer<string> }>();
 });
 
 test('the dependency factories hydrate to their pinned binding types', () => {

@@ -102,7 +102,7 @@ describe('email()', () => {
       message = (error as Error).message;
     }
     expect(message).toBe(
-      'The input binding of module "root.email" does not match the module\'s input schema: from must be a string (was missing)',
+      'The input binding of module "root.email" does not match the module\'s input schema: from must be a string or an object (was missing)',
     );
   });
 

@@ -10,16 +10,16 @@
  * bootstrap can re-import it as `main` and call `main.run(address, boot)`;
  * `entry` resolves the sibling entrypoint pass in the same dist directory.
  */
-import { secretString } from '@internal/foundation/arktype';
+import { field, secretString } from '@internal/foundation/arktype';
 import node from '@internal/node';
 import { compute, rawPostgres } from '@internal/prisma-cloud';
 import { type } from 'arktype';
 import { emailOutboxContract, emailSendContract } from './contract.ts';
 
 const emailInputSchema = type({
-  deliveryMode: "'resend'|'smtp'|'none'",
+  deliveryMode: field(type("'resend'|'smtp'|'none'")),
   deliveryUrl: 'string',
-  from: 'string',
+  from: field(type('string')),
   deliveryCredential: secretString(),
 });
 
