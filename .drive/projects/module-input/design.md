@@ -72,8 +72,10 @@ A pointer has one of two kinds. A **secret pointer**, typed `Pointer<SecretStrin
 
 A module should not care which form its caller uses. So the idiomatic way to declare a leaf field is to wrap its schema in `field()`. A **wrapped field** is a field whose schema is `field(inner)`. It accepts a literal, a deploy-time value, or a runtime value with a plain pointer. A **plain field** is written without `field()`. It is the author's explicit request for deploy-time data: it accepts a literal or a deploy-time value only. A plain field is the only kind of field a `resolve()` can compute with.
 
+This ArkType example is a module's schema. In a service's schema it fails the deploy: `port`'s transform makes ArkType copy the input, and the copy loses `deliveryCredential`'s secret ("Limits of the schema", below).
+
 ```ts
-// ArkType: import { field, secretString } from '@prisma/composer/arktype'
+// ArkType, a module's schema: import { field, secretString } from '@prisma/composer/arktype'
 type({
   from: field(type('string')),
   baseUrl: field(type('string.url')),
