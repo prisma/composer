@@ -1,4 +1,4 @@
-import { type SecretSource, secretSource, type Value } from '@internal/core';
+import { type Pointer, type RuntimeValue, type SecretSource, secretSource } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import type { SecretString } from '@internal/foundation/secret';
 
@@ -34,7 +34,9 @@ const PLATFORM_OWNED_SECRET_NAMES: ReadonlySet<string> = new Set([
  * only at boot: a resolve() function that lists it receives a pointer, which
  * throws when turned into text.
  */
-export function envSecret(name: string): SecretSource<EnvSecretPayload> & Value<SecretString> {
+export function envSecret(
+  name: string,
+): SecretSource<EnvSecretPayload> & RuntimeValue<SecretString> {
   if (typeof name !== 'string' || name.length === 0) {
     throw new Error(
       "envSecret() requires a non-empty platform env-var name, e.g. envSecret('STRIPE_SECRET_KEY').",
@@ -53,7 +55,7 @@ export function envSecret(name: string): SecretSource<EnvSecretPayload> & Value<
         'Declare the database your service uses and read its url from that connection.',
     );
   }
-  return secretSource<EnvSecretPayload, SecretString>(
+  return secretSource<EnvSecretPayload, Pointer<SecretString>>(
     { [PRISMA_CLOUD_SECRET_SOURCE]: true, name },
     { label: `envSecret('${name}')` },
   );
