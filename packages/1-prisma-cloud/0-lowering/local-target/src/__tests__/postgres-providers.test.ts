@@ -69,7 +69,11 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
       input: { appName: APP, environment: 'dev' },
       serialize: () => 'x',
     };
-    input = { container, devDir: path.join(root, 'project', '.prisma-composer', 'dev', 'dev') };
+    input = {
+      container,
+      devDir: path.join(root, 'project', '.prisma-composer', 'dev', 'dev'),
+      pools: { config: {}, secrets: {} },
+    };
   });
 
   afterEach(async () => {
