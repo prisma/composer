@@ -20,14 +20,17 @@ import { isSecretString, type SecretString } from './secret.ts';
  * ```
  */
 export const secretString = () =>
-  z.custom<SecretString>((value) => isSecretString(value) || isSecretPointer(value), {
-    error: (issue) =>
-      `must be a SecretString box — bind this field to a secret (was ${
-        isPlainPointer(issue.input)
-          ? 'a value known only at boot that is not a secret'
-          : describeKind(issue.input)
-      })`,
-  });
+  z.custom<SecretString | Pointer<SecretString>>(
+    (value) => isSecretString(value) || isSecretPointer(value),
+    {
+      error: (issue) =>
+        `must be a SecretString box — bind this field to a secret (was ${
+          isPlainPointer(issue.input)
+            ? 'a value known only at boot that is not a secret'
+            : describeKind(issue.input)
+        })`,
+    },
+  );
 
 /**
  * Wraps the schema of one leaf field so the field also accepts a plain

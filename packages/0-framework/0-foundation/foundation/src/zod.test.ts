@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { z } from 'zod';
 import { POINTER } from './pointer.ts';
-import { SecretBox } from './secret.ts';
+import { isSecretString, SecretBox } from './secret.ts';
 import { field, secretString } from './zod.ts';
 
 const plain = Object.freeze({ [POINTER]: 'plain' as const });
@@ -38,8 +38,10 @@ const compare = (inner: () => z.ZodType, value: unknown) => {
 describe('secretString', () => {
   const schema = z.object({ k: secretString() });
 
-  test('accepts a secret box, and the validated field reads back as a SecretString', () => {
-    expect(schema.parse({ k: new SecretBox('v') }).k.expose()).toBe('v');
+  test('accepts a secret box, and the validated field is a box that exposes its value', () => {
+    const { k } = schema.parse({ k: new SecretBox('v') });
+    if (!isSecretString(k)) throw new Error('expected a SecretString box');
+    expect(k.expose()).toBe('v');
   });
 
   test('accepts a secret pointer', () => {

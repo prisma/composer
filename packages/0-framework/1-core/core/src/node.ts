@@ -337,8 +337,23 @@ type ModuleInputOf<I extends StandardSchemaV1 | undefined> = StandardSchemaV1.In
   NonNullable<I>
 >;
 
-/** What `input()` returns: the schema's validated output type; `never` on a service that declares no input schema. */
-export type InputValueOf<I> = I extends StandardSchemaV1 ? StandardSchemaV1.InferOutput<I> : never;
+/**
+ * `T` with every pointer removed, at any depth: what a service reads at boot,
+ * when each pointer has been replaced by the text of the variable it names.
+ */
+type WithoutPointers<T> =
+  T extends Pointer<unknown>
+    ? never
+    : T extends SecretString
+      ? T
+      : T extends object
+        ? { [K in keyof T]: WithoutPointers<T[K]> }
+        : T;
+
+/** What `input()` returns: the schema's validated output type with every pointer removed; `never` on a service that declares no input schema. */
+export type InputValueOf<I> = I extends StandardSchemaV1
+  ? WithoutPointers<StandardSchemaV1.InferOutput<I>>
+  : never;
 
 /** Opaque `Contract<any, any>` bound shared by every node/port type that doesn't care which contract. */
 // biome-ignore lint/suspicious/noExplicitAny: the one alias for this bound — see doc comment.

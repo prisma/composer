@@ -21,7 +21,7 @@ import { isSecretString, type SecretString } from './secret.ts';
  */
 export const secretString = () =>
   type('unknown').narrow(
-    (value, ctx): value is SecretString =>
+    (value, ctx): value is SecretString | Pointer<SecretString> =>
       isSecretString(value) ||
       isSecretPointer(value) ||
       ctx.reject({

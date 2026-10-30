@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { type Type, type } from 'arktype';
 import { field, secretString } from './arktype.ts';
 import { isPlainPointer, POINTER } from './pointer.ts';
-import { SecretBox } from './secret.ts';
+import { isSecretString, SecretBox } from './secret.ts';
 
 const plain = Object.freeze({ [POINTER]: 'plain' as const });
 const secret = Object.freeze({ [POINTER]: 'secret' as const });
@@ -24,11 +24,12 @@ const allInners = Object.values(inners) as (() => Type<unknown>)[];
 describe('secretString', () => {
   const schema = type({ signingKey: secretString() });
 
-  test('accepts a secret box, and the validated field reads back as a SecretString', () => {
+  test('accepts a secret box, and the validated field is a box that exposes its value', () => {
     const out = schema({ signingKey: new SecretBox('sk_live_abc') });
     if (out instanceof type.errors) throw new Error(out.summary);
-    // `.expose()` compiles only because the field's inferred type is SecretString.
-    expect(out.signingKey.expose()).toBe('sk_live_abc');
+    const { signingKey } = out;
+    if (!isSecretString(signingKey)) throw new Error('expected a SecretString box');
+    expect(signingKey.expose()).toBe('sk_live_abc');
   });
 
   test('rejects a plain string — a credential cannot arrive unboxed', () => {

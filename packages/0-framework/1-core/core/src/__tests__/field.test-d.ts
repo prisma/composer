@@ -6,6 +6,7 @@ import { type } from 'arktype';
 import { expectTypeOf, test } from 'vitest';
 import { z } from 'zod';
 import type {
+  InputValueOf,
   ModuleInputField,
   Pointer,
   RuntimeValue,
@@ -13,6 +14,7 @@ import type {
   Value,
 } from '../exports/index.ts';
 import { isPlainPointer, isSecretPointer, module, service } from '../exports/index.ts';
+import type { LoadOverrides } from '../exports/testing.ts';
 
 declare const plainRuntime: RuntimeValue<string>;
 declare const secretRuntime: RuntimeValue<SecretString>;
@@ -89,13 +91,13 @@ test('a wrapped text field takes no secret pointer', () => {
   void [ark, zod];
 });
 
-test('secretString() still reads as SecretString in both libraries', () => {
+test('secretString() reads as a SecretString or a secret pointer in both libraries', () => {
   const ark = arkSecretString();
   const zod = zodSecretString();
-  expectTypeOf<In<typeof ark>>().toEqualTypeOf<SecretString>();
-  expectTypeOf<Out<typeof ark>>().toEqualTypeOf<SecretString>();
-  expectTypeOf<In<typeof zod>>().toEqualTypeOf<SecretString>();
-  expectTypeOf<Out<typeof zod>>().toEqualTypeOf<SecretString>();
+  expectTypeOf<In<typeof ark>>().toEqualTypeOf<SecretString | Pointer<SecretString>>();
+  expectTypeOf<Out<typeof ark>>().toEqualTypeOf<SecretString | Pointer<SecretString>>();
+  expectTypeOf<In<typeof zod>>().toEqualTypeOf<SecretString | Pointer<SecretString>>();
+  expectTypeOf<Out<typeof zod>>().toEqualTypeOf<SecretString | Pointer<SecretString>>();
 });
 
 test('ArkType: a default outside the wrapper keeps the wrapped output', () => {
@@ -222,4 +224,73 @@ test("a pointer's kind follows its type", () => {
   const secret: Pointer<SecretString> = { [POINTER]: 'plain' };
   const either: Pointer<unknown> = {} as Pointer<SecretString>;
   void [plain, secret, either];
+});
+
+const arkNested = type({
+  smtp: { user: arkField(type('string')), password: arkSecretString() },
+  'replyTo?': arkField(type('string')),
+  tags: arkField(type('string')).array(),
+});
+const zodNested = z.object({
+  smtp: z.object({ user: zodField(z.string()), password: zodSecretString() }),
+  replyTo: zodField(z.string()).optional(),
+  tags: z.array(zodField(z.string())),
+});
+
+test("ArkType: service.input() is the schema's output with every pointer removed", () => {
+  expectTypeOf<InputValueOf<typeof arkSchema>>().toEqualTypeOf<{
+    from: string;
+    port: number;
+    host: string;
+    key: SecretString;
+  }>();
+  expectTypeOf<InputValueOf<typeof arkNested>>().toEqualTypeOf<{
+    smtp: { user: string; password: SecretString };
+    replyTo?: string;
+    tags: string[];
+  }>();
+});
+
+test("Zod: service.input() is the schema's output with every pointer removed", () => {
+  expectTypeOf<InputValueOf<typeof zodSchema>>().toEqualTypeOf<{
+    from: string;
+    port: number;
+    host: string;
+    key: SecretString;
+  }>();
+  expectTypeOf<InputValueOf<typeof zodNested>>().toEqualTypeOf<{
+    smtp: { user: string; password: SecretString };
+    replyTo?: string | undefined;
+    tags: string[];
+  }>();
+});
+
+test('a schema without type information still reads as unknown', () => {
+  expectTypeOf<InputValueOf<StandardSchemaV1>>().toEqualTypeOf<unknown>();
+});
+
+test("mockService()'s input double takes the shape service.input() returns, with no pointer", () => {
+  expectTypeOf<LoadOverrides<Record<never, never>, typeof arkSchema>['input']>().toEqualTypeOf<
+    InputValueOf<typeof arkSchema>
+  >();
+  // @ts-expect-error a test double holds the text the service reads, never a pointer
+  const double: LoadOverrides<Record<never, never>, typeof arkSchema>['input']['from'] =
+    {} as Pointer<string>;
+  void double;
+});
+
+test('a secretString() field of a module takes a secret runtime value, and the body sees it as a value of SecretString | Pointer<SecretString>', () => {
+  module('shop', ({ provision }) => {
+    provision(arkChild, {
+      id: 'a',
+      input: { from: 'x', port: '1', host: 'h', key: secretRuntime },
+    });
+    provision(zodChild, {
+      id: 'b',
+      input: { from: 'x', port: '1', host: 'h', key: secretRuntime },
+    });
+  });
+  module('m', { input: arkSchema }, ({ input }) => {
+    expectTypeOf(input.key).toEqualTypeOf<ModuleInputField<SecretString | Pointer<SecretString>>>();
+  });
 });
