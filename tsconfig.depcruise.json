@@ -24,6 +24,9 @@
       "@internal/foundation/pointer": [
         "./packages/0-framework/0-foundation/foundation/src/exports/pointer.ts"
       ],
+      "@internal/foundation/zod": [
+        "./packages/0-framework/0-foundation/foundation/src/exports/zod.ts"
+      ],
       "@internal/tsdown-config": ["./packages/0-framework/0-foundation/tsdown-config/base.ts"],
       "@internal/bundle-paths": [
         "./packages/0-framework/2-authoring/bundle-paths/src/exports/index.ts"

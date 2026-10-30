@@ -592,6 +592,9 @@ importers:
       arktype:
         specifier: ^2.2.3
         version: 2.2.7
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@internal/tsdown-config':
         specifier: workspace:0.36.0
