@@ -20,8 +20,9 @@ describe('renderDevStackFile()', () => {
     });
 
     expect(content).toContain("import { lower } from '@prisma/composer/deploy';");
+    expect(content).toContain("import { deserializeContainers } from '@prisma/composer/config';");
     expect(content).toContain(
-      "import { deserializeContainers, readConfigPool, readSecretsPool } from '@prisma/composer/config';",
+      "import { readConfigPool, readSecretsPool } from '@prisma/composer/internal/pools';",
     );
     expect(content).toContain(
       "import { devEnvironmentDir, devState, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",

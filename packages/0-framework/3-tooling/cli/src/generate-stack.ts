@@ -75,7 +75,7 @@ export function renderStackFile(input: StackFileInput): string {
 // It reads the config pool again here, from the same adapters, so an adapter must return the same values for the same environment every time.
 import { lower } from '@prisma/composer/deploy';
 import * as report from '@prisma/composer/report';
-import { readConfigPool } from '@prisma/composer/config';
+import { readConfigPool } from '@prisma/composer/internal/pools';
 import prismaConfig from ${quote(configImport)};
 import app from ${quote(appImport)};
 

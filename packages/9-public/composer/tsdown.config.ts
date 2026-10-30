@@ -14,6 +14,7 @@ export default defineConfig({
   entry: {
     index: 'src/exports/index.ts',
     config: 'src/exports/config.ts',
+    'internal-pools': 'src/exports/internal-pools.ts',
     control: 'src/exports/control.ts',
     deploy: 'src/exports/deploy.ts',
     'local-target': 'src/exports/local-target.ts',

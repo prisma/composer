@@ -86,7 +86,8 @@ export function renderDevStackFile(input: DevStackFileInput): string {
   // module's own imports, and this renderer ships in the testing entry.
   const imports = [
     "import * as path from 'node:path';",
-    "import { deserializeContainers, readConfigPool, readSecretsPool } from '@prisma/composer/config';",
+    "import { deserializeContainers } from '@prisma/composer/config';",
+    "import { readConfigPool, readSecretsPool } from '@prisma/composer/internal/pools';",
     "import { lower } from '@prisma/composer/deploy';",
     "import { devEnvironmentDir, devState, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
     `import prismaConfig from ${quote(configImport)};`,

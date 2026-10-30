@@ -362,11 +362,11 @@ Each is a `CliStructuredError` with `where: { path: input.configFile }` and `met
 - New file `packages/0-framework/3-tooling/cli/src/exports/config.ts`:
 
   ```ts
-  /** The config adapters and the pool readers (ADR-0062): imported by prisma.config.ts and by the generated stack files, so this entry imports nothing heavier than node:fs, node:path and dotenv. */
+  /** The config adapters (ADR-0062), imported by prisma.config.ts, so this entry imports nothing heavier than node:fs, node:path and dotenv. */
   export { dotenv, environmentVariables } from '../config-adapters.ts';
-  export type { PoolReadInput } from '../config-pools.ts';
-  export { readConfigPool, readSecretsPool } from '../config-pools.ts';
   ```
+
+- New file `packages/0-framework/3-tooling/cli/src/exports/pools.ts`, the entry `pools`, re-exports `readConfigPool`, `readSecretsPool` and the type `PoolReadInput`. `@prisma/composer` publishes it as `@prisma/composer/internal/pools` (`src/exports/internal-pools.ts`, `export * from '@internal/cli/pools'`). It is not public API: only the generated stack files import it. (Review fix: the readers first sat on the public `/config` entry, which made a function that returns every secret supported API.)
 
 - `packages/0-framework/3-tooling/cli/tsdown.config.ts` gains the entry `config: 'src/exports/config.ts'`. The build regenerates `package.json#exports` with `"./config"`; commit it, do not hand-edit it.
 - `packages/9-public/composer/src/exports/config.ts` becomes:
@@ -439,7 +439,7 @@ const pools: ConfigPools = {
 The template gains, after the `@prisma/composer/report` import:
 
 ```ts
-import { readConfigPool } from '@prisma/composer/config';
+import { readConfigPool } from '@prisma/composer/internal/pools';
 ```
 
 and, after the `config === undefined` check and before `report.captureEngineFailure?.()`:
@@ -452,7 +452,7 @@ const configPool = await readConfigPool(config, { environment: <quoted environme
 
 ### 5.5 The generated dev stack file: `dev/generate-dev-stack.ts`
 
-The import line `import { deserializeContainers } from '@prisma/composer/config';` becomes `import { deserializeContainers, readConfigPool, readSecretsPool } from '@prisma/composer/config';` (it stays inside the `imports` array, so no line of the built renderer starts with `import`).
+The `imports` array gains `import { readConfigPool, readSecretsPool } from '@prisma/composer/internal/pools';` after the `@prisma/composer/config` import (it stays inside the array, so no line of the built renderer starts with `import`).
 
 After the `devDir` line:
 
@@ -700,7 +700,7 @@ The section is `{ extensions: [], state: { extension: 'x', create: () => undefin
 36. Same file: `the validator never calls an adapter` — an adapter that throws when called; the section is accepted.
 37. `__tests__/pipeline.test.ts`: `runPipeline passes the config pool the adapters return to Load` — a copy of the `pipeline-config-pool` fixture whose `prisma.config.ts` sets `config: [() => ({ CONFIG_POOL_PROBE: 'adapter' })]`, with `CONFIG_POOL_PROBE=shell` in the process environment; the binding is `{ greeting: 'adapter' }`, and `result.pools.config` is `{ CONFIG_POOL_PROBE: 'adapter' }`.
 38. Same file: `runPipeline reads the secrets pool only when asked` — `readSecrets` unset gives `pools.secrets` `{}` and a throwing `secrets` adapter is never called; `readSecrets: true` calls it and fails with `CONFIG.ADAPTER_FAILED`.
-39. `__tests__/generate-stack.test.ts`: the deploy file contains `import { readConfigPool } from '@prisma/composer/config';`, the `readConfigPool(config, { environment: "staging", configFile: <absolute> })` line, `  configPool,`, and no `readSecretsPool`.
+39. `__tests__/generate-stack.test.ts`: the deploy file contains `import { readConfigPool } from '@prisma/composer/internal/pools';`, the `readConfigPool(config, { environment: "staging", configFile: <absolute> })` line, `  configPool,`, and no `readSecretsPool`.
 40. `dev/__tests__/generate-dev-stack.test.ts`: the dev file contains the extended `@prisma/composer/config` import, the `poolInput` and `pools` lines, `  configPool: pools.config,` and `localTargetProviders(resolved, containers, devDir, pools)`. With `S4_SECRET_SENTINEL=never-in-the-stack-file` in the process environment, neither rendered file contains `never-in-the-stack-file`.
 41. `__tests__/stack-file-import.test.ts`: the stub `@prisma/composer/config` gains `readConfigPool = async (section, input) => ({ read: 'config', environment: input.environment, configFile: input.configFile })` and `readSecretsPool = async () => ({ read: 'secrets' })`; the stub `lower` prints `configPool: opts.configPool` and the stub `localTargetProviders` records its fourth argument on `globalThis`, which the stub `lower` prints as `pools`. The deploy stack prints `configPool: { read: 'config', environment: 'staging', configFile: <the fixture's prisma.config.ts> }` and no `pools`; the dev stack prints the same `configPool` and `pools: { config: …, secrets: { read: 'secrets' } }`.
 42. `operations/__tests__/operations.test.ts`: `deploy fills the root's input from the config adapters` — a fixture root declaring `input: type({ GREETING: 'string' })` forwarded to the service; a `prisma.config.ts` with `config: [() => ({ GREETING: 'from-adapter' })]`; the fake alchemy sees the stack file; the graph's binding is `{ greeting: 'from-adapter' }`.

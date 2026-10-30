@@ -50,7 +50,7 @@ describe('renderStackFile() — a module root', () => {
       assembled: { devServers: {}, bundles: {} },
     });
 
-    expect(content).toContain("import { readConfigPool } from '@prisma/composer/config';");
+    expect(content).toContain("import { readConfigPool } from '@prisma/composer/internal/pools';");
     expect(content).toContain(
       'const configPool = await readConfigPool(config, { environment: "staging", configFile: "/app/prisma.config.ts" });',
     );
