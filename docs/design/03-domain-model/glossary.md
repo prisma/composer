@@ -202,14 +202,18 @@ input, validated by the root's schema, and what an `envParam('NAME')` reads
 `NAME` from, wherever it sits. With no `config` list in the `composer` section
 it is the process environment. In code it is `LoadOptions.configPool`, and the
 name a source reads is its **pool key** (`paramSource()`'s `poolKey` option).
-Composer reads it in the CLI and again in the deploy engine's process.
+Composer reads it in the CLI and again in the deploy engine's process. It holds
+whatever the adapters return, which by default is the whole process
+environment, secrets included, so only the root's fields that its body passes
+on one by one reach the graph; Load refuses the root's whole input.
 
 ### Secrets pool
 
 The merged values the `secrets` adapters return, text only. Deploy preflight
 fills a missing `envSecret()` platform variable from it, and `prisma dev` gives
-a service its secrets from it. It never reaches Load, a schema, a file or a
-report. With no `secrets` list it is the process environment.
+a service its secrets from it. Composer never passes it to Load or a schema,
+and never writes its values to a file, a report, an error or deploy state.
+With no `secrets` list it is the process environment.
 
 ### Config adapter
 
