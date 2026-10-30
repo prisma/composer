@@ -49,7 +49,8 @@ async function readPool(
     environment: input.environment,
     configDirectory: path.dirname(input.configFile),
   });
-  const pool: Record<string, unknown> = {};
+  // A key such as __proto__ or toString from an adapter is a value like any other, never an inherited property.
+  const pool: Record<string, unknown> = Object.create(null);
   for (const [index, adapter] of adapters.entries()) {
     const field = `composer.${list}[${index}]`;
     let values: unknown;

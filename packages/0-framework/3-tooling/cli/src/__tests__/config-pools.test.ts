@@ -176,7 +176,7 @@ describe('readConfigPool and readSecretsPool', () => {
     expect(error.message).not.toContain('918273645');
   });
 
-  test('the pools are frozen plain objects', async () => {
+  test('the pools are frozen objects with no prototype', async () => {
     const config = section({ config: [() => ({ A: 'a' })], secrets: [() => ({ B: 'b' })] });
 
     for (const pool of [
@@ -184,7 +184,21 @@ describe('readConfigPool and readSecretsPool', () => {
       await readSecretsPool(config, input),
     ]) {
       expect(Object.isFrozen(pool)).toBe(true);
-      expect(Object.getPrototypeOf(pool)).toBe(Object.prototype);
+      expect(Object.getPrototypeOf(pool)).toBeNull();
     }
+  });
+
+  test('__proto__, constructor and prototype from an adapter are values, and no name reads an inherited property', async () => {
+    const parsed = JSON.parse('{"__proto__":{"INHERITED":"x"},"constructor":"c","prototype":"p"}');
+    const config = section({ config: [() => parsed] });
+
+    const pool = await readConfigPool(config, input);
+
+    expect(Object.getPrototypeOf(pool)).toBeNull();
+    expect(pool['INHERITED']).toBeUndefined();
+    expect(pool['toString']).toBeUndefined();
+    expect(Object.keys(pool)).toEqual(['__proto__', 'constructor', 'prototype']);
+    expect(pool['constructor']).toBe('c');
+    expect(pool['prototype']).toBe('p');
   });
 });
