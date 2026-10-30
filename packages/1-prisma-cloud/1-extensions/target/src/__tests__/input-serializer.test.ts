@@ -19,6 +19,13 @@ import {
   serializeInput,
 } from '../serializer.ts';
 
+/** An ArkType copy of `value`: a transform elsewhere in the schema makes ArkType copy its whole input. */
+const copyOf = <T>(value: T): T => {
+  const out = type({ value: 'object', n: 'string.integer.parse' })({ value, n: '1' });
+  if (out instanceof type.errors) throw new Error(out.summary);
+  return out.value as T;
+};
+
 const build = {
   extension: '@prisma/composer/node',
   type: 'node',
@@ -610,6 +617,46 @@ describe('a source forwarded through a module input', () => {
 
     expect(JSON.parse(row?.value ?? '')).toEqual({
       secret: { $generated: 'COMPOSER_SHOP_LOGIN_WEB_SECRET_GENERATED', redacted: true },
+    });
+  });
+});
+
+describe('an ArkType copy of a source', () => {
+  test('a copy of envSecret() serializes to its $secret pointer', () => {
+    const row = serializeInput(
+      svc(type({ key: secretString() })),
+      'web',
+      { key: copyOf(envSecret('STRIPE_SECRET_KEY')) },
+      { env: {} },
+    );
+
+    expect(JSON.parse(row?.value ?? '')).toEqual({ key: { $secret: 'STRIPE_SECRET_KEY' } });
+  });
+
+  test('a copy of serviceOrigin() serializes to its $generated pointer', () => {
+    const row = serializeInput(
+      svc(type({ base: 'string' })),
+      'web',
+      { base: copyOf(serviceOrigin('shop.web')) },
+      { env: {} },
+    );
+
+    expect(JSON.parse(row?.value ?? '')).toEqual({
+      base: { $generated: 'COMPOSER_WEB_BASE_GENERATED', redacted: false },
+    });
+    expect(row?.generated[0]?.origin).toBe('shop.web');
+  });
+
+  test('a copy of a redacted generatedParam() serializes to its $generated pointer', () => {
+    const row = serializeInput(
+      svc(type({ secret: secretString() })),
+      'web',
+      { secret: copyOf(generatedParam()) },
+      { env: {} },
+    );
+
+    expect(JSON.parse(row?.value ?? '')).toEqual({
+      secret: { $generated: 'COMPOSER_WEB_SECRET_GENERATED', redacted: true },
     });
   });
 });

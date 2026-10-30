@@ -1,7 +1,22 @@
 import { describe, expect, test } from 'bun:test';
-import { isParamSource, Load, module, paramSource, service } from '@internal/core';
+import {
+  isParamSource,
+  isPlainPointer,
+  isSecretPointer,
+  Load,
+  module,
+  paramSource,
+  service,
+} from '@internal/core';
 import { type } from 'arktype';
-import { envParam, isEnvParamSource, paramBindingFor, paramName } from '../param.ts';
+import {
+  envParam,
+  generatedParam,
+  isEnvParamSource,
+  paramBindingFor,
+  paramName,
+  serviceOrigin,
+} from '../param.ts';
 
 describe('envParam (Prisma Cloud param source)', () => {
   test('builds an opaque param source; paramName reads its env-var name back', () => {
@@ -84,5 +99,15 @@ describe('envParam() in a module input', () => {
     const graph = Load(root, { configPool: { APP_ORIGIN: 'https://shop.example' } });
 
     expect(graph.inputBindings[0]?.binding).toEqual({ appOrigin: 'https://shop.example' });
+  });
+});
+
+describe('the kind of pointer each source is', () => {
+  test('serviceOrigin() and a plain generatedParam() are plain pointers, a redacted generatedParam() is a secret pointer, and envParam() is no pointer', () => {
+    expect(isPlainPointer(serviceOrigin('shop.web'))).toBe(true);
+    expect(isPlainPointer(generatedParam({ redacted: false }))).toBe(true);
+    expect(isSecretPointer(generatedParam())).toBe(true);
+    expect(isPlainPointer(envParam('X'))).toBe(false);
+    expect(isSecretPointer(envParam('X'))).toBe(false);
   });
 });
