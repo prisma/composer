@@ -157,7 +157,7 @@ does (see the matching `gotchas.md` entry).
 
 ## Platform env vars (per environment)
 
-`deliveryMode`, `from` and `deliveryCredential` are the module's `input`. Bind `deliveryMode` and `from` to a literal, an `envParam(...)` or a field of your root's input, so they can vary per environment. `deliveryCredential` is a `secretString()` field: bind it with `envSecret(...)`. The module's schema checks only that `deliveryMode` is a string; the service checks that it is `resend`, `smtp` or `none` before anything is created. `deliveryUrl` is a factory option (`email({ deliveryUrl })`), static per app: it defaults to `https://api.resend.com` and follows the mode.
+`deliveryMode`, `from` and `deliveryCredential` are the module's `input`. Bind `deliveryMode` and `from` to a literal, an `envParam(...)` or a field of your root's input, so they can vary per environment. `deliveryCredential` is a `secretString()` field: bind it with `envSecret(...)`. `deliveryMode` and `from` are wrapped fields (`field()`), so a module that passes its own wrapped field on can bind them too. The module's schema checks only that `deliveryMode` is a string; the service checks that it is `resend`, `smtp` or `none`, before anything is created for a literal or an `envParam()`, and at boot for a value known only at boot. `deliveryUrl` is a factory option (`email({ deliveryUrl })`), static per app: it defaults to `https://api.resend.com` and follows the mode.
 
 | Var | Production | Preview |
 | --- | --- | --- |

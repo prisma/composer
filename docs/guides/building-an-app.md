@@ -376,13 +376,13 @@ A module declares its configuration as one `input` schema, as a service does
 
 ```ts
 import { module, resolve } from '@prisma/composer';
-import { secretString } from '@prisma/composer/arktype';
+import { field, secretString } from '@prisma/composer/arktype';
 import { envSecret } from '@prisma/composer-prisma-cloud';
 import { type } from 'arktype';
 
 const email = module(
   'email',
-  { input: type({ from: 'string', deliveryCredential: secretString(), 'replyTo?': 'string' }) },
+  { input: type({ from: 'string', deliveryCredential: secretString(), 'replyTo?': field(type('string')) }) },
   ({ input, environment, provision }) => {
     const sender = resolve([input.from, environment.name], ([from, name]) =>
       name === 'production' ? from : `${name}+${from}`);
@@ -425,11 +425,12 @@ envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
   a mistake fails before anything reaches the platform.
 - A root module's input is filled from the config adapters ([Values from outside the code](#values-from-outside-the-code)).
 - A module's `input` takes every source a service's does. Its schema checks
-  `envParam()`'s value. It checks a stand-in for the three whose value exists
-  only at boot: an empty `SecretString` for `envSecret()` and a redacted
-  `generatedParam()`, `''` for a plain `generatedParam()`, and
-  `https://origin.invalid` for `serviceOrigin()`. A schema that transforms
-  such a field fails the deploy.
+  `envParam()`'s value, and checks each of the other three as its
+  **pointer**: the object that names the platform variable the service
+  reads at boot. A `secretString()` field accepts the pointer of
+  `envSecret()` and of a redacted `generatedParam()`. A plain field accepts
+  no pointer, so a field bound to `serviceOrigin()` or a plain
+  `generatedParam()` is wrapped with `field()`, below.
 - `field()`, from `@prisma/composer/arktype` or `@prisma/composer/zod`,
   wraps one leaf field's schema: `type({ from: field(type('string')) })` or
   `z.object({ from: field(z.string()) })`. A wrapped field also accepts a
@@ -443,7 +444,7 @@ envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
   object schema, and with ArkType put a default outside the wrapper:
   `field(type('string')).default('x')`. With another Standard Schema library,
   `Pointer`, `isPlainPointer()` and `isSecretPointer()` from
-  `@prisma/composer` are what `field()` and `secretString()` check.
+  `@prisma/composer` are what `field()` and `secretString()` check. Wrap every leaf field of a reusable module's schema, unless a `resolve()` lists it: the module then takes a literal, a deploy-time value or a value known only at boot, whichever its caller has. In the example above, `from` stays plain because a `resolve()` computes with it, and `replyTo` is wrapped. A root's fields stay plain too, because the config pool never holds a pointer.
 - A body reaches only the keys every member of a union schema has, and has no
   element access into an array field. To narrow, forward the whole `input`,
   or narrow inside a `resolve()` function.
@@ -673,12 +674,26 @@ credential almost landed in plain config), and binding `envSecret` where the
 schema expects a string fails the same way. Neither side can silently
 misclassify a credential.
 
-A schema with a `SecretString` field cannot also transform its input. An
-ArkType morph anywhere in the schema, such as `'string.trim'` or `.pipe()`,
-makes ArkType copy the whole input, and a copied `SecretString` loses its
-value, so the service could not read the secret at boot. The deploy refuses
-such a schema and names the secret field. Do the transform in the service
-code instead.
+**A field bound to `serviceOrigin()` or `generatedParam({ redacted: false })`
+is wrapped.** Their value exists only at boot, so at deploy the schema sees
+a pointer to the platform variable, and only a field wrapped with `field()`
+accepts it: `type({ returnUrl: field(type('string')) })`. A plain `'string'`
+field fails the deploy, and in a module's binding it fails to compile. A
+redacted `generatedParam()` is a secret, so its field is `secretString()`.
+In the service a wrapped field reads as its inner type:
+`service.input().returnUrl` is a `string`, because at boot the pointer has
+been replaced by the variable's text. `mockService()` takes the input
+double in the same shape.
+
+An ArkType schema with a `SecretString` field cannot also transform its
+input. A morph anywhere in the schema, such as `'string.trim'`,
+`.pipe()` or a wrapped transforming field like
+`field(type('string.integer.parse'))`, and deleting undeclared keys with
+`'+': 'delete'`, make ArkType copy the whole input, and a copied
+`SecretString` loses its value, so the service could not read the secret at
+boot. The deploy checks for this and refuses such a schema, naming the
+secret field. Do the transform in the service code instead. A Zod schema
+keeps the secret box when it transforms, so it can do both.
 
 **`envParam('NAME')`** is for plain values the code *can't* know. An app
 origin is the canonical case: it's different on production and on every
@@ -818,8 +833,8 @@ from the environment's name.
 `envParam()`, `envSecret()`, `generatedParam()` and `serviceOrigin()` are
 values too, so `resolve()` can list them. For `envParam('NAME')`, `fn`
 receives the variable's value at deploy, read from the config pool. For
-the other three, `fn` receives a **pointer**, although the type says
-`SecretString` or `string`, because their value exists only at boot: the
+the other three, `fn` receives a **pointer**, typed `Pointer<SecretString>`
+or `Pointer<string>`, because their value exists only at boot: the
 deploy never holds a secret, and it creates a generated value or a service's
 origin after it has run `fn`. A pointer throws when code turns it into text or
 a number. `fn` may return it, or put it in its result, unchanged, and the
@@ -828,13 +843,13 @@ service then receives the source as if it had been bound directly.
 
 ```ts
 import { module, resolve } from '@prisma/composer';
-import { secretString } from '@prisma/composer/arktype';
+import { field, secretString } from '@prisma/composer/arktype';
 import { envParam, envSecret, serviceOrigin } from '@prisma/composer-prisma-cloud';
 import { type } from 'arktype';
 
 const billing = module(
   'billing',
-  { input: type({ greeting: 'string', stripeKey: secretString(), returnUrl: 'string' }) },
+  { input: type({ greeting: 'string', stripeKey: secretString(), returnUrl: field(type('string')) }) },
   ({ input, provision }) => {
     provision(billingService, {
       id: 'service',
