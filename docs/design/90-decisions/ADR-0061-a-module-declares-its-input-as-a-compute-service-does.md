@@ -4,6 +4,8 @@ Amended 2026-10-29 (module-input project, second slice): each input field the bo
 
 Amended 2026-10-29 (module-input project, third slice): one statement below is corrected. `paramSource()` and `secretSource()` change: each now returns one object that is both the target's source and a value, so a module's input takes every source a service's input does. Each also takes an optional second argument of options: `secretSource()` takes `label`, the name errors use, and `paramSource()` takes `label`, `poolKey`, `sentinel` and `redacted`, which tell core what it needs about the source's value without reading the payload.
 
+Amended 2026-10-30 (module-input project, fourth slice): a root may declare `input`. Its binding is the config pool, which Load validates with the root's schema first, during its second pass, before anything is created. A root's input takes no secret: the config pool holds plain values, so a `secretString()` field refuses them.
+
 ## Decision
 
 A module declares all of its incoming configuration as **one Standard Schema**, `input`, exactly as `compute()` does. Secret fields are typed `secretString()`. The module's body receives `input` as a set of opaque references, one per key, which it can only pass on: into a child's input, into a node parameter that takes a value, or as a `resolve()` dependency. Modules have no per-key `params` or `secrets` slots.

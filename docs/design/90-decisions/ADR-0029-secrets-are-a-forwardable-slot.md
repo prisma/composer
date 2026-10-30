@@ -4,6 +4,8 @@ Amended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-
 
 Amended 2026-10-29 (module-input project, third slice): `envSecret('NAME')` returns a value, `SecretSource & Value<SecretString>`, that is also the source. Wherever a binding took the source, the target receives the same object, so the pointer and boot are unchanged. Its real value at deploy is a pointer: a `resolve()` function that lists it receives the source itself, which throws when turned into text or a number, and may return it. Deploy preflight checks every `envSecret()` the graph names, including one a function lists but does not return, one in a module's input that no service receives, and one a function in a resource's props lists. `secretSource()` takes an optional `label`, the name errors use.
 
+Amended 2026-10-30 (module-input project, fourth slice): a name missing on the platform is filled from the secrets pool, what the `composer` section's `secrets` adapters return, in place of the deploy shell's environment. The default `secrets` list reads the process environment, so a project that sets no list behaves as before.
+
 ## Decision
 
 A **secret** is one specific thing: a value the deployment reads from the
