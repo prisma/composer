@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
+import { field } from '@internal/foundation/arktype';
 import { isPlainPointer, isSecretPointer } from '@internal/foundation/pointer';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { string } from '../config.ts';
-import { type Graph, Load } from '../graph.ts';
+import { type Graph, Load, LoadError } from '../graph.ts';
 import {
   isSecretSource,
   type ModuleNode,
@@ -32,6 +33,16 @@ const echoService = () =>
     input: anyInputSchema,
     build,
   });
+
+const loadError = (run: () => unknown): LoadError => {
+  try {
+    run();
+  } catch (error) {
+    if (error instanceof LoadError) return error;
+    throw error;
+  }
+  throw new Error('expected a LoadError');
+};
 
 /** A root `shop` that provisions `child` as `email` with `input`. */
 const shopWith = (child: ModuleNode, input: unknown): ModuleNode =>
@@ -132,5 +143,46 @@ describe('an ArkType copy of a source', () => {
     const graph = Load(shopWith(relay(type({ base: 'string' })), { base: copyOf(source) }));
 
     expect(bindingOf(graph)['base']).toBe(source);
+  });
+});
+
+describe('a wrapped field at Load', () => {
+  test("a wrapped field reports the plain field's error at Load", () => {
+    const fails = (schema: StandardSchemaV1) =>
+      loadError(() =>
+        Load(
+          shopWith(
+            module('email', { input: schema }, () => {}),
+            { from: 3 },
+          ),
+        ),
+      ).message;
+
+    const wrapped = fails(type({ from: field(type('string')) }));
+
+    expect(wrapped).toBe(fails(type({ from: 'string' })));
+    expect(wrapped).toBe(
+      'The input binding of module "shop.email" does not match the module\'s input schema: from must be a string (was a number)',
+    );
+  });
+
+  test("a wrapped field takes a runtime param source's stand-in at Load, and the service receives the source", () => {
+    const source = origin();
+
+    const graph = Load(shopWith(relay(type({ base: field(type('string')) })), { base: source }));
+
+    expect(bindingOf(graph)['base']).toBe(source);
+  });
+
+  test("a secret source bound to a wrapped text field fails at Load with the plain field's error", () => {
+    const fails = (schema: StandardSchemaV1<{ base: unknown }, { base: unknown }>) =>
+      loadError(() => Load(shopWith(relay(schema), { base: pointer('K') }))).message;
+
+    const wrapped = fails(type({ base: field(type('string')) }));
+
+    expect(wrapped).toBe(fails(type({ base: 'string' })));
+    expect(wrapped).toBe(
+      'The input binding of module "shop.email" does not match the module\'s input schema: base must be a string (was an object)',
+    );
   });
 });
