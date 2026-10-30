@@ -186,6 +186,69 @@ describe("a root's input is the config pool", () => {
   });
 });
 
+describe("the root's whole input never reaches a binding", () => {
+  const schema = type({ GREETING: 'string' });
+  const pool = { GREETING: 'hi', STRIPE_KEY: 'sk_live_SENTINEL' };
+  const refusal = (site: string) =>
+    `${site} depends on the whole input of root module "shop". The root's input is the whole ` +
+    'config pool, which by default holds every variable of the process environment, secrets ' +
+    'included. Pass on the fields the root declares one by one, such as input.EMAIL_FROM.';
+
+  test("a service binding that is the root's whole input is refused", () => {
+    const root = module('shop', { input: schema }, ({ input, provision }) => {
+      provision(echoService(), { input: input as never });
+    });
+
+    expect(loadError(() => Load(root, { configPool: pool })).message).toBe(
+      refusal('the input binding of service "shop.echo"'),
+    );
+  });
+
+  test("the root's whole input nested inside a binding is refused", () => {
+    const root = module('shop', { input: schema }, ({ input, provision }) => {
+      provision(echoService(), { input: { settings: { all: input } } as never });
+    });
+
+    expect(loadError(() => Load(root, { configPool: pool })).message).toBe(
+      refusal('input key "settings.all" of service "shop.echo"'),
+    );
+  });
+
+  test("the root's whole input as a resolve() dependency is refused", () => {
+    const root = module('shop', { input: schema }, ({ input, provision }) => {
+      provision(echoService(), { input: { all: resolve([input], ([i]) => i) } as never });
+    });
+
+    expect(loadError(() => Load(root, { configPool: pool })).message).toBe(
+      refusal('input key "all" of service "shop.echo"'),
+    );
+  });
+
+  test("the root's whole input bound to a child module is refused", () => {
+    const email = module('email', { input: anyInputSchema }, ({ input, provision }) => {
+      provision(echoService(), { input: input as never });
+    });
+    const root = module('shop', { input: schema }, ({ input, provision }) => {
+      provision(email as never, { input: { config: input } } as never);
+    });
+
+    expect(loadError(() => Load(root, { configPool: pool })).message).toBe(
+      refusal('input key "config" of module "shop.email"'),
+    );
+  });
+
+  test('a module that is not the root may forward its whole input', () => {
+    const email = module('email', { input: anyInputSchema }, ({ input, provision }) => {
+      provision(echoService(), { input: input as never });
+    });
+    const root = module('shop', { input: schema }, ({ input, provision }) => {
+      provision(email as never, { input: { greeting: input.GREETING } } as never);
+    });
+
+    expect(bindingOf(Load(root, { configPool: pool }))).toEqual({ greeting: 'hi' });
+  });
+});
+
 describe('a pool-key source reads text', () => {
   test('a pool-key source whose pool value is not text fails naming its kind', () => {
     const email = module('email', { input: anyInputSchema }, ({ input, provision }) => {

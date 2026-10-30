@@ -535,6 +535,11 @@ export function resolveValues(input: {
             `${describeSite(site)} depends on ${inputFieldLabel(origin)} of module "${origin.module}", which this Load does not provision. An input field can be passed on only inside the body of the module that received it.`,
           );
         }
+        if (entry.fromConfigPool && origin.path.length === 0) {
+          throw new LoadError(
+            `${describeSite(site)} depends on the whole input of root module "${origin.module}". The root's input is the whole config pool, which by default holds every variable of the process environment, secrets included. Pass on the fields the root declares one by one, such as input.EMAIL_FROM.`,
+          );
+        }
         result = readPath(validatedInputOf(entry), origin);
         break;
       }
