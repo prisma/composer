@@ -181,9 +181,6 @@ export interface OriginParamPayload {
   readonly address: string;
 }
 
-/** What a schema checks at deploy in place of a serviceOrigin() leaf, whose value exists only once the deploy has created the service; boot checks the real one. */
-export const ORIGIN_SENTINEL = 'https://origin.invalid';
-
 /**
  * Binds an input leaf to another service's public origin in the environment being deployed,
  * e.g. `auth()`'s `baseUrl: serviceOrigin('shop.web')`. `address` is the target service's

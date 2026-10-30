@@ -23,18 +23,17 @@
  * and pass through untouched, so a ref keeps carrying its ordering edge.
  */
 import type { Config, ConfigParam, Params, ServiceNode } from '@internal/core';
-import { isParamSource, isSecretSource } from '@internal/core';
+import {
+  isParamSource,
+  isSecretPointer as isSecretPointerValue,
+  isSecretSource,
+} from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
-import { SecretBox, type SecretString } from '@internal/foundation/secret';
+import { SecretBox } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { addressKeySegments, configKey, ORIGIN_KEY_NAME } from './config-key.ts';
-import {
-  isEnvParamSource,
-  isGeneratedParamSource,
-  isOriginParamSource,
-  ORIGIN_SENTINEL,
-} from './param.ts';
+import { isEnvParamSource, isGeneratedParamSource, isOriginParamSource } from './param.ts';
 import { poolText } from './pool-text.ts';
 import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
 import { secretName } from './secret.ts';
@@ -271,7 +270,7 @@ export function stashRows(node: ServiceNode, address: string, env: Env): Record<
 // Deploy resolves the provision-time input binding (literals as-is, envParam
 // leaves read from the config pool, envSecret leaves as `$secret` pointers),
 // validates the resolved object with the service's own Standard Schema
-// (secrets as empty sentinel boxes — never values), and writes the
+// (each value known only at boot as its pointer — never a value), and writes the
 // defaults-applied result to COMPOSER_<addr>_INPUT. Boot reads that one row,
 // swaps each pointer for a redacting box over the named platform var,
 // validates again, and hands the app the typed object. Writer and reader
@@ -363,13 +362,9 @@ export interface PointerName {
   readonly varName: string;
 }
 
-/** What `resolveInputBinding` hands back: the schema-ready object plus the sentinel→platform-name map, the generated leaves, and every key path that resolved absent. */
+/** What `resolveInputBinding` hands back: the schema-ready object, with each pointer in place, plus the generated leaves and every key path that resolved absent. */
 export interface ResolvedInputBinding {
   readonly resolved: unknown;
-  /** Each secret leaf's sentinel box, mapped to the platform var it points to — identity is the lever `serializeInput` substitutes by. */
-  readonly sentinels: ReadonlyMap<SecretString, string>;
-  /** The dot-joined binding path of each secret leaf that has a sentinel box. */
-  readonly secretPaths: ReadonlySet<string>;
   /** Every generated leaf — provisioned by the descriptor, substituted to a `$generated` pointer by path. */
   readonly generated: readonly GeneratedLeaf[];
   /** Dot-joined binding paths whose env-bound leaf resolved absent (unset/empty deploy-shell var, or a secret `prisma dev` found unset) — deploy-report fodder. */
@@ -423,13 +418,13 @@ export function assertDistinctPointerNames(
 
 /**
  * Deploy: recursive descent over the provision-time binding (plain data).
- * `envSecret` leaves become empty sentinel `SecretBox`es (the value never
- * enters the deploy); `envParam` leaves read the config pool — unset or
- * empty means the enclosing object key is OMITTED, and the schema arbitrates
- * whether that absence is legal (ADR-0042). An `envSecret` leaf named in
- * `absentSecrets` is omitted the same way; only `prisma dev` passes any.
- * Everything non-plain (a class instance, a function, a raw SecretBox holding
- * a value) is rejected loudly.
+ * `envSecret`, `generatedParam` and `serviceOrigin` leaves stay in place as
+ * their pointers (the value never enters the deploy); `envParam` leaves read
+ * the config pool — unset or empty means the enclosing object key is
+ * OMITTED, and the schema arbitrates whether that absence is legal
+ * (ADR-0042). An `envSecret` leaf named in `absentSecrets` is omitted the
+ * same way; only `prisma dev` passes any. Everything non-plain (a class
+ * instance, a function, a raw SecretBox holding a value) is rejected loudly.
  */
 export function resolveInputBinding(
   binding: unknown,
@@ -437,32 +432,27 @@ export function resolveInputBinding(
   options: SerializeInputOptions = {},
 ): ResolvedInputBinding {
   const { env, absentSecrets } = withDefaults(options);
-  const sentinels = new Map<SecretString, string>();
-  const secretPaths = new Set<string>();
   const generated: GeneratedLeaf[] = [];
   const pointers: PointerName[] = [];
   const absent: string[] = [];
 
   const walk = (value: unknown, path: string): unknown => {
     // A generated leaf is a ParamSource too, so it MUST be recognized before
-    // the param/secret branches. It resolves to a sentinel the schema
-    // validates — a redacting box when redacted, the empty string otherwise
-    // (mirroring the deploy sentinel a secret leaf uses). The substitution
-    // later swaps the sentinel for a `{ "$generated": VAR, "redacted": <bool> }`
-    // pointer by path — the facet rides the pointer so schema-blind boot knows
-    // whether to box; the walk itself provisions nothing.
+    // the param branch. It stays in place as its pointer, which the schema
+    // checks; serializing swaps it for a `{ "$generated": VAR, "redacted": <bool> }`
+    // pointer by path. The walk itself provisions nothing.
     if (isOriginParamSource(value)) {
       const varName = generatedParamVarName(address, path);
       generated.push({ varName, bytes: 0, redacted: false, path, origin: value.payload.address });
       pointers.push({ path, varName });
-      return ORIGIN_SENTINEL;
+      return value;
     }
     if (isGeneratedParamSource(value)) {
       const { bytes, redacted } = value.payload;
       const varName = generatedParamVarName(address, path);
       generated.push({ varName, bytes, redacted, path });
       pointers.push({ path, varName });
-      return redacted ? new SecretBox('') : '';
+      return value;
     }
     if (isSecretSource(value)) {
       const name = secretName(
@@ -474,10 +464,7 @@ export function resolveInputBinding(
         absent.push(path === '' ? `(root) → ${name}` : `${path} → ${name}`);
         return ABSENT;
       }
-      const sentinel = new SecretBox('');
-      sentinels.set(sentinel, name);
-      secretPaths.add(path);
-      return sentinel;
+      return value;
     }
     if (isParamSource(value)) {
       if (!isEnvParamSource(value)) {
@@ -545,8 +532,6 @@ export function resolveInputBinding(
   assertDistinctPointerNames(pointers, address);
   return {
     resolved: resolved === ABSENT ? undefined : resolved,
-    sentinels,
-    secretPaths,
     generated,
     absent,
   };
@@ -570,15 +555,18 @@ export interface InputDocumentRow {
   readonly secrets: readonly string[];
 }
 
+/** The text a stand-in box holds: known, and not a secret. */
+const STAND_IN_TEXT = 'composer-stand-in-not-a-secret';
+
 /**
- * Deploy: resolve the binding, judge it with the service's own schema
- * (secrets as opaque sentinel boxes), and serialize the defaults-applied
- * VALIDATED output — pointers substituted back where the sentinels sit — into
- * one JSON row. Returns `undefined` for a service with no input schema.
- * A validation failure that mentions a secret leaf means either a
- * misclassified binding (a literal where the schema wants a `SecretString`,
- * or vice versa) or a schema refining on secret CONTENT — deploy-time
- * validation sees only empty boxes, and the ADR forbids content refinements.
+ * Deploy: resolve the binding, judge it with the service's own schema (each
+ * value known only at boot as its pointer), and serialize the
+ * defaults-applied VALIDATED output, each pointer written as a `$secret` or
+ * `$generated` marker, into one JSON row. Returns `undefined` for a service
+ * with no input schema. A service whose binding holds a secret pointer is
+ * judged a second time, with a stand-in box in place of each secret pointer,
+ * and refused if a box loses its text: the schema copies its input, and at
+ * boot the copy would lose the secret's value.
  */
 export function serializeInput(
   node: ServiceNode,
@@ -591,21 +579,16 @@ export function serializeInput(
   if (!judged.ok) {
     throw new Error(
       `invalid input for service "${address}": ${judged.thrown ? '' : 'config param validation failed: '}${judged.message}\n` +
-        '(Deploy-time validation sees each envSecret leaf as an opaque, empty SecretString box. ' +
+        '(Deploy-time validation sees each value known only at boot, envSecret() included, as a pointer ' +
+        'to its platform variable, never its value. ' +
         'A failure naming a secret field means the binding and schema disagree about its ' +
         'secretness, or the schema refines on secret content — which ADR-0042 forbids.)',
     );
   }
-  const { validated, sentinels, secretPaths, generated, absent } = judged;
+  const { validated, generated, absent, resolved } = judged;
+  refuseLostSecrets(node, address, resolved);
   const emittedSecrets = new Set<string>();
-  const document = substitutePointers(
-    validated,
-    sentinels,
-    secretPaths,
-    generated,
-    address,
-    emittedSecrets,
-  );
+  const document = substitutePointers(validated, generated, address, emittedSecrets);
   return {
     key: inputKey(address),
     value: JSON.stringify(document),
@@ -617,6 +600,71 @@ export function serializeInput(
     // duplicates leaves cannot move it.
     secrets: [...emittedSecrets].sort(),
   };
+}
+
+/**
+ * Judges `resolved` a second time with a stand-in box in place of each secret
+ * pointer, and fails naming the first field whose box no longer gives back
+ * the stand-in's text. A schema that copies its input (an ArkType transform,
+ * or deleting undeclared keys) copies a box without its value, so at boot the
+ * service could not read the secret. Does nothing when `resolved` holds no
+ * secret pointer.
+ */
+function refuseLostSecrets(node: ServiceNode, address: string, resolved: unknown): void {
+  let found = false;
+  const withStandIns = (value: unknown): unknown => {
+    if (isSecretPointerValue(value)) {
+      found = true;
+      return new SecretBox(STAND_IN_TEXT);
+    }
+    if (isSecretSource(value) || isParamSource(value)) return value;
+    if (Array.isArray(value)) return value.map(withStandIns);
+    if (isPlainObject(value)) {
+      return Object.fromEntries(
+        Object.entries(value).map(([key, member]) => [key, withStandIns(member)]),
+      );
+    }
+    return value;
+  };
+  const standIns = withStandIns(resolved);
+  if (!found || node.inputSchema === undefined) return;
+  const result = standardValidate(node.inputSchema, standIns);
+  if ('issues' in result) {
+    throw new Error(
+      `invalid input for service "${address}": the schema accepts each secret's pointer but refuses a secret box in its place: ${result.issues}`,
+    );
+  }
+  const walk = (value: unknown, path: string): void => {
+    if (value instanceof SecretBox) {
+      let text: unknown;
+      try {
+        text = value.expose();
+      } catch {
+        text = undefined;
+      }
+      if (text !== STAND_IN_TEXT) {
+        throw new Error(
+          `input key "${path}" of service "${address}" validated to a copy of its secret, and the copy ` +
+            "has lost the secret's value: the schema copies its input (for example an ArkType morph " +
+            'elsewhere in the schema), so the service would fail to read the secret at boot. Move the ' +
+            'transform into the service code, or keep the schema free of transforms.',
+        );
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const [index, member] of value.entries()) {
+        walk(member, path === '' ? String(index) : `${path}.${index}`);
+      }
+      return;
+    }
+    if (isPlainObject(value)) {
+      for (const [key, member] of Object.entries(value)) {
+        walk(member, path === '' ? key : `${path}.${key}`);
+      }
+    }
+  };
+  walk(result.value, '');
 }
 
 type InputJudgement =
@@ -683,24 +731,17 @@ export function inputValidationFailure(
 }
 
 /**
- * Walks the VALIDATED output, mapping each generated leaf (by input path) to
- * its `{ "$generated": VAR, "redacted": <bool> }` pointer and each sentinel box
- * (by identity) to its `{ "$secret": name }` pointer, escaping any user key that
- * matches a reserved marker. The generated check runs FIRST, so a redacted
- * generated leaf's sentinel box becomes `$generated`, never mistaken for a
- * secret. The `redacted` facet rides the pointer so schema-blind boot knows
- * whether to box. A `SecretString` the walk does not recognize at a path where
- * the binding has a secret is a copy of the sentinel: the schema copied its
- * input, and at boot the same copy would lose the secret's value, so it is
- * rejected. Anywhere else it came from the schema itself (a default or
- * transform minting a box) — there is no platform var behind it, so it is
- * rejected rather than serialized. The path format
- * matches `resolveInputBinding`'s exactly, so generated leaves are found by path.
+ * Walks the VALIDATED output and writes each pointer as its document marker:
+ * an `envSecret` pointer as `{ "$secret": name }`, and a `generatedParam` or
+ * `serviceOrigin` pointer as `{ "$generated": VAR, "redacted": <bool> }`, found
+ * by the input path its binding put it at. A pointer is recognised by its
+ * brands, never by identity, so a copy the schema made still counts. Escapes
+ * any user key that matches a reserved marker. A `SecretString` in the output
+ * came from the schema itself (a default or transform minting a box): no
+ * platform var stands behind it, so it is rejected rather than serialized.
  */
 function substitutePointers(
   value: unknown,
-  sentinels: ReadonlyMap<SecretString, string>,
-  secretPaths: ReadonlySet<string>,
   generated: readonly GeneratedLeaf[],
   address: string,
   emittedSecrets: Set<string>,
@@ -708,26 +749,32 @@ function substitutePointers(
   const generatedByPath = new Map(generated.map((leaf) => [leaf.path, leaf]));
   const walk = (v: unknown, path: string): unknown => {
     const leaf = generatedByPath.get(path);
-    if (leaf !== undefined) return { [GENERATED_MARKER]: leaf.varName, redacted: leaf.redacted };
-    if (v instanceof SecretBox) {
-      const name = sentinels.get(v);
-      if (name === undefined && secretPaths.has(path)) {
-        throw new Error(
-          `input key "${path}" of service "${address}" validated to a copy of its secret, and the copy ` +
-            "has lost the secret's value: the schema copies its input (for example an ArkType morph " +
-            'elsewhere in the schema), so the service would fail to read the secret at boot. Move the ' +
-            'transform into the service code, or keep the schema free of transforms.',
-        );
-      }
-      if (name === undefined) {
-        throw new Error(
-          `input key "${path}" of service "${address}" validated to a SecretString the binding did ` +
-            'not supply — a schema must not mint secret boxes (a default/transform cannot name a ' +
-            "platform variable); bind the field with envSecret('NAME') instead.",
-        );
-      }
+    if (isSecretSource(v)) {
+      const name = secretName(v, path === '' ? 'the input binding root' : `input key "${path}"`);
       emittedSecrets.add(name);
       return { [SECRET_MARKER]: name };
+    }
+    if (isParamSource(v)) {
+      if (leaf === undefined) {
+        throw new Error(
+          `input key "${path}" of service "${address}" validated to a value known only at boot that its ` +
+            'binding did not put there: the schema moved it. A schema may check such a field, never move or transform it.',
+        );
+      }
+      return { [GENERATED_MARKER]: leaf.varName, redacted: leaf.redacted };
+    }
+    if (leaf !== undefined && v !== undefined) {
+      throw new Error(
+        `input key "${path}" of service "${address}" is bound to a value known only at boot, but the ` +
+          'schema replaced it. A schema may check such a field, never move or transform it.',
+      );
+    }
+    if (v instanceof SecretBox) {
+      throw new Error(
+        `input key "${path}" of service "${address}" validated to a SecretString the binding did ` +
+          'not supply — a schema must not mint secret boxes (a default/transform cannot name a ' +
+          "platform variable); bind the field with envSecret('NAME') instead.",
+      );
     }
     if (Array.isArray(v)) return v.map((m, i) => walk(m, path === '' ? String(i) : `${path}.${i}`));
     if (isPlainObject(v)) {
