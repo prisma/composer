@@ -223,10 +223,10 @@ function wiringEdges(wiring: Record<string, unknown>, targetId: string): Edge[] 
 }
 
 /**
- * Checks the params wired into a provisioned SERVICE: unlike a secret slot, a
- * declared param is never required to be bound here — it may fall back to its
- * own `default` (checked later, at `buildConfig`) — so this only rejects a
- * wired key that names something other than a real declared param.
+ * Checks the params wired into a provisioned SERVICE: a declared param is never
+ * required to be bound here — it may fall back to its own `default` (checked
+ * later, at `buildConfig`) — so this only rejects a wired key that names
+ * something other than a real declared param.
  */
 function validateServiceParamBinding(
   child: ServiceNode,
@@ -352,9 +352,9 @@ function flatten(
           'pass the value into it.',
       );
     }
-    // The id defaults to the node's own `name`; `opts.deps`/`opts.secrets`/
-    // `opts.input`/`opts.params` carry the producers, the input binding and a
-    // service's param bindings that satisfy its slots. The "_"/"." and
+    // The id defaults to the node's own `name`; `opts.deps`, `opts.input` and a
+    // service's `opts.params` carry the producers, the input binding and the
+    // param bindings. `opts.secrets` is read only to refuse it. The "_"/"." and
     // duplicate-id checks, brand-check and address join below are identical
     // whether the id was written or inferred.
     const id = opts?.id ?? child.name;
