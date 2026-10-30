@@ -6,6 +6,8 @@ Amended 2026-10-29 (module-input project, third slice): `envSecret('NAME')` retu
 
 Amended 2026-10-30 (module-input project, fourth slice): a name missing on the platform is filled from the secrets pool, what the `composer` section's `secrets` adapters return, in place of the deploy shell's environment. The default `secrets` list reads the process environment, so a project that sets no list behaves as before.
 
+Amended 2026-10-30 (module-input project, fifth slice): `secret()`, `SecretNeed`, `Secrets` and `SecretBindings` are removed, with the module `secrets` slot. What the Decision below calls a module's secret need is now a `secretString()` field of the module's `input`, which the module passes on and the root binds with `envSecret('NAME')`. So the module still never learns the platform name. `secretSource()`, `isSecretSource()` and `envSecret()` are unchanged.
+
 ## Decision
 
 A **secret** is one specific thing: a value the deployment reads from the

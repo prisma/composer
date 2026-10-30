@@ -6,6 +6,8 @@ Amended 2026-10-29 (module-input project, third slice): one statement below is c
 
 Amended 2026-10-30 (module-input project, fourth slice): a root may declare `input`. Its binding is the config pool, which Load validates with the root's schema first, during its second pass, before anything is created. A root's input takes no secret: the config pool holds plain values, so a `secretString()` field refuses them.
 
+Amended 2026-10-30 (module-input project, fifth slice): the slots are removed from the code, as the Consequences below say. `module()` refuses a `params` or `secrets` key, and `provision()` of a module refuses a `params` or `secrets` map, with errors that name `input`. `ModuleNode` and `ModuleContext` lose their slot type parameters: `ModuleNode<D, E, I>` and `ModuleContext<D, I>`. `auth()` and `email()` declare `input`.
+
 ## Decision
 
 A module declares all of its incoming configuration as **one Standard Schema**, `input`, exactly as `compute()` does. Secret fields are typed `secretString()`. The module's body receives `input` as a set of opaque references, one per key, which it can only pass on: into a child's input, into a node parameter that takes a value, or as a `resolve()` dependency. Modules have no per-key `params` or `secrets` slots.

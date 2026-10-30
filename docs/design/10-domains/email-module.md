@@ -65,12 +65,12 @@ verification link out of the outbox instead of a mailbox.
 ## The delivery credential is always required
 
 The delivery credential is a required secret even in environments where delivery is
-`none` and the value is never read. The framework has no optional or
-conditional secrets: every wired secret is required
-([ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md)). Such
-environments set a junk value. This was accepted as known friction, recorded in
-[`gotchas.md`](../../../gotchas.md#composers-secret-model-has-no-optionalconditional-secrets--every-off-environment-still-needs-a-junk-credential),
-rather than solved in the framework.
+`none` and the value is never read: the email service's input schema requires
+it in every mode. A schema can make a secret field optional
+([ADR-0042](../90-decisions/ADR-0042-service-input-is-one-standard-schema.md));
+the email service's does not. Such environments set a junk value. This was
+accepted as known friction, recorded in
+[`gotchas.md`](../../../gotchas.md#the-email-service-requires-its-delivery-credential-in-every-mode--every-off-environment-still-needs-a-junk-credential).
 
 ## No custom contract kinds
 

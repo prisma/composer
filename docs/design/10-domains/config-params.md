@@ -3,6 +3,8 @@
 > Amended by [ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares one `input` schema, as a compute service does; the module `params`/`paramNeed()` and `secrets`/`secret()` slots described here are removed.
 >
 > Amended by the module-input project (2026-10-29): every source constructor returns a value; see [Sources are values](#sources-are-values).
+>
+> Amended by the module-input project (2026-10-30): the module slots are removed from the code; § Secrets and the table below describe `input`.
 
 How a service's configuration is declared, typed, carried to the platform, and
 read back at boot. Rests on
@@ -99,10 +101,9 @@ the double-lookup — pointer, then platform variable. The differences from a
 secret are deliberate: the value reads back through `config()`, **unredacted**;
 the platform variable's **raw string** is handed to the param's own schema (no
 decode — a `number()` param bound to `envParam` fails at boot); and an empty
-string is a value, valid iff the schema accepts it. A module boundary forwards
-a binding down to a child through a nameless `paramNeed()` slot, the same way
-it forwards a secret need. Value changes need a redeploy, same as secret
-rotation.
+string is a value, valid iff the schema accepts it. A module passes a binding
+down to a child as a field of its own `input`. Value changes need a redeploy,
+same as secret rotation.
 
 **One concept, a param, bound to a source** (the glossary's *params and their
 sources* is the canonical statement). Four sources, by where the value comes
@@ -142,14 +143,12 @@ return one object that is both the target's source and a
 | --- | --- | --- | --- | --- |
 | A service's `input` binding | kept; read at serialize from the config pool | kept | kept | kept |
 | A service's `params` | kept; pointer row, as today | kept (fails at deploy, as today) | kept (fails at deploy, as today) | kept (fails at deploy, as today) |
-| A module's `secrets` slot | refused, as today | accepted and forwarded | refused, as today | refused, as today |
-| A module's `params` slot | accepted and forwarded | refused | accepted and forwarded | accepted and forwarded |
 | A module's `input` binding | its string; unset or empty leaves the key out | its pointer; the schema checks an empty `SecretString` | its pointer; the schema checks an empty `SecretString` when redacted, else `''` | its pointer; the schema checks `https://origin.invalid` |
 | A `resolve()` dependency | its string; unset or empty fails | its pointer | its pointer | its pointer |
 | A resource's `props` | its string; unset or empty leaves the key out | refused by the type | refused by the type | refused at Load |
 
-A service's input binding, a service's params and a module's `secrets` and
-`params` slots receive the source itself, the same object they received before
+A service's input binding and a service's params receive the source itself,
+the same object they received before
 sources were values. So the target reads the same leaves, writes the same
 pointer rows and checks the same names, and the rest of this document holds
 unchanged.
@@ -256,41 +255,43 @@ Job[] → Config (structured) → target serialize (its medium) → stored confi
 
 ## Secrets
 
-A secret is **not** a param — it is its own forwardable slot (ADR-0029). The
-value is provisioned out-of-band on the platform; the framework carries only the
-NAME. A service declares a nameless *need* with `secret()`; the root binds it to
-a platform env-var with `envSecret('NAME')` and forwards it in; it reads back
-through a third accessor, `secrets()`, as a redacting `SecretBox`:
+A secret is **not** a param (ADR-0029). The value is provisioned out-of-band on
+the platform; the framework carries only the NAME. A service types the field
+`secretString()` in its input schema; a module declares the same field in its
+own `input` and passes it on; the root binds it to a platform variable with
+`envSecret('NAME')`. The service reads it back through `service.input()` as a
+redacting `SecretString`:
 
 ```ts
-// A service/module declares the need — no platform name here:
-compute({ name: 'auth', secrets: { signingKey: secret() }, build: … });
+// A service declares the field's type — no platform name here:
+compute({ name: 'auth', input: type({ signingKey: secretString() }), build: … });
 
-// A module forwards its need down to an inner service (ctx.secrets):
-module('auth', { secrets: { signingKey: secret() }, expose: … }, ({ secrets, provision }) =>
-  provision(inner, { secrets: { signingKey: secrets.signingKey } }),
+// A module declares the same field in its input and passes it on:
+module('auth', { input: type({ signingKey: secretString() }), expose: … }, ({ input, provision }) =>
+  provision(inner, { input: { signingKey: input.signingKey } }),
 );
 
 // Only the ROOT names the platform variable (envSecret is the TARGET's, from
-// @prisma/composer-prisma-cloud — secret() is core's, from @prisma/composer):
-provision(auth, { secrets: { signingKey: envSecret('AUTH_SIGNING_KEY') } });
+// @prisma/composer-prisma-cloud; secretString() is core's, from @prisma/composer/arktype):
+provision(auth, { input: { signingKey: envSecret('AUTH_SIGNING_KEY') } });
 
 // Read at the point of use — expose() is the sole reader:
-const { signingKey } = service.secrets(); // SecretBox<string>
-signingKey.expose();                       // the one door to the value
+const { signingKey } = service.input(); // SecretString
+signingKey.expose();                     // the one door to the value
 ```
 
-`secrets()` sits beside `load()`/`config()` (ADR-0021). The `SecretBox` redacts
+`service.input()` returns the whole validated input. A `SecretString` redacts
 under `toString`/`toJSON`/`valueOf`/`inspect`, so a stray log or serialization
-prints `[REDACTED]`; only `expose()` returns the value. `secret()` and the opaque
-`SecretSource` are core (`@prisma/composer`); `envSecret('NAME')` — the source
-constructor that names and validates a platform variable — is the target's, from
-`@prisma/composer-prisma-cloud` (ADR-0018/0019 applied to secrets).
+prints `[REDACTED]`; only `expose()` returns the value. `secretString()` and the
+opaque `SecretSource` are core (`@prisma/composer`); `envSecret('NAME')`, the
+source constructor that names and validates a platform variable, is the
+target's, from `@prisma/composer-prisma-cloud` (ADR-0018/0019 applied to
+secrets).
 
 The round trip carries only the name, never the value:
 
-1. **Bind + forward.** The root binds each need to a platform name and wires it
-   down the module topology (the same rail dependencies use). Load records
+1. **Bind.** The root binds each secret field to a platform name, and each
+   module on the way passes it on as a field of its input. Load records
    one binding per resolved service secret slot: `{ serviceAddress, slot, name }`.
 2. **Preflight.** Before Alchemy runs, the deploy verifies every bound name
    exists on the platform for the target environment's class/branch, filling a name
@@ -336,9 +337,9 @@ Three lines the model holds everywhere:
 - **Params are static data.** A value that must come from another node — an
   address, a URL, credentials a resource mints — is a dependency, never a
   field inside a param value.
-- **Secrets are not params.** A secret is a distinct forwardable slot (§ Secrets,
-  ADR-0029), read through `secrets()` as a `SecretBox` — sensitivity is carried by
-  the type, never a param facet.
+- **Secrets are not params.** A secret is a `secretString()` field of an input
+  schema (§ Secrets, ADR-0029, ADR-0042), read through `service.input()` as a
+  `SecretString`: sensitivity is carried by the type, never a param facet.
 
 ## Related
 
