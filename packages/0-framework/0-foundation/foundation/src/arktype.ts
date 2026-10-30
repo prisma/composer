@@ -3,7 +3,7 @@
  * accepts any Standard Schema library (ADR-0042) and nothing outside this
  * module imports arktype, so an app that uses Zod never loads it.
  */
-import { type Type, type } from 'arktype';
+import { type ArkError, type Type, type } from 'arktype';
 import { blindCast } from './casts.ts';
 import { describeKind } from './describe-kind.ts';
 import { isPlainPointer, isSecretPointer, type Pointer } from './pointer.ts';
@@ -32,11 +32,35 @@ export const secretString = () =>
       }),
   );
 
-/** The error `inner` reports for `data`: what a wrapped field reports for a value that is not a pointer. */
-function innerProblem(inner: Type<unknown, unknown>, data: unknown): string {
-  const errors = inner(data);
-  if (errors instanceof type.errors) return errors.map((error) => error.problem).join('; ');
-  return `must be ${inner.description} (was ${describeKind(data)})`;
+/** Where a wrapped field's error sits, and what it was given. */
+interface FieldError {
+  readonly data: unknown;
+  readonly path: readonly PropertyKey[];
+  hasCode(code: 'union'): boolean;
+}
+
+/** `error`'s message as if it were reported at `parent` joined with its own path. */
+function messageAt(parent: readonly PropertyKey[], error: ArkError): string {
+  return error.transform(({ relativePath, prefixPath, ...input }) => ({
+    ...input,
+    path: [...parent, ...error.path],
+  })).message;
+}
+
+/**
+ * The error `inner` reports for the wrapped field's value: what a wrapped field
+ * reports for a value that is not a pointer. When both branches are objects,
+ * ArkType reports a union error, whose message is its problem alone, so each
+ * inner error carries its full path from the field's parent.
+ */
+function innerProblem(inner: Type<unknown, unknown>, field: FieldError): string {
+  const errors = inner(field.data);
+  if (!(errors instanceof type.errors)) {
+    return `must be ${inner.description} (was ${describeKind(field.data)})`;
+  }
+  return errors
+    .map((error) => (field.hasCode('union') ? messageAt(field.path, error) : error.problem))
+    .join('; ');
 }
 
 /**
@@ -59,5 +83,5 @@ export function field<t, $>(inner: Type<t, $>): Type<t | Pointer<Type<t, $>['inf
   return blindCast<
     Type<t | Pointer<Type<t, $>['inferIn']>, $>,
     "ArkType infers the pointer branch as object; the branch admits only a plain pointer, which stands for the inner schema's input text"
-  >(checked.or(pointer).configure({ problem: (error) => innerProblem(checked, error.data) }));
+  >(checked.or(pointer).configure({ problem: (error) => innerProblem(checked, error) }));
 }
