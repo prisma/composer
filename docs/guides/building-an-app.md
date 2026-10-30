@@ -405,8 +405,8 @@ export default module('shop', ({ provision }) => {
 envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
 
 - The body receives each field as a [value](#values-that-differ-per-environment).
-  It can pass a field into a `provision()` binding, or list it as a
-  `resolve()` dependency to compute with it.
+  It can pass a field into a `provision()` binding, or, if the field is
+  plain, list it as a `resolve()` dependency to compute with it.
 - Reading a field in the body fails the deploy with a message naming the
   field: a template literal, `String()`, arithmetic, `JSON.stringify` or
   `Object.keys` on `input.domain` reports that `input.domain` of the module is
@@ -816,9 +816,9 @@ the platform, with a message that names the binding the value sits in, such as
   a result for every environment; Composer never picks a default.
 - `fn` returns a value. List that value as a dependency instead; `fn`
   receives its real value.
-- `fn` returns a source it did not receive, such as `envSecret()` called
-  inside `fn`. It may return a pointer it received
-  ([below](#sources-in-resolve)).
+- `fn` returns a source, such as `envSecret()` called inside `fn`.
+- `fn` lists a value known only at boot, or a field whose real value holds
+  one ([below](#sources-in-resolve)).
 - `fn` lists `envParam('NAME')` and the variable is unset or empty.
 - `fn` returns a Promise, a function, a class instance or anything else
   that is not plain data.
@@ -831,16 +831,16 @@ from the environment's name.
 
 ### Sources in resolve()
 
-`envParam()`, `envSecret()`, `generatedParam()` and `serviceOrigin()` are
-values too, so `resolve()` can list them. For `envParam('NAME')`, `fn`
-receives the variable's value at deploy, read from the config pool. For
-the other three, `fn` receives a **pointer**, typed `Pointer<SecretString>`
-or `Pointer<string>`, because their value exists only at boot: the
-deploy never holds a secret, and it creates a generated value or a service's
-origin after it has run `fn`. A pointer throws when code turns it into text or
-a number. `fn` may return it, or put it in its result, unchanged, and the
-service then receives the source as if it had been bound directly.
-`isRuntimeValue(x)` from `@prisma/composer` is true for a pointer.
+`envParam()` is known at deploy, so `resolve()` can list it: `fn` receives
+the variable's value at deploy, read from the config pool. `envSecret()`,
+`generatedParam()` and `serviceOrigin()` are known only at boot: the deploy
+never holds a secret, and it creates a generated value or a service's origin
+after it has run `fn`. So `fn` would have nothing to compute with, and
+`resolve()` cannot list them. Nor can it list a module's input field wrapped
+with `field()` or typed `secretString()`, because its real value may be one of
+them. A dependency must be a **deploy-time value**: `environment.name`,
+another `resolve()` result, `envParam()`, or a plain field of a module's
+input. Bind the other sources directly:
 
 ```ts
 import { module, resolve } from '@prisma/composer';
@@ -859,15 +859,11 @@ const billing = module(
   },
 );
 
-export default module('shop', ({ environment, provision }) => {
-  const stripeKey = resolve(
-    [envSecret('STRIPE_LIVE_KEY'), envSecret('STRIPE_TEST_KEY'), environment.name],
-    ([live, test, name]) => (name === 'production' ? live : test),
-  );
+export default module('shop', ({ provision }) => {
   provision(billing, {
     input: {
       greeting: resolve([envParam('GREETING')], ([greeting]) => greeting.toUpperCase()),
-      stripeKey,
+      stripeKey: envSecret('STRIPE_KEY'),
       returnUrl: serviceOrigin('shop.web'),
     },
   });
@@ -876,17 +872,32 @@ export default module('shop', ({ environment, provision }) => {
 ```
 
 `GREETING=hi prisma deploy --environment staging` gives `shop.billing.service`
-the input binding `{ greeting: 'HI', stripeKey: envSecret('STRIPE_TEST_KEY'),
-returnUrl: serviceOrigin('shop.web') }`, exactly as if the root had bound those
-sources on the service directly. Turning the
-pointer into text fails the deploy, naming the binding and the source:
-`` resolve([envSecret('STRIPE_TEST_KEY')], ([key]) => `Bearer ${key}`) ``
-stops with `envSecret('STRIPE_TEST_KEY') is known only at boot`.
+the input binding `{ greeting: 'HI', stripeKey: envSecret('STRIPE_KEY'),
+returnUrl: serviceOrigin('shop.web') }`.
 
-Deploy preflight checks every `envSecret()` that `resolve()` lists, in every
-environment, whichever one `fn` returns. So the example above needs both
-`STRIPE_LIVE_KEY` and `STRIPE_TEST_KEY` on every environment. One variable
-name with a different value per environment is simpler.
+Listing a value known only at boot, such as
+`resolve([envSecret('STRIPE_KEY')], ([key]) => …)`, fails to compile, with a
+type error that says a dependency must be a deploy-time value:
+
+```text
+error TS2322: Type 'SecretSource<EnvSecretPayload> & RuntimeValue<SecretString>' is not assignable to type '"a resolve() dependency must be a deploy-time value, never a value known only at boot or a field wrapped with field(); to compute with an input field, declare it plain"'.
+```
+
+A second error can follow where the result is used, because TypeScript types
+the result of a call that fails as `Value<unknown>`. The compiler cannot see
+every case: a field typed `unknown`, a schema without type information and a
+cast all compile. So the deploy also refuses a dependency whose real value is
+a value known only at boot, or holds one at any depth, before anything
+reaches the platform. The message names the field and says to declare it
+plain:
+
+```text
+The resolve() function for input key "url" of service "shop.email.service" lists input.from of module "shop.email", whose real value is serviceOrigin('shop.web'), a value known only at boot. A resolve() dependency must be a deploy-time value. To compute with input.from, declare it plain, without field(), and bind it to deploy-time data.
+```
+
+To use a different secret in each environment, give the secret one name and
+set a different value for it on each environment, instead of choosing between
+two names in `resolve()`.
 
 Turning `envParam()` itself into text in a module body, such as
 `` `${envParam('GREETING')}` ``, fails the deploy, as reading an input field
