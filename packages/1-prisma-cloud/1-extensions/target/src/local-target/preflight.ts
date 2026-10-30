@@ -1,8 +1,7 @@
 /**
  * Dev preflight (local-dev spec § 5, ADR-0041): the same name walk deploy's
  * preflight uses (`preflight-names.ts`), with dev's value-sourcing policy.
- * Every value comes from this run's environment variables: the shell, or a `.env` that
- * `prisma.config.ts` loads. An unset or empty secret is left out of the
+ * Every value comes from the pools the command read: secrets from the secrets pool, env-sourced params from the config pool. An unset or empty secret is left out of the
  * service's input; it is an error only when the service's schema rejects
  * its absence. An unset or empty env-sourced param is always an error.
  *
@@ -20,7 +19,13 @@ import {
   removeRetiredSecretsFile,
 } from '@internal/local-target';
 import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
-import { collectPreflightNames, inputSecretNames, type PreflightName } from '../preflight-names.ts';
+import { poolText } from '../pool-text.ts';
+import {
+  collectPreflightNames,
+  envParamNotTextError,
+  inputSecretNames,
+  type PreflightName,
+} from '../preflight-names.ts';
 import { checkPublicUrls, publicUrlStrategies } from '../public-url.ts';
 import { inputValidationFailure } from '../serializer.ts';
 
@@ -31,19 +36,20 @@ interface MissingSecrets {
   readonly message: string;
 }
 
-type Env = Record<string, string | undefined>;
+type Env = Readonly<Record<string, unknown>>;
 
-const isSet = (env: Env, name: string): boolean => {
-  const value = env[name];
-  return value !== undefined && value.length > 0;
-};
+const isSet = (value: string | undefined): value is string =>
+  value !== undefined && value.length > 0;
 
-const HOW_TO_SET =
-  'Set each missing variable in either of these ways:\n' +
-  '  - export it in the shell you run `prisma dev` from, or\n' +
-  '  - load a .env file from prisma.config.ts: install the dotenv package and add ' +
-  "import 'dotenv/config' at the top of prisma.config.ts.\n" +
-  "(process.loadEnvFile('.env') works too, but only when the CLI runs under Node: Bun does not implement it.)";
+function howToSet(environment: string): string {
+  const encoded = encodeURIComponent(environment);
+  return (
+    'Set each missing variable where an adapter in prisma.config.ts reads it: the `secrets` list of ' +
+    'the `composer` section for a secret, the `config` list for an env-sourced param. ' +
+    'environmentVariables() reads the shell you run `prisma dev` from; dotenv() reads .env, ' +
+    `.env.local, .env.${encoded} and .env.${encoded}.local beside prisma.config.ts.`
+  );
+}
 
 function missingEnvParamsSection(missing: readonly PreflightName[]): string {
   const lines = missing.map((m) => `  - ${m.name}  (required by service "${m.address}")`);
@@ -113,16 +119,23 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
   const devDir = `${process.cwd()}/${devEnvironmentDir(input.environment)}`;
   await removeRetiredSecretsFile(`${process.cwd()}/${DEV_DIR}`);
   await removeRetiredSecretsFile(devDir);
-  const env = process.env;
+  const env = input.pools.config;
+  const secretValue = (name: string): string | undefined => input.pools.secrets[name];
 
   const absentSecrets = new Set<string>();
-  const pointed = new Set<string>();
+  const secretNames = new Set<string>();
+  const pointed = new Map<string, string>();
   const missingSecrets: MissingSecrets[] = [];
   const invalidInputs: string[] = [];
   for (const { serviceAddress, binding } of inputManifest(input.graph)) {
     const names = inputSecretNames(binding, serviceAddress);
-    const unset = names.filter((name) => !isSet(env, name));
-    for (const name of names) (isSet(env, name) ? pointed : absentSecrets).add(name);
+    const unset = names.filter((name) => !isSet(secretValue(name)));
+    for (const name of names) {
+      secretNames.add(name);
+      const value = secretValue(name);
+      if (isSet(value)) pointed.set(name, value);
+      else absentSecrets.add(name);
+    }
     if (unset.length === 0) continue;
     const node = serviceNodeAt(input.graph, serviceAddress);
     const invalid = inputValidationFailure(node, serviceAddress, binding, {
@@ -138,7 +151,10 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
 
   const missingParams: PreflightName[] = [];
   for (const param of collectPreflightNames(input.graph).envParams) {
-    if (isSet(env, param.name)) pointed.add(param.name);
+    const value = secretNames.has(param.name)
+      ? secretValue(param.name)
+      : poolText(env, param.name, (kind) => envParamNotTextError(param.name, param.address, kind));
+    if (isSet(value)) pointed.set(param.name, value);
     else missingParams.push(param);
   }
 
@@ -146,7 +162,11 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
     ...(missingParams.length > 0 ? [missingEnvParamsSection(missingParams)] : []),
     ...(missingSecrets.length > 0 ? [missingSecretsSection(missingSecrets)] : []),
   ];
-  const sections = [...invalidInputs, ...missing, ...(missing.length > 0 ? [HOW_TO_SET] : [])];
+  const sections = [
+    ...invalidInputs,
+    ...missing,
+    ...(missing.length > 0 ? [howToSet(input.environment)] : []),
+  ];
   if (sections.length > 0) {
     throw new Error(`prisma dev cannot start:\n\n${sections.join('\n\n')}`);
   }
@@ -160,6 +180,6 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
     ['sign'],
   );
   const pointerVersions: Record<string, string> = {};
-  for (const name of pointed) pointerVersions[name] = await fingerprint(key, env[name] ?? '');
+  for (const [name, value] of pointed) pointerVersions[name] = await fingerprint(key, value);
   return serializeDevPreflightPayload({ absentSecrets: [...absentSecrets], pointerVersions });
 }

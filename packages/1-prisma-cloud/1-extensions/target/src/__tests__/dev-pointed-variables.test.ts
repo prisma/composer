@@ -1,7 +1,7 @@
 /** The local Deployment provider reads the serializer's pointer formats with its own copy of them; the two must agree. */
 import { expect, test } from 'bun:test';
 import { service } from '@internal/core';
-import { pointedVariableNames } from '@internal/local-target';
+import { pointedVariables } from '@internal/local-target';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { envSecret } from '../secret.ts';
 import { configKey, encodeParamPointer, serializeInput } from '../serializer.ts';
@@ -43,9 +43,8 @@ test('the local provider finds exactly the variables the serializer writes point
       encodeParamPointer('APP_ORIGIN'),
   };
 
-  expect([...pointedVariableNames(rows, 'shop.billing')].sort()).toEqual([
-    'APP_ORIGIN',
-    'STRIPE_SECRET_KEY',
-    'STRIPE_WEBHOOK_SECRET',
-  ]);
+  const pointed = pointedVariables(rows, 'shop.billing');
+
+  expect([...pointed.params]).toEqual(['APP_ORIGIN']);
+  expect([...pointed.secrets].sort()).toEqual(['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']);
 });
