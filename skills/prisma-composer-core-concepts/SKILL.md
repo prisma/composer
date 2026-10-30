@@ -144,10 +144,12 @@ Rules that bite:
 
 1. **Secretness is enforced by validation.** A literal bound where the schema
    expects `SecretString` fails the deploy; `envSecret` bound to a plain
-   string field fails the same way. A schema with a `SecretString` field
-   cannot also transform its input: an ArkType morph anywhere in it
-   (`'string.trim'`, `.pipe()`) copies the input, the copied secret loses its
-   value, and the deploy refuses it. Transform in the service code instead.
+   string field fails the same way. An ArkType schema with a `SecretString`
+   field cannot also transform its input: a morph anywhere in it
+   (`'string.trim'`, `.pipe()`, `field(type('string.integer.parse'))`) or
+   `'+': 'delete'` copies the input, the copied secret loses its value, and
+   the deploy refuses it. Transform in the service code instead; a Zod schema
+   keeps the box.
 2. **`envParam` values arrive as raw strings**; bind them to string fields. In
    a service's `input`, the deploy reads the variable from the config pool
    on every deploy and writes its value into the input document. As a service
@@ -170,13 +172,18 @@ Rules that bite:
    refuse both, naming `input`. A service's `params` stay.
 6. `input.apiKey.expose()` is the only way to a secret's value; the box
    redacts everywhere else (logs, JSON, errors).
+7. **A field bound to `serviceOrigin()` or a plain `generatedParam()` is
+   wrapped**: `field(type('string'))`. At deploy the schema sees a pointer,
+   and a plain `'string'` field refuses it (a deploy error, and a compile
+   error in a module's binding). `service.input()` and `mockService`'s input
+   double read the field as its inner type.
 
 ### Values that differ per environment
 
 The graph is the same in every environment; only configuration may differ.
 
 - A module declares `input` (one Standard Schema) as a service does; `provision(module, { input })` binds it, and the body receives each field as a value it can pass into a binding or list in `resolve()`. A root's `input` is the config pool, and a module's `input` takes every source a service's does.
-- `field(inner)` from `@prisma/composer/arktype` or `@prisma/composer/zod` wraps one leaf field's schema (`field(type('string'))`, `field(z.string())`) so it also accepts a plain pointer, the stand-in for a value known only at boot such as `serviceOrigin()`. In the body the field is `Value<string | Pointer<string>>`: pass it into another wrapped field or a service's input, never a plain `string` field (compile error). Wrap leaves, not object schemas; an ArkType default goes outside: `field(type('string')).default('x')`. Other schema libraries: `Pointer`, `isPlainPointer()` and `isSecretPointer()` from `@prisma/composer`.
+- `field(inner)` from `@prisma/composer/arktype` or `@prisma/composer/zod` wraps one leaf field's schema (`field(type('string'))`, `field(z.string())`) so it also accepts a plain pointer, which is what a value known only at boot such as `serviceOrigin()` is at deploy. In the body the field is `Value<string | Pointer<string>>`: pass it into another wrapped field or a service's input, never a plain `string` field (compile error). Wrap leaves, not object schemas; an ArkType default goes outside: `field(type('string')).default('x')`. Other schema libraries: `Pointer`, `isPlainPointer()` and `isSecretPointer()` from `@prisma/composer`. Wrap every leaf of a reusable module's schema unless a `resolve()` lists it; keep a root's fields plain.
 - `composer({ config: [...], secrets: [...] })` lists config adapters; each gets the environment's name and returns values, later wins by top-level key. Both default to `[environmentVariables()]` (the shell); a list you write replaces the default. `dotenv()` reads `.env`, `.env.local`, `.env.<environment>`, `.env.<environment>.local`, later wins. The config pool is the root's input and what `envParam()` reads; pass the root's input fields on one by one, because Load refuses its whole `input` (the whole pool, by default every shell variable). The secrets pool only seeds `envSecret()` platform variables and `prisma dev`'s secrets, never the root's input. Both import from `@prisma/composer/config`. Credentials (`PRISMA_SERVICE_TOKEN`) still come from the shell.
 - A field exists only under a plain object: a path into a string, an array or a secret, such as `input.tags[0]`, fails the deploy naming the path.
 - A truthiness check such as `if (input.enabled)` is not caught: the field is an object, so the branch always runs, in every environment. A module's structure cannot depend on its input; to provision something only sometimes, let the parent decide whether to provision it.
@@ -186,7 +193,7 @@ The graph is the same in every environment; only configuration may differ.
 - A value is opaque in the body: you cannot read, compare or branch on it. List it as a `resolve()` dependency instead.
 - Calling `provision()` inside `fn` fails the load: `fn` computes configuration, never graph structure.
 - `fn` is pure and synchronous and returns plain data (no `undefined`, Promise or value, and no source it did not receive); a deploy and `destroy` both run it, in two processes. To retire an environment, keep its case in every `fn` until `destroy` for it has finished.
-- Sources are values. `resolve([envParam('X')], ([x]) => …)` receives the string, and an unset `X` fails the deploy. For `envSecret()`, `generatedParam()` and `serviceOrigin()` the function receives a pointer that throws when used as text; it may return the pointer unchanged. `isRuntimeValue(x)` is true for one. Preflight checks every `envSecret()` listed, even one the function does not return.
+- Sources are values. `resolve([envParam('X')], ([x]) => …)` receives the string, and an unset `X` fails the deploy. For `envSecret()`, `generatedParam()` and `serviceOrigin()` the function receives a pointer (typed `Pointer<…>`) that throws when used as text; it may return the pointer unchanged. `isRuntimeValue(x)` is true for one. Preflight checks every `envSecret()` listed, even one the function does not return.
 
 ## Contracts and RPC
 
@@ -676,7 +683,7 @@ under test.
 `mockService` returns a copy of the service whose `load()` yields your
 doubles (type-checked against the declared deps) and whose `input()` yields
 the object passed under the reserved `input` key (required exactly when the
-service declares an input schema; handed over as-is, not validated). Wiring
+service declares an input schema, typed as `service.input()` returns, with no pointers; handed over as-is, not validated). Wiring
 the module substitution is your runner's job (`vi.mock` in Vitest,
 `mock.module` in bun test).
 
