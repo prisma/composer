@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import { secretString } from './arktype.ts';
+import { POINTER } from './pointer.ts';
 import { SecretBox } from './secret.ts';
+
+const plain = Object.freeze({ [POINTER]: 'plain' as const });
+const secret = Object.freeze({ [POINTER]: 'secret' as const });
 
 describe('secretString', () => {
   const schema = type({ signingKey: secretString() });
@@ -29,5 +33,17 @@ describe('secretString', () => {
   test('rejects an unbranded look-alike', () => {
     const lookalike = { expose: () => 'sk_live_abc', toString: () => '[REDACTED]' };
     expect(schema({ signingKey: lookalike })).toBeInstanceOf(type.errors);
+  });
+
+  test('accepts a secret pointer', () => {
+    const out = schema({ signingKey: secret });
+    if (out instanceof type.errors) throw new Error(out.summary);
+    expect<unknown>(out.signingKey).toBe(secret);
+  });
+
+  test('refuses a plain pointer, saying it is not a secret', () => {
+    expect(String(schema({ signingKey: plain }))).toBe(
+      'signingKey must be a SecretString box — bind this field to a secret (was a value known only at boot that is not a secret)',
+    );
   });
 });

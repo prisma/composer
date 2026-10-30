@@ -5,13 +5,14 @@
  */
 import { type } from 'arktype';
 import { describeKind } from './describe-kind.ts';
+import { isPlainPointer, isSecretPointer } from './pointer.ts';
 import { isSecretString, type SecretString } from './secret.ts';
 
 /**
- * A schema leaf that accepts only a redacting `SecretString` box, so
- * `input().<field>.expose()` type-checks and binding a plain literal there
- * fails the deploy (ADR-0042). Its error names the refused value's kind,
- * never the value.
+ * A schema leaf that accepts only a redacting `SecretString` box or a secret
+ * pointer, so `input().<field>.expose()` type-checks and binding a plain
+ * literal there fails the deploy (ADR-0042). Its error names the refused
+ * value's kind, never the value.
  *
  * ```ts
  * input: type({ signingKey: secretString() })
@@ -21,8 +22,11 @@ export const secretString = () =>
   type('unknown').narrow(
     (value, ctx): value is SecretString =>
       isSecretString(value) ||
+      isSecretPointer(value) ||
       ctx.reject({
         expected: 'a SecretString box — bind this field to a secret',
-        actual: describeKind(value),
+        actual: isPlainPointer(value)
+          ? 'a value known only at boot that is not a secret'
+          : describeKind(value),
       }),
   );
