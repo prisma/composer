@@ -79,3 +79,20 @@ A second touch and build printed nothing and converged nothing. The session was 
 `ENV_PARAM_ENVIRONMENT=s4-qa pnpm run destroy:environment` succeeded with the edit still in place (`Destroyed.`). Then `git checkout examples/env-param` and the three `.env.*` files were removed.
 
 The `production` deploy from step 1 was destroyed too, with the example back to its original code. `ENV_PARAM_GREETING=hi pnpm run destroy` printed `Removed the Project (proj_iliwugmbe1ib1qhgx5wslppr) — nothing was left in it.` Without `ENV_PARAM_GREETING`, the destroy of the unchanged example fails in the compute descriptor's serialize (`greeting must be a string (was missing)`), as it did before this slice. The project list then held no `s4qa-env-param` project.
+
+## 8. Review fix: step 3 rerun with the report file checked
+
+Run 2026-10-30 after the review fixes, against Prisma Cloud (`PRISMA_REGION=us-east-1`), under the throwaway name `ENV_PARAM_STACK_NAME=s4qa-report-7k2`.
+
+The edit was step 2's, with the same three files minus `.env.dev`. The root binds `greeting: input.GREETING`, a field, so Load's new refusal of the root's whole input does not apply. With `GREETING`, `ENV_PARAM_GREETING` and `S4_QA_SECRET` unset in the shell, `ENV_PARAM_ENVIRONMENT=s4-qa pnpm run deploy` ran with `ENV_PARAM_REPORT` pointing at a file in the scratchpad, so the deploy wrote its report there through `--report`. It succeeded (`✔ Deployed s4qa-report-7k2 to s4-qa in 33.5s.`), and the smoke test passed against that report:
+
+```text
+ok - s4qa-report-7k2.site is a public-url entity at echo's URL https://jqepkl8hpmygeywgx1uiryti.ewr.prisma.build
+ok - s4-qa serves greeting "from-env-s4-qa"
+ok - s4-qa serves environment "deployed to s4-qa"
+ok - https://jqepkl8hpmygeywgx1uiryti.ewr.prisma.build/logo.svg serves the entry's sibling asset — the whole tree arrived
+```
+
+The report file (798 bytes, `outcome: "succeeded"`) holds the input document `{"greeting":"from-env-s4-qa",…}`, and `grep -c s4-qa-value` on it gives 0. It does not name `S4_QA_SECRET` either. The deploy output and `.prisma-composer`, `.prisma` and `.alchemy` do not contain `s4-qa-value`.
+
+Teardown: `ENV_PARAM_ENVIRONMENT=s4-qa pnpm run destroy:environment` printed `Destroyed.` The Project was still listed, empty. With the example restored (`git checkout` of `module.ts` and `prisma.config.ts`, the `.env.*` files removed), `ENV_PARAM_GREETING=hi pnpm run destroy` printed `Removed the Project (proj_kk9da08jyp7566n8uc0tcyn0) — nothing was left in it.` The workspace's project list then held no `s4qa` project, and a GET of that project returned 404.
