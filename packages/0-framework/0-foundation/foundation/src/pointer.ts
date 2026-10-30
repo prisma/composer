@@ -15,11 +15,16 @@ export { POINTER };
 /** Whether the variable a pointer names holds a secret. */
 export type PointerKind = 'secret' | 'plain';
 
-/** The real value at deploy of a value known only at boot: it names the platform variable that holds the text of a `T`. */
-export interface Pointer<T> {
-  readonly [POINTER]: PointerKind;
+interface PointerWithKind<T, K extends PointerKind> {
+  readonly [POINTER]: K;
   readonly [POINTER_TYPE]?: T;
 }
+
+/** The real value at deploy of a value known only at boot: it names the platform variable that holds the text of a `T`. Its kind is `'secret'` when `T` is a `SecretString` and `'plain'` otherwise. */
+export type Pointer<T> = PointerWithKind<
+  T,
+  unknown extends T ? PointerKind : T extends SecretString ? 'secret' : 'plain'
+>;
 
 function kindOf(value: unknown): unknown {
   if (typeof value !== 'object' || value === null) return undefined;
