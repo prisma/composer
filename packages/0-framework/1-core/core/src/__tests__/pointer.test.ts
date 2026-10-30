@@ -350,6 +350,28 @@ describe('resolve() takes deploy-time values only', () => {
     );
   });
 
+  test('a secret below the listed field is named by its own path in the advice', () => {
+    const email = module(
+      'email',
+      { input: type({ smtp: { user: 'string', password: secretString() } }) },
+      ({ input, provision }) => {
+        const url = resolve([input.smtp as Value<unknown>], () => 'x');
+        provision(echoService(), { input: { url } });
+      },
+    );
+
+    const message = loadError(() =>
+      Load(shopWith(email, { smtp: { user: 'u', password: pointer('SMTP_PASSWORD') } })),
+    ).message;
+
+    expect(message).toContain(
+      `lists input.smtp of module "shop.email", which holds envSecret('SMTP_PASSWORD') at input.smtp.password,`,
+    );
+    expect(message).toContain(
+      'A secret has no deploy-time value: pass input.smtp.password on into a binding, and read it in the service.',
+    );
+  });
+
   test('a pointer in an array field is named by its index', () => {
     const email = module(
       'email',
