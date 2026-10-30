@@ -59,6 +59,9 @@ type ModuleOutputs<E extends Expose> = { [P in keyof E]: RefPort<E[P]> };
   wiring)` — and defaults to the node's own `name`. Pass an explicit id only
   when the name is not a valid id (contains `_`/`.`) or two provisioned nodes
   share a name.
+- `module()` refuses a `params` or `secrets` key when it is called, before Load
+  starts, with an error naming `input`: a module takes its configuration only
+  through `input`.
 
 ## Forwarding
 
@@ -233,9 +236,8 @@ everything downstream consumes:
     exist, so composition brings the check with it;
   - a module's input binding the module's schema refuses — validated in the
     second pass, after every module body has run;
-  - a `params` or `secrets` key on `module()`, or a `params` or `secrets` map on
-    a module's `provision()`: a module takes its configuration only through
-    `input`.
+  - a `params` or `secrets` map on a module's `provision()`: a module takes its
+    configuration only through `input`.
 
 The boundary is a wiring-time contract, checked at compile time and re-checked
 at Load. It is not enforced against a body that captures a sibling scope's ref
