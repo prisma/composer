@@ -81,3 +81,34 @@ Destroyed.
 ```
 
 `.env` was removed. The Project list afterwards is the one step 1 recorded, line for line. `git status` showed no changes outside this slice's commits.
+
+## 4, rerun: `prisma dev` of the auth example
+
+Rerun 2026-10-30 after Will stopped the stale postgres and buckets emulators. `pnpm build` was fully cached, so `dist` was current. The compute emulator recorded in `~/.prisma-composer/emulators/compute.json` was still running, started by another session from its own scratch folder, which still exists; it was left alone and `prisma dev` reused it. `prisma dev` started a fresh postgres emulator from this worktree's `packages/9-public/composer-prisma-cloud/dist/postgres-main.mjs`.
+
+In `examples/auth`, with no `.env` and the three email variables unset in the shell, `.env.dev` held `EMAIL_DELIVERY_MODE=none`, `EMAIL_FROM=s7-qa-auth-dev@example.com` and `EMAIL_DELIVERY_CREDENTIAL=local-dev-unused`. `prisma dev --detach`:
+
+```text
+Done: 46 succeeded (1.9s)
+dev: ready
+auth-example.api: http://localhost:3222
+auth-example.ops: http://localhost:3223
+auth-example.auth.service: http://localhost:3221
+auth-example.mail.service: http://localhost:3220
+```
+
+`prisma dev url auth-example.api` printed `http://localhost:3222`, and `prisma dev url auth-example.ops` printed `http://localhost:3223`. `POST http://localhost:3222/api/auth/sign-up/email` for `s7-qa-dev-user@example.com` returned 200 with the new user. `POST http://localhost:3223/admin/find-sent-email` with `{"to":"s7-qa-dev-user@example.com","templateId":"verification"}` returned 200:
+
+```text
+"from":"s7-qa-auth-dev@example.com"
+"subject":"Verify your email address"
+"text":"http://localhost:3222/api/auth/verify-email?token=…&callbackURL=%2F"
+```
+
+The `from` is the `.env.dev` value, and the link starts with the api service's dev URL. `prisma dev stop` printed `Stopped auth-example in the environment dev.` `.env.dev` was removed, and `git status` was clean.
+
+## The integration tests' local-dev scripts, rerun
+
+`pnpm run test` in `test/integration` (`@prisma/integration-tests`) exited 0: `bun test` 5 pass, 0 fail, then `PASS: local dev (S4) integration proof`, `PASS: local dev (S5 proving) — examples/store, criteria 1/2/3/6`, `PASS: local dev (S5 proving) — criteria 4 and 5` and `PASS: local dev --detach`.
+
+`pnpm turbo run test --filter @prisma/integration-tests` first ran its dependencies' tests, and `@internal/dev-emulators` failed 2 of 137 there: `a start during an instance delete leaves no process behind` and `with a 1-second readiness timeout > a service that never listens fails the deployment, is stopped, and its log says why`. Both passed when run alone, and a second full `bun test` of `@internal/dev-emulators` passed 137 of 137. They are timing failures under load, not this slice's.
