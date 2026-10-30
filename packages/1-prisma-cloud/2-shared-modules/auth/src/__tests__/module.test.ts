@@ -8,7 +8,7 @@
  * (least-privilege by wiring).
  */
 import { describe, expect, test } from 'bun:test';
-import { Load, module, type Value } from '@internal/core';
+import { Load, module, type Pointer, type Value } from '@internal/core';
 import { emailSendContract } from '@internal/email';
 import { rawHttp } from '@internal/http';
 import node from '@internal/node';
@@ -58,7 +58,9 @@ const sessionConsumer = () =>
 const opsConsumer = () =>
   compute({ name: 'opsConsumer', deps: { admin: rpc(authAdminContract) }, build });
 
-function rootWithAuth(baseUrl: Value<string> | string = serviceOrigin('root.app')) {
+function rootWithAuth(
+  baseUrl: Value<string | Pointer<string>> | string = serviceOrigin('root.app'),
+) {
   return module('root', {}, ({ provision }) => {
     const db = provision(database(), { id: 'database' });
     const mail = provision(mailProvider(), { id: 'mail' });

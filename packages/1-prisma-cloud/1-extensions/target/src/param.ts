@@ -2,7 +2,9 @@ import {
   isParamSource,
   type ParamBinding,
   type ParamSource,
+  type Pointer,
   paramSource,
+  type RuntimeValue,
   type Value,
 } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
@@ -125,16 +127,16 @@ const GENERATED_PARAM_MAX_BYTES = 1024;
  */
 export function generatedParam(
   opts?: GeneratedParamOptions & { readonly redacted?: true },
-): ParamSource<GeneratedParamPayload> & Value<SecretString>;
+): ParamSource<GeneratedParamPayload> & RuntimeValue<SecretString>;
 export function generatedParam(
   opts: GeneratedParamOptions & { readonly redacted: false },
-): ParamSource<GeneratedParamPayload> & Value<string>;
+): ParamSource<GeneratedParamPayload> & RuntimeValue<string>;
 export function generatedParam(
   opts: GeneratedParamOptions,
-): ParamSource<GeneratedParamPayload> & Value<SecretString | string>;
+): ParamSource<GeneratedParamPayload> & RuntimeValue<SecretString | string>;
 export function generatedParam(
   opts: GeneratedParamOptions = {},
-): ParamSource<GeneratedParamPayload> & Value<SecretString | string> {
+): ParamSource<GeneratedParamPayload> & RuntimeValue<SecretString | string> {
   const bytes = opts.bytes ?? GENERATED_PARAM_DEFAULT_BYTES;
   const redacted = opts.redacted ?? true;
   if (
@@ -147,7 +149,7 @@ export function generatedParam(
         `${GENERATED_PARAM_MAX_BYTES} (got ${String(bytes)}).`,
     );
   }
-  return paramSource<GeneratedParamPayload, SecretString | string>(
+  return paramSource<GeneratedParamPayload, Pointer<SecretString | string>>(
     { [PRISMA_CLOUD_GENERATED_PARAM_SOURCE]: true, bytes, redacted },
     { label: 'generatedParam()', redacted },
   );
@@ -186,13 +188,15 @@ export interface OriginParamPayload {
  * e.g. `auth()`'s `baseUrl: serviceOrigin('shop.web')`. `address` is the target service's
  * full address, starting with the app name.
  */
-export function serviceOrigin(address: string): ParamSource<OriginParamPayload> & Value<string> {
+export function serviceOrigin(
+  address: string,
+): ParamSource<OriginParamPayload> & RuntimeValue<string> {
   if (typeof address !== 'string' || address.length === 0) {
     throw new Error(
       "serviceOrigin() requires the target service's full address, e.g. serviceOrigin('shop.web').",
     );
   }
-  return paramSource<OriginParamPayload, string>(
+  return paramSource<OriginParamPayload, Pointer<string>>(
     { [PRISMA_CLOUD_ORIGIN_PARAM_SOURCE]: true, address },
     { label: `serviceOrigin('${address}')` },
   );
