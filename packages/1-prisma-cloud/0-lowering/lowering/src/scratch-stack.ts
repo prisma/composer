@@ -20,14 +20,14 @@ import * as Layer from 'effect/Layer';
 import * as Logger from 'effect/Logger';
 
 /**
- * Runs Alchemy's real plan and apply engine in-process against a private
- * in-memory state, for provider tests. A port of the scratch-stack harness
+ * Runs Alchemy's real plan and apply engine in-process for Composer's own
+ * provider tests; not re-exported by any public package. Each scratch stack
+ * owns a private in-memory state, exposed as `state`. A port of the harness
  * Alchemy kept in `alchemy/Test/Core` up to 2.0.0-beta.83, without its
  * emulator and sidecar support.
  */
 export interface ScratchStackOptions<ROut> {
   readonly providers: Layer.Layer<ROut, never, StackServices>;
-  readonly state: Layer.Layer<State.State>;
   readonly dev?: boolean;
 }
 
@@ -52,13 +52,16 @@ export const scratchStack = <ROut>(options: ScratchStackOptions<ROut>, name: str
           Plan.make(compiled).pipe(
             Effect.flatMap(Deploy.applyAndRender),
             Effect.provide(compiled.services),
+            Effect.provide(stateLayer),
           ),
         ),
         provideFreshArtifactStore,
       ),
     plan: <A, E, R extends ROut | StackServices>(effect: Effect.Effect<A, E, R>) =>
       compile(effect).pipe(
-        Effect.flatMap((compiled) => Plan.make(compiled).pipe(Effect.provide(compiled.services))),
+        Effect.flatMap((compiled) =>
+          Plan.make(compiled).pipe(Effect.provide(compiled.services), Effect.provide(stateLayer)),
+        ),
         provideFreshArtifactStore,
       ),
   };
@@ -97,19 +100,19 @@ const withoutEventRecords = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     ),
   );
 
+/** What a scratch-stack program may require: the stack supplies its own state. */
+type ScratchRequirements = Exclude<Effect.Services<StackEffect<unknown>>, State.State>;
+
 /** Runs a scratch-stack program with the services the Alchemy CLI would provide. */
 export const runScratch = <A, E, ROut>(
-  effect: StackEffect<A, E>,
+  effect: Effect.Effect<A, E, ScratchRequirements>,
   options: ScratchStackOptions<ROut>,
 ): Promise<A> =>
   Effect.runPromise(
-    provideFreshArtifactStore<A, E, Exclude<Effect.Services<typeof effect>, ArtifactStore>>(
-      effect,
-    ).pipe(
+    provideFreshArtifactStore<A, E, Exclude<ScratchRequirements, ArtifactStore>>(effect).pipe(
       withoutEventRecords,
       Effect.provideService(AdoptPolicy, false),
       Effect.provide(overrideDev(options.dev ?? false)),
-      Effect.provide(options.state),
       Effect.provideService(AuthProviders, {}),
       Effect.provide(Layer.provideMerge(alchemyLayer, platformLayer)),
       Effect.scoped,

@@ -2,9 +2,8 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import * as Prisma from '@alchemy.run/prisma';
 import type { ContainerInstance, LocalTargetProvidersInput } from '@internal/core/config';
-import { runScratch, scratchStack } from '@internal/lowering/testing';
+import { runScratch, scratchStack } from '@internal/lowering/scratch-stack';
 import * as State from 'alchemy/State';
-import { inMemoryState } from 'alchemy/State/InMemoryState';
 import * as Effect from 'effect/Effect';
 import { localTargetProviders } from '../providers.ts';
 
@@ -30,7 +29,7 @@ describe('a custom domain under the local providers', () => {
 
   test('calls nothing, records the hostname as active with no DNS records, and converges on a second deploy', async () => {
     const fetch = spyOn(globalThis, 'fetch');
-    const options = { providers: localTargetProviders(input), state: inMemoryState(), dev: false };
+    const options = { providers: localTargetProviders(input), dev: false };
     const stack = scratchStack(options, 'local-custom-domain');
 
     const first = await runScratch(stack.deploy(program), options);
@@ -49,7 +48,7 @@ describe('a custom domain under the local providers', () => {
 
   test('a hostname change creates the new custom domain and removes the old one, calling nothing', async () => {
     const fetch = spyOn(globalThis, 'fetch');
-    const options = { providers: localTargetProviders(input), state: inMemoryState(), dev: false };
+    const options = { providers: localTargetProviders(input), dev: false };
     const stack = scratchStack(options, 'local-custom-domain-change');
 
     await runScratch(stack.deploy(programFor('shop.com')), options);

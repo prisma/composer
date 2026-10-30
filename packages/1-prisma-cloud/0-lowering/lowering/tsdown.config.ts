@@ -7,6 +7,6 @@ export default defineConfig({
     deployed: 'src/exports/deployed.ts',
     compute: 'src/exports/compute.ts',
     state: 'src/exports/state.ts',
-    testing: 'src/exports/testing.ts',
+    'scratch-stack': 'src/exports/scratch-stack.ts',
   },
 });

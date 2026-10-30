@@ -19,8 +19,8 @@
   },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "https://pkg.alchemy.run/alchemy/972f294ae0c7982a8ebcb551fadd07d29c9c0fca",
-    "effect": "4.1.0",
+    "alchemy": "catalog:",
+    "effect": "catalog:",
     "@internal/foundation": "workspace:0.36.0"
   },
   "devDependencies": {

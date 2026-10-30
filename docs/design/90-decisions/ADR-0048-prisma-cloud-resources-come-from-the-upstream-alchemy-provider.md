@@ -5,7 +5,7 @@ Amended by [ADR-0057](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-nam
 
 ## Decision
 
-Composer does not implement Alchemy resources for Prisma Cloud's Management API. It composes the official `alchemy/Prisma` provider's resources and providers, and defines its own resources only where the upstream provider has no support yet (buckets, whose routes upstream deferred) or where no Management API exists behind them (local mechanisms like migration steps).
+Composer does not implement Alchemy resources for Prisma Cloud's Management API. It composes the official upstream Prisma provider's (`@alchemy.run/prisma`, formerly `alchemy/Prisma`) resources and providers, and defines its own resources only where the upstream provider has no support yet (buckets, whose routes upstream deferred) or where no Management API exists behind them (local mechanisms like migration steps).
 
 The live wiring is composition, not implementation:
 

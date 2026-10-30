@@ -113,7 +113,7 @@ const OUTPUT_TAIL_LIMIT = 64 * 1024;
 /** Fits the platform's 5000-character build `errorMessage` with room for the exit-status prefix. */
 const ENGINE_FAILURE_CAUSE_LIMIT = 1000;
 
-/** Alchemy's advice to rerun its own CLI with `--adopt`, which a Composer user has no way to do. */
+/** Alchemy's advice to rerun its own CLI with `--adopt` or to import a resource with adoption, which a Composer user has no way to do. */
 const ALCHEMY_ADOPT_ADVICE: readonly (readonly [RegExp, string])[] = [
   [
     /Re-run with `--adopt` \(or wrap the effect in `adopt\(true\)`\) to take it over\./g,
@@ -124,6 +124,14 @@ const ALCHEMY_ADOPT_ADVICE: readonly (readonly [RegExp, string])[] = [
     'Remove that resource, then deploy again.',
   ],
   [/\(re-deploy with --adopt to take ownership, then destroy\)/g, '(remove it by hand)'],
+  [
+    /Import it with explicit adoption (?:instead of silently taking it over|or choose a different [\w ]+ name)\./g,
+    'Something other than this app holds it. Remove that resource, then deploy again.',
+  ],
+  [
+    /; rerun with adoption enabled if it is the intended [\w ]+\./g,
+    '. Remove that resource, then deploy again.',
+  ],
 ];
 
 /** Replaces Alchemy CLI advice in engine output with steps that work from Composer. */

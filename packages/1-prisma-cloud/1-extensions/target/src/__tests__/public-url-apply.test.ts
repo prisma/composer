@@ -5,9 +5,8 @@ import type { CustomDomain } from '@alchemy.run/prisma/Types';
 import { Load, module } from '@internal/core';
 import type { LowerContext } from '@internal/core/deploy';
 import { rawHttpContract } from '@internal/http';
-import { runScratch, scratchStack } from '@internal/lowering/testing';
+import { runScratch, scratchStack } from '@internal/lowering/scratch-stack';
 import * as Provider from 'alchemy/Provider';
-import { inMemoryState } from 'alchemy/State/InMemoryState';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
 import * as HttpClient from 'effect/http/HttpClient';
@@ -19,10 +18,11 @@ import { publicUrlDescriptor } from '../descriptors/public-url.ts';
 import { publicUrl } from '../public-url.ts';
 
 // The provider waits for the hostname's CNAME on its authoritative nameservers before it registers a domain. No nameservers means no wait and no network.
+const realDns = await import('node:dns/promises');
 mock.module('node:dns/promises', () => ({
+  ...realDns,
   resolveNs: () => Promise.reject(new Error('no DNS in this test')),
   resolve4: () => Promise.reject(new Error('no DNS in this test')),
-  Resolver: class {},
 }));
 
 const APP_ID = 'app_1';
@@ -151,7 +151,7 @@ function fakePlatform(refuse: readonly string[]) {
     ),
     Layer.provideMerge(Layer.succeed(HttpClient.HttpClient, http)),
   );
-  return { platform, options: { providers, state: inMemoryState(), dev: false } };
+  return { platform, options: { providers, dev: false } };
 }
 
 const build = {

@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // Regression check for TML-3158: a standalone `npm install` of the public
 // packages must resolve exactly ONE `effect` — the version the packages pin —
-// and alchemy's position in the tree must resolve that copy.
+// and alchemy's position in the tree must resolve that copy. It also asserts
+// one copy each of `alchemy`, `@alchemy.run/prisma` and `@distilled.cloud/prisma`:
+// a second `@distilled.cloud/prisma` makes the provider's `Credentials` stop
+// matching ours.
 //
-// Why: alchemy declares floating ranges on the effect ecosystem
-// (`@effect/vitest`, optional platform peers, `effect` itself). Without exact,
+// Why: alchemy and @alchemy.run/prisma declare floating peer ranges on the
+// effect ecosystem (`effect` itself, optional platform peers). Without exact,
 // mutually consistent pins of the whole constellation in the public packages,
 // npm installs a second `effect` and hoists it where alchemy resolves it — the
 // first `prisma deploy` then dies inside a provider it never asked
@@ -56,6 +59,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { catalogVersion } from './pnpm-catalog.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const composerDir = join(repoRoot, 'packages/9-public/composer');
@@ -65,23 +69,26 @@ const prismaCloudDir = join(repoRoot, 'packages/9-public/composer-prisma-cloud')
 /** Scratch dir holding the packed tarballs and the shape installs. */
 let work;
 
-const pinnedEffect = JSON.parse(readFileSync(join(composerDir, 'package.json'), 'utf-8'))
+const composerEffectSpec = JSON.parse(readFileSync(join(composerDir, 'package.json'), 'utf-8'))
   .dependencies.effect;
+const pinnedEffect =
+  composerEffectSpec === 'catalog:'
+    ? catalogVersion(readFileSync(join(repoRoot, 'pnpm-workspace.yaml'), 'utf-8'), 'effect')
+    : composerEffectSpec;
 if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(pinnedEffect)) {
   fail(`@prisma/composer's effect dependency must be an exact version, got "${pinnedEffect}"`);
 }
 
-// alchemy's own `effect`-family ranges float (`@effect/sql-d1`,
-// `@effect/sql-sqlite-do`, `@effect/vitest` as dependencies, the platform
-// adapters as optional peers, all `>=4.0.0-rc.110 || >=4.0.0`). The public
-// packages pin every one of them exactly in `dependencies`, so a consumer's
-// npm resolves our copy instead of the newest on the registry. The healthy
-// shapes below install bare — no overrides — because that is how the unified
-// `prisma` CLI and anyone who follows the guide installs us. They run under a
-// timeout: when a floater's newest release names an `effect` peer no published
-// version satisfies, npm does not fail, it backtracks for hours (2026-09-11,
-// `@effect/*@4.0.0-rc.114` with `effect` still at rc.113 stalled every install
-// of @prisma/cli until @effect/vitest was pinned).
+// alchemy and @alchemy.run/prisma declare `effect` and the platform adapters
+// (`@effect/platform-*`, optional) as peers with `^` ranges. The public
+// packages pin `effect` and the adapters exactly in `dependencies`, so a
+// consumer's npm resolves our copy instead of the newest on the registry. The
+// healthy shapes below install bare — no overrides — because that is how the
+// unified `prisma` CLI and anyone who follows the guide installs us. They run
+// under a timeout: when a floating package's newest release names an `effect`
+// peer no published version satisfies, npm does not fail, it backtracks for
+// hours (2026-09-11, `@effect/*@4.0.0-rc.114` with `effect` still at rc.113
+// stalled every install of @prisma/cli until @effect/vitest was pinned).
 const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 
 // `process.exit` skips the normal-path cleanup, so a failure deliberately
@@ -265,12 +272,11 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
   if (timedOut) {
     fail(
       `[${label}] npm install did not finish within ${INSTALL_TIMEOUT_MS / 1000}s. npm is ` +
-        'backtracking over an effect-family package alchemy declares with a floating range: ' +
-        'a dependency alchemy pulls in resolves to a version whose `effect` peer no published ' +
-        '`effect` satisfies. Pin that package exactly where Composer pins its siblings: ' +
-        "alchemy's regular dependencies in @prisma/composer's `dependencies` (next to " +
-        '@effect/sql-d1), the optional platform peers (@effect/platform-*) in ' +
-        "@prisma/composer-prisma-cloud's `dependencies`. See skills-contrib/upgrade-alchemy-effect.",
+        'backtracking over an effect-family package that alchemy or @alchemy.run/prisma ' +
+        'declares with a floating range: it resolves to a version whose `effect` peer no ' +
+        'published `effect` satisfies. Pin that package exactly in the public package that ' +
+        "depends on alchemy (the platform peers @effect/platform-* sit in @prisma/composer-prisma-cloud's " +
+        '`dependencies`). See skills-contrib/upgrade-alchemy-effect.',
     );
   }
   if (installStatus !== 0) {
@@ -293,15 +299,26 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
     );
   }
 
-  const alchemyCopies = new Set(
-    JSON.parse(
-      execFileSync(command, [...npmArgs, 'query', '#alchemy'], { cwd: appDir, encoding: 'utf-8' }),
-    ).map((node) => node.path),
-  );
-  if (alchemyCopies.size !== 1) {
-    fail(
-      `[${label}] expected exactly one alchemy in the npm tree, got: ${[...alchemyCopies].join(', ')}`,
+  const prismaCloudShape = label === 'composer-cli-and-prisma-cloud';
+  for (const [name, required] of [
+    ['alchemy', true],
+    ['@alchemy.run/prisma', prismaCloudShape],
+    ['@distilled.cloud/prisma', prismaCloudShape],
+  ]) {
+    const copies = new Set(
+      JSON.parse(
+        execFileSync(command, [...npmArgs, 'query', `[name="${name}"]`], {
+          cwd: appDir,
+          encoding: 'utf-8',
+        }),
+      ).map((node) => node.path),
     );
+    if (copies.size > 1 || (required && copies.size === 0)) {
+      fail(
+        `[${label}] expected ${required ? 'exactly' : 'at most'} one ${name} in the npm tree, ` +
+          `got: ${[...copies].join(', ') || '(none)'}`,
+      );
+    }
   }
 
   const { version: resolvedVersion, entry: effectEntry } = effectSeenByAlchemy(label, appDir);
@@ -332,7 +349,7 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
   assertFamilyImports(label, appDir, 'a healthy tree');
 
   process.stderr.write(
-    `[${label}] OK — single effect@${pinnedEffect} and single alchemy, alchemy resolves that effect and imports, the family imports\n`,
+    `[${label}] OK — single effect@${pinnedEffect} and single alchemy-family packages, alchemy resolves that effect and imports, the family imports\n`,
   );
 }
 
