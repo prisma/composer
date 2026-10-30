@@ -135,7 +135,7 @@ client back from `load()`.
 The service declares its whole incoming configuration, plain values and
 credentials together, as **one [Standard Schema](https://standardschema.dev)**
 (arktype is the house choice). A credential is a field typed as
-`secretString()` from `@prisma/composer/arktype`; conditional legality ("no
+`secretString()` from `@prisma/composer/arktype` (or `@prisma/composer/zod` for a Zod schema); conditional legality ("no
 stripe key unless billing is on") is an ordinary schema union. The binding at
 `provision()` mirrors the schema's shape; `envSecret('NAME')` names the
 platform variable and never carries the value.
@@ -176,6 +176,7 @@ Rules that bite:
 The graph is the same in every environment; only configuration may differ.
 
 - A module declares `input` (one Standard Schema) as a service does; `provision(module, { input })` binds it, and the body receives each field as a value it can pass into a binding or list in `resolve()`. A root's `input` is the config pool, and a module's `input` takes every source a service's does.
+- `field(inner)` from `@prisma/composer/arktype` or `@prisma/composer/zod` wraps one leaf field's schema (`field(type('string'))`, `field(z.string())`) so it also accepts a plain pointer, the stand-in for a value known only at boot such as `serviceOrigin()`. In the body the field is `Value<string | Pointer<string>>`: pass it into another wrapped field or a service's input, never a plain `string` field (compile error). Wrap leaves, not object schemas; an ArkType default goes outside: `field(type('string')).default('x')`. Other schema libraries: `Pointer`, `isPlainPointer()` and `isSecretPointer()` from `@prisma/composer`.
 - `composer({ config: [...], secrets: [...] })` lists config adapters; each gets the environment's name and returns values, later wins by top-level key. Both default to `[environmentVariables()]` (the shell); a list you write replaces the default. `dotenv()` reads `.env`, `.env.local`, `.env.<environment>`, `.env.<environment>.local`, later wins. The config pool is the root's input and what `envParam()` reads; pass the root's input fields on one by one, because Load refuses its whole `input` (the whole pool, by default every shell variable). The secrets pool only seeds `envSecret()` platform variables and `prisma dev`'s secrets, never the root's input. Both import from `@prisma/composer/config`. Credentials (`PRISMA_SERVICE_TOKEN`) still come from the shell.
 - A field exists only under a plain object: a path into a string, an array or a secret, such as `input.tags[0]`, fails the deploy naming the path.
 - A truthiness check such as `if (input.enabled)` is not caught: the field is an object, so the branch always runs, in every environment. A module's structure cannot depend on its input; to provision something only sometimes, let the parent decide whether to provision it.
