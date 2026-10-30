@@ -681,7 +681,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
     if (opts?.configPool === undefined) {
       throw new LoadError(
         `Module "${root.name}" declares input and is being deployed as the root, but Load was given ` +
-          'no config pool to fill it from. Pass { configPool } to Load; prisma deploy and prisma dev ' +
+          'no values from the `config` adapters to fill it from. Pass { configPool } to Load; prisma deploy and prisma dev ' +
           'pass the values the `config` adapters return.',
       );
     }

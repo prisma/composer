@@ -476,7 +476,7 @@ export function resolveInputBinding(
         name,
         (kind) =>
           new Error(
-            `input binding${path === '' ? '' : ` key "${path}"`} is bound to envParam('${name}'), but the config pool holds ${kind} at "${name}", not text. envParam() reads text; to pass other data, declare it in the root module's input.`,
+            `input binding${path === '' ? '' : ` key "${path}"`} is bound to envParam('${name}'), but the \`config\` adapters return ${kind} for "${name}", not text. envParam() reads text; to pass other data, declare it in the root module's input.`,
           ),
       );
       if (raw === undefined) {

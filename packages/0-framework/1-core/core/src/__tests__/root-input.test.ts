@@ -111,8 +111,8 @@ describe("a root's input is the config pool", () => {
 
     expect(loadError(() => Load(root, { ...staging, configPool: {} })).message).toBe(
       'The input of root module "shop" does not match its input schema: EMAIL_FROM must be a ' +
-        "string (was missing). A root's input is the config pool: the values the `config` " +
-        'adapters in prisma.config.ts return for the environment "staging".',
+        "string (was missing). A root's input is the values the `config` adapters in " +
+        'prisma.config.ts return for the environment "staging".',
     );
   });
 
@@ -121,8 +121,8 @@ describe("a root's input is the config pool", () => {
 
     expect(loadError(() => Load(root, { configPool: {} })).message).toBe(
       'The input of root module "shop" does not match its input schema: EMAIL_FROM must be a ' +
-        "string (was missing). A root's input is the config pool: the values the `config` " +
-        'adapters in prisma.config.ts return.',
+        "string (was missing). A root's input is the values the `config` adapters in " +
+        'prisma.config.ts return.',
     );
   });
 
@@ -131,7 +131,8 @@ describe("a root's input is the config pool", () => {
 
     expect(loadError(() => Load(root)).message).toBe(
       'Module "shop" declares input and is being deployed as the root, but Load was given no ' +
-        'config pool to fill it from. Pass { configPool } to Load; prisma deploy and prisma dev ' +
+        'values from the `config` adapters to fill it from. Pass { configPool } to Load; ' +
+        'prisma deploy and prisma dev ' +
         'pass the values the `config` adapters return.',
     );
   });
@@ -190,9 +191,9 @@ describe("the root's whole input never reaches a binding", () => {
   const schema = type({ GREETING: 'string' });
   const pool = { GREETING: 'hi', STRIPE_KEY: 'sk_live_SENTINEL' };
   const refusal = (site: string) =>
-    `${site} depends on the whole input of root module "shop". The root's input is the whole ` +
-    'config pool, which by default holds every variable of the process environment, secrets ' +
-    'included. Pass on the fields the root declares one by one, such as input.EMAIL_FROM.';
+    `${site} depends on the whole input of root module "shop". The root's input is every ` +
+    'value the `config` adapters return, which by default is every variable of the process ' +
+    'environment, secrets included. Pass on the fields the root declares one by one, such as input.EMAIL_FROM.';
 
   test("a service binding that is the root's whole input is refused", () => {
     const root = module('shop', { input: schema }, ({ input, provision }) => {
@@ -260,8 +261,8 @@ describe('a pool-key source reads text', () => {
 
     expect(loadError(() => Load(root, { configPool: { N: 4 } })).message).toBe(
       'input key "n" of module "shop.email" depends on envParam(\'N\'), which reads "N" from the ' +
-        'config pool, but the pool holds a number there, not text. A source with a pool key reads ' +
-        "text; to pass other data, declare it in the root module's input.",
+        'values the `config` adapters return, but they return a number for it, not text. ' +
+        "envParam('N') reads text; to pass other data, declare it in the root module's input.",
     );
   });
 });

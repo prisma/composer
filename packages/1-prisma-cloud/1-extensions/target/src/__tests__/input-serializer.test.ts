@@ -138,10 +138,10 @@ describe('resolveInputBinding — envParam() reads the config pool', () => {
     expect(() =>
       resolveInputBinding({ nested: { greeting: envParam('G') } }, 'web', { env: { G: 4 } }),
     ).toThrow(
-      'input binding key "nested.greeting" is bound to envParam(\'G\'), but the config pool holds a number at "G", not text. envParam() reads text; to pass other data, declare it in the root module\'s input.',
+      'input binding key "nested.greeting" is bound to envParam(\'G\'), but the `config` adapters return a number for "G", not text. envParam() reads text; to pass other data, declare it in the root module\'s input.',
     );
     expect(() => resolveInputBinding(envParam('G'), 'web', { env: { G: ['x'] } })).toThrow(
-      'input binding is bound to envParam(\'G\'), but the config pool holds an array at "G", not text.',
+      'input binding is bound to envParam(\'G\'), but the `config` adapters return an array for "G", not text.',
     );
   });
 });

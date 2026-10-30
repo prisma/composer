@@ -1135,7 +1135,7 @@ describe('runPreflight — values come from the pools, never the shell', () => {
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe(
-      'The config pool holds a number at "APP_ORIGIN", not text, so preflight cannot set the platform variable envParam(\'APP_ORIGIN\') of service "app.web" reads. Make the adapter return a string.',
+      'The `config` adapters return a number for "APP_ORIGIN", not text, so preflight cannot set the platform variable envParam(\'APP_ORIGIN\') of service "app.web" reads. Make the adapter return a string.',
     );
     expect(state.posts).toEqual([]);
   });

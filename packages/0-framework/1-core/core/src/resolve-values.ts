@@ -374,7 +374,7 @@ function validateModuleInput(
       const forEnvironment =
         environment === undefined ? '' : ` for the environment "${environment.name}"`;
       throw new LoadError(
-        `The input of root module "${address}" does not match its input schema: ${messages}. A root's input is the config pool: the values the \`config\` adapters in prisma.config.ts return${forEnvironment}.`,
+        `The input of root module "${address}" does not match its input schema: ${messages}. A root's input is the values the \`config\` adapters in prisma.config.ts return${forEnvironment}.`,
       );
     }
     throw new LoadError(
@@ -541,7 +541,7 @@ export function resolveValues(input: {
           result = origin.source;
         } else if (configPool === undefined) {
           throw new LoadError(
-            `${describeSite(site)} depends on ${origin.label}, but Load was given no config pool to read "${origin.poolKey}" from. Pass { configPool } to Load; the deploy and dev commands pass the values the \`config\` adapters return.`,
+            `${describeSite(site)} depends on ${origin.label}, but Load was given no values from the \`config\` adapters to read "${origin.poolKey}" from. Pass { configPool } to Load; the deploy and dev commands pass the values the \`config\` adapters return.`,
           );
         } else {
           const raw = configPool[origin.poolKey];
@@ -551,7 +551,7 @@ export function resolveValues(input: {
             result = raw;
           } else {
             throw new LoadError(
-              `${describeSite(site)} depends on ${origin.label}, which reads "${origin.poolKey}" from the config pool, but the pool holds ${describeKind(raw)} there, not text. A source with a pool key reads text; to pass other data, declare it in the root module's input.`,
+              `${describeSite(site)} depends on ${origin.label}, which reads "${origin.poolKey}" from the values the \`config\` adapters return, but they return ${describeKind(raw)} for it, not text. ${origin.label} reads text; to pass other data, declare it in the root module's input.`,
             );
           }
         }
@@ -588,7 +588,7 @@ export function resolveValues(input: {
         }
         if (entry.fromConfigPool && origin.path.length === 0) {
           throw new LoadError(
-            `${describeSite(site)} depends on the whole input of root module "${origin.module}". The root's input is the whole config pool, which by default holds every variable of the process environment, secrets included. Pass on the fields the root declares one by one, such as input.EMAIL_FROM.`,
+            `${describeSite(site)} depends on the whole input of root module "${origin.module}". The root's input is every value the \`config\` adapters return, which by default is every variable of the process environment, secrets included. Pass on the fields the root declares one by one, such as input.EMAIL_FROM.`,
           );
         }
         result = readPath(validatedInputOf(entry), origin);

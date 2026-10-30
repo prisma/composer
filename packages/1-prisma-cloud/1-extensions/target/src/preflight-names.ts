@@ -33,7 +33,7 @@ export interface PreflightName {
 /** An env-sourced param's config pool value that preflight cannot write to a platform variable. */
 export const envParamNotTextError = (name: string, address: string, kind: string): Error =>
   new Error(
-    `The config pool holds ${kind} at "${name}", not text, so preflight cannot set the platform variable envParam('${name}') of service "${address}" reads. Make the adapter return a string.`,
+    `The \`config\` adapters return ${kind} for "${name}", not text, so preflight cannot set the platform variable envParam('${name}') of service "${address}" reads. Make the adapter return a string.`,
   );
 
 export interface PreflightNames {
