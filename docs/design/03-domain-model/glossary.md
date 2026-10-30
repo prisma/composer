@@ -16,7 +16,7 @@ Every element the framework provisions carries a **managed lifecycle** — it ca
 recreated in a fresh environment and stood up in the local emulator. Two kinds
 carry that lifecycle: **Services** (your code) and **Resources** (managed
 dependencies); **Modules** group them into bounded contexts. Anything without a
-lifecycle — an API key, an external URL — is **Configuration**, not a node.
+lifecycle — an API key, an external URL — is part of a node's **[Input](#input)**, not a node.
 
 ### Module
 
@@ -35,9 +35,9 @@ distinct type, with composition behaviours a Service doesn't have.
 - **Nesting.** A wrapped node's dependencies and exposed interfaces connect either to the
   parent Module's own or to a sibling (Service, Resource, or Module) inside the same Module; a
   wrapped node reaches outside the Module only through the parent's boundary.
-- **Input.** A Module declares its configuration as one `input` Standard Schema,
-  as a Service does, and whoever provisions it binds it. Its body receives one
-  [value](#value) per input field and can only pass it on: into a `provision()`
+- **Input.** A Module declares its [Input](#input) as one `input` Standard
+  Schema, as a Service does, and whoever provisions it binds it. Its body
+  receives one [value](#value) per input field and can only pass it on: into a `provision()`
   binding or as a `resolve()` dependency.
 - **Composite, not atomic.** Where a Service is a leaf (opaque), a Module is
   transparent: the framework sees its dependencies and exposed interfaces *and* the internal topology it owns. The
@@ -89,7 +89,7 @@ and nowhere else on a Resource.
 
 Not Resources: **Compute** is what a Service lowers to (one per deployment target
 — Prisma Compute on Prisma Cloud); a **Stream** is a connection style; a service
-you call but don't provision is **Configuration**, not a Resource.
+you call but don't provision is part of the caller's **Input**, not a Resource.
 
 See `layering.md` → Resources: first-class vs BYO.
 
@@ -99,34 +99,50 @@ A node that depends on what it sends work to and that nothing calls. Cron and a
 public URL are drivers ([ADR-0020](../90-decisions/ADR-0020-scheduled-work-is-a-driver-not-a-resource.md)).
 Elsewhere in these docs, "driver" also means a database client library.
 
-### Configuration — params and their sources
+### Input
 
-Per-environment values a node needs at runtime but that are **not themselves
-nodes**: injected at the boundary (no-globals — user code never reads the
-environment; the framework injects). There is **one concept, a param, bound at
-wiring time to a source.** A source is target-provided logic that turns the
-parameter information the author supplies at wiring into a value. Four sources:
+What a Service or a Module needs, per environment, from whoever provisions
+it, other than its dependencies: values that are **not themselves nodes**.
+The node declares its input as one Standard Schema, `input`
+([ADR-0042](../90-decisions/ADR-0042-service-input-is-one-standard-schema.md),
+[ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)),
+and whoever provisions it binds that input with
+`provision(node, { input: { … } })`, an object that mirrors the schema. The
+framework checks the binding with the schema and injects the result; user
+code never reads the environment (no-globals). Each key of a binding takes:
 
-- **literal** — the author supplies the value; it travels in the service's
-  input document.
-- **`envParam(NAME)`** — the author supplies an environment-variable name.
-  Where the value goes depends on where it is bound. In a service's input, the
-  deploy reads `NAME` from its [config pool](#config-pool) and writes the value
-  into the service's input document, so every deploy reads it again. In a
-  service's per-key params, the deploy writes a pointer row to a platform
-  variable, and the service reads that variable at boot. Either way it varies
-  by environment, not by deployment logic.
-- **`envSecret(NAME)`** — the author supplies a name; the target reads the
-  platform's secret store. The value **never enters deploy state**, and it is
-  **redacted**. **This is the only thing the framework calls a secret.**
-- **`generatedParam(...)`** — the author supplies generation parameters; the
-  **target generates the value at deploy** and **persists it in deploy state**,
-  stable across redeploys. A generated value can act as asymmetric knowledge
-  (an rpc service key, an instance signing key) but it is **not a secret** — it
-  is config the system produces and owns.
+- a **literal**: the author writes the data, and it travels in the
+  service's input document;
+- a [value](#value): `environment.name`, a `resolve()` result, or a field of
+  the provisioning module's own input;
+- a **source**: target-provided logic that turns what the author supplies
+  into data. A source is a value too. Prisma Cloud's:
+  - **`envParam(NAME)`** — the author supplies an environment-variable name.
+    Where the value goes depends on where it is bound. In a service's input,
+    the deploy reads `NAME` from its [config pool](#config-pool) and writes
+    the value into the service's input document, so every deploy reads it
+    again. In a service's per-key params, the deploy writes a pointer row to
+    a platform variable, and the service reads that variable at boot. Either
+    way it varies by environment, not by deployment logic.
+  - **`envSecret(NAME)`** — the author supplies a name; the target reads the
+    platform's secret store. The value **never enters deploy state**, and it
+    is **redacted**. **This is the only thing the framework calls a
+    secret.**
+  - **`generatedParam(...)`** — the author supplies generation parameters;
+    the **target generates the value at deploy** and **persists it in deploy
+    state**, stable across redeploys. A generated value can act as
+    asymmetric knowledge (an rpc service key, an instance signing key) but
+    it is **not a secret** — it is config the system produces and owns.
+  - **`serviceOrigin(address)`** — the public origin of another service in
+    the environment being deployed, which exists only once the deploy has
+    created that service.
 
-Each source constructor, and `serviceOrigin()`, returns a [value](#value) that
-is the source too.
+A field typed `secretString()` takes only a secret. A
+[wrapped field](#field) also takes a value known only at boot.
+
+The older form of input is a service's per-key `params`, each bound to a
+literal or a source
+([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)).
 
 Two properties fall out of the source, and neither is its own category:
 
@@ -156,11 +172,15 @@ interface.
 
 ### Value
 
-An opaque stand-in, in a module body, for data that is known later: by the end
-of Load for a deploy-time value, or only on the platform for a runtime value.
-The body can pass a value wherever data of its type is accepted, and can do
-nothing else with it: it cannot read it, compare it or branch on it. That is
-what keeps the graph's structure the same whatever inputs Composer is given
+An opaque stand-in, in a module body, for data that is known later: by the
+end of Load for a deploy-time value, or only on the platform for a
+[runtime value](#runtimevalue). The body can pass a value wherever data of
+its type is accepted. It cannot read the data: turning a value into text or
+a number, serializing it or listing its keys fails the deploy. It can branch
+on a value with a truthiness check or `typeof`, but a value is always an
+object, so the branch always goes the same way, in every environment, and
+cannot vary the graph. That is what keeps the graph's structure the same
+whatever inputs Composer is given
 ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
 The data a value stands for is its **real value**.
 
@@ -172,16 +192,14 @@ The data a value stands for is its **real value**.
   value is what `resolve(dependencies, fn)` returns; Load runs `fn` with its
   dependencies' real values after every module body has run, with `provision`
   disabled. `resolve()` declares a computed value; Load resolves every value.
-- **Deploy-time or runtime.** A deploy-time value has its real value by the end
-  of Load: `environment.name`, a `resolve()` result, and `envParam()`, whose
-  real value is the variable's value at deploy. A runtime value has no real
-  value when Load runs: the platform holds it (`envSecret()`), or the deploy
-  creates it later (`generatedParam()`, `serviceOrigin()`). Load holds a
-  **pointer** in its place, and uses the pointer as its real value: a
-  `resolve()` function that lists one receives the pointer, and a module input
-  field bound to one holds it. A pointer throws when code turns it into text or
-  a number, and `isRuntimeValue(x)` is true for one. A function may return a
-  pointer it received.
+- **Deploy-time or runtime.** A deploy-time value has its real value by the
+  end of Load: `environment.name`, a `resolve()` result, `envParam()`, whose
+  real value is the variable's value at deploy, and a module input field
+  bound to one of these. `envSecret()`, `generatedParam()` and
+  `serviceOrigin()` give [runtime values](#runtimevalue): the platform holds
+  the data, or the deploy creates it later, so Load holds a pointer in its
+  place. A `resolve()` function that lists a runtime value receives the
+  pointer and may return it unchanged; `isRuntimeValue(x)` is true for it.
 - **Sources are values.** `envParam()`, `envSecret()`, `generatedParam()` and
   `serviceOrigin()` each return one object that is a value and the deploy
   target's source. Where a service's binding takes a source, the target
@@ -193,6 +211,47 @@ the source and a value at once, such as `SecretSource & Value<SecretString>`.
 A value is not a node: it has no lifecycle and no address. Elsewhere
 in this glossary "value" in lower case keeps its ordinary meaning, plain data
 such as a param's value.
+
+### RuntimeValue
+
+A [value](#value) whose data exists only on the platform the app is
+deployed to: the service reads it at boot. `envSecret()`, `generatedParam()`
+and `serviceOrigin()` give one. In code a runtime value is
+`RuntimeValue<T>`, which is `Value<Pointer<T>>`.
+
+At deploy its real value is a **pointer**: an object that names the
+platform variable holding the data. The deploy writes the pointer into the
+service's input document, and the service reads the variable at boot. A
+pointer has one of two kinds, which it records in its data:
+
+- a **secret pointer**, typed `Pointer<SecretString>`, from `envSecret()`
+  and a redacted `generatedParam()`;
+- a **plain pointer**, typed `Pointer<string>`, from `serviceOrigin()` and
+  a plain `generatedParam()`.
+
+A pointer is typed by the variable's text, so every plain pointer is a
+`Pointer<string>`. `isSecretPointer(x)` and `isPlainPointer(x)` from
+`@prisma/composer` tell the kinds apart. A schema may return a copy of a
+pointer: ArkType copies its input when a transform runs in it or when it
+deletes undeclared keys. The copy keeps the pointer's kind and the variable
+it names, and Composer treats it as the same pointer. A pointer throws when
+code turns it into text or a number.
+
+### `field()`
+
+`field(inner)`, from `@prisma/composer/arktype` or `@prisma/composer/zod`,
+wraps the schema of one leaf field of an input schema. A **wrapped field**
+accepts what `inner` accepts and a plain pointer, so it also takes a runtime
+value with a plain pointer. Its input type is `In | Pointer<In>` and its
+output type `Out | Pointer<In>`, where `In` and `Out` are `inner`'s. A
+**plain field** is written without `field()`: the author's request for
+deploy-time data, and the kind of field a `resolve()` computes with, since a
+wrapped field's real value may be a pointer. A secret field is
+`secretString()`, which accepts a secret box or a secret pointer and needs no
+`field()`. `field()` wraps leaves only: an object field stays a plain object
+schema whose leaves are wrapped. For another Standard Schema library,
+`@prisma/composer` exports `Pointer`, `isPlainPointer()` and
+`isSecretPointer()`, with which an author writes the same two helpers.
 
 ### Config pool
 
@@ -233,7 +292,7 @@ platform to provision.
 Every node in the topology has a managed lifecycle — which is exactly what lets the
 whole graph be recreated in a fresh environment and reproduced in the local
 emulator (see the [goals](../00-purpose/goals.md)). Anything without a lifecycle is
-Configuration, not a node.
+part of a node's [Input](#input), not a node.
 
 ### Address and logical ID
 
@@ -312,7 +371,7 @@ hostname or one the platform generates
 **Egress** = a Service's declared
 **outbound dependency** on something outside the topology (an external URL/API).
 Egress is *not* an edge to a node — the far end isn't in the graph; it's a property
-of the Service plus the Configuration (URL + credentials) it carries. To represent
+of the Service plus the Input (URL + credentials) it carries. To represent
 that external thing as a node, provision it (a Resource) or wrap it in a Service.
 
 ## Contracts
@@ -513,7 +572,7 @@ is in `layering.md`; this is the term-by-term catalogue.
 - **Props** — the desired configuration passed at declare time; diffed against
   the last deploy to detect change. (A rebuild registers as a change because the
   artifact is content-addressed: new bytes, new `artifactPath`.) `→` a node's **dependencies** +
-  **Configuration**.
+  **Input**.
 - **Attributes / Output\<T>** — values the cloud returns (`appEndpointDomain`,
   `deploymentId`, ids); lazy references that flow into other Resources' Props.
   Resource-to-resource wiring is Output → Props. `→` a node's **exposed interfaces**; a
@@ -567,9 +626,9 @@ is where the framework's own binding layer gets built.
   `R` channel; a **connection** type-checks as "provided Layer satisfies required
   Tag".
 - **Config** (`effect/Config`) — reads env/secret values at the boundary. `→`
-  **Configuration**; the host shim builds each binding's Layer from Config.
+  **Input**; the host shim builds each binding's Layer from Config.
 - **Redacted** (`effect/Redacted`) — wraps a secret so it doesn't print. `→`
-  secret **Configuration** (e.g. `DATABASE_URL`).
+  a secret field of a node's **Input** (e.g. `DATABASE_URL`).
 - **Schedule** (`effect/Schedule`) — retry/poll policy (we poll a compute
   version until `running` before promoting).
 - **Data.TaggedError** (`effect/Data`) — typed, tagged errors (our
@@ -598,7 +657,7 @@ is where the framework's own binding layer gets built.
   **exposed interface**. The dataflow and ports-and-adapters traditions give the
   same two ends opposite names, so the words were ambiguous; see
   [ADR-0063](../90-decisions/ADR-0063-a-node-depends-on-an-interface-or-exposes-one.md).
-  "Input" still names a service's or module's configuration document (`input`).
+  "Input" still names a service's or module's configuration document (`input`). **Input** now names what a node's `input` schema declares ([Input](#input)).
 - **System** (and its predecessor **Hex**) → use **Module** (the unit of
   composition). "System" and "Hex" were earlier working names; see
   [ADR-0025](../90-decisions/ADR-0025-name-the-unit-of-composition-module.md),
