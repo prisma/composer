@@ -26,7 +26,7 @@ interface PlatformResource {
 
 /**
  * Alchemy resource type → platform resource type, keyed by upstream
- * `alchemy/Prisma`'s type-ids and attribute names — the shapes the state
+ * `@alchemy.run/prisma`'s type-ids and attribute names — the shapes the state
  * store actually writes since the upstream provider adoption.
  *
  * Two resources are deliberately absent. `Prisma.BucketAccessKey` has no

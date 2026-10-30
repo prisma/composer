@@ -5,10 +5,10 @@
  * `localTarget.emulators` hook ensures it before converge.
  */
 import * as path from 'node:path';
+import { Bucket, BucketAccessKey } from '@alchemy.run/prisma';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
 import { bucketsClient } from '@internal/dev-emulators';
 import { mintKeyPair } from '@internal/s3-protocol';
-import { Bucket, BucketAccessKey } from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';

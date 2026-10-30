@@ -38,7 +38,7 @@ fix. Reach for workarounds only after that check says otherwise.
 ## Why the versions move as a set
 
 `effect` and its companions — `@effect/platform-node`, `@effect/platform-bun`,
-`@effect/platform-node-shared`, `@effect/vitest` — each declare a peer that is
+`@effect/platform-node-shared` — each declare a peer that is
 **floored at their own version**:
 
 ```jsonc
@@ -90,12 +90,12 @@ install never gets there.
    npm view alchemy dist-tags
    npm view alchemy@<version> peerDependencies
    for p in effect @effect/platform-node @effect/platform-bun \
-            @effect/platform-node-shared @effect/vitest; do
+            @effect/platform-node-shared; do
      echo "$p $(npm view $p version)"
    done
    ```
 
-   alchemy's floor is not a compatibility promise. alchemy 2.0.0-beta.75 to beta.77 accept `effect` rc.112 and later, but call `Config.string`, which rc.113 removed, so they crash on it. Pin the `effect` release alchemy was built against: the newest one published before that alchemy release (`npm view effect time`). Check the new alchemy's `alchemy/Prisma` still loads from a plain npm install: in beta.79 it imports the optional peer `@alchemy.run/frontend-frameworks` and fails.
+   alchemy's floor is not a compatibility promise. alchemy 2.0.0-beta.75 to beta.77 accept `effect` rc.112 and later, but call `Config.string`, which rc.113 removed, so they crash on it. Pin the `effect` release alchemy was built against: the newest one published before that alchemy release (`npm view effect time`). Check the new alchemy's Prisma provider still loads from a plain npm install: in beta.79 it imports the optional peer `@alchemy.run/frontend-frameworks` and fails. Since beta.84 each provider is its own package, versioned in lockstep with `alchemy`: the Prisma provider is `@alchemy.run/prisma` (formerly the `alchemy/Prisma` module), and only `@prisma/composer-prisma-cloud` and the Prisma Cloud internals depend on it. Bump it with `alchemy`.
 
 2. **Find every pin.** They are spread across public packages, framework
    packages, examples, `test/integration`, and `website`:
@@ -121,21 +121,22 @@ install never gets there.
 8. **The E2E deploy jobs are the real bar.** An alchemy upgrade changes the
    deploy engine; a green typecheck says very little about it.
 
-## alchemy's floating dependencies are pinned in the public packages
+## The effect-family packages a consumer installs are pinned in the public packages
 
-alchemy's `effect`-family ranges float past what its code supports (the
-upstream `TaggedErrorClass` drift), and a floater whose newest release names
-an `effect` peer that does not exist yet sends npm into hours of backtracking
-instead of an error (2026-09-11: `@effect/*@4.0.0-rc.114` published ahead of
-`effect`). Consumers carry no overrides block; instead the public packages
-pin, in `dependencies`, every package alchemy declares with a floating range
-so a consumer's npm resolves our copy:
+alchemy's `effect`-family ranges float past what its code supports (the upstream `TaggedErrorClass` drift), and a floater whose newest release names an `effect` peer that does not exist yet sends npm into hours of backtracking instead of an error (2026-09-11: `@effect/*@4.0.0-rc.114` published ahead of `effect`). Consumers carry no overrides block. Instead, the rule is:
 
-- `@prisma/composer` — alchemy's regular dependencies: `@effect/sql-d1`,
-  `@effect/sql-sqlite-do`, `@effect/vitest`.
-- `@prisma/composer-prisma-cloud` — the optional platform peers: `@effect/platform-bun`, `@effect/platform-node`, `@effect/platform-node-shared`. It also depends on `@distilled.cloud/prisma`, whose `Credentials` the provider wiring imports; keep it at the exact version alchemy depends on so npm installs one copy.
+**Pin exactly, in a public package's `dependencies`, every `effect`-family package that a consumer's install will contain.** A package is in the install when it is a regular dependency of `alchemy` or `@alchemy.run/prisma`, an optional peer that one of them loads at runtime, or a package Composer's own code imports. An optional peer that nothing loads is not installed by npm at all, so it gets no pin: pinning it would install it, and everything it depends on, for every consumer.
 
-When alchemy adds a floating `effect`-family dependency, add its pin next to these; `check-npm-effect-resolution` installs the tarballs bare and fails when the install backtracks or resolves a second `effect`. It installs once more with npm 10, the npm that Node 22 bundles: npm 10 crashes on `vitest@4.1.x`, which `@effect/vitest` rc.112 and earlier pull in. The only case left to a consumer's own `overrides` is an app that pins a different `effect` itself (documented in `docs/guides/deploying.md`).
+Today that is:
+
+- `@prisma/composer` — `effect` itself.
+- `@prisma/composer-prisma-cloud` — `@effect/platform-bun` and `@effect/platform-node`, which alchemy loads at runtime (`alchemy/Util/PlatformServices`, `alchemy/Http`; Composer's provider wiring also imports `@effect/platform-node`), and `@effect/platform-node-shared`, which both depend on. It also depends on `@distilled.cloud/prisma`, whose `Credentials` the provider wiring imports; keep it at the exact version `@alchemy.run/prisma` depends on so npm installs one copy.
+
+To apply the rule on an upgrade, read `dependencies` and `peerDependenciesMeta` in both `alchemy/package.json` and `@alchemy.run/prisma/package.json`, and grep the built `dist/` of the public packages and the installed `lib/` of both for imports of each `@effect/*` package.
+
+History: beta.83 listed `@effect/sql-d1` and `@effect/sql-sqlite-do` as regular dependencies, so `@prisma/composer` pinned them, along with `@effect/vitest`, which it pinned on its own. Beta.84 no longer depends on the two SQL packages, and `@effect/vitest` is an optional peer that only `alchemy/Test/Vitest` loads. All three pins were dropped with the beta.84 bump. Dropping `@effect/vitest` also removed `vitest` and `vite` from every consumer's install.
+
+`check-npm-effect-resolution` installs the tarballs bare and fails when the install backtracks or resolves a second `effect`. It installs once more with npm 10, the npm that Node 22 bundles, because npm 10 has crashed on packages the tree once contained (`vitest@4.1.x`); the shape stays as a guard for Node 22 users. The only case left to a consumer's own `overrides` is an app that pins a different `effect` itself (documented in `docs/guides/deploying.md`).
 
 ## Breakage classes seen in practice
 

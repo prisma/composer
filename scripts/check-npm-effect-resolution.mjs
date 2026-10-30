@@ -4,7 +4,7 @@
 // and alchemy's position in the tree must resolve that copy.
 //
 // Why: alchemy declares floating ranges on the effect ecosystem
-// (`@effect/vitest`, optional platform peers, `effect` itself). Without exact,
+// (optional platform peers, `effect` itself). Without exact,
 // mutually consistent pins of the whole constellation in the public packages,
 // npm installs a second `effect` and hoists it where alchemy resolves it — the
 // first `prisma deploy` then dies inside a provider it never asked
@@ -71,11 +71,10 @@ if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(pinnedEffect)) {
   fail(`@prisma/composer's effect dependency must be an exact version, got "${pinnedEffect}"`);
 }
 
-// alchemy's own `effect`-family ranges float (`@effect/sql-d1`,
-// `@effect/sql-sqlite-do`, `@effect/vitest` as dependencies, the platform
-// adapters as optional peers, all `>=4.0.0-rc.110 || >=4.0.0`). The public
-// packages pin every one of them exactly in `dependencies`, so a consumer's
-// npm resolves our copy instead of the newest on the registry. The healthy
+// alchemy's `effect`-family ranges float (`effect` itself and the optional
+// platform peers it loads at runtime). The public packages pin every one of
+// them exactly in `dependencies`, so a consumer's npm resolves our copy
+// instead of the newest on the registry. The healthy
 // shapes below install bare — no overrides — because that is how the unified
 // `prisma` CLI and anyone who follows the guide installs us. They run under a
 // timeout: when a floater's newest release names an `effect` peer no published
@@ -111,15 +110,53 @@ function packInto(pkgDir, destDir) {
 }
 const usedTarballs = new Set();
 
-/** Collects every distinct effect version in an `npm ls --json` tree. */
-function collectEffectVersions(node, found = new Map()) {
+/** Collects every distinct version of `pkg` in an `npm ls --json` tree. */
+function collectVersions(node, pkg, found = new Map()) {
   for (const [name, child] of Object.entries(node.dependencies ?? {})) {
-    if (name === 'effect' && child.version) {
+    if (name === pkg && child.version) {
       found.set(child.version, (found.get(child.version) ?? 0) + 1);
     }
-    collectEffectVersions(child, found);
+    collectVersions(child, pkg, found);
   }
   return found;
+}
+
+// Packages no consumer install may contain: nothing Composer or alchemy loads
+// at runtime needs them, and each one drags its own tree in (`vitest` brings
+// `vite`). They arrive only if a public package pins them again.
+const KEPT_OUT = ['@effect/vitest', 'vitest', 'vite'];
+
+/**
+ * Asserts the install contains only what the shape needs: none of KEPT_OUT,
+ * the Prisma provider only when the Prisma Cloud package is installed, and one
+ * copy of `@distilled.cloud/prisma`, which Composer pins at the provider's
+ * exact version.
+ */
+function assertFootprint(label, appDir, npm, { prismaCloud }) {
+  const [command, ...npmArgs] = npm;
+  const tree = JSON.parse(
+    execFileSync(command, [...npmArgs, 'ls', '--all', '--json'], {
+      cwd: appDir,
+      encoding: 'utf-8',
+      maxBuffer: 256 * 1024 * 1024,
+    }),
+  );
+  const present = (pkg) => collectVersions(tree, pkg).size > 0;
+  const unwanted = KEPT_OUT.filter(present);
+  if (unwanted.length > 0) {
+    fail(
+      `[${label}] the install contains ${unwanted.join(', ')}; a public package pins something that pulls it in`,
+    );
+  }
+  if (!prismaCloud && present('@alchemy.run/prisma')) {
+    fail(`[${label}] @alchemy.run/prisma is installed without @prisma/composer-prisma-cloud`);
+  }
+  const distilledPrisma = collectVersions(tree, '@distilled.cloud/prisma');
+  if (distilledPrisma.size > 1) {
+    fail(
+      `[${label}] expected one @distilled.cloud/prisma, got: ${[...distilledPrisma.keys()].join(', ')}`,
+    );
+  }
 }
 
 /**
@@ -268,9 +305,9 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
         'backtracking over an effect-family package alchemy declares with a floating range: ' +
         'a dependency alchemy pulls in resolves to a version whose `effect` peer no published ' +
         '`effect` satisfies. Pin that package exactly where Composer pins its siblings: ' +
-        "alchemy's regular dependencies in @prisma/composer's `dependencies` (next to " +
-        '@effect/sql-d1), the optional platform peers (@effect/platform-*) in ' +
-        "@prisma/composer-prisma-cloud's `dependencies`. See skills-contrib/upgrade-alchemy-effect.",
+        "alchemy's regular dependencies in @prisma/composer's `dependencies`, the optional " +
+        "platform peers (@effect/platform-*) in @prisma/composer-prisma-cloud's `dependencies`. " +
+        'See skills-contrib/upgrade-alchemy-effect.',
     );
   }
   if (installStatus !== 0) {
@@ -284,7 +321,7 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
       encoding: 'utf-8',
     }),
   );
-  const versions = collectEffectVersions(tree);
+  const versions = collectVersions(tree, 'effect');
   process.stderr.write(`[${label}] effect versions in tree: ${[...versions.keys()].join(', ')}\n`);
   if (versions.size !== 1 || !versions.has(pinnedEffect)) {
     fail(
@@ -308,15 +345,23 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
   }
 
   if (label === 'composer-cli-and-prisma-cloud') {
+    // The Prisma provider holds its runtime bootstrap since beta.84, so it is
+    // where a stray signal handler would come from: the CLI engine must stay
+    // the only SIGINT/SIGTERM listener (skills-contrib/upgrade-alchemy-effect).
     const providers = importAlchemy(
       label,
       appDir,
-      "await import('alchemy/Prisma'); await import('@prisma/composer-prisma-cloud/control');",
+      "const count = () => ['SIGINT', 'SIGTERM', 'exit'].reduce((n, s) => n + process.listenerCount(s), 0);" +
+        'const before = count();' +
+        "await import('@alchemy.run/prisma'); await import('@prisma/composer-prisma-cloud/control');" +
+        "if (count() !== before) { console.log('importing the providers added', count() - before, 'process listener(s)'); process.exit(1); }",
     );
     if (providers.status !== 0) {
-      fail(`[${label}] Prisma Cloud providers did not import:\n${providers.output}`);
+      fail(`[${label}] Prisma Cloud providers did not import cleanly:\n${providers.output}`);
     }
   }
+
+  assertFootprint(label, appDir, npm, { prismaCloud: label === 'composer-cli-and-prisma-cloud' });
 
   assertFamilyImports(label, appDir, 'a healthy tree');
 

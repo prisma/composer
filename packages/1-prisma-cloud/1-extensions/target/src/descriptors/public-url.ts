@@ -1,9 +1,9 @@
 /** The `public-url` node kind's descriptor: a named hostname becomes one Prisma custom domain on the target service; the prisma.build strategy declares nothing. */
 
+import * as Prisma from '@alchemy.run/prisma';
 import type { NodeDescriptor } from '@internal/core/config';
 import type { LowerContext, Lowering } from '@internal/core/deploy';
 import * as Output from 'alchemy/Output';
-import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import { resolvedStrategy } from '../public-url.ts';
 import { resourceId } from '../resource-ids.ts';

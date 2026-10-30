@@ -5,8 +5,7 @@
  * `ManagementClient`, no credentials layer — this bundle must typecheck
  * without either.
  */
-import type { LocalTargetProvidersInput } from '@internal/core/config';
-import { Providers } from '@internal/lowering';
+
 import {
   App,
   Bucket,
@@ -17,7 +16,9 @@ import {
   Deployment,
   EnvironmentVariable,
   Project,
-} from 'alchemy/Prisma';
+} from '@alchemy.run/prisma';
+import type { LocalTargetProvidersInput } from '@internal/core/config';
+import { Providers } from '@internal/lowering';
 import * as Provider from 'alchemy/Provider';
 import * as Layer from 'effect/Layer';
 import { LocalBucketAccessKeyProvider, LocalBucketProvider } from './bucket.ts';

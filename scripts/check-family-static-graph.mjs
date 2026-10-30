@@ -48,7 +48,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** Bare specifiers that must never appear in either graph, matched on the package name. */
-const FORBIDDEN = [/^alchemy(\/|$)/, /^effect(\/|$)/, /^@effect\//];
+const FORBIDDEN = [/^alchemy(\/|$)/, /^@alchemy\.run\//, /^effect(\/|$)/, /^@effect\//];
 
 /**
  * The library, statically imported from a start-up graph. The walk cannot

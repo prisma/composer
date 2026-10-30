@@ -8,9 +8,10 @@
  * `databaseUrl`, everything else is left absent. A Database's `databaseId`
  * is its emulator instance's id.
  */
+
+import * as Prisma from '@alchemy.run/prisma';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
 import { postgresClient } from '@internal/dev-emulators';
-import * as Prisma from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
