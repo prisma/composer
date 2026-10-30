@@ -1,4 +1,5 @@
 import { blindCast } from '@internal/foundation/casts';
+import type { Pointer } from '@internal/foundation/pointer';
 import type { ParamSource, SecretSource } from './node.ts';
 
 // Brands, Symbol.for so a check survives duplicated module instances (as NODE in node.ts).
@@ -66,6 +67,9 @@ export interface Value<T> {
   readonly [VALUE_TYPE]?: T;
   readonly [VALUE_ORIGIN]: ValueOrigin<T>;
 }
+
+/** A value known only at boot (ADR-0062): its real value at deploy is a `Pointer<T>`, which names the platform variable the service reads at boot. */
+export type RuntimeValue<T> = Value<Pointer<T>>;
 
 /** The tuple of real-value types a dependency tuple stands for: what `resolve()`'s `fn` receives. */
 export type RealValuesOf<D extends readonly Value<unknown>[]> = {

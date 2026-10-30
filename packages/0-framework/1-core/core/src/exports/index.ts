@@ -5,6 +5,8 @@
  * surface grows.) Pure barrel — no implementations live here.
  */
 
+export type { Pointer } from '@internal/foundation/pointer';
+export { isPlainPointer, isSecretPointer } from '@internal/foundation/pointer';
 export type { SecretString } from '@internal/foundation/secret';
 export { isSecretString, SecretBox } from '@internal/foundation/secret';
 export type {
@@ -90,5 +92,5 @@ export {
   service,
   slotsOf,
 } from '../node.ts';
-export type { EnvironmentFacts, PlainData, RealValuesOf, Value } from '../value.ts';
+export type { EnvironmentFacts, PlainData, RealValuesOf, RuntimeValue, Value } from '../value.ts';
 export { isValue, resolve } from '../value.ts';
