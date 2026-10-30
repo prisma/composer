@@ -76,6 +76,10 @@ Design a solution for this case: deploying production from a machine whose `.env
 
 Give secrets a home distinct from plain values, so a `.env` file no longer mixes the two, and redaction stops covering the plain values that share a file with secrets. Designed with Will after S13.
 
+## S17. A secret field wraps its schema, as `field()` does
+
+`secretString()` becomes `secret(schema)`, following the `field()` pattern: `secret(type('string'))` for ArkType and `secret(z.string())` for Zod. The wrapped schema checks the secret's content at boot, when the real value exists; at deploy the field accepts a secret pointer or a secret box. The name is settled when the slice is designed. `secretString()` is removed, which is a breaking change for every schema with a secret field. Designed after S16.
+
 ## Close-out
 
 - [ ] Verify every condition in the spec's definition of done.
