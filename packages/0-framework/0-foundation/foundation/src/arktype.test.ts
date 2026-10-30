@@ -19,6 +19,13 @@ describe('secretString', () => {
     expect(String(out)).toContain('signingKey must be a SecretString box');
   });
 
+  test("the refusal names the value's kind, never the value", () => {
+    const out = schema({ signingKey: 'sk_live_SENTINEL' });
+    expect(String(out)).toBe(
+      'signingKey must be a SecretString box — bind this field to a secret (was a string)',
+    );
+  });
+
   test('rejects an unbranded look-alike', () => {
     const lookalike = { expose: () => 'sk_live_abc', toString: () => '[REDACTED]' };
     expect(schema({ signingKey: lookalike })).toBeInstanceOf(type.errors);
