@@ -3,6 +3,7 @@
  * data objects. A node's `extension` + `type` form its deploy-time registry key (ADR-0017).
  */
 import { blindCast } from '@internal/foundation/casts';
+import { POINTER, type PointerKind } from '@internal/foundation/pointer';
 import type { SecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { ConfigParam, Connection, Params } from './config.ts';
@@ -36,7 +37,7 @@ const SECRET_SOURCE: unique symbol = blindCast<never, 'unique-symbol brand for a
   Symbol.for('prisma:secret-source'),
 );
 
-/** A secret's source: a target-defined payload core forwards but never inspects. It is a value too, known only at boot; its real value at deploy is the source itself, a pointer. A target (e.g. @prisma/composer-prisma-cloud's `envSecret`) builds one with `secretSource()`. */
+/** A secret's source: a target-defined payload core forwards but never inspects. It is a value too, known only at boot; its real value at deploy is the source itself, a secret pointer. A target (e.g. @prisma/composer-prisma-cloud's `envSecret`) builds one with `secretSource()`. */
 export interface SecretSource<T = unknown> extends Value<unknown> {
   readonly [SECRET_SOURCE]: true;
   /** Target-defined. Core never reads this; the target that authored the source reads it back. */
@@ -55,7 +56,7 @@ export interface ParamSourceOptions extends SourceOptions {
   readonly poolKey?: string;
   /** For a source known only at boot: the string a module's input schema checks in its place, because the deploy has no value for it. */
   readonly sentinel?: string;
-  /** For a source known only at boot whose value is redacted: a module's input schema checks an empty `SecretString` in its place, as for a secret. */
+  /** For a source known only at boot whose value is redacted: a module's input schema checks an empty `SecretString` in its place, as for a secret, and the source is a secret pointer. */
   readonly redacted?: boolean;
 }
 
@@ -69,13 +70,18 @@ export function secretSource<P, T = unknown>(
     SecretSource<P> & Value<T>,
     'the frozen object carries the value brand, a source origin whose source is itself, the source brand and the payload, which is the SecretSource and Value shape'
   >(
-    buildSource(SECRET_SOURCE, payload, {
-      kind: 'source',
-      label,
-      poolKey: undefined,
-      sentinel: undefined,
-      redacted: true,
-    }),
+    buildSource(
+      SECRET_SOURCE,
+      payload,
+      {
+        kind: 'source',
+        label,
+        poolKey: undefined,
+        sentinel: undefined,
+        redacted: true,
+      },
+      'secret',
+    ),
   );
 }
 
@@ -131,7 +137,7 @@ const PARAM_SOURCE: unique symbol = blindCast<never, 'unique-symbol brand for a 
   Symbol.for('prisma:param-source'),
 );
 
-/** A param's source: a target-defined payload core forwards but never inspects. It is a value too: known at deploy when it names a config pool key (`envParam`), otherwise known only at boot, with the source itself, a pointer, as its real value. A target builds one with `paramSource()`. */
+/** A param's source: a target-defined payload core forwards but never inspects. It is a value too: known at deploy when it names a config pool key (`envParam`), otherwise known only at boot, with the source itself as its real value: a secret pointer when it is redacted, a plain pointer otherwise. A target builds one with `paramSource()`. */
 export interface ParamSource<T = unknown> extends Value<unknown> {
   readonly [PARAM_SOURCE]: true;
   /** Target-defined. Core never reads this; the target that authored the source reads it back. */
@@ -161,7 +167,14 @@ export function paramSource<P, T = unknown>(
   return blindCast<
     ParamSource<P> & Value<T>,
     'the frozen object carries the value brand, a source origin whose source is itself, the source brand and the payload, which is the ParamSource and Value shape'
-  >(buildSource(PARAM_SOURCE, payload, { kind: 'source', label, poolKey, sentinel, redacted }));
+  >(
+    buildSource(
+      PARAM_SOURCE,
+      payload,
+      { kind: 'source', label, poolKey, sentinel, redacted },
+      poolKey !== undefined ? undefined : redacted ? 'secret' : 'plain',
+    ),
+  );
 }
 
 function sourceLabel(factory: string, label: unknown, fallback: string): string {
@@ -176,8 +189,15 @@ function buildSource(
   brand: typeof SECRET_SOURCE | typeof PARAM_SOURCE,
   payload: unknown,
   origin: Omit<SourceOrigin, 'source'>,
+  kind: PointerKind | undefined,
 ): object {
-  const source = { [VALUE]: true, [VALUE_ORIGIN]: origin, [brand]: true, payload };
+  const source = {
+    [VALUE]: true,
+    [VALUE_ORIGIN]: origin,
+    [brand]: true,
+    ...(kind === undefined ? {} : { [POINTER]: kind }),
+    payload,
+  };
   Object.defineProperty(origin, 'source', { value: source });
   Object.defineProperties(source, coercions(origin));
   Object.freeze(origin);
