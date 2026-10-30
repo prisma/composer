@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type {
   InputValueOf,
   ModuleInputField,
+  PlainData,
   Pointer,
   RuntimeValue,
   SecretString,
@@ -20,6 +21,7 @@ declare const plainRuntime: RuntimeValue<string>;
 declare const secretRuntime: RuntimeValue<SecretString>;
 declare const text: Value<string>;
 declare const secretValue: Value<SecretString>;
+declare const plainData: Value<PlainData>;
 
 const arkSchema = type({
   from: arkField(type('string')),
@@ -335,6 +337,16 @@ test('resolve() lists deploy-time values: a plain field, a computed value, and a
       expectTypeOf(loose).toBeAny();
       return 'x';
     });
+  });
+});
+
+test('resolve() lists a dependency whose type is recursive, such as PlainData or a JSON field', () => {
+  resolve([plainData], ([data]) => {
+    expectTypeOf(data).toEqualTypeOf<PlainData>();
+    return 'x';
+  });
+  module('m', { input: z.object({ meta: z.json() }) }, ({ input }) => {
+    resolve([input.meta], () => 'x');
   });
 });
 

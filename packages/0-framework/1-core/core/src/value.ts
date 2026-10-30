@@ -72,14 +72,18 @@ export type RealValuesOf<D extends readonly Value<unknown>[]> = {
   readonly [K in keyof D]: D[K] extends Value<infer T> ? T : never;
 };
 
-/** `true` when `T` is a `Pointer` or holds one, through arrays and plain object types. */
-type HoldsPointer<T> =
-  T extends Pointer<unknown>
+/**
+ * `true` when `T` is a `Pointer` or holds one, through arrays and plain object types.
+ * It looks eight levels deep, so a recursive type such as `PlainData` ends; Load checks deeper.
+ */
+type HoldsPointer<T, Depth extends readonly unknown[] = []> = Depth['length'] extends 8
+  ? false
+  : T extends Pointer<unknown>
     ? true
     : T extends readonly (infer E)[]
-      ? HoldsPointer<E>
+      ? HoldsPointer<E, [...Depth, unknown]>
       : T extends Record<PropertyKey, unknown>
-        ? HoldsPointer<T[keyof T]>
+        ? HoldsPointer<T[keyof T], [...Depth, unknown]>
         : false;
 
 /** `true` for a real-value type a `resolve()` function can compute with: one that holds no pointer. `any` and `unknown` pass; Load checks those. */
