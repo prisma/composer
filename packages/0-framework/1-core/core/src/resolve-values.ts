@@ -14,6 +14,7 @@ import {
   isParamSource,
   isSecretSource,
   isSourceMisuse,
+  type ParamSource,
   type ResourceNode,
   type ResourceProps,
   type SecretSource,
@@ -291,6 +292,26 @@ function refuseSecretBoxes(address: NodeId, value: unknown, path: string): void 
   }
 }
 
+/** The original source each runtime value in `value` names, by its path. */
+function sourcesByPath(
+  value: unknown,
+  path = '',
+  found = new Map<string, ParamSource | SecretSource>(),
+) {
+  if (isSecretSource(value) || isParamSource(value)) {
+    found.set(path, sourceOriginOf(value)?.source ?? value);
+  } else if (Array.isArray(value)) {
+    for (const [index, member] of value.entries()) {
+      sourcesByPath(member, joinPath(path, index), found);
+    }
+  } else if (isPlainObject(value)) {
+    for (const [key, member] of Object.entries(value)) {
+      sourcesByPath(member, joinPath(path, key), found);
+    }
+  }
+  return found;
+}
+
 function validateModuleInput(
   entry: ProvisionedModuleInput,
   resolved: unknown,
@@ -317,9 +338,24 @@ function validateModuleInput(
       `The input binding of module "${address}" does not match the module's input schema: ${messages}`,
     );
   }
+  const bound = sourcesByPath(resolved);
+  const onlyChecked =
+    "Its value is known only at boot, so a module's schema may check the field but never replace or move it.";
   const restore = (value: unknown, path: string): unknown => {
+    const expected = bound.get(path);
     if (isSecretSource(value) || isParamSource(value)) {
-      return sourceOriginOf(value)?.source ?? value;
+      const source = sourceOriginOf(value)?.source ?? value;
+      if (source !== expected) {
+        throw new LoadError(
+          `The input schema of module "${address}" moved ${sourceOriginOf(source)?.label} to input key "${path}". ${onlyChecked}`,
+        );
+      }
+      return source;
+    }
+    if (expected !== undefined && value !== undefined) {
+      throw new LoadError(
+        `The input schema of module "${address}" replaced input key "${path}", which is bound to ${sourceOriginOf(expected)?.label}. ${onlyChecked}`,
+      );
     }
     if (isSecretString(value)) {
       const atPath = path === '' ? '' : ` at "${path}"`;
