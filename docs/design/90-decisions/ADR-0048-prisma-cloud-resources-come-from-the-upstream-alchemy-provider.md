@@ -2,10 +2,12 @@
 
 Amended by [ADR-0057](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md): resource IDs are the node's full address for its main resource and the address plus `.` and a role for its other pieces (`shop.web`, `shop.web.deploy`), not `${id}-svc` and `${id}-deploy`. Each declares its previous ID with `renamedFrom`.
 
+Amended 2026-10-30: from Alchemy 2.0.0-beta.84 the provider is its own package, `@alchemy.run/prisma`, versioned in lockstep with `alchemy`; before that it was the `alchemy/Prisma` module of the `alchemy` package. Only `@prisma/composer-prisma-cloud` and the Prisma Cloud internals it bundles depend on it; `@prisma/composer` and `@prisma/composer-cli` depend on `alchemy` alone. The move kept every resource type id (`Prisma.*`), so deploy state carries over unchanged. The decision below is unchanged.
+
 
 ## Decision
 
-Composer does not implement Alchemy resources for Prisma Cloud's Management API. It composes the official Prisma provider (`@alchemy.run/prisma`)'s resources and providers, and defines its own resources only where the upstream provider has no support yet (buckets, whose routes upstream deferred) or where no Management API exists behind them (local mechanisms like migration steps).
+Composer does not implement Alchemy resources for Prisma Cloud's Management API. It composes the official `alchemy/Prisma` provider's resources and providers, and defines its own resources only where the upstream provider has no support yet (buckets, whose routes upstream deferred) or where no Management API exists behind them (local mechanisms like migration steps).
 
 The live wiring is composition, not implementation:
 
@@ -85,6 +87,6 @@ No plaintext reaches state: members are `Redacted` in props, and only the salted
 ## References
 
 - ADR-0005 (the framework never builds or bundles user code), ADR-0034 (hosted deploy state), ADR-0039 (a service's origin is a target-resolved property), ADR-0041 (local dev runs the deploy pipeline against local providers).
-- The provider: the `@alchemy.run/prisma` package, 2.0.0-beta.84 or later, versioned in lockstep with `alchemy`. Before beta.84 it was the `alchemy/Prisma` module of the `alchemy` package; buckets and `Deployment.triggers` first shipped there in beta.74. The move kept every resource type id (`Prisma.*`), so deploy state carries over unchanged.
+- The provider: the `alchemy/Prisma` module of the `alchemy` package, 2.0.0-beta.74 or later (buckets and `Deployment.triggers` first ship there).
 - `docs/design/05-prisma-cloud/alchemy-lowering.md` — the current resource-by-resource lowering map.
 - `docs/guides/deploying.md` — operator-facing upgrade notes (one-time deployment reship, branch-database renames, leftover placeholder rows).
