@@ -144,8 +144,9 @@ their real values and passed through the module's schema. A real value is the
 schema's output, so a field typed `number` by a `string.integer.parse` schema
 receives `4`, not `'4'`. An input field is deploy-time: its real value is known
 by the end of Load. A field bound to `envSecret()`, `generatedParam()` or
-`serviceOrigin()` has a pointer as its real value, never a value, although its
-type is the schema's output type.
+`serviceOrigin()` has a pointer as its real value, and its type says so: a
+wrapped field's type includes `Pointer<In>`, and a `secretString()` field's
+includes `Pointer<SecretString>`.
 
 A leaf field can be **wrapped**: its schema is `field(inner)`, from
 `@prisma/composer/arktype` or `@prisma/composer/zod`
@@ -155,9 +156,9 @@ typed `Value<Out | Pointer<In>>`: for `from: field(type('string'))`,
 `input.from` is `Value<string | Pointer<string>>`. Its binding takes a
 literal, a value of `inner`'s input type, or a `RuntimeValue<string>`; a
 `RuntimeValue<SecretString>` there fails to compile, and so does a
-`RuntimeValue<string>` in a plain field. At deploy a module's schema still
-checks the stand-ins described below, so a wrapped and a plain field check
-the same data.
+`RuntimeValue<string>` in a plain field. At deploy a module's schema checks
+each runtime value as its pointer, so a plain field bound to one fails the
+deploy, as below.
 
 The body can only pass an input field on. Turning one into text or a number,
 serializing it, listing its keys, iterating it, testing it with `in`,
@@ -188,13 +189,14 @@ return. Load refuses each.
 pass, synchronously, after every module body has run. A child's real value is
 read from its parent's validated output, so the parent's schema runs first; an
 async schema fails the Load. Each module's binding is validated once per Load,
-whether or not the body uses any field. A secret source reaches the schema as
-an empty `SecretString` box and is put back in the validated output, as the
-Prisma Cloud serializer does for a service. A param source known only at boot
-reaches the schema as the sentinel its target names, an empty `SecretString`
-box when it is redacted, and is put back at its path; a schema that changes
-such a field fails the Load. An optional field the binding left
-out has no real value, and a binding that forwards it leaves the key out.
+whether or not the body uses any field. A value known only at boot reaches
+the schema as its pointer, the source itself: `secretString()` accepts a
+secret pointer, a wrapped field a plain one, and a plain field neither.
+Wherever the schema's output holds a pointer, Load passes on the original
+source, so a copy the schema made, as ArkType does when a transform runs,
+reaches the child as the source the binding named. An optional field the
+binding left out has no real value, and a binding that forwards it leaves the
+key out.
 
 A root's input is the config pool, validated by its schema before any other module's binding.
 

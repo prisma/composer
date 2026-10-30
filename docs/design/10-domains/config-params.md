@@ -143,9 +143,15 @@ return one object that is both the target's source and a
 | --- | --- | --- | --- | --- |
 | A service's `input` binding | kept; read at serialize from the config pool | kept | kept | kept |
 | A service's `params` | kept; pointer row, as today | kept (fails at deploy, as today) | kept (fails at deploy, as today) | kept (fails at deploy, as today) |
-| A module's `input` binding | its string; unset or empty leaves the key out | its pointer; the schema checks an empty `SecretString` | its pointer; the schema checks an empty `SecretString` when redacted, else `''` | its pointer; the schema checks `https://origin.invalid` |
+| A module's `input` binding | its string; unset or empty leaves the key out | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
 | A `resolve()` dependency | its string; unset or empty fails | its pointer | its pointer | its pointer |
 | A resource's `props` | its string; unset or empty leaves the key out | refused by the type | refused by the type | refused at Load |
+
+In a service's and a module's input, the schema checks each of the three
+runtime sources as its pointer. A plain field refuses a pointer, so a field
+bound to `generatedParam()` or `serviceOrigin()` is wrapped with `field()`,
+or is a `secretString()` field for a redacted `generatedParam()`
+([glossary](../03-domain-model/glossary.md#field)).
 
 A service's input binding and a service's params receive the source itself,
 the same object they received before
