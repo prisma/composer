@@ -14,8 +14,8 @@ export default compute({
   },
   // The whole incoming configuration as ONE schema (ADR-0042): a single
   // secret field, typed as the redacting SecretString box. The auth module
-  // forwards its boundary secret slot as this field's binding leaf; the root
-  // names the platform var via `envSecret` — this service never knows the
+  // passes its own `signingKey` input field on as this field's binding; the
+  // root names the platform var via `envSecret` — this service never knows the
   // name. Read via `input().signingKey.expose()`.
   input: type({
     signingKey: secretString(),
