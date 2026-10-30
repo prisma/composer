@@ -622,6 +622,11 @@ With Zod, import `secretString` from `@prisma/composer/zod` instead:
 library, accept a value for which `isSecretString()` or `isSecretPointer()`
 from `@prisma/composer` is true.
 
+These helpers use your app's copy of the schema library, so the app installs
+it: `arktype` for `@prisma/composer/arktype`, which supports ArkType 2, and
+`zod` for `@prisma/composer/zod`, which supports Zod 4. Composer installs
+neither.
+
 Because the input is a real schema, legality can be conditional — "no
 `stripeSecretKey` unless billing is on" is a union, not a framework feature,
 and `service.input()` narrows it like any other TypeScript union:
