@@ -41,13 +41,23 @@
     "@effect/vitest": "4.0.3",
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "2.0.0-beta.83",
-    "arktype": "^2.2.3",
     "cross-spawn": "^7.0.6",
     "dotenv": "^17.4.2",
     "effect": "4.0.3",
     "esbuild": "^0.28.1",
-    "@prisma/management-api-sdk": "^1.80.0",
+    "@prisma/management-api-sdk": "^1.80.0"
+  },
+  "peerDependencies": {
+    "arktype": "^2.2.3",
     "zod": "^4.4.3"
+  },
+  "peerDependenciesMeta": {
+    "arktype": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@internal/assemble": "workspace:0.36.0",
@@ -62,7 +72,9 @@
     "@internal/tsdown-config": "workspace:0.36.0",
     "@types/node": "^26.0.1",
     "tsdown": "^0.22.7",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "arktype": "^2.2.3",
+    "zod": "^4.4.3"
   },
   "license": "Apache-2.0",
   "repository": {
