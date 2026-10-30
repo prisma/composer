@@ -269,7 +269,7 @@ export function stashRows(node: ServiceNode, address: string, env: Env): Record<
 // ——— Input channel (ADR-0042): ONE self-describing JSON document per service.
 //
 // Deploy resolves the provision-time input binding (literals as-is, envParam
-// leaves read from the deploy shell, envSecret leaves as `$secret` pointers),
+// leaves read from the config pool, envSecret leaves as `$secret` pointers),
 // validates the resolved object with the service's own Standard Schema
 // (secrets as empty sentinel boxes — never values), and writes the
 // defaults-applied result to COMPOSER_<addr>_INPUT. Boot reads that one row,
@@ -424,7 +424,7 @@ export function assertDistinctPointerNames(
 /**
  * Deploy: recursive descent over the provision-time binding (plain data).
  * `envSecret` leaves become empty sentinel `SecretBox`es (the value never
- * enters the deploy); `envParam` leaves read the deploy shell — unset or
+ * enters the deploy); `envParam` leaves read the config pool — unset or
  * empty means the enclosing object key is OMITTED, and the schema arbitrates
  * whether that absence is legal (ADR-0042). An `envSecret` leaf named in
  * `absentSecrets` is omitted the same way; only `prisma dev` passes any.

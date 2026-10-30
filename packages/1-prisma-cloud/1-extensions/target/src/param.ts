@@ -40,8 +40,9 @@ const PLATFORM_OWNED_PARAM_NAMES: ReadonlySet<string> = new Set([
  * framework's reserved `COMPOSER_` prefix or the platform-owned
  * `DATABASE_URL(_POOLED)` keys — same parity as `envSecret`. It returns a
  * value known at deploy: where a module's input or a resolve() function needs
- * its real value, that is the variable's value in the config pool, the process
- * environment of the deploying shell.
+ * its real value, that is the variable's value in the config pool: what the
+ * `config` adapters in prisma.config.ts return, by default the process
+ * environment.
  */
 export function envParam(name: string): ParamSource<EnvParamPayload> & Value<string> {
   if (typeof name !== 'string' || name.length === 0) {

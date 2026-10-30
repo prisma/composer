@@ -150,7 +150,7 @@ interface EnvRow {
 /**
  * The report's two lines of honesty (ADR-0042): the serialized input
  * document (secret-free by construction — every secret leaf is a `$secret`
- * pointer) and every binding key that resolved absent in the deploy shell (a
+ * pointer) and every binding key that resolved absent in the config pool (a
  * possible typo'd variable name). Newlines in a detail value render as one
  * line per entry.
  */
