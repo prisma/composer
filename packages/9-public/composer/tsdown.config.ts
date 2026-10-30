@@ -23,6 +23,7 @@ export default defineConfig({
     casts: 'src/exports/casts.ts',
     assertions: 'src/exports/assertions.ts',
     arktype: 'src/exports/arktype.ts',
+    zod: 'src/exports/zod.ts',
     'service-rpc': 'src/exports/service-rpc.ts',
     http: 'src/exports/http.ts',
     node: 'src/exports/node.ts',
