@@ -179,8 +179,7 @@ box when it is redacted, and is put back at its path; a schema that changes
 such a field fails the Load. An optional field the binding left
 out has no real value, and a binding that forwards it leaves the key out.
 
-**Not supported yet.** A root cannot declare `input` until the config adapters
-fill it; Load refuses one.
+A root's input is the config pool, validated by its schema before any other module's binding.
 
 **Not detected.** Load cannot list a schema's keys, because Standard Schema
 exposes only `validate`. So a declared input field the body never uses is not

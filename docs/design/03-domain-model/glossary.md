@@ -167,7 +167,8 @@ The data a value stands for is its **real value**.
 - **Provided or computed.** A provided value is handed to the module body:
   `environment.name` is one, a deploy-time fact of the environment, and each
   field of a module's `input` is another, whose real value is read from the
-  module's input after its schema has validated it. A computed
+  module's input after its schema has validated it. A root's input is the
+  config pool. A computed
   value is what `resolve(dependencies, fn)` returns; Load runs `fn` with its
   dependencies' real values after every module body has run, with `provision`
   disabled. `resolve()` declares a computed value; Load resolves every value.
@@ -195,13 +196,29 @@ such as a param's value.
 
 ### Config pool
 
-The merged values the deploy reads deploy-time config from, by name. An
-`envParam('NAME')` in a service's input, in a module's input or listed in
-`resolve()` reads `NAME` there. Today the pool is the process environment of
-the shell that runs `prisma deploy` or `prisma dev`; once the config adapters
-ship, it is merged from them. In code it is `LoadOptions.configPool`, which the
-commands fill, and the name a source reads is its **pool key**
-(`paramSource()`'s `poolKey` option).
+The merged values the `config` adapters return for the environment being
+deployed, a later adapter winning by top-level key. It is the root module's
+input, validated by the root's schema, and what an `envParam('NAME')` reads
+`NAME` from, wherever it sits. With no `config` list in the `composer` section
+it is the process environment. In code it is `LoadOptions.configPool`, and the
+name a source reads is its **pool key** (`paramSource()`'s `poolKey` option).
+Composer reads it in the CLI and again in the deploy engine's process.
+
+### Secrets pool
+
+The merged values the `secrets` adapters return, text only. Deploy preflight
+fills a missing `envSecret()` platform variable from it, and `prisma dev` gives
+a service its secrets from it. It never reaches Load, a schema, a file or a
+report. With no `secrets` list it is the process environment.
+
+### Config adapter
+
+A function in the `config` or `secrets` list of the `composer` section. It
+receives the environment's name and the directory of `prisma.config.ts`, and
+returns that environment's values. `environmentVariables()` and `dotenv()` ship
+with Composer. An adapter is a mechanism, not a setting: the values stay
+wherever it reads them
+([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
 
 ### Topology
 
@@ -359,7 +376,8 @@ A place the app runs: `production`, `staging`, a preview such as `pr-42`, or
 `dev` on a developer's machine. Chosen with `--environment`, never authored in
 the topology — the same graph deploys to any environment. Every environment has
 a name and none is special: `prisma deploy` defaults to `production` and
-`prisma dev` to `dev`. Under `prisma dev`, each environment is a separate local
+`prisma dev` to `dev`. `dotenv()` reads `.env.<environment>` for the
+environment being deployed. Under `prisma dev`, each environment is a separate local
 copy of the app, with its own services, databases, buckets and ports. On Prisma Cloud, `production` resolves to the Project's
 default **Branch** and any other environment to the Branch whose `gitName` is
 its name. "Stage" is the old word for the same concept, and "branch" is Prisma

@@ -58,6 +58,7 @@ covers those three
 - **`destroy`**, an operation on `@prisma/composer/control` with no command —
   tear an environment down (same derivation, Alchemy destroy); the
   environment is always named explicitly (see § Environments and containers). Users call it from a script.
+  It reads the config pool, because Load validates the root's input; it reads no secrets.
 - **`prisma dev`** — bring up the application whose root node
   is the entry module's default export (found as for deploy), entirely on this machine, credential-free —
   local counterparts of every provisioned resource, real service processes,
@@ -121,6 +122,9 @@ user can rerun it by hand (ADR-0007).
    composing Module. The deploy root must be a Module — a bare service is not
    independently deployable; the CLI errors naming the fix (wrap it:
    `module('name', ({ provision }) => { provision(...); })`).
+   Load runs after the name is resolved and the pools are read (steps 4
+   and 5), and the root's input is validated here: the root's schema checks
+   the config pool before anything is created.
 3. **Load the config + validate coverage.** The `composer` section of
    `prisma.config.ts` — loaded by the Prisma CLI engine (ADR-0049), never
    imported by app code — supplies the extension registries and the deploy's one state store
@@ -138,14 +142,15 @@ user can rerun it by hand (ADR-0007).
    digits, `-` and `_`; Load refuses any other. An app that uses
    `serviceOrigin()` can't be deployed under `--name`: the addresses in its
    code start with its own name, which then names no node.
-5. **Assemble each service.** Look up the service's build descriptor in the
+5. **Read the pools.** The CLI calls the `config` adapters, and for `deploy` the `secrets` adapters, in list order, each awaited, and merges what they return by top-level key, a later adapter winning. Both lists default to `[environmentVariables()]`. The config pool is Load's input: the root's input and what `envParam()` reads. The secrets pool is held in memory for preflight. An adapter that throws or returns something other than an object fails with `CONFIG.ADAPTER_FAILED` or `CONFIG.ADAPTER_INVALID`.
+6. **Assemble each service.** Look up the service's build descriptor in the
    registries — `extensions[build.extension].nodes[build.type].assemble` — and
    run it. The assembler resolves its `entry` (and any other path field)
    relative to `dirname(build.module)` — the authoring module the descriptor
    carries (ADR-0004) — no directory discovery of any kind. Assembly validates
    the user's built output exists (missing → "run your build" error; staleness
    is not detected) and produces a normalized bundle `{ dir, entry }`.
-6. **Validate the environment name, then resolve each extension's containers.**
+7. **Validate the environment name, then resolve each extension's containers.**
    The environment name, including a default such as `production`, must pass
    `git check-ref-format` (`DEPLOY.ENVIRONMENT_INVALID`). A name made only of
    letters, digits, `-` and `_`, starting with a letter or digit, is a valid
@@ -178,7 +183,7 @@ user can rerun it by hand (ADR-0007).
    emulator instance is touched.
    On `deploy`, an older extension's `ensure` may already have created the
    app's Project by then; the check stops everything after that.
-7. **Lower and drive.** Write the pipeline's results as a runnable stack
+8. **Lower and drive.** Write the pipeline's results as a runnable stack
    module at `.prisma-composer/alchemy.run.ts` and drive the `alchemy` CLI against
    it (ADR-0007), started as § Runtime describes, carrying every resolved container across to the child as one
    environment variable per extension — content the CLI writes but never
@@ -186,7 +191,7 @@ user can rerun it by hand (ADR-0007).
    destroy` re-imports and re-evaluates the same stack, so its target
    reconstruction needs the same containers. The generated file and Alchemy's
    state live in the process's working directory — tool state lives where you
-   run the tool, like any other CLI (ADR-0004).
+   run the tool, like any other CLI (ADR-0004). The generated stack file reads the config pool again, from the same adapters; it never reads the secrets pool.
 
 The pass that assembles a service is the same pass that lowers it, so the
 correlation between services and their built bundles never exists as
@@ -211,7 +216,7 @@ inputs carry the same `environment`.
   `container` descriptor
   ([ADR-0038](../90-decisions/ADR-0038-containers-are-an-extension-descriptor.md)).
   The CLI resolves every configured extension's container before Alchemy runs
-  (pipeline step 6) and holds each result as an opaque value.
+  (pipeline step 7) and holds each result as an opaque value.
 - **The transport is content-blind.** Each resolved container crosses to the
   alchemy child as one environment variable, named from the extension's id
   and holding whatever that extension's own `serialize()` produced; the child
@@ -297,6 +302,8 @@ them:
 | Node `(extension, type)` not covered | the extension to add to the `composer` section |
 | Missing extension env | the exact variable(s) the extension factory needed |
 | Built output missing | the expected path, and "run your build" |
+| Root's input refused by its schema | the schema's messages, and that a root's input is the config pool for the environment |
+| A config adapter throws or returns something other than an object (`CONFIG.ADAPTER_FAILED`, `CONFIG.ADAPTER_INVALID`) | which list and position, and the fix |
 
 ## Out of scope (designed around)
 
@@ -358,4 +365,4 @@ them:
   — the term is environment.
 - [ADR-0038](../90-decisions/ADR-0038-containers-are-an-extension-descriptor.md)
   — the container descriptor and the opaque parent→child transport
-  (pipeline steps 6-7, § Environments and containers).
+  (pipeline steps 7-8, § Environments and containers).
