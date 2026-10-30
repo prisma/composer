@@ -10,8 +10,6 @@ import {
   type ModuleNode,
   module,
   paramSource,
-  type SecretSource,
-  secret,
   secretSource,
   service,
 } from '../node.ts';
@@ -430,33 +428,6 @@ describe('forwarding and the second pass', () => {
     );
   });
 
-  test("a forwarded secrets slot inside a module's input binding counts as used", () => {
-    const email = module(
-      'email',
-      { input: type({ from: 'string', key: secretString() }) },
-      ({ input, provision }) => {
-        provision(echoService(), { input: { from: input.from, key: input.key } });
-      },
-    );
-    const relay = module(
-      'relay',
-      { secrets: { key: secret() }, input: type({ from: 'string' }) },
-      ({ input, secrets, provision }) => {
-        provision(email, { input: { from: input.from, key: secrets.key } });
-      },
-    );
-    const source = secretSource({ name: 'EMAIL_KEY' });
-
-    const graph = Load(
-      module('shop', ({ provision }) => {
-        provision(relay, { input: { from: 'shop@example.com' }, secrets: { key: source } });
-      }),
-    );
-
-    const key = bindingOf(graph)['key'] as SecretSource;
-    expect(key.payload).toBe(source.payload);
-  });
-
   test('the whole input forwarded into a child module reaches its service', () => {
     const email = module('email', { input: type({ from: 'string' }) }, ({ input, provision }) => {
       provision(echoService(), { input: { from: input.from } });
@@ -684,26 +655,6 @@ describe('errors', () => {
     expect(loadError(() => Load(shopWith(email, { from: 'a' }))).message).toBe(
       'The deps for "shop.email.svc.target" are bound to a value. A value can configure a node, ' +
         'never decide its edges: the graph is the same whatever inputs Composer is given (ADR-0062).',
-    );
-  });
-
-  test("an input field bound to a module's secrets slot fails with the existing message", () => {
-    const auth = module('auth', { secrets: { key: secret() } }, ({ secrets, provision }) => {
-      provision(echoService(), { input: { key: secrets.key } });
-    });
-    const email = module(
-      'email',
-      { input: type({ key: secretString() }) },
-      ({ input, provision }) => {
-        provision(auth, { secrets: { key: input.key as never } });
-      },
-    );
-
-    expect(
-      loadError(() => Load(shopWith(email, { key: secretSource({ name: 'K' }) }))).message,
-    ).toBe(
-      'The secrets for "shop.email.auth" bind "key" to a value. A value is not a secret source; ' +
-        "bind envSecret('NAME') or a forwarded ctx.secrets ref.",
     );
   });
 });

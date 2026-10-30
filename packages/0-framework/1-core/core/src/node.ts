@@ -32,40 +32,15 @@ const NODE = Symbol.for('prisma:node');
 
 export type { NODE };
 
-// A secret slot rides its OWN brand + field, structurally distinct from deps and
-// params (ADR-0029): sensitivity is by type, not a flag. `secret()` is the NEED
-// (a nameless slot); `envSecret('NAME')` is the SOURCE (the platform name the
-// root binds it to) — the same need-vs-source split as rpc(contract) vs a
-// producer's exposed port.
-const SECRET_NEED: unique symbol = blindCast<never, 'unique-symbol brand for a secret need'>(
-  Symbol.for('prisma:secret-need'),
-);
 const SECRET_SOURCE: unique symbol = blindCast<never, 'unique-symbol brand for a secret source'>(
   Symbol.for('prisma:secret-source'),
 );
-
-/** A declared secret input slot — nameless; the root binds it and the topology forwards it in. */
-export interface SecretNeed {
-  readonly [SECRET_NEED]: true;
-  readonly kind: 'secret';
-}
-
-/** A module's secret-forwarding slots: name → the need it declares. */
-export type Secrets = Record<string, SecretNeed>;
 
 /** A secret's source: a target-defined payload core forwards but never inspects. It is a value too, known only at boot; its real value at deploy is the source itself, a pointer. A target (e.g. @prisma/composer-prisma-cloud's `envSecret`) builds one with `secretSource()`. */
 export interface SecretSource<T = unknown> extends Value<unknown> {
   readonly [SECRET_SOURCE]: true;
   /** Target-defined. Core never reads this; the target that authored the source reads it back. */
   readonly payload: T;
-}
-
-/** What `provision(moduleChild, { secrets })` supplies: one source per declared secret slot. */
-export type SecretBindings<S extends Secrets> = { [K in keyof S]: SecretSource };
-
-/** Declares a secret NEED. Nameless — the platform name is bound at the root via `envSecret`. */
-export function secret(): SecretNeed {
-  return Object.freeze({ [SECRET_NEED]: true as const, kind: 'secret' as const });
 }
 
 /** What a deploy target says about a source it builds. */
@@ -104,7 +79,7 @@ export function secretSource<P, T = unknown>(
   );
 }
 
-/** True if `value` is a secret source (an `envSecret` result or a forwarded ctx.secrets ref). */
+/** True if `value` is a secret source, such as an `envSecret()` result. */
 export function isSecretSource(value: unknown): value is SecretSource {
   return (
     typeof value === 'object' &&
@@ -152,22 +127,9 @@ export function isProvisionNeed(value: unknown): value is ProvisionNeed {
   );
 }
 
-// A param can be bound at provision time to a literal value OR an opaque
-// source — the non-secret sibling of the secret need/source split above,
-// mirrored onto the params channel. `param.default` stays the fallback when
-// neither is supplied; the param's own declared schema (ConfigParam.schema)
-// validates a literal, so — unlike a secret need — a param source has no
-// separate nameless "need" of its own at the SERVICE level; it binds directly
-// against the already-declared param. A MODULE boundary, which owns no
-// schema, forwards a param source through a nameless `ParamNeed` slot,
-// exactly the way it forwards a secret need.
 const PARAM_SOURCE: unique symbol = blindCast<never, 'unique-symbol brand for a param source'>(
   Symbol.for('prisma:param-source'),
 );
-const PARAM_NEED: unique symbol = blindCast<
-  never,
-  'unique-symbol brand for a module param-forwarding need'
->(Symbol.for('prisma:param-need'));
 
 /** A param's source: a target-defined payload core forwards but never inspects. It is a value too: known at deploy when it names a config pool key (`envParam`), otherwise known only at boot, with the source itself, a pointer, as its real value. A target builds one with `paramSource()`. */
 export interface ParamSource<T = unknown> extends Value<unknown> {
@@ -278,7 +240,7 @@ export function isRuntimeValue(value: unknown): value is ParamSource | SecretSou
   return sourceOriginOf(value)?.poolKey === undefined;
 }
 
-/** True if `value` is a param source (an `envParam` result or a forwarded ctx.params ref). */
+/** True if `value` is a param source, such as an `envParam()` result. */
 export function isParamSource(value: unknown): value is ParamSource {
   return (
     typeof value === 'object' &&
@@ -289,20 +251,6 @@ export function isParamSource(value: unknown): value is ParamSource {
   );
 }
 
-/** A module's declared param-forwarding slot — nameless, schema-less; the root (or an ancestor module) binds a `ParamSource` and the topology forwards it into a child's real, schema-bearing param. */
-export interface ParamNeed {
-  readonly [PARAM_NEED]: true;
-  readonly kind: 'param';
-}
-
-/** A module's param-forwarding slots: name → the need it declares. */
-export type ParamNeeds = Record<string, ParamNeed>;
-
-/** Declares a module param-forwarding NEED. Nameless — bound to a `ParamSource` by an enclosing scope and forwarded into a child's real param. */
-export function paramNeed(): ParamNeed {
-  return Object.freeze({ [PARAM_NEED]: true as const, kind: 'param' as const });
-}
-
 /** What `provision(service, { params })` accepts per declared param: a literal (schema-validated when config is built) or an opaque `ParamSource`, taking precedence over `param.default`. Every entry is optional — an unbound param falls back to its `default`. */
 export type ParamBindings<P extends Params> = {
   readonly [K in keyof P]?:
@@ -311,11 +259,6 @@ export type ParamBindings<P extends Params> = {
     | (StandardSchemaV1.InferOutput<P[K]['schema']> extends PlainData
         ? Value<StandardSchemaV1.InferOutput<P[K]['schema']>>
         : never);
-};
-
-/** What `provision(moduleChild, { params })` accepts per declared `ParamNeed`: a `ParamSource` only — a need carries no schema to validate a literal against. */
-export type ParamNeedBindings<PN extends ParamNeeds> = {
-  readonly [K in keyof PN]?: ParamSource;
 };
 
 /** What a value in a service's input binding may stand for: plain data, a `SecretString` at any depth (a forwarded secret field), and `undefined` (an optional field the binding left out). */
@@ -497,8 +440,6 @@ export interface DependencyEnd<C = unknown, Req = unknown> {
 export interface ModuleNode<
   D extends Deps = Deps,
   E extends Expose = Expose,
-  S extends Secrets = Secrets,
-  PN extends ParamNeeds = ParamNeeds,
   I extends StandardSchemaV1 | undefined = StandardSchemaV1 | undefined,
 > {
   readonly [NODE]: true;
@@ -506,15 +447,11 @@ export interface ModuleNode<
   /** Human-readable, given at authoring — logs/diagnostics only. */
   readonly name: string;
   readonly deps: D;
-  /** Declared secret input slots (authored as `secrets`) — forwarded to internals via `ctx.secrets` (ADR-0029). */
-  readonly secretSlots: S;
-  /** Declared param-forwarding slots (authored as `params`) — forwarded to internals via `ctx.params`, the same rail secrets ride on. */
-  readonly paramSlots: PN;
   /** The module's whole incoming configuration as one Standard Schema (authored as `input`, ADR-0061), or `undefined` when it takes none. Load only calls its `~standard.validate`. */
   readonly inputSchema: I;
   readonly expose: E;
   // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
-  body(ctx: ModuleContext<D, S, PN, I>): ModuleOutputs<E> | void;
+  body(ctx: ModuleContext<D, I>): ModuleOutputs<E> | void;
 }
 
 /**
@@ -523,16 +460,10 @@ export interface ModuleNode<
  */
 export interface ModuleContext<
   D extends Deps,
-  S extends Secrets = Secrets,
-  PN extends ParamNeeds = ParamNeeds,
   I extends StandardSchemaV1 | undefined = StandardSchemaV1 | undefined,
 > {
   /** The module's declared dependencies as wiring values — pass them into provision(). */
   readonly deps: { [K in keyof D]: InputRef<D[K]> };
-  /** The module's declared secret slots as forwardable sources — pass them into a child's `secrets` (ADR-0029). */
-  readonly secrets: { readonly [K in keyof S]: SecretSource };
-  /** The module's declared param-forwarding slots as forwardable sources — pass them into a child's `params`. */
-  readonly params: { readonly [K in keyof PN]: ParamSource };
   /** The module's input: one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. A root's input is the config pool, validated by its schema; a root passes on its fields one by one, never its whole input. Pass a field into a provision() binding or list it as a resolve() dependency. */
   readonly input: I extends StandardSchemaV1 ? ModuleInput<I> : undefined;
   /** The deploy-time facts of the environment, each a value (ADR-0062). List `environment.name` as a `resolve()` dependency. Never environment variables: user code never reads those. */
@@ -602,34 +533,22 @@ type ServiceProvisionArgs<D extends Deps, I extends StandardSchemaV1 | undefined
     : [opts: { id?: string; deps: DepBindings<D>; input: InputBinding; params?: PB }];
 
 /**
- * A child-MODULE provision's trailing options: `deps`, `secrets` and `input`
- * each required exactly when the module declares them; a declared
- * param-forwarding slot may be bound to a `ParamSource`.
+ * A child-MODULE provision's trailing options: `deps` and `input` each
+ * required exactly when the module declares them.
  */
-type ModuleProvisionOptions<
-  D extends Deps,
-  S extends Secrets,
-  I extends StandardSchemaV1 | undefined,
-  PB,
-> = { id?: string; params?: PB } & ([keyof D] extends [never]
-  ? unknown
-  : { deps: DepBindings<D> }) &
-  ([keyof S] extends [never] ? unknown : { secrets: SecretBindings<S> }) &
+type ModuleProvisionOptions<D extends Deps, I extends StandardSchemaV1 | undefined> = {
+  id?: string;
+} & ([keyof D] extends [never] ? unknown : { deps: DepBindings<D> }) &
   ([I] extends [StandardSchemaV1] ? { input: ModuleInputBinding<ModuleInputOf<I>> } : unknown);
 
 /** The options are optional exactly when nothing is required. */
-type ModuleProvisionArgs<
-  D extends Deps,
-  S extends Secrets,
-  I extends StandardSchemaV1 | undefined,
-  PB,
-> = [keyof D] extends [never]
-  ? [keyof S] extends [never]
-    ? [I] extends [StandardSchemaV1]
-      ? [opts: ModuleProvisionOptions<D, S, I, PB>]
-      : [opts?: ModuleProvisionOptions<D, S, I, PB>]
-    : [opts: ModuleProvisionOptions<D, S, I, PB>]
-  : [opts: ModuleProvisionOptions<D, S, I, PB>];
+type ModuleProvisionArgs<D extends Deps, I extends StandardSchemaV1 | undefined> = [
+  keyof D,
+] extends [never]
+  ? [I] extends [StandardSchemaV1]
+    ? [opts: ModuleProvisionOptions<D, I>]
+    : [opts?: ModuleProvisionOptions<D, I>]
+  : [opts: ModuleProvisionOptions<D, I>];
 
 export interface ModuleBuilder {
   /** Provisions an owned resource; its id defaults to the node's `name`. */
@@ -667,31 +586,17 @@ export interface ModuleBuilder {
       params?: ParamBindings<P>;
     },
   ): ProvisionedRef<E>;
-  /** Registers an owned child module; its id defaults to the node's `name`; `deps`, `secrets` and `input` are required iff it declares them; a declared param-forwarding slot may be bound to a `ParamSource`. */
-  provision<
-    D extends Deps,
-    E extends Expose,
-    S extends Secrets,
-    PN extends ParamNeeds,
-    I extends StandardSchemaV1 | undefined,
-  >(
-    child: ModuleNode<D, E, S, PN, I>,
-    ...args: ModuleProvisionArgs<D, S, I, ParamNeedBindings<PN>>
+  /** Registers an owned child module; its id defaults to the node's `name`; `deps` and `input` are required iff it declares them. */
+  provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
+    child: ModuleNode<D, E, I>,
+    ...args: ModuleProvisionArgs<D, I>
   ): ProvisionedRef<E>;
   /** The child-module call with `deps` spelled out — the same generic-wrapper escape as the service overload above. */
-  provision<
-    D extends Deps,
-    E extends Expose,
-    S extends Secrets,
-    PN extends ParamNeeds,
-    I extends StandardSchemaV1 | undefined,
-  >(
-    child: ModuleNode<D, E, S, PN, I>,
+  provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
+    child: ModuleNode<D, E, I>,
     opts: {
       id?: string;
       deps: DepBindings<D>;
-      secrets?: SecretBindings<S>;
-      params?: ParamNeedBindings<PN>;
       input?: ModuleInputBinding<ModuleInputOf<I>>;
     },
   ): ProvisionedRef<E>;
@@ -1061,16 +966,8 @@ export function dependency<P extends Params, C, Req = unknown>(def: {
  */
 export function module(
   name: string,
-  body: (
-    ctx: ModuleContext<Record<never, never>, Record<never, never>, Record<never, never>, undefined>,
-  ) => void,
-): ModuleNode<
-  Record<never, never>,
-  Record<never, never>,
-  Record<never, never>,
-  Record<never, never>,
-  undefined
->;
+  body: (ctx: ModuleContext<Record<never, never>, undefined>) => void,
+): ModuleNode<Record<never, never>, Record<never, never>, undefined>;
 /**
  * A module with a boundary: `deps` and/or `expose` declare what wires in and
  * out, the same way a service does. The body returns one port per `expose` key.
@@ -1078,15 +975,13 @@ export function module(
 export function module<
   D extends Deps = Record<never, never>,
   E extends Expose = Record<never, never>,
-  S extends Secrets = Record<never, never>,
-  PN extends ParamNeeds = Record<never, never>,
   I extends StandardSchemaV1 | undefined = undefined,
 >(
   name: string,
-  boundary: { deps?: D; secrets?: S; params?: PN; input?: I; expose?: E },
+  boundary: { deps?: D; input?: I; expose?: E },
   // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
-  body: (ctx: ModuleContext<D, S, PN, I>) => ModuleOutputs<E> | void,
-): ModuleNode<D, E, S, PN, I>;
+  body: (ctx: ModuleContext<D, I>) => ModuleOutputs<E> | void,
+): ModuleNode<D, E, I>;
 /**
  * Constructs a branded, frozen Module node. Construction is INERT — the body is
  * wiring, not user code, and runs only when the module is Loaded.
@@ -1094,20 +989,26 @@ export function module<
 export function module(
   name: string,
   boundaryOrBody:
-    | {
-        deps?: Deps;
-        secrets?: Secrets;
-        params?: ParamNeeds;
-        input?: StandardSchemaV1;
-        expose?: Expose;
-      }
-    | ((ctx: ModuleContext<Deps, Secrets, ParamNeeds, undefined>) => void),
+    | { deps?: Deps; input?: StandardSchemaV1; expose?: Expose }
+    | ((ctx: ModuleContext<Deps, undefined>) => void),
   // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
   maybeBody?: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose> | void,
 ): ModuleNode {
   requireName(name, 'module');
   const closedRoot = typeof boundaryOrBody === 'function';
   const boundary = closedRoot ? {} : boundaryOrBody;
+  if (Object.hasOwn(boundary, 'params')) {
+    throw new Error(
+      `module("${name}") declares \`params\`, which a module no longer takes. Declare each value ` +
+        "as a field of the module's `input` schema, and bind it with provision(module, { input: { … } }) (ADR-0061).",
+    );
+  }
+  if (Object.hasOwn(boundary, 'secrets')) {
+    throw new Error(
+      `module("${name}") declares \`secrets\`, which a module no longer takes. Declare each secret ` +
+        "as a secretString() field of the module's `input` schema, and bind it with provision(module, { input: { … } }) (ADR-0061).",
+    );
+  }
   requireNotReservedPortNames(Object.keys(boundary.deps ?? {}), 'module');
   requireNotReservedPortNames(Object.keys(boundary.expose ?? {}), 'module');
   if (boundary.input !== undefined && typeof boundary.input['~standard']?.validate !== 'function') {
@@ -1117,8 +1018,6 @@ export function module(
     );
   }
   const deps = frozenShallowCopy(boundary.deps ?? {});
-  const secretSlots = frozenShallowCopy(boundary.secrets ?? {});
-  const paramSlots = frozenShallowCopy(boundary.params ?? {});
   const expose = frozenShallowCopy(boundary.expose ?? {});
   // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
   const body: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose> | void = closedRoot
@@ -1133,8 +1032,6 @@ export function module(
     kind: 'module' as const,
     name,
     deps,
-    secretSlots,
-    paramSlots,
     inputSchema: boundary.input,
     expose,
     body,

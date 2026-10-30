@@ -63,7 +63,7 @@ export interface Connection<P extends Params = Params, C = unknown> {
  * absent). `schema` is a data-only projection of the param's Standard Schema
  * (JSON Schema when the vendor supports the optional conversion, a `{ vendor }`
  * tag otherwise) — never the param's functions. Physical locations are the
- * target pack's business. Secrets are not here — they live on their own slot.
+ * target pack's business. Secrets are not here: they are `secretString()` fields of a service's input, bound with `envSecret()`.
  */
 export interface ConfigDeclaration {
   readonly owner: 'service' | { readonly input: string };
