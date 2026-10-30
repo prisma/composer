@@ -250,4 +250,31 @@ describe("a module's schema sees pointers at Load", () => {
     expect(bindingOf(graph)['key']).toBe(key);
     expect(bindingOf(graph)['port']).toBe(4);
   });
+
+  const returning = (
+    output: (value: Record<string, unknown>) => { base: unknown },
+  ): StandardSchemaV1<{ base: unknown }, { base: unknown }> => ({
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate: (value) => ({ value: output(value as Record<string, unknown>) }),
+    },
+  });
+
+  test('a module schema that replaces a field bound to a runtime value fails at Load', () => {
+    expect(
+      loadError(() => Load(shopWith(relay(returning(() => ({ base: 'x' }))), { base: origin() })))
+        .message,
+    ).toBe(
+      'The input schema of module "shop.email" replaced input key "base", which is bound to serviceOrigin(\'shop.web\'). Its value is known only at boot, so a module\'s schema may check the field but never replace or move it.',
+    );
+  });
+
+  test('a module schema that moves a runtime value to another key fails at Load', () => {
+    const moving = relay(returning((value) => ({ base: value['key'] })));
+
+    expect(loadError(() => Load(shopWith(moving, { base: 'x', key: pointer('K') }))).message).toBe(
+      'The input schema of module "shop.email" moved envSecret(\'K\') to input key "base". Its value is known only at boot, so a module\'s schema may check the field but never replace or move it.',
+    );
+  });
 });
