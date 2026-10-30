@@ -48,6 +48,7 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
   let root: string;
   let devDir: string;
   let serverDir: string;
+  let secrets: Record<string, string>;
 
   beforeEach(async () => {
     root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'target-serve-')));
@@ -63,7 +64,7 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
         COMPOSER_OTHER_ROW: 'a sibling service row',
       }),
     );
-    process.env['STRIPE_KEY'] = 'sk_real';
+    secrets = { STRIPE_KEY: 'sk_real' };
     serverDir = path.join(root, 'app', 'gateway');
     fs.mkdirSync(serverDir, { recursive: true });
     fs.writeFileSync(path.join(serverDir, 'server.js'), ENV_ECHO_SERVER);
@@ -72,7 +73,6 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
 
   afterEach(async () => {
     delete process.env[SHELL_MARKER];
-    delete process.env['STRIPE_KEY'];
     await deleteAppInstances({ devDir, app: APP, environment: 'dev' }).catch(() => undefined);
     await stopDaemon('compute', { registryRoot: path.join(root, 'emulators') }).catch(
       () => undefined,
@@ -85,7 +85,7 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
   async function attach() {
     const descriptor = localTargetDescriptor();
     const container = await descriptor.container.ensure({ appName: APP, environment: 'dev' });
-    return descriptor.attach({ container, devDir });
+    return descriptor.attach({ container, devDir, pools: { config: {}, secrets } });
   }
 
   const server = (argv: readonly string[]): DevServer => ({
@@ -135,7 +135,7 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
       });
 
     await serve();
-    process.env['STRIPE_KEY'] = 'sk_rotated';
+    secrets['STRIPE_KEY'] = 'sk_rotated';
     const changed = await serve();
 
     expect(changed?.restarted).toBe(true);
@@ -144,7 +144,7 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
   });
 
   test('an unset secret is not given to the dev server', async () => {
-    delete process.env['STRIPE_KEY'];
+    delete secrets['STRIPE_KEY'];
     const attachment = await attach();
     const { instance } = await ensureServiceInstance(
       { devDir, app: APP, environment: 'dev' },

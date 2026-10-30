@@ -157,7 +157,7 @@ export async function devAttach(input: LocalTargetAttachInput): Promise<LocalTar
     // stashed address-free as run() would, laid over the shell's own.
     serve: async ({ address, node, server }) => {
       const { instance } = await ensureServiceInstance(scope, address);
-      const materialized = await materializeEnv(input.devDir, address, instance.port);
+      const materialized = await materializeEnv(input.devDir, address, instance.port, input.pools);
       const stashed = stashRows(node, address, materialized);
       const env: Record<string, string> = {};
       for (const layer of [shellEnv(), materialized, stashed]) {

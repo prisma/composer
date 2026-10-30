@@ -32,6 +32,12 @@ export interface PreflightName {
   readonly nodeKind: SecretSourceUse['nodeKind'];
 }
 
+/** An env-sourced param's config pool value that preflight cannot write to a platform variable. */
+export const envParamNotTextError = (name: string, address: string, kind: string): Error =>
+  new Error(
+    `The config pool holds ${kind} at "${name}", not text, so preflight cannot set the platform variable envParam('${name}') of service "${address}" reads. Make the adapter return a string.`,
+  );
+
 export interface PreflightNames {
   /** Every secret source in a service's input binding or in `graph.secretSources`, deduped by name; the first entry wins the reported address. */
   readonly secrets: readonly PreflightName[];

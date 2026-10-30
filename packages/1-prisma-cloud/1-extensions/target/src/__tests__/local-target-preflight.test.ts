@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -152,15 +152,23 @@ const devPreflightWarnings = async (graph: ReturnType<typeof Load>, environment:
     graph,
     container: fakeContainer(environment),
     environment,
+    pools: { config, secrets },
     warn: (message) => warnings.push(message),
   });
   return warnings;
 };
 
-const NAMES = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'APP_PORT'];
+/** What the dev command's adapters returned: the secrets pool and the config pool. */
+let secrets: Record<string, string> = {};
+let config: Record<string, unknown> = {};
 
 const preflight = (graph: ReturnType<typeof Load>, environment = 'dev') =>
-  runDevPreflight({ graph, container: fakeContainer(environment), environment });
+  runDevPreflight({
+    graph,
+    container: fakeContainer(environment),
+    environment,
+    pools: { config, secrets },
+  });
 
 /** The folder `prisma dev --environment <name>` keeps its local copy in. */
 const environmentDir = (cwd: string, folder = 'dev') =>
@@ -209,33 +217,32 @@ describe('prisma dev preflight', () => {
     cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-preflight-test-'));
     previousCwd = process.cwd();
     process.chdir(cwd);
-    for (const name of NAMES) delete process.env[name];
+    secrets = {};
+    config = {};
   });
 
   afterEach(() => {
     process.chdir(previousCwd);
     fs.rmSync(cwd, { recursive: true, force: true });
-    for (const name of NAMES) delete process.env[name];
+    secrets = {};
+    config = {};
   });
 
   test('a required secret that is unset stops dev, naming the variable, the service and both fixes', async () => {
-    process.env['STRIPE_WEBHOOK_SECRET'] = 'whsec_1';
+    secrets['STRIPE_WEBHOOK_SECRET'] = 'whsec_1';
 
     const message = await preflightError(billingGraph(requiresSecrets('stripeKey')));
 
     expect(message).toContain('STRIPE_SECRET_KEY');
     expect(message).toContain('service "app.billing"');
     expect(message).toContain('stripeKey is required');
-    expect(message).toContain('export it in the shell you run `prisma dev` from');
-    expect(message).toContain(
-      "install the dotenv package and add import 'dotenv/config' at the top of prisma.config.ts",
-    );
-    expect(message).toContain('only when the CLI runs under Node: Bun does not implement it');
+    expect(message).toContain('the `secrets` list of the `composer` section for a secret');
+    expect(message).toContain('environmentVariables() reads the shell you run `prisma dev` from');
   });
 
   test('a required secret that is set to an empty string stops dev the same way', async () => {
-    process.env['STRIPE_SECRET_KEY'] = '';
-    process.env['STRIPE_WEBHOOK_SECRET'] = 'whsec_1';
+    secrets['STRIPE_SECRET_KEY'] = '';
+    secrets['STRIPE_WEBHOOK_SECRET'] = 'whsec_1';
 
     const message = await preflightError(billingGraph(requiresSecrets('stripeKey')));
 
@@ -261,7 +268,7 @@ describe('prisma dev preflight', () => {
   });
 
   test('an optional secret that is unset is left out of the service input', async () => {
-    process.env['STRIPE_SECRET_KEY'] = 'sk_test_1';
+    secrets['STRIPE_SECRET_KEY'] = 'sk_test_1';
     const graph = billingGraph(requiresSecrets('stripeKey'));
 
     const childEnv = transported(await preflight(graph));
@@ -272,8 +279,8 @@ describe('prisma dev preflight', () => {
   });
 
   test('an optional secret that is set to an empty string is left out of the service input', async () => {
-    process.env['STRIPE_SECRET_KEY'] = 'sk_test_1';
-    process.env['STRIPE_WEBHOOK_SECRET'] = '';
+    secrets['STRIPE_SECRET_KEY'] = 'sk_test_1';
+    secrets['STRIPE_WEBHOOK_SECRET'] = '';
     const graph = billingGraph(requiresSecrets('stripeKey'));
 
     const childEnv = transported(await preflight(graph));
@@ -284,7 +291,7 @@ describe('prisma dev preflight', () => {
   });
 
   test('the payload reaches the alchemy process with the absent secrets and a hash of each value, never the value', async () => {
-    process.env['STRIPE_SECRET_KEY'] = 'sk_test_1';
+    secrets['STRIPE_SECRET_KEY'] = 'sk_test_1';
 
     const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
 
@@ -297,7 +304,7 @@ describe('prisma dev preflight', () => {
   test("the deployment's trigger member for a secret changes exactly when its value changes", async () => {
     const graph = billingGraph(requiresSecrets('stripeKey'));
     const memberFor = async (value: string) => {
-      process.env['STRIPE_SECRET_KEY'] = value;
+      secrets['STRIPE_SECRET_KEY'] = value;
       const { pointerVersion } = transportedPreflight(
         new Map(),
         transported(await preflight(graph)),
@@ -312,7 +319,7 @@ describe('prisma dev preflight', () => {
   });
 
   test('an unset secret has no trigger member value', async () => {
-    process.env['STRIPE_SECRET_KEY'] = 'sk_test_1';
+    secrets['STRIPE_SECRET_KEY'] = 'sk_test_1';
 
     const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
 
@@ -326,8 +333,7 @@ describe('prisma dev preflight', () => {
 
     expect(message).toContain('APP_PORT');
     expect(message).toContain('service "app.web"');
-    expect(message).toContain('export it in the shell you run `prisma dev` from');
-    expect(message).toContain("import 'dotenv/config'");
+    expect(message).toContain('the `config` list for an env-sourced param');
   });
 
   test('missing params and secrets are reported together, with the ways to set them given once', async () => {
@@ -348,7 +354,7 @@ describe('prisma dev preflight', () => {
   });
 
   test('an env-sourced param that is set is fingerprinted for the alchemy process', async () => {
-    process.env['APP_PORT'] = '3000';
+    config['APP_PORT'] = '3000';
 
     const childEnv = transported(await preflight(paramGraph()));
 
@@ -356,7 +362,7 @@ describe('prisma dev preflight', () => {
   });
 
   test('the fingerprint key is created once, readable only by its owner, and reused', async () => {
-    process.env['APP_PORT'] = '3000';
+    config['APP_PORT'] = '3000';
     const keyPath = path.join(environmentDir(cwd), 'fingerprint.key');
 
     const first = devPayload(transported(await preflight(paramGraph())));
@@ -370,7 +376,7 @@ describe('prisma dev preflight', () => {
   });
 
   test('a lost fingerprint key only changes the fingerprints', async () => {
-    process.env['APP_PORT'] = '3000';
+    config['APP_PORT'] = '3000';
     const keyPath = path.join(environmentDir(cwd), 'fingerprint.key');
 
     const first = devPayload(transported(await preflight(paramGraph())));
@@ -388,7 +394,7 @@ describe('prisma dev preflight', () => {
   });
 
   test('a secret shared by two services that is set gets one fingerprint', async () => {
-    process.env['STRIPE_SECRET_KEY'] = 'sk_test_1';
+    secrets['STRIPE_SECRET_KEY'] = 'sk_test_1';
 
     const payload = devPayload(transported(await preflight(sharedGraph())));
 
@@ -397,7 +403,7 @@ describe('prisma dev preflight', () => {
   });
 
   test('a damaged fingerprint key stops dev with the file and how to fix it', async () => {
-    process.env['APP_PORT'] = '3000';
+    config['APP_PORT'] = '3000';
     const devDir = environmentDir(cwd);
     fs.mkdirSync(devDir, { recursive: true });
     fs.writeFileSync(path.join(devDir, 'fingerprint.key'), 'short');
@@ -409,8 +415,8 @@ describe('prisma dev preflight', () => {
   });
 
   test('prisma dev does not require a secret only a resolve() dependency lists', async () => {
-    process.env['A'] = 'sk_test_a';
-    delete process.env['B'];
+    secrets['A'] = 'sk_test_a';
+    delete secrets['B'];
     try {
       const graph = Load(
         module('app', ({ environment, provision }) => {
@@ -431,7 +437,7 @@ describe('prisma dev preflight', () => {
 
       await preflight(graph);
     } finally {
-      delete process.env['A'];
+      delete secrets['A'];
     }
   });
 
@@ -462,7 +468,7 @@ describe('prisma dev preflight', () => {
   });
 
   test('each environment has its own fingerprint key, in its own folder', async () => {
-    process.env['APP_PORT'] = '3000';
+    config['APP_PORT'] = '3000';
 
     const versions = [];
     for (const environment of ['dev', 'test', 'feature/x']) {
@@ -474,6 +480,58 @@ describe('prisma dev preflight', () => {
     for (const folder of ['dev', 'test', 'feature%2Fx']) {
       expect(fs.existsSync(path.join(environmentDir(cwd, folder), 'fingerprint.key'))).toBe(true);
     }
+  });
+
+  test('a required secret only the shell has stops prisma dev', async () => {
+    process.env['STRIPE_SECRET_KEY'] = 'sk_shell';
+    try {
+      const message = await preflightError(billingGraph(requiresSecrets('stripeKey')));
+
+      expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
+    } finally {
+      delete process.env['STRIPE_SECRET_KEY'];
+    }
+  });
+
+  test("a secret in the secrets pool satisfies prisma dev, and its fingerprint is the pool value's", async () => {
+    secrets['STRIPE_SECRET_KEY'] = 'sk_pool';
+    process.env['STRIPE_SECRET_KEY'] = 'sk_shell';
+    try {
+      const payload = devPayload(
+        transported(await preflight(billingGraph(requiresSecrets('stripeKey')))),
+      );
+      const key = fs.readFileSync(path.join(environmentDir(cwd), 'fingerprint.key'));
+
+      expect(payload.pointerVersions.get('STRIPE_SECRET_KEY')).toBe(
+        createHmac('sha256', key).update('sk_pool').digest('hex'),
+      );
+    } finally {
+      delete process.env['STRIPE_SECRET_KEY'];
+    }
+  });
+
+  test('an env-sourced param is read from the config pool', async () => {
+    process.env['APP_PORT'] = '3000';
+    try {
+      expect(await preflightError(paramGraph())).toContain(
+        'APP_PORT  (required by service "app.web")',
+      );
+
+      config['APP_PORT'] = '3000';
+      const payload = devPayload(transported(await preflight(paramGraph())));
+
+      expect([...payload.pointerVersions.keys()]).toEqual(['APP_PORT']);
+    } finally {
+      delete process.env['APP_PORT'];
+    }
+  });
+
+  test('the missing-values message says where the adapters read', async () => {
+    const message = await preflightError(paramGraph());
+
+    expect(message).toContain(
+      'Set each missing variable where an adapter in prisma.config.ts reads it: the `secrets` list of the `composer` section for a secret, the `config` list for an env-sourced param. environmentVariables() reads the shell you run `prisma dev` from; dotenv() reads .env, .env.local, .env.dev and .env.dev.local beside prisma.config.ts.',
+    );
   });
 
   test('warns once per public URL that names a hostname, in any environment, and never for a prisma-build one', async () => {

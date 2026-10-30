@@ -82,7 +82,7 @@ describe.skipIf(process.platform === 'win32')("the dev session's stop", () => {
       true,
     );
 
-    await (await devAttach({ container, devDir })).stopApp();
+    await (await devAttach({ container, devDir, pools: { config: {}, secrets: {} } })).stopApp();
 
     expect(await postgresClient().getInstance(recorded.id)).toMatchObject({
       status: 'stopped',
@@ -111,7 +111,7 @@ describe.skipIf(process.platform === 'win32')("the dev session's stop", () => {
       true,
     );
 
-    await (await devAttach({ container, devDir })).stopApp();
+    await (await devAttach({ container, devDir, pools: { config: {}, secrets: {} } })).stopApp();
 
     expect(await postgresClient().getInstance(recorded.id)).toMatchObject({ status: 'stopped' });
   }, 60_000);

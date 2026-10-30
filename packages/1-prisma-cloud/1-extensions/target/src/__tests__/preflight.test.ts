@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { Load, module, resolve, resource } from '@internal/core';
 import { secretString } from '@internal/foundation/arktype';
+import type { ConfigPool, ConfigPools, SecretsPool } from '@internal/core/config';
 import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { PrismaCloudContainer } from '../container.ts';
 import { compute } from '../exports/index.ts';
 import { envParam, generatedParam } from '../param.ts';
-import { runPreflight } from '../preflight.ts';
+import { type PrismaCloudPreflightInput, runPreflight } from '../preflight.ts';
 import { envSecret } from '../secret.ts';
 
 /** A resolved container matching `input.container` after the boundary move — preflight narrows it with `prismaCloudContainerOf`. */
@@ -33,7 +34,7 @@ interface Row {
 /** What a row the test did not date reads as. */
 const DEFAULT_UPDATED_AT = '2026-01-01T00:00:00.000Z';
 
-/** What the fake platform stamps on a row preflight creates from the deploy shell. */
+/** What the fake platform stamps on a row preflight creates from a pool. */
 const CREATED_UPDATED_AT = '2026-03-03T00:00:00.000Z';
 
 interface FakeState {
@@ -175,17 +176,25 @@ const literalParamGraph = () =>
     }),
   );
 
-/** Sets env vars for the duration of `fn`, restoring whatever was there before. */
-async function withEnv<T>(values: Record<string, string>, fn: () => Promise<T> | T): Promise<T> {
-  const previous = new Map(Object.keys(values).map((k) => [k, process.env[k]]));
-  for (const [k, v] of Object.entries(values)) process.env[k] = v;
+const NO_POOLS: ConfigPools = { config: {}, secrets: {} };
+let pools: ConfigPools = NO_POOLS;
+
+/** Runs preflight with the pools `withPools` set, or empty ones. */
+const preflightWith = (
+  input: Omit<PrismaCloudPreflightInput, 'pools'>,
+  deps?: Parameters<typeof runPreflight>[1],
+) => runPreflight({ ...input, pools }, deps);
+
+/** Sets the pools preflight reads for the duration of `fn`. */
+async function withPools<T>(
+  values: { readonly config?: ConfigPool; readonly secrets?: SecretsPool },
+  fn: () => Promise<T> | T,
+): Promise<T> {
+  pools = { config: values.config ?? {}, secrets: values.secrets ?? {} };
   try {
     return await fn();
   } finally {
-    for (const [k, v] of previous) {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
+    pools = NO_POOLS;
   }
 }
 
@@ -194,8 +203,6 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
   beforeEach(() => {
     state = { gets: [], posts: [], rows: [], postStatus: 201 };
-    // The manifest secret must not leak from the ambient shell into "absent" tests.
-    delete process.env['STRIPE_SECRET_KEY'];
   });
 
   test('production: checks the production class; all-present passes with no writes', async () => {
@@ -203,7 +210,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
 
-    await runPreflight(
+    await preflightWith(
       {
         graph: secretGraph(),
         container: fakeContainer('proj', undefined),
@@ -223,7 +230,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
 
-    await runPreflight(
+    await preflightWith(
       { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
       { client: fakeClient(state) },
     );
@@ -237,7 +244,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: 'br-1' },
     ];
 
-    await runPreflight(
+    await preflightWith(
       { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
       { client: fakeClient(state) },
     );
@@ -250,7 +257,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: 'br-2' },
     ];
 
-    const error: unknown = await runPreflight(
+    const error: unknown = await preflightWith(
       { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
       { client: fakeClient(state) },
     ).catch((e: unknown) => e);
@@ -260,11 +267,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toEqual([]);
   });
 
-  test('fill-missing (named environment): absent-but-in-shell is POSTed as a preview branch override', async () => {
+  test('fill-missing (named environment): absent-but-in-the-secrets-pool is POSTed as a preview branch override', async () => {
     state.rows = [];
 
-    await withEnv({ STRIPE_SECRET_KEY: 'sk_live_fill' }, () =>
-      runPreflight(
+    await withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
+      preflightWith(
         { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
         { client: fakeClient(state) },
       ),
@@ -284,8 +291,8 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
   test('fill-missing (production): POSTed as a production template, no branchId', async () => {
     state.rows = [];
 
-    await withEnv({ STRIPE_SECRET_KEY: 'sk_live_fill' }, () =>
-      runPreflight(
+    await withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
+      preflightWith(
         {
           graph: secretGraph(),
           container: fakeContainer('proj', undefined),
@@ -300,13 +307,13 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     ]);
   });
 
-  test('present on the platform is never overwritten, even when also in the shell', async () => {
+  test('present on the platform is never overwritten, even when also in the secrets pool', async () => {
     state.rows = [
       { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
 
-    await withEnv({ STRIPE_SECRET_KEY: 'sk_live_ignored' }, () =>
-      runPreflight(
+    await withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_ignored' } }, () =>
+      preflightWith(
         {
           graph: secretGraph(),
           container: fakeContainer('proj', undefined),
@@ -319,10 +326,10 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toEqual([]);
   });
 
-  test('absent from both platform and shell fails, naming the missing name, service, and scope', async () => {
+  test('absent from both platform and secrets pool fails, naming the missing name, service, and scope', async () => {
     state.rows = [];
 
-    const error: unknown = await runPreflight(
+    const error: unknown = await preflightWith(
       {
         graph: secretGraph(),
         container: fakeContainer('proj', undefined),
@@ -345,7 +352,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
   test('quotes the environment in the printed add command so it is safe to paste', async () => {
     state.rows = [];
 
-    const error = await runPreflight(
+    const error = await preflightWith(
       {
         graph: secretGraph(),
         container: fakeContainer('proj', 'br_1'),
@@ -359,10 +366,10 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     );
   });
 
-  test('reports how many names it checked, filled from the shell, and found missing', async () => {
+  test('reports how many names it checked, filled from the pools, and found missing', async () => {
     const reports: Readonly<Record<string, number>>[] = [];
     const run = () =>
-      runPreflight(
+      preflightWith(
         {
           graph: secretGraph(),
           container: fakeContainer('proj', undefined),
@@ -372,7 +379,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
         { client: fakeClient(state) },
       );
 
-    await withEnv({ STRIPE_SECRET_KEY: 'sk_live_fill' }, run);
+    await withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, run);
     state.rows = [
       { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
@@ -388,7 +395,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
   });
 
   test('a graph with no pointer secrets is a pass-through — no platform calls at all', async () => {
-    await runPreflight(
+    await preflightWith(
       {
         graph: noSecretGraph(),
         container: fakeContainer('proj', undefined),
@@ -402,7 +409,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
   });
 
   test('a generated leaf is skipped — nothing to seed, no platform calls at all', async () => {
-    await runPreflight(
+    await preflightWith(
       {
         graph: generatedGraph(),
         container: fakeContainer('proj', undefined),
@@ -421,8 +428,8 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
     const reports: Readonly<Record<string, number>>[] = [];
 
-    await withEnv({ STRIPE_SECRET_KEY: 'sk_live_race' }, () =>
-      runPreflight(
+    await withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_race' } }, () =>
+      preflightWith(
         {
           graph: secretGraph(),
           container: fakeContainer('proj', undefined),
@@ -470,7 +477,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       },
     } as unknown as ManagementApiClient;
 
-    await runPreflight(
+    await preflightWith(
       {
         graph: secretGraph(),
         container: fakeContainer('proj', undefined),
@@ -487,7 +494,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
   test('the same platform name bound by two services is checked once and named in the failure', async () => {
     state.rows = [];
 
-    const error: unknown = await runPreflight(
+    const error: unknown = await preflightWith(
       {
         graph: sharedSecretGraph(),
         container: fakeContainer('proj', undefined),
@@ -503,11 +510,10 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.gets).toHaveLength(1);
   });
 
-  test('env-sourced param: missing on the platform and absent from the shell fails, naming the platform var', async () => {
-    delete process.env['APP_ORIGIN'];
+  test('env-sourced param: missing on the platform and absent from the config pool fails, naming the platform var', async () => {
     state.rows = [];
 
-    const error: unknown = await runPreflight(
+    const error: unknown = await preflightWith(
       {
         graph: paramGraph(),
         container: fakeContainer('proj', undefined),
@@ -523,11 +529,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toEqual([]);
   });
 
-  test('env-sourced param: absent on the platform but present in the shell is shell-filled', async () => {
+  test('env-sourced param: absent on the platform but present in the config pool is filled from it', async () => {
     state.rows = [];
 
-    await withEnv({ APP_ORIGIN: 'https://preview.example.com' }, () =>
-      runPreflight(
+    await withPools({ config: { APP_ORIGIN: 'https://preview.example.com' } }, () =>
+      preflightWith(
         {
           graph: paramGraph(),
           container: fakeContainer('proj', undefined),
@@ -550,7 +556,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
   test('env-sourced param: present on the platform passes with no writes', async () => {
     state.rows = [{ projectId: 'proj', class: 'production', key: 'APP_ORIGIN', branchId: null }];
 
-    await runPreflight(
+    await preflightWith(
       {
         graph: paramGraph(),
         container: fakeContainer('proj', undefined),
@@ -563,7 +569,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
   });
 
   test('a literal-bound param never reaches the platform — no calls at all', async () => {
-    await runPreflight(
+    await preflightWith(
       {
         graph: literalParamGraph(),
         container: fakeContainer('proj', undefined),
@@ -577,8 +583,6 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
   });
 
   test('a secret only a resolve() dependency lists is checked, and fails when missing', async () => {
-    delete process.env['A'];
-    delete process.env['B'];
     state.rows = [{ projectId: 'proj', class: 'production', key: 'A', branchId: null }];
     const graph = Load(
       module('app', ({ environment, provision }) => {
@@ -594,7 +598,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       { environment: { name: 'production' } },
     );
 
-    const error: unknown = await runPreflight(
+    const error: unknown = await preflightWith(
       { graph, container: fakeContainer('proj', undefined), environment: 'production' },
       { client: fakeClient(state) },
     ).catch((e: unknown) => e);
@@ -606,7 +610,6 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
   });
 
   test("a secret in a module's input that no service receives is checked, named as used by the module", async () => {
-    delete process.env['MAIL_KEY'];
     const mail = module('mail', { input: type({ 'key?': secretString() }) }, () => {});
     const graph = Load(
       module('app', ({ provision }) => {
@@ -614,7 +617,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       }),
     );
 
-    const error: unknown = await runPreflight(
+    const error: unknown = await preflightWith(
       { graph, container: fakeContainer('proj', undefined), environment: 'production' },
       { client: fakeClient(state) },
     ).catch((e: unknown) => e);
@@ -624,7 +627,6 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
   });
 
   test("a secret a service receives through a module's input is named as used by the service", async () => {
-    delete process.env['MAIL_KEY'];
     const mail = module(
       'mail',
       { input: type({ key: secretString() }) },
@@ -641,7 +643,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       }),
     );
 
-    const error: unknown = await runPreflight(
+    const error: unknown = await preflightWith(
       { graph, container: fakeContainer('proj', undefined), environment: 'production' },
       { client: fakeClient(state) },
     ).catch((e: unknown) => e);
@@ -651,7 +653,6 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
   });
 
   test("a secret a resolve() in a resource's props lists is named as used by the resource", async () => {
-    delete process.env['SITE_KEY'];
     const site = resource({
       name: 'site',
       extension: 'test/pack',
@@ -664,7 +665,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       }),
     );
 
-    const error: unknown = await runPreflight(
+    const error: unknown = await preflightWith(
       { graph, container: fakeContainer('proj', undefined), environment: 'production' },
       { client: fakeClient(state) },
     ).catch((e: unknown) => e);
@@ -681,7 +682,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
         { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: null },
       ];
 
-      await runPreflight(
+      await preflightWith(
         { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
         { client: fakeClient(state) },
       );
@@ -697,7 +698,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       state.cursorStuck = true;
 
       await expect(
-        runPreflight(
+        preflightWith(
           {
             graph: secretGraph(),
             container: fakeContainer('proj', undefined),
@@ -713,7 +714,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       state.cursorRunaway = true;
 
       await expect(
-        runPreflight(
+        preflightWith(
           {
             graph: secretGraph(),
             container: fakeContainer('proj', undefined),
@@ -729,7 +730,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       state.cursorMissing = true;
 
       await expect(
-        runPreflight(
+        preflightWith(
           {
             graph: secretGraph(),
             container: fakeContainer('proj', undefined),
@@ -753,7 +754,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
         },
       ];
 
-      const timestamps = await runPreflight(
+      const timestamps = await preflightWith(
         {
           graph: secretGraph(),
           container: fakeContainer('proj', undefined),
@@ -783,7 +784,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
         },
       ];
 
-      const timestamps = await runPreflight(
+      const timestamps = await preflightWith(
         { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'feature' },
         { client: fakeClient(state) },
       );
@@ -809,7 +810,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
         },
       ];
 
-      const timestamps = await runPreflight(
+      const timestamps = await preflightWith(
         { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'feature' },
         { client: fakeClient(state) },
       );
@@ -837,7 +838,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
         },
       ];
 
-      const timestamps = await runPreflight(
+      const timestamps = await preflightWith(
         { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'feature' },
         { client: fakeClient(state) },
       );
@@ -845,11 +846,11 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       expect(timestamps.get('STRIPE_SECRET_KEY')).toBe('2026-05-05T12:00:00.000Z');
     });
 
-    test('a name preflight fills from the shell reports the created row\u2019s time', async () => {
+    test('a name preflight fills from the secrets pool reports the created row\u2019s time', async () => {
       state.rows = [];
 
-      const timestamps = await withEnv({ STRIPE_SECRET_KEY: 'sk_live_fill' }, () =>
-        runPreflight(
+      const timestamps = await withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
+        preflightWith(
           {
             graph: secretGraph(),
             container: fakeContainer('proj', undefined),
@@ -866,8 +867,8 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       state.rows = [];
       state.postStatus = 409;
 
-      const timestamps = await withEnv({ STRIPE_SECRET_KEY: 'sk_live_fill' }, () =>
-        runPreflight(
+      const timestamps = await withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
+        preflightWith(
           {
             graph: secretGraph(),
             container: fakeContainer('proj', undefined),
@@ -881,7 +882,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     });
 
     test('a graph with nothing to check hands back an empty map', async () => {
-      const timestamps = await runPreflight(
+      const timestamps = await preflightWith(
         {
           graph: noSecretGraph(),
           container: fakeContainer('proj', undefined),
@@ -896,15 +897,17 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     test('no VALUE is ever handed back — the API returns none and preflight asks for none', async () => {
       state.rows = [];
 
-      const timestamps = await withEnv({ STRIPE_SECRET_KEY: 'sk_live_sentinel' }, () =>
-        runPreflight(
-          {
-            graph: secretGraph(),
-            container: fakeContainer('proj', undefined),
-            environment: 'production',
-          },
-          { client: fakeClient(state) },
-        ),
+      const timestamps = await withPools(
+        { secrets: { STRIPE_SECRET_KEY: 'sk_live_sentinel' } },
+        () =>
+          preflightWith(
+            {
+              graph: secretGraph(),
+              container: fakeContainer('proj', undefined),
+              environment: 'production',
+            },
+            { client: fakeClient(state) },
+          ),
       );
 
       expect(JSON.stringify([...timestamps])).not.toContain('sk_live_sentinel');
@@ -938,7 +941,7 @@ describe('runPreflight — a COMPOSER_ key that changes owner in the move to ful
   });
 
   const preflight = () =>
-    runPreflight(
+    preflightWith(
       { graph: clashGraph(), container: fakeContainer('proj', 'br_1'), environment: 'pr-1' },
       { client: fakeClient(state) },
     );
@@ -962,7 +965,7 @@ describe('runPreflight — a COMPOSER_ key that changes owner in the move to ful
   test('quotes the environment so the printed command is safe to paste', async () => {
     state.rows = [row('COMPOSER_SHOP_X_ORIGIN')];
 
-    const error = await runPreflight(
+    const error = await preflightWith(
       {
         graph: clashGraph(),
         container: fakeContainer('proj', 'br_1'),
@@ -1018,7 +1021,7 @@ describe('runPreflight — a chain of COMPOSER_ keys that change owner', () => {
     branchId: null,
   });
   const preflight = (state: FakeState) =>
-    runPreflight(
+    preflightWith(
       {
         graph: chainGraph(),
         container: fakeContainer('proj', undefined),
@@ -1054,5 +1057,99 @@ describe('runPreflight — a chain of COMPOSER_ keys that change owner', () => {
     };
 
     await preflight(state);
+  });
+});
+
+describe('runPreflight — values come from the pools, never the shell', () => {
+  let state: FakeState;
+
+  beforeEach(() => {
+    state = { gets: [], posts: [], rows: [], postStatus: 201 };
+  });
+
+  const production = { container: fakeContainer('proj', undefined), environment: 'production' };
+
+  /** A name bound both as a secret in the service's input and as an env-sourced param. */
+  const sharedNameGraph = () =>
+    Load(
+      module('app', ({ provision }) => {
+        provision(compute({ name: 'web', deps: {}, input: anySchema, build }), {
+          id: 'web',
+          input: { key: envSecret('SHARED') },
+          params: { port: envParam('SHARED') },
+        });
+      }),
+    );
+
+  async function withShell<T>(values: Record<string, string>, fn: () => Promise<T>): Promise<T> {
+    for (const [name, value] of Object.entries(values)) process.env[name] = value;
+    try {
+      return await fn();
+    } finally {
+      for (const name of Object.keys(values)) delete process.env[name];
+    }
+  }
+
+  test('a missing secret is filled from the secrets pool, not the shell', async () => {
+    await withShell({ STRIPE_SECRET_KEY: 'shell' }, () =>
+      withPools({ secrets: { STRIPE_SECRET_KEY: 'pool' } }, () =>
+        preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) }),
+      ),
+    );
+
+    expect(state.posts).toEqual([
+      { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', value: 'pool' },
+    ]);
+  });
+
+  test('a missing secret the secrets pool lacks fails, even when the shell has it', async () => {
+    const error = await withShell({ STRIPE_SECRET_KEY: 'shell' }, () =>
+      preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) }).catch(
+        (e: unknown) => e,
+      ),
+    );
+
+    expect(String(error)).toContain(
+      'Deploy failed. 1 required setting has no value:\n  - STRIPE_SECRET_KEY  (used by service "app.ingest")',
+    );
+    expect(state.posts).toEqual([]);
+  });
+
+  test('a missing env-sourced param is filled from the config pool', async () => {
+    await withShell({ APP_ORIGIN: 'shell' }, () =>
+      withPools({ config: { APP_ORIGIN: 'https://pool.example' } }, () =>
+        preflightWith({ graph: paramGraph(), ...production }, { client: fakeClient(state) }),
+      ),
+    );
+
+    expect(state.posts).toEqual([
+      { projectId: 'proj', class: 'production', key: 'APP_ORIGIN', value: 'https://pool.example' },
+    ]);
+  });
+
+  test('a name bound as a secret and as an env-sourced param is filled from the secrets pool', async () => {
+    await withPools(
+      { secrets: { SHARED: 'from-secrets' }, config: { SHARED: 'from-config' } },
+      () =>
+        preflightWith({ graph: sharedNameGraph(), ...production }, { client: fakeClient(state) }),
+    );
+
+    expect(state.posts).toEqual([
+      { projectId: 'proj', class: 'production', key: 'SHARED', value: 'from-secrets' },
+    ]);
+  });
+
+  test('an env-sourced param whose config pool value is not text fails naming its kind', async () => {
+    const error = await withPools({ config: { APP_ORIGIN: 4 } }, () =>
+      preflightWith({ graph: paramGraph(), ...production }, { client: fakeClient(state) }).catch(
+        (e: unknown) => e,
+      ),
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(
+      'The config pool holds a number at "APP_ORIGIN", not text, so preflight cannot set the platform variable envParam(\'APP_ORIGIN\') of service "app.web" reads. Make the adapter return a string.',
+    );
+    expect(state.posts).toEqual([]);
   });
 });
