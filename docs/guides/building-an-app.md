@@ -430,6 +430,20 @@ envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
   `generatedParam()`, `''` for a plain `generatedParam()`, and
   `https://origin.invalid` for `serviceOrigin()`. A schema that transforms
   such a field fails the deploy.
+- `field()`, from `@prisma/composer/arktype` or `@prisma/composer/zod`,
+  wraps one leaf field's schema: `type({ from: field(type('string')) })` or
+  `z.object({ from: field(z.string()) })`. A wrapped field also accepts a
+  plain pointer, which stands for a value known only at boot such as
+  `serviceOrigin()`, so in the body `input.from` is typed
+  `Value<string | Pointer<string>>`. Pass it on into another wrapped field or
+  a service's input; a plain `string` field refuses it at compile time. For a
+  value that is not a pointer, a wrapped field reports the plain field's
+  error, except that ArkType reports a missing key as
+  `from must be a string or an object (was missing)`. Wrap leaves, never an
+  object schema, and with ArkType put a default outside the wrapper:
+  `field(type('string')).default('x')`. With another Standard Schema library,
+  `Pointer`, `isPlainPointer()` and `isSecretPointer()` from
+  `@prisma/composer` are what `field()` and `secretString()` check.
 - A body reaches only the keys every member of a union schema has, and has no
   element access into an array field. To narrow, forward the whole `input`,
   or narrow inside a `resolve()` function.
@@ -602,6 +616,11 @@ const schedulerInput = type({
 
 compute({ name: 'scheduler', input: schedulerInput, /* ... */ });
 ```
+
+With Zod, import `secretString` from `@prisma/composer/zod` instead:
+`z.object({ apiKey: secretString() })`. With another Standard Schema
+library, accept a value for which `isSecretString()` or `isSecretPointer()`
+from `@prisma/composer` is true.
 
 Because the input is a real schema, legality can be conditional — "no
 `stripeSecretKey` unless billing is on" is a union, not a framework feature,
