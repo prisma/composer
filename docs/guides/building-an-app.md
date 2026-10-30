@@ -817,9 +817,9 @@ the platform, with a message that names the binding the value sits in, such as
 - `fn` returns a value. List that value as a dependency instead; `fn`
   receives its real value.
 - `fn` returns a source, such as `envSecret()` called inside `fn`.
-- `fn` lists a value known only at boot, or a field whose real value holds
-  one ([below](#sources-in-resolve)).
-- `fn` lists `envParam('NAME')` and the variable is unset or empty.
+- `resolve()` lists a value known only at boot, or a field whose real value
+  holds one ([below](#sources-in-resolve)).
+- `resolve()` lists `envParam('NAME')` and the variable is unset or empty.
 - `fn` returns a Promise, a function, a class instance or anything else
   that is not plain data.
 - A value depends on itself.
@@ -888,12 +888,17 @@ the result of a call that fails as `Value<unknown>`. The compiler cannot see
 every case: a field typed `unknown`, a schema without type information and a
 cast all compile. So the deploy also refuses a dependency whose real value is
 a value known only at boot, or holds one at any depth, before anything
-reaches the platform. The message names the field and says to declare it
-plain:
+reaches the platform. The message names the field and says what to do
+instead. For a wrapped field, it says to declare the field plain:
 
 ```text
 The resolve() function for input key "url" of service "shop.email.service" lists input.from of module "shop.email", whose real value is serviceOrigin('shop.web'), a value known only at boot. A resolve() dependency must be a deploy-time value. To compute with input.from, declare it plain, without field(), and bind it to deploy-time data.
 ```
+
+For a secret field, the message says to pass the field on into a binding and
+read it in the service. For a source listed directly, such as `envSecret()`,
+it says to bind the source directly into the input of the service that reads
+it.
 
 To use a different secret in each environment, give the secret one name and
 set a different value for it on each environment, instead of choosing between

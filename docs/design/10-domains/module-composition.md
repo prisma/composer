@@ -178,7 +178,10 @@ An input field is accepted in four places:
 - **a `resolve()` dependency**, for a plain field: `fn` receives the real
   value. Listing a field wrapped with `field()` or typed `secretString()`
   fails to compile, and Load refuses a listed field whose real value holds a
-  pointer, naming it and saying to declare it plain;
+  pointer, naming it and saying what to do instead: declare a wrapped field
+  plain, or pass a secret field on into a binding and read it in the service.
+  A source listed directly is refused too, with advice to bind it into the
+  service's input;
 - **a service param or a resource prop**, when its real-value type is plain
   data: not optional, and not a secret.
 
