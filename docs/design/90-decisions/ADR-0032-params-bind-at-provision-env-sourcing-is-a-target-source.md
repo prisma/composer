@@ -8,6 +8,8 @@ Amended 2026-10-30 (module-input project, fourth slice): `envParam('NAME')` read
 
 Amended 2026-10-30 (module-input project, fifth slice): `paramNeed()`, `ParamNeed`, `ParamNeeds` and `ParamNeedBindings` are removed, with the module `params` slot. A module takes a value as a field of its `input`, which takes a literal as well as a source, so the rule that a module param slot takes only a source is gone with the slot. A service's per-key `params`, `paramSource()` and `envParam()` are unchanged.
 
+Amended 2026-10-30 (module-input project, seventh slice): `paramSource()` no longer takes `sentinel`, which the third-slice note above lists. Its `redacted` option alone sets the pointer's kind: `true` makes the source a secret pointer, and without it the source is a plain pointer ([ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)).
+
 ## Decision
 
 A config param can be bound at `provision()` time — to a literal value or to a
