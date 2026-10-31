@@ -254,7 +254,7 @@ describe('convergeInProcess', () => {
     expect(second).toEqual({ kind: 'refused', reason: 'already-running' });
   });
 
-  test('restores the environment even when the working directory cannot be restored', async () => {
+  test('restores the environment and keeps the outcome when the working directory cannot be restored', async () => {
     const before = process.cwd();
     const doomed = tmpDir();
     process.chdir(doomed);
@@ -274,7 +274,7 @@ describe('convergeInProcess', () => {
         request(config, {}, { cwd, env: { COMPOSER_TEST_TOKEN: 'tok' } }),
       );
 
-      expect(outcome.kind).toBe('failed');
+      expect(outcome).toEqual({ kind: 'applied' });
       expect(process.env['COMPOSER_TEST_TOKEN']).toBeUndefined();
     } finally {
       process.chdir(before);

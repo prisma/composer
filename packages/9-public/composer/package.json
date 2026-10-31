@@ -8,6 +8,7 @@
     "./config": "./dist/config.mjs",
     "./internal/pools": "./dist/internal-pools.mjs",
     "./internal/converge": "./dist/internal-converge.mjs",
+    "./internal/converge-contract": "./dist/internal-converge-contract.mjs",
     "./control": "./dist/control.mjs",
     "./deploy": "./dist/deploy.mjs",
     "./local-target": "./dist/local-target.mjs",

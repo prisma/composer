@@ -161,7 +161,8 @@ const flag = blindCast<
 /**
  * Sets the process state Alchemy reads for the length of `run`, and restores
  * it on every exit path: the variables in `env`, then the working directory.
- * A directory that cannot be restored never leaves a variable behind.
+ * A directory that cannot be restored never leaves a variable behind and
+ * never changes what `run` returned.
  */
 async function withProcessState<T>(
   env: Readonly<Record<string, string | undefined>>,
@@ -186,7 +187,13 @@ async function withProcessState<T>(
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }
-    if (changedDirectory) process.chdir(previousCwd);
+    if (changedDirectory) {
+      try {
+        process.chdir(previousCwd);
+      } catch {
+        // The old directory is gone, so there is nowhere to return to; the outcome stands.
+      }
+    }
   }
 }
 

@@ -4,8 +4,9 @@
  * `prisma.config.ts`, the file its extensions are imported from. The stack,
  * Alchemy and the providers then share one copy of `alchemy` and `effect`
  * even when the `prisma` host pins another Composer (ADR-0050, ADR-0064).
- * The host calls that copy across a version boundary, and Composer's
- * packages release in lockstep, so the two versions must be equal.
+ * The host calls that copy across a version boundary, so the two must speak
+ * the same converge contract (`CONVERGE_CONTRACT`); their package versions
+ * may differ.
  */
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -15,9 +16,11 @@ import type { lower } from '@internal/core/deploy';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
 import manifest from '../package.json' with { type: 'json' };
+import { CONVERGE_CONTRACT } from './converge-contract.ts';
 import type { Converge } from './converge-in-process.ts';
 
 const ENTRY = '@prisma/composer/internal/converge';
+const CONTRACT_ENTRY = '@prisma/composer/internal/converge-contract';
 
 /** The Composer version this host runs; every Composer package carries the same one. */
 export const HOST_COMPOSER_VERSION: string = manifest.version;
@@ -56,37 +59,9 @@ function installedVersion(require: NodeJS.Require): string | undefined {
   }
 }
 
-/**
- * The app's converge, from the install `appDir` resolves. Raises
- * DEPS.CONVERGE_UNRESOLVABLE when it is missing or predates the in-process
- * converge, and DEPS.CONVERGE_VERSION_MISMATCH when its version is not
- * `hostVersion`.
- */
-export async function loadAppConverge(
-  appDir: string,
-  hostVersion: string = HOST_COMPOSER_VERSION,
-): Promise<AppConverge> {
-  const require = createRequire(path.join(appDir, 'package.json'));
-  let file: string;
+async function importFile(appDir: string, file: string): Promise<Record<string, unknown>> {
   try {
-    file = require.resolve(ENTRY);
-  } catch (error) {
-    throw unresolvable(appDir, `${ENTRY} does not resolve.`, error);
-  }
-  const appVersion = installedVersion(require);
-  if (appVersion !== hostVersion) {
-    throw new CliStructuredError(
-      'DEPS.CONVERGE_VERSION_MISMATCH',
-      `The app's @prisma/composer is ${appVersion ?? 'of an unknown version'}, and the \`prisma\` CLI runs Composer ${hostVersion}.`,
-      {
-        why: "Deploy calls the app's @prisma/composer from the CLI's Composer, and Composer's packages work together only at one version.",
-        fix: `Install @prisma/composer ${hostVersion} in the app, or a \`prisma\` CLI that runs Composer ${appVersion ?? "the app's version"}, so the two versions match.`,
-      },
-    );
-  }
-  let loaded: Record<string, unknown>;
-  try {
-    loaded = await import(pathToFileURL(file).href);
+    return await import(pathToFileURL(file).href);
   } catch (error) {
     throw unresolvable(
       appDir,
@@ -94,12 +69,63 @@ export async function loadAppConverge(
       error,
     );
   }
-  const { lower: appLower, convergeInProcess } = loaded;
+}
+
+function contractMismatch(
+  host: { readonly contract: number; readonly version: string },
+  app: { readonly contract: number; readonly version: string | undefined },
+): CliStructuredError {
+  const appVersion = app.version ?? 'an unknown version';
+  const update =
+    app.contract < host.contract
+      ? `Upgrade the app's @prisma/composer to a release that speaks converge contract ${host.contract}, such as ${host.version}.`
+      : `Upgrade the \`prisma\` CLI to one that runs a Composer speaking converge contract ${app.contract}, such as ${appVersion}.`;
+  return new CliStructuredError(
+    'DEPS.CONVERGE_CONTRACT_MISMATCH',
+    `The app's @prisma/composer ${appVersion} speaks converge contract ${app.contract}, and the \`prisma\` CLI's Composer ${host.version} speaks contract ${host.contract}.`,
+    {
+      why: "Deploy calls the app's @prisma/composer from the CLI's Composer, and the two read each other's data only when they speak the same converge contract.",
+      fix: update,
+    },
+  );
+}
+
+/**
+ * The app's converge, from the install `appDir` resolves. Reads the app's
+ * converge contract before loading anything else. Raises
+ * DEPS.CONVERGE_UNRESOLVABLE when the install is missing or predates the
+ * in-process converge, and DEPS.CONVERGE_CONTRACT_MISMATCH when it speaks
+ * another contract than `host`.
+ */
+export async function loadAppConverge(
+  appDir: string,
+  host: { readonly contract: number; readonly version: string } = {
+    contract: CONVERGE_CONTRACT,
+    version: HOST_COMPOSER_VERSION,
+  },
+): Promise<AppConverge> {
+  const require = createRequire(path.join(appDir, 'package.json'));
+  let contractFile: string;
+  let file: string;
+  try {
+    contractFile = require.resolve(CONTRACT_ENTRY);
+    file = require.resolve(ENTRY);
+  } catch (error) {
+    throw unresolvable(appDir, `${CONTRACT_ENTRY} or ${ENTRY} does not resolve.`, error);
+  }
+  const { CONVERGE_CONTRACT: appContract } = await importFile(appDir, contractFile);
+  if (typeof appContract !== 'number') {
+    throw unresolvable(appDir, `${contractFile} exports no CONVERGE_CONTRACT.`);
+  }
+  if (appContract !== host.contract) {
+    throw contractMismatch(host, { contract: appContract, version: installedVersion(require) });
+  }
+  const { lower: appLower, convergeInProcess } = await importFile(appDir, file);
   if (typeof appLower !== 'function' || typeof convergeInProcess !== 'function') {
     throw unresolvable(appDir, `${file} exports no lower and convergeInProcess.`);
   }
   return blindCast<
     AppConverge,
-    "the typeof checks above prove both are functions, and the version check proves the entry is this package's own src/exports/converge.ts at this version"
+    "the typeof checks above prove both are functions, and the contract check proves the entry speaks this host's converge contract"
   >({ lower: appLower, converge: convergeInProcess });
 }

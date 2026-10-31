@@ -8,6 +8,7 @@
     "./config": "./dist/config.mjs",
     "./control": "./dist/control.mjs",
     "./converge": "./dist/converge.mjs",
+    "./converge-contract": "./dist/converge-contract.mjs",
     "./family": "./dist/family.mjs",
     "./pools": "./dist/pools.mjs",
     "./report": "./dist/report.mjs",

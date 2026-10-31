@@ -11,6 +11,7 @@ export default defineConfig({
     pools: 'src/exports/pools.ts',
     control: 'src/exports/control.ts',
     converge: 'src/exports/converge.ts',
+    'converge-contract': 'src/exports/converge-contract.ts',
     family: 'src/exports/family.ts',
     testing: 'src/exports/testing.ts',
   },

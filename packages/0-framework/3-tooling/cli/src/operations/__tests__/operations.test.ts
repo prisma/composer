@@ -31,6 +31,7 @@ import * as Layer from 'effect/Layer';
 import { type AppConverge, HOST_COMPOSER_VERSION } from '../../app-converge.ts';
 import type { ComposerConfigSource } from '../../composer-config.ts';
 import { dotenv } from '../../config-adapters.ts';
+import { CONVERGE_CONTRACT } from '../../converge-contract.ts';
 import type { Converge, ConvergeOutcome, ConvergeRequest } from '../../converge-in-process.ts';
 import { DEPLOYMENT_RESULT_FILE_ENV, engineFailureFilePath } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
@@ -889,8 +890,16 @@ describe('deploy() credentials, app converge and redaction', () => {
         name: '@prisma/composer',
         version: HOST_COMPOSER_VERSION,
         type: 'module',
-        exports: { './internal/converge': './converge.mjs', './package.json': './package.json' },
+        exports: {
+          './internal/converge': './converge.mjs',
+          './internal/converge-contract': './contract.mjs',
+          './package.json': './package.json',
+        },
       }),
+    );
+    fs.writeFileSync(
+      path.join(pkg, 'contract.mjs'),
+      `export const CONVERGE_CONTRACT = ${String(CONVERGE_CONTRACT)};`,
     );
     fs.writeFileSync(
       path.join(pkg, 'converge.mjs'),
