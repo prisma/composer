@@ -28,7 +28,7 @@ import type {
 } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import * as Layer from 'effect/Layer';
-import type { DeployEngine } from '../../app-engine.ts';
+import { type AppConverge, HOST_COMPOSER_VERSION } from '../../app-converge.ts';
 import type { ComposerConfigSource } from '../../composer-config.ts';
 import { dotenv } from '../../config-adapters.ts';
 import type { Converge, ConvergeOutcome, ConvergeRequest } from '../../converge-in-process.ts';
@@ -202,8 +202,8 @@ const fakeAssembler = async (node: ServiceNode) => ({
 
 const APPLIED: ConvergeOutcome = { kind: 'applied' };
 
-/** Core's own `lower` with a stand-in for Alchemy's plan and apply: deploy tests never run the real engine here. */
-function engineWith(converge: Converge): DeployEngine {
+/** Core's own `lower` with a stand-in for Alchemy's plan and apply: deploy tests never run the real Alchemy here. */
+function appConverge(converge: Converge): AppConverge {
   return { lower, converge };
 }
 
@@ -217,7 +217,7 @@ afterAll(() => {
   else process.env['PRISMA_SERVICE_TOKEN'] = previousServiceToken;
 });
 
-/** Stands in for Alchemy's plan and apply: deploy tests never run the real engine here. */
+/** Stands in for Alchemy's plan and apply: deploy tests never run the real Alchemy here. */
 const applied: Converge = async () => APPLIED;
 
 function recordingConverge(
@@ -246,7 +246,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(recordingConverge(requests)),
+          converge: appConverge(recordingConverge(requests)),
           alchemy: async () => {
             spawned = true;
             return { exitCode: 0, signal: null };
@@ -293,7 +293,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(async () => {
+          converge: appConverge(async () => {
             ran = true;
             return APPLIED;
           }),
@@ -322,7 +322,7 @@ describe('deploy()', () => {
             ...(input.entry === undefined ? {} : { entry: input.entry }),
             cwd: app.dir,
           },
-          { runAssembler: fakeAssembler, engine: engineWith(applied) },
+          { runAssembler: fakeAssembler, converge: appConverge(applied) },
         ),
       );
 
@@ -354,7 +354,7 @@ describe('deploy()', () => {
         { config: composerConfig(fakeConfig()), cwd: app.dir },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(async () => {
+          converge: appConverge(async () => {
             ran = true;
             return APPLIED;
           }),
@@ -384,7 +384,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(recordingConverge(requests)),
+          converge: appConverge(recordingConverge(requests)),
         },
       ),
     );
@@ -411,7 +411,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(applied),
+          converge: appConverge(applied),
         },
       ),
     );
@@ -442,7 +442,7 @@ describe('deploy()', () => {
             assembled = true;
             return fakeAssembler(node);
           },
-          engine: engineWith(async () => {
+          converge: appConverge(async () => {
             convergeRan = true;
             return APPLIED;
           }),
@@ -469,7 +469,7 @@ describe('deploy()', () => {
           { config, entry: app.entryPath, cwd: app.dir },
           {
             runAssembler: fakeAssembler,
-            engine: engineWith(async () => {
+            converge: appConverge(async () => {
               convergeRan = true;
               return APPLIED;
             }),
@@ -588,7 +588,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(async () => {
+          converge: appConverge(async () => {
             convergeRan = true;
             return APPLIED;
           }),
@@ -616,7 +616,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(async () => ({
+          converge: appConverge(async () => ({
             kind: 'failed',
             reasons: [
               {
@@ -666,7 +666,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(async () => ({
+          converge: appConverge(async () => ({
             kind: 'failed',
             reasons: [
               {
@@ -705,7 +705,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(recordingConverge(requests, { kind: 'interrupted' })),
+          converge: appConverge(recordingConverge(requests, { kind: 'interrupted' })),
         },
       ),
     );
@@ -796,7 +796,7 @@ function stepLine(event: DeployEvent): string {
   return event.kind === 'step-started' ? `started ${name}` : `finished ${name} ${event.outcome}`;
 }
 
-describe('deploy() credentials, engine and redaction', () => {
+describe('deploy() credentials, app converge and redaction', () => {
   const deployWith = (
     app: { dir: string; entryPath: string },
     deps: Parameters<typeof deployWithDeps>[1],
@@ -824,7 +824,7 @@ describe('deploy() credentials, engine and redaction', () => {
     const result = await deployWith(
       app,
       {
-        engine: engineWith(recordingConverge(requests)),
+        converge: appConverge(recordingConverge(requests)),
         credentials: { workspaceId: 'ws_1', client: {} },
       },
       fakeConfig({}, { calls: containerCalls }),
@@ -841,7 +841,7 @@ describe('deploy() credentials, engine and redaction', () => {
     const saved = process.env['PRISMA_SERVICE_TOKEN'];
     delete process.env['PRISMA_SERVICE_TOKEN'];
     try {
-      const result = await deployWith(app, { engine: engineWith(applied) });
+      const result = await deployWith(app, { converge: appConverge(applied) });
       if (result.ok) throw new Error('expected a failure');
       expect(result.failure.code).toBe('DEPLOY.SERVICE_TOKEN_REQUIRED');
     } finally {
@@ -854,7 +854,7 @@ describe('deploy() credentials, engine and redaction', () => {
     const requests: ConvergeRequest[] = [];
 
     await deployWith(app, {
-      engine: engineWith(recordingConverge(requests)),
+      converge: appConverge(recordingConverge(requests)),
       credentials: { workspaceId: undefined, client: {}, serviceToken: 'tok-1234567890' },
     });
 
@@ -864,15 +864,66 @@ describe('deploy() credentials, engine and redaction', () => {
     });
   });
 
-  test('an app with no installed @prisma/composer fails with DEPS.ENGINE_UNRESOLVABLE before any container is ensured', async () => {
+  test('an app with no installed @prisma/composer fails with DEPS.CONVERGE_UNRESOLVABLE before any container is ensured', async () => {
     const app = makeAppDir();
     const containerCalls: ContainerCall[] = [];
 
     const result = await deployWith(app, {}, fakeConfig({}, { calls: containerCalls }));
 
     if (result.ok) throw new Error('expected a failure');
-    expect(result.failure.code).toBe('DEPS.ENGINE_UNRESOLVABLE');
+    expect(result.failure.code).toBe('DEPS.CONVERGE_UNRESOLVABLE');
     expect(containerCalls).toEqual([]);
+  });
+
+  test("the app's install is found beside its prisma.config.ts, not in cwd", async () => {
+    const app = makeAppDir();
+    const configDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'composer-config-')));
+    tmpDirs.push(configDir);
+    fs.writeFileSync(path.join(configDir, 'package.json'), JSON.stringify({ name: 'app' }));
+    fs.writeFileSync(path.join(configDir, 'prisma.config.ts'), 'export default {};\n');
+    const pkg = path.join(configDir, 'node_modules', '@prisma', 'composer');
+    fs.mkdirSync(pkg, { recursive: true });
+    fs.writeFileSync(
+      path.join(pkg, 'package.json'),
+      JSON.stringify({
+        name: '@prisma/composer',
+        version: HOST_COMPOSER_VERSION,
+        type: 'module',
+        exports: { './internal/converge': './converge.mjs', './package.json': './package.json' },
+      }),
+    );
+    fs.writeFileSync(
+      path.join(pkg, 'converge.mjs'),
+      "export const lower = () => ({}); export const convergeInProcess = async (request) => ({ kind: 'applied', cwd: request.cwd });",
+    );
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: { value: fakeConfig(), file: path.join(configDir, 'prisma.config.ts') },
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+        },
+        { runAssembler: fakeAssembler },
+      ),
+    );
+
+    if (!result.ok) throw result.failure;
+  });
+
+  test('a converge that rejects instead of returning an outcome is DEPLOY.ENGINE_FAILED', async () => {
+    const app = makeAppDir();
+
+    const result = await deployWith(app, {
+      converge: appConverge(async () => {
+        throw new TypeError('outcome.reasons is not iterable');
+      }),
+    });
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure.code).toBe('DEPLOY.ENGINE_FAILED');
+    expect(result.failure.message).toContain('outcome.reasons is not iterable');
   });
 
   test('the token never reaches a message event, the engine failure, or a stack-building error', async () => {
@@ -885,7 +936,7 @@ describe('deploy() credentials, engine and redaction', () => {
       app,
       {
         credentials,
-        engine: engineWith(async (request) => {
+        converge: appConverge(async (request) => {
           request.onEvent?.({ kind: 'log', severity: 'warn', text: `retrying with ${token}` });
           request.onEvent?.({
             kind: 'resource',
@@ -906,7 +957,7 @@ describe('deploy() credentials, engine and redaction', () => {
       app,
       {
         credentials,
-        engine: {
+        converge: {
           lower: () => {
             throw new Error(`state store refused ${token}`);
           },
@@ -927,7 +978,7 @@ describe('deploy() credentials, engine and redaction', () => {
   test('a refused converge is DEPLOY.CONVERGE_RUNNING or DEPLOY.WORKER_THREAD', async () => {
     const app = makeAppDir();
     const refused = (reason: 'already-running' | 'worker-thread') =>
-      deployWith(app, { engine: engineWith(async () => ({ kind: 'refused', reason })) });
+      deployWith(app, { converge: appConverge(async () => ({ kind: 'refused', reason })) });
 
     const running = await refused('already-running');
     const worker = await refused('worker-thread');
@@ -965,7 +1016,7 @@ describe('deploy() step events', () => {
             report?.({ bytes: 4096 });
             return fakeAssembler(node);
           },
-          engine: engineWith(applied),
+          converge: appConverge(applied),
         },
       ),
     );
@@ -1023,7 +1074,7 @@ describe('deploy() step events', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(async (request) => {
+          converge: appConverge(async (request) => {
             request.onEvent?.(resource('pending', 'pending'));
             request.onEvent?.(resource('creating', 'running'));
             request.onEvent?.({ kind: 'log', severity: 'info', text: 'uploading 3 files' });
@@ -1064,7 +1115,7 @@ describe('deploy() step events', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(async (request) => {
+          converge: appConverge(async (request) => {
             request.onEvent?.({
               kind: 'resource',
               fqn: 'site',
@@ -1123,7 +1174,7 @@ describe('deploy() step events', () => {
           cwd: app.dir,
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, engine: engineWith(applied) },
+        { runAssembler: fakeAssembler, converge: appConverge(applied) },
       ).catch((error: unknown) => error),
     );
 
@@ -1156,7 +1207,7 @@ describe('deploy() step events', () => {
           onEvent: (event) => events.push(event),
         },
         {
-          engine: engineWith(applied),
+          converge: appConverge(applied),
           runAssembler: async () => {
             throw new Error('no built entry');
           },
@@ -1193,7 +1244,7 @@ describe('deploy() step events', () => {
           reportPath: path.join(app.dir, 'package.json', 'report.json'),
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, engine: engineWith(applied) },
+        { runAssembler: fakeAssembler, converge: appConverge(applied) },
       );
     } finally {
       warnSpy.mockRestore();
@@ -1217,7 +1268,7 @@ describe('deploy() step events', () => {
             throw new Error('renderer bug');
           },
         },
-        { runAssembler: fakeAssembler, engine: engineWith(applied) },
+        { runAssembler: fakeAssembler, converge: appConverge(applied) },
       ),
     );
 
@@ -1424,7 +1475,7 @@ describe('destroy()', () => {
         ran.push('alchemy');
         return { exitCode: 0, signal: null };
       },
-      engine: engineWith(async () => {
+      converge: appConverge(async () => {
         ran.push('alchemy');
         return APPLIED;
       }),
@@ -2961,7 +3012,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(recordingConverge(requests)),
+          converge: appConverge(recordingConverge(requests)),
         },
       ),
     );
@@ -2990,7 +3041,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(applied),
+          converge: appConverge(applied),
           credentials: { workspaceId: 'ws-1', client: {}, serviceToken: 'tok' },
         },
       ),
@@ -3029,7 +3080,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(applied),
+          converge: appConverge(applied),
         },
       ),
     );
@@ -3055,7 +3106,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(async () => ({ kind: 'interrupted' })),
+          converge: appConverge(async () => ({ kind: 'interrupted' })),
         },
       ),
     );
@@ -3084,7 +3135,7 @@ describe('deploy-run reporting', () => {
         { entry: app.entryPath, environment: 'ci-6', cwd: app.dir, config: composerConfig(config) },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(async () => ({
+          converge: appConverge(async () => ({
             kind: 'failed',
             reasons: [{ tag: 'PrismaApiError', message: '409 Conflict' }],
           })),
@@ -3114,7 +3165,7 @@ describe('deploy-run reporting', () => {
           },
           {
             runAssembler: fakeAssembler,
-            engine: engineWith(applied),
+            converge: appConverge(applied),
           },
         ),
       );
@@ -3161,7 +3212,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(applied),
+          converge: appConverge(applied),
         },
       ),
     );
@@ -3189,7 +3240,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(applied),
+          converge: appConverge(applied),
         },
       ),
     );
@@ -3538,7 +3589,7 @@ describe('the operations read the pools from the config adapters', () => {
         },
         {
           runAssembler: fakeAssembler,
-          engine: engineWith(applied),
+          converge: appConverge(applied),
         },
       ),
     );
@@ -3568,7 +3619,7 @@ describe('the operations read the pools from the config adapters', () => {
           environment: 'staging',
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, engine: engineWith(applied) },
+        { runAssembler: fakeAssembler, converge: appConverge(applied) },
       ),
     );
 
@@ -3634,7 +3685,7 @@ describe('the operations read the pools from the config adapters', () => {
           reportPath,
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, engine: engineWith(applied) },
+        { runAssembler: fakeAssembler, converge: appConverge(applied) },
       ),
     );
 
@@ -3661,7 +3712,7 @@ describe('the operations read the pools from the config adapters', () => {
           environment: 'staging',
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, engine: engineWith(applied) },
+        { runAssembler: fakeAssembler, converge: appConverge(applied) },
       ),
     );
 

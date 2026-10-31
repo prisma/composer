@@ -178,7 +178,22 @@ export const createDeployCommand = (operations: ComposerOperations) =>
           },
         ),
       );
-      if (!result.ok) return notOk(toEngineError(result.failure));
+      if (!result.ok) {
+        // An interrupted run settles as the signal it is: the engine exits
+        // 130/143 only for its own abort, not for a returned error. The
+        // structured error still reaches the output, as a message.
+        if (result.failure.code === 'DEPLOY.INTERRUPTED' && ctx.signal.aborted) {
+          const { code, message, why, fix } = result.failure;
+          ctx.report({
+            kind: 'message',
+            severity: 'warn',
+            text: `${message} ${fix ?? ''}`.trim(),
+            data: { code, message, why, fix },
+          });
+          throw ctx.signal.reason;
+        }
+        return notOk(toEngineError(result.failure));
+      }
 
       const { summary, durationMs } = result.value;
       const target = `to ${args.flags.environment ?? DEFAULT_DEPLOY_ENVIRONMENT} in ${formatDuration(durationMs)}`;

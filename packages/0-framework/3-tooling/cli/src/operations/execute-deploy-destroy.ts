@@ -18,7 +18,7 @@ import type {
 import { containerEnv, preflightEnvVarName } from '@internal/core/config';
 import { CliStructuredError, InternalError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
-import { type DeployEngine, loadAppEngine } from '../app-engine.ts';
+import { type AppConverge, loadAppConverge } from '../app-converge.ts';
 import type { ComposerConfigSource } from '../composer-config.ts';
 import type {
   ConvergeEvent,
@@ -394,7 +394,7 @@ async function runStackPipelineInner(
 
   let converge: ConvergeSetup | undefined;
   if (action === 'deploy') {
-    const setup = await prepareConverge(deps, cwd);
+    const setup = await prepareConverge(deps, path.dirname(path.resolve(cwd, composerConfig.file)));
     if (!setup.ok) return setup;
     converge = setup.value;
   }
@@ -775,7 +775,7 @@ async function runStackPipelineInner(
 }
 
 interface ConvergeSetup {
-  readonly engine: DeployEngine;
+  readonly appConverge: AppConverge;
   /** The credential variables Alchemy reads, set for the length of the apply; `undefined` removes one. */
   readonly credentialEnv: Readonly<Record<string, string | undefined>>;
 }
@@ -798,28 +798,28 @@ function serviceTokenRequired(): CliStructuredError {
 
 /**
  * What deploy's converge needs before anything is created: the service token,
- * and the app's own install of the engine. A caller that supplies credentials
+ * and the app's own install of the converge. A caller that supplies credentials
  * supplies the token with them, and the token and workspace always come from
  * that one credential; a caller that supplies none leaves both to the
  * environment.
  */
 async function prepareConverge(
   deps: OperationDeps,
-  cwd: string,
+  appDir: string,
 ): Promise<Result<ConvergeSetup, CliStructuredError>> {
   const credentials = deps.credentials;
   const token =
     credentials === undefined ? process.env['PRISMA_SERVICE_TOKEN'] : credentials.serviceToken;
   if (token === undefined || token.length === 0) return notOk(serviceTokenRequired());
-  let engine: DeployEngine;
+  let appConverge: AppConverge;
   try {
-    engine = deps.engine ?? (await loadAppEngine(cwd));
+    appConverge = deps.converge ?? (await loadAppConverge(appDir));
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;
   }
   return ok({
-    engine,
+    appConverge,
     credentialEnv:
       credentials === undefined
         ? {}
@@ -916,6 +916,10 @@ function convergeFailure(
       );
     }
   }
+  return new CliStructuredError(
+    'DEPLOY.ENGINE_FAILED',
+    'The converge ended with an outcome this Composer does not know.',
+  );
 }
 
 /**
@@ -951,7 +955,7 @@ async function convergeDeploy(
   steps.start({ name: 'apply' });
   let stack: LoweredStack;
   try {
-    stack = setup.engine.lower(root, config, {
+    stack = setup.appConverge.lower(root, config, {
       name: pipeline.name,
       environment,
       configPool: pipeline.pools.config,
@@ -971,15 +975,27 @@ async function convergeDeploy(
       ),
     );
   }
-  const outcome = await setup.engine.converge({
-    operation: 'deploy',
-    stack,
-    stage: resolved.stage,
-    cwd,
-    env,
-    signal: opts.signal,
-    onEvent: (event) => reportConvergeEvent(steps, event, redact),
-  });
+  let outcome: ConvergeOutcome;
+  try {
+    outcome = await setup.appConverge.converge({
+      operation: 'deploy',
+      stack,
+      stage: resolved.stage,
+      cwd,
+      env,
+      signal: opts.signal,
+      onEvent: (event) => reportConvergeEvent(steps, event, redact),
+    });
+  } catch (error) {
+    return notOk(
+      new CliStructuredError(
+        'DEPLOY.ENGINE_FAILED',
+        redact(
+          `Alchemy could not deploy the app.\n${error instanceof Error ? error.message : String(error)}`,
+        ),
+      ),
+    );
+  }
   if (outcome.kind !== 'applied') return notOk(convergeFailure(outcome, redact));
   steps.finish({ name: 'apply' });
   return ok(summary);

@@ -10,6 +10,7 @@ import * as path from 'node:path';
 import { type Contract, module, resource } from '@internal/core';
 import type { ExtensionDescriptor, PrismaAppConfig } from '@internal/core/config';
 import { type DeploymentResult, type LowerOptions, lower } from '@internal/core/deploy';
+import * as Alchemist from 'alchemy/Alchemist';
 import * as Interaction from 'alchemy/Interaction';
 import * as State from 'alchemy/State';
 import { InMemoryService } from 'alchemy/State/InMemoryState';
@@ -229,6 +230,80 @@ describe('convergeInProcess', () => {
     }
   });
 
+  test('one converge per process holds across two copies of the module', async () => {
+    const copy: typeof import('../converge-in-process.ts') = await import(
+      `../converge-in-process.ts?copy=${String(Date.now())}`
+    );
+    expect(copy.convergeInProcess).not.toBe(convergeInProcess);
+    const controller = new AbortController();
+    let started!: () => void;
+    const running = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const { config } = observing(
+      {},
+      Effect.sync(() => started()).pipe(Effect.andThen(Effect.never)),
+    );
+
+    const first = convergeInProcess(request(config, {}, { signal: controller.signal }));
+    await running;
+    const second = await copy.convergeInProcess(request(fixture(reportsThing).config));
+    controller.abort();
+    await first;
+
+    expect(second).toEqual({ kind: 'refused', reason: 'already-running' });
+  });
+
+  test('restores the environment even when the working directory cannot be restored', async () => {
+    const before = process.cwd();
+    const doomed = tmpDir();
+    process.chdir(doomed);
+    const cwd = tmpDir();
+    const { config } = fixture(
+      Object.assign(
+        () =>
+          Effect.sync(() => {
+            fs.rmSync(doomed, { recursive: true, force: true });
+            return { outputs: {}, entities: [] };
+          }),
+        { kind: 'resource' as const },
+      ),
+    );
+    try {
+      const outcome = await convergeInProcess(
+        request(config, {}, { cwd, env: { COMPOSER_TEST_TOKEN: 'tok' } }),
+      );
+
+      expect(outcome.kind).toBe('failed');
+      expect(process.env['COMPOSER_TEST_TOKEN']).toBeUndefined();
+    } finally {
+      process.chdir(before);
+    }
+    expect(await convergeInProcess(request(fixture(reportsThing).config))).toEqual({
+      kind: 'applied',
+    });
+  });
+
+  test('a converge whose Alchemy services cannot be built fails, and leaves the next one free to run', async () => {
+    const layer = spyOn(Alchemist, 'layer').mockImplementation(() => {
+      throw new Error('alchemy without Alchemist.layer');
+    });
+    let outcome: Awaited<ReturnType<typeof convergeInProcess>>;
+    try {
+      outcome = await convergeInProcess(request(fixture(reportsThing).config));
+    } finally {
+      layer.mockRestore();
+    }
+
+    expect(outcome).toEqual({
+      kind: 'failed',
+      reasons: [{ tag: 'Error', message: 'alchemy without Alchemist.layer' }],
+    });
+    expect(await convergeInProcess(request(fixture(reportsThing).config))).toEqual({
+      kind: 'applied',
+    });
+  });
+
   test('sets the requested environment and working directory only while it runs', async () => {
     const seen: { token?: string | undefined; cwd?: string } = {};
     const { config } = fixture(
@@ -352,7 +427,7 @@ describe('deploy with the real in-process converge', () => {
       },
       {
         runAssembler: async () => ({ dir, entry: 'server.js' }),
-        engine: { lower, converge: convergeInProcess },
+        converge: { lower, converge: convergeInProcess },
         credentials: { workspaceId: 'ws_1', client: {}, serviceToken: 'tok' },
       },
     );

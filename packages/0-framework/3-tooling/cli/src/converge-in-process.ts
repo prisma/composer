@@ -9,6 +9,7 @@
  */
 import { isMainThread } from 'node:worker_threads';
 import type { lower } from '@internal/core/deploy';
+import { blindCast } from '@internal/foundation/casts';
 import * as Alchemist from 'alchemy/Alchemist';
 import * as Interaction from 'alchemy/Interaction';
 import { recordOf } from 'alchemy/Util/LogRecord';
@@ -149,11 +150,18 @@ export function failureReasons(cause: Cause.Cause<unknown>): readonly ConvergeFa
     : [{ tag: 'Unknown', message: Cause.pretty(cause) }];
 }
 
-let running = false;
+/** One flag per process, shared by every copy of this module, so two apps' installs in one host cannot converge at once. */
+const RUNNING = Symbol.for('prisma.composer.converge.running');
+
+const flag = blindCast<
+  { [RUNNING]?: boolean },
+  'globalThis takes any symbol-keyed property; this one is ours alone'
+>(globalThis);
 
 /**
  * Sets the process state Alchemy reads for the length of `run`, and restores
- * it on every exit path: the variables in `env` and the working directory.
+ * it on every exit path: the variables in `env`, then the working directory.
+ * A directory that cannot be restored never leaves a variable behind.
  */
 async function withProcessState<T>(
   env: Readonly<Record<string, string | undefined>>,
@@ -162,42 +170,28 @@ async function withProcessState<T>(
 ): Promise<T> {
   const previousEnv = Object.keys(env).map((name) => [name, process.env[name]] as const);
   const previousCwd = process.cwd();
+  let changedDirectory = false;
   try {
     for (const [name, value] of Object.entries(env)) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }
-    if (previousCwd !== cwd) process.chdir(cwd);
+    if (previousCwd !== cwd) {
+      process.chdir(cwd);
+      changedDirectory = true;
+    }
     return await run();
   } finally {
-    if (process.cwd() !== previousCwd) process.chdir(previousCwd);
     for (const [name, value] of previousEnv) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }
+    if (changedDirectory) process.chdir(previousCwd);
   }
 }
 
-/**
- * Plans and applies `stack` in this process, as `alchemy deploy --yes` would.
- * The plan's scope, and the state-store lease it holds, closes before this
- * returns, including when `signal` interrupts it. One converge runs at a time
- * per process: a second call while one runs is refused.
- */
-export const convergeInProcess: Converge = async (request) => {
-  if (running) return { kind: 'refused', reason: 'already-running' };
-  if (!isMainThread && process.cwd() !== request.cwd) {
-    return { kind: 'refused', reason: 'worker-thread' };
-  }
-  running = true;
-  const emit = (event: ConvergeEvent): void => {
-    try {
-      request.onEvent?.(event);
-    } catch {
-      // Rendering is the caller's; its failures are not the deploy's.
-    }
-  };
-  const program = Effect.gen(function* () {
+function program(request: ConvergeRequest, emit: (event: ConvergeEvent) => void) {
+  return Effect.gen(function* () {
     const plan = yield* Alchemist.plan({
       stack: request.stack,
       operation: request.operation,
@@ -217,11 +211,33 @@ export const convergeInProcess: Converge = async (request) => {
     Effect.provide(Interaction.layerNonInteractive({ stdout: process.stderr })),
     Effect.provide(Alchemist.layer()),
   );
+}
 
+/**
+ * Plans and applies `stack` in this process, as `alchemy deploy --yes` would.
+ * The plan's scope, and the state-store lease it holds, closes before this
+ * returns, including when `signal` interrupts it. One converge runs at a time
+ * per process, across every install of this module: a second call while one
+ * runs is refused.
+ */
+export const convergeInProcess: Converge = async (request) => {
+  if (flag[RUNNING] === true) return { kind: 'refused', reason: 'already-running' };
+  if (!isMainThread && process.cwd() !== request.cwd) {
+    return { kind: 'refused', reason: 'worker-thread' };
+  }
+  const emit = (event: ConvergeEvent): void => {
+    try {
+      request.onEvent?.(event);
+    } catch {
+      // Rendering is the caller's; its failures are not the deploy's.
+    }
+  };
   try {
+    flag[RUNNING] = true;
+    const effect = program(request, emit);
     return await withProcessState(request.env, request.cwd, async () => {
       const exit = await Effect.runPromiseExit(
-        program,
+        effect,
         request.signal === undefined ? undefined : { signal: request.signal },
       );
       if (Exit.isSuccess(exit)) return { kind: 'applied' } as const;
@@ -239,6 +255,6 @@ export const convergeInProcess: Converge = async (request) => {
       ],
     };
   } finally {
-    running = false;
+    flag[RUNNING] = false;
   }
 };

@@ -328,6 +328,62 @@ describe('settlement', () => {
   });
 });
 
+describe('Ctrl-C', () => {
+  /** A deploy that runs until the run is aborted, then reports DEPLOY.INTERRUPTED as the real operation does. */
+  function interruptedCli(controller: AbortController) {
+    const double = createOperationsDouble({});
+    const family = createComposerFamily({
+      operations: {
+        ...double.operations,
+        deploy: async (input) => {
+          controller.abort();
+          await new Promise<void>((resolve) => {
+            if (input.signal?.aborted === true) resolve();
+            input.signal?.addEventListener('abort', () => resolve());
+          });
+          return notOk(
+            new CliStructuredError('DEPLOY.INTERRUPTED', 'The deploy was interrupted.', {
+              fix: 'Deploy again to finish.',
+            }),
+          );
+        },
+      },
+    });
+    return createTestCli({
+      commands: { deploy: commandAt(family, 'deploy') },
+      config: { composer: validComposerSection() },
+      environmentCredential: activeCredential(),
+    });
+  }
+
+  test('an interrupted deploy exits 130, and the human output still says it was interrupted', async () => {
+    const controller = new AbortController();
+    const result = await interruptedCli(controller).run(['deploy', '--entry', 'src/service.ts'], {
+      ...AS_TTY,
+      abort: controller.signal,
+    });
+
+    expect(result.exitCode).toBe(130);
+    expect(plain(result.stderr)).toContain('The deploy was interrupted. Deploy again to finish.');
+  });
+
+  test('in JSON, the interruption is a message frame carrying DEPLOY.INTERRUPTED', async () => {
+    const controller = new AbortController();
+    const result = await interruptedCli(controller).run(
+      ['deploy', '--entry', 'src/service.ts', '--json'],
+      { ...AS_TTY, abort: controller.signal },
+    );
+
+    expect(result.exitCode).toBe(130);
+    expect(result.json).toContainEqual(
+      expect.objectContaining({
+        kind: 'message',
+        data: expect.objectContaining({ code: 'DEPLOY.INTERRUPTED' }),
+      }),
+    );
+  });
+});
+
 describe('what a successful run presents', () => {
   test('deploy reports the app and a row per deployed node', async () => {
     const { cli } = composerCli({
