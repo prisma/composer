@@ -1,5 +1,7 @@
 # ADR-0049: Composer's configuration is the `composer` section of `prisma.config.ts`
 
+Amended by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): `deploy` no longer starts an Alchemy child or imports the declaring file in one, so the child-process reason below now holds for `destroy` and `prisma dev` only. The decision is unchanged: the section still comes from one file, and `file` is still returned.
+
 Amended by [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): the section gains `config` (and later `secrets`), each an array of adapters.
 
 Amended after acceptance: the Alternatives section adds four rejected ways to keep a Composer-owned effect check, and the Consequences state the exit code of `CLI.CONFIG_UNREADABLE`. The decision is unchanged.

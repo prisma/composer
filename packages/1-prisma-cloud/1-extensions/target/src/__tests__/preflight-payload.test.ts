@@ -9,7 +9,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { Load, module } from '@internal/core';
-import { preflightEnv } from '@internal/core/config';
+import { preflightEnv, readPreflightPayload } from '@internal/core/config';
 import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
@@ -93,7 +93,9 @@ async function cliProcess(updatedAt: string): Promise<Record<string, string>> {
  * fingerprint moves on.
  */
 function alchemyProcessPointerTriggers(env: Record<string, string>): Record<string, string> {
-  const { pointerVersion } = transportedPreflight(new Map(), env);
+  const { pointerVersion } = transportedPreflight(
+    readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, env),
+  );
   return Object.fromEntries(
     pointers.map((name) => [`${name}:updatedAt`, pointerVersion(name) ?? '?']),
   );
@@ -188,9 +190,11 @@ describe('one transport variable, two kinds of payload', () => {
 
   test('a deploy payload names no absent secret and reads as timestamps', () => {
     const preflight = transportedPreflight(
-      new Map(),
-      childEnv(
-        serializeDeployPreflightPayload(new Map([['STRIPE_SECRET_KEY', '2026-10-01T00:00:00Z']])),
+      readPreflightPayload(
+        PRISMA_CLOUD_EXTENSION_ID,
+        childEnv(
+          serializeDeployPreflightPayload(new Map([['STRIPE_SECRET_KEY', '2026-10-01T00:00:00Z']])),
+        ),
       ),
     );
 
@@ -200,12 +204,14 @@ describe('one transport variable, two kinds of payload', () => {
 
   test('a dev payload carries the absent secrets and the value versions', () => {
     const preflight = transportedPreflight(
-      new Map(),
-      childEnv(
-        serializeDevPreflightPayload({
-          absentSecrets: ['STRIPE_WEBHOOK_SECRET'],
-          pointerVersions: { STRIPE_SECRET_KEY: 'hmac-of-value' },
-        }),
+      readPreflightPayload(
+        PRISMA_CLOUD_EXTENSION_ID,
+        childEnv(
+          serializeDevPreflightPayload({
+            absentSecrets: ['STRIPE_WEBHOOK_SECRET'],
+            pointerVersions: { STRIPE_SECRET_KEY: 'hmac-of-value' },
+          }),
+        ),
       ),
     );
 
@@ -214,7 +220,9 @@ describe('one transport variable, two kinds of payload', () => {
   });
 
   test('with no payload nothing is absent and every version is unknown', () => {
-    const preflight = transportedPreflight(new Map(), childEnv(undefined));
+    const preflight = transportedPreflight(
+      readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv(undefined)),
+    );
 
     expect([...preflight.absentSecrets]).toEqual([]);
     expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBeUndefined();

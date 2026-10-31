@@ -19,8 +19,10 @@ describe('renderDevStackFile()', () => {
       },
     });
 
-    expect(content).toContain("import { lower } from '@prisma/composer/deploy';");
-    expect(content).toContain("import { deserializeContainers } from '@prisma/composer/config';");
+    expect(content).toContain(
+      "import { lower, transportedLowerInputs } from '@prisma/composer/deploy';",
+    );
+    expect(content).not.toContain('deserializeContainers');
     expect(content).toContain(
       "import { readConfigPool, readSecretsPool } from '@prisma/composer/internal/pools';",
     );
@@ -37,15 +39,13 @@ describe('renderDevStackFile()', () => {
     // deserialized, `localTarget` thunks resolved by top-level await,
     // providers + state passed explicitly — and no `dev` flag, which no
     // longer exists on LowerOptions.
-    expect(content).toContain(
-      'const containers = deserializeContainers(config.extensions, process.env);',
-    );
+    expect(content).toContain('const transported = transportedLowerInputs(config);');
     expect(content).toContain('const resolved = await resolveLocalTargets(config);');
     expect(content).toContain('const devDir = path.join(process.cwd(), devEnvironmentDir("dev"));');
     expect(content).toContain('lower(app, config, {');
     expect(content).toContain('name: "app"');
     expect(content).toContain(
-      'providers: localTargetProviders(resolved, containers, devDir, pools)',
+      'providers: localTargetProviders(resolved, transported.containers, devDir, pools)',
     );
     expect(content).toContain('state: devState()');
     expect(content).not.toContain('dev: true');
@@ -108,7 +108,9 @@ describe('renderDevStackFile() — the environment', () => {
       'const pools = { config: await readConfigPool(config, poolInput), secrets: await readSecretsPool(config, poolInput) };',
     );
     expect(content).toContain('  environment: "test",\n  configPool: pools.config,\n');
-    expect(content).toContain('localTargetProviders(resolved, containers, devDir, pools)');
+    expect(content).toContain(
+      'localTargetProviders(resolved, transported.containers, devDir, pools)',
+    );
   });
 
   test('no secret value in the process environment reaches either rendered stack file', () => {

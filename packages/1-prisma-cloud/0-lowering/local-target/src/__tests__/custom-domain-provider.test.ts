@@ -33,8 +33,8 @@ describe('a custom domain under the local providers', () => {
     const options = { providers: localTargetProviders(input), dev: false };
     const stack = scratchStack(options, 'local-custom-domain');
 
-    const first = await runScratch(stack.deploy(program), options);
-    const second = await runScratch(stack.deploy(program), options);
+    const first = await runScratch(stack.deploy(program));
+    const second = await runScratch(stack.deploy(program));
 
     expect(first).toMatchObject({
       customDomainId: 'local-shop.site.domain.shop.com',
@@ -52,8 +52,8 @@ describe('a custom domain under the local providers', () => {
     const options = { providers: localTargetProviders(input), dev: false };
     const stack = scratchStack(options, 'local-custom-domain-change');
 
-    await runScratch(stack.deploy(programFor('shop.com')), options);
-    const changed = await runScratch(stack.deploy(programFor('new.shop.com')), options);
+    await runScratch(stack.deploy(programFor('shop.com')));
+    const changed = await runScratch(stack.deploy(programFor('new.shop.com')));
 
     expect(changed).toMatchObject({
       customDomainId: 'local-shop.site.domain.new.shop.com',

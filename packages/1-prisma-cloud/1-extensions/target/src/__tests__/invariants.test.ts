@@ -127,8 +127,7 @@ describe('invariant 2: authoring imports stay lean (core + pack)', () => {
 describe('invariant 4: environment touches are confined to the config serializer, the control factory, and the container lifecycle', () => {
   // Why each file reads the environment: serializer.ts (params, the input
   // document's env-sourced leaves and boot reads), control/extension.ts
-  // (optional PRISMA_WORKSPACE_ID and PRISMA_REGION, and the preflight
-  // transport), container.ts (PRISMA_WORKSPACE_ID, PRISMA_SERVICE_TOKEN),
+  // (optional PRISMA_WORKSPACE_ID and PRISMA_REGION), container.ts (PRISMA_WORKSPACE_ID, PRISMA_SERVICE_TOKEN),
   // preflight.ts (PRISMA_SERVICE_TOKEN; values come from the pools), local-target/attach.ts (the shell environment a dev
   // server keeps under its Composer rows, ADR-0056), compute.ts (run()
   // applies stashRows to the environment), testing.ts (bootstrapService).
@@ -145,7 +144,7 @@ describe('invariant 4: environment touches are confined to the config serializer
     expect(hits.sort((a, b) => a.file.localeCompare(b.file))).toEqual([
       { file: 'compute.ts', count: 2 },
       { file: 'container.ts', count: 3 },
-      { file: 'control/extension.ts', count: 3 },
+      { file: 'control/extension.ts', count: 2 },
       { file: 'local-target/attach.ts', count: 1 },
       { file: 'preflight.ts', count: 1 },
       { file: 'serializer.ts', count: 9 },

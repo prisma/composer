@@ -39,6 +39,7 @@ function renderOptions(input: StackFileInput): string {
   lines.push(`  name: ${quote(input.name)},`);
   lines.push(`  environment: ${quote(input.environment)},`);
   lines.push('  configPool,');
+  lines.push('  ...transportedLowerInputs(config),');
 
   lines.push('  bundles: {');
   for (const [id, bundle] of Object.entries(input.assembled.bundles)) {
@@ -73,7 +74,7 @@ export function renderStackFile(input: StackFileInput): string {
 //
 // bisects a CLI bug from an Alchemy bug (deploy-cli.md § Implementation decisions).
 // It reads the config pool again here, from the same adapters, so an adapter must return the same values for the same environment every time.
-import { lower } from '@prisma/composer/deploy';
+import { lower, transportedLowerInputs } from '@prisma/composer/deploy';
 import * as report from '@prisma/composer/report';
 import { readConfigPool } from '@prisma/composer/internal/pools';
 import prismaConfig from ${quote(configImport)};

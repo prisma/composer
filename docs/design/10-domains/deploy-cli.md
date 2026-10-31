@@ -96,7 +96,9 @@ that relative imports inside the entry graph may use `./x.js` or extensionless
 bun APIs can only deploy under bun, since loading the graph imports that module
 — the app's choice, not a CLI limit.
 
-**The Alchemy child's runtime.** Composer runs the `bin` of the `alchemy`
+**Where Alchemy runs.** `prisma deploy` runs Alchemy in the `prisma` process, through Alchemy's programmatic API (`alchemy/Alchemist`) ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)). It loads core's `lower()` and the converge from `@prisma/composer/internal/converge`, resolved from the directory of the app's `prisma.config.ts`, so they use the app's own install of `alchemy` and `effect`, the same one its extensions and providers come from. The `prisma` host's Composer calls that install, so the two must speak the same converge contract, a number the install exports from `@prisma/composer/internal/converge-contract`; their package versions may differ. A different contract fails with `DEPS.CONVERGE_CONTRACT_MISMATCH`, naming both contracts and both versions and saying which side to upgrade. An app whose `@prisma/composer` cannot be resolved, or predates that entry, fails with `DEPS.CONVERGE_UNRESOLVABLE`. Both fail before anything is created. Alchemy and `effect` load only behind the deploy operation's lazy executor import, so `prisma --version` never loads them.
+
+**The Alchemy child's runtime (`destroy` and `prisma dev`).** These still start an Alchemy child. Composer runs the `bin` of the `alchemy`
 package that the app's `@prisma/composer` depends on, found from the app
 directory the way the generated stack file's own imports are, so the CLI and
 the stack code come from one install. It starts that bin with Node, as the
@@ -182,20 +184,19 @@ user can rerun it by hand (ADR-0007).
    emulator instance is touched.
    On `deploy`, an older extension's `ensure` may already have created the
    app's Project by then; the check stops everything after that.
-9. **Lower and drive.** Write the pipeline's results as a runnable stack
-   module at `.prisma-composer/alchemy.run.ts` and drive the `alchemy` CLI against
-   it (ADR-0007), started as § Runtime describes, carrying every resolved container across to the child as one
-   environment variable per extension — content the CLI writes but never
-   reads (ADR-0038). Both `deploy` and `destroy` set it, since `alchemy
-   destroy` re-imports and re-evaluates the same stack, so its target
-   reconstruction needs the same containers. The generated file and Alchemy's
-   state live in the process's working directory — tool state lives where you
-   run the tool, like any other CLI (ADR-0004). The generated stack file reads the config pool again, from the same adapters; it never reads the secrets pool.
+9. **Lower and apply.** `deploy` calls core's `lower()` with the pipeline's results as values: the name, the environment, the config pool, the assembled bundles, every resolved container, every extension's preflight payload, and the report hook. It passes the stack value `lower()` returns to `Alchemist.plan` and then `Alchemist.apply`, in the `prisma` process, with Alchemy's stage set as § CLI behavior notes describes ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)). No stack file is written and no child is started.
+   - **Progress.** Alchemy's typed events become step events under the `deploy.apply` step: one step per resource, labelled with Alchemy's status word (`creating shop.api`, then `created shop.api`), and Alchemy's log lines become messages, with credentials and pool secrets removed. Human and JSON output keep one format. Alchemy's console output is replaced, its interaction output goes to stderr, and the `prisma deploy` command sends `console`'s stdout methods to stderr while the operation runs. A provider that writes to `process.stdout` directly is out of reach.
+   - **Result.** The report hook runs inside the apply, in the same process, so the deployment summary comes back as a value.
+   - **Failure.** A failed plan or apply is `DEPLOY.ENGINE_FAILED`. Its message carries the errors Alchemy failed with, with Composer's advice in place of the Alchemy CLI's (`--adopt`) and every credential and pool secret removed.
+   - **Ctrl-C.** The engine's abort signal interrupts the plan or apply. The plan's scope closes, which releases the environment's state lease (ADR-0045), and the deploy fails with `DEPLOY.INTERRUPTED`. The CLI reports that code as a message (a frame in JSON) and exits 130 through the engine's own abort (`CLI.ABORTED`).
+   - **Process state.** Alchemy reads its configuration only from `process.env` and `.env` in the working directory. For the length of the plan and apply, `deploy` sets the service token, the workspace id and each reporter's variables in `process.env`, and changes to the deploy's working directory when the process is elsewhere. It restores all of them on every exit path. One process runs one converge at a time, across every install it loads (`DEPLOY.CONVERGE_RUNNING`), and a worker thread cannot change directory (`DEPLOY.WORKER_THREAD`).
+   - **Credentials.** Alchemy needs a service token. The engine gives a command no way to read a `prisma login` session's token, so the command passes a token only when the active credential came from `PRISMA_SERVICE_TOKEN`, with that credential's workspace. The operation checks for it before preflight and before any container is ensured, and fails with `DEPLOY.SERVICE_TOKEN_REQUIRED` without one.
+
+   `destroy` (and `prisma dev`) write the pipeline's results as a runnable stack module at `.prisma-composer/alchemy.run.ts` and drive the `alchemy` CLI against it (ADR-0007), started as § Runtime describes, carrying every resolved container across to the child as one environment variable per extension — content the CLI writes but never reads (ADR-0038). `alchemy destroy` re-imports and re-evaluates the same stack, so its target reconstruction needs the containers. The generated file and Alchemy's state live in the process's working directory — tool state lives where you run the tool, like any other CLI (ADR-0004). The generated stack file reads the config pool again, from the same adapters; it never reads the secrets pool.
 
 The pass that assembles a service is the same pass that lowers it, so the
 correlation between services and their built bundles never exists as
-user-facing configuration — it is computed, written into the generated stack
-file, and consumed in one motion.
+user-facing configuration — it is computed and consumed in one motion.
 
 ## Environments and containers
 
@@ -216,12 +217,7 @@ inputs carry the same `environment`.
   ([ADR-0038](../90-decisions/ADR-0038-containers-are-an-extension-descriptor.md)).
   The CLI resolves every configured extension's container before Alchemy runs
   (pipeline step 8) and holds each result as an opaque value.
-- **The transport is content-blind.** Each resolved container crosses to the
-  alchemy child as one environment variable, named from the extension's id
-  and holding whatever that extension's own `serialize()` produced; the child
-  reads it back and calls the same extension's `deserialize`. The CLI never
-  reads the value, and an extension never touches `process.env` directly — it
-  receives its container as a parameter everywhere.
+- **Containers reach the lowering as values.** `deploy` hands each resolved container to `lower()` directly. For `destroy` and `prisma dev`, which start an Alchemy child, each container crosses to the child as one environment variable, named from the extension's id and holding whatever that extension's own `serialize()` produced; the child reads it back and calls the same extension's `deserialize`. The transport is content-blind: the CLI never reads the value, and an extension never touches `process.env` directly — it receives its container as a parameter everywhere. Preflight payloads travel the same two ways and reach the lowering as `LowerContext.preflight`.
 - **State rides the container.** `PrismaAppConfig.state` names its owning
   extension; core hands that extension's own resolved container to
   `state.create()`, so the state layer is built from it rather than from the
@@ -303,6 +299,9 @@ them:
 | Built output missing | the expected path, and "run your build" |
 | Root's input refused by its schema | the schema's messages, and that a root's input is the config pool for the environment |
 | A config adapter throws or returns something other than an object (`CONFIG.ADAPTER_FAILED`, `CONFIG.ADAPTER_INVALID`) | which list and position, and the fix |
+| No `PRISMA_SERVICE_TOKEN` in the environment for `deploy` (`DEPLOY.SERVICE_TOKEN_REQUIRED`) | to set it to a workspace service token |
+| Alchemy's plan or apply failed (`DEPLOY.ENGINE_FAILED`) | the errors Alchemy failed with |
+| Ctrl-C during the plan or apply (`DEPLOY.INTERRUPTED`) | to deploy again; the lease is already released |
 
 ## Out of scope (designed around)
 
@@ -328,7 +327,7 @@ them:
   `--stage` — the environment's Branch id, which for `production` is the
   project's default Branch id. This pins the deploy-state scope to the Branch
   instead of Alchemy's `dev_$USER` default, so it never varies by machine.
-  `alchemy` is ALWAYS invoked with an explicit `--stage`: the
+  Alchemy is ALWAYS given an explicit stage (`stage` on `Alchemist.plan`, `--stage` for the child): the
   container-supplied `alchemyStage` when there is one, else the environment
   name. Every environment has a name, so there is always a value. The generated
   stack file carries neither the environment nor any resolved container

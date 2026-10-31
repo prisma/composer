@@ -50,8 +50,7 @@ You'll need:
 - [Bun](https://bun.sh) — Prisma Compute runs Bun, so that's what the server
   code targets (`Bun.serve`), and it's the fastest way to run things locally.
 - pnpm (or npm).
-- For the deploy at the end: a Prisma Cloud workspace you can sign in to
-  with `prisma auth login`.
+- For the deploy at the end: a Prisma Cloud workspace and a service token for it.
   (Naming, once: **Prisma Cloud** is the platform; **Prisma Compute** runs
   your services on it, and **Prisma Postgres** hosts the databases.)
 
@@ -343,16 +342,14 @@ shared contract code into a chunk neither output contains:
 pnpm run build
 ```
 
-Deploying needs a signed-in `prisma`. Sign in once; it opens a browser and
-stores a session for one workspace:
+Deploying needs a service token. Create one in your workspace's settings in the [Prisma Console](https://console.prisma.io) and set it as `PRISMA_SERVICE_TOKEN`, on your machine and in CI alike:
 
 ```sh
-pnpm prisma auth login
+export PRISMA_SERVICE_TOKEN=<your service token>
 pnpm prisma deploy
 ```
 
-In CI, set `PRISMA_SERVICE_TOKEN` to a service token from the
-[Prisma Console](https://console.prisma.io) instead.
+A `prisma auth login` session alone is not enough for `prisma deploy` yet; without the token it fails with `DEPLOY.SERVICE_TOKEN_REQUIRED`.
 
 `pnpm prisma` runs under Node, which suits this app: the modules `prisma`
 loads declare services and never call Bun APIs themselves. An app whose

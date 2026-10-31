@@ -5,7 +5,7 @@
  * test if the operation itself writes to the console: rendering belongs to
  * the host.
  */
-import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -20,6 +20,7 @@ import type {
   PrismaAppConfig,
   RunOutcome,
 } from '@internal/core/config';
+import { lower } from '@internal/core/deploy';
 import type {
   LocalTargetAttachment,
   LocalTargetCurrentApp,
@@ -27,15 +28,13 @@ import type {
 } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import * as Layer from 'effect/Layer';
+import { type AppConverge, HOST_COMPOSER_VERSION } from '../../app-converge.ts';
 import type { ComposerConfigSource } from '../../composer-config.ts';
 import { dotenv } from '../../config-adapters.ts';
-import {
-  DEPLOYMENT_RESULT_FILE_ENV,
-  type DeploymentSummary,
-  engineFailureFilePath,
-} from '../../deployment-summary.ts';
+import { CONVERGE_CONTRACT } from '../../converge-contract.ts';
+import type { Converge, ConvergeOutcome, ConvergeRequest } from '../../converge-in-process.ts';
+import { DEPLOYMENT_RESULT_FILE_ENV, engineFailureFilePath } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
-import { type AlchemyInvocation, alchemyCommandLine } from '../../run-alchemy.ts';
 import { RUN_REPORT_VERSION } from '../../run-report.ts';
 import { type DeployEvent, deployWithDeps } from '../deploy.ts';
 import { type DestroyInput, destroyWithDeps } from '../destroy.ts';
@@ -142,7 +141,8 @@ function fakeConfig(
       },
       { id: 'fixture-build', nodes: { node: { kind: 'build', assemble: unused } } },
     ],
-    state: { extension: 'fixture-extension', create: unused },
+    // lower() builds the stack value eagerly; nothing here ever plans it.
+    state: { extension: 'fixture-extension', create: () => Layer.empty as never },
   };
 }
 
@@ -201,15 +201,41 @@ const fakeAssembler = async (node: ServiceNode) => ({
   entry: 'server.js',
 });
 
-const summaryFixture: DeploymentSummary = {
-  app: 'hello-ops',
-  nodes: [{ address: 'app', entities: [{ kind: 'compute-service', id: 'cps_1' }] }],
-};
+const APPLIED: ConvergeOutcome = { kind: 'applied' };
+
+/** Core's own `lower` with a stand-in for Alchemy's plan and apply: deploy tests never run the real Alchemy here. */
+function appConverge(converge: Converge): AppConverge {
+  return { lower, converge };
+}
+
+// Deploy needs a service token; a caller passing no credentials leaves it to the environment.
+const previousServiceToken = process.env['PRISMA_SERVICE_TOKEN'];
+beforeAll(() => {
+  process.env['PRISMA_SERVICE_TOKEN'] = 'test-service-token';
+});
+afterAll(() => {
+  if (previousServiceToken === undefined) delete process.env['PRISMA_SERVICE_TOKEN'];
+  else process.env['PRISMA_SERVICE_TOKEN'] = previousServiceToken;
+});
+
+/** Stands in for Alchemy's plan and apply: deploy tests never run the real Alchemy here. */
+const applied: Converge = async () => APPLIED;
+
+function recordingConverge(
+  requests: ConvergeRequest[],
+  outcome: ConvergeOutcome = APPLIED,
+): Converge {
+  return async (request) => {
+    requests.push(request);
+    return outcome;
+  };
+}
 
 describe('deploy()', () => {
-  test('a successful deploy passes the result-file env var to alchemy and returns the summary the child wrote', async () => {
+  test('a successful deploy converges the lowered app in this process: no stack file, no child', async () => {
     const app = makeAppDir('hello-ops');
-    const calls: AlchemyInvocation[] = [];
+    const requests: ConvergeRequest[] = [];
+    let spawned = false;
 
     const result = await silently(() =>
       deployWithDeps(
@@ -221,25 +247,31 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async (input) => {
-            calls.push(input);
-            const file = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
-            if (typeof file === 'string') fs.writeFileSync(file, JSON.stringify(summaryFixture));
+          converge: appConverge(recordingConverge(requests)),
+          alchemy: async () => {
+            spawned = true;
             return { exitCode: 0, signal: null };
+          },
+          credentials: {
+            workspaceId: 'ws_handler',
+            client: {},
+            serviceToken: 'token-from-the-handler',
           },
         },
       ),
     );
 
-    expect(calls).toHaveLength(1);
-    const resultFile = calls[0]?.env?.[DEPLOYMENT_RESULT_FILE_ENV];
-    expect(resultFile).toStartWith(path.join(app.dir, '.prisma-composer', 'deployment-result-'));
-    expect(resultFile).toEndWith('.json');
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('unreachable');
-    expect(result.value.summary).toEqual(summaryFixture);
-    // Read once, then removed — nothing left for a later run to misread.
-    expect(fs.existsSync(resultFile ?? '')).toBe(false);
+    if (!result.ok) throw result.failure;
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      stage: 'ci-7',
+      cwd: app.dir,
+      env: { PRISMA_SERVICE_TOKEN: 'token-from-the-handler', PRISMA_WORKSPACE_ID: 'ws_handler' },
+    });
+    expect(requests[0]?.stack.stackName).toBe('hello-ops');
+    expect(spawned).toBe(false);
+    expect(fs.existsSync(path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'))).toBe(false);
+    expect(result.value.summary).toBeUndefined();
   });
 
   test("the config's entry resolves against the config file's directory, not cwd", async () => {
@@ -262,10 +294,10 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => {
+          converge: appConverge(async () => {
             ran = true;
-            return { exitCode: 0, signal: null };
-          },
+            return APPLIED;
+          }),
         },
       ),
     );
@@ -291,7 +323,7 @@ describe('deploy()', () => {
             ...(input.entry === undefined ? {} : { entry: input.entry }),
             cwd: app.dir,
           },
-          { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+          { runAssembler: fakeAssembler, converge: appConverge(applied) },
         ),
       );
 
@@ -323,10 +355,10 @@ describe('deploy()', () => {
         { config: composerConfig(fakeConfig()), cwd: app.dir },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => {
+          converge: appConverge(async () => {
             ran = true;
-            return { exitCode: 0, signal: null };
-          },
+            return APPLIED;
+          }),
         },
       ),
     );
@@ -339,177 +371,10 @@ describe('deploy()', () => {
     expect(ran).toBe(false);
   });
 
-  test('a deploy whose child wrote no result file still succeeds, with an undefined summary', async () => {
-    const app = makeAppDir('hello-ops');
-
-    const result = await silently(() =>
-      deployWithDeps(
-        {
-          config: composerConfig(fakeConfig()),
-          entry: app.entryPath,
-          environment: 'ci-7',
-          cwd: app.dir,
-        },
-        {
-          runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
-        },
-      ),
-    );
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('unreachable');
-    expect(result.value.summary).toBeUndefined();
-  });
-
-  test('a malformed result file is treated as absent, never a deploy failure', async () => {
-    const app = makeAppDir('hello-ops');
-
-    const result = await silently(() =>
-      deployWithDeps(
-        {
-          config: composerConfig(fakeConfig()),
-          entry: app.entryPath,
-          environment: 'ci-7',
-          cwd: app.dir,
-        },
-        {
-          runAssembler: fakeAssembler,
-          alchemy: async (input) => {
-            const file = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
-            if (typeof file === 'string') fs.writeFileSync(file, '{"app": 42, "nodes": "nope"');
-            return { exitCode: 0, signal: null };
-          },
-        },
-      ),
-    );
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('unreachable');
-    expect(result.value.summary).toBeUndefined();
-  });
-
-  test("each run's result file is its own — a stale file from another run is never read, and two runs never share a path", async () => {
-    const app = makeAppDir('hello-ops');
-    fs.mkdirSync(path.join(app.dir, '.prisma-composer'), { recursive: true });
-    fs.writeFileSync(
-      path.join(app.dir, '.prisma-composer', 'deployment-result-99999-stale.json'),
-      JSON.stringify(summaryFixture),
-    );
-    const resultFiles: (string | undefined)[] = [];
-    const deps = {
-      runAssembler: fakeAssembler,
-      alchemy: async (input: AlchemyInvocation) => {
-        resultFiles.push(input.env?.[DEPLOYMENT_RESULT_FILE_ENV]);
-        return { exitCode: 0, signal: null };
-      },
-    };
-
-    const first = await silently(() =>
-      deployWithDeps(
-        {
-          entry: app.entryPath,
-          environment: 'ci-7',
-          cwd: app.dir,
-          config: composerConfig(fakeConfig()),
-        },
-        deps,
-      ),
-    );
-    const second = await silently(() =>
-      deployWithDeps(
-        {
-          entry: app.entryPath,
-          environment: 'ci-7',
-          cwd: app.dir,
-          config: composerConfig(fakeConfig()),
-        },
-        deps,
-      ),
-    );
-
-    expect(first.ok).toBe(true);
-    expect(second.ok).toBe(true);
-    expect(resultFiles).toHaveLength(2);
-    expect(resultFiles[0]).not.toBe(resultFiles[1]);
-  });
-
-  test('a failed deploy removes the result file the child already wrote', async () => {
-    const app = makeAppDir('hello-ops');
-    let resultFile: string | undefined;
-
-    const result = await silently(() =>
-      deployWithDeps(
-        {
-          entry: app.entryPath,
-          environment: 'ci-7',
-          cwd: app.dir,
-          config: composerConfig(fakeConfig()),
-        },
-        {
-          runAssembler: fakeAssembler,
-          alchemy: async (input) => {
-            resultFile = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
-            if (typeof resultFile === 'string') {
-              fs.writeFileSync(resultFile, JSON.stringify(summaryFixture));
-            }
-            return { exitCode: 1, signal: null };
-          },
-        },
-      ),
-    );
-
-    expect(result.ok).toBe(false);
-    expect(resultFile).toBeDefined();
-    expect(fs.existsSync(resultFile ?? '')).toBe(false);
-  });
-
-  test('the summary round-trips through a real child process writing via the report writer', async () => {
-    const app = makeAppDir('hello-ops');
-    const writerPath = fileURLToPath(new URL('../../deployment-summary.ts', import.meta.url));
-    const childPath = path.join(app.dir, 'report-child.ts');
-    fs.writeFileSync(
-      childPath,
-      `import { writeDeploymentSummaryFile } from ${JSON.stringify(writerPath)};\n` +
-        'const result = {\n' +
-        "  app: 'hello-ops',\n" +
-        "  nodes: [{ address: 'app', node: undefined, entities: [{ kind: 'compute-service', id: 'cps_1' }] }],\n" +
-        '} as never;\n' +
-        'writeDeploymentSummaryFile(result);\n',
-    );
-
-    const result = await silently(() =>
-      deployWithDeps(
-        {
-          entry: app.entryPath,
-          environment: 'ci-7',
-          cwd: app.dir,
-          config: composerConfig(fakeConfig()),
-        },
-        {
-          runAssembler: fakeAssembler,
-          alchemy: async (input) => {
-            const child = spawnSync(process.execPath, [childPath], {
-              cwd: app.dir,
-              env: { ...process.env, ...input.env },
-              encoding: 'utf-8',
-            });
-            expect(child.stderr).toBe('');
-            return { exitCode: child.status ?? 1, signal: null };
-          },
-        },
-      ),
-    );
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('unreachable');
-    expect(result.value.summary).toEqual(summaryFixture);
-  }, 15_000);
-
   test('without an environment, deploy targets production and runs Alchemy under that name when the container pins no stage', async () => {
     const app = makeAppDir();
     const containerCalls: ContainerCall[] = [];
-    const invocations: AlchemyInvocation[] = [];
+    const requests: ConvergeRequest[] = [];
 
     const result = await silently(() =>
       deployWithDeps(
@@ -520,10 +385,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async (input) => {
-            invocations.push(input);
-            return { exitCode: 0, signal: null };
-          },
+          converge: appConverge(recordingConverge(requests)),
         },
       ),
     );
@@ -533,7 +395,7 @@ describe('deploy()', () => {
       op: 'ensure',
       input: { appName: 'fixture-app', environment: 'production' },
     });
-    expect(invocations[0]?.stage).toBe('production');
+    expect(requests[0]?.stage).toBe('production');
   });
 
   test('an invalid environment name is an invalid-input failure, before any container call', async () => {
@@ -550,7 +412,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          converge: appConverge(applied),
         },
       ),
     );
@@ -566,7 +428,7 @@ describe('deploy()', () => {
     const app = makeAppDir();
     const containerCalls: ContainerCall[] = [];
     let assembled = false;
-    let alchemyRan = false;
+    let convergeRan = false;
 
     const result = await silently(() =>
       deployWithDeps(
@@ -581,10 +443,10 @@ describe('deploy()', () => {
             assembled = true;
             return fakeAssembler(node);
           },
-          alchemy: async () => {
-            alchemyRan = true;
-            return { exitCode: 0, signal: null };
-          },
+          converge: appConverge(async () => {
+            convergeRan = true;
+            return APPLIED;
+          }),
         },
       ),
     );
@@ -593,7 +455,7 @@ describe('deploy()', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.failure.message).toContain('The app name "acme.shop" is not valid.');
     expect(assembled).toBe(false);
-    expect(alchemyRan).toBe(false);
+    expect(convergeRan).toBe(false);
     expect(containerCalls).toEqual([]);
   });
 
@@ -602,21 +464,21 @@ describe('deploy()', () => {
       app: { dir: string; entryPath: string },
       config: ComposerConfigSource,
     ) {
-      let alchemyRan = false;
+      let convergeRan = false;
       const result = await silently(() =>
         deployWithDeps(
           { config, entry: app.entryPath, cwd: app.dir },
           {
             runAssembler: fakeAssembler,
-            alchemy: async () => {
-              alchemyRan = true;
-              return { exitCode: 0, signal: null };
-            },
+            converge: appConverge(async () => {
+              convergeRan = true;
+              return APPLIED;
+            }),
           },
         ),
       );
       if (result.ok) throw new Error('expected a failure');
-      return { failure: result.failure, alchemyRan };
+      return { failure: result.failure, convergeRan };
     }
 
     test('the whole prisma.config.ts export in place of its composer property', async () => {
@@ -624,7 +486,7 @@ describe('deploy()', () => {
       const containerCalls: ContainerCall[] = [];
       const wholeExport = { $prismaConfig: 1, composer: fakeConfig({}, { calls: containerCalls }) };
 
-      const { failure, alchemyRan } = await deployWith(app, {
+      const { failure, convergeRan } = await deployWith(app, {
         value: wholeExport as unknown as PrismaAppConfig,
         file: 'prisma.config.ts',
       });
@@ -635,7 +497,7 @@ describe('deploy()', () => {
         where: { path: path.join(app.dir, 'prisma.config.ts') },
       });
       expect(containerCalls).toEqual([]);
-      expect(alchemyRan).toBe(false);
+      expect(convergeRan).toBe(false);
     });
 
     test('an old prisma-composer.config.ts beside config.file', async () => {
@@ -643,7 +505,7 @@ describe('deploy()', () => {
       const containerCalls: ContainerCall[] = [];
       fs.writeFileSync(path.join(app.dir, 'prisma-composer.config.ts'), 'export default {};\n');
 
-      const { failure, alchemyRan } = await deployWith(
+      const { failure, convergeRan } = await deployWith(
         app,
         composerConfig(fakeConfig({}, { calls: containerCalls })),
       );
@@ -653,7 +515,7 @@ describe('deploy()', () => {
         message: `${path.join(app.dir, 'prisma-composer.config.ts')} is no longer read.`,
       });
       expect(containerCalls).toEqual([]);
-      expect(alchemyRan).toBe(false);
+      expect(convergeRan).toBe(false);
     });
 
     test('every finding, in the order the CLI reports them', async () => {
@@ -707,9 +569,9 @@ describe('deploy()', () => {
     });
   });
 
-  test('an extension-preflight throw is a pipeline failure — alchemy never runs, no stack file is written', async () => {
+  test('an extension-preflight throw is a pipeline failure — alchemy never runs', async () => {
     const app = makeAppDir('hello-preflight-fail');
-    let alchemyRan = false;
+    let convergeRan = false;
 
     const result = await silently(() =>
       deployWithDeps(
@@ -727,10 +589,10 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => {
-            alchemyRan = true;
-            return { exitCode: 0, signal: null };
-          },
+          converge: appConverge(async () => {
+            convergeRan = true;
+            return APPLIED;
+          }),
         },
       ),
     );
@@ -739,11 +601,10 @@ describe('deploy()', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.failure.code).toBe('DEPLOY.PREFLIGHT_FAILED');
     expect(result.failure.message).toContain('SECRET_X is not provisioned');
-    expect(alchemyRan).toBe(false);
-    expect(fs.existsSync(path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'))).toBe(false);
+    expect(convergeRan).toBe(false);
   });
 
-  test('an alchemy exit 42 is an execution failure carrying the exit code and both hint fields', async () => {
+  test("a failed converge is DEPLOY.ENGINE_FAILED carrying Alchemy's cause, with Composer's advice in place of the Alchemy CLI's", async () => {
     const app = makeAppDir();
 
     const result = await silently(() =>
@@ -756,91 +617,27 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 42, signal: null }),
+          converge: appConverge(async () => ({
+            kind: 'failed',
+            reasons: [
+              {
+                tag: 'PrismaApiError',
+                message:
+                  'the bucket is held by another app. Re-run with `--adopt` (or wrap the effect in `adopt(true)`) to take it over.',
+              },
+            ],
+          })),
         },
       ),
     );
 
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('unreachable');
+    if (result.ok) throw new Error('expected a failure');
+    const cause =
+      'PrismaApiError: the bucket is held by another app. Something other than this app holds it. Remove that resource, then deploy again.';
     expect(result.failure.code).toBe('DEPLOY.ENGINE_FAILED');
-    expect(result.failure.message).toBe('alchemy deploy exited with status 42.');
-    expect(executionDiagnostics(result.failure)).toEqual({
-      exitCode: 42,
-      stackFilePath: path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'),
-      reproduceCommand: `alchemy deploy ${path.join('.prisma-composer', 'alchemy.run.ts')} --yes --stage ci-7`,
-      cwd: app.dir,
-    });
-  });
-
-  test('the reproduce command is the command line the adapter started', async () => {
-    const app = makeAppDir();
-
-    const result = await silently(() =>
-      deployWithDeps(
-        {
-          config: composerConfig(fakeConfig()),
-          entry: app.entryPath,
-          environment: 'ci-7',
-          cwd: app.dir,
-        },
-        {
-          runAssembler: fakeAssembler,
-          alchemy: async (invocation) => ({
-            exitCode: 1,
-            signal: null,
-            commandLine: alchemyCommandLine(
-              invocation,
-              '/store/alchemy/bin/cli.js',
-              '/usr/bin/node',
-            ),
-          }),
-        },
-      ),
-    );
-
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('unreachable');
-    expect(executionDiagnostics(result.failure)?.reproduceCommand).toBe(
-      `/usr/bin/node /store/alchemy/bin/cli.js deploy ${path.join('.prisma-composer', 'alchemy.run.ts')} --yes --stage ci-7`,
-    );
-  });
-
-  test('an engine failure carries the cause the child recorded, after the status sentence and in meta', async () => {
-    const app = makeAppDir();
-    let failureFile: string | undefined;
-
-    const result = await silently(() =>
-      deployWithDeps(
-        {
-          entry: app.entryPath,
-          environment: 'ci-7',
-          cwd: app.dir,
-          config: composerConfig(fakeConfig()),
-        },
-        {
-          runAssembler: fakeAssembler,
-          alchemy: async (input) => {
-            const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
-            if (resultFile === undefined) throw new Error('the result-file env var must be set');
-            failureFile = engineFailureFilePath(resultFile);
-            fs.writeFileSync(failureFile, '[web] fail — PrismaApiError: 409 Conflict');
-            return { exitCode: 1, signal: null };
-          },
-        },
-      ),
-    );
-
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('unreachable');
-    expect(result.failure.code).toBe('DEPLOY.ENGINE_FAILED');
-    expect(result.failure.message).toBe(
-      'alchemy deploy exited with status 1.\n[web] fail — PrismaApiError: 409 Conflict',
-    );
-    expect(result.failure.meta?.['engineCause']).toBe('[web] fail — PrismaApiError: 409 Conflict');
-    expect(result.failure.meta?.['exitCode']).toBe(1);
-    expect(executionDiagnostics(result.failure)?.exitCode).toBe(1);
-    expect(fs.existsSync(failureFile ?? '')).toBe(false);
+    expect(result.failure.message).toBe(`Alchemy could not deploy the app.\n${cause}`);
+    expect(result.failure.meta?.['engineCause']).toBe(cause);
+    expect(executionDiagnostics(result.failure)).toBeUndefined();
   });
 
   test('an engine failure cause never carries a value the pools read from a dotenv file', async () => {
@@ -870,15 +667,15 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async (input) => {
-            const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
-            if (resultFile === undefined) throw new Error('the result-file env var must be set');
-            fs.writeFileSync(
-              engineFailureFilePath(resultFile),
-              `error: rejected ${onlyInDotenvFile}, ${inBothPools} and ${secretNamedConfigValue}`,
-            );
-            return { exitCode: 1, signal: null };
-          },
+          converge: appConverge(async () => ({
+            kind: 'failed',
+            reasons: [
+              {
+                tag: 'Error',
+                message: `error: rejected ${onlyInDotenvFile}, ${inBothPools} and ${secretNamedConfigValue}`,
+              },
+            ],
+          })),
         },
       ),
     );
@@ -891,8 +688,11 @@ describe('deploy()', () => {
     expect(JSON.stringify(result.failure)).not.toContain('SENTINEL');
   });
 
-  test('an engine failure with no recorded cause keeps the bare status sentence and no engineCause', async () => {
+  test('an interrupted converge is DEPLOY.INTERRUPTED, and the apply step closes as failed', async () => {
     const app = makeAppDir();
+    const events: DeployEvent[] = [];
+    const controller = new AbortController();
+    const requests: ConvergeRequest[] = [];
 
     const result = await silently(() =>
       deployWithDeps(
@@ -901,77 +701,21 @@ describe('deploy()', () => {
           environment: 'ci-7',
           cwd: app.dir,
           config: composerConfig(fakeConfig()),
+          onEvent: (event) => events.push(event),
+          signal: controller.signal,
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 1, signal: null }),
+          converge: appConverge(recordingConverge(requests, { kind: 'interrupted' })),
         },
       ),
     );
 
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('unreachable');
-    expect(result.failure.message).toBe('alchemy deploy exited with status 1.');
-    expect(result.failure.meta).not.toHaveProperty('engineCause');
-  });
-
-  test('an interrupted converge reports only its signal, since a killed child records no cause', async () => {
-    const app = makeAppDir();
-
-    const result = await silently(() =>
-      deployWithDeps(
-        {
-          entry: app.entryPath,
-          environment: 'ci-7',
-          cwd: app.dir,
-          config: composerConfig(fakeConfig()),
-        },
-        {
-          runAssembler: fakeAssembler,
-          alchemy: async (input) => {
-            const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
-            if (resultFile === undefined) throw new Error('the result-file env var must be set');
-            fs.writeFileSync(engineFailureFilePath(resultFile), 'lease held by another deploy');
-            return { exitCode: null, signal: 'SIGTERM' };
-          },
-        },
-      ),
-    );
-
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('unreachable');
-    expect(result.failure.message).toBe('alchemy deploy was interrupted by SIGTERM.');
-    expect(result.failure.meta?.['signal']).toBe('SIGTERM');
+    if (result.ok) throw new Error('expected a failure');
+    expect(requests[0]?.signal).toBe(controller.signal);
+    expect(result.failure.code).toBe('DEPLOY.INTERRUPTED');
     expect(result.failure.meta?.['engineCause']).toBeUndefined();
-  });
-
-  test('.prisma-composer existing as a FILE is a pipeline failure, not a rejection', async () => {
-    const app = makeAppDir('hello-ops');
-    fs.writeFileSync(path.join(app.dir, '.prisma-composer'), 'not a directory');
-    let alchemyRan = false;
-
-    const result = await silently(() =>
-      deployWithDeps(
-        {
-          config: composerConfig(fakeConfig()),
-          entry: app.entryPath,
-          environment: 'ci-7',
-          cwd: app.dir,
-        },
-        {
-          runAssembler: fakeAssembler,
-          alchemy: async () => {
-            alchemyRan = true;
-            return { exitCode: 0, signal: null };
-          },
-        },
-      ),
-    );
-
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('unreachable');
-    expect(result.failure.code).toBe('DEPLOY.STACK_WRITE_FAILED');
-    expect(alchemyRan).toBe(false);
+    expect(events.map(stepLine)).toContain('finished apply failed');
   });
 
   test('an executor that cannot load is a structured failure carrying the import error — the host stays alive', () => {
@@ -1043,12 +787,216 @@ describe('deploy()', () => {
 
 /** Each event as `kind name[:address] outcome`, for asserting order without timings. */
 function stepLine(event: DeployEvent): string {
+  if (event.kind === 'message') return `message ${event.text}`;
   const name =
     event.step.name === 'assemble-service'
       ? `assemble-service:${event.step.address}`
-      : event.step.name;
+      : event.step.name === 'apply-resource'
+        ? `apply-resource:${event.step.fqn}`
+        : event.step.name;
   return event.kind === 'step-started' ? `started ${name}` : `finished ${name} ${event.outcome}`;
 }
+
+describe('deploy() credentials, app converge and redaction', () => {
+  const deployWith = (
+    app: { dir: string; entryPath: string },
+    deps: Parameters<typeof deployWithDeps>[1],
+    config: PrismaAppConfig = fakeConfig(),
+    onEvent?: (event: DeployEvent) => void,
+  ) =>
+    silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(config),
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+          ...(onEvent === undefined ? {} : { onEvent }),
+        },
+        { runAssembler: fakeAssembler, ...deps },
+      ),
+    );
+
+  test('a credential that is not a service token is refused before any container is ensured', async () => {
+    const app = makeAppDir();
+    const containerCalls: ContainerCall[] = [];
+    const requests: ConvergeRequest[] = [];
+
+    const result = await deployWith(
+      app,
+      {
+        converge: appConverge(recordingConverge(requests)),
+        credentials: { workspaceId: 'ws_1', client: {} },
+      },
+      fakeConfig({}, { calls: containerCalls }),
+    );
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure.code).toBe('DEPLOY.SERVICE_TOKEN_REQUIRED');
+    expect(containerCalls).toEqual([]);
+    expect(requests).toEqual([]);
+  });
+
+  test('without credentials or PRISMA_SERVICE_TOKEN in the environment, deploy is refused', async () => {
+    const app = makeAppDir();
+    const saved = process.env['PRISMA_SERVICE_TOKEN'];
+    delete process.env['PRISMA_SERVICE_TOKEN'];
+    try {
+      const result = await deployWith(app, { converge: appConverge(applied) });
+      if (result.ok) throw new Error('expected a failure');
+      expect(result.failure.code).toBe('DEPLOY.SERVICE_TOKEN_REQUIRED');
+    } finally {
+      process.env['PRISMA_SERVICE_TOKEN'] = saved;
+    }
+  });
+
+  test('a credential that names no workspace removes PRISMA_WORKSPACE_ID for the apply', async () => {
+    const app = makeAppDir();
+    const requests: ConvergeRequest[] = [];
+
+    await deployWith(app, {
+      converge: appConverge(recordingConverge(requests)),
+      credentials: { workspaceId: undefined, client: {}, serviceToken: 'tok-1234567890' },
+    });
+
+    expect(requests[0]?.env).toEqual({
+      PRISMA_SERVICE_TOKEN: 'tok-1234567890',
+      PRISMA_WORKSPACE_ID: undefined,
+    });
+  });
+
+  test('an app with no installed @prisma/composer fails with DEPS.CONVERGE_UNRESOLVABLE before any container is ensured', async () => {
+    const app = makeAppDir();
+    const containerCalls: ContainerCall[] = [];
+
+    const result = await deployWith(app, {}, fakeConfig({}, { calls: containerCalls }));
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure.code).toBe('DEPS.CONVERGE_UNRESOLVABLE');
+    expect(containerCalls).toEqual([]);
+  });
+
+  test("the app's install is found beside its prisma.config.ts, not in cwd", async () => {
+    const app = makeAppDir();
+    const configDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'composer-config-')));
+    tmpDirs.push(configDir);
+    fs.writeFileSync(path.join(configDir, 'package.json'), JSON.stringify({ name: 'app' }));
+    fs.writeFileSync(path.join(configDir, 'prisma.config.ts'), 'export default {};\n');
+    const pkg = path.join(configDir, 'node_modules', '@prisma', 'composer');
+    fs.mkdirSync(pkg, { recursive: true });
+    fs.writeFileSync(
+      path.join(pkg, 'package.json'),
+      JSON.stringify({
+        name: '@prisma/composer',
+        version: HOST_COMPOSER_VERSION,
+        type: 'module',
+        exports: {
+          './internal/converge': './converge.mjs',
+          './internal/converge-contract': './contract.mjs',
+          './package.json': './package.json',
+        },
+      }),
+    );
+    fs.writeFileSync(
+      path.join(pkg, 'contract.mjs'),
+      `export const CONVERGE_CONTRACT = ${String(CONVERGE_CONTRACT)};`,
+    );
+    fs.writeFileSync(
+      path.join(pkg, 'converge.mjs'),
+      "export const lower = () => ({}); export const convergeInProcess = async (request) => ({ kind: 'applied', cwd: request.cwd });",
+    );
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: { value: fakeConfig(), file: path.join(configDir, 'prisma.config.ts') },
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+        },
+        { runAssembler: fakeAssembler },
+      ),
+    );
+
+    if (!result.ok) throw result.failure;
+  });
+
+  test('a converge that rejects instead of returning an outcome is DEPLOY.ENGINE_FAILED', async () => {
+    const app = makeAppDir();
+
+    const result = await deployWith(app, {
+      converge: appConverge(async () => {
+        throw new TypeError('outcome.reasons is not iterable');
+      }),
+    });
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure.code).toBe('DEPLOY.ENGINE_FAILED');
+    expect(result.failure.message).toContain('outcome.reasons is not iterable');
+  });
+
+  test('the token never reaches a message event, the engine failure, or a stack-building error', async () => {
+    const app = makeAppDir();
+    const token = 'tok-SENTINEL-abcdef123456';
+    const events: DeployEvent[] = [];
+    const credentials = { workspaceId: 'ws_1', client: {}, serviceToken: token };
+
+    const failed = await deployWith(
+      app,
+      {
+        credentials,
+        converge: appConverge(async (request) => {
+          request.onEvent?.({ kind: 'log', severity: 'warn', text: `retrying with ${token}` });
+          request.onEvent?.({
+            kind: 'resource',
+            fqn: 'app',
+            resourceType: 'Prisma.Deployment',
+            status: 'fail',
+            phase: 'failed',
+            message: `401 for Bearer ${token}`,
+          });
+          return { kind: 'failed', reasons: [{ tag: 'PrismaApiError', message: `bad ${token}` }] };
+        }),
+      },
+      fakeConfig(),
+      (event) => events.push(event),
+    );
+    const stateBroken = fakeConfig();
+    const stackError = await deployWith(
+      app,
+      {
+        credentials,
+        converge: {
+          lower: () => {
+            throw new Error(`state store refused ${token}`);
+          },
+          converge: applied,
+        },
+      },
+      stateBroken,
+    );
+
+    expect(JSON.stringify(events)).not.toContain('SENTINEL');
+    expect(events.filter((event) => event.kind === 'message')).toHaveLength(2);
+    if (failed.ok || stackError.ok) throw new Error('expected failures');
+    expect(JSON.stringify(failed.failure)).not.toContain('SENTINEL');
+    expect(stackError.failure.code).toBe('DEPLOY.ENGINE_FAILED');
+    expect(stackError.failure.message).toBe('state store refused [redacted]');
+  });
+
+  test('a refused converge is DEPLOY.CONVERGE_RUNNING or DEPLOY.WORKER_THREAD', async () => {
+    const app = makeAppDir();
+    const refused = (reason: 'already-running' | 'worker-thread') =>
+      deployWith(app, { converge: appConverge(async () => ({ kind: 'refused', reason })) });
+
+    const running = await refused('already-running');
+    const worker = await refused('worker-thread');
+
+    if (running.ok || worker.ok) throw new Error('expected failures');
+    expect(running.failure.code).toBe('DEPLOY.CONVERGE_RUNNING');
+    expect(worker.failure.code).toBe('DEPLOY.WORKER_THREAD');
+  });
+});
 
 describe('deploy() step events', () => {
   test('a successful deploy reports every step in order, each with a duration and its data', async () => {
@@ -1077,7 +1025,7 @@ describe('deploy() step events', () => {
             report?.({ bytes: 4096 });
             return fakeAssembler(node);
           },
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          converge: appConverge(applied),
         },
       ),
     );
@@ -1112,6 +1060,97 @@ describe('deploy() step events', () => {
     expect(result.value.durationMs).toBeGreaterThanOrEqual(0);
   });
 
+  test("Alchemy's progress becomes one step per resource inside apply, and its log lines become messages", async () => {
+    const app = makeAppDir('hello-resources');
+    const events: DeployEvent[] = [];
+    const resource = (status: string, phase: 'pending' | 'running' | 'done' | 'failed') =>
+      ({
+        kind: 'resource',
+        fqn: 'hello-resources.app',
+        resourceType: 'Prisma.Deployment',
+        status,
+        phase,
+      }) as const;
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(fakeConfig()),
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+          onEvent: (event) => events.push(event),
+        },
+        {
+          runAssembler: fakeAssembler,
+          converge: appConverge(async (request) => {
+            request.onEvent?.(resource('pending', 'pending'));
+            request.onEvent?.(resource('creating', 'running'));
+            request.onEvent?.({ kind: 'log', severity: 'info', text: 'uploading 3 files' });
+            request.onEvent?.(resource('created', 'done'));
+            return APPLIED;
+          }),
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    const applyEvents = events.slice(
+      events.findIndex((event) => event.kind === 'step-started' && event.step.name === 'apply'),
+    );
+    expect(applyEvents.map(stepLine).slice(0, 5)).toEqual([
+      'started apply',
+      'started apply-resource:hello-resources.app',
+      'message uploading 3 files',
+      'finished apply-resource:hello-resources.app ok',
+      'finished apply ok',
+    ]);
+    expect(applyEvents[1]).toMatchObject({ step: { status: 'creating' } });
+    expect(applyEvents[3]).toMatchObject({ step: { status: 'created' } });
+  });
+
+  test('a resource Alchemy failed closes its step as failed and reports the reason', async () => {
+    const app = makeAppDir('hello-resource-fail');
+    const events: DeployEvent[] = [];
+
+    await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(fakeConfig()),
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+          onEvent: (event) => events.push(event),
+        },
+        {
+          runAssembler: fakeAssembler,
+          converge: appConverge(async (request) => {
+            request.onEvent?.({
+              kind: 'resource',
+              fqn: 'site',
+              resourceType: 'Prisma.CustomDomain',
+              status: 'fail',
+              phase: 'failed',
+              message: 'domain-ownership-required',
+            });
+            return {
+              kind: 'failed',
+              reasons: [{ tag: 'PrismaApiError', message: 'domain-ownership-required' }],
+            };
+          }),
+        },
+      ),
+    );
+
+    expect(events.map(stepLine)).toContain('finished apply-resource:site failed');
+    expect(events).toContainEqual({
+      kind: 'message',
+      severity: 'warn',
+      text: 'site: domain-ownership-required',
+    });
+    expect(events.map(stepLine)).toContain('finished apply failed');
+  });
+
   test('a thrown defect closes the open steps as failed and still records the result', async () => {
     const app = makeAppDir('hello-steps-defect');
     const events: DeployEvent[] = [];
@@ -1144,7 +1183,7 @@ describe('deploy() step events', () => {
           cwd: app.dir,
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+        { runAssembler: fakeAssembler, converge: appConverge(applied) },
       ).catch((error: unknown) => error),
     );
 
@@ -1177,6 +1216,7 @@ describe('deploy() step events', () => {
           onEvent: (event) => events.push(event),
         },
         {
+          converge: appConverge(applied),
           runAssembler: async () => {
             throw new Error('no built entry');
           },
@@ -1213,7 +1253,7 @@ describe('deploy() step events', () => {
           reportPath: path.join(app.dir, 'package.json', 'report.json'),
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+        { runAssembler: fakeAssembler, converge: appConverge(applied) },
       );
     } finally {
       warnSpy.mockRestore();
@@ -1237,7 +1277,7 @@ describe('deploy() step events', () => {
             throw new Error('renderer bug');
           },
         },
-        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+        { runAssembler: fakeAssembler, converge: appConverge(applied) },
       ),
     );
 
@@ -1444,6 +1484,10 @@ describe('destroy()', () => {
         ran.push('alchemy');
         return { exitCode: 0, signal: null };
       },
+      converge: appConverge(async () => {
+        ran.push('alchemy');
+        return APPLIED;
+      }),
     };
     const result =
       action === 'deploy'
@@ -2548,7 +2592,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       endpoints: () => Promise.resolve([]),
       logs: async function* () {},
     };
-    let alchemyRan = false;
+    let convergeRan = false;
 
     const result = await silently(() =>
       devWithDeps(
@@ -2560,7 +2604,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         {
           runAssembler: fakeAssembler,
           alchemy: async () => {
-            alchemyRan = true;
+            convergeRan = true;
             return { exitCode: 0, signal: null };
           },
         },
@@ -2570,7 +2614,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
     expect(result.failure.code).toBe('DEV.STACK_WRITE_FAILED');
-    expect(alchemyRan).toBe(false);
+    expect(convergeRan).toBe(false);
   }, 15_000);
 });
 
@@ -2962,10 +3006,10 @@ describe('deploy-run reporting', () => {
     }
   };
 
-  test('a successful deploy is begun, attached, and finished, and its build reaches the apply child', async () => {
+  test('a successful deploy is begun, attached, and finished, and its build reaches the apply', async () => {
     const app = makeAppDir('reported-app');
     const log = recordingReporter();
-    const invocations: AlchemyInvocation[] = [];
+    const requests: ConvergeRequest[] = [];
 
     const result = await silently(() =>
       deployWithDeps(
@@ -2977,10 +3021,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async (invocation) => {
-            invocations.push(invocation);
-            return { exitCode: 0, signal: null };
-          },
+          converge: appConverge(recordingConverge(requests)),
         },
       ),
     );
@@ -2991,7 +3032,7 @@ describe('deploy-run reporting', () => {
       'attach:container',
       'finish:ok',
     ]);
-    expect(invocations[0]?.env['FAKE_BUILD_ID']).toBe('bld_1');
+    expect(requests[0]?.env['FAKE_BUILD_ID']).toBe('bld_1');
   });
 
   test('the engine credentials and the --build-id both reach begin', async () => {
@@ -3009,8 +3050,8 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
-          credentials: { workspaceId: 'ws-1', client: {} },
+          converge: appConverge(applied),
+          credentials: { workspaceId: 'ws-1', client: {}, serviceToken: 'tok' },
         },
       ),
     );
@@ -3048,7 +3089,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          converge: appConverge(applied),
         },
       ),
     );
@@ -3074,7 +3115,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: null, signal: 'SIGINT' }),
+          converge: appConverge(async () => ({ kind: 'interrupted' })),
         },
       ),
     );
@@ -3103,12 +3144,10 @@ describe('deploy-run reporting', () => {
         { entry: app.entryPath, environment: 'ci-6', cwd: app.dir, config: composerConfig(config) },
         {
           runAssembler: fakeAssembler,
-          alchemy: async (input) => {
-            const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
-            if (resultFile === undefined) throw new Error('the result-file env var must be set');
-            fs.writeFileSync(engineFailureFilePath(resultFile), '[web] fail — 409 Conflict');
-            return { exitCode: 1, signal: null };
-          },
+          converge: appConverge(async () => ({
+            kind: 'failed',
+            reasons: [{ tag: 'PrismaApiError', message: '409 Conflict' }],
+          })),
         },
       ),
     );
@@ -3116,7 +3155,7 @@ describe('deploy-run reporting', () => {
     expect(outcomes).toHaveLength(1);
     expect(outcomes[0]?.failingStep).toBe('DEPLOY.ENGINE_FAILED');
     expect(outcomes[0]?.errorMessage).toBe(
-      'alchemy deploy exited with status 1.\n[web] fail — 409 Conflict',
+      'Alchemy could not deploy the app.\nPrismaApiError: 409 Conflict',
     );
   });
 
@@ -3135,7 +3174,7 @@ describe('deploy-run reporting', () => {
           },
           {
             runAssembler: fakeAssembler,
-            alchemy: async () => ({ exitCode: 0, signal: null }),
+            converge: appConverge(applied),
           },
         ),
       );
@@ -3182,7 +3221,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          converge: appConverge(applied),
         },
       ),
     );
@@ -3210,7 +3249,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          converge: appConverge(applied),
         },
       ),
     );
@@ -3540,7 +3579,6 @@ describe('the operations read the pools from the config adapters', () => {
   test("deploy fills the root's input from the config adapters", async () => {
     const app = makeInputAppDir();
     const bindings: unknown[] = [];
-    let stackFileSeen = false;
 
     const result = await silently(() =>
       deployWithDeps(
@@ -3560,16 +3598,12 @@ describe('the operations read the pools from the config adapters', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async (invocation) => {
-            stackFileSeen = fs.existsSync(path.join(app.dir, invocation.stackFileRelativePath));
-            return { exitCode: 0, signal: null };
-          },
+          converge: appConverge(applied),
         },
       ),
     );
 
     expect(result.ok).toBe(true);
-    expect(stackFileSeen).toBe(true);
     expect(bindings).toEqual([{ greeting: 'from-adapter' }]);
   });
 
@@ -3594,7 +3628,7 @@ describe('the operations read the pools from the config adapters', () => {
           environment: 'staging',
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+        { runAssembler: fakeAssembler, converge: appConverge(applied) },
       ),
     );
 
@@ -3606,7 +3640,7 @@ describe('the operations read the pools from the config adapters', () => {
     const app = makeAppDir();
     fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
     fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
-    let alchemyRan = false;
+    let convergeRan = false;
 
     const result = await silently(() =>
       destroyWithDeps(
@@ -3622,7 +3656,7 @@ describe('the operations read the pools from the config adapters', () => {
         {
           runAssembler: fakeAssembler,
           alchemy: async () => {
-            alchemyRan = true;
+            convergeRan = true;
             return { exitCode: 0, signal: null };
           },
         },
@@ -3630,7 +3664,7 @@ describe('the operations read the pools from the config adapters', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(alchemyRan).toBe(true);
+    expect(convergeRan).toBe(true);
   });
 
   test('a secrets pool value appears in no event, result or report', async () => {
@@ -3660,7 +3694,7 @@ describe('the operations read the pools from the config adapters', () => {
           reportPath,
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+        { runAssembler: fakeAssembler, converge: appConverge(applied) },
       ),
     );
 
@@ -3687,7 +3721,7 @@ describe('the operations read the pools from the config adapters', () => {
           environment: 'staging',
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+        { runAssembler: fakeAssembler, converge: appConverge(applied) },
       ),
     );
 

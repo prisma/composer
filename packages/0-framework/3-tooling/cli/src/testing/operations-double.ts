@@ -17,14 +17,13 @@
  * control implementation, which scripts/check-family-static-graph.mjs proves
  * against the packed tarball.
  */
-import { CliStructuredError } from '@internal/foundation/errors';
-import { notOk, ok, type Result } from '@internal/foundation/result';
+import type { CliStructuredError } from '@internal/foundation/errors';
+import { ok, type Result } from '@internal/foundation/result';
 import type { ComposerOperations } from '../family/family.ts';
 import type { DeployEvent, DeployInput, DeploySuccess } from '../operations/deploy.ts';
 import type { DevEvent, DevInput, DevSession } from '../operations/dev.ts';
 import type { DevStopInput, DevStopped, DevUrl, DevUrlInput } from '../operations/dev-current.ts';
 import type { OperationDeps, ServiceEndpoint } from '../operations/shared.ts';
-import { type AlchemyInvocation, reproduceCommand } from '../run-alchemy.ts';
 
 export interface OperationsDoubleFixtures {
   /** Returned as-is; pass notOk(error) for a failing deploy. Default: ok with no summary and a zero duration. */
@@ -48,8 +47,8 @@ export interface OperationsDoubleFixtures {
 
 /**
  * The deps each call carried, in the same order as the inputs beside them.
- * These are the operation's SECOND argument — the seam the config path, the
- * converge spawn adapter and the credentials ride in on — so a host that
+ * These are the operation's SECOND argument — the seam the credentials and
+ * the converge environment ride in on — so a host that
  * drops one of those is caught here rather than by its absence downstream.
  */
 export interface OperationsDoubleDeps {
@@ -97,72 +96,6 @@ function devSessionDouble(
   };
 }
 
-/**
- * Runs the caller's converge adapter, when it supplied one, against a
- * synthetic invocation — no alchemy bin is resolved and no real child is
- * started; the adapter decides what the child does.
- *
- * This is what makes a host's tests cover the settlement rules rather than
- * just the grammar: a scripted fake child that exits non-zero, or is killed
- * by a signal, produces the same failure shape the real executor produces, so
- * the handler's settlement — and the engine's own child-status settlement
- * behind it — is genuinely exercised. Returns undefined when no adapter was
- * injected, leaving the fixture result untouched.
- */
-async function runConverge(
-  deps: OperationDeps,
-  cwd: string | undefined,
-): Promise<Result<never, CliStructuredError> | undefined> {
-  if (deps.alchemy === undefined) return undefined;
-  const stackFilePath = '.prisma-composer/alchemy.run.ts';
-  const workingDirectory = cwd ?? '.';
-  const invocation: AlchemyInvocation = {
-    action: 'deploy',
-    stackFileRelativePath: stackFilePath,
-    cwd: workingDirectory,
-    stage: 'test',
-    env: {},
-  };
-  const outcome = await deps.alchemy(invocation);
-  const reproduce = reproduceCommand(invocation, outcome);
-
-  if (outcome.signal !== null) {
-    return notOk(
-      new CliStructuredError(
-        'DEPLOY.ENGINE_FAILED',
-        `alchemy deploy was interrupted by ${outcome.signal}.`,
-        {
-          meta: {
-            signal: outcome.signal,
-            diagnostics: {
-              exitCode: undefined,
-              signal: outcome.signal,
-              stackFilePath,
-              reproduceCommand: reproduce,
-              cwd: workingDirectory,
-            },
-          },
-        },
-      ),
-    );
-  }
-  const status = outcome.exitCode ?? 1;
-  if (status === 0) return undefined;
-  return notOk(
-    new CliStructuredError('DEPLOY.ENGINE_FAILED', `alchemy deploy exited with status ${status}.`, {
-      meta: {
-        exitCode: status,
-        diagnostics: {
-          exitCode: status,
-          stackFilePath,
-          reproduceCommand: reproduce,
-          cwd: workingDirectory,
-        },
-      },
-    }),
-  );
-}
-
 export function createOperationsDouble(fixtures: OperationsDoubleFixtures = {}): OperationsDouble {
   const deployCalls: DeployInput[] = [];
   const devCalls: DevInput[] = [];
@@ -190,8 +123,6 @@ export function createOperationsDouble(fixtures: OperationsDoubleFixtures = {}):
           // The real deploy ignores a throwing onEvent, so the double does too.
         }
       }
-      const converge = await runConverge(operationDeps, input.cwd);
-      if (converge !== undefined) return converge;
       return fixtures.deploy ?? ok({ summary: undefined, durationMs: 0 });
     },
     dev: async (input, operationDeps) => {

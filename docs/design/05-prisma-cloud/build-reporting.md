@@ -46,8 +46,7 @@ The CLI calls the hook three times:
    `state` (`succeeded`, `failed` or `cancelled`), `failingStep` (Composer's
    error code, capped at 500 characters) and `errorMessage` (capped at 5000).
 
-The session also hands the alchemy child its environment through
-`childEnv()`: `PRISMA_BUILD_ID`, so reporting inside the apply finds the run.
+The session also hands the apply its environment through `childEnv()`: `PRISMA_BUILD_ID`, so reporting inside the apply finds the run. `deploy` runs the apply in its own process and sets these variables in `process.env` for the length of the apply ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)).
 
 The reporter installs no signal handlers. The CLI engine owns signals, and an
 interrupt reaches the reporter as `cancelled` on the ordinary `finish` path.
@@ -170,9 +169,7 @@ has no resource row; the Build's `projectId` carries the association.
 
 `--report <path>` or `PRISMA_COMPOSER_REPORT_FILE` writes a versioned JSON file
 with the app, its environment, its nodes and entities (including preview URLs), and
-the failure cause. It is written on failure too. It is separate from the
-internal summary the alchemy child hands the CLI, which is deleted after every
-run so resource ids and URLs do not accumulate on disk. The Prisma GitHub
+the failure cause. It is written on failure too. It is separate from the deployment summary `deploy` returns as a value, which is never written to disk. The Prisma GitHub
 Action reads it to comment preview links on a pull request. It is
 transitional: it can go once the Action reads the Build, topology and versions
 from the platform.
@@ -199,10 +196,7 @@ from the platform.
   builds. An interrupt the engine catches is reported as `cancelled`; SIGKILL
   and a torn-down CI runner cannot be. CI cancellation is common, so this is
   the normal case, not a defect.
-- **A failed apply reports `DEPLOY.ENGINE_FAILED` as its `failingStep`.** Every
-  failure inside the alchemy child shares that code. The `errorMessage`
-  carries the exit status and, when the child recorded one on its way out, the
-  underlying cause.
+- **A failed apply reports `DEPLOY.ENGINE_FAILED` as its `failingStep`.** Every failure Alchemy's plan or apply ends with shares that code. The `errorMessage` carries the errors Alchemy failed with, with every credential and pool secret removed.
 - **`branchId` stays empty on a `production` deploy.** Only the Branch of
   another environment is attached to the Build.
 
