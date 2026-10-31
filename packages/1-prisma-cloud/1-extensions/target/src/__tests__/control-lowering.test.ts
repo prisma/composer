@@ -25,6 +25,7 @@ import * as Effect from 'effect/Effect';
 import * as Option from 'effect/Option';
 import * as Redacted from 'effect/Redacted';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
+import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
 import type { ComputeProvisioned, ComputeSerialized } from '../descriptors/compute.ts';
 import { computeDescriptor } from '../descriptors/compute.ts';
 import type { S3StoreSerialized } from '../descriptors/s3-store.ts';
@@ -2731,7 +2732,6 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
       const o: ResolvedCloudOptions = {
         workspaceId: 'ws_1',
         providerParams,
-        preflight: { pointerVersion: () => undefined, absentSecrets: new Set() },
       };
       const node = compute({ name: 'multi', deps: {}, build, expose: { any: anyContract } });
       const ctx = {
@@ -2787,10 +2787,6 @@ describe('a secret the prisma dev preflight found unset', () => {
     const o: ResolvedCloudOptions = {
       workspaceId: 'ws_1',
       providerParams: new Map(),
-      preflight: {
-        pointerVersion: () => undefined,
-        absentSecrets: new Set(['STRIPE_WEBHOOK_SECRET']),
-      },
     };
     const node = compute({
       name: 'billing',
@@ -2827,6 +2823,10 @@ describe('a secret the prisma dev preflight found unset', () => {
       },
       provisioned: new Map(),
       opts: {},
+      preflight: serializeDevPreflightPayload({
+        absentSecrets: ['STRIPE_WEBHOOK_SECRET'],
+        pointerVersions: {},
+      }),
     } as unknown as LowerContext;
     const provisioned = {
       serviceId: 'billing-svc#cloud-id',

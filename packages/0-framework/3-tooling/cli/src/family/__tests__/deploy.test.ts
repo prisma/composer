@@ -9,7 +9,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok } from '@internal/foundation/result';
-import type { ScriptedChildProgram, TestCli } from '@prisma/cli-engine/testing';
+import type { TestCli } from '@prisma/cli-engine/testing';
 import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
 import { createOperationsDouble, type OperationsDouble } from '../../testing/operations-double.ts';
 import { createComposerFamily } from '../family.ts';
@@ -18,28 +18,7 @@ import { validComposerSection } from './fixtures/composer-section.ts';
 
 type Fixtures = Parameters<typeof createOperationsDouble>[0];
 
-/**
- * A real app directory with @prisma/composer and its `alchemy` installed,
- * because the handler's spawn adapter resolves that alchemy's bin before
- * handing the terminal over, as a real run does. The bin is never executed:
- * the engine's scripted fake child stands in for the process.
- */
-const CWD = (() => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'composer-family-')));
-  const nodeModules = path.join(dir, 'node_modules');
-  fs.mkdirSync(path.join(nodeModules, '@prisma', 'composer'), { recursive: true });
-  fs.writeFileSync(
-    path.join(nodeModules, '@prisma', 'composer', 'package.json'),
-    JSON.stringify({ name: '@prisma/composer', exports: { './package.json': './package.json' } }),
-  );
-  fs.mkdirSync(path.join(nodeModules, 'alchemy', 'bin'), { recursive: true });
-  fs.writeFileSync(
-    path.join(nodeModules, 'alchemy', 'package.json'),
-    JSON.stringify({ name: 'alchemy', bin: { alchemy: './bin/cli.js' } }),
-  );
-  fs.writeFileSync(path.join(nodeModules, 'alchemy', 'bin', 'cli.js'), '');
-  return dir;
-})();
+const CWD = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'composer-family-')));
 
 /** A credential that is signed in and nowhere near expiry. */
 function activeCredential() {
@@ -63,8 +42,8 @@ interface Harness {
 function composerCli(
   spec: {
     readonly fixtures?: Fixtures;
-    readonly signedIn?: boolean;
-    readonly spawnScript?: ScriptedChildProgram;
+    /** How the run is signed in: a service token in the environment (the default), a `prisma login` session, or not at all. */
+    readonly signedIn?: 'environment' | 'session' | false;
   } = {},
 ): Harness {
   const double = createOperationsDouble(spec.fixtures ?? {});
@@ -76,8 +55,11 @@ function composerCli(
     // group; their own tests mount them alone.
     commands: { deploy: commandAt(family, 'deploy'), dev: commandAt(family, 'dev') },
     config: { composer: validComposerSection() },
-    ...(spec.signedIn === false ? {} : { credential: activeCredential() }),
-    ...(spec.spawnScript === undefined ? {} : { spawnScript: spec.spawnScript }),
+    ...(spec.signedIn === false
+      ? {}
+      : spec.signedIn === 'session'
+        ? { credential: activeCredential() }
+        : { environmentCredential: activeCredential() }),
   });
   return { cli, double };
 }
@@ -88,16 +70,6 @@ const AS_TTY = { isTty: { stdout: true, stderr: true }, cwd: CWD } as const;
 /** A real terminal gets styled output; the assertions here are about the words, not the escape codes. */
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
 const plain = (text: string): string => text.replace(ANSI, '');
-
-const childExiting = (status: number): ScriptedChildProgram =>
-  function scriptedExit() {
-    return { exitCode: status, signal: null };
-  };
-
-const childKilledBy = (signal: 'SIGINT' | 'SIGTERM'): ScriptedChildProgram =>
-  function scriptedSignal() {
-    return { exitCode: null, signal };
-  };
 
 describe('argument validation', () => {
   test('a leftover positional entry is refused by the grammar and never reaches the handler', async () => {
@@ -193,18 +165,14 @@ describe('argument validation', () => {
         environment: 'feat-auth',
         cwd: CWD,
         onEvent: expect.any(Function),
+        signal: expect.any(AbortSignal),
       },
     ]);
   });
 });
 
-/**
- * Engine 0.2.0 (prisma-cli#184): a spawning command uses the engine's normal
- * structured-output contract. `--json` runs the command — the terminal frame
- * on stdout is the machine surface, and the child's own output becomes
- * diagnostics — instead of being refused up front as it was on engine 0.1.1.
- */
-describe('--json on a spawning command', () => {
+/** `--json` runs the command, and the terminal frame on stdout is the machine surface. */
+describe('--json', () => {
   for (const argv of [['deploy', '--entry', 'src/service.ts']]) {
     test(`\`${argv[0]} --json\` runs and emits one result frame`, async () => {
       const { cli, double } = composerCli();
@@ -234,82 +202,63 @@ describe('credentials', () => {
 
     expect(result.exitCode).toBe(2);
     expect(plain(result.stderr)).toContain('CLI.CREDENTIALS_REQUIRED');
-    expect(result.spawns).toEqual([]);
+    expect(double.calls.deploy).toEqual([]);
+  });
+
+  test('a `prisma login` session without PRISMA_SERVICE_TOKEN is refused before the operation runs', async () => {
+    const { cli, double } = composerCli({ signedIn: 'session' });
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
+
+    expect(result.exitCode).toBe(2);
+    expect(plain(result.stderr)).toContain('DEPLOY.SERVICE_TOKEN_REQUIRED');
+    expect(plain(result.stderr)).toContain('set PRISMA_SERVICE_TOKEN');
     expect(double.calls.deploy).toEqual([]);
   });
 
   /**
-   * The child leg: the command declares `needs: { credentials: 'child' }`, so
-   * the engine composes the credential into the converge's environment. Only
-   * the KEY is observable here — the harness never records a value, so a
-   * fixture cannot carry token material.
+   * Alchemy runs in this process and reads its credential from
+   * `process.env`, so the handler hands the operation the token and the
+   * credential's workspace to set there for the apply.
    */
-  test('the converge child is given the credential by the engine', async () => {
-    const { cli } = composerCli({ spawnScript: childExiting(0) });
+  test('the service token and the workspace reach the converge environment, and no child is spawned', async () => {
+    const { cli, double } = composerCli();
     const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(0);
-    expect(result.spawns[0]?.envKeys).toContain('PRISMA_SERVICE_TOKEN');
+    expect(result.spawns).toEqual([]);
+    const deps = double.calls.deps.deploy[0];
+    expect(Object.keys(deps?.convergeEnv ?? {}).sort()).toEqual([
+      'PRISMA_SERVICE_TOKEN',
+      'PRISMA_WORKSPACE_ID',
+    ]);
+    expect(deps?.convergeEnv?.['PRISMA_WORKSPACE_ID']).toBe('ws_1');
+    expect(deps?.credentials?.workspaceId).toBe('ws_1');
+    expect(double.calls.deploy[0]?.signal).toBeInstanceOf(AbortSignal);
   });
 });
 
-/**
- * How a converge settles, which is the whole reason the commands run the
- * child through `ctx.spawn` rather than describing the outcome themselves.
- */
 describe('settlement', () => {
-  test("a converge that exits non-zero settles with the child's own status, not a collapsed one", async () => {
-    const { cli } = composerCli({ spawnScript: childExiting(7) });
-    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
-
-    expect(result.exitCode).toBe(7);
-  });
-
-  test('a failed converge renders the reproduce hint and no failure envelope', async () => {
-    const { cli } = composerCli({ spawnScript: childExiting(1) });
-    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
-
-    expect(result.exitCode).toBe(1);
-    expect(plain(result.stderr)).toContain(
-      `Run the converge directly from ${CWD} to reproduce this`,
-    );
-    // The bin path is quoted when it contains a character the platform's shell
-    // treats specially, such as a space, so the path and the arguments are
-    // checked apart.
-    expect(plain(result.stderr)).toContain(
-      path.join(CWD, 'node_modules', 'alchemy', 'bin', 'cli.js'),
-    );
-    expect(plain(result.stderr)).toContain(
-      'deploy .prisma-composer/alchemy.run.ts --yes --stage test',
-    );
-    expect(plain(result.stderr)).not.toContain('✖');
-  });
-
-  /**
-   * The rule this whole restructure exists for. A signal-killed child is the
-   * user aborting, not a deploy that failed: it settles 128 + the signal, and
-   * it renders NOTHING — no failure envelope, because nothing failed, and no
-   * reproduce hint, because the user stopped it and there is nothing to
-   * reproduce. The old CLI collapsed the signal into an exit code and reported
-   * a Ctrl-C'd deploy as an engine failure.
-   */
-  for (const [signal, code] of [
-    ['SIGINT', 130],
-    ['SIGTERM', 143],
-  ] as const) {
-    test(`a deploy whose converge is killed by ${signal} settles ${String(code)} in silence`, async () => {
-      const { cli } = composerCli({ spawnScript: childKilledBy(signal) });
-      const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
-
-      expect(result.exitCode).toBe(code);
-      expect(plain(result.stderr)).toBe('');
-      expect(plain(result.stdout)).toBe('');
+  test('a failed converge renders the normal envelope and exits 2', async () => {
+    const { cli } = composerCli({
+      fixtures: {
+        deploy: notOk(
+          new CliStructuredError(
+            'DEPLOY.ENGINE_FAILED',
+            'Alchemy could not deploy the app.\nPrismaApiError: quota exceeded',
+          ),
+        ),
+      },
     });
-  }
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
+
+    expect(result.exitCode).toBe(2);
+    expect(plain(result.stderr)).toContain('DEPLOY.ENGINE_FAILED');
+    expect(plain(result.stderr)).toContain('PrismaApiError: quota exceeded');
+    expect(plain(result.stderr)).not.toContain('to reproduce this');
+  });
 
   /**
-   * A failure that never reached the child is an ordinary structured error, so
-   * it gets the ordinary envelope — and composer's `fix` prose has to survive
+   * A structured failure gets the ordinary envelope — and composer's `fix` prose has to survive
    * the translation into the engine's `nextActions`, which is the one part of
    * an envelope that changes representation at the family boundary.
    */
@@ -488,6 +437,49 @@ describe('step events', () => {
     ];
     expect(lines.filter((line) => expected.includes(line))).toEqual(expected);
     expect(plain(result.stderr)).toContain('Deployed shop to pr-7 in 12.3s.');
+  });
+
+  test("each resource Alchemy applies is a step under apply, and Alchemy's log lines are messages", async () => {
+    const step = {
+      name: 'apply-resource',
+      fqn: 'shop.api',
+      resourceType: 'Prisma.Deployment',
+    } as const;
+    const { cli } = composerCli({
+      fixtures: {
+        deploy,
+        deployEvents: [
+          { kind: 'step-started', step: { name: 'apply' } },
+          { kind: 'step-started', step: { ...step, status: 'creating' } },
+          { kind: 'message', severity: 'info', text: 'shop.api: uploading 3 files' },
+          {
+            kind: 'step-finished',
+            step: { ...step, status: 'created' },
+            outcome: 'ok',
+            durationMs: 1_200,
+          },
+        ],
+      },
+    });
+    const human = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
+    const json = await composerCli({
+      fixtures: {
+        deploy,
+        deployEvents: [{ kind: 'step-started', step: { ...step, status: 'creating' } }],
+      },
+    }).cli.run(['deploy', '--entry', 'src/service.ts', '--json'], AS_TTY);
+
+    const lines = plain(human.stderr).split('\n');
+    expect(lines).toContain('▸ creating shop.api');
+    expect(lines).toContain('shop.api: uploading 3 files');
+    expect(lines).toContain('✔ created shop.api (1.2s)');
+    expect(json.json[0]).toMatchObject({
+      kind: 'step-started',
+      step: 'creating shop.api',
+      id: 'deploy.apply.shop.api',
+      parentId: 'deploy.apply',
+      data: { resourceType: 'Prisma.Deployment' },
+    });
   });
 
   test("a finished step's durationMs is the measured one, even when the adapter reported its own", async () => {

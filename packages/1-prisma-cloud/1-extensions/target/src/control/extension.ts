@@ -43,11 +43,7 @@ import { resourceId } from '../resource-ids.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 import { STREAMS_API_KEY } from '../streams-keys.ts';
-import {
-  serializeDeployPreflightPayload,
-  type TransportedPreflight,
-  transportedPreflight,
-} from './preflight-payload.ts';
+import { serializeDeployPreflightPayload } from './preflight-payload.ts';
 
 /**
  * ADR-0031's registered provisioner for RPC_PEER_KEY: mints one `ServiceKey`
@@ -287,7 +283,7 @@ export const PROVIDER_PARAMS: ReadonlyMap<symbol, ProviderParam | ServiceProvide
  * required for `prisma dev`, which never sets `PRISMA_REGION` and
  * must not fail on its absence (local-dev spec § 5).
  */
-function resolveOptions(opts: PrismaCloudOptions): Omit<ResolvedCloudOptions, 'preflight'> {
+function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
   const workspaceId = opts.workspaceId ?? process.env['PRISMA_WORKSPACE_ID'] ?? '';
 
   if (opts.region !== undefined) {
@@ -316,26 +312,17 @@ function resolveOptions(opts: PrismaCloudOptions): Omit<ResolvedCloudOptions, 'p
  * environment present, since it also builds the `localTarget` descriptor, which must
  * never require `PRISMA_WORKSPACE_ID`/`PRISMA_REGION`/`PRISMA_SERVICE_TOKEN`.
  */
-function lazyOptions(
-  opts: PrismaCloudOptions,
-  preflight: TransportedPreflight,
-): () => ResolvedCloudOptions {
+function lazyOptions(opts: PrismaCloudOptions): () => ResolvedCloudOptions {
   let cached: ResolvedCloudOptions | undefined;
   return () => {
-    cached ??= { ...resolveOptions(opts), preflight };
+    cached ??= resolveOptions(opts);
     return cached;
   };
 }
 
 /** The Prisma Cloud extension descriptor — the `composer` section of `prisma.config.ts` lists it under `extensions`. */
 export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor => {
-  // When each pointed-at platform variable was last written — filled by the
-  // deploy preflight, read by the environment fingerprint. A closure, not a
-  // module variable, so two `prismaCloud()` extensions cannot share it. In
-  // the alchemy process (no preflight) the lookup falls back to what the CLI
-  // transported (preflight-payload.ts).
-  const preflightTimestamps = new Map<string, string>();
-  const o = lazyOptions(opts, transportedPreflight(preflightTimestamps, process.env));
+  const o = lazyOptions(opts);
 
   return {
     id: PRISMA_CLOUD_EXTENSION_ID,
@@ -356,16 +343,12 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
 
     // Deploy-time prerequisite check (ADR-0029): verify every pointer secret in
     // the provision manifest exists for the resolved environment, filling absent-but-
-    // in-shell names via a direct API POST — before any stack file or Alchemy.
-    // Timestamps are kept for this process AND serialized onto the preflight
-    // transport for the alchemy process. The parameter annotation is what
-    // recovers this extension's own client type from the framework's erased
-    // one; without it `input.credentials` arrives as `unknown`.
+    // in-shell names via a direct API POST — before Alchemy runs. The
+    // timestamps reach the lowering as its `preflight` payload. The parameter
+    // annotation is what recovers this extension's own client type from the
+    // framework's erased one; without it `input.credentials` arrives as `unknown`.
     preflight: (input: PrismaCloudPreflightInput) =>
-      runPreflight(input).then((timestamps) => {
-        for (const [name, updatedAt] of timestamps) preflightTimestamps.set(name, updatedAt);
-        return serializeDeployPreflightPayload(timestamps);
-      }),
+      runPreflight(input).then(serializeDeployPreflightPayload),
 
     // Records the deploy as a Build so it appears in the Console, and passes
     // the build's id into the apply so the state store can report what the

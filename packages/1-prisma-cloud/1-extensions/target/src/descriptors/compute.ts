@@ -11,6 +11,7 @@ import {
 import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
+import { transportedPreflight } from '../control/preflight-payload.ts';
 import { GeneratedParam } from '../generated-param-resource.ts';
 import {
   fromLegacyId,
@@ -257,7 +258,7 @@ export function computeDescriptor(
           address,
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
           {
-            absentSecrets: o().preflight.absentSecrets,
+            absentSecrets: transportedPreflight(ctx.preflight).absentSecrets,
             ...(ctx.opts.configPool !== undefined ? { env: ctx.opts.configPool } : {}),
           },
         );
@@ -419,9 +420,9 @@ export function computeDescriptor(
         }),
       ),
 
-    deploy: ({ address, graph }, provisioned, artifact, serialized) =>
+    deploy: ({ address, graph, preflight }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
-        const { pointerVersion } = o().preflight;
+        const { pointerVersion } = transportedPreflight(preflight);
         // Env keys never contain ':', so a `<name>:updatedAt` member cannot
         // collide with a row's own trigger member. The key name is historical:
         // under `prisma dev` the member holds an HMAC of the value, and

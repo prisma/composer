@@ -140,8 +140,8 @@ describe("invariant 2: the '.' authoring entry bundles lean", () => {
   });
 });
 
-describe('invariant 4: core touches the environment only to read back the container transport it wrote', () => {
-  test("the process-env token appears only in control/deploy.ts (deserializeContainers(config, process.env), read-back for the parent→child container transport core itself owns — never a target's own vars)", () => {
+describe('invariant 4: core touches the environment only to read back the transports it wrote', () => {
+  test("the process-env token appears only in control/deploy.ts (the container and preflight transports a generated stack file reads back — never a target's own vars)", () => {
     const sources = shippedSources();
     expect(sources.length).toBeGreaterThan(0);
 

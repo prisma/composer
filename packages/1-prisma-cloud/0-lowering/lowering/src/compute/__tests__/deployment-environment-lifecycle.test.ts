@@ -289,7 +289,6 @@ test.each(scenarios)(
         yield* stack.deploy(program(input, 2, addVariable));
         expect(snapshots).toHaveLength(2);
       }),
-      options,
     );
   },
 );

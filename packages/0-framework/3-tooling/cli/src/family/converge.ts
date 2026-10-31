@@ -1,39 +1,17 @@
 /**
- * The `deploy` command's converge: the two-leg authenticated run of a
- * converge, and the settlement rules for how the child ended.
- *
- * The two legs (S3 § Auth). The IN-PROCESS leg is the pre-work that happens
- * in this process — config evaluation, container ensure/locate, preflight —
- * and it authenticates through composer's own injection seam: the engine's
- * pinned, refreshing API client goes in as the operation deps' client, and
- * the workspace id comes from the engine's credential read. Nothing here
- * reads the environment for token material. The CHILD leg is the engine's:
- * it composes the credential into the child environment at spawn time because
- * the command declares `needs: { credentials: 'child' }`, which is also what
- * makes the engine refuse a near-expiry credential BEFORE the handler runs —
- * before the in-process leg creates anything on any platform.
+ * The `dev` command's converge child: the spawn adapter backed by the
+ * engine's `ctx.spawn`, and the settlement rules for how the child ended.
+ * `deploy` converges in this process and settles as an ordinary command.
  */
 
 import type { CliStructuredError as ComposerError } from '@internal/foundation/errors';
-import type { Result as ComposerResult } from '@internal/foundation/result';
-import type {
-  ChildResult,
-  ChildStatusSettlement,
-  ManagementApiClient,
-  PresentedResult,
-} from '@prisma/cli-engine';
+import type { ChildResult, ChildStatusSettlement } from '@prisma/cli-engine';
 import { exitWithChildStatus } from '@prisma/cli-engine';
 import type { CliStructuredError, NextAction, Result } from '@prisma/cli-engine/protocol';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
-import { executionDiagnostics, type OperationDeps } from '../operations/shared.ts';
+import { executionDiagnostics } from '../operations/shared.ts';
 import { alchemyCommandLine, type RunAlchemy } from '../run-alchemy.ts';
 import { toEngineError } from './translate-error.ts';
-
-/** What a result command's handler may settle with. */
-export type HandlerResult = Result<
-  PresentedResult<unknown> | ChildStatusSettlement,
-  CliStructuredError
->;
 
 /** The subset of the engine context this module needs, so the helpers stay
  *  testable without building a whole context. */
@@ -77,19 +55,6 @@ export function convergeSpawn(ctx: ConvergeContext): RunAlchemy {
   };
 }
 
-/** The in-process leg's deps: composer's existing seam, carrying the engine's
- *  own client and workspace id rather than anything read from the env. */
-export function operationDeps(spec: {
-  readonly alchemy: RunAlchemy;
-  readonly workspaceId: string | undefined;
-  readonly client: ManagementApiClient;
-}): OperationDeps {
-  return {
-    alchemy: spec.alchemy,
-    credentials: { workspaceId: spec.workspaceId, client: spec.client },
-  };
-}
-
 /**
  * The reproduce hint a failed converge carries. Deliberately absent for an
  * aborted one: the user stopped it, so there is nothing to reproduce.
@@ -108,14 +73,14 @@ export function reproduceHint(failure: ComposerError): readonly NextAction[] {
 }
 
 /**
- * How a FAILED converge settles. `deploy` and `dev` both end this
- * way and must not drift apart, so the decision lives here once rather than
- * inline in each handler.
+ * How a FAILED `dev` converge settles.
  *
  * A failure that reached the child exits with the child's status verbatim and
  * carries the reproduce hint; a failure that never reached the child is an
  * ordinary structured error and gets the normal envelope. Nothing here reads
- * `signal` — see settleConverge.
+ * `signal`: `exitWithChildStatus` settles from the engine's own record of the
+ * child, and a signal-killed one overrules it with 128 + the signal and no
+ * reproduce hint.
  */
 export function settleConvergeFailure(
   failure: ComposerError,
@@ -126,35 +91,4 @@ export function settleConvergeFailure(
     return ok(exitWithChildStatus({ nextActions: reproduceHint(failure) }));
   }
   return notOk(toEngineError(failure));
-}
-
-/**
- * How a converge settles, now that the engine owns the child's status.
- *
- * Nothing here reads `signal`. `exitWithChildStatus` settles from the engine's
- * own record of the child, and a signal-killed one overrules whatever this
- * function asked for: 128 + the signal, no failure envelope, and the reproduce
- * hint dropped, because the user stopped the run and there is nothing to
- * reproduce.
- *
- * What is left is the operation's own verdict. A failure that reached the
- * child exits with the child's status verbatim and carries the reproduce hint;
- * a failure that never reached the child is an ordinary structured error and
- * gets the normal envelope.
- *
- * A SUCCESS presents its result even when the child was signal-killed. No
- * composer operation produces that pair today — each one reports a
- * signal-killed converge as a failure — and an operation that ever did would
- * have a real result worth showing. The run still exits 130, because the
- * engine settles a signal-terminated run from its own record of the signal
- * whatever the handler returns.
- */
-export function settleConverge<T>(
-  result: ComposerResult<T, ComposerError>,
-  ctx: ConvergeContext,
-  present: (value: T) => PresentedResult<unknown>,
-): HandlerResult {
-  if (!result.ok) return settleConvergeFailure(result.failure, ctx);
-
-  return ok(present(result.value));
 }

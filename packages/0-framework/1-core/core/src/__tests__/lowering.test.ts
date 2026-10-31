@@ -42,6 +42,7 @@ import {
   resource,
   service,
 } from '../node.ts';
+import { preflightEnvVarName } from '../preflight-transport.ts';
 import { resolve } from '../value.ts';
 import { anyInputSchema, conn, providerContract } from './helpers.ts';
 
@@ -715,6 +716,7 @@ describe('lowering a module root — a single service', () => {
       opts: opts(),
       application: undefined,
       container: undefined,
+      preflight: undefined,
       lowered,
       provisioned: new Map(),
     };
@@ -1556,6 +1558,48 @@ describe('container threading through lowering() (the parent→child transport r
       { phase: 'application', container: undefined },
       { phase: 'resource', container: undefined },
     ]);
+  });
+
+  test('containers passed as values win over the transport in the environment', () => {
+    const { descriptor, config, seen } = fakeExtensionWithContainer();
+    const passed = new FakeContainerInstance({ appName: 'shop', environment: 'staging' });
+    const stale = { appName: 'shop', environment: 'production' };
+
+    withEnv({ [containerEnvVarName(descriptor.id)]: JSON.stringify(stale) }, () => {
+      run(lowering(dbModule(), config, opts({ containers: new Map([[descriptor.id, passed]]) })));
+    });
+
+    expect(seen).toEqual([
+      { phase: 'application', container: passed },
+      { phase: 'resource', container: passed },
+    ]);
+  });
+
+  test("each context carries its own extension's preflight payload: passed as values, else read from the environment", () => {
+    const seen: unknown[] = [];
+    const descriptor: ExtensionDescriptor = {
+      id: 'test/preflight-pack',
+      application: {
+        provision: (ctx) => {
+          seen.push(ctx.preflight);
+          return Effect.succeed(undefined);
+        },
+      },
+      nodes: {},
+    };
+    const config: PrismaAppConfig = {
+      extensions: [descriptor],
+      state: { extension: descriptor.id, create: () => stateSentinel('config') },
+    };
+    const root = module('shop', {}, () => ({}));
+
+    withEnv({ [preflightEnvVarName(descriptor.id)]: 'from-env' }, () => {
+      run(lowering(root, config, opts({ preflight: new Map([[descriptor.id, 'passed']]) })));
+      run(lowering(root, config, opts({ preflight: new Map() })));
+      run(lowering(root, config, opts()));
+    });
+
+    expect(seen).toEqual(['passed', undefined, 'from-env']);
   });
 
   test('an extension declaring no container descriptor at all sees ctx.container as undefined', () => {

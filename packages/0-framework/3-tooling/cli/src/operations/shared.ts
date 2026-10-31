@@ -12,6 +12,7 @@ import type {
 } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
+import type { Converge } from '../converge-in-process.ts';
 import type { startWatch } from '../dev/watch.ts';
 import type { RunAlchemy } from '../run-alchemy.ts';
 
@@ -39,11 +40,19 @@ export interface ServiceEndpoint {
 export interface OperationDeps {
   readonly runAssembler?: RunAssembler | undefined;
   /**
-   * Starts the converge child. The CLI passes one backed by the engine's
-   * `ctx.spawn`, so the terminal reaches the child natively and the engine
-   * owns signal policy; hosts get the default `spawnAlchemy`.
+   * Starts the converge child for `destroy` and `dev`. The CLI passes one
+   * backed by the engine's `ctx.spawn`, so the terminal reaches the child
+   * natively and the engine owns signal policy; hosts get the default `spawnAlchemy`.
    */
   readonly alchemy?: RunAlchemy | undefined;
+  /** Plans and applies `deploy`'s lowered stack; defaults to `convergeInProcess`. Tests substitute it. */
+  readonly converge?: Converge | undefined;
+  /**
+   * Set in `process.env` while `deploy`'s plan and apply run, and restored
+   * after. The CLI puts the credential here, because Alchemy reads its
+   * credentials only from the environment.
+   */
+  readonly convergeEnv?: Readonly<Record<string, string>> | undefined;
   /** Starts a file watch for `dev`; defaults to chokidar-backed `startWatch`. Tests substitute it to drive changes directly. */
   readonly watch?: typeof startWatch | undefined;
   /**

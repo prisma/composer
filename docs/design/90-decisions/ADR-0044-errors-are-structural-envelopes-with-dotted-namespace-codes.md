@@ -1,5 +1,7 @@
 # ADR-0044: Errors are structural envelopes with dotted namespace codes
 
+Amended by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): `deploy` starts no Alchemy child, so the child exit-status passthrough below applies only to `prisma dev` and `destroy`. A failed `deploy` plan or apply is `DEPLOY.ENGINE_FAILED` and exits 2. `DEPLOY.INTERRUPTED` and `DEPLOY.SERVICE_TOKEN_REQUIRED` are added.
+
 Amended 2026-10-23: the `CONFIG` registry gains ENTRY_MISSING, for a command or operation that has no entry module from the config or an override.
 
 Amended 2026-10-27: the `DEPLOY` registry follows [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md), which calls a place the app runs an environment. It gains ENVIRONMENT_INVALID, ENVIRONMENT_UNVALIDATABLE and ENVIRONMENT_REQUIRED, and retires STAGE_INVALID, STAGE_UNVALIDATABLE and SCOPE_MISSING. The `DEPS` registry gains EXTENSION_INCOMPATIBLE.
@@ -99,10 +101,14 @@ Closed subcode registry:
   ENVIRONMENT_INVALID, ENVIRONMENT_UNVALIDATABLE, ENVIRONMENT_REQUIRED,
   CONTAINER_FAILED,
   PREFLIGHT_FAILED, ENGINE_FAILED, TEARDOWN_FAILED, CONTAINER_REMOVE_FAILED,
-  BUILD_REQUIRED, ALCHEMY_BIN_MISSING, NODE_MISSING, STACK_WRITE_FAILED
+  BUILD_REQUIRED, ALCHEMY_BIN_MISSING, NODE_MISSING, STACK_WRITE_FAILED,
+  INTERRUPTED, SERVICE_TOKEN_REQUIRED
   *(STAGE_INVALID, STAGE_UNVALIDATABLE and SCOPE_MISSING retired by
   [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md))*.
   ENVIRONMENT_REQUIRED: a `destroy` call names no environment.
+  INTERRUPTED: the abort signal stopped `deploy`'s plan or apply.
+  SERVICE_TOKEN_REQUIRED: `prisma deploy` has no `PRISMA_SERVICE_TOKEN` in
+  the environment ([ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md)).
   `prisma dev` starts the Alchemy child the same way `deploy` does, so it
   raises ALCHEMY_BIN_MISSING and NODE_MISSING under `DEPLOY` too.
 - `DEV` — PLATFORM_UNSUPPORTED, TARGET_UNSUPPORTED, CONTAINER_FAILED, TEARDOWN_FAILED, PREFLIGHT_FAILED, EMULATOR_FAILED, SERVICE_START_FAILED, CONVERGE_FAILED, ATTACH_FAILED, STACK_WRITE_FAILED, EMULATORS_DIR_INVALID, EMULATOR_UNREACHABLE, SERVICE_READY_TIMEOUT_INVALID, NOT_STARTED_HERE, ADDRESS_UNKNOWN, NOT_RUNNING. EMULATOR_UNREACHABLE is raised by the emulator client when it cannot connect, so `log` raises it under `DEV` too; for a connection failure it takes the place of SERVICE_START_FAILED, ATTACH_FAILED and `LOG.ATTACH_FAILED`. `devUrl` also raises it when the emulator a node runs on is not running. NOT_STARTED_HERE (no `prisma dev` has recorded an app in the directory) is raised by `devUrl` and `devStop`; ADDRESS_UNKNOWN (the recorded app has no node at that address; the known addresses are listed) and NOT_RUNNING (the node exists but is not running; its state is named, and the reason and fix depend on it) by `devUrl` alone ([ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md)). Both operations raise EMULATOR_FAILED when the local target fails without a code. `emulator list` fails only with EMULATORS_DIR_INVALID; an emulator it cannot list is reported in that emulator's entry with EMULATOR_UNREACHABLE or EMULATOR_FAILED.
@@ -122,7 +128,7 @@ governs statuses the CLI itself generates: `0` OK, `1` internal error/bug ONLY,
 `2` expected failure (usage errors and structured failures alike), `3` user
 abort, `130`/`143` signals.
 
-**Documented exception:** when the spawned deploy engine (alchemy) exits
+**Documented exception** (`destroy` and `prisma dev`; `deploy` runs Alchemy in process since [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md)): when the spawned deploy engine (alchemy) exits
 nonzero, the CLI prints the two reproduce-hint lines and passes the child's own
 exit status through unchanged — the child's status is the operator's signal and
 renumbering it would erase information. A passthrough status is the child's
