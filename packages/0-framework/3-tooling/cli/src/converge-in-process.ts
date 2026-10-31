@@ -1,14 +1,16 @@
 /**
  * Runs a lowered stack's plan and apply in this process through Alchemy's
  * programmatic API (`alchemy/Alchemist`). Alchemy's typed events and log
- * lines come back as {@link ConvergeEvent}s, so the caller renders them in
- * its own output format; nothing here writes to stdout.
+ * lines come back as {@link ConvergeEvent}s, and Alchemy's own output goes to
+ * stderr, so the caller renders progress in its own format.
  *
- * Reached only behind an operation's lazy executor import: it loads alchemy
- * and effect.
+ * Published as `@prisma/composer/internal/converge`: the CLI loads it from
+ * the app's install, so it runs on the app's copy of alchemy and effect.
  */
+import { isMainThread } from 'node:worker_threads';
 import type { lower } from '@internal/core/deploy';
 import * as Alchemist from 'alchemy/Alchemist';
+import * as Interaction from 'alchemy/Interaction';
 import { recordOf } from 'alchemy/Util/LogRecord';
 import * as Cause from 'effect/Cause';
 import * as Effect from 'effect/Effect';
@@ -38,20 +40,30 @@ export type ConvergeEvent =
     };
 
 export interface ConvergeRequest {
+  /** What to plan and apply. Only `deploy` today; `prisma dev` adds its own. */
+  readonly operation: 'deploy';
   readonly stack: LoweredStack;
   readonly stage: string;
   /** The directory Alchemy runs in: where it reads `.env` and keeps `.alchemy`. */
   readonly cwd: string;
-  /** Set in `process.env` while Alchemy plans and applies, and restored after. Alchemy reads its configuration only from there. */
-  readonly env: Readonly<Record<string, string>>;
+  /** Set in `process.env` while Alchemy plans and applies, and restored after; `undefined` removes the variable for that time. Alchemy reads its configuration only from there. */
+  readonly env: Readonly<Record<string, string | undefined>>;
   readonly signal?: AbortSignal | undefined;
   readonly onEvent?: ((event: ConvergeEvent) => void) | undefined;
+}
+
+/** One error a failed converge ended with: the error's tag or class name, and its message. */
+export interface ConvergeFailureReason {
+  readonly tag: string;
+  readonly message: string;
 }
 
 export type ConvergeOutcome =
   | { readonly kind: 'applied' }
   | { readonly kind: 'interrupted' }
-  | { readonly kind: 'failed'; readonly cause: string };
+  | { readonly kind: 'failed'; readonly reasons: readonly ConvergeFailureReason[] }
+  /** Nothing ran: another converge holds this process's environment and working directory, or this is a worker thread that cannot change directory. */
+  | { readonly kind: 'refused'; readonly reason: 'already-running' | 'worker-thread' };
 
 /** Plans and applies a lowered stack. The deploy executor's default is {@link convergeInProcess}. */
 export type Converge = (request: ConvergeRequest) => Promise<ConvergeOutcome>;
@@ -120,47 +132,44 @@ function logEvents(emit: (event: ConvergeEvent) => void) {
   });
 }
 
-/** The failure a converge ended with, as one line per error: the error's name when it has one, then its message. */
-export function failureText(cause: Cause.Cause<unknown>): string {
-  const lines = cause.reasons.flatMap((reason) => {
+/** The errors a converge failed with, one per distinct error, interruptions left out. */
+export function failureReasons(cause: Cause.Cause<unknown>): readonly ConvergeFailureReason[] {
+  const reasons = cause.reasons.flatMap((reason): ConvergeFailureReason[] => {
     if (Cause.isInterruptReason(reason)) return [];
     const error = Cause.isFailReason(reason) ? reason.error : reason.defect;
     if (error instanceof Error) {
       const tag = '_tag' in error && typeof error._tag === 'string' ? error._tag : error.name;
-      return [
-        tag === 'Error' || error.message.startsWith(tag)
-          ? error.message
-          : `${tag}: ${error.message}`,
-      ];
+      return [{ tag, message: error.message }];
     }
-    return [typeof error === 'string' ? error : String(error)];
+    return [{ tag: 'Unknown', message: typeof error === 'string' ? error : String(error) }];
   });
-  return lines.length > 0 ? [...new Set(lines)].join('\n') : Cause.pretty(cause);
+  const unique = new Map(reasons.map((reason) => [`${reason.tag}\0${reason.message}`, reason]));
+  return unique.size > 0
+    ? [...unique.values()]
+    : [{ tag: 'Unknown', message: Cause.pretty(cause) }];
 }
+
+let running = false;
 
 /**
  * Sets the process state Alchemy reads for the length of `run`, and restores
- * it after: the variables in `env`, the working directory, and `console`'s
- * stdout methods, which go to stderr so a provider's `console.log` cannot
- * corrupt structured output.
+ * it on every exit path: the variables in `env` and the working directory.
  */
 async function withProcessState<T>(
-  env: Readonly<Record<string, string>>,
+  env: Readonly<Record<string, string | undefined>>,
   cwd: string,
   run: () => Promise<T>,
 ): Promise<T> {
   const previousEnv = Object.keys(env).map((name) => [name, process.env[name]] as const);
   const previousCwd = process.cwd();
-  const { log, info, debug } = console;
-  Object.assign(process.env, env);
-  if (previousCwd !== cwd) process.chdir(cwd);
-  console.log = console.error;
-  console.info = console.error;
-  console.debug = console.error;
   try {
+    for (const [name, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    if (previousCwd !== cwd) process.chdir(cwd);
     return await run();
   } finally {
-    Object.assign(console, { log, info, debug });
     if (process.cwd() !== previousCwd) process.chdir(previousCwd);
     for (const [name, value] of previousEnv) {
       if (value === undefined) delete process.env[name];
@@ -172,9 +181,15 @@ async function withProcessState<T>(
 /**
  * Plans and applies `stack` in this process, as `alchemy deploy --yes` would.
  * The plan's scope, and the state-store lease it holds, closes before this
- * returns, including when `signal` interrupts it.
+ * returns, including when `signal` interrupts it. One converge runs at a time
+ * per process: a second call while one runs is refused.
  */
-export const convergeInProcess: Converge = (request) => {
+export const convergeInProcess: Converge = async (request) => {
+  if (running) return { kind: 'refused', reason: 'already-running' };
+  if (!isMainThread && process.cwd() !== request.cwd) {
+    return { kind: 'refused', reason: 'worker-thread' };
+  }
+  running = true;
   const emit = (event: ConvergeEvent): void => {
     try {
       request.onEvent?.(event);
@@ -185,7 +200,7 @@ export const convergeInProcess: Converge = (request) => {
   const program = Effect.gen(function* () {
     const plan = yield* Alchemist.plan({
       stack: request.stack,
-      operation: 'deploy',
+      operation: request.operation,
       stage: request.stage,
       updateStateStore: true,
     });
@@ -199,16 +214,31 @@ export const convergeInProcess: Converge = (request) => {
     ),
     Effect.scoped,
     Effect.provide(Logger.layer([logEvents(emit)])),
+    Effect.provide(Interaction.layerNonInteractive({ stdout: process.stderr })),
     Effect.provide(Alchemist.layer()),
   );
 
-  return withProcessState(request.env, request.cwd, async () => {
-    const exit = await Effect.runPromiseExit(
-      program,
-      request.signal === undefined ? undefined : { signal: request.signal },
-    );
-    if (Exit.isSuccess(exit)) return { kind: 'applied' };
-    if (Cause.hasInterruptsOnly(exit.cause)) return { kind: 'interrupted' };
-    return { kind: 'failed', cause: failureText(exit.cause) };
-  });
+  try {
+    return await withProcessState(request.env, request.cwd, async () => {
+      const exit = await Effect.runPromiseExit(
+        program,
+        request.signal === undefined ? undefined : { signal: request.signal },
+      );
+      if (Exit.isSuccess(exit)) return { kind: 'applied' } as const;
+      if (Cause.hasInterruptsOnly(exit.cause)) return { kind: 'interrupted' } as const;
+      return { kind: 'failed', reasons: failureReasons(exit.cause) } as const;
+    });
+  } catch (error) {
+    return {
+      kind: 'failed',
+      reasons: [
+        {
+          tag: error instanceof Error ? error.name : 'Unknown',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      ],
+    };
+  } finally {
+    running = false;
+  }
 };

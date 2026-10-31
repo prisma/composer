@@ -1,5 +1,7 @@
 # ADR-0062: A value that differs per environment is computed with `resolve()`; values from outside the code come through config adapters
 
+Amended by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): `deploy` runs Alchemy in its first process and passes the config pool to `lower()` as a value, so it starts no second process and writes no configuration file. What § Which commands run the adapters says about a second process now holds for `prisma dev` and `destroy` only.
+
 ```ts
 // module.ts
 import { type } from 'arktype';

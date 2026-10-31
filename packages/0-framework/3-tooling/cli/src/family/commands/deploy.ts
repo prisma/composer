@@ -6,7 +6,6 @@
  * valid with destroy"), so no invocation using it could ever have succeeded;
  * deploy targets the environment production when no `--environment` is given.
  */
-import { CliStructuredError } from '@internal/foundation/errors';
 import type { EngineEvent } from '@prisma/cli-engine';
 import { defineCommand, flag, SERVICE_TOKEN_ENV_VAR } from '@prisma/cli-engine';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
@@ -15,11 +14,11 @@ import {
   type DeployEvent,
   type DeployStep,
 } from '../../operations/deploy.ts';
+import { withConsoleOnStderr } from '../console-to-stderr.ts';
 import { dataLine } from '../data-lines.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
 import { toEngineError } from '../translate-error.ts';
-import { workspaceIdOf } from '../workspace.ts';
 
 const STEP_LABELS = {
   prepare: 'load config and app',
@@ -150,30 +149,34 @@ export const createDeployCommand = (operations: ComposerOperations) =>
     },
     needs: { config: composerSection, credentials: true },
     handler: async (args, ctx) => {
-      const token = ctx.env[SERVICE_TOKEN_ENV_VAR];
-      if (token === undefined || token.length === 0) {
-        return notOk(toEngineError(serviceTokenRequired()));
-      }
-      const workspaceId = await workspaceIdOf(ctx);
-      const result = await operations.deploy(
-        {
-          entry: args.flags.entry,
-          config: ctx.config,
-          name: args.flags.name,
-          environment: args.flags.environment,
-          cwd: ctx.cwd,
-          reportPath: args.flags.report,
-          reportId: args.flags.buildId,
-          onEvent: (event) => ctx.report(toEngineEvent(event)),
-          signal: ctx.signal,
-        },
-        {
-          credentials: { workspaceId, client: ctx.api },
-          convergeEnv: {
-            [SERVICE_TOKEN_ENV_VAR]: token,
-            ...(workspaceId === undefined ? {} : { PRISMA_WORKSPACE_ID: workspaceId }),
+      // The engine resolved which credential this run acts as. Only a service
+      // token from the environment can reach Alchemy, and its token and
+      // workspace travel together; a stored session carries no token, so the
+      // operation refuses it with DEPLOY.SERVICE_TOKEN_REQUIRED.
+      const credential = await ctx.activeCredential();
+      const serviceToken =
+        credential?.origin.source === 'environment' ? ctx.env[SERVICE_TOKEN_ENV_VAR] : undefined;
+      const result = await withConsoleOnStderr(() =>
+        operations.deploy(
+          {
+            entry: args.flags.entry,
+            config: ctx.config,
+            name: args.flags.name,
+            environment: args.flags.environment,
+            cwd: ctx.cwd,
+            reportPath: args.flags.report,
+            reportId: args.flags.buildId,
+            onEvent: (event) => ctx.report(toEngineEvent(event)),
+            signal: ctx.signal,
           },
-        },
+          {
+            credentials: {
+              workspaceId: credential?.workspaceId,
+              client: ctx.api,
+              serviceToken,
+            },
+          },
+        ),
       );
       if (!result.ok) return notOk(toEngineError(result.failure));
 
@@ -221,19 +224,3 @@ export const createDeployCommand = (operations: ComposerOperations) =>
       );
     },
   });
-
-/**
- * Alchemy runs in this process and reads its Prisma credential only from the
- * environment, and the engine gives a command no way to read a `prisma login`
- * session's token. So deploy needs the service token in the environment.
- */
-function serviceTokenRequired(): CliStructuredError {
-  return new CliStructuredError(
-    'DEPLOY.SERVICE_TOKEN_REQUIRED',
-    `\`prisma deploy\` needs ${SERVICE_TOKEN_ENV_VAR} in the environment.`,
-    {
-      why: 'Alchemy applies the deploy in this process and reads its Prisma credential from the environment. A `prisma login` session cannot reach it yet.',
-      fix: `Create a service token for the workspace in the Prisma Console and set ${SERVICE_TOKEN_ENV_VAR} to it, then deploy again.`,
-    },
-  );
-}

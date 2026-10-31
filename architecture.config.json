@@ -763,6 +763,12 @@
       "plane": "control"
     },
     {
+      "glob": "packages/9-public/composer/src/exports/internal-converge.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "control"
+    },
+    {
       "glob": "packages/9-public/composer-cli/src/exports/family.ts",
       "domain": "public",
       "layer": "public",

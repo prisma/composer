@@ -12,7 +12,7 @@ import type {
 } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
-import type { Converge } from '../converge-in-process.ts';
+import type { DeployEngine } from '../app-engine.ts';
 import type { startWatch } from '../dev/watch.ts';
 import type { RunAlchemy } from '../run-alchemy.ts';
 
@@ -45,14 +45,8 @@ export interface OperationDeps {
    * natively and the engine owns signal policy; hosts get the default `spawnAlchemy`.
    */
   readonly alchemy?: RunAlchemy | undefined;
-  /** Plans and applies `deploy`'s lowered stack; defaults to `convergeInProcess`. Tests substitute it. */
-  readonly converge?: Converge | undefined;
-  /**
-   * Set in `process.env` while `deploy`'s plan and apply run, and restored
-   * after. The CLI puts the credential here, because Alchemy reads its
-   * credentials only from the environment.
-   */
-  readonly convergeEnv?: Readonly<Record<string, string>> | undefined;
+  /** Lowers and converges `deploy`'s stack; defaults to the app's own install (`loadAppEngine`). Tests substitute it. */
+  readonly engine?: DeployEngine | undefined;
   /** Starts a file watch for `dev`; defaults to chokidar-backed `startWatch`. Tests substitute it to drive changes directly. */
   readonly watch?: typeof startWatch | undefined;
   /**
@@ -69,7 +63,18 @@ export interface OperationDeps {
    * call", and both commands are credential-free by contract: there is no
    * authenticated call on those paths for this to reach.
    */
-  readonly credentials?: ContainerCredentials | undefined;
+  readonly credentials?: OperationCredentials | undefined;
+}
+
+/** The caller's credential: what the in-process leg authenticates with, and the service token Alchemy applies `deploy` with. */
+export interface OperationCredentials extends ContainerCredentials {
+  /**
+   * The service token the credential is. Absent when it is not one, such as a
+   * `prisma login` session: `deploy` then refuses with
+   * DEPLOY.SERVICE_TOKEN_REQUIRED, because Alchemy reads its credential only
+   * from the environment.
+   */
+  readonly serviceToken?: string | undefined;
 }
 
 /**

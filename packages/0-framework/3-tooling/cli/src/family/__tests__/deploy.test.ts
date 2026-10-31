@@ -3,7 +3,7 @@
  * argument validation, the real credential check, the real settlement rules —
  * with the published operations double standing in for alchemy.
  */
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -21,11 +21,11 @@ type Fixtures = Parameters<typeof createOperationsDouble>[0];
 const CWD = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'composer-family-')));
 
 /** A credential that is signed in and nowhere near expiry. */
-function activeCredential() {
+function activeCredential(workspaceId = 'ws_1') {
   return {
     token: mintTestJwt({
       sub: 'user_1',
-      workspace_id: 'ws_1',
+      workspace_id: workspaceId,
       exp: Math.floor(Date.now() / 1000) + 3600,
     }),
     refreshToken: undefined,
@@ -43,7 +43,7 @@ function composerCli(
   spec: {
     readonly fixtures?: Fixtures;
     /** How the run is signed in: a service token in the environment (the default), a `prisma login` session, or not at all. */
-    readonly signedIn?: 'environment' | 'session' | false;
+    readonly signedIn?: 'environment' | 'session' | 'both' | false;
   } = {},
 ): Harness {
   const double = createOperationsDouble(spec.fixtures ?? {});
@@ -59,7 +59,12 @@ function composerCli(
       ? {}
       : spec.signedIn === 'session'
         ? { credential: activeCredential() }
-        : { environmentCredential: activeCredential() }),
+        : spec.signedIn === 'both'
+          ? {
+              credential: activeCredential('ws_session'),
+              environmentCredential: activeCredential('ws_env'),
+            }
+          : { environmentCredential: activeCredential() }),
   });
   return { cli, double };
 }
@@ -205,35 +210,75 @@ describe('credentials', () => {
     expect(double.calls.deploy).toEqual([]);
   });
 
-  test('a `prisma login` session without PRISMA_SERVICE_TOKEN is refused before the operation runs', async () => {
+  test('a `prisma login` session reaches the operation with no service token, so the operation refuses it', async () => {
     const { cli, double } = composerCli({ signedIn: 'session' });
-    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
+    await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
-    expect(result.exitCode).toBe(2);
-    expect(plain(result.stderr)).toContain('DEPLOY.SERVICE_TOKEN_REQUIRED');
-    expect(plain(result.stderr)).toContain('set PRISMA_SERVICE_TOKEN');
-    expect(double.calls.deploy).toEqual([]);
+    const credentials = double.calls.deps.deploy[0]?.credentials;
+    expect(credentials?.workspaceId).toBe('ws_1');
+    expect(credentials?.serviceToken).toBeUndefined();
   });
 
   /**
    * Alchemy runs in this process and reads its credential from
-   * `process.env`, so the handler hands the operation the token and the
-   * credential's workspace to set there for the apply.
+   * `process.env`, so the handler hands the operation the environment token
+   * and that token's workspace, for the operation to set there for the apply.
    */
-  test('the service token and the workspace reach the converge environment, and no child is spawned', async () => {
+  test('an environment token reaches the operation with its own workspace, and no child is spawned', async () => {
     const { cli, double } = composerCli();
     const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(0);
     expect(result.spawns).toEqual([]);
-    const deps = double.calls.deps.deploy[0];
-    expect(Object.keys(deps?.convergeEnv ?? {}).sort()).toEqual([
-      'PRISMA_SERVICE_TOKEN',
-      'PRISMA_WORKSPACE_ID',
-    ]);
-    expect(deps?.convergeEnv?.['PRISMA_WORKSPACE_ID']).toBe('ws_1');
-    expect(deps?.credentials?.workspaceId).toBe('ws_1');
+    const credentials = double.calls.deps.deploy[0]?.credentials;
+    expect(credentials?.serviceToken).toEqual(expect.any(String));
+    expect(credentials?.workspaceId).toBe('ws_1');
     expect(double.calls.deploy[0]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test('with both a session and an environment token, the token and the workspace come from one credential', async () => {
+    const { cli, double } = composerCli({ signedIn: 'both' });
+    await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
+
+    const credentials = double.calls.deps.deploy[0]?.credentials;
+    expect(
+      credentials?.serviceToken === undefined
+        ? credentials?.workspaceId
+        : `${credentials.workspaceId} with a token`,
+    ).toBeOneOf(['ws_session', 'ws_env with a token']);
+  });
+
+  test("a provider's console.log during the operation goes to stderr, and console is restored after", async () => {
+    const log = console.log;
+    const stdoutWrite = spyOn(process.stdout, 'write');
+    const consoleError = spyOn(console, 'error').mockImplementation(() => {});
+    const operations = createOperationsDouble({});
+    const deploy = operations.operations.deploy;
+    try {
+      const family = createComposerFamily({
+        operations: {
+          ...operations.operations,
+          deploy: async (input, deps) => {
+            console.log('provider chatter');
+            console.table([{ a: 1 }]);
+            return deploy(input, deps);
+          },
+        },
+      });
+      const probe = createTestCli({
+        commands: { deploy: commandAt(family, 'deploy') },
+        config: { composer: validComposerSection() },
+        environmentCredential: activeCredential(),
+      });
+      await probe.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
+
+      expect(stdoutWrite).not.toHaveBeenCalled();
+      expect(consoleError.mock.calls.map((call) => call[0])).toContain('provider chatter');
+    } finally {
+      stdoutWrite.mockRestore();
+      consoleError.mockRestore();
+    }
+    expect(console.log).toBe(log);
   });
 });
 

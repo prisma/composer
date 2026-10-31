@@ -60,6 +60,7 @@
       ],
       "@internal/cli/config": ["./packages/0-framework/3-tooling/cli/src/exports/config.ts"],
       "@internal/cli/pools": ["./packages/0-framework/3-tooling/cli/src/exports/pools.ts"],
+      "@internal/cli/converge": ["./packages/0-framework/3-tooling/cli/src/exports/converge.ts"],
       "@internal/cli/control": ["./packages/0-framework/3-tooling/cli/src/exports/control.ts"],
       "@internal/cli/family": ["./packages/0-framework/3-tooling/cli/src/exports/family.ts"],
       "@internal/cli/testing": ["./packages/0-framework/3-tooling/cli/src/exports/testing.ts"],
@@ -148,6 +149,9 @@
       "@prisma/composer/config": ["./packages/9-public/composer/src/exports/config.ts"],
       "@prisma/composer/internal/pools": [
         "./packages/9-public/composer/src/exports/internal-pools.ts"
+      ],
+      "@prisma/composer/internal/converge": [
+        "./packages/9-public/composer/src/exports/internal-converge.ts"
       ],
       "@prisma/composer/deploy": ["./packages/9-public/composer/src/exports/deploy.ts"],
       "@prisma/composer/local-target": ["./packages/9-public/composer/src/exports/local-target.ts"],

@@ -263,20 +263,19 @@ export function engineFailureCause(
     : `${cause.slice(0, ENGINE_FAILURE_CAUSE_LIMIT - 1)}…`;
 }
 
-/**
- * The cause an in-process converge failed with, fit for a failure message
- * that may leave the machine: Composer's advice in place of Alchemy CLI
- * advice, credentials and pool secrets removed, capped.
- */
-export function convergeFailureCause(
-  cause: string,
+/** Removes from text every credential `redactSecrets` finds in `env`, and every pool secret. For text an in-process converge produces, which may leave the machine. */
+export function convergeRedactor(
   env: Readonly<Record<string, string | undefined>>,
   secrets: readonly string[],
-): string {
-  const cleaned = redactValues(redactSecrets(withComposerAdvice(cause), env), secrets);
-  return cleaned.length <= ENGINE_FAILURE_CAUSE_LIMIT
-    ? cleaned
-    : `${cleaned.slice(0, ENGINE_FAILURE_CAUSE_LIMIT - 1)}…`;
+): (text: string) => string {
+  return (text) => redactValues(redactSecrets(text, env), secrets);
+}
+
+/** A failure cause capped to fit the platform build's error message. */
+export function capFailureCause(cause: string): string {
+  return cause.length <= ENGINE_FAILURE_CAUSE_LIMIT
+    ? cause
+    : `${cause.slice(0, ENGINE_FAILURE_CAUSE_LIMIT - 1)}…`;
 }
 
 /** Replaces each value of 8 characters or more, longest first, so a one-letter placeholder does not blank every matching letter. */

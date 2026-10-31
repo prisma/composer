@@ -1,6 +1,6 @@
 # ADR-0044: Errors are structural envelopes with dotted namespace codes
 
-Amended by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): `deploy` starts no Alchemy child, so the child exit-status passthrough below applies only to `prisma dev` and `destroy`. A failed `deploy` plan or apply is `DEPLOY.ENGINE_FAILED` and exits 2. `DEPLOY.INTERRUPTED` and `DEPLOY.SERVICE_TOKEN_REQUIRED` are added.
+Amended by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): `deploy` starts no Alchemy child, so the child exit-status passthrough below applies only to `prisma dev` and `destroy`. A failed `deploy` plan or apply is `DEPLOY.ENGINE_FAILED` and exits 2. `DEPLOY.INTERRUPTED`, `DEPLOY.SERVICE_TOKEN_REQUIRED`, `DEPLOY.CONVERGE_RUNNING`, `DEPLOY.WORKER_THREAD` and `DEPS.ENGINE_UNRESOLVABLE` are added.
 
 Amended 2026-10-23: the `CONFIG` registry gains ENTRY_MISSING, for a command or operation that has no entry module from the config or an override.
 
@@ -102,21 +102,24 @@ Closed subcode registry:
   CONTAINER_FAILED,
   PREFLIGHT_FAILED, ENGINE_FAILED, TEARDOWN_FAILED, CONTAINER_REMOVE_FAILED,
   BUILD_REQUIRED, ALCHEMY_BIN_MISSING, NODE_MISSING, STACK_WRITE_FAILED,
-  INTERRUPTED, SERVICE_TOKEN_REQUIRED
+  INTERRUPTED, SERVICE_TOKEN_REQUIRED, CONVERGE_RUNNING, WORKER_THREAD
   *(STAGE_INVALID, STAGE_UNVALIDATABLE and SCOPE_MISSING retired by
   [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md))*.
   ENVIRONMENT_REQUIRED: a `destroy` call names no environment.
+  ENGINE_FAILED: Alchemy failed. `deploy` runs Alchemy in process and exits 2; `destroy` and `prisma dev` pass the Alchemy child's exit status through (see § Exit codes).
   INTERRUPTED: the abort signal stopped `deploy`'s plan or apply.
-  SERVICE_TOKEN_REQUIRED: `prisma deploy` has no `PRISMA_SERVICE_TOKEN` in
-  the environment ([ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md)).
+  SERVICE_TOKEN_REQUIRED: `deploy`'s credential is not a service token, such as a `prisma login` session, or there is none in the environment ([ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md)). Temporary: it is retired when `@prisma/cli-engine` gives a command the active access token (the in-process credentials need, `needs: { credentials: 'process' }`, asked of `@prisma/cli-engine`), so a session can deploy.
+  CONVERGE_RUNNING: another in-process converge holds this process's environment and working directory.
+  WORKER_THREAD: `deploy` was called from a worker thread with a `cwd` other than the process's working directory, which a worker cannot change.
   `prisma dev` starts the Alchemy child the same way `deploy` does, so it
   raises ALCHEMY_BIN_MISSING and NODE_MISSING under `DEPLOY` too.
 - `DEV` — PLATFORM_UNSUPPORTED, TARGET_UNSUPPORTED, CONTAINER_FAILED, TEARDOWN_FAILED, PREFLIGHT_FAILED, EMULATOR_FAILED, SERVICE_START_FAILED, CONVERGE_FAILED, ATTACH_FAILED, STACK_WRITE_FAILED, EMULATORS_DIR_INVALID, EMULATOR_UNREACHABLE, SERVICE_READY_TIMEOUT_INVALID, NOT_STARTED_HERE, ADDRESS_UNKNOWN, NOT_RUNNING. EMULATOR_UNREACHABLE is raised by the emulator client when it cannot connect, so `log` raises it under `DEV` too; for a connection failure it takes the place of SERVICE_START_FAILED, ATTACH_FAILED and `LOG.ATTACH_FAILED`. `devUrl` also raises it when the emulator a node runs on is not running. NOT_STARTED_HERE (no `prisma dev` has recorded an app in the directory) is raised by `devUrl` and `devStop`; ADDRESS_UNKNOWN (the recorded app has no node at that address; the known addresses are listed) and NOT_RUNNING (the node exists but is not running; its state is named, and the reason and fix depend on it) by `devUrl` alone ([ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md)). Both operations raise EMULATOR_FAILED when the local target fails without a code. `emulator list` fails only with EMULATORS_DIR_INVALID; an emulator it cannot list is reported in that emulator's entry with EMULATOR_UNREACHABLE or EMULATOR_FAILED.
 - `LOG` — PLATFORM_UNSUPPORTED, ATTACH_FAILED, ADDRESS_UNKNOWN
-- `DEPS` — EXECUTOR_UNLOADABLE, EXTENSION_INCOMPATIBLE *(EFFECT_VERSION_CONFLICT retired by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*.
+- `DEPS` — EXECUTOR_UNLOADABLE, EXTENSION_INCOMPATIBLE, ENGINE_UNRESOLVABLE *(EFFECT_VERSION_CONFLICT retired by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*.
   EXTENSION_INCOMPATIBLE: an installed extension is older than the Composer
   running the deploy or destroy, so the container it resolved, rebuilt through
   its own `deserialize`, does not name the environment that was asked for.
+  ENGINE_UNRESOLVABLE: `deploy` cannot load `@prisma/composer/internal/converge` from the app's own install, or that install predates it ([ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md)).
 
 Adding a subcode is an edit to this list; adding a namespace is an amendment to
 this ADR.

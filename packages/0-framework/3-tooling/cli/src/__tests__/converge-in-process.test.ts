@@ -3,13 +3,14 @@
  * an in-memory state store and a fake extension whose one resource node
  * creates nothing on any platform.
  */
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { type Contract, module, resource } from '@internal/core';
 import type { ExtensionDescriptor, PrismaAppConfig } from '@internal/core/config';
 import { type DeploymentResult, type LowerOptions, lower } from '@internal/core/deploy';
+import * as Interaction from 'alchemy/Interaction';
 import * as State from 'alchemy/State';
 import { InMemoryService } from 'alchemy/State/InMemoryState';
 import * as Cause from 'effect/Cause';
@@ -20,7 +21,7 @@ import {
   type ConvergeEvent,
   type ConvergeRequest,
   convergeInProcess,
-  failureText,
+  failureReasons,
   toConvergeEvent,
 } from '../converge-in-process.ts';
 import { deployWithDeps } from '../operations/deploy.ts';
@@ -84,7 +85,14 @@ function request(
   overrides: Partial<ConvergeRequest> = {},
 ): ConvergeRequest {
   return {
-    stack: lower(app(), config, { name: 'shop', bundles: {}, ...extra }),
+    operation: 'deploy',
+    stack: lower(app(), config, {
+      name: 'shop',
+      bundles: {},
+      containers: new Map(),
+      preflight: new Map(),
+      ...extra,
+    }),
     stage: 'test',
     cwd: tmpDir(),
     env: {},
@@ -124,6 +132,103 @@ describe('convergeInProcess', () => {
     );
   });
 
+  const observing = (
+    seen: { token?: string | undefined; cwd?: string },
+    end: Effect.Effect<never, unknown> | undefined,
+  ) =>
+    fixture(
+      Object.assign(
+        () =>
+          Effect.sync(() => {
+            seen.token = process.env['COMPOSER_TEST_TOKEN'];
+            seen.cwd = process.cwd();
+          }).pipe(Effect.andThen(end ?? Effect.succeed({ outputs: {}, entities: [] }))),
+        { kind: 'resource' as const },
+      ),
+    );
+
+  test('restores the environment and working directory after a failed or interrupted run, and when it cannot change directory', async () => {
+    const before = process.cwd();
+    process.env['COMPOSER_TEST_KEEP'] = 'shell';
+    const env = { COMPOSER_TEST_TOKEN: 'tok', COMPOSER_TEST_KEEP: undefined };
+    const controller = new AbortController();
+    const failedSeen: { token?: string | undefined; cwd?: string } = {};
+    const failing = observing(
+      failedSeen,
+      Effect.fail(new Error('no')) as Effect.Effect<never, unknown>,
+    );
+    const interrupting = observing(
+      {},
+      Effect.sync(() => controller.abort()).pipe(Effect.andThen(Effect.never)),
+    );
+    const cwd = tmpDir();
+
+    const failed = await convergeInProcess(request(failing.config, {}, { cwd, env }));
+    const interrupted = await convergeInProcess(
+      request(interrupting.config, {}, { cwd, env, signal: controller.signal }),
+    );
+    const missingDir = await convergeInProcess(
+      request(failing.config, {}, { cwd: path.join(cwd, 'gone'), env }),
+    );
+
+    expect(failedSeen).toEqual({ token: 'tok', cwd });
+    expect(failed.kind).toBe('failed');
+    expect(interrupted.kind).toBe('interrupted');
+    expect(missingDir.kind).toBe('failed');
+    expect(process.env['COMPOSER_TEST_TOKEN']).toBeUndefined();
+    expect(process.env['COMPOSER_TEST_KEEP']).toBe('shell');
+    expect(process.cwd()).toBe(before);
+    delete process.env['COMPOSER_TEST_KEEP'];
+  });
+
+  test('refuses a second converge while one runs, and runs again once it ends', async () => {
+    const controller = new AbortController();
+    let started!: () => void;
+    const running = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const { config } = observing(
+      {},
+      Effect.sync(() => started()).pipe(Effect.andThen(Effect.never)),
+    );
+
+    const first = convergeInProcess(request(config, {}, { signal: controller.signal }));
+    await running;
+    const second = await convergeInProcess(request(fixture(reportsThing).config));
+    controller.abort();
+    await first;
+    const third = await convergeInProcess(request(fixture(reportsThing).config));
+
+    expect(second).toEqual({ kind: 'refused', reason: 'already-running' });
+    expect(third).toEqual({ kind: 'applied' });
+  });
+
+  test("Alchemy's interaction output goes to stderr, never stdout", async () => {
+    const { config } = fixture(
+      Object.assign(
+        () =>
+          Effect.gen(function* () {
+            const interaction = yield* Interaction.Interaction;
+            yield* interaction.output.info('state store bootstrapped');
+            return { outputs: {}, entities: [] };
+          }),
+        { kind: 'resource' as const },
+      ),
+    );
+    const stdout = spyOn(process.stdout, 'write');
+    const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      expect(await convergeInProcess(request(config))).toEqual({ kind: 'applied' });
+      expect(stdout).not.toHaveBeenCalled();
+      expect(stderr.mock.calls.map(([chunk]) => String(chunk)).join('')).toContain(
+        'state store bootstrapped',
+      );
+    } finally {
+      stdout.mockRestore();
+      stderr.mockRestore();
+    }
+  });
+
   test('sets the requested environment and working directory only while it runs', async () => {
     const seen: { token?: string | undefined; cwd?: string } = {};
     const { config } = fixture(
@@ -157,7 +262,10 @@ describe('convergeInProcess', () => {
 
     const outcome = await convergeInProcess(request(config));
 
-    expect(outcome).toEqual({ kind: 'failed', cause: 'ThingRefused: the platform said no' });
+    expect(outcome).toEqual({
+      kind: 'failed',
+      reasons: [{ tag: 'ThingRefused', message: 'the platform said no' }],
+    });
     expect(released()).toBe(true);
   });
 
@@ -242,7 +350,11 @@ describe('deploy with the real in-process converge', () => {
         environment: 'test',
         cwd: dir,
       },
-      { runAssembler: async () => ({ dir, entry: 'server.js' }) },
+      {
+        runAssembler: async () => ({ dir, entry: 'server.js' }),
+        engine: { lower, converge: convergeInProcess },
+        credentials: { workspaceId: 'ws_1', client: {}, serviceToken: 'tok' },
+      },
     );
 
     if (!result.ok) throw result.failure;
@@ -295,8 +407,8 @@ describe('toConvergeEvent', () => {
   });
 });
 
-describe('failureText', () => {
-  test('one line per distinct error, each with its tag', () => {
+describe('failureReasons', () => {
+  test('one reason per distinct error, each with its tag', () => {
     class Refused extends Data.TaggedError('Refused')<{ readonly message: string }> {}
     const cause = Cause.combine(
       Cause.fail(new Refused({ message: 'quota exceeded' })),
@@ -306,10 +418,13 @@ describe('failureText', () => {
       ),
     );
 
-    expect(failureText(cause)).toBe('Refused: quota exceeded\nboom');
+    expect(failureReasons(cause)).toEqual([
+      { tag: 'Refused', message: 'quota exceeded' },
+      { tag: 'Error', message: 'boom' },
+    ]);
   });
 
-  test('a non-error failure is printed as text', () => {
-    expect(failureText(Cause.fail('plain'))).toBe('plain');
+  test('a non-error failure is kept as text', () => {
+    expect(failureReasons(Cause.fail('plain'))).toEqual([{ tag: 'Unknown', message: 'plain' }]);
   });
 });

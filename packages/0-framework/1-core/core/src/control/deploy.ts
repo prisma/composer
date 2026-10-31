@@ -236,10 +236,10 @@ export interface LowerOptions {
   readonly report?: (result: DeploymentResult) => void;
   /** Addresses lowered without an artifact: `package` and `deploy` are skipped and `reserve` runs instead (ADR-0056). Only the dev stack file sets it. */
   readonly unassembled?: readonly string[];
-  /** Each extension's resolved container, by extension id. Absent means read them from the container transport in the environment (the generated stack file's path). */
-  readonly containers?: ReadonlyMap<string, ContainerInstance>;
-  /** Each extension's preflight payload, by extension id. Absent means read them from the preflight transport in the environment (the generated stack file's path). */
-  readonly preflight?: ReadonlyMap<string, string>;
+  /** Each extension's resolved container, by extension id. A generated stack file reads them with `transportedLowerInputs`. */
+  readonly containers: ReadonlyMap<string, ContainerInstance>;
+  /** Each extension's preflight payload, by extension id. A generated stack file reads them with `transportedLowerInputs`. */
+  readonly preflight: ReadonlyMap<string, string>;
 }
 
 /** A build descriptor's normalized output: the produced bundle dir plus the app's runnable entry within it. */
@@ -668,11 +668,8 @@ export function lowering(
       ...(opts.configPool !== undefined ? { configPool: opts.configPool } : {}),
     });
     const extensions = yield* extensionsById(config);
-    const containers = containersOf(config, opts);
-    const preflightOf = (extensionId: string): PreflightPayload =>
-      opts.preflight === undefined
-        ? readPreflightPayload(extensionId, process.env)
-        : opts.preflight.get(extensionId);
+    const containers = opts.containers;
+    const preflightOf = (extensionId: string): PreflightPayload => opts.preflight.get(extensionId);
     const lowered = new Map<NodeId, Outputs>();
     // Each node's reported entities, in topo order — the loop is the only
     // party that holds both the node's identity and what it became. Collected
@@ -882,12 +879,21 @@ export function lowering(
   }) as Effect.Effect<undefined, LowerError, unknown>;
 }
 
-/** The containers `opts` carries, else the ones the generated stack file's process reads from the container transport. */
-function containersOf(
+/**
+ * The containers and preflight payloads the CLI wrote into a generated stack
+ * file's environment, for `lower()`. Only the generated stack files that
+ * `destroy` and `prisma dev` run in an Alchemy child call it.
+ */
+export function transportedLowerInputs(
   config: PrismaAppConfig,
-  opts: LowerOptions,
-): ReadonlyMap<string, ContainerInstance> {
-  return opts.containers ?? deserializeContainers(config.extensions, process.env);
+): Pick<LowerOptions, 'containers' | 'preflight'> {
+  const env = process.env;
+  const preflight = new Map<string, string>();
+  for (const { id } of config.extensions) {
+    const payload = readPreflightPayload(id, env);
+    if (payload !== undefined) preflight.set(id, payload);
+  }
+  return { containers: deserializeContainers(config.extensions, env), preflight };
 }
 
 /**
@@ -899,12 +905,11 @@ export function lower(root: ModuleNode, config: PrismaAppConfig, opts: LowerOpti
   // A LowerError at deploy is fatal; orDie moves it off the error channel to
   // match what Alchemy.Stack accepts.
   const stackEffect = Effect.orDie(lowering(root, config, opts)) as Effect.Effect<undefined, never>;
-  const containers = containersOf(config, opts);
   const providers = opts.providers ?? mergedProviders(config);
 
   return Alchemy.Stack(
     opts.name,
-    { providers, state: resolveStateLayer(opts, config, containers) },
+    { providers, state: resolveStateLayer(opts, config, opts.containers) },
     stackEffect,
   );
 }

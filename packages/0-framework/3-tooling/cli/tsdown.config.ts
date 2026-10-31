@@ -10,6 +10,7 @@ export default defineConfig({
     config: 'src/exports/config.ts',
     pools: 'src/exports/pools.ts',
     control: 'src/exports/control.ts',
+    converge: 'src/exports/converge.ts',
     family: 'src/exports/family.ts',
     testing: 'src/exports/testing.ts',
   },

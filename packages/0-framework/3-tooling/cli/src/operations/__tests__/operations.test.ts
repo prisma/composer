@@ -5,7 +5,7 @@
  * test if the operation itself writes to the console: rendering belongs to
  * the host.
  */
-import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -20,6 +20,7 @@ import type {
   PrismaAppConfig,
   RunOutcome,
 } from '@internal/core/config';
+import { lower } from '@internal/core/deploy';
 import type {
   LocalTargetAttachment,
   LocalTargetCurrentApp,
@@ -27,6 +28,7 @@ import type {
 } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import * as Layer from 'effect/Layer';
+import type { DeployEngine } from '../../app-engine.ts';
 import type { ComposerConfigSource } from '../../composer-config.ts';
 import { dotenv } from '../../config-adapters.ts';
 import type { Converge, ConvergeOutcome, ConvergeRequest } from '../../converge-in-process.ts';
@@ -200,6 +202,21 @@ const fakeAssembler = async (node: ServiceNode) => ({
 
 const APPLIED: ConvergeOutcome = { kind: 'applied' };
 
+/** Core's own `lower` with a stand-in for Alchemy's plan and apply: deploy tests never run the real engine here. */
+function engineWith(converge: Converge): DeployEngine {
+  return { lower, converge };
+}
+
+// Deploy needs a service token; a caller passing no credentials leaves it to the environment.
+const previousServiceToken = process.env['PRISMA_SERVICE_TOKEN'];
+beforeAll(() => {
+  process.env['PRISMA_SERVICE_TOKEN'] = 'test-service-token';
+});
+afterAll(() => {
+  if (previousServiceToken === undefined) delete process.env['PRISMA_SERVICE_TOKEN'];
+  else process.env['PRISMA_SERVICE_TOKEN'] = previousServiceToken;
+});
+
 /** Stands in for Alchemy's plan and apply: deploy tests never run the real engine here. */
 const applied: Converge = async () => APPLIED;
 
@@ -229,12 +246,16 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: recordingConverge(requests),
+          engine: engineWith(recordingConverge(requests)),
           alchemy: async () => {
             spawned = true;
             return { exitCode: 0, signal: null };
           },
-          convergeEnv: { PRISMA_SERVICE_TOKEN: 'token-from-the-handler' },
+          credentials: {
+            workspaceId: 'ws_handler',
+            client: {},
+            serviceToken: 'token-from-the-handler',
+          },
         },
       ),
     );
@@ -244,7 +265,7 @@ describe('deploy()', () => {
     expect(requests[0]).toMatchObject({
       stage: 'ci-7',
       cwd: app.dir,
-      env: { PRISMA_SERVICE_TOKEN: 'token-from-the-handler' },
+      env: { PRISMA_SERVICE_TOKEN: 'token-from-the-handler', PRISMA_WORKSPACE_ID: 'ws_handler' },
     });
     expect(requests[0]?.stack.stackName).toBe('hello-ops');
     expect(spawned).toBe(false);
@@ -272,10 +293,10 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: async () => {
+          engine: engineWith(async () => {
             ran = true;
             return APPLIED;
-          },
+          }),
         },
       ),
     );
@@ -301,7 +322,7 @@ describe('deploy()', () => {
             ...(input.entry === undefined ? {} : { entry: input.entry }),
             cwd: app.dir,
           },
-          { runAssembler: fakeAssembler, converge: applied },
+          { runAssembler: fakeAssembler, engine: engineWith(applied) },
         ),
       );
 
@@ -333,10 +354,10 @@ describe('deploy()', () => {
         { config: composerConfig(fakeConfig()), cwd: app.dir },
         {
           runAssembler: fakeAssembler,
-          converge: async () => {
+          engine: engineWith(async () => {
             ran = true;
             return APPLIED;
-          },
+          }),
         },
       ),
     );
@@ -363,7 +384,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: recordingConverge(requests),
+          engine: engineWith(recordingConverge(requests)),
         },
       ),
     );
@@ -390,7 +411,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: applied,
+          engine: engineWith(applied),
         },
       ),
     );
@@ -421,10 +442,10 @@ describe('deploy()', () => {
             assembled = true;
             return fakeAssembler(node);
           },
-          converge: async () => {
+          engine: engineWith(async () => {
             convergeRan = true;
             return APPLIED;
-          },
+          }),
         },
       ),
     );
@@ -448,10 +469,10 @@ describe('deploy()', () => {
           { config, entry: app.entryPath, cwd: app.dir },
           {
             runAssembler: fakeAssembler,
-            converge: async () => {
+            engine: engineWith(async () => {
               convergeRan = true;
               return APPLIED;
-            },
+            }),
           },
         ),
       );
@@ -567,10 +588,10 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: async () => {
+          engine: engineWith(async () => {
             convergeRan = true;
             return APPLIED;
-          },
+          }),
         },
       ),
     );
@@ -595,11 +616,16 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: async () => ({
+          engine: engineWith(async () => ({
             kind: 'failed',
-            cause:
-              'PrismaApiError: the bucket is held by another app. Re-run with `--adopt` (or wrap the effect in `adopt(true)`) to take it over.',
-          }),
+            reasons: [
+              {
+                tag: 'PrismaApiError',
+                message:
+                  'the bucket is held by another app. Re-run with `--adopt` (or wrap the effect in `adopt(true)`) to take it over.',
+              },
+            ],
+          })),
         },
       ),
     );
@@ -640,10 +666,15 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: async () => ({
+          engine: engineWith(async () => ({
             kind: 'failed',
-            cause: `error: rejected ${onlyInDotenvFile}, ${inBothPools} and ${secretNamedConfigValue}`,
-          }),
+            reasons: [
+              {
+                tag: 'Error',
+                message: `error: rejected ${onlyInDotenvFile}, ${inBothPools} and ${secretNamedConfigValue}`,
+              },
+            ],
+          })),
         },
       ),
     );
@@ -674,7 +705,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: recordingConverge(requests, { kind: 'interrupted' }),
+          engine: engineWith(recordingConverge(requests, { kind: 'interrupted' })),
         },
       ),
     );
@@ -765,6 +796,148 @@ function stepLine(event: DeployEvent): string {
   return event.kind === 'step-started' ? `started ${name}` : `finished ${name} ${event.outcome}`;
 }
 
+describe('deploy() credentials, engine and redaction', () => {
+  const deployWith = (
+    app: { dir: string; entryPath: string },
+    deps: Parameters<typeof deployWithDeps>[1],
+    config: PrismaAppConfig = fakeConfig(),
+    onEvent?: (event: DeployEvent) => void,
+  ) =>
+    silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(config),
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+          ...(onEvent === undefined ? {} : { onEvent }),
+        },
+        { runAssembler: fakeAssembler, ...deps },
+      ),
+    );
+
+  test('a credential that is not a service token is refused before any container is ensured', async () => {
+    const app = makeAppDir();
+    const containerCalls: ContainerCall[] = [];
+    const requests: ConvergeRequest[] = [];
+
+    const result = await deployWith(
+      app,
+      {
+        engine: engineWith(recordingConverge(requests)),
+        credentials: { workspaceId: 'ws_1', client: {} },
+      },
+      fakeConfig({}, { calls: containerCalls }),
+    );
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure.code).toBe('DEPLOY.SERVICE_TOKEN_REQUIRED');
+    expect(containerCalls).toEqual([]);
+    expect(requests).toEqual([]);
+  });
+
+  test('without credentials or PRISMA_SERVICE_TOKEN in the environment, deploy is refused', async () => {
+    const app = makeAppDir();
+    const saved = process.env['PRISMA_SERVICE_TOKEN'];
+    delete process.env['PRISMA_SERVICE_TOKEN'];
+    try {
+      const result = await deployWith(app, { engine: engineWith(applied) });
+      if (result.ok) throw new Error('expected a failure');
+      expect(result.failure.code).toBe('DEPLOY.SERVICE_TOKEN_REQUIRED');
+    } finally {
+      process.env['PRISMA_SERVICE_TOKEN'] = saved;
+    }
+  });
+
+  test('a credential that names no workspace removes PRISMA_WORKSPACE_ID for the apply', async () => {
+    const app = makeAppDir();
+    const requests: ConvergeRequest[] = [];
+
+    await deployWith(app, {
+      engine: engineWith(recordingConverge(requests)),
+      credentials: { workspaceId: undefined, client: {}, serviceToken: 'tok-1234567890' },
+    });
+
+    expect(requests[0]?.env).toEqual({
+      PRISMA_SERVICE_TOKEN: 'tok-1234567890',
+      PRISMA_WORKSPACE_ID: undefined,
+    });
+  });
+
+  test('an app with no installed @prisma/composer fails with DEPS.ENGINE_UNRESOLVABLE before any container is ensured', async () => {
+    const app = makeAppDir();
+    const containerCalls: ContainerCall[] = [];
+
+    const result = await deployWith(app, {}, fakeConfig({}, { calls: containerCalls }));
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure.code).toBe('DEPS.ENGINE_UNRESOLVABLE');
+    expect(containerCalls).toEqual([]);
+  });
+
+  test('the token never reaches a message event, the engine failure, or a stack-building error', async () => {
+    const app = makeAppDir();
+    const token = 'tok-SENTINEL-abcdef123456';
+    const events: DeployEvent[] = [];
+    const credentials = { workspaceId: 'ws_1', client: {}, serviceToken: token };
+
+    const failed = await deployWith(
+      app,
+      {
+        credentials,
+        engine: engineWith(async (request) => {
+          request.onEvent?.({ kind: 'log', severity: 'warn', text: `retrying with ${token}` });
+          request.onEvent?.({
+            kind: 'resource',
+            fqn: 'app',
+            resourceType: 'Prisma.Deployment',
+            status: 'fail',
+            phase: 'failed',
+            message: `401 for Bearer ${token}`,
+          });
+          return { kind: 'failed', reasons: [{ tag: 'PrismaApiError', message: `bad ${token}` }] };
+        }),
+      },
+      fakeConfig(),
+      (event) => events.push(event),
+    );
+    const stateBroken = fakeConfig();
+    const stackError = await deployWith(
+      app,
+      {
+        credentials,
+        engine: {
+          lower: () => {
+            throw new Error(`state store refused ${token}`);
+          },
+          converge: applied,
+        },
+      },
+      stateBroken,
+    );
+
+    expect(JSON.stringify(events)).not.toContain('SENTINEL');
+    expect(events.filter((event) => event.kind === 'message')).toHaveLength(2);
+    if (failed.ok || stackError.ok) throw new Error('expected failures');
+    expect(JSON.stringify(failed.failure)).not.toContain('SENTINEL');
+    expect(stackError.failure.code).toBe('DEPLOY.ENGINE_FAILED');
+    expect(stackError.failure.message).toBe('state store refused [redacted]');
+  });
+
+  test('a refused converge is DEPLOY.CONVERGE_RUNNING or DEPLOY.WORKER_THREAD', async () => {
+    const app = makeAppDir();
+    const refused = (reason: 'already-running' | 'worker-thread') =>
+      deployWith(app, { engine: engineWith(async () => ({ kind: 'refused', reason })) });
+
+    const running = await refused('already-running');
+    const worker = await refused('worker-thread');
+
+    if (running.ok || worker.ok) throw new Error('expected failures');
+    expect(running.failure.code).toBe('DEPLOY.CONVERGE_RUNNING');
+    expect(worker.failure.code).toBe('DEPLOY.WORKER_THREAD');
+  });
+});
+
 describe('deploy() step events', () => {
   test('a successful deploy reports every step in order, each with a duration and its data', async () => {
     const app = makeAppDir('hello-steps');
@@ -792,7 +965,7 @@ describe('deploy() step events', () => {
             report?.({ bytes: 4096 });
             return fakeAssembler(node);
           },
-          converge: applied,
+          engine: engineWith(applied),
         },
       ),
     );
@@ -850,13 +1023,13 @@ describe('deploy() step events', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: async (request) => {
+          engine: engineWith(async (request) => {
             request.onEvent?.(resource('pending', 'pending'));
             request.onEvent?.(resource('creating', 'running'));
             request.onEvent?.({ kind: 'log', severity: 'info', text: 'uploading 3 files' });
             request.onEvent?.(resource('created', 'done'));
             return APPLIED;
-          },
+          }),
         },
       ),
     );
@@ -891,7 +1064,7 @@ describe('deploy() step events', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: async (request) => {
+          engine: engineWith(async (request) => {
             request.onEvent?.({
               kind: 'resource',
               fqn: 'site',
@@ -900,8 +1073,11 @@ describe('deploy() step events', () => {
               phase: 'failed',
               message: 'domain-ownership-required',
             });
-            return { kind: 'failed', cause: 'PrismaApiError: domain-ownership-required' };
-          },
+            return {
+              kind: 'failed',
+              reasons: [{ tag: 'PrismaApiError', message: 'domain-ownership-required' }],
+            };
+          }),
         },
       ),
     );
@@ -947,7 +1123,7 @@ describe('deploy() step events', () => {
           cwd: app.dir,
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, converge: applied },
+        { runAssembler: fakeAssembler, engine: engineWith(applied) },
       ).catch((error: unknown) => error),
     );
 
@@ -980,6 +1156,7 @@ describe('deploy() step events', () => {
           onEvent: (event) => events.push(event),
         },
         {
+          engine: engineWith(applied),
           runAssembler: async () => {
             throw new Error('no built entry');
           },
@@ -1016,7 +1193,7 @@ describe('deploy() step events', () => {
           reportPath: path.join(app.dir, 'package.json', 'report.json'),
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, converge: applied },
+        { runAssembler: fakeAssembler, engine: engineWith(applied) },
       );
     } finally {
       warnSpy.mockRestore();
@@ -1040,7 +1217,7 @@ describe('deploy() step events', () => {
             throw new Error('renderer bug');
           },
         },
-        { runAssembler: fakeAssembler, converge: applied },
+        { runAssembler: fakeAssembler, engine: engineWith(applied) },
       ),
     );
 
@@ -1247,10 +1424,10 @@ describe('destroy()', () => {
         ran.push('alchemy');
         return { exitCode: 0, signal: null };
       },
-      converge: async () => {
+      engine: engineWith(async () => {
         ran.push('alchemy');
         return APPLIED;
-      },
+      }),
     };
     const result =
       action === 'deploy'
@@ -2784,7 +2961,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: recordingConverge(requests),
+          engine: engineWith(recordingConverge(requests)),
         },
       ),
     );
@@ -2813,8 +2990,8 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: applied,
-          credentials: { workspaceId: 'ws-1', client: {} },
+          engine: engineWith(applied),
+          credentials: { workspaceId: 'ws-1', client: {}, serviceToken: 'tok' },
         },
       ),
     );
@@ -2852,7 +3029,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: applied,
+          engine: engineWith(applied),
         },
       ),
     );
@@ -2878,7 +3055,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: async () => ({ kind: 'interrupted' }),
+          engine: engineWith(async () => ({ kind: 'interrupted' })),
         },
       ),
     );
@@ -2907,7 +3084,10 @@ describe('deploy-run reporting', () => {
         { entry: app.entryPath, environment: 'ci-6', cwd: app.dir, config: composerConfig(config) },
         {
           runAssembler: fakeAssembler,
-          converge: async () => ({ kind: 'failed', cause: 'PrismaApiError: 409 Conflict' }),
+          engine: engineWith(async () => ({
+            kind: 'failed',
+            reasons: [{ tag: 'PrismaApiError', message: '409 Conflict' }],
+          })),
         },
       ),
     );
@@ -2934,7 +3114,7 @@ describe('deploy-run reporting', () => {
           },
           {
             runAssembler: fakeAssembler,
-            converge: applied,
+            engine: engineWith(applied),
           },
         ),
       );
@@ -2981,7 +3161,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: applied,
+          engine: engineWith(applied),
         },
       ),
     );
@@ -3009,7 +3189,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: applied,
+          engine: engineWith(applied),
         },
       ),
     );
@@ -3358,7 +3538,7 @@ describe('the operations read the pools from the config adapters', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: applied,
+          engine: engineWith(applied),
         },
       ),
     );
@@ -3388,7 +3568,7 @@ describe('the operations read the pools from the config adapters', () => {
           environment: 'staging',
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, converge: applied },
+        { runAssembler: fakeAssembler, engine: engineWith(applied) },
       ),
     );
 
@@ -3454,7 +3634,7 @@ describe('the operations read the pools from the config adapters', () => {
           reportPath,
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, converge: applied },
+        { runAssembler: fakeAssembler, engine: engineWith(applied) },
       ),
     );
 
@@ -3481,7 +3661,7 @@ describe('the operations read the pools from the config adapters', () => {
           environment: 'staging',
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, converge: applied },
+        { runAssembler: fakeAssembler, engine: engineWith(applied) },
       ),
     );
 

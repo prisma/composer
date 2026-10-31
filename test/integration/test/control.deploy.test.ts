@@ -22,10 +22,16 @@ const fixtureEntry = path.join(
 
 describe('@prisma/composer/control — programmatic deploy over the real extension config', () => {
   test('resolves both /control entries for real and fails structurally at the missing built entry, not at resolution', async () => {
+    // Deploy checks for a service token before any work; this one never reaches the platform.
+    const savedToken = process.env['PRISMA_SERVICE_TOKEN'];
+    process.env['PRISMA_SERVICE_TOKEN'] = 'integration-test-token';
     const result = await deploy({
       entry: fixtureEntry,
       cwd: integrationDir,
       config: { value: prismaConfig.composer, file: path.join(integrationDir, 'prisma.config.ts') },
+    }).finally(() => {
+      if (savedToken === undefined) delete process.env['PRISMA_SERVICE_TOKEN'];
+      else process.env['PRISMA_SERVICE_TOKEN'] = savedToken;
     });
 
     expect(result.ok).toBe(false);

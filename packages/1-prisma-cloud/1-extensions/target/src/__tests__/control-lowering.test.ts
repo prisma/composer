@@ -5,6 +5,7 @@ import type { Contract } from '@internal/core';
 import type { NodeDescriptor } from '@internal/core/config';
 import { type ContainerInstance, containerEnvVarName } from '@internal/core/config';
 import type { LowerContext, LoweredResult, Outputs } from '@internal/core/deploy';
+import { transportedLowerInputs } from '@internal/core/deploy';
 // Import the REAL modules the mocks below stub, so each mock can spread them.
 // This matters beyond convenience: `bun test` runs every test file in ONE
 // process and `mock.module` is process-global. When the real module is already
@@ -2274,6 +2275,7 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
 
       run<undefined>(
         lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
           name: 'shop',
           bundles: {
             'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
@@ -2367,6 +2369,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
 
       run<undefined>(
         lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
           name: 'shop',
           bundles: {
             'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
@@ -2418,6 +2421,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
 
       run<undefined>(
         lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
           name: 'shop',
           bundles: {
             'shop.auth2': { dir: 'modules/auth2/dist/bundle', entry: 'server.js' },
@@ -2458,6 +2462,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
 
       run<undefined>(
         lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
           name: 'shop',
           bundles: { 'shop.auth3': { dir: 'modules/auth3/dist/bundle', entry: 'server.js' } },
         }),
@@ -2495,6 +2500,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
 
       run<undefined>(
         lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
           name: 'shop',
           bundles: {
             'shop.auth4': { dir: 'modules/auth4/dist/bundle', entry: 'server.js' },
@@ -2560,6 +2566,7 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
 
       run<undefined>(
         lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
           name: 'shop',
           bundles: {
             'shop.events': { dir: 'modules/events/dist/bundle', entry: 'server.js' },
@@ -2672,6 +2679,7 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
 
       run<undefined>(
         lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
           name: 'shop',
           bundles: { 'shop.lonely': { dir: 'modules/lonely/dist/bundle', entry: 'server.js' } },
         }),
@@ -2895,7 +2903,13 @@ describe('name validation — fail fast on Prisma name constraints, before creat
       });
       const before = recorded.db.length;
 
-      const error = lowerError(lowering(root, configFor(target), { name: 'shop', bundles }));
+      const error = lowerError(
+        lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
+          name: 'shop',
+          bundles,
+        }),
+      );
 
       // A framework authoring error naming the address and the limit — not a raw PrismaApiError.
       expect(error).toBeInstanceOf(Error);
@@ -2916,7 +2930,13 @@ describe('name validation — fail fast on Prisma name constraints, before creat
       });
       const before = recorded.conn.length;
 
-      run<undefined>(lowering(root, configFor(target), { name: 'shop', bundles: {} }));
+      run<undefined>(
+        lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
+          name: 'shop',
+          bundles: {},
+        }),
+      );
 
       expect(recorded.conn[before]?.[1]).toHaveProperty('name', `shop.${id}`);
     });
@@ -2932,7 +2952,13 @@ describe('name validation — fail fast on Prisma name constraints, before creat
       });
       const before = recorded.bucket.length;
 
-      const error = lowerError(lowering(root, configFor(target), { name: 'shop', bundles: {} }));
+      const error = lowerError(
+        lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
+          name: 'shop',
+          bundles: {},
+        }),
+      );
 
       expect(error.message).toContain(tooLongMessage(id, 'Bucket', 1, 100));
       expect(recorded.bucket.length).toBe(before);
@@ -2949,7 +2975,13 @@ describe('name validation — fail fast on Prisma name constraints, before creat
       });
       const before = recorded.bucket.length;
 
-      run<undefined>(lowering(root, configFor(target), { name: 'shop', bundles: {} }));
+      run<undefined>(
+        lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
+          name: 'shop',
+          bundles: {},
+        }),
+      );
 
       expect(recorded.bucket[before]?.[1]).toHaveProperty('name', `shop.${id}`);
     });
@@ -2967,6 +2999,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
       const error = lowerError(
         lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
           name: 'shop',
           bundles: { [`shop.${id}`]: bundles['shop.auth'] },
         }),
@@ -2989,6 +3022,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
       run<undefined>(
         lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
           name: 'shop',
           bundles: { [`shop.${id}`]: bundles['shop.auth'] },
         }),
@@ -3015,7 +3049,13 @@ describe('name validation — fail fast on Prisma name constraints, before creat
       const before = recorded.db.length;
 
       expect(() =>
-        run<undefined>(lowering(root, configFor(target), { name: 'shop', bundles })),
+        run<undefined>(
+          lowering(root, configFor(target), {
+            ...transportedLowerInputs(configFor(target)),
+            name: 'shop',
+            bundles,
+          }),
+        ),
       ).not.toThrow();
       expect(recorded.db.length).toBe(before + 1);
     });
@@ -3136,6 +3176,7 @@ describe('platform identity: each row carries its topology node logicalId — th
 
       run<undefined>(
         lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
           name: 'shop',
           bundles: { 'shop.auth.service': { dir: 'modules/auth/dist/bundle', entry: 'server.js' } },
         }),
@@ -3365,6 +3406,7 @@ describe('resource IDs are built from the full address, and each declares the ID
 
       run<undefined>(
         lowering(root, configFor(target), {
+          ...transportedLowerInputs(configFor(target)),
           name: 'shop',
           bundles: { 'shop.auth': bundle, 'shop.events': bundle, 'shop.web': bundle },
         }),
@@ -3712,6 +3754,7 @@ describe("prismaCloud().nodes['public-url'] — the public URL descriptor", () =
     withEnv(containerEnv('shop-project#cloud-id'), () => {
       run<undefined>(
         lowering(root, configFor(prismaCloud({ workspaceId: 'ws_1' })), {
+          ...transportedLowerInputs(configFor(prismaCloud({ workspaceId: 'ws_1' }))),
           name: 'shop',
           environment: 'production',
           bundles: Object.fromEntries(

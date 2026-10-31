@@ -27,7 +27,7 @@ if (result.ok) {
   switch (result.failure.code) {
     case 'DEPLOY.STAGE_INVALID': // e.g. a stage name git would reject
     case 'ASSEMBLE.BUILD_FAILED': // the app's built output is missing
-    case 'DEPLOY.ENGINE_FAILED': // alchemy ran and exited nonzero
+    case 'DEPLOY.ENGINE_FAILED': // Alchemy's plan or apply failed
       report(result.failure.message);
   }
 }

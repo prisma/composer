@@ -16,17 +16,19 @@ import type {
   RunReporter,
 } from '@internal/core/config';
 import { containerEnv, preflightEnvVarName } from '@internal/core/config';
-import { lower } from '@internal/core/deploy';
 import { CliStructuredError, InternalError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
+import { type DeployEngine, loadAppEngine } from '../app-engine.ts';
 import type { ComposerConfigSource } from '../composer-config.ts';
-import {
-  type ConvergeEvent,
-  convergeInProcess,
-  type LoweredStack,
+import type {
+  ConvergeEvent,
+  ConvergeFailureReason,
+  ConvergeOutcome,
+  LoweredStack,
 } from '../converge-in-process.ts';
 import {
-  convergeFailureCause,
+  capFailureCause,
+  convergeRedactor,
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
   engineFailureFilePath,
@@ -390,6 +392,17 @@ async function runStackPipelineInner(
     throw error;
   }
 
+  let converge: ConvergeSetup | undefined;
+  if (action === 'deploy') {
+    const setup = await prepareConverge(deps, cwd);
+    if (!setup.ok) return setup;
+    converge = setup.value;
+  }
+  const platformCredentials =
+    deps.credentials === undefined
+      ? undefined
+      : { workspaceId: deps.credentials.workspaceId, client: deps.credentials.client };
+
   // Destroy-only guardrail — first, ahead of every other step, so it
   // surfaces even when the rest of the pipeline goes on to fail for an
   // unrelated reason (missing config, missing built output — both common
@@ -463,7 +476,7 @@ async function runStackPipelineInner(
           environment,
           cwd,
           reportId: opts.reportId,
-          credentials: deps.credentials,
+          credentials: platformCredentials,
         })),
       );
     }
@@ -479,7 +492,7 @@ async function runStackPipelineInner(
         if (action === 'deploy') {
           const instance = await extension.container.ensure(
             { appName: resolvedName, environment },
-            deps.credentials,
+            platformCredentials,
           );
           requireContainerForEnvironment(
             action,
@@ -492,7 +505,7 @@ async function runStackPipelineInner(
         } else {
           const instance = await extension.container.locate(
             { appName: resolvedName, environment },
-            deps.credentials,
+            platformCredentials,
           );
           if (instance === undefined) {
             throw new CliStructuredError(
@@ -547,7 +560,7 @@ async function runStackPipelineInner(
             container: containers.get(extension.id),
             environment,
             pools: pipeline.pools,
-            credentials: deps.credentials,
+            credentials: platformCredentials,
             report,
           });
           if (payload !== undefined) preflightPayloads.set(extension.id, payload);
@@ -569,8 +582,8 @@ async function runStackPipelineInner(
     throw error;
   }
 
-  if (action === 'deploy') {
-    return convergeDeploy(opts, pipeline, {
+  if (converge !== undefined) {
+    return convergeDeploy(opts, pipeline, converge, {
       containers,
       stage: alchemyStage,
       preflight: preflightPayloads,
@@ -739,7 +752,7 @@ async function runStackPipelineInner(
           const instance = containers.get(extension.id);
           if (instance === undefined) continue;
           try {
-            await extension.container.remove(instance, deps.credentials);
+            await extension.container.remove(instance, platformCredentials);
           } catch (error) {
             throw toStructured('DEPLOY.CONTAINER_REMOVE_FAILED', error);
           }
@@ -761,10 +774,67 @@ async function runStackPipelineInner(
   }
 }
 
+interface ConvergeSetup {
+  readonly engine: DeployEngine;
+  /** The credential variables Alchemy reads, set for the length of the apply; `undefined` removes one. */
+  readonly credentialEnv: Readonly<Record<string, string | undefined>>;
+}
+
+/**
+ * Alchemy runs in this process and reads its Prisma credential only from the
+ * environment, and the engine gives a command no way to read a `prisma login`
+ * session's token. So deploy needs a service token.
+ */
+function serviceTokenRequired(): CliStructuredError {
+  return new CliStructuredError(
+    'DEPLOY.SERVICE_TOKEN_REQUIRED',
+    'Deploy needs PRISMA_SERVICE_TOKEN in the environment.',
+    {
+      why: 'Alchemy applies the deploy in this process and reads its Prisma credential from the environment. A `prisma login` session cannot reach it yet.',
+      fix: 'Create a service token for the workspace in the Prisma Console and set PRISMA_SERVICE_TOKEN to it, then deploy again.',
+    },
+  );
+}
+
+/**
+ * What deploy's converge needs before anything is created: the service token,
+ * and the app's own install of the engine. A caller that supplies credentials
+ * supplies the token with them, and the token and workspace always come from
+ * that one credential; a caller that supplies none leaves both to the
+ * environment.
+ */
+async function prepareConverge(
+  deps: OperationDeps,
+  cwd: string,
+): Promise<Result<ConvergeSetup, CliStructuredError>> {
+  const credentials = deps.credentials;
+  const token =
+    credentials === undefined ? process.env['PRISMA_SERVICE_TOKEN'] : credentials.serviceToken;
+  if (token === undefined || token.length === 0) return notOk(serviceTokenRequired());
+  let engine: DeployEngine;
+  try {
+    engine = deps.engine ?? (await loadAppEngine(cwd));
+  } catch (error) {
+    if (CliStructuredError.is(error)) return notOk(error);
+    throw error;
+  }
+  return ok({
+    engine,
+    credentialEnv:
+      credentials === undefined
+        ? {}
+        : { PRISMA_SERVICE_TOKEN: token, PRISMA_WORKSPACE_ID: credentials.workspaceId },
+  });
+}
+
 /** One Alchemy progress event as the deploy's step events: each resource is a step inside `apply`. */
-function reportConvergeEvent(steps: DeploySteps, event: ConvergeEvent): void {
+function reportConvergeEvent(
+  steps: DeploySteps,
+  event: ConvergeEvent,
+  redact: (text: string) => string,
+): void {
   if (event.kind === 'log') {
-    steps.message(event.severity, withComposerAdvice(event.text));
+    steps.message(event.severity, redact(withComposerAdvice(event.text)));
     return;
   }
   const step: DeployStep = {
@@ -785,11 +855,66 @@ function reportConvergeEvent(steps: DeploySteps, event: ConvergeEvent): void {
       if (!steps.isOpen(step)) steps.start(step);
       steps.fail(step);
       if (event.message !== undefined) {
-        steps.message('warn', `${event.fqn}: ${withComposerAdvice(event.message)}`);
+        steps.message('warn', redact(`${event.fqn}: ${withComposerAdvice(event.message)}`));
       }
       return;
     case 'pending':
       return;
+  }
+}
+
+function reasonsText(reasons: readonly ConvergeFailureReason[]): string {
+  return reasons
+    .map(({ tag, message }) =>
+      tag === 'Error' || tag === 'Unknown' || message.startsWith(tag)
+        ? message
+        : `${tag}: ${message}`,
+    )
+    .join('\n');
+}
+
+/** The structured failure a converge that did not apply settles as. */
+function convergeFailure(
+  outcome: Exclude<ConvergeOutcome, { readonly kind: 'applied' }>,
+  redact: (text: string) => string,
+): CliStructuredError {
+  switch (outcome.kind) {
+    case 'interrupted':
+      return new CliStructuredError('DEPLOY.INTERRUPTED', 'The deploy was interrupted.', {
+        why: 'It stopped while Alchemy planned or applied it. Resources it had already changed stay as they are.',
+        fix: 'Deploy again to finish.',
+      });
+    case 'refused':
+      return outcome.reason === 'already-running'
+        ? new CliStructuredError(
+            'DEPLOY.CONVERGE_RUNNING',
+            'Another deploy is already running in this process.',
+            {
+              why: "A deploy sets the process's environment and working directory while Alchemy runs, so two cannot overlap.",
+              fix: 'Wait for the other deploy to finish, or run this one in its own process.',
+            },
+          )
+        : new CliStructuredError(
+            'DEPLOY.WORKER_THREAD',
+            'Deploy cannot run in a worker thread when its cwd is not the process working directory.',
+            {
+              why: 'Alchemy reads `.env` and keeps `.alchemy` in the working directory, and a worker thread cannot change it.',
+              fix: "Call deploy from the main thread, or with the process's working directory as its cwd.",
+            },
+          );
+    case 'failed': {
+      const cause = capFailureCause(redact(withComposerAdvice(reasonsText(outcome.reasons))));
+      return new CliStructuredError(
+        'DEPLOY.ENGINE_FAILED',
+        `Alchemy could not deploy the app.\n${cause}`,
+        {
+          meta: {
+            engineCause: cause,
+            reasons: outcome.reasons.map(({ tag, message }) => ({ tag, message: redact(message) })),
+          },
+        },
+      );
+    }
   }
 }
 
@@ -802,6 +927,7 @@ function reportConvergeEvent(steps: DeploySteps, event: ConvergeEvent): void {
 async function convergeDeploy(
   opts: StackPipelineOptions,
   pipeline: PipelineResult,
+  setup: ConvergeSetup,
   resolved: {
     readonly containers: ReadonlyMap<ExtensionId, ContainerInstance>;
     readonly stage: string;
@@ -809,8 +935,13 @@ async function convergeDeploy(
     readonly env: Readonly<Record<string, string>>;
   },
 ): Promise<Result<DeploymentSummary | undefined, CliStructuredError>> {
-  const { cwd, environment, deps, steps } = opts;
+  const { cwd, environment, steps } = opts;
   const config = pipeline.configSource.value;
+  const env = { ...resolved.env, ...setup.credentialEnv };
+  const redact = convergeRedactor(
+    { ...process.env, ...env },
+    poolSecrets(pipeline.pools, config.secrets !== undefined),
+  );
   let summary: DeploymentSummary | undefined;
 
   const root = pipeline.graph.root.node;
@@ -820,7 +951,7 @@ async function convergeDeploy(
   steps.start({ name: 'apply' });
   let stack: LoweredStack;
   try {
-    stack = lower(root, config, {
+    stack = setup.engine.lower(root, config, {
       name: pipeline.name,
       environment,
       configPool: pipeline.pools.config,
@@ -833,42 +964,23 @@ async function convergeDeploy(
     });
   } catch (error) {
     // An extension's state or providers factory threw while the stack was built.
-    return notOk(toStructured('DEPLOY.ENGINE_FAILED', error));
+    return notOk(
+      new CliStructuredError(
+        'DEPLOY.ENGINE_FAILED',
+        redact(error instanceof Error ? error.message : String(error)),
+      ),
+    );
   }
-  const env = { ...resolved.env, ...deps.convergeEnv };
-  const outcome = await (deps.converge ?? convergeInProcess)({
+  const outcome = await setup.engine.converge({
+    operation: 'deploy',
     stack,
     stage: resolved.stage,
     cwd,
     env,
     signal: opts.signal,
-    onEvent: (event) => reportConvergeEvent(steps, event),
+    onEvent: (event) => reportConvergeEvent(steps, event, redact),
   });
-
-  switch (outcome.kind) {
-    case 'applied':
-      steps.finish({ name: 'apply' });
-      return ok(summary);
-    case 'interrupted':
-      return notOk(
-        new CliStructuredError('DEPLOY.INTERRUPTED', 'The deploy was interrupted.', {
-          why: 'It stopped while Alchemy planned or applied it. Resources it had already changed stay as they are.',
-          fix: 'Deploy again to finish.',
-        }),
-      );
-    case 'failed': {
-      const cause = convergeFailureCause(
-        outcome.cause,
-        { ...process.env, ...env },
-        poolSecrets(pipeline.pools, config.secrets !== undefined),
-      );
-      return notOk(
-        new CliStructuredError(
-          'DEPLOY.ENGINE_FAILED',
-          `Alchemy could not deploy the app.\n${cause}`,
-          { meta: { engineCause: cause } },
-        ),
-      );
-    }
-  }
+  if (outcome.kind !== 'applied') return notOk(convergeFailure(outcome, redact));
+  steps.finish({ name: 'apply' });
+  return ok(summary);
 }
