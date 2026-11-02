@@ -4,11 +4,11 @@ import { isSecretPointer } from '@internal/foundation/pointer';
 import { isSecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import {
+  type InputBindingUse,
   LoadError,
   type NodeId,
   type ParamBinding,
   type SecretSourceUse,
-  type ServiceInputBinding,
 } from './graph-types.ts';
 import { inputFieldLabel } from './module-input.ts';
 import {
@@ -452,12 +452,12 @@ function refusePointersInProps(address: NodeId, props: unknown): void {
 export function resolveValues(input: {
   readonly environment: EnvironmentRealValues | undefined;
   readonly configPool: Readonly<Record<string, unknown>> | undefined;
-  readonly inputBindings: readonly ServiceInputBinding[];
+  readonly inputBindings: readonly InputBindingUse[];
   readonly params: readonly ParamBinding[];
   readonly moduleInputs: readonly ProvisionedModuleInput[];
   readonly resources: ReadonlyMap<NodeId, ResourceNode>;
 }): {
-  readonly inputBindings: readonly ServiceInputBinding[];
+  readonly inputBindings: readonly InputBindingUse[];
   readonly params: readonly ParamBinding[];
   readonly resourceProps: ReadonlyMap<NodeId, ResourceProps>;
   readonly secretSources: readonly SecretSourceUse[];
@@ -474,7 +474,7 @@ export function resolveValues(input: {
     });
   };
   const secretSourcesReceivedBy = (
-    inputBindings: readonly ServiceInputBinding[],
+    inputBindings: readonly InputBindingUse[],
     params: readonly ParamBinding[],
   ): readonly SecretSourceUse[] => {
     for (const { serviceAddress, binding } of [...inputBindings, ...params]) {
@@ -663,7 +663,7 @@ export function resolveValues(input: {
       : {
           serviceAddress: entry.serviceAddress,
           binding: blindCast<
-            ServiceInputBinding['binding'],
+            InputBindingUse['binding'],
             'substitution replaces each value with its real value and keeps every source in place: an environment or computed value is plain data, which checkResult checked, and an input field is its module schema output with each pointer put back; the service schema validates the whole binding again when the target serializes it'
           >(binding),
         };

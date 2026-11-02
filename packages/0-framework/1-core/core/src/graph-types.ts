@@ -78,12 +78,10 @@ export interface Edge {
 }
 
 /**
- * A service's provision-time input binding (ADR-0042): the plain object a
- * `provision(service, { input })` call supplied, recorded at that service's
- * address. Core never walks it beyond usage tracking; the deploy target's
- * recursive descent classifies its leaves (literals, `envParam`, `envSecret`).
+ * The binding a `provision()` call supplied as a service's input (ADR-0042),
+ * recorded at the service's address. The deploy target resolves its leaves.
  */
-export interface ServiceInputBinding {
+export interface InputBindingUse {
   /** The graph address of the service that declares the input schema. */
   readonly serviceAddress: NodeId;
   /** The binding object supplied at provision. */
@@ -127,7 +125,7 @@ export interface Graph {
   /** The authored (pre-dereference) edges between boundary ports, in declaration order. */
   readonly authoredEdges: readonly AuthoredEdge[];
   /** Every service input binding a `provision()` call supplied (ADR-0042). */
-  readonly inputBindings: readonly ServiceInputBinding[];
+  readonly inputBindings: readonly InputBindingUse[];
   /** Every service param bound at provision — literal or source; unbound params are absent here and fall back to their `default` (see `buildConfig`). */
   readonly params: readonly ParamBinding[];
   /** Every secret source a binding names, once each, in the order Load met them (ADR-0029). */
