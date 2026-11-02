@@ -73,8 +73,14 @@ import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
-import { containerEnv } from '@prisma/composer/config';
+import { Load, nodeAddresses, secretsKeys } from '@prisma/composer';
+import { containerEnv, environmentVariables } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
+import {
+  removeConfigurationFile,
+  secondProcessEnvironment,
+  writeConfigurationFile,
+} from '@prisma/composer-cli/testing';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import { emulatorRegistryRoot } from '@prisma/composer-prisma-cloud/local-target';
 import { prismaBinDir } from './spawn-prisma.ts';
@@ -416,6 +422,13 @@ const PROVING_PRODUCT_ID = 'proving-row';
 const APP_NAME = 'store';
 const catalogDist = path.join(storeDir, 'modules', 'catalog', 'dist', 'server.mjs');
 const DEV_STACK_FILE = path.join(storeDir, '.prisma-composer', 'dev', 'dev', 'alchemy.run.ts');
+const CONFIGURATION_FILE = path.join(
+  storeDir,
+  '.prisma-composer',
+  'dev',
+  'dev',
+  'configuration.json',
+);
 
 /** Walks up from `startDir` looking for `node_modules/.bin/alchemy` — same as local-dev.integration.ts's own helper. */
 function alchemyBin(startDir: string): string {
@@ -489,6 +502,32 @@ async function touchCatalogAndAwaitRealWatchLoop(
   }, 15_000);
 }
 
+/**
+ * What `prisma dev`'s first process hands its second process for the store app, built the
+ * same way: the default adapters read for the environment `dev`, a Load with that app
+ * configuration, and the configuration-file helpers `prisma dev` itself uses.
+ */
+async function secondProcessHandover() {
+  const adapterInput = { environment: 'dev', configDirectory: storeDir };
+  const configuration = await environmentVariables()(adapterInput);
+  const appSecrets = await environmentVariables()(adapterInput);
+  const { default: root } = await import(path.join(storeDir, 'module.ts'));
+  const graph = Load(root, { id: APP_NAME, environment: { name: 'dev' }, configuration });
+  const secrets: Record<string, string> = {};
+  for (const key of secretsKeys(graph)) {
+    const value = appSecrets[key];
+    if (typeof value === 'string' && value !== '') secrets[key] = value;
+  }
+  return {
+    checked: graph.checkedConfiguration,
+    env: secondProcessEnvironment({
+      configurationFile: CONFIGURATION_FILE,
+      nodeAddresses: nodeAddresses(graph),
+      secrets,
+    }),
+  };
+}
+
 async function rebuildCatalogAndReconverge(
   session: DevSession,
 ): Promise<Record<string, number | undefined>> {
@@ -526,12 +565,23 @@ async function rebuildCatalogAndReconverge(
   const dev = await descriptor.localTarget();
   const container = await dev.container.ensure({ appName: APP_NAME, environment: 'dev' });
   const envVars = containerEnv(new Map([[descriptor.id, container]]));
+  const secondProcessEnv = await secondProcessHandover();
 
-  const result = spawnSync(
-    alchemyBin(storeDir),
-    ['deploy', path.relative(storeDir, DEV_STACK_FILE), '--yes', '--stage', 'dev'],
-    { cwd: storeDir, stdio: 'inherit', env: { ...process.env, ...envVars } },
-  );
+  writeConfigurationFile(CONFIGURATION_FILE, secondProcessEnv.checked);
+  let result: ReturnType<typeof spawnSync>;
+  try {
+    result = spawnSync(
+      alchemyBin(storeDir),
+      ['deploy', path.relative(storeDir, DEV_STACK_FILE), '--yes', '--stage', 'dev'],
+      {
+        cwd: storeDir,
+        stdio: 'inherit',
+        env: { ...process.env, ...envVars, ...secondProcessEnv.env },
+      },
+    );
+  } finally {
+    removeConfigurationFile(CONFIGURATION_FILE);
+  }
   assert(
     result.status === 0,
     `re-converge (alchemy deploy) failed with status ${String(result.status)}`,
