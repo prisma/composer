@@ -1,6 +1,6 @@
 # S11 to S13 — Configuration is read once, and no known secret is printed
 
-Parent: [module-input spec](../../spec.md) and [plan](../../plan.md). Design: [design.md](../../design.md), which is authoritative; these slices build section 8 ("The two adapters that ship", "Which commands run which adapters", "The deploy's two processes", "`prisma dev`'s two processes"), section 9, the section 10 items "The 'pool' names in code" and "The second process's own run of the config adapters", and the section 12 changes to the decisions on secrets, env-sourced params, the `composer` config section, dev secrets and errors, with the glossary. Decisions: [ADR-0062](../../../../../docs/design/90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md), [ADR-0049](../../../../../docs/design/90-decisions/ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md), [ADR-0058](../../../../../docs/design/90-decisions/ADR-0058-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md), [ADR-0029](../../../../../docs/design/90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md), [ADR-0032](../../../../../docs/design/90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md) and [ADR-0044](../../../../../docs/design/90-decisions/ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md).
+Parent: [module-input spec](../../spec.md) and [plan](../../plan.md). Design: [design.md](../../design.md), which is authoritative; these slices build section 8 ("The two adapters that ship", "Which commands run which adapters", "The deploy's two processes", "`prisma dev`'s two processes"), section 9, the section 10 items "The 'pool' names in code" and "The second process's own run of the config adapters", and the section 12 changes to the decisions on secrets, env-sourced params, the `composer` config section, dev secrets and errors, with the glossary. Decisions: [ADR-0062](../../../../../docs/design/90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md), [ADR-0049](../../../../../docs/design/90-decisions/ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md), [ADR-0058](../../../../../docs/design/90-decisions/ADR-0058-prisma-dev-reads-secrets-from-the-app-secrets-and-never-invents-them.md), [ADR-0029](../../../../../docs/design/90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md), [ADR-0032](../../../../../docs/design/90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md) and [ADR-0044](../../../../../docs/design/90-decisions/ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md).
 
 The three slices ship as one pull request. It is built on `claude/module-input-s11-s13`, stacked on prisma/composer#412 (S9 and S10). This spec is grounded in that branch at `78166d80`, which holds S9 and S10; § 19 says what S10 changed.
 
@@ -30,9 +30,9 @@ $ prisma deploy --environment staging
    {"rootInput":[{"path":["EMAIL_FROM"],"value":"shop@example.com"},{"path":["EMAIL_DELIVERY_MODE"],"value":"none"}],"values":{}}
    ```
 
-4. It starts the second process with `PRISMA_COMPOSER_CONFIGURATION_FILE` naming that file and `PRISMA_COMPOSER_NODE_ADDRESSES` listing the node addresses it checked. The second process runs no adapter. It Loads the graph with the file's values, without running the root's schema, and refuses to deploy a graph whose node addresses differ.
+4. It starts the second process with `PRISMA_COMPOSER_APP_CONFIGURATION_FILE` naming that file and `PRISMA_COMPOSER_NODE_ADDRESSES` listing the node addresses it checked. The second process runs no adapter. It Loads the graph with the file's values, without running the root's schema, and refuses to deploy a graph whose node addresses differ.
 5. The CLI engine passes the second process's output through Composer's redactor before it prints it. The redactor replaces every secret value Composer knows, including one split across two chunks of output.
-6. When the deploy ends, success or failure, the first process deletes the configuration file.
+6. When the deploy ends, success or failure, the first process deletes the app configuration file.
 
 What the user sees when the second process prints a secret, and when an adapter's error holds one:
 
@@ -42,15 +42,15 @@ api key is [redacted]
   Why: It threw: cannot use token [redacted]
 ```
 
-`prisma dev` does the same, with `.prisma-composer/dev/<environment>/configuration.json`, and also hands its second process the secrets its local services need, in `PRISMA_COMPOSER_APP_SECRETS`, never in a file.
+`prisma dev` does the same, with `.prisma-composer/dev/<environment>/configuration.json`, and also hands its second process the secrets its local services need, in `PRISMA_COMPOSER_NAMED_SECRETS`, never in a file.
 
 ## 2. The model
 
 - **The app configuration** is what the `config` adapters return, merged. **The app secrets** is what the `secrets` adapters return, merged. These names replace "config pool" and "secrets pool" everywhere: in types, functions, options, messages, docs and tests (§ 4).
 - **Only the first process runs adapters.** `deploy` and `dev` run both lists; `destroy` runs only `config`. The order is now secrets first, then configuration, so a failing config adapter's message is redacted with every value a written `secrets` list returned (§ 7.2).
-- **Load records what it read** from the app configuration, as `graph.checkedConfiguration` (§ 5). That record is exactly what the configuration file holds. It holds no secrets: a name may not be read both by `envParam()` and by `envSecret()` (§ 5.5).
-- **The second process Loads with `checkedConfiguration`** instead of `configuration`. Load then takes each root field from the record without running the root's schema, and reads each configuration key from the record's text. A root field the record lacks is an error: the two processes built different graphs (§ 5.4).
-- **The second process checks the node addresses.** `lower()` takes `checkedNodeAddresses` and refuses a graph whose addresses differ (§ 6.2).
+- **Load records what it read** from the app configuration, as `graph.appConfigurationRead` (§ 5). That record is exactly what the app configuration file holds. It holds no secrets: a name may not be read both by `envParam()` and by `envSecret()` (§ 5.5).
+- **The second process Loads with `appConfigurationRead`** instead of `configuration`. Load then takes each root field from the record without running the root's schema, and reads each configuration key from the record's text. A root field the record lacks is an error: the two processes built different graphs (§ 5.4).
+- **The second process checks the node addresses.** `lower()` takes `firstProcessNodeAddresses` and refuses a graph whose addresses differ (§ 6.2).
 - **Core knows each secret's name.** `secretSource()` takes `secretsKey`, the app secrets key that holds the secret's value; `envSecret('NAME')` passes `NAME`. Core's `secretsKeys(graph)` lists them. The CLI uses it to know what to redact and, under `prisma dev`, which secrets to hand the second process (§ 6.1).
 - **Redaction** (§ 9). A `KnownSecrets` object per command collects every secret value the command reads: under every name an `envSecret()` in the graph names, the value in the app configuration and in the app secrets, at any length; and with a written `secrets` list, every value it returns, at any length. Every error an operation returns, every event `prisma dev` emits, the run report, the deploy reporter's message, the deployment summary and the second process's output pass through it. Composer also keeps the redaction S4 shipped: each app configuration value of eight characters or more under a name that looks like a credential, and the shapes `redactSecrets` finds. That is existing behaviour, kept for now; it is not part of this design.
 - **The second process's output passes through a stream redactor.** For the CLI, the engine's `ctx.spawn` takes a per-stream output transform (prisma/prisma-cli#383, `@prisma/cli-engine` 0.10.0). Composer hands it a transform that redacts, and the engine prints the result where it would have printed the output, in every output format (§ 9.5). For programmatic hosts, `spawnAlchemy` pipes the output in-process through the same redactor (§ 9.4).
@@ -153,7 +153,7 @@ The import of `childEnvironment` goes. In `alchemyInvocation`, `env: childEnviro
 | `localTargetProviders(resolved, containers, devDir, pools)` | `localTargetProviders(resolved, containers, devDir, configuration, secrets)` | core `control/local-target.ts`, the dev stack file |
 | `materializeEnv(devDir, address, port, pools)` | `materializeEnv(devDir, address, port, configuration, secrets)` | `local-target/src/compute.ts`, `attach.ts` |
 | `LoadOptions.configPool` | `LoadOptions.configuration` | core `graph-types.ts`, every caller |
-| `LowerOptions.configPool` | removed; replaced by `checkedConfiguration` and `checkedNodeAddresses` (§ 6.2) | core `control/deploy.ts` |
+| `LowerOptions.configPool` | removed; replaced by `appConfigurationRead` and `firstProcessNodeAddresses` (§ 6.2) | core `control/deploy.ts` |
 | `ParamSourceOptions.poolKey` | `ParamSourceOptions.configurationKey` | core `node.ts`, target `param.ts` |
 | the `'source'` origin's `poolKey` | `configurationKey` | core `value.ts`, `node.ts`, `resolve-values.ts` |
 | `ProvisionedModuleInput.fromConfigPool` | `ProvisionedModuleInput.isRoot` | core `resolve-values.ts`, `load-module.ts` |
@@ -162,7 +162,7 @@ The import of `childEnvironment` goes. In `alchemyInvocation`, `env: childEnviro
 | `PipelineResult.pools` | `PipelineResult.configuration` and `PipelineResult.secrets` | CLI `pipeline.ts`, operations |
 | `samePools` | `sameValues` | CLI `execute-dev.ts` |
 | `poolSecrets` | removed (§ 9.2) | CLI `deployment-summary.ts` |
-| `src/exports/pools.ts` (`@internal/cli/pools`) and `packages/9-public/composer/src/exports/internal-pools.ts` (`@prisma/composer/internal/pools`) | removed; § 8.6 adds `internal/configuration-file` | CLI, public composer |
+| `src/exports/pools.ts` (`@internal/cli/pools`) and `packages/9-public/composer/src/exports/internal-pools.ts` (`@prisma/composer/internal/pools`) | removed; § 8.6 adds `internal/app-configuration-file` | CLI, public composer |
 | `pool-text.ts`, `poolText(pool, name, notText)` | `configuration-text.ts`, `configurationText(configuration, name, notText)` | Prisma Cloud target |
 | `poolValue` (preflight's map) | `valueOf` | target `preflight.ts` |
 | the test fixture folder `pipeline-config-pool` | `pipeline-app-configuration` | CLI tests |
@@ -198,7 +198,7 @@ After `NodeId`:
 
 ```ts
 /** One field of the root's input that its body names, with the real value the root's schema produced there. */
-export interface CheckedRootField {
+export interface RootInputField {
   /** The key path inside the root's input, such as `['smtp', 'host']`. */
   readonly path: readonly string[];
   /** The real value; absent when it is `undefined`. */
@@ -207,12 +207,12 @@ export interface CheckedRootField {
 
 /**
  * What a Load read from the app configuration, once the root's schema checked it (ADR-0062).
- * The deploy's and `prisma dev`'s first process writes it to the configuration file, and
+ * The deploy's and `prisma dev`'s first process writes it to the app configuration file, and
  * their second process Loads with it in place of the app configuration.
  */
-export interface CheckedConfiguration {
+export interface AppConfigurationRead {
   /** Each field of the root's input that its body names. Empty when the root declares no input. */
-  readonly rootInput: readonly CheckedRootField[];
+  readonly rootInput: readonly RootInputField[];
   /** The text the app configuration holds for each configuration key a source reads, such as `envParam('NAME')`'s `NAME`. A key the app configuration does not hold, or holds as `''`, is absent. */
   readonly values: Readonly<Record<string, string>>;
 }
@@ -223,18 +223,18 @@ export interface CheckedConfiguration {
 ```ts
   /** The app configuration (ADR-0062): what the `config` adapters return. It is the root's input, which the root's schema checks, and what a source with a configuration key, such as `envParam('NAME')`, reads. The deploy's and dev's first process pass it. */
   readonly configuration?: Readonly<Record<string, unknown>>;
-  /** What the first process's Load read, from the configuration file. The deploy's and dev's second process pass it in place of `configuration`: Load takes each root field from it without running the root's schema. */
-  readonly checkedConfiguration?: CheckedConfiguration;
+  /** What the first process's Load read, from the app configuration file. The deploy's and dev's second process pass it in place of `configuration`: Load takes each root field from it without running the root's schema. */
+  readonly appConfigurationRead?: AppConfigurationRead;
 ```
 
 `Graph` gains, after `secretSources`:
 
 ```ts
   /** What this Load read from the app configuration (ADR-0062). Empty when Load was given none. */
-  readonly checkedConfiguration: CheckedConfiguration;
+  readonly appConfigurationRead: AppConfigurationRead;
 ```
 
-`load-service.ts`'s graph gains `checkedConfiguration: { rootInput: [], values: {} },` after `secretSources: [],`.
+`load-service.ts`'s graph gains `appConfigurationRead: { rootInput: [], values: {} },` after `secretSources: [],`.
 
 ### 5.2 `packages/0-framework/1-core/core/src/load-module.ts`, `loadModule`
 
@@ -242,19 +242,19 @@ The root's input block becomes:
 
 ```ts
   const moduleInputs: ProvisionedModuleInput[] = [];
-  if (opts?.configuration !== undefined && opts.checkedConfiguration !== undefined) {
+  if (opts?.configuration !== undefined && opts.appConfigurationRead !== undefined) {
     throw new LoadError(
-      'Load takes configuration, in the first process, or checkedConfiguration, in the second, not both.',
+      'Load takes configuration, in the first process, or appConfigurationRead, in the second, not both.',
     );
   }
   if (root.inputSchema !== undefined) {
-    if (opts?.checkedConfiguration !== undefined) {
+    if (opts?.appConfigurationRead !== undefined) {
       moduleInputs.push({
         moduleAddress: rootId,
         schema: root.inputSchema,
         binding: undefined,
         isRoot: true,
-        checked: opts.checkedConfiguration.rootInput,
+        checked: opts.appConfigurationRead.rootInput,
       });
     } else if (opts?.configuration !== undefined) {
       moduleInputs.push({
@@ -273,18 +273,18 @@ The root's input block becomes:
   }
 ```
 
-The module-child push in `flatten` sets `isRoot: false` in place of `fromConfigPool: false`. The `resolveValues` call passes `configuration: opts?.configuration` and `checkedConfiguration: opts?.checkedConfiguration` in place of `configPool`. The returned graph gains `checkedConfiguration: resolved.checkedConfiguration,` after `secretSources`.
+The module-child push in `flatten` sets `isRoot: false` in place of `fromConfigPool: false`. The `resolveValues` call passes `configuration: opts?.configuration` and `appConfigurationRead: opts?.appConfigurationRead` in place of `configPool`. The returned graph gains `appConfigurationRead: resolved.appConfigurationRead,` after `secretSources`.
 
 ### 5.3 `packages/0-framework/1-core/core/src/resolve-values.ts`
 
-1. Imports: `type CheckedConfiguration` and `type CheckedRootField` join the `./graph-types.ts` import.
+1. Imports: `type AppConfigurationRead` and `type RootInputField` join the `./graph-types.ts` import.
 2. `ProvisionedModuleInput`: `fromConfigPool` and its doc comment become:
 
    ```ts
      /** True for the root, whose binding is the app configuration. */
      readonly isRoot: boolean;
      /** For the root in the second process: its fields as the first process checked them. The root's schema does not run. */
-     readonly checked?: readonly CheckedRootField[];
+     readonly checked?: readonly RootInputField[];
    ```
 
 3. New module-private functions, after `describeNotPlain`:
@@ -322,20 +322,20 @@ The module-child push in `flatten` sets `isRoot: false` in place of `fromConfigP
 
    ```ts
      readonly configuration: Readonly<Record<string, unknown>> | undefined;
-     readonly checkedConfiguration: CheckedConfiguration | undefined;
+     readonly appConfigurationRead: AppConfigurationRead | undefined;
    ```
 
-   Its return type gains `readonly checkedConfiguration: CheckedConfiguration;`.
+   Its return type gains `readonly appConfigurationRead: AppConfigurationRead;`.
 6. At the start of `resolveValues`'s body, `const { environment, configPool } = input;` becomes:
 
    ```ts
      const { environment } = input;
-     const rootFields = new Map<string, CheckedRootField>();
+     const rootFields = new Map<string, RootInputField>();
      const keysRead = new Map<string, { readonly label: string; readonly text: string | undefined }>();
      /** The text the app configuration holds for `key`, recorded; `undefined` when it holds none or `''`. */
      const configurationText = (key: string, label: string, site: ValueBindingSite): string | undefined => {
        let raw: unknown;
-       if (input.checkedConfiguration !== undefined) raw = input.checkedConfiguration.values[key];
+       if (input.appConfigurationRead !== undefined) raw = input.appConfigurationRead.values[key];
        else if (input.configuration !== undefined) raw = input.configuration[key];
        else {
          throw new LoadError(
@@ -373,7 +373,7 @@ The module-child push in `flatten` sets `isRoot: false` in place of `fromConfigP
              );
              if (field === undefined) {
                throw new LoadError(
-                 `${inputFieldLabel(origin)} of root module "${origin.module}" is not in the configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. ${SAME_GRAPH_ADVICE}`,
+                 `${inputFieldLabel(origin)} of root module "${origin.module}" is not in the app configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. ${SAME_GRAPH_ADVICE}`,
                );
              }
              result = field.value;
@@ -392,12 +392,12 @@ The module-child push in `flatten` sets `isRoot: false` in place of `fromConfigP
 10. New closure inside `resolveValues`, after `validatedInputOf`:
 
     ```ts
-      const checkedConfigurationOf = (
+      const appConfigurationReadOf = (
         inputBindings: readonly InputBindingUse[],
         params: readonly ParamBinding[],
         secretSources: readonly SecretSourceUse[],
-      ): CheckedConfiguration => {
-        if (input.configuration !== undefined || input.checkedConfiguration !== undefined) {
+      ): AppConfigurationRead => {
+        if (input.configuration !== undefined || input.appConfigurationRead !== undefined) {
           const kept: { readonly binding: unknown; readonly site: ValueBindingSite }[] = [
             ...inputBindings.map(({ serviceAddress, binding }) => ({
               binding,
@@ -443,7 +443,7 @@ The module-child push in `flatten` sets `isRoot: false` in place of `fromConfigP
     ```
 
     `rootModuleAddress()` is a closure, declared before it: `const rootModuleAddress = (): string => input.moduleInputs.find((entry) => entry.isRoot)?.moduleAddress ?? '';`. `inputFieldLabel` takes an `InputOrigin`, so the object literal above is that origin.
-11. Both returns of `resolveValues` gain `checkedConfiguration`. The early return becomes:
+11. Both returns of `resolveValues` gain `appConfigurationRead`. The early return becomes:
 
     ```ts
       if (found.length === 0) {
@@ -454,7 +454,7 @@ The module-child push in `flatten` sets `isRoot: false` in place of `fromConfigP
           params: input.params,
           resourceProps: authoredProps,
           secretSources,
-          checkedConfiguration: checkedConfigurationOf(input.inputBindings, input.params, secretSources),
+          appConfigurationRead: appConfigurationReadOf(input.inputBindings, input.params, secretSources),
         };
       }
     ```
@@ -468,18 +468,18 @@ The module-child push in `flatten` sets `isRoot: false` in place of `fromConfigP
         inputBindings,
         params,
         secretSources,
-        checkedConfiguration: checkedConfigurationOf(inputBindings, params, secretSources),
+        appConfigurationRead: appConfigurationReadOf(inputBindings, params, secretSources),
       };
     ```
 
 ### 5.4 What Load does in each process
 
-| | First process: `{ configuration }` | Second process: `{ checkedConfiguration }` |
+| | First process: `{ configuration }` | Second process: `{ appConfigurationRead }` |
 | --- | --- | --- |
 | The root's schema | runs over the whole app configuration | does not run |
-| A root field the body names | read from the schema's output, recorded | taken from `checkedConfiguration.rootInput`; missing is a `LoadError` |
-| A configuration key read in a module's input or a `resolve()` | read from `configuration`, recorded | read from `checkedConfiguration.values` |
-| A configuration key in a service's input or a service param | read and recorded after resolution; non-text is a `LoadError` | read from `checkedConfiguration.values` |
+| A root field the body names | read from the schema's output, recorded | taken from `appConfigurationRead.rootInput`; missing is a `LoadError` |
+| A configuration key read in a module's input or a `resolve()` | read from `configuration`, recorded | read from `appConfigurationRead.values` |
+| A configuration key in a service's input or a service param | read and recorded after resolution; non-text is a `LoadError` | read from `appConfigurationRead.values` |
 | A key read as both a configuration key and a secrets key | `LoadError` | `LoadError` |
 | A recorded root field JSON cannot hold | `LoadError` | cannot happen: the values came from JSON |
 
@@ -518,7 +518,7 @@ The module-child push in `flatten` sets `isRoot: false` in place of `fromConfigP
 4. `paramSource`: `poolKey` becomes `configurationKey` throughout; the two messages become `'paramSource() configurationKey must be a non-empty string.'` and `'paramSource() takes configurationKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.'`; its origin literal becomes `{ kind: 'source', label, configurationKey, secretsKey: undefined }`.
 5. `sourceMisuse`: `origin.poolKey === undefined` becomes `origin.configurationKey === undefined`.
 6. `ParamSource`'s doc comment: `known at deploy when it names a config pool key (\`envParam\`)` becomes `known at deploy when it names an app configuration key (\`envParam\`)`.
-7. `exports/index.ts`: the `../node.ts` type export gains `SecretSourceOptions`; the `../graph.ts` type export gains `CheckedConfiguration` and `CheckedRootField`.
+7. `exports/index.ts`: the `../node.ts` type export gains `SecretSourceOptions`; the `../graph.ts` type export gains `AppConfigurationRead` and `RootInputField`.
 
 ## 6. Core: secret names, node addresses and the second process's check
 
@@ -550,17 +550,17 @@ export function nodeAddresses(graph: Graph): readonly string[] {
 1. `LowerOptions.configPool` and its doc comment are replaced by:
 
    ```ts
-     /** What the first process's Load read from the app configuration (ADR-0062), from the configuration file. Load takes the root's input and every configuration key's text from it, and the Prisma Cloud serializer reads a service's `envParam()` leaves from its `values`. The generated stack files pass it. */
-     readonly checkedConfiguration?: CheckedConfiguration;
+     /** What the first process's Load read from the app configuration (ADR-0062), from the app configuration file. Load takes the root's input and every configuration key's text from it, and the Prisma Cloud serializer reads a service's `envParam()` leaves from its `values`. The generated stack files pass it. */
+     readonly appConfigurationRead?: AppConfigurationRead;
      /** The node addresses the first process checked. When given, lowering refuses a graph whose addresses differ. The generated stack files pass them. */
-     readonly checkedNodeAddresses?: readonly string[];
+     readonly firstProcessNodeAddresses?: readonly string[];
    ```
 
-2. In `lowering`, the `Load` call's `...(opts.configPool !== undefined ? { configPool: opts.configPool } : {})` becomes `...(opts.checkedConfiguration !== undefined ? { checkedConfiguration: opts.checkedConfiguration } : {})`, and directly after the `Load` call:
+2. In `lowering`, the `Load` call's `...(opts.configPool !== undefined ? { configPool: opts.configPool } : {})` becomes `...(opts.appConfigurationRead !== undefined ? { appConfigurationRead: opts.appConfigurationRead } : {})`, and directly after the `Load` call:
 
    ```ts
-       if (opts.checkedNodeAddresses !== undefined) {
-         assertSameNodeAddresses(nodeAddresses(graph), opts.checkedNodeAddresses);
+       if (opts.firstProcessNodeAddresses !== undefined) {
+         assertSameNodeAddresses(nodeAddresses(graph), opts.firstProcessNodeAddresses);
        }
    ```
 
@@ -579,7 +579,7 @@ export function nodeAddresses(graph: Graph): readonly string[] {
    }
    ```
 
-   `deploy.ts` imports `nodeAddresses` from `../graph.ts` and the type `CheckedConfiguration` from `../graph-types.ts`. Core's `process.env` count stays `control/deploy.ts`, 2 (`invariants.test.ts` is unchanged): the addresses reach `lower()` as an option, and the messages say "the process environment", not `process.env`, because the invariant counts the text.
+   `deploy.ts` imports `nodeAddresses` from `../graph.ts` and the type `AppConfigurationRead` from `../graph-types.ts`. Core's `process.env` count stays `control/deploy.ts`, 2 (`invariants.test.ts` is unchanged): the addresses reach `lower()` as an option, and the messages say "the process environment", not `process.env`, because the invariant counts the text.
 
 ### 6.3 `control/app-config.ts`
 
@@ -593,7 +593,7 @@ export function nodeAddresses(graph: Graph): readonly string[] {
    export type AppSecrets = Readonly<Record<string, string>>;
    ```
 
-2. `ConfigAdapter`'s doc comment becomes: `A function in the \`config\` or \`secrets\` list of the \`composer\` section (ADR-0062): it receives the environment and returns that environment's values. Only the command's first process calls it; the second process reads what the first checked from the configuration file.`
+2. `ConfigAdapter`'s doc comment becomes: `A function in the \`config\` or \`secrets\` list of the \`composer\` section (ADR-0062): it receives the environment and returns that environment's values. Only the command's first process calls it; the second process reads what the first checked from the app configuration file.`
 3. `PrismaAppConfig`'s doc comment's last sentence becomes `` `config` and `secrets` list the adapters the app configuration and the app secrets come from. ``; `config`'s member comment becomes `Where the app configuration comes from. …` and `secrets`' `Where the app secrets come from. …`, the rest unchanged.
 4. `PreflightInput.pools` is replaced by:
 
@@ -667,7 +667,7 @@ export function nodeAddresses(graph: Graph): readonly string[] {
 3. `PipelineResult.pools` is replaced by:
 
    ```ts
-     /** The app configuration read for this run. In memory only; the configuration file holds only what Load read from it. */
+     /** The app configuration read for this run. In memory only; the app configuration file holds only what Load read from it. */
      readonly configuration: AppConfiguration;
      /** The app secrets read for this run. In memory only: never written to a file, an event, a result or a report. */
      readonly secrets: AppSecrets;
@@ -694,22 +694,22 @@ export function nodeAddresses(graph: Graph): readonly string[] {
 
 6. The return becomes `return { configSource, entryModule, graph, name, assembled, configuration, secrets };`.
 
-## 8. CLI: the configuration file and the second process
+## 8. CLI: the app configuration file and the second process
 
-### 8.1 New file `packages/0-framework/3-tooling/cli/src/configuration-file.ts`
+### 8.1 New file `packages/0-framework/3-tooling/cli/src/app-configuration-file.ts`
 
-It imports `node:fs` and the types `AppSecrets`, `CheckedConfiguration` and `CheckedRootField`, and no value from core or `@prisma/cli-engine`, because the generated stack files import it in the second process.
+It imports `node:fs` and the types `AppSecrets`, `AppConfigurationRead` and `RootInputField`, and no value from core or `@prisma/cli-engine`, because the generated stack files import it in the second process.
 
 ```ts
-/** Names the configuration file the first process wrote for this run (ADR-0062). */
-export const CONFIGURATION_FILE_ENV = 'PRISMA_COMPOSER_CONFIGURATION_FILE';
+/** Names the app configuration file the first process wrote for this run (ADR-0062). */
+export const APP_CONFIGURATION_FILE_ENV = 'PRISMA_COMPOSER_APP_CONFIGURATION_FILE';
 /** Lists, as JSON, the node addresses the first process checked. */
 export const NODE_ADDRESSES_ENV = 'PRISMA_COMPOSER_NODE_ADDRESSES';
 /** `prisma dev` only: the value of each app secret an `envSecret()` in the graph names, as a JSON object. */
-export const APP_SECRETS_ENV = 'PRISMA_COMPOSER_APP_SECRETS';
+export const APP_SECRETS_ENV = 'PRISMA_COMPOSER_NAMED_SECRETS';
 
 /** Writes `checked` to `file` as JSON, readable only by its owner. A file already there is replaced. */
-export function writeConfigurationFile(file: string, checked: CheckedConfiguration): void {
+export function writeConfigurationFile(file: string, checked: AppConfigurationRead): void {
   fs.rmSync(file, { force: true });
   fs.writeFileSync(file, JSON.stringify(checked), { mode: 0o600, flag: 'wx' });
 }
@@ -730,31 +730,31 @@ export function secondProcessEnvironment(input: {
   readonly secrets?: AppSecrets;
 }): Record<string, string> {
   return {
-    [CONFIGURATION_FILE_ENV]: input.configurationFile,
+    [APP_CONFIGURATION_FILE_ENV]: input.configurationFile,
     [NODE_ADDRESSES_ENV]: JSON.stringify(input.nodeAddresses),
     ...(input.secrets === undefined ? {} : { [APP_SECRETS_ENV]: JSON.stringify(input.secrets) }),
   };
 }
 
-/** Second process: what the first process checked, from the configuration file and the node addresses it names. */
-export function readCheckedConfiguration(env: Readonly<Record<string, string | undefined>>): {
-  readonly configuration: CheckedConfiguration;
+/** Second process: what the first process checked, from the app configuration file and the node addresses it names. */
+export function readAppConfigurationFile(env: Readonly<Record<string, string | undefined>>): {
+  readonly configuration: AppConfigurationRead;
   readonly nodeAddresses: readonly string[];
 };
 
 /** Second process, under `prisma dev`: the app secrets the first process handed it. */
-export function appSecretsFromEnvironment(env: Readonly<Record<string, string | undefined>>): AppSecrets;
+export function namedSecretsFromEnvironment(env: Readonly<Record<string, string | undefined>>): AppSecrets;
 ```
 
-`readCheckedConfiguration`:
+`readAppConfigurationFile`:
 
-1. `const file = env[CONFIGURATION_FILE_ENV]`; when it is `undefined` or `''`, throws `new Error(missingVariable(CONFIGURATION_FILE_ENV, 'names the configuration file it wrote there'))`.
-2. Reads the file with `fs.readFileSync(file, 'utf8')`. A read error throws `new Error(\`Could not read the configuration file ${file}: ${message}. Composer deletes it when the run ends, so a stack file run by hand after that cannot read it; run the command again.\`, { cause })`.
-3. Parses it with `JSON.parse`. A parse error, or a result that is not an object whose `rootInput` is an array of objects each with a `path` that is an array of strings, and whose `values` is an object of strings, throws `new Error(\`The configuration file ${file} is not one Composer wrote: <what>.\`)`, where `<what>` is `it is not JSON`, `rootInput is not a list of fields`, or `values is not an object of text`.
+1. `const file = env[APP_CONFIGURATION_FILE_ENV]`; when it is `undefined` or `''`, throws `new Error(missingVariable(APP_CONFIGURATION_FILE_ENV, 'names the app configuration file it wrote there'))`.
+2. Reads the file with `fs.readFileSync(file, 'utf8')`. A read error throws `new Error(\`Could not read the app configuration file ${file}: ${message}. Composer deletes it when the run ends, so a stack file run by hand after that cannot read it; run the command again.\`, { cause })`.
+3. Parses it with `JSON.parse`. A parse error, or a result that is not an object whose `rootInput` is an array of objects each with a `path` that is an array of strings, and whose `values` is an object of strings, throws `new Error(\`The app configuration file ${file} is not one Composer wrote: <what>.\`)`, where `<what>` is `it is not JSON`, `rootInput is not a list of fields`, or `values is not an object of text`.
 4. `const addresses = env[NODE_ADDRESSES_ENV]`; when it is `undefined` or `''`, throws `new Error(missingVariable(NODE_ADDRESSES_ENV, 'lists the node addresses it checked there'))`. When it does not parse to an array of strings, throws `new Error(\`${NODE_ADDRESSES_ENV} is not a JSON list of node addresses.\`)`.
 5. Returns `{ configuration: { rootInput, values }, nodeAddresses }`, built from the parsed data without a cast: module-private type guards `isRecord(value): value is Record<string, unknown>` and `isTextList(value): value is string[]` check each part, each field is rebuilt as `{ path }` or `{ path, value }` (a field without a `value` key stays without one), and `values` is rebuilt entry by entry, refusing an entry that is not text.
 
-`appSecretsFromEnvironment`: `env[APP_SECRETS_ENV]` undefined or `''` throws `new Error(missingVariable(APP_SECRETS_ENV, 'hands the app secrets the local services need there'))`; a value that does not parse to an object of strings throws `new Error(\`${APP_SECRETS_ENV} is not a JSON object of text.\`)`; otherwise returns a frozen object with no prototype holding the parsed entries.
+`namedSecretsFromEnvironment`: `env[APP_SECRETS_ENV]` undefined or `''` throws `new Error(missingVariable(APP_SECRETS_ENV, 'hands the app secrets the local services need there'))`; a value that does not parse to an object of strings throws `new Error(\`${APP_SECRETS_ENV} is not a JSON object of text.\`)`; otherwise returns a frozen object with no prototype holding the parsed entries.
 
 `missingVariable(name, what)` is module-private and returns `` `${name} is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which ${what}.` ``.
 
@@ -763,19 +763,19 @@ export function appSecretsFromEnvironment(env: Readonly<Record<string, string | 
 1. `renderOptions`: `lines.push('  configPool,');` becomes:
 
    ```ts
-     lines.push('  checkedConfiguration: checked.configuration,');
-     lines.push('  checkedNodeAddresses: checked.nodeAddresses,');
+     lines.push('  appConfigurationRead: checked.configuration,');
+     lines.push('  firstProcessNodeAddresses: checked.nodeAddresses,');
    ```
 
-2. In the template, the header line `// It reads the config pool again here, from the same adapters, so an adapter must return the same values for the same environment every time.` becomes `// It runs no config adapter: it reads the values the CLI checked from the configuration file named in PRISMA_COMPOSER_CONFIGURATION_FILE.` The header's `(the PRISMA_COMPOSER_CONTAINER_*/_PREFLIGHT_* vars —` becomes `(the PRISMA_COMPOSER_CONTAINER_*/_PREFLIGHT_* vars and the configuration file —`.
-3. The import `import { readConfigPool } from '@prisma/composer/internal/pools';` becomes `import { readCheckedConfiguration } from '@prisma/composer/internal/configuration-file';`.
+2. In the template, the header line `// It reads the config pool again here, from the same adapters, so an adapter must return the same values for the same environment every time.` becomes `// It runs no config adapter: it reads the values the CLI checked from the app configuration file named in PRISMA_COMPOSER_APP_CONFIGURATION_FILE.` The header's `(the PRISMA_COMPOSER_CONTAINER_*/_PREFLIGHT_* vars —` becomes `(the PRISMA_COMPOSER_CONTAINER_*/_PREFLIGHT_* vars and the app configuration file —`.
+3. The import `import { readConfigPool } from '@prisma/composer/internal/pools';` becomes `import { readAppConfigurationFile } from '@prisma/composer/internal/app-configuration-file';`.
 4. The lines from `const configPool = await readConfigPool(…);` to `report.captureEngineFailure?.();` become:
 
    ```ts
    // The app's own @prisma/composer may predate the failure recorder.
    report.captureEngineFailure?.();
 
-   const checked = readCheckedConfiguration(process.env);
+   const checked = readAppConfigurationFile(process.env);
    ```
 
    The failure recorder starts first, so a missing configuration file is recorded as the cause.
@@ -783,18 +783,18 @@ export function appSecretsFromEnvironment(env: Readonly<Record<string, string | 
 ### 8.3 The generated dev stack file, `dev/generate-dev-stack.ts`
 
 1. `renderOptions`: `lines.push('  configPool: pools.config,');` becomes the same two lines as § 8.2, and `'  providers: localTargetProviders(resolved, containers, devDir, pools),'` becomes `'  providers: localTargetProviders(resolved, containers, devDir, checked.configuration.values, secrets),'`.
-2. In `imports`, `"import { readConfigPool, readSecretsPool } from '@prisma/composer/internal/pools';"` becomes `"import { appSecretsFromEnvironment, readCheckedConfiguration } from '@prisma/composer/internal/configuration-file';"`.
-3. The header line `// It reads the config and secrets pools again here, …` becomes `// It runs no config or secrets adapter: it reads the values the CLI checked from the configuration file named in PRISMA_COMPOSER_CONFIGURATION_FILE, and the app secrets from PRISMA_COMPOSER_APP_SECRETS.`
+2. In `imports`, `"import { readConfigPool, readSecretsPool } from '@prisma/composer/internal/pools';"` becomes `"import { namedSecretsFromEnvironment, readAppConfigurationFile } from '@prisma/composer/internal/app-configuration-file';"`.
+3. The header line `// It reads the config and secrets pools again here, …` becomes `// It runs no config or secrets adapter: it reads the values the CLI checked from the app configuration file named in PRISMA_COMPOSER_APP_CONFIGURATION_FILE, and the app secrets from PRISMA_COMPOSER_NAMED_SECRETS.`
 4. The two lines `const poolInput = …;` and `const pools = …;` become:
 
    ```ts
-   const checked = readCheckedConfiguration(process.env);
-   const secrets = appSecretsFromEnvironment(process.env);
+   const checked = readAppConfigurationFile(process.env);
+   const secrets = namedSecretsFromEnvironment(process.env);
    ```
 
 ### 8.4 `operations/execute-deploy-destroy.ts`
 
-1. Imports: `poolSecrets` goes from the `../deployment-summary.ts` import; new imports `nodeAddresses` from `@internal/core`, `removeConfigurationFile, secondProcessEnvironment, writeConfigurationFile` from `../configuration-file.ts` and `KnownSecrets, redactError, redactSummary` from `../redaction.ts`.
+1. Imports: `poolSecrets` goes from the `../deployment-summary.ts` import; new imports `nodeAddresses` from `@internal/core`, `removeConfigurationFile, secondProcessEnvironment, writeConfigurationFile` from `../app-configuration-file.ts` and `KnownSecrets, redactError, redactSummary` from `../redaction.ts`.
 2. `StackPipelineOptions` gains `readonly knownSecrets: KnownSecrets;`. `executeDeploy` and `executeDestroy` pass `knownSecrets: new KnownSecrets()`.
 3. `pipelineDeps` gains `knownSecrets: opts.knownSecrets`.
 4. `extension.preflight({ …, pools: pipeline.pools, … })` becomes `configuration: pipeline.configuration, secrets: pipeline.secrets,`.
@@ -808,7 +808,7 @@ export function appSecretsFromEnvironment(env: Readonly<Record<string, string | 
      );
    ```
 
-6. Inside the try that writes the stack file, after `stackPath = writeStackFile({ … });`: `writeConfigurationFile(configurationFilePath, pipeline.graph.checkedConfiguration);`. A failure is `DEPLOY.STACK_WRITE_FAILED`, as for the stack file.
+6. Inside the try that writes the stack file, after `stackPath = writeStackFile({ … });`: `writeConfigurationFile(configurationFilePath, pipeline.graph.appConfigurationRead);`. A failure is `DEPLOY.STACK_WRITE_FAILED`, as for the stack file.
 7. `alchemyInvocation`'s `env` becomes:
 
    ```ts
@@ -833,7 +833,7 @@ export function appSecretsFromEnvironment(env: Readonly<Record<string, string | 
 
 ### 8.5 `operations/execute-dev.ts`
 
-1. Imports: `type ConfigPools` goes; new imports `type PipelineResult` from `../pipeline.ts`, `nodeAddresses` and `secretsKeys` from `@internal/core`, `removeConfigurationFile, secondProcessEnvironment, writeConfigurationFile` from `../configuration-file.ts`, `KnownSecrets, redactDevEvent, redactError` from `../redaction.ts`, and `type AlchemyInvocation` from `../run-alchemy.ts`.
+1. Imports: `type ConfigPools` goes; new imports `type PipelineResult` from `../pipeline.ts`, `nodeAddresses` and `secretsKeys` from `@internal/core`, `removeConfigurationFile, secondProcessEnvironment, writeConfigurationFile` from `../app-configuration-file.ts`, `KnownSecrets, redactDevEvent, redactError` from `../redaction.ts`, and `type AlchemyInvocation` from `../run-alchemy.ts`.
 2. `executeDev`'s body moves into a module-private `executeDevInner(input, deps, cwd, known: KnownSecrets)`, unchanged except as below. `executeDev` becomes:
 
    ```ts
@@ -898,7 +898,7 @@ export function appSecretsFromEnvironment(env: Readonly<Record<string, string | 
      };
    ```
 
-8. `converge` becomes `converge(p: PipelineResult): Promise<{ outcome; stackPath; invocation }>`. It builds `const invocation = invocationFor(p);`; writes the dev stack file from `p` and, in the same try, `writeConfigurationFile(configurationFilePath, p.graph.checkedConfiguration);` (both `DEV.STACK_WRITE_FAILED`); runs the converge; and in a `finally` around the converge call, `removeConfigurationFile(configurationFilePath);`. It returns `invocation` too. The first converge calls `converge(pipeline)`, and its `reproduceCommand(invocation, …)` uses the returned invocation.
+8. `converge` becomes `converge(p: PipelineResult): Promise<{ outcome; stackPath; invocation }>`. It builds `const invocation = invocationFor(p);`; writes the dev stack file from `p` and, in the same try, `writeConfigurationFile(configurationFilePath, p.graph.appConfigurationRead);` (both `DEV.STACK_WRITE_FAILED`); runs the converge; and in a `finally` around the converge call, `removeConfigurationFile(configurationFilePath);`. It returns `invocation` too. The first converge calls `converge(pipeline)`, and its `reproduceCommand(invocation, …)` uses the returned invocation.
 9. `rebuild`: the block from `const stackPath = writeDevStackFile({ … });` to the `converge-failed` emit becomes:
 
    ```ts
@@ -920,22 +920,22 @@ The dev configuration file lives only while a converge runs, which is shorter th
 
 ### 8.6 Entries and packaging
 
-1. `packages/0-framework/3-tooling/cli/src/exports/pools.ts` is deleted. New `src/exports/configuration-file.ts`:
+1. `packages/0-framework/3-tooling/cli/src/exports/pools.ts` is deleted. New `src/exports/app-configuration-file.ts`:
 
    ```ts
-   /** What the generated stack files read in the second process. Not public API: published as `@prisma/composer/internal/configuration-file`, it may change in any release. */
+   /** What the generated stack files read in the second process. Not public API: published as `@prisma/composer/internal/app-configuration-file`, it may change in any release. */
    export {
-     appSecretsFromEnvironment,
-     readCheckedConfiguration,
-   } from '../configuration-file.ts';
+     namedSecretsFromEnvironment,
+     readAppConfigurationFile,
+   } from '../app-configuration-file.ts';
    ```
 
-2. `packages/0-framework/3-tooling/cli/tsdown.config.ts`: the entry `pools: 'src/exports/pools.ts',` becomes `'configuration-file': 'src/exports/configuration-file.ts',`. Run `pnpm --filter @internal/cli build`; it regenerates `package.json#exports` with `./configuration-file` and without `./pools`. Commit the regenerated file; do not hand-edit it.
-3. `packages/9-public/composer/src/exports/internal-pools.ts` is deleted. New `internal-configuration-file.ts`: `export * from '@internal/cli/configuration-file';`.
+2. `packages/0-framework/3-tooling/cli/tsdown.config.ts`: the entry `pools: 'src/exports/pools.ts',` becomes `'app-configuration-file': 'src/exports/app-configuration-file.ts',`. Run `pnpm --filter @internal/cli build`; it regenerates `package.json#exports` with `./app-configuration-file` and without `./pools`. Commit the regenerated file; do not hand-edit it.
+3. `packages/9-public/composer/src/exports/internal-pools.ts` is deleted. New `internal-configuration-file.ts`: `export * from '@internal/cli/app-configuration-file';`.
 4. `packages/9-public/composer/tsdown.config.ts`: `'internal-pools': 'src/exports/internal-pools.ts',` becomes `'internal-configuration-file': 'src/exports/internal-configuration-file.ts',`.
-5. `packages/9-public/composer/package.json#exports`: `"./internal/pools": "./dist/internal-pools.mjs",` becomes `"./internal/configuration-file": "./dist/internal-configuration-file.mjs",`.
+5. `packages/9-public/composer/package.json#exports`: `"./internal/pools": "./dist/internal-pools.mjs",` becomes `"./internal/app-configuration-file": "./dist/internal-configuration-file.mjs",`.
 6. `architecture.config.json`: the entry for `packages/9-public/composer/src/exports/internal-pools.ts` becomes the same entry for `internal-configuration-file.ts`, `"domain": "public", "layer": "public", "plane": "control"`.
-7. `tsconfig.depcruise.json`: the `@prisma/composer/internal/pools` path becomes `@prisma/composer/internal/configuration-file` → `./packages/9-public/composer/src/exports/internal-configuration-file.ts`.
+7. `tsconfig.depcruise.json`: the `@prisma/composer/internal/pools` path becomes `@prisma/composer/internal/app-configuration-file` → `./packages/9-public/composer/src/exports/internal-configuration-file.ts`.
 
 ### 8.7 The engine version
 
@@ -1229,7 +1229,7 @@ export function redactingTransform(values: readonly string[]): TransformStream<s
 }
 ```
 
-Neither `redaction.ts` nor `configuration-file.ts` casts, so `pnpm lint:casts` reports `delta=0`. The redactor never cuts a value in two. It holds back exactly the longest end of the text that is the start, but not the whole, of some value. A value that starts before that cut cannot still be growing into a longer value, because then the text from its start would be a longer such end. When a match runs past the cut, the redactor starts again on the text after the match. It never ends a piece on the first half of a surrogate pair, so an emoji split across two chunks stays whole. `TransformStream` is a global in Node and Bun, typed by `@types/node`, which the CLI's `tsconfig.json` already loads (§ 18 shows both probes).
+Neither `redaction.ts` nor `app-configuration-file.ts` casts, so `pnpm lint:casts` reports `delta=0`. The redactor never cuts a value in two. It holds back exactly the longest end of the text that is the start, but not the whole, of some value. A value that starts before that cut cannot still be growing into a longer value, because then the text from its start would be a longer such end. When a match runs past the cut, the redactor starts again on the text after the match. It never ends a piece on the first half of a surrogate pair, so an emoji split across two chunks stays whole. `TransformStream` is a global in Node and Bun, typed by `@types/node`, which the CLI's `tsconfig.json` already loads (§ 18 shows both probes).
 
 Why it holds back only a possible start of a value: Alchemy prints a line, such as `Creating web`, then waits minutes for the platform, and a prompt such as `Deploy to production? (y/N) ` ends without a line break. A cut by length would hold back the end of either until the next output. Text that cannot start a value is printed at once.
 
@@ -1409,8 +1409,8 @@ What Composer relies on:
 1. `packages/1-prisma-cloud/1-extensions/target/src/param.ts`: in `envParam`, `{ label: \`envParam('${name}')\`, poolKey: name }` becomes `{ label: \`envParam('${name}')\`, configurationKey: name }`; the doc comment's "the variable's value in the config pool" becomes "the variable's value in the app configuration".
 2. `secret.ts`: in `envSecret`, `{ label: \`envSecret('${name}')\` }` becomes `{ label: \`envSecret('${name}')\`, secretsKey: name }`.
 3. `git mv pool-text.ts configuration-text.ts`; the function becomes `configurationText(configuration: Readonly<Record<string, unknown>>, name: string, notText: (kind: string) => Error): string | undefined`, doc comment `The text the app configuration holds for \`name\`, as an environment variable would: \`undefined\` when it is absent or empty. Throws the error \`notText\` builds when it holds anything else there.` Its three importers (`serializer.ts`, `preflight.ts`, `local-target/preflight.ts`) import and call it by the new name.
-4. `serializer.ts`: `SerializeInputOptions.env`'s doc comment becomes `Where \`envParam\` leaves are read: the app configuration, or in the second process the checked values from the configuration file. The process environment when not given.`
-5. `descriptors/compute.ts`: `...(ctx.opts.configPool !== undefined ? { env: ctx.opts.configPool } : {}),` becomes `...(ctx.opts.checkedConfiguration !== undefined ? { env: ctx.opts.checkedConfiguration.values } : {}),`.
+4. `serializer.ts`: `SerializeInputOptions.env`'s doc comment becomes `Where \`envParam\` leaves are read: the app configuration, or in the second process the checked values from the app configuration file. The process environment when not given.`
+5. `descriptors/compute.ts`: `...(ctx.opts.configPool !== undefined ? { env: ctx.opts.configPool } : {}),` becomes `...(ctx.opts.appConfigurationRead !== undefined ? { env: ctx.opts.appConfigurationRead.values } : {}),`.
 6. `preflight.ts`: `poolValue` becomes `valueOf`; `input.pools.secrets[meta.name]` becomes `input.secrets[meta.name]`; `poolText(input.pools.config, …)` becomes `configurationText(input.configuration, …)`; the doc comments use § 4.2's words.
 7. `preflight-names.ts`: `/** An env-sourced param's config pool value that preflight cannot write to a platform variable. */` becomes `/** An env-sourced param's app configuration value that preflight cannot write to a platform variable. */`.
 8. `local-target/preflight.ts`: `const env = input.pools.config;` becomes `const env = input.configuration;`; `input.pools.secrets[name]` becomes `input.secrets[name]`; the header's first sentence becomes `Every value comes from what the command read: secrets from the app secrets, env-sourced params from the app configuration.`
@@ -1433,13 +1433,13 @@ What Composer relies on:
 
     so it never names `.env.local` for the environment `test`, which `dotenv()` skips.
 
-In the dev second process, `configuration` is `checked.configuration.values`, the text of each configuration key the graph reads, which is every name a param row points at; `secrets` is what `PRISMA_COMPOSER_APP_SECRETS` holds, every name a `$secret` pointer names.
+In the dev second process, `configuration` is `checked.configuration.values`, the text of each configuration key the graph reads, which is every name a param row points at; `secrets` is what `PRISMA_COMPOSER_NAMED_SECRETS` holds, every name a `$secret` pointer names.
 
 ## 11. What breaks, and what does not
 
 Breaks:
 
-1. `LoadOptions.configPool` is now `configuration`. `LowerOptions.configPool` is gone; a hand-written stack passes `checkedConfiguration` or nothing.
+1. `LoadOptions.configPool` is now `configuration`. `LowerOptions.configPool` is gone; a hand-written stack passes `appConfigurationRead` or nothing.
 2. `paramSource()`'s `poolKey` option is now `configurationKey`.
 3. `ConfigPool`, `SecretsPool` and `ConfigPools` are now `AppConfiguration` and `AppSecrets`; `PreflightInput`, `LocalTargetProvidersInput` and a local attachment's `serve` input take `configuration` and `secrets` in place of `pools`; `localTargetProviders()` takes them as two arguments. This touches extension authors only.
 4. `@prisma/composer/internal/pools` is gone. It was not public API.
@@ -1451,7 +1451,7 @@ Breaks:
 10. A name read both by `envParam()` and by `envSecret()` fails the Load.
 11. An `envParam()` in a service's input or params whose app configuration value is not text fails at Load, in the first process. Before, it failed later, in the serializer or preflight.
 12. A config adapter now runs after the secrets adapters, so a broken secrets adapter is reported before a broken config adapter.
-13. The app's `@prisma/composer` must be at least the version that ships `internal/configuration-file`; with an older one the second process fails when it imports the stack file.
+13. The app's `@prisma/composer` must be at least the version that ships `internal/app-configuration-file`; with an older one the second process fails when it imports the stack file.
 14. `@prisma/composer-cli` declares `@prisma/cli-engine` 0.10.0 as its exact peer. `prisma deploy` and `prisma dev` under a host with an older engine fail with `DEPS.CLI_ENGINE_INCOMPATIBLE` before they start anything.
 
 Unchanged:
@@ -1466,24 +1466,24 @@ The only existing tests this PR changes are those § 15.1 lists. If any other ex
 
 | Where | Condition | Message |
 | --- | --- | --- |
-| `loadModule` | both `configuration` and `checkedConfiguration` | `Load takes configuration, in the first process, or checkedConfiguration, in the second, not both.` |
+| `loadModule` | both `configuration` and `appConfigurationRead` | `Load takes configuration, in the first process, or appConfigurationRead, in the second, not both.` |
 | `loadModule` | a root with `input` and neither | ``Module "<root>" declares input and is being deployed as the root, but Load was given no app configuration to fill it from. Pass { configuration } to Load; prisma deploy and prisma dev pass the values the `config` adapters return.`` |
 | `configurationText` | no app configuration | ``<site> depends on <label>, but Load was given no app configuration to read "<key>" from. Pass { configuration } to Load; the deploy and dev commands pass the values the `config` adapters return.`` |
 | `configurationText` | the value is not text (unchanged text; now also for a service's input and params) | ``<site> depends on <label>, which reads "<key>" from the values the `config` adapters return, but they return <kind> for it, not text. <label> reads text; to pass other data, declare it in the root module's input.`` |
-| `resolveOne`, second process | a root field missing from the file | `<input.path> of root module "<m>" is not in the configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.` |
-| `checkedConfigurationOf` | a key read as both | `<param label> reads "<key>" from the app configuration, and <secret label> names "<key>" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every plain value it reads, in a file, and never writes a secret to a file. Give the plain value and the secret different names.` |
-| `checkedConfigurationOf` | a root field JSON cannot hold | `<input.path> of root module "<m>" holds <kind>, which JSON cannot hold exactly. The deploy hands the root's checked input to its second process in a JSON file, so a field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.` `<kind>` is `a non-finite number`, `an array with a missing member`, `a function`, `a symbol`, `a bigint` or `an object that is not plain data`. |
+| `resolveOne`, second process | a root field missing from the file | `<input.path> of root module "<m>" is not in the app configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.` |
+| `appConfigurationReadOf` | a key read as both | `<param label> reads "<key>" from the app configuration, and <secret label> names "<key>" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every plain value it reads, in a file, and never writes a secret to a file. Give the plain value and the secret different names.` |
+| `appConfigurationReadOf` | a root field JSON cannot hold | `<input.path> of root module "<m>" holds <kind>, which JSON cannot hold exactly. The deploy hands the root's checked input to its second process in a JSON file, so a field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.` `<kind>` is `a non-finite number`, `an array with a missing member`, `a function`, `a symbol`, `a bigint` or `an object that is not plain data`. |
 | `secretSource()` | an empty `secretsKey` | `secretSource() secretsKey must be a non-empty string.` |
 | `paramSource()` | an empty `configurationKey` | `paramSource() configurationKey must be a non-empty string.` |
 | `paramSource()` | `configurationKey` and `redacted` | `paramSource() takes configurationKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.` |
 | `lowering` | the addresses differ | `The deploy's second process built a different graph from the one Composer checked in its first process. Only in the second process: <list>. Only in the first process: <list>. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.` `<list>` is `none`, or the addresses sorted, each in double quotes, joined by `, `. |
-| `readCheckedConfiguration` | no `PRISMA_COMPOSER_CONFIGURATION_FILE` | `PRISMA_COMPOSER_CONFIGURATION_FILE is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which names the configuration file it wrote there.` |
-| `readCheckedConfiguration` | the file cannot be read | `Could not read the configuration file <file>: <message>. Composer deletes it when the run ends, so a stack file run by hand after that cannot read it; run the command again.` |
-| `readCheckedConfiguration` | not what Composer writes | `The configuration file <file> is not one Composer wrote: <it is not JSON | rootInput is not a list of fields | values is not an object of text>.` |
-| `readCheckedConfiguration` | no `PRISMA_COMPOSER_NODE_ADDRESSES` | `PRISMA_COMPOSER_NODE_ADDRESSES is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which lists the node addresses it checked there.` |
-| `readCheckedConfiguration` | addresses not a list of text | `PRISMA_COMPOSER_NODE_ADDRESSES is not a JSON list of node addresses.` |
-| `appSecretsFromEnvironment` | no `PRISMA_COMPOSER_APP_SECRETS` | `PRISMA_COMPOSER_APP_SECRETS is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which hands the app secrets the local services need there.` |
-| `appSecretsFromEnvironment` | not an object of text | `PRISMA_COMPOSER_APP_SECRETS is not a JSON object of text.` |
+| `readAppConfigurationFile` | no `PRISMA_COMPOSER_APP_CONFIGURATION_FILE` | `PRISMA_COMPOSER_APP_CONFIGURATION_FILE is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which names the app configuration file it wrote there.` |
+| `readAppConfigurationFile` | the file cannot be read | `Could not read the app configuration file <file>: <message>. Composer deletes it when the run ends, so a stack file run by hand after that cannot read it; run the command again.` |
+| `readAppConfigurationFile` | not what Composer writes | `The app configuration file <file> is not one Composer wrote: <it is not JSON | rootInput is not a list of fields | values is not an object of text>.` |
+| `readAppConfigurationFile` | no `PRISMA_COMPOSER_NODE_ADDRESSES` | `PRISMA_COMPOSER_NODE_ADDRESSES is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which lists the node addresses it checked there.` |
+| `readAppConfigurationFile` | addresses not a list of text | `PRISMA_COMPOSER_NODE_ADDRESSES is not a JSON list of node addresses.` |
+| `namedSecretsFromEnvironment` | no `PRISMA_COMPOSER_NAMED_SECRETS` | `PRISMA_COMPOSER_NAMED_SECRETS is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which hands the app secrets the local services need there.` |
+| `namedSecretsFromEnvironment` | not an object of text | `PRISMA_COMPOSER_NAMED_SECRETS is not a JSON object of text.` |
 | `outputTransformMissing` | `DEPS.CLI_ENGINE_INCOMPATIBLE` | summary ``This prisma CLI's @prisma/cli-engine is older than 0.10.0; Composer needs 0.10.0 or later.``; why ``Composer removes secrets from the deploy engine's output through ctx.spawn's transformOutput option, which @prisma/cli-engine 0.10.0 added. An older engine ignores the option and would print that output unredacted, so Composer starts nothing.``; fix ``Use a prisma CLI whose @prisma/cli-engine is 0.10.0 or later, the version @prisma/composer-cli declares as its peer.`` |
 | `dotenv()` | a file `dotenv-flow` lists cannot be read | `dotenv() could not read <absolute path>: <message>` (unchanged) |
 
@@ -1509,7 +1509,7 @@ The repo has no changesets; the pull request description carries the release not
   4. `The deploy's second process no longer runs the config adapters. It reads the values the first process checked from a configuration file in .prisma-composer/, readable only by you and deleted when the deploy ends, and refuses to deploy a graph whose node addresses differ from the first process's. A module body that reads process.env, a file or the clock and builds a different graph now fails the deploy.`
   5. `Composer redacts every secret it knows wherever it prints: every value under a name an envSecret() names, every value your own secrets list returns, at any length. The deploy engine's output now passes through Composer's redactor before the CLI prints it, so Alchemy shows plain progress lines without colour.`
   6. `A root field the body passes on must hold data JSON can hold exactly; a name may not be read both by envParam() and by envSecret(); and a non-text envParam() value in a service's input now fails before anything is created.`
-  7. `@prisma/composer and @prisma/composer-cli must be the same version: the generated stack file imports @prisma/composer/internal/configuration-file. @prisma/composer-cli needs @prisma/cli-engine 0.10.0 or later; under an older prisma CLI, prisma deploy and prisma dev stop with DEPS.CLI_ENGINE_INCOMPATIBLE before they start anything.`
+  7. `@prisma/composer and @prisma/composer-cli must be the same version: the generated stack file imports @prisma/composer/internal/app-configuration-file. @prisma/composer-cli needs @prisma/cli-engine 0.10.0 or later; under an older prisma CLI, prisma deploy and prisma dev stop with DEPS.CLI_ENGINE_INCOMPATIBLE before they start anything.`
 
 ## 14. Documentation
 
@@ -1560,7 +1560,7 @@ The engine resolves a section over the chain of config files it loaded, nearest 
 
 That import is also why the command needs the declaring file, not only the section. The engine gives the validator the section's provenance, the files that declared it, nearest first, and the engine's own guidance is that a validator resolves what it needs from provenance and returns it in its value. So the validator returns `{ value, file: provenance.files[0] }`, and every command that declares the section receives the file without doing anything itself.
 
-The second process imports the file for its descriptors, not for its values. It runs no adapter: the first process writes what its Load read from the app configuration to a configuration file, readable only by its owner and deleted when the run ends, and the stack file reads it from `@prisma/composer/internal/configuration-file`, an entry that is not public API. So an adapter is called once per run, a `.env` file edited during a deploy cannot change what is deployed, and a secrets manager is asked once.
+The second process imports the file for its descriptors, not for its values. It runs no adapter: the first process writes what its Load read from the app configuration to a configuration file, readable only by its owner and deleted when the run ends, and the stack file reads it from `@prisma/composer/internal/app-configuration-file`, an entry that is not public API. So an adapter is called once per run, a `.env` file edited during a deploy cannot change what is deployed, and a secrets manager is asked once.
 
 What makes a section valid lives in one module that does not import the engine, because `@prisma/composer` must not depend on it. The validator calls that module and turns its findings into engine diagnostics. The programmatic operations call the same module at the start of the pipeline, before the entry is loaded and before any container, preflight or deploy engine runs: a host that drives a deploy from code evaluates `prisma.config.ts` itself and passes `config: { value, file }`, and gets the same refusals a CLI user would. Passing the whole export instead of its `composer` property is caught this way, with a fix that says so. One invariant cannot be checked in-process: the second process imports `file` and uses its `composer` export, while the first process uses `value`, so the two must be the same section. Checking it would mean evaluating the user's config file inside `@prisma/composer`, which is the private loader this decision removes.
 
@@ -1572,7 +1572,7 @@ Moving evaluation into the engine also retired Composer's effect pre-flight. The
 
 - `prisma.config.ts` is the only config file Composer reads. Examples and fixtures declare the section there, next to any `orm` section.
 - The generated deploy and dev stack files import the declaring `prisma.config.ts` and pass its `composer` export to `lower()`. The second process evaluates the whole file, not only Composer's section: the imports of every section in it, such as the ORM's config module and `definePrismaConfig`'s package, run there with the second process's environment, and a failure in any of them fails the deploy. This is accepted because the section's descriptors are functions that cannot cross a process boundary, so the second process must import the file that built them.
-- The second process reads the values the first process checked from the configuration file the first process names in `PRISMA_COMPOSER_CONFIGURATION_FILE`, and the node addresses it checked from `PRISMA_COMPOSER_NODE_ADDRESSES`. A stack file run by hand after the run ended cannot read the configuration file, because it is gone.
+- The second process reads the values the first process checked from the app configuration file the first process names in `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, and the node addresses it checked from `PRISMA_COMPOSER_NODE_ADDRESSES`. A stack file run by hand after the run ended cannot read the app configuration file, because it is gone.
 - `dev` reads the section once, at start, and watches the declaring file. After an edit it reports that the file changed and pauses rebuilds until it is restarted, so the two processes never run against different versions of the file. When what an adapter returns changes, it pauses the same way.
 - `deploy`, `destroy`, `dev` and `log` on `@prisma/composer/control` take a required `config: ComposerConfigSource` and never look for a config file. Their `entry` input is optional and overrides `config.value.entry`. `log` reads only `value`; it takes the same input so a host builds it once.
 - `@prisma/composer-cli/family` exports no `ComposerSection`; the section's value type is `ComposerConfigSource`, exported from `@prisma/composer/control`.
@@ -1587,7 +1587,7 @@ Moving evaluation into the engine also retired Composer's effect pre-flight. The
 - **A schema-declared section** (`defineConfigSection({ schema })` with the engine's `reference()` helper): rejected. The engine's schema path does not reject unknown keys, emits `CLI.` codes rather than Composer's `CONFIG.` codes, and cannot give `configPath` its own migration message.
 - **The engine's default per-key merge**: rejected. A section merged from several files has no single file for the generated stack to import.
 - **Migrate the old file automatically**: rejected. Rewriting a user's `prisma.config.ts` is out of place for a deploy command; a refusal naming the exact change is deterministic and short.
-- **The second process runs the adapters again**, which an earlier version of this decision did, with the requirement that an adapter return the same values for the same environment in both processes. Rejected: a `.env` file edited during the deploy, or an adapter whose answer changed, could deploy values the first process never checked, and a secrets manager was asked twice. The configuration file holds exactly what the first process checked.
+- **The second process runs the adapters again**, which an earlier version of this decision did, with the requirement that an adapter return the same values for the same environment in both processes. Rejected: a `.env` file edited during the deploy, or an adapter whose answer changed, could deploy values the first process never checked, and a secrets manager was asked twice. The app configuration file holds exactly what the first process checked.
 - **Keep the effect pre-flight**: rejected for the reasons above. It would be a second, Composer-owned check for a failure the engine already reports, fixable only in the user's package manager.
 - **An engine hook that lets a command family veto config evaluation with its own diagnostic**, so the effect check could run before the engine evaluates `prisma.config.ts`: rejected. It would be an engine extension point with one consumer.
 - **Composer's commands load the config themselves, after running the effect check**: rejected. It has the same cost in practice, and only Composer's commands would benefit.
@@ -1601,12 +1601,12 @@ Moving evaluation into the engine also retired Composer's effect pre-flight. The
 - [ADR-0017](ADR-0017-control-plane-loads-through-the-app-config.md) — the control-plane firewall this section carries.
 - [ADR-0043](ADR-0043-the-control-subpath-is-the-programmatic-deploy-surface.md) — the programmatic surface that takes the `config` input.
 - [ADR-0044](ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md) — the `CONFIG` and `DEPS` namespaces.
-- [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md) — the config and secrets adapters, the app configuration and the configuration file.
+- [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md) — the config and secrets adapters, the app configuration and the app configuration file.
 ~~~
 
 ### 14.2 ADR-0058, rewritten
 
-`docs/design/90-decisions/ADR-0058-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md`. The file name stays, so links keep working.
+`docs/design/90-decisions/ADR-0058-prisma-dev-reads-secrets-from-the-app-secrets-and-never-invents-them.md`. The file name stays, so links keep working.
 
 ~~~markdown
 # ADR-0058: `prisma dev` reads secrets from the app secrets and never invents them
@@ -1636,7 +1636,7 @@ Under `prisma dev`, a secret's value comes only from the app secrets, and an env
 - **An optional secret that is unset or empty reaches the service as absent.** Its input has no value for that field, and the schema decides what that means, as it does for an unset `envParam` leaf ([ADR-0042](ADR-0042-service-input-is-one-standard-schema.md)).
 - **Required or optional is decided by validation, not by reading the schema.** For each service the dev preflight resolves the input binding with every unset secret left out and calls the schema's `validate`. If that passes, the missing secrets were optional. If it fails, the preflight checks each unset secret alone and names as required only the secrets whose absence alone fails. When no single secret fails alone, the error says the service needs some of them, and calls none of them required.
 - **Env-sourced params get the same sourcing.** An unset or empty env-sourced param is always an error. Like secrets, params are read fresh each run and fingerprinted, so a changed value redeploys the services that read it.
-- **The second process receives the values; it reads none.** `prisma dev` runs Alchemy in a second process at start and at each rebuild. That process runs no adapter. It reads the app configuration's checked values from a configuration file, readable only by its owner, which `prisma dev` deletes as soon as that converge ends. It receives each app secret an `envSecret()` in the graph names through its environment, in `PRISMA_COMPOSER_APP_SECRETS`, in memory; no secret is written to a file for it.
+- **The second process receives the values; it reads none.** `prisma dev` runs Alchemy in a second process at start and at each rebuild. That process runs no adapter. It reads the app configuration's checked values from a configuration file, readable only by its owner, which `prisma dev` deletes as soon as that converge ends. It receives each app secret an `envSecret()` in the graph names through its environment, in `PRISMA_COMPOSER_NAMED_SECRETS`, in memory; no secret is written to a file for it.
 - **The dev preflight hands the second process a payload.** It travels on the preflight transport that carries deploy's rotation timestamps (`PRISMA_COMPOSER_PREFLIGHT_<extension>`), with a `dev:` prefix that a deploy payload, always a JSON object, never starts with. It names the absent secrets and carries a fingerprint of the current value of each variable that a service's input or params point at, never the value. The serializer leaves an `envSecret` leaf out of the input document only when this payload names it absent.
 - **Each service gets only the variables its own rows point at**: the `$secret` pointers in its input document and its param pointer rows. A service that runs a dev server ([ADR-0056](ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md)) is given the same environment, and a changed value restarts it.
 - **A changed value redeploys the services that read it.** Each `Deployment`'s triggers carry a `<name>:updatedAt` member per variable its rows point at. On a hosted deploy it holds the platform variable's `updatedAt`. Under `prisma dev` it holds the fingerprint from the payload: an HMAC-SHA256 of the value under a random 32-byte key that `prisma dev` creates once in `.prisma-composer/dev/<environment>/fingerprint.key` (mode 0600). Alchemy writes trigger members to its state as given, which is why the fingerprint is keyed: a bare hash of a short secret could be reversed by guessing. A lost key causes one redeploy, and `--fresh` deletes it.
@@ -1679,14 +1679,14 @@ The second process needs the dev preflight's findings and the secret values, and
 
 - [ADR-0041](ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md) — local dev runs the deploy pipeline against local providers.
 - [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md) — the input schema, the binding, and validation as the only judge of absence.
-- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) — the secrets model.
+- [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) — the secrets model.
 - [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md) — the adapters, the app configuration and the app secrets.
 - [local-dev.md](../10-domains/local-dev.md) and [running-locally.md](../../guides/running-locally.md).
 ~~~
 
 ### 14.3 ADR-0029, rewritten
 
-`docs/design/90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md`. The file name stays.
+`docs/design/90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md`. The file name stays.
 
 ~~~markdown
 # ADR-0029: A secret is an environment-sourced value the framework never stores
@@ -1761,7 +1761,7 @@ At boot the framework swaps each pointer for a redacting box over the named vari
 - [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md) — the one-schema input model a secret field lives in.
 - [ADR-0030](ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md) — a generated param, which is config, not a secret.
 - [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md) and [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md) — module input, values, and the adapters.
-- [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md) — how `prisma dev` reads secrets.
+- [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-app-secrets-and-never-invents-them.md) — how `prisma dev` reads secrets.
 - [config-params.md](../10-domains/config-params.md).
 ~~~
 
@@ -1788,7 +1788,7 @@ const { appOrigin } = web.config();   // string
 
 ## Decision
 
-A service's per-key param can be bound at `provision()` to a literal or to a target-owned source such as `envParam('NAME')`, instead of only carrying an authoring-time `default`. An env-sourced param is the plain sibling of [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md)'s secret: the same name-carried source, the same per-environment platform variable, the same preflight, but read back unredacted and validated by the param's own schema.
+A service's per-key param can be bound at `provision()` to a literal or to a target-owned source such as `envParam('NAME')`, instead of only carrying an authoring-time `default`. An env-sourced param is the plain sibling of [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md)'s secret: the same name-carried source, the same per-environment platform variable, the same preflight, but read back unredacted and validated by the param's own schema.
 
 `envParam('NAME')` returns a value, typed `Value<string>`, that is also the source ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). It reads `NAME` from the app configuration, what the `composer` section's `config` adapters return. Where it sits decides when:
 
@@ -1798,7 +1798,7 @@ A service's per-key param can be bound at `provision()` to a literal or to a tar
 
 The value must be text; anything else fails the Load, naming the key and the kind of value, before anything is created. Core knows a source only as an opaque payload; `paramSource(payload, { label, configurationKey, redacted })` is the constructor a target calls. `configurationKey` is the app configuration key whose text is the source's real value at deploy; `redacted` makes a source known only at boot a secret pointer rather than a plain one. Prisma Cloud's `envParam('NAME')` passes `configurationKey: NAME`.
 
-The deploy reads the app configuration once, in its first process, and hands its second process the text of every key the graph reads, in the configuration file ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
+The deploy reads the app configuration once, in its first process, and hands its second process the text of every key the graph reads, in the app configuration file ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
 
 ## Reasoning
 
@@ -1833,7 +1833,7 @@ The deploy reads the app configuration once, in its first process, and hands its
 
 ## Related
 
-- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) — the secret this mirrors.
+- [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) — the secret this mirrors.
 - [ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md) — framework-minted param values, which live in deploy state.
 - [ADR-0018](ADR-0018-config-params-carry-a-caller-owned-schema.md) and [ADR-0019](ADR-0019-the-target-owns-config-serialization.md) — schema on the declaration, wire owned by the target.
 - [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md) — values and the app configuration.
@@ -1875,7 +1875,7 @@ if (!result.ok) {
 }
 ```
 
-Between the two snippets a structured error changes in one way only: before an operation returns it, Composer removes every secret value it knows from its summary, `why`, `fix` and `meta`, and drops its cause, which holds the same text unredacted ([ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md)). Its code, severity, `where` and docs link are the ones raised at the origin. A foreign error (a rejecting build, a throwing extension hook) is wrapped exactly once, at the site that understands it, into a structured error carrying the original as `cause`.
+Between the two snippets a structured error changes in one way only: before an operation returns it, Composer removes every secret value it knows from its summary, `why`, `fix` and `meta`, and drops its cause, which holds the same text unredacted ([ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md)). Its code, severity, `where` and docs link are the ones raised at the origin. A foreign error (a rejecting build, a throwing extension hook) is wrapped exactly once, at the site that understands it, into a structured error carrying the original as `cause`.
 
 ## Decision
 
@@ -1906,7 +1906,7 @@ Closed subcode registry:
 - `CONFIG` — SECTION_MISSING, FIELD_INVALID, FIELD_UNKNOWN, FIELD_RETIRED, FILE_MISSING, FILE_RETIRED, EXTENSION_DUPLICATE, EXTENSION_MISSING, DESCRIPTOR_MISSING, DESCRIPTOR_KIND_MISMATCH, ENTRY_MISSING, ADAPTER_FAILED, ADAPTER_INVALID *(EXPORT_INVALID, PATH_MISMATCH and EVALUATION_FAILED retired by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*. ENTRY_MISSING: neither `entry` in the `composer` section nor `--entry`, or the operation's `entry` input, names the entry module. ADAPTER_FAILED: a config or secrets adapter threw or rejected; its message is redacted. ADAPTER_INVALID: an adapter returned something other than an object of values, or a secrets adapter returned a value that is not text.
 - `COMPOSE` — ENTRY_UNLOADABLE, ENTRY_EXPORT_INVALID, ROOT_NOT_MODULE, NAME_MISSING, GRAPH_INVALID
 - `ASSEMBLE` — EXTENSION_MISSING, DESCRIPTOR_MISSING, DESCRIPTOR_KIND_MISMATCH, SERVICE_MISSING, BUILD_FAILED
-- `DEPLOY` — FLAG_INVALID, TARGET_CONFLICT, TARGET_MISSING, TARGET_NOT_FOUND, ENVIRONMENT_INVALID, ENVIRONMENT_UNVALIDATABLE, ENVIRONMENT_REQUIRED, CONTAINER_FAILED, PREFLIGHT_FAILED, ENGINE_FAILED, TEARDOWN_FAILED, CONTAINER_REMOVE_FAILED, BUILD_REQUIRED, ALCHEMY_BIN_MISSING, NODE_MISSING, STACK_WRITE_FAILED *(STAGE_INVALID, STAGE_UNVALIDATABLE and SCOPE_MISSING retired by [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md))*. ENVIRONMENT_REQUIRED: a `destroy` call names no environment. STACK_WRITE_FAILED covers the configuration file as well as the stack file. `prisma dev` starts the deploy engine the same way `deploy` does, so it raises ALCHEMY_BIN_MISSING and NODE_MISSING under `DEPLOY` too.
+- `DEPLOY` — FLAG_INVALID, TARGET_CONFLICT, TARGET_MISSING, TARGET_NOT_FOUND, ENVIRONMENT_INVALID, ENVIRONMENT_UNVALIDATABLE, ENVIRONMENT_REQUIRED, CONTAINER_FAILED, PREFLIGHT_FAILED, ENGINE_FAILED, TEARDOWN_FAILED, CONTAINER_REMOVE_FAILED, BUILD_REQUIRED, ALCHEMY_BIN_MISSING, NODE_MISSING, STACK_WRITE_FAILED *(STAGE_INVALID, STAGE_UNVALIDATABLE and SCOPE_MISSING retired by [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md))*. ENVIRONMENT_REQUIRED: a `destroy` call names no environment. STACK_WRITE_FAILED covers the app configuration file as well as the stack file. `prisma dev` starts the deploy engine the same way `deploy` does, so it raises ALCHEMY_BIN_MISSING and NODE_MISSING under `DEPLOY` too.
 - `DEV` — PLATFORM_UNSUPPORTED, TARGET_UNSUPPORTED, CONTAINER_FAILED, TEARDOWN_FAILED, PREFLIGHT_FAILED, EMULATOR_FAILED, SERVICE_START_FAILED, CONVERGE_FAILED, ATTACH_FAILED, STACK_WRITE_FAILED, EMULATORS_DIR_INVALID, EMULATOR_UNREACHABLE, SERVICE_READY_TIMEOUT_INVALID, NOT_STARTED_HERE, ADDRESS_UNKNOWN, NOT_RUNNING. EMULATOR_UNREACHABLE is raised by the emulator client when it cannot connect, so `log` raises it under `DEV` too; for a connection failure it takes the place of SERVICE_START_FAILED, ATTACH_FAILED and `LOG.ATTACH_FAILED`. `devUrl` also raises it when the emulator a node runs on is not running. NOT_STARTED_HERE (no `prisma dev` has recorded an app in the directory) is raised by `devUrl` and `devStop`; ADDRESS_UNKNOWN (the recorded app has no node at that address; the known addresses are listed) and NOT_RUNNING (the node exists but is not running; its state is named, and the reason and fix depend on it) by `devUrl` alone ([ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md)). Both operations raise EMULATOR_FAILED when the local target fails without a code. `emulator list` fails only with EMULATORS_DIR_INVALID; an emulator it cannot list is reported in that emulator's entry with EMULATOR_UNREACHABLE or EMULATOR_FAILED.
 - `LOG` — PLATFORM_UNSUPPORTED, ATTACH_FAILED, ADDRESS_UNKNOWN
 - `DEPS` — EXECUTOR_UNLOADABLE, EXTENSION_INCOMPATIBLE, CLI_ENGINE_INCOMPATIBLE *(EFFECT_VERSION_CONFLICT retired by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*. EXTENSION_INCOMPATIBLE: an installed extension is older than the Composer running the deploy or destroy, so the container it resolved, rebuilt through its own `deserialize`, does not name the environment that was asked for. CLI_ENGINE_INCOMPATIBLE: the `prisma` CLI running `prisma deploy` or `prisma dev` has a `@prisma/cli-engine` older than 0.10.0, which cannot pass the deploy engine's output through Composer's redactor; it is raised before anything starts.
@@ -1953,7 +1953,7 @@ The `code` is the machine-branching surface: hosts driving `@prisma/composer/con
 - prisma/prisma's [ADR 239](https://github.com/prisma/prisma/blob/main/docs/architecture%20docs/adrs/ADR%20239%20-%20Errors%20are%20structural%20envelopes%20with%20dotted%20namespace%20codes.md) and [ADR 245](https://github.com/prisma/prisma/blob/main/docs/architecture%20docs/adrs/ADR%20245%20-%20Errors%20are%20structured%20at%20origin%3B%20results%20carry%20one%20ok%20discriminator.md): the parents of this record.
 - [ADR-0043](ADR-0043-the-control-subpath-is-the-programmatic-deploy-surface.md): the programmatic surface these failures cross.
 - [ADR-0007](ADR-0007-deploy-drives-alchemy-through-a-generated-stack-file.md): the spawned child behind the exit-status exception.
-- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md): what Composer redacts.
+- [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md): what Composer redacts.
 ~~~
 
 ### 14.6 ADR-0062, edited
@@ -1972,21 +1972,21 @@ The `code` is the machine-branching surface: hosts driving `@prisma/composer/con
 10. The **The second process's output** bullet becomes: `- **The second process's output** passes through Composer's redactor. The CLI's command engine pipes the second process's stdout and stderr, passes each through a transform Composer gives it, and prints the result where it would have printed the output. The redactor holds back only the end of the output that could be the start of a secret, so a secret split across two chunks of output is still caught, and text that cannot start one, such as a prompt, is printed at once. The second process has no terminal, so Alchemy's progress display and colours change.`
 11. In § Consequences: `- **The configuration is plain.**` → `- **The app configuration is plain.**`.
 12. In the **`dotenv()`** bullet, `` `dotenv-flow`'s `.env.defaults` file is not read. `` → `` `dotenv-flow` lists its `.env.defaults` file first whenever it is given its own default pattern, so `dotenv()` drops that file from the list and never reads it. ``
-13. After the sentence `It holds no secrets.` in the configuration file paragraph: `Load refuses a name that both an \`envParam()\` and an \`envSecret()\` read, because the file would then hold that secret.`
+13. After the sentence `It holds no secrets.` in the app configuration file paragraph: `Load refuses a name that both an \`envParam()\` and an \`envSecret()\` read, because the file would then hold that secret.`
 14. In § Keeping secrets out, after the **Redaction.** bullet, a new bullet: `- **Core knows each secret's name.** A target's secret source tells core which app secrets key holds its value: \`secretSource()\` takes \`secretsKey\`, and \`envSecret('NAME')\` passes \`NAME\`. That is how Composer knows what to redact, and which secrets \`prisma dev\` hands its second process.`
 
-`git grep -n -E 'the configuration[^ ]? |the secrets[^ ]? ' docs/design/90-decisions/ADR-0062*` afterwards shows only "the configuration file", "the secrets adapters", "the `config` adapters" and "the secrets manager".
+`git grep -n -E 'the configuration[^ ]? |the secrets[^ ]? ' docs/design/90-decisions/ADR-0062*` afterwards shows only "the app configuration file", "the secrets adapters", "the `config` adapters" and "the secrets manager".
 
 ### 14.7 The decision index, `docs/design/90-decisions/README.md`
 
 Each whole line, from `- [ADR-00NN](` to the end of the line, becomes:
 
 ```markdown
-- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) — A secret is a value the deployment reads from a platform variable by name, whose contents the framework never writes into deploy state, a generated file, a log, the deploy report or an error. A service types the field `secretString()`; the application binds it with `envSecret('NAME')`, a value whose real value is a secret pointer; the service reads a redacting `SecretString`. The input document carries `{ "$secret": NAME }`; preflight fills a missing platform variable from the app secrets with a write-only call. Composer redacts every secret it knows wherever it prints, at any length, including the deploy engine's output, which the CLI's command engine passes through Composer's redactor. `secretSource()` takes a `secretsKey`, the app secrets key that holds the value.
+- [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) — A secret is a value the deployment reads from a platform variable by name, whose contents the framework never writes into deploy state, a generated file, a log, the deploy report or an error. A service types the field `secretString()`; the application binds it with `envSecret('NAME')`, a value whose real value is a secret pointer; the service reads a redacting `SecretString`. The input document carries `{ "$secret": NAME }`; preflight fills a missing platform variable from the app secrets with a write-only call. Composer redacts every secret it knows wherever it prints, at any length, including the deploy engine's output, which the CLI's command engine passes through Composer's redactor. `secretSource()` takes a `secretsKey`, the app secrets key that holds the value.
 - [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md) — A service's per-key param can be bound at `provision()` to a literal or to a target-owned source such as `envParam('NAME')`, which reads `NAME` from the app configuration: a pointer row in params, filled by preflight and read at boot; the text in a service's input document; the real value in a module's input or a `resolve()`. Non-text fails the Load. `paramSource()` takes `configurationKey` and `redacted`.
 - [ADR-0044](ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md) — Errors are structural envelopes with dotted `NAMESPACE.SUBCODE` codes from a closed registry, structured at origin with why/fix splits, no catch-all codes; bugs carry no code (exit 1); recognition is structural; operation results ride the `Result` `ok` discriminator; expected failures exit 2, with the deploy engine's status passed through. The one change between origin and consumer is redaction of known secrets, which also drops the cause.
 - [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md) — Composer's configuration is the `composer` section of `prisma.config.ts`, loaded by the Prisma CLI engine: `extensions`, `state`, and optional `entry`, `config` and `secrets` adapter lists. The validator checks only what identifies each value, passes the file's own objects through, never calls an adapter, rejects unknown keys, takes the nearest declaring file's section whole, and returns `{ value, file }`; the programmatic operations take the same input. The old config file is refused, not migrated. Only the first process runs adapters; the second process imports the file for its descriptors and reads the checked values from a configuration file.
-- [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md) — Under `prisma dev` a secret comes from the app secrets and an env-sourced param from the app configuration, read once per run in the first process; Composer never invents a value or reuses one. A required secret that is missing stops dev; an optional one arrives absent, decided by validation. The second process reads the checked configuration from a file deleted after each converge and receives the secrets its services need through its environment, never a file. Fingerprints of values on the preflight transport redeploy exactly the services whose value changed.
+- [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-app-secrets-and-never-invents-them.md) — Under `prisma dev` a secret comes from the app secrets and an env-sourced param from the app configuration, read once per run in the first process; Composer never invents a value or reuses one. A required secret that is missing stops dev; an optional one arrives absent, decided by validation. The second process reads the checked configuration from a file deleted after each converge and receives the secrets its services need through its environment, never a file. Fingerprints of values on the preflight transport redeploy exactly the services whose value changed.
 - [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md) — The graph's structure is the same whatever inputs Composer is given; only values differ per environment. A module body holds values (`Value<T>`), opaque stand-ins for data known later: deploy-time values, whose data the deploy has by the end of Load, and runtime values (`RuntimeValue<T>`, which is `Value<Pointer<T>>`), whose data only the platform holds. `resolve(dependencies, fn)` computes a value from deploy-time values only; `fn` never sees a pointer. Config adapters produce the app configuration, which is the root's input and what `envParam()` reads; secrets adapters produce the app secrets, which fill missing `envSecret()` platform variables. Both lists default to `[environmentVariables()]`; `dotenv()` reads `.env` files through `dotenv-flow`. Only the first process runs adapters; the second reads a configuration file and refuses a graph whose node addresses differ. Secrets stay out through pointers and redaction. Every environment has a name and none is special.
 ```
 
@@ -2022,15 +2022,15 @@ Each whole line, from `- [ADR-00NN](` to the end of the line, becomes:
    - `It reads the config pool, because Load validates the root's input; it reads no secrets.` → `It runs the config adapters, because Load checks the root's input; it reads no secrets.`
    - Pipeline step 4 becomes one line: `4. **Read the app secrets and the app configuration.** For \`deploy\` the CLI first calls the \`secrets\` adapters, then for every command the \`config\` adapters, in list order, each awaited, and merges what each list returns by top-level key, a later adapter winning. Both lists default to \`[environmentVariables()]\`. The app configuration is Load's input: the root's input and what \`envParam()\` reads. The app secrets are held in memory for preflight. Every secret value read is recorded for redaction. An adapter that throws or returns something other than an object fails with \`CONFIG.ADAPTER_FAILED\` or \`CONFIG.ADAPTER_INVALID\`. No other process runs an adapter.`
    - Step 5's `config pool as the root's input` → `app configuration as the root's input`.
-   - `The generated stack file reads the config pool again, from the same adapters; it never reads the secrets pool.` → `Beside it the CLI writes the configuration file, \`.prisma-composer/configuration-<pid>-<uuid>.json\`, mode 0600, holding what Load read from the app configuration, and deletes it when the run ends. The second process reads it, runs no adapter, and refuses a graph whose node addresses differ from the list the CLI passes in \`PRISMA_COMPOSER_NODE_ADDRESSES\`. It never receives the app secrets. The CLI engine passes its output through Composer's redactor, which replaces every secret value the CLI knows, before it prints it.`
+   - `The generated stack file reads the config pool again, from the same adapters; it never reads the secrets pool.` → `Beside it the CLI writes the app configuration file, \`.prisma-composer/configuration-<pid>-<uuid>.json\`, mode 0600, holding what Load read from the app configuration, and deletes it when the run ends. The second process reads it, runs no adapter, and refuses a graph whose node addresses differ from the list the CLI passes in \`PRISMA_COMPOSER_NODE_ADDRESSES\`. It never receives the app secrets. The CLI engine passes its output through Composer's redactor, which replaces every secret value the CLI knows, before it prints it.`
    - The error table row `| Root's input refused by its schema | the schema's messages, and that a root's input is the config pool for the environment |` → `| Root's input refused by its schema | the schema's messages, and that a root's input is the app configuration for the environment |`. A new row after the adapter row: `| The prisma CLI's engine is older than 0.10.0 (\`DEPS.CLI_ENGINE_INCOMPATIBLE\`) | that Composer needs @prisma/cli-engine 0.10.0 or later to redact the deploy engine's output, and nothing was started |`.
 2. `docs/design/10-domains/local-dev.md`:
    - The second note at the top, `> Amended by the module-input project (2026-10-30): …`, is removed; its content is in the body below.
    - The table rows: `| \`envParam\` sources (ADR-0032) | the config pool, same names; …` → `| \`envParam\` sources (ADR-0032) | the app configuration, same names; …` (the rest of the row unchanged); `| secrets (ADR-0029, ADR-0058) | the secrets pool: by default the shell, …` → `| secrets (ADR-0029, ADR-0058) | the app secrets: by default the shell, …`.
-   - `The local \`Deployment\` provider reads current values from the pools the dev stack file read and gives each service only the variables its own input and params point at.` → `The dev second process runs no adapter. It reads the checked values of the app configuration from \`.prisma-composer/dev/<environment>/configuration.json\`, which \`prisma dev\` writes before each converge and deletes after it, and receives the app secrets the graph's \`envSecret()\`s name in \`PRISMA_COMPOSER_APP_SECRETS\`. The local \`Deployment\` provider gives each service only the variables its own input and params point at.`
+   - `The local \`Deployment\` provider reads current values from the pools the dev stack file read and gives each service only the variables its own input and params point at.` → `The dev second process runs no adapter. It reads the checked values of the app configuration from \`.prisma-composer/dev/<environment>/configuration.json\`, which \`prisma dev\` writes before each converge and deletes after it, and receives the app secrets the graph's \`envSecret()\`s name in \`PRISMA_COMPOSER_NAMED_SECRETS\`. The local \`Deployment\` provider gives each service only the variables its own input and params point at.`
    - `It reads \`.env\`, \`.env.local\`, \`.env.<environment>\` and \`.env.<environment>.local\` beside \`prisma.config.ts\`.` → `It reads \`.env\`, \`.env.local\`, \`.env.<environment>\` and \`.env.<environment>.local\` beside \`prisma.config.ts\`, through \`dotenv-flow\`, and skips \`.env.local\` for the environment \`test\`.` and `` `import 'dotenv/config'` at the top of `prisma.config.ts` still works with the default lists.`` → `` `import 'dotenv/config'` at the top of `prisma.config.ts` still works with the default lists; remove it when you list `dotenv()`.``
 3. `docs/design/10-domains/config-params.md`: the four lines § 4.3's grep finds (99, 144, 161 and 300 at `78166d80`) take § 4.2's words; line 161's `read from the config pool Load is given` becomes `read from the app configuration Load is given`.
-4. `docs/design/10-domains/core-model.md`, the `LowerOptions` sketch: `readonly configPool?: Readonly<Record<string, unknown>>       // passed to Load and the serializer; the generated stack files pass readConfigPool()` becomes two lines: `readonly checkedConfiguration?: CheckedConfiguration     // passed to Load and the serializer; the generated stack files read it from the configuration file` and `readonly checkedNodeAddresses?: readonly string[]        // lowering refuses a graph whose addresses differ`.
+4. `docs/design/10-domains/core-model.md`, the `LowerOptions` sketch: `readonly configPool?: Readonly<Record<string, unknown>>       // passed to Load and the serializer; the generated stack files pass readConfigPool()` becomes two lines: `readonly appConfigurationRead?: AppConfigurationRead     // passed to Load and the serializer; the generated stack files read it from the app configuration file` and `readonly firstProcessNodeAddresses?: readonly string[]        // lowering refuses a graph whose addresses differ`.
 5. `docs/design/10-domains/module-composition.md`: `A root's input is the config pool, validated by its schema before any other module's binding.` → `A root's input is the app configuration, checked by its schema before any other module's binding.`; and the `ModuleContext.input` doc comment's last sentence, as in `node.ts`, becomes `A root's input is the app configuration, validated by its schema.`
 
 The same sentence in `node.ts`'s `ModuleContext.input` doc comment changes the same way.
@@ -2081,34 +2081,34 @@ Changes beyond renames:
 
   ```ts
   describe('where the readers are published', () => {
-    test('the public config entry exports the adapters only, and the second process reads through the configuration-file entry', () => {
+    test('the public config entry exports the adapters only, and the second process reads through the app-configuration-file entry', () => {
       expect(Object.keys(configEntry).sort()).toEqual(['dotenv', 'environmentVariables']);
       expect(Object.keys(configurationFileEntry).sort()).toEqual([
-        'appSecretsFromEnvironment',
-        'readCheckedConfiguration',
+        'namedSecretsFromEnvironment',
+        'readAppConfigurationFile',
       ]);
     });
   });
   ```
 
-  with `import * as configurationFileEntry from '../exports/configuration-file.ts';` in place of the pools entry import.
+  with `import * as configurationFileEntry from '../exports/app-configuration-file.ts';` in place of the pools entry import.
 - `cli/src/__tests__/deployment-summary.test.ts`: the describe `poolSecrets` and its two tests are removed (§ 15.3 tests `secretValuesIn`). Each `readEngineFailureCause(file, values)` call becomes `readEngineFailureCause(file, (text) => redactValues(text, values))`.
-- `cli/src/__tests__/generate-stack.test.ts`: `reads the config pool from the adapters and passes it to lower(), directly after the environment, and never reads the secrets pool` becomes `reads what the CLI checked from the configuration file, after the failure recorder starts, and passes it to lower() directly after the environment`. It asserts the rendered file contains `import { readCheckedConfiguration } from '@prisma/composer/internal/configuration-file';`, that `report.captureEngineFailure?.();` comes before `const checked = readCheckedConfiguration(process.env);`, that the options contain `  environment: "staging",\n  checkedConfiguration: checked.configuration,\n  checkedNodeAddresses: checked.nodeAddresses,`, and that the file contains neither `readConfigPool` nor `readSecretsPool`.
-- `cli/src/dev/__tests__/generate-dev-stack.test.ts`: the expected import line becomes the § 8.3 one; `reads both pools from the adapters, …` becomes `reads the checked configuration and the app secrets the CLI handed over, passes the configuration to lower() directly after the environment, and both to the local providers`, asserting `const checked = readCheckedConfiguration(process.env);`, `const secrets = appSecretsFromEnvironment(process.env);`, the two option lines, and `  providers: localTargetProviders(resolved, containers, devDir, checked.configuration.values, secrets),`.
-- `cli/src/__tests__/fixtures/stack-import/stub-composer.ts`: the `@prisma/composer/internal/pools` module becomes `@prisma/composer/internal/configuration-file`, with `export const readCheckedConfiguration = () => ({ configuration: { rootInput: [], values: { read: 'checked' } }, nodeAddresses: ['stub-address'] }); export const appSecretsFromEnvironment = () => ({ read: 'secrets' });`. The `lower` stub prints `checkedConfiguration: opts.checkedConfiguration, checkedNodeAddresses: opts.checkedNodeAddresses` in place of `configPool: opts.configPool`, and `...(globalThis.stubLocal === undefined ? {} : { local: globalThis.stubLocal })` in place of the `stubPools` spread. `localTargetProviders` becomes `(resolved, containers, devDir, configuration, secrets) => { globalThis.stubLocal = { configuration, secrets }; return {}; }`.
-- `cli/src/__tests__/stack-file-import.test.ts`: `configPool` (the expected object) becomes `const checked = { configuration: { rootInput: [], values: { read: 'checked' } }, nodeAddresses: ['stub-address'] };`; the deploy test expects `{ app, extensions, state, environment: 'staging', checkedConfiguration: checked.configuration, checkedNodeAddresses: checked.nodeAddresses }`, retitled `the deploy stack passes the composer export of prisma.config.ts, the environment, and what the CLI checked, to lower(), and reads no secrets`; the dev test adds `local: { configuration: { read: 'checked' }, secrets: { read: 'secrets' } }`, retitled likewise.
+- `cli/src/__tests__/generate-stack.test.ts`: `reads the config pool from the adapters and passes it to lower(), directly after the environment, and never reads the secrets pool` becomes `reads what the CLI checked from the app configuration file, after the failure recorder starts, and passes it to lower() directly after the environment`. It asserts the rendered file contains `import { readAppConfigurationFile } from '@prisma/composer/internal/app-configuration-file';`, that `report.captureEngineFailure?.();` comes before `const checked = readAppConfigurationFile(process.env);`, that the options contain `  environment: "staging",\n  appConfigurationRead: checked.configuration,\n  firstProcessNodeAddresses: checked.nodeAddresses,`, and that the file contains neither `readConfigPool` nor `readSecretsPool`.
+- `cli/src/dev/__tests__/generate-dev-stack.test.ts`: the expected import line becomes the § 8.3 one; `reads both pools from the adapters, …` becomes `reads the checked configuration and the app secrets the CLI handed over, passes the configuration to lower() directly after the environment, and both to the local providers`, asserting `const checked = readAppConfigurationFile(process.env);`, `const secrets = namedSecretsFromEnvironment(process.env);`, the two option lines, and `  providers: localTargetProviders(resolved, containers, devDir, checked.configuration.values, secrets),`.
+- `cli/src/__tests__/fixtures/stack-import/stub-composer.ts`: the `@prisma/composer/internal/pools` module becomes `@prisma/composer/internal/app-configuration-file`, with `export const readAppConfigurationFile = () => ({ configuration: { rootInput: [], values: { read: 'checked' } }, nodeAddresses: ['stub-address'] }); export const namedSecretsFromEnvironment = () => ({ read: 'secrets' });`. The `lower` stub prints `appConfigurationRead: opts.appConfigurationRead, firstProcessNodeAddresses: opts.firstProcessNodeAddresses` in place of `configPool: opts.configPool`, and `...(globalThis.stubLocal === undefined ? {} : { local: globalThis.stubLocal })` in place of the `stubPools` spread. `localTargetProviders` becomes `(resolved, containers, devDir, configuration, secrets) => { globalThis.stubLocal = { configuration, secrets }; return {}; }`.
+- `cli/src/__tests__/stack-file-import.test.ts`: `configPool` (the expected object) becomes `const checked = { configuration: { rootInput: [], values: { read: 'checked' } }, nodeAddresses: ['stub-address'] };`; the deploy test expects `{ app, extensions, state, environment: 'staging', appConfigurationRead: checked.configuration, firstProcessNodeAddresses: checked.nodeAddresses }`, retitled `the deploy stack passes the composer export of prisma.config.ts, the environment, and what the CLI checked, to lower(), and reads no secrets`; the dev test adds `local: { configuration: { read: 'checked' }, secrets: { read: 'secrets' } }`, retitled likewise.
 - `cli/src/__tests__/run-alchemy.test.ts`: every `alchemyInvocation({ … })` and every hand-built `AlchemyInvocation` gains `redactedValues: []`. `env carries only the ADDITIONS …` drops any expectation of `PRISMA_COMPOSER_PARENT_VALUES`. Every `spawnCommandLine(line)` call becomes `spawnCommandLine(line, [])`.
 - `cli/src/family/__tests__/converge-spawn.test.ts`: both `alchemyInvocation` calls gain `redactedValues: []`. The fake `ConvergeContext` ignores `transformOutput`, so the two tests still check `STDOUT_TO_STDERR` and the reproduce command; their expectations do not change.
 - `cli/src/family/__tests__/*.test.ts` that run `deploy` or `dev` through `createTestCli`: the 0.10.0 harness sets `ctx.spawnOptionNames`, so they pass the new check unchanged.
 - `cli/src/testing/operations-double.ts`: the synthetic `AlchemyInvocation` in `runConverge` gains `redactedValues: []`.
 - `cli/src/operations/__tests__/operations.test.ts`: `deploy hands every extension's preflight both pools` becomes `deploy hands every extension's preflight the app configuration and the app secrets`, recording `{ configuration: input.configuration, secrets: input.secrets }`; `a secrets pool value appears in no event, result or report` becomes `an app secrets value appears in no event, result or report`, reading `input.secrets['S4_SENTINEL']`; `dev hands both pools to preflight and to a dev server` becomes `dev hands the app configuration and the app secrets to preflight and to a dev server`, with `serve: async ({ configuration, secrets }) => { seen.serve = { configuration, secrets }; … }` and the expected `{ configuration: { A: 'a' }, secrets: { S: 's' } }` for both; `an engine failure cause never carries a value the pools read from a dotenv file` becomes `an engine failure cause never carries a secret value read from a dotenv file`, its assertions unchanged. The describe `the operations read the pools from the config adapters` becomes `the operations read the app configuration and the app secrets from the adapters`.
 
-- `test/integration/test/local-dev.integration.ts` hands the dev second process what the first process checked, as `prisma dev` does. It Loads with `{ id, environment: { name: 'dev' }, configuration }`, where `configuration` is what the default adapters return, and before each of its three converges it writes `graph.checkedConfiguration` to `.prisma-composer/dev/dev/configuration.json` with `writeConfigurationFile`, and deletes it after with `removeConfigurationFile`. The alchemy child's environment adds `secondProcessEnvironment({ configurationFile, nodeAddresses: nodeAddresses(graph), secrets })`, where `secrets` holds the non-empty app secrets under each of `secretsKeys(graph)`. The test cannot reach `executeDev`'s own converge, so it uses the same helpers, which `@prisma/composer-cli/testing` now exports beside `renderDevStackFile`. Run it locally with `bun run test/local-dev.integration.ts` from `test/integration`.
+- `test/integration/test/local-dev.integration.ts` hands the dev second process what the first process checked, as `prisma dev` does. It Loads with `{ id, environment: { name: 'dev' }, configuration }`, where `configuration` is what the default adapters return, and before each of its three converges it writes `graph.appConfigurationRead` to `.prisma-composer/dev/dev/configuration.json` with `writeConfigurationFile`, and deletes it after with `removeConfigurationFile`. The alchemy child's environment adds `secondProcessEnvironment({ configurationFile, nodeAddresses: nodeAddresses(graph), secrets })`, where `secrets` holds the non-empty app secrets under each of `secretsKeys(graph)`. The test cannot reach `executeDev`'s own converge, so it uses the same helpers, which `@prisma/composer-cli/testing` now exports beside `renderDevStackFile`. Run it locally with `bun run test/local-dev.integration.ts` from `test/integration`.
 
-- `test/integration/test/local-dev-store.integration.ts`: its direct `alchemy deploy` re-run of the dev stack file that `prisma dev` wrote gets what the first process hands over, through the same helpers. A function `secondProcessHandover()` reads the default adapters, `environmentVariables()`, for the environment `dev` beside the store app's `prisma.config.ts`, imports the app's `module.ts`, Loads it with `{ id: 'store', environment: { name: 'dev' }, configuration }`, and returns `graph.checkedConfiguration` and `secondProcessEnvironment({ configurationFile, nodeAddresses: nodeAddresses(graph), secrets })`, where `secrets` holds the non-empty app secrets under `secretsKeys(graph)`. The re-run writes `.prisma-composer/dev/dev/configuration.json` with `writeConfigurationFile` before it starts and deletes it with `removeConfigurationFile` after, and adds that environment to the child's. No other file under `test/integration` or `examples/` runs a stack file or Alchemy directly. The tests that start a real `prisma dev` (this one, `local-dev-criteria-4-5` and `local-dev-detach`) need the `prisma` host release of the release-order note before they can run.
+- `test/integration/test/local-dev-store.integration.ts`: its direct `alchemy deploy` re-run of the dev stack file that `prisma dev` wrote gets what the first process hands over, through the same helpers. A function `secondProcessHandover()` reads the default adapters, `environmentVariables()`, for the environment `dev` beside the store app's `prisma.config.ts`, imports the app's `module.ts`, Loads it with `{ id: 'store', environment: { name: 'dev' }, configuration }`, and returns `graph.appConfigurationRead` and `secondProcessEnvironment({ configurationFile, nodeAddresses: nodeAddresses(graph), secrets })`, where `secrets` holds the non-empty app secrets under `secretsKeys(graph)`. The re-run writes `.prisma-composer/dev/dev/configuration.json` with `writeConfigurationFile` before it starts and deletes it with `removeConfigurationFile` after, and adds that environment to the child's. No other file under `test/integration` or `examples/` runs a stack file or Alchemy directly. The tests that start a real `prisma dev` (this one, `local-dev-criteria-4-5` and `local-dev-detach`) need the `prisma` host release of the release-order note before they can run.
 
-- `core/src/__tests__/lowering.test.ts`: `lowering() passes opts.configPool to Load` becomes `lowering() passes opts.checkedConfiguration to Load`, and `opts({ bundles, configPool: { X: 'probe' } })` becomes `opts({ bundles, checkedConfiguration: { rootInput: [], values: { X: 'probe' } } })`; its assertion does not change.
-- `target/src/__tests__/control-lowering.test.ts`: `the input document reads envParam() leaves from LowerOptions.configPool` becomes `the input document reads envParam() leaves from LowerOptions.checkedConfiguration`, and `opts: { configPool: { G: 'pool' } }` becomes `opts: { checkedConfiguration: { rootInput: [], values: { G: 'pool' } } }`; its assertion does not change.
+- `core/src/__tests__/lowering.test.ts`: `lowering() passes opts.configPool to Load` becomes `lowering() passes opts.appConfigurationRead to Load`, and `opts({ bundles, configPool: { X: 'probe' } })` becomes `opts({ bundles, appConfigurationRead: { rootInput: [], values: { X: 'probe' } } })`; its assertion does not change.
+- `target/src/__tests__/control-lowering.test.ts`: `the input document reads envParam() leaves from LowerOptions.configPool` becomes `the input document reads envParam() leaves from LowerOptions.appConfigurationRead`, and `opts: { configPool: { G: 'pool' } }` becomes `opts: { appConfigurationRead: { rootInput: [], values: { G: 'pool' } } }`; its assertion does not change.
 
 If any other existing test fails, the implementer stops and reports.
 
@@ -2116,20 +2116,20 @@ If any other existing test fails, the implementer stops and reports.
 
 In `root-input.test.ts`, a new `describe("what Load reads from the app configuration", …)`. Its root schema is `type({ A: 'string', 'B?': 'string', C: 'string.integer.parse', D: 'string' })`; the body binds `{ a: input.A, b: input.B, c: input.C }` into the file's echo service; the configuration is `{ A: 'a', C: '4', D: 'unused', PATH: '/bin' }`.
 
-1. `the graph records each root field the body names, with its checked value, and no other` — `[...graph.checkedConfiguration.rootInput].sort(byPath)` equals `[{ path: ['A'], value: 'a' }, { path: ['B'] }, { path: ['C'], value: 4 }]`, where `byPath` compares `path.join('.')`. `D` and `PATH` are absent.
+1. `the graph records each root field the body names, with its checked value, and no other` — `[...graph.appConfigurationRead.rootInput].sort(byPath)` equals `[{ path: ['A'], value: 'a' }, { path: ['B'] }, { path: ['C'], value: 4 }]`, where `byPath` compares `path.join('.')`. `D` and `PATH` are absent.
 2. `a root field JSON cannot hold exactly fails the Load, naming it` — schema `type({ WHEN: type('string').pipe((text) => new Date(text)) })`, body binds `{ when: input.WHEN }` into a service whose schema is `type({ when: 'Date' })`; Load with `{ configuration: { WHEN: '2026-01-01' } }` fails with exactly `input.WHEN of root module "shop" holds an object that is not plain data, which JSON cannot hold exactly. The deploy hands the root's checked input to its second process in a JSON file, so a field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.`
-3. `the second process takes each root field from the checked configuration, without running the root's schema` — a Standard Schema whose `validate` pushes to a `calls` array and returns `{ value: {} }`; `Load(root, { checkedConfiguration: { rootInput: [{ path: ['A'], value: 'from-file' }, { path: ['B'] }, { path: ['C'], value: 4 }], values: {} } })`; `calls` stays `[]`, and the echo service's binding is `{ a: 'from-file', c: 4 }`.
-4. `a root field missing from the checked configuration fails, saying the two processes built different graphs` — the same Load with `rootInput: [{ path: ['A'], value: 'a' }]` fails with exactly `input.B of root module "shop" is not in the configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.`
-5. `Load refuses configuration and checkedConfiguration together` — exact message from § 12.
-6. `a root with no input records no fields` — `Load(rootWithoutInput, { configuration: {} }).graph.checkedConfiguration` equals `{ rootInput: [], values: {} }`.
+3. `the second process takes each root field from the checked configuration, without running the root's schema` — a Standard Schema whose `validate` pushes to a `calls` array and returns `{ value: {} }`; `Load(root, { appConfigurationRead: { rootInput: [{ path: ['A'], value: 'from-file' }, { path: ['B'] }, { path: ['C'], value: 4 }], values: {} } })`; `calls` stays `[]`, and the echo service's binding is `{ a: 'from-file', c: 4 }`.
+4. `a root field missing from the checked configuration fails, saying the two processes built different graphs` — the same Load with `rootInput: [{ path: ['A'], value: 'a' }]` fails with exactly `input.B of root module "shop" is not in the app configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.`
+5. `Load refuses configuration and appConfigurationRead together` — exact message from § 12.
+6. `a root with no input records no fields` — `Load(rootWithoutInput, { configuration: {} }).graph.appConfigurationRead` equals `{ rootInput: [], values: {} }`.
 
 In `source-load.test.ts`, a new `describe('configuration keys Load reads', …)`, with a test source `const configured = (key: string) => paramSource({ key }, { label: \`configured('${key}')\`, configurationKey: key })` and `const secret = (key: string) => secretSource({ key }, { label: \`secret('${key}')\`, secretsKey: key })`:
 
-7. `the graph records the text of every configuration key a source reads, in a module's input, a service's input and a service's params` — keys `IN_MODULE`, `IN_SERVICE`, `IN_PARAM` bound in the three places, configuration `{ IN_MODULE: 'm', IN_SERVICE: 's', IN_PARAM: 'p', OTHER: 'o' }`; `graph.checkedConfiguration.values` equals `{ IN_MODULE: 'm', IN_SERVICE: 's', IN_PARAM: 'p' }`.
+7. `the graph records the text of every configuration key a source reads, in a module's input, a service's input and a service's params` — keys `IN_MODULE`, `IN_SERVICE`, `IN_PARAM` bound in the three places, configuration `{ IN_MODULE: 'm', IN_SERVICE: 's', IN_PARAM: 'p', OTHER: 'o' }`; `graph.appConfigurationRead.values` equals `{ IN_MODULE: 'm', IN_SERVICE: 's', IN_PARAM: 'p' }`.
 8. `an unset or empty key is left out of the recorded values` — `IN_SERVICE: ''` and `IN_PARAM` absent; values equal `{ IN_MODULE: 'm' }`.
 9. `a configuration key in a service's input whose value is not text fails at Load` — `IN_SERVICE: 4`; message exactly ``the input binding of service "shop.email.echo" depends on configured('IN_SERVICE'), which reads "IN_SERVICE" from the values the `config` adapters return, but they return a number for it, not text. configured('IN_SERVICE') reads text; to pass other data, declare it in the root module's input.``
 10. `a name read as a configuration key and named as a secrets key fails at Load` — the service binds `{ plain: configured('SHARED'), key: secret('SHARED') }`; message exactly `configured('SHARED') reads "SHARED" from the app configuration, and secret('SHARED') names "SHARED" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every plain value it reads, in a file, and never writes a secret to a file. Give the plain value and the secret different names.`
-11. `the second process reads configuration keys from the checked values` — `Load(root, { checkedConfiguration: { rootInput: [], values: { IN_MODULE: 'from-file' } } })` gives the module-bound field `'from-file'`.
+11. `the second process reads configuration keys from the checked values` — `Load(root, { appConfigurationRead: { rootInput: [], values: { IN_MODULE: 'from-file' } } })` gives the module-bound field `'from-file'`.
 
 In `source-value.test.ts`:
 
@@ -2139,8 +2139,8 @@ In `source-value.test.ts`:
 
 In `lowering.test.ts`:
 
-15. `lowering refuses a graph whose node addresses differ from the checked ones, naming both sides` — `lowering(root, config, { name: 'shop', bundles, checkedNodeAddresses: ['shop', 'shop.gone'] })` fails with the `LowerError` of § 12, where the second process built `shop.echo` and not `shop.gone`: `… Only in the second process: "shop.echo". Only in the first process: "shop.gone". …`. The test runs the effect as the file's other lowering tests do.
-16. `lowering accepts the same addresses in any order` — `checkedNodeAddresses` is the graph's addresses reversed; no error.
+15. `lowering refuses a graph whose node addresses differ from the checked ones, naming both sides` — `lowering(root, config, { name: 'shop', bundles, firstProcessNodeAddresses: ['shop', 'shop.gone'] })` fails with the `LowerError` of § 12, where the second process built `shop.echo` and not `shop.gone`: `… Only in the second process: "shop.echo". Only in the first process: "shop.gone". …`. The test runs the effect as the file's other lowering tests do.
+16. `lowering accepts the same addresses in any order` — `firstProcessNodeAddresses` is the graph's addresses reversed; no error.
 
 ### 15.3 New CLI tests
 
@@ -2166,16 +2166,16 @@ New file `cli/src/__tests__/redaction.test.ts`:
 52. `StreamRedactor returns a prompt without a line break at once` — values `['hunter2-secret']`: `push('Deploy to production? (y/N) ')` returns the whole prompt, and `end()` returns `''`.
 53. `StreamRedactor never splits a surrogate pair across two pieces` — values `['🚀X']`: `push('launch ' + the first half of 🚀)`, then `push(the second half of 🚀 + ' done')`, then `end()`: no piece ends with a high surrogate or starts with a low one, and together they are `'launch 🚀 done'`.
 
-New file `cli/src/__tests__/configuration-file.test.ts`:
+New file `cli/src/__tests__/app-configuration-file.test.ts`:
 
-31. `the configuration file is JSON readable only by its owner` — `writeConfigurationFile(file, checked)`; `fs.statSync(file).mode & 0o777` equals `0o600`; `JSON.parse` of the file equals `checked`.
+31. `the app configuration file is JSON readable only by its owner` — `writeConfigurationFile(file, checked)`; `fs.statSync(file).mode & 0o777` equals `0o600`; `JSON.parse` of the file equals `checked`.
 32. `a file already there is replaced, and gets mode 0600` — a file written first with mode `0o644`.
-33. `readCheckedConfiguration reads back what was written, with the node addresses` — a field with `value` and one without.
-34. `readCheckedConfiguration names the variable when it is not set` — exact message of § 12.
-35. `readCheckedConfiguration says a file it cannot read is deleted when the run ends` — message starts with `Could not read the configuration file <file>: ` and ends with `run the command again.`
-36. `readCheckedConfiguration refuses a file Composer did not write` — `{"rootInput":{}}` gives `… rootInput is not a list of fields.`
+33. `readAppConfigurationFile reads back what was written, with the node addresses` — a field with `value` and one without.
+34. `readAppConfigurationFile names the variable when it is not set` — exact message of § 12.
+35. `readAppConfigurationFile says a file it cannot read is deleted when the run ends` — message starts with `Could not read the app configuration file <file>: ` and ends with `run the command again.`
+36. `readAppConfigurationFile refuses a file Composer did not write` — `{"rootInput":{}}` gives `… rootInput is not a list of fields.`
 37. `secondProcessEnvironment names the file and the node addresses, and the app secrets only when given`.
-38. `appSecretsFromEnvironment reads the object, and refuses one that is not text`.
+38. `namedSecretsFromEnvironment reads the object, and refuses one that is not text`.
 
 `cli/src/family/__tests__/converge-spawn.test.ts`, new, using the engine's test harness (`createTestCli` from `@prisma/cli-engine/testing`). The command under test is defined in the file: `defineCommand({ help: { summary: 'Runs a converge' }, maySpawn: true, handler: async (_args, ctx) => { await convergeSpawn(ctx)(invocation); return ok(exitWithChildStatus()); } })`, where `invocation` is `alchemyInvocation({ command: 'deploy', stackFileRelativePath: '.prisma-composer/alchemy.run.ts', cwd, stage: 'test', containerEnv: {}, redactedValues: ['hunter2-secret'] })` and `cwd` is `appWithAlchemy([])`. The harness's scripted child writes its output with `child.write(stream, chunk)`, which the engine passes through the transform as it would a real child's.
 
@@ -2201,10 +2201,10 @@ New file `cli/src/__tests__/configuration-file.test.ts`:
 
 `cli/src/operations/__tests__/operations.test.ts`, a new `describe('the second process reads what the first process checked', …)`, using a fixture app whose root declares `input: type({ GREETING: 'string' })`, binds `{ greeting: input.GREETING, origin: configured('APP_ORIGIN'), key: secret('S13_SECRET') }` into its service (the helpers of § 15.2, built from core), and whose `config` adapter returns `{ GREETING: 'hello', APP_ORIGIN: 'https://origin.example', UNUSED: 'x' }`:
 
-46. `deploy writes the configuration file before the second process starts and deletes it after, mode 0600, holding only what Load read` — in the fake `alchemy`, `const file = input.env[CONFIGURATION_FILE_ENV]`; while it runs, the file exists, its mode is `0o600`, and its JSON equals `{ rootInput: [{ path: ['GREETING'], value: 'hello' }], values: { APP_ORIGIN: 'https://origin.example' } }`; `input.env[NODE_ADDRESSES_ENV]` equals `JSON.stringify(nodeAddresses(graph))` for the fixture's graph; after `deploy` returns, the file does not exist. The same holds when the fake returns `{ exitCode: 1, signal: null }`.
-47. `destroy writes and deletes the configuration file the same way, and reads no secrets`.
+46. `deploy writes the app configuration file before the second process starts and deletes it after, mode 0600, holding only what Load read` — in the fake `alchemy`, `const file = input.env[APP_CONFIGURATION_FILE_ENV]`; while it runs, the file exists, its mode is `0o600`, and its JSON equals `{ rootInput: [{ path: ['GREETING'], value: 'hello' }], values: { APP_ORIGIN: 'https://origin.example' } }`; `input.env[NODE_ADDRESSES_ENV]` equals `JSON.stringify(nodeAddresses(graph))` for the fixture's graph; after `deploy` returns, the file does not exist. The same holds when the fake returns `{ exitCode: 1, signal: null }`.
+47. `destroy writes and deletes the app configuration file the same way, and reads no secrets`.
 48. `dev hands the second process the app secrets the graph names through its environment, never in a file` — `secrets: [() => ({ S13_SECRET: 'dev-secret-value', OTHER: 'not-named' })]`; in the fake `alchemy`, `input.env[APP_SECRETS_ENV]` equals `'{"S13_SECRET":"dev-secret-value"}'`, and no file under the app directory contains `dev-secret-value`; `.prisma-composer/dev/dev/configuration.json` exists during the converge and not after it.
-49. **The end-to-end test.** `no known secret reaches the configuration file, the stack file, the deploy report, the errors or the second process's output`. The app's `secrets` adapter returns `{ S13_SECRET: 'e2e-SENTINEL-5f2a' }` and `config` returns the values above. The fake `alchemy` (a) copies the configuration file's text and the stack file's text into variables; (b) runs `spawnCommandLine({ command: process.execPath, args: ['-e', script], cwd, env: input.env }, input.redactedValues, outputs)`, where `script` writes `e2e-SENTI` and, after 50 ms, `NEL-5f2a and more\n` to stdout and `boom e2e-SENTINEL-5f2a\n` to stderr, and `outputs` collects both streams; (c) writes to the result file a deployment summary whose one entity has `id: 'svc'` and `details: { note: 'e2e-SENTINEL-5f2a' }`, and beside it the failure cause `error: rejected e2e-SENTINEL-5f2a`; and (d) returns the status the test sets. The test deploys twice, each with `reportPath` set to a file in the app directory: once with status 0 and once with status 1. Afterwards none of these contains `SENTINEL`: the copied configuration file and stack file texts of both runs, the collected stdout and stderr, both run report files, `JSON.stringify(result.value.summary)` of the first run, and `JSON.stringify(result.failure.toEnvelope())` and `String(result.failure.meta?.['engineCause'])` of the second. The collected stdout of each run is `[redacted] and more\n`.
+49. **The end-to-end test.** `no known secret reaches the app configuration file, the stack file, the deploy report, the errors or the second process's output`. The app's `secrets` adapter returns `{ S13_SECRET: 'e2e-SENTINEL-5f2a' }` and `config` returns the values above. The fake `alchemy` (a) copies the app configuration file's text and the stack file's text into variables; (b) runs `spawnCommandLine({ command: process.execPath, args: ['-e', script], cwd, env: input.env }, input.redactedValues, outputs)`, where `script` writes `e2e-SENTI` and, after 50 ms, `NEL-5f2a and more\n` to stdout and `boom e2e-SENTINEL-5f2a\n` to stderr, and `outputs` collects both streams; (c) writes to the result file a deployment summary whose one entity has `id: 'svc'` and `details: { note: 'e2e-SENTINEL-5f2a' }`, and beside it the failure cause `error: rejected e2e-SENTINEL-5f2a`; and (d) returns the status the test sets. The test deploys twice, each with `reportPath` set to a file in the app directory: once with status 0 and once with status 1. Afterwards none of these contains `SENTINEL`: the copied configuration file and stack file texts of both runs, the collected stdout and stderr, both run report files, `JSON.stringify(result.value.summary)` of the first run, and `JSON.stringify(result.failure.toEnvelope())` and `String(result.failure.meta?.['engineCause'])` of the second. The collected stdout of each run is `[redacted] and more\n`.
 50. `an adapter's failure message is redacted with every value a written secrets list returned` — `secrets: [() => ({ TOKEN_X: 'adapter-SENTINEL-1' })]`, `config: [() => { throw new Error('bad adapter-SENTINEL-1'); }]`; the failure is `CONFIG.ADAPTER_FAILED` and `JSON.stringify(result.failure.toEnvelope())` does not contain `SENTINEL`.
 51. `a dev event's message is redacted` — a dev server output line holding the secret reaches `onEvent` as `[redacted]`.
 
@@ -2235,9 +2235,9 @@ Each commit is made with `git commit -s --trailer "Signed-off-by: Will Madden <m
 - Every document in § 14 is updated. The pull request carries § 13.
 - **Manual QA**, recorded in `qa.md` in this slice's folder, after `pnpm build`. Credentials: `set -a; . ~/.config/prisma-compose/deploy.env; set +a`, never printing a value, with `PRISMA_REGION=us-east-1`. Every hosted step runs from `examples/email`, after `pnpm turbo run build --filter @prisma/example-email...`, as `( set -a; . ~/.config/prisma-compose/deploy.env; set +a; PRISMA_REGION=us-east-1 bun ../../node_modules/.bin/prisma deploy --name s13qa-email --environment s13-qa )`, called "the deploy" below. The name `s13qa-email` keeps the workspace's existing `email-example` project untouched. The secret value is generated once: `export S13_QA_SECRET="s13qa-$(openssl rand -hex 8)"`; `qa.md` records only its first five characters.
   1. **Files, deployed to Prisma Cloud.** Write `examples/email/.env.s13-qa` with `EMAIL_DELIVERY_MODE=none` and `EMAIL_FROM=s13qa@example.com`, and `examples/email/.env.s13-qa.local` with `EMAIL_DELIVERY_CREDENTIAL=$S13_QA_SECRET` (the value, written by the shell). Write `.env.defaults` with `EMAIL_FROM=defaults-must-not-win@example.com`. In a second shell, from `examples/email`, run `while true; do cp .prisma-composer/configuration-*.json ../../wip/s13-qa-configuration.json 2>/dev/null; sleep 0.2; done`. Run the deploy. Stop the loop. Record: the deploy succeeded; `wip/s13-qa-configuration.json` holds `rootInput` with `EMAIL_DELIVERY_MODE` and `EMAIL_FROM` set to `s13qa@example.com` (not the `.env.defaults` value), and `values` `{}`; `ls -l` showed mode `-rw-------` on it while it existed; `ls .prisma-composer/configuration-*.json` finds nothing after the deploy; `grep -r "$S13_QA_SECRET" .prisma-composer ../../wip/s13-qa-configuration.json` finds nothing; the Management API lists `EMAIL_DELIVERY_CREDENTIAL` on the `s13-qa` Branch (metadata only).
-  2. **The second process's output is redacted.** Add, for this step only, at the end of `examples/email/prisma.config.ts`: `if (process.env.PRISMA_COMPOSER_CONFIGURATION_FILE !== undefined) console.log('qa secret in the second process:', process.env.EMAIL_DELIVERY_CREDENTIAL);`, export `EMAIL_DELIVERY_CREDENTIAL="$S13_QA_SECRET"` in the shell, and run the deploy again under `script -q ../../wip/s13-qa-output.txt bash -c '<the deploy>'`, so the terminal is a real one and its text is captured. Record: the output shows `qa secret in the second process: [redacted]`; `grep -c "$S13_QA_SECRET" ../../wip/s13-qa-output.txt` is 0; Alchemy's progress lines appear without colour. Run the deploy once more with `--json`, its stdout to `../../wip/s13-qa-stdout.json` and its stderr to `../../wip/s13-qa-stderr.txt`, and record that neither file holds the value and that the stdout file holds only JSON lines. Remove the line and unset the variable.
+  2. **The second process's output is redacted.** Add, for this step only, at the end of `examples/email/prisma.config.ts`: `if (process.env.PRISMA_COMPOSER_APP_CONFIGURATION_FILE !== undefined) console.log('qa secret in the second process:', process.env.EMAIL_DELIVERY_CREDENTIAL);`, export `EMAIL_DELIVERY_CREDENTIAL="$S13_QA_SECRET"` in the shell, and run the deploy again under `script -q ../../wip/s13-qa-output.txt bash -c '<the deploy>'`, so the terminal is a real one and its text is captured. Record: the output shows `qa secret in the second process: [redacted]`; `grep -c "$S13_QA_SECRET" ../../wip/s13-qa-output.txt` is 0; Alchemy's progress lines appear without colour. Run the deploy once more with `--json`, its stdout to `../../wip/s13-qa-stdout.json` and its stderr to `../../wip/s13-qa-stderr.txt`, and record that neither file holds the value and that the stdout file holds only JSON lines. Remove the line and unset the variable.
   3. **An adapter's error is redacted.** Put, for this step only, `config: [() => { throw new Error(\`cannot use ${process.env.EMAIL_DELIVERY_CREDENTIAL}\`); }, dotenv(), environmentVariables()]` in `prisma.config.ts`, export the variable again, and deploy. Record the `CONFIG.ADAPTER_FAILED` output: its `Why:` line reads `It threw: cannot use [redacted]`. Restore `prisma.config.ts` and unset the variable.
-  4. **A different graph is refused.** Add, for this step only, to the root body in `examples/email/module.ts`: `if (process.env.PRISMA_COMPOSER_CONFIGURATION_FILE !== undefined) provision(email(), { id: 'extra', input: { deliveryMode: input.EMAIL_DELIVERY_MODE, from: input.EMAIL_FROM, deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') } });`, and deploy. Record that it fails with `DEPLOY.ENGINE_FAILED`, whose cause names `"s13qa-email.extra"` (and the nodes under it) as only in the second process, and that nothing new was created on the Branch. Restore `module.ts`.
+  4. **A different graph is refused.** Add, for this step only, to the root body in `examples/email/module.ts`: `if (process.env.PRISMA_COMPOSER_APP_CONFIGURATION_FILE !== undefined) provision(email(), { id: 'extra', input: { deliveryMode: input.EMAIL_DELIVERY_MODE, from: input.EMAIL_FROM, deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') } });`, and deploy. Record that it fails with `DEPLOY.ENGINE_FAILED`, whose cause names `"s13qa-email.extra"` (and the nodes under it) as only in the second process, and that nothing new was created on the Branch. Restore `module.ts`.
   5. **`prisma dev`.** Write `examples/email/.env.dev` with the same two plain values, `EMAIL_FROM=dev-qa@example.com`, and `.env.dev.local` with `EMAIL_DELIVERY_CREDENTIAL=$S13_QA_SECRET`. Run `prisma dev --detach` from `examples/email`. Record: it started; `.prisma-composer/dev/dev/configuration.json` does not exist after it returns; `grep -r "$S13_QA_SECRET" .prisma-composer .alchemy` finds nothing (the compute emulator's own copy lives outside the project, as ADR-0058 records); `curl -s -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"email":"qa@example.com","name":"QA"}' "$(prisma dev url email-example.mailer)/signup"` prints a 2xx status. Then `prisma dev stop`.
   6. **Clean up.** Run `( set -a; . ~/.config/prisma-compose/deploy.env; set +a; PRISMA_REGION=us-east-1 bun ../../scripts/composer-destroy.ts --environment s13-qa --name s13qa-email )`, and the same with `--environment production` if step 1 created it; record that destroy ran no secrets adapter (step 3's throwing adapter, put in `secrets` for this check only, does not fail it). Delete `.env.s13-qa`, `.env.s13-qa.local`, `.env.defaults`, `.env.dev`, `.env.dev.local` and `wip/s13-qa-*`. `git status` shows only this PR's changes.
 
@@ -2262,7 +2262,7 @@ Checks for this amendment, in a scratch worktree at the git-ignored `wip/s11-ame
 
 ## 19. What S10 changed
 
-S10 is on this branch. It typed a service's binding from its schema, renamed `ServiceInputBinding` to `InputBindingUse` and typed its `binding` as `unknown`. § 5.3's `checkedConfigurationOf` now takes `readonly InputBindingUse[]`. S10 did not change `SourceOptions`, `ParamSourceOptions`, `secretSource()`, `paramSource()`, `value.ts`'s source origin, `resolveValues`'s `configPool` reading, `loadModule`'s root input block, the CLI, the stack files, the operations or redaction, so every other quote in § 5 and § 10 matches the code. In the documents, S10 rewrote the binding sentences of `config-params.md` and the glossary; the lines § 14.8 and § 14.9 quote are still there, and `config-params.md` has four pool lines, at 99, 144, 161 and 300. `building-an-app.md` and the agent skill still hold every sentence § 14.10 and § 14.11 quote. ADR-0029's rewrite (§ 14.3) now says a wrong binding fails to compile, as S10 made it.
+S10 is on this branch. It typed a service's binding from its schema, renamed `ServiceInputBinding` to `InputBindingUse` and typed its `binding` as `unknown`. § 5.3's `appConfigurationReadOf` now takes `readonly InputBindingUse[]`. S10 did not change `SourceOptions`, `ParamSourceOptions`, `secretSource()`, `paramSource()`, `value.ts`'s source origin, `resolveValues`'s `configPool` reading, `loadModule`'s root input block, the CLI, the stack files, the operations or redaction, so every other quote in § 5 and § 10 matches the code. In the documents, S10 rewrote the binding sentences of `config-params.md` and the glossary; the lines § 14.8 and § 14.9 quote are still there, and `config-params.md` has four pool lines, at 99, 144, 161 and 300. `building-an-app.md` and the agent skill still hold every sentence § 14.10 and § 14.11 quote. ADR-0029's rewrite (§ 14.3) now says a wrong binding fails to compile, as S10 made it.
 
 ## 20. Decisions this spec records, for the review
 
@@ -2273,10 +2273,10 @@ S10 is on this branch. It typed a service's binding from its schema, renamed `Se
 5. **The redaction set keeps S4's credential-name heuristic** for app configuration values of eight characters or more, and S4's shape patterns. This is existing behaviour, kept for now, not part of the design's redaction. Without it, a value such as `STRIPE_KEY` in the app configuration under the default lists, which no `envSecret()` names, would stop being redacted. The decision records and the design say the same (§ 14.3, § 14.6, § 14.13).
 6. **The stream redactor matches exact values only**; the shape patterns (bearer tokens, JWTs, URL passwords) apply to whole texts: errors, events and failure causes. A pattern cannot be held back across chunks by a length.
 7. **Core gains `secretSource()`'s `secretsKey`** (§ 5.5), so the CLI can list the names `envSecret()`s name without knowing a target's payload, as `paramSource()`'s `configurationKey` already does for params.
-8. **Load records what it read on the graph** (`graph.checkedConfiguration`), so the first process writes exactly that and the second process Loads with it; core imports no `node:` module and reads no environment variable for this.
+8. **Load records what it read on the graph** (`graph.appConfigurationRead`), so the first process writes exactly that and the second process Loads with it; core imports no `node:` module and reads no environment variable for this.
 9. **The dev configuration file lives only while a converge runs**, at a fixed path per environment, which is stricter than the design's "deleted when `prisma dev` stops".
-10. **The configuration file for a deploy has a unique name** per run, as the result file does, passed in `PRISMA_COMPOSER_CONFIGURATION_FILE`, so two deploys from one checkout never read each other's.
-11. **A name read both as a configuration key and as a secrets key fails the Load** (§ 5.3), because the first would put the second's value in the configuration file.
+10. **The app configuration file for a deploy has a unique name** per run, as the result file does, passed in `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, so two deploys from one checkout never read each other's.
+11. **A name read both as a configuration key and as a secrets key fails the Load** (§ 5.3), because the first would put the second's value in the app configuration file.
 12. **A non-text configuration value in a service's input or params fails at Load**, in the first process, because the first process must decide what the file holds; before, the serializer or preflight raised it.
 13. **A redacted error is a new `CliStructuredError` with the same code and no cause** (§ 9.3). ADR-0044's record changes to say so.
 14. **No example adopts `dotenv()` in this PR**; `examples/email` and `examples/auth` already use it, and `examples/storefront-auth` keeps `import 'dotenv/config'`, which still works.
@@ -2290,8 +2290,8 @@ S10 is on this branch. It typed a service's binding from its schema, renamed `Se
 3. **Not said: how the CLI knows the names an `envSecret()` names.** Core sees only an opaque payload. This spec adds `secretsKey` to `secretSource()` (§ 20, decision 7), a core SPI change. Will accepted it; § 14.13 adds it to the design.
 4. **Not said: what is redacted before the graph exists.** An adapter failure or a Load error happens before the CLI knows any `envSecret()` name. Under the default lists, only the credential-name heuristic applies then; with a written secrets list, its values apply too, because it is read first (§ 20, decision 4).
 5. **Conflict with a recorded decision: ADR-0044 says a structured error is never transformed between its origin and the consumer.** Redaction transforms it. § 14.5 rewrites that statement; this reverses it for redaction only.
-6. **Not said: a name read by both `envParam()` and `envSecret()`.** Without a refusal, the configuration file would hold a secret (§ 20, decision 11). Will accepted the refusal; § 14.13 adds it to the design.
-7. **Consequence not stated: the reproduce command no longer works after a run.** It needs the configuration file, which is deleted when the run ends. It already needed the container and preflight variables the CLI passes, so a user could not run it bare before either; the second process's error now says why (§ 12).
+6. **Not said: a name read by both `envParam()` and `envSecret()`.** Without a refusal, the app configuration file would hold a secret (§ 20, decision 11). Will accepted the refusal; § 14.13 adds it to the design.
+7. **Consequence not stated: the reproduce command no longer works after a run.** It needs the app configuration file, which is deleted when the run ends. It already needed the container and preflight variables the CLI passes, so a user could not run it bare before either; the second process's error now says why (§ 12).
 8. **Size.** This is one pull request of nine commits touching core, the CLI, both public packages, the target, the local target, five decision records and three guides. The plan keeps them together, and this spec does too.
 9. **Closed: the credential the engine gives the child.** The first amendment found that a `PRISMA_SERVICE_TOKEN` from `prisma login` never reaches Composer, so its redactor could not match it. #383's final API redacts the credential the engine injects before the command's transform runs (§ 9.5).
 10. **Closed: an older engine.** A 0.9.0 host ignores `transformOutput` and would print the output unredacted. #383's final API adds `ctx.spawnOptionNames` and refuses unknown option names from 0.10.0 on, and `prisma deploy` and `prisma dev` now refuse with `DEPS.CLI_ENGINE_INCOMPATIBLE` before starting anything when `transformOutput` is not listed (§ 9.5, test 43).
@@ -2315,3 +2315,23 @@ Made on 2026-11-02, after Will's decisions on the first version.
 13. **The redactor holds back only what could start a secret, and keeps surrogate pairs whole** (§ 9.3, tests 29, 30, 52 and 53), after the engine's round-2 review. A prompt without a line break, such as `Deploy to production? (y/N) `, is printed at once. This replaces the hold of one fewer character than the longest secret and the line-end rule. Test 40's tail now ends in the start of the secret, so it is still held until the stream ends, and test 39 allows the stderr line to fall inside the stdout text in json mode.
 14. **The engine's support field is `ctx.spawnOptionNames`**, optional in its type, renamed from `spawnOptions` in #383's rework (`44526435`). `outputTransformMissing` checks `ctx.spawnOptionNames?.includes('transformOutput')`.
 15. **`redactValues` replaces in one pass** (§ 9.2). Replacing one value at a time, longest first, matched a short value inside an earlier `[redacted]`, so test 21 failed against the first version's code.
+
+## Review fixes
+
+Made on 2026-11-02, after the code review (F01 to F08) and the system design review (D01 to D14). Where this section and an earlier section disagree, this section is right; the identifiers above were renamed in place.
+
+1. **F01: no secret reaches the app configuration file.** Load refuses, with `COMPOSE.GRAPH_INVALID`, a root input field the root's body passes on when an `envSecret()` in the graph reads the same name: "input.API_KEY of root module "shop" reads "API_KEY" from the app configuration, and envSecret('API_KEY') names "API_KEY" as a secret. A name is a plain value or a secret, not both: …". Before it writes the file, the CLI refuses with `CONFIG.SECRET_AS_PLAIN_VALUE` when any text in it equals a value under a secrets key or a value a written `secrets` list returned: "Root input field input.GREETING holds the text of a secret. …" or "Configuration key "APP_ORIGIN" holds …". Neither names the value. The credential-name heuristic is not used for this check: `KnownSecrets` keeps those values apart (`addByName`), and the check reads only `certainValues()`.
+2. **F02, F05, D06: one matcher.** `SecretMatcher` in `redaction.ts` builds one regular expression for all secrets, once per set: a lookahead over an alternation, longest first, so each position yields the longest secret that starts there. Overlapping spans are merged and replaced once, so `abc` and `bcdef` turn `xxabcdefyy` into `xx[redacted]yy`, in whole text and in a stream. The stream redactor holds back the longest end that could start a secret, from a set of every proper prefix built once, and also a match a later secret could still extend. `REDACTED`, `redactValues`, `redactSecrets` and `secretNamedValues` move from `deployment-summary.ts` to `redaction.ts`. With 200 secrets of 70 characters, 1 MB of output takes about 60 ms at any chunk size (it took 2.8 s in 64-character chunks before), and 1 MB of secret prefixes about 60 ms (3.3 s before).
+3. **F03: leftover files.** Deploy writes `.prisma-composer/app-configuration-<pid>-<uuid>.json`; `prisma dev` writes `<dev environment dir>/app-configuration-<pid>.json`. At the start of each deploy, destroy and `prisma dev`, `removeLeftoverAppConfigurationFiles(cwd)` deletes such files in `.prisma-composer/` and in each dev environment folder whose process id is no longer running.
+4. **F04: `redactThrown`** lives in `redaction.ts`, redacts the message and stack of the error, of each error in its `cause` chain and of an `AggregateError`'s `errors`, and replaces a cause that is text or plain data with a redacted copy. `executeDev` calls it.
+5. **D07: one set.** `KnownSecrets` takes the process environment when the command builds it and adds its credential-looking values. `redact` applies the set plus the shape patterns; the stream redactor gets `values()`, the same set, so `convergeSpawn` and `spawnCommandLine` add nothing of their own.
+6. **D01 to D04: names and one file.** "The configuration file" is "the app configuration file" (`app-configuration-file.ts`, `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, `@prisma/composer/internal/app-configuration-file`). It holds `{ appConfigurationRead, nodeAddresses }`; `PRISMA_COMPOSER_NODE_ADDRESSES` is gone. `CheckedConfiguration` is `AppConfigurationRead` with `rootInput: RootInputField[]` and `configurationKeyText` (was `values`). `Graph.appConfigurationRead`, `LoadOptions.appConfigurationRead`, `LowerOptions.appConfigurationRead` and `LowerOptions.firstProcessNodeAddresses`. The local target's `LocalTargetProvidersInput` takes `configurationKeyText` and `namedSecrets: NamedSecrets`; `localTargetProviders` takes the same two. `PRISMA_COMPOSER_APP_SECRETS` is `PRISMA_COMPOSER_NAMED_SECRETS`, read by `namedSecretsFromEnvironment`.
+7. **D05: one handover function.** `prepareSecondProcess({ file, appConfigurationRead, nodeAddresses, secretsKeys, secretValues, appSecrets? })` refuses a secret in the file, chooses the named secrets, and returns `{ env, writeFile(), removeFile() }`. It replaces `writeConfigurationFile`, `removeConfigurationFile` and `secondProcessEnvironment`. Deploy, destroy and dev call it, and it is the one handover export on `@prisma/composer-cli/testing`, which the integration tests call. It takes plain data, not a `Graph`, because `@prisma/composer-cli` inlines its own copy of core, so a graph from `@prisma/composer` is a different type there. `nodeAddresses` and `secretsKeys` move from `@prisma/composer` to `@prisma/composer/deploy`.
+8. **D08:** `environmentVariables()` returns the whole process environment, with no exception.
+9. **D13 and F08:** the stack-import fixture's `config` and `secrets` adapters throw, and both stack files still run. The deploy stack test asserts that the only internal entry the file imports is the app configuration file's, and that it calls no adapter list. The two negative assertions on the old names are gone, so the § 4.3 grep finds nothing.
+10. **D14:** `LoadOptions` is `FirstProcessLoadOptions | SecondProcessLoadOptions`, so the compiler refuses `configuration` with `appConfigurationRead` (type test `load-options.test-d.ts`); Load's runtime refusal and its test are gone. A source origin has `sourceKind: 'param'` with `configurationKey`, or `sourceKind: 'secret'` with `secretsKey`.
+11. **F06:** a deploy with the default lists, a reporter and a secret known only because `envSecret('MAILER_X')` names it: no sentinel in the file, the run report, the reporter's outcome, the error, the engine cause or the second process's output.
+12. **F07:** the engine-version test runs `createDeployCommand` and `createDevCommand` with a context that has no `spawnOptionNames`: exit 2, `DEPS.CLI_ENGINE_INCOMPATIBLE`, no spawn, no operation called.
+13. **Docs (D09 to D12):** ADR-0029 and ADR-0058 are renamed after their titles, with every link; ADR-0061 names `configurationKey` and `secretsKey`; the glossary defines the secrets key, the named secrets and the app configuration file; "read once" means once per deploy, and at start and at each rebuild under `prisma dev`; ADR-0044 states its redaction exception in its Decision section.
+14. **`scripts/setup-env.ts`** tells the user to run `pnpm run deploy` in `examples/storefront-auth`, which goes through `prisma deploy`.
+15. **Deferred** to `deferred.md`: the two redaction markers, and the two variable prefixes.
