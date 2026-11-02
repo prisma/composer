@@ -330,10 +330,10 @@ export interface LocalTargetProvidersInput {
   readonly container: ContainerInstance | undefined;
   /** Absolute path of the environment's dev state directory (`devEnvironmentDir`, under the cwd). */
   readonly devDir: string;
-  /** The app configuration the second process read: the text of each configuration key the graph reads. A local deployment takes the values its param rows point at from it. */
-  readonly configuration: AppConfiguration;
-  /** The app secrets the first process handed the second process. A local deployment takes the values its `$secret` pointers name from it. */
-  readonly secrets: AppSecrets;
+  /** The text of each configuration key the graph reads, from the app configuration file. A local deployment takes the text its param rows point at from it. */
+  readonly configurationKeyText: Readonly<Record<string, string>>;
+  /** The app secrets the graph's `envSecret()`s name, which the first process handed the second. A local deployment takes the text its `$secret` pointers name from it. */
+  readonly namedSecrets: NamedSecrets;
 }
 
 export interface LocalTargetEmulatorsInput {
@@ -445,7 +445,7 @@ export interface ConfigAdapterInput {
 /** The values one adapter returns, by name. */
 export type ConfigValues = Readonly<Record<string, unknown>>;
 
-/** A function in the `config` or `secrets` list of the `composer` section (ADR-0062): it receives the environment and returns that environment's values. Only the command's first process calls it; the second process reads what the first checked from the configuration file. */
+/** A function in the `config` or `secrets` list of the `composer` section (ADR-0062): it receives the environment and returns that environment's values. Only the command's first process calls it; the second process reads what the first read from the app configuration file. */
 export type ConfigAdapter = (input: ConfigAdapterInput) => ConfigValues | Promise<ConfigValues>;
 
 /** The app configuration (ADR-0062): what the `config` adapters return, merged by top-level key, a later adapter winning. It is the root's input, and what `envParam()` reads. */
@@ -453,6 +453,9 @@ export type AppConfiguration = Readonly<Record<string, unknown>>;
 
 /** The app secrets (ADR-0062): what the `secrets` adapters return, merged the same way. Every value is text. Preflight fills a missing `envSecret()` platform variable from it, and `prisma dev` hands its second process the values the graph's `envSecret()`s name. Composer redacts its values wherever it prints. */
 export type AppSecrets = Readonly<Record<string, string>>;
+
+/** The app secrets an `envSecret()` in the graph names, each with text. `prisma dev`'s first process hands them to its second process in `PRISMA_COMPOSER_NAMED_SECRETS`. */
+export type NamedSecrets = Readonly<Record<string, string>>;
 
 /**
  * The config file's default export. `extensions` lists every extension the

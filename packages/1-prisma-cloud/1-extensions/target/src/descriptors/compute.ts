@@ -258,8 +258,8 @@ export function computeDescriptor(
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
           {
             absentSecrets: o().preflight.absentSecrets,
-            ...(ctx.opts.checkedConfiguration !== undefined
-              ? { env: ctx.opts.checkedConfiguration.values }
+            ...(ctx.opts.appConfigurationRead !== undefined
+              ? { env: ctx.opts.appConfigurationRead.configurationKeyText }
               : {}),
           },
         );

@@ -671,19 +671,14 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
     );
   }
   const moduleInputs: ProvisionedModuleInput[] = [];
-  if (opts?.configuration !== undefined && opts.checkedConfiguration !== undefined) {
-    throw new LoadError(
-      'Load takes configuration, in the first process, or checkedConfiguration, in the second, not both.',
-    );
-  }
   if (root.inputSchema !== undefined) {
-    if (opts?.checkedConfiguration !== undefined) {
+    if (opts?.appConfigurationRead !== undefined) {
       moduleInputs.push({
         moduleAddress: rootId,
         schema: root.inputSchema,
         binding: undefined,
         isRoot: true,
-        checked: opts.checkedConfiguration.rootInput,
+        checked: opts.appConfigurationRead.rootInput,
       });
     } else if (opts?.configuration !== undefined) {
       moduleInputs.push({
@@ -739,7 +734,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   const resolved = resolveValues({
     environment: opts?.environment,
     configuration: opts?.configuration,
-    checkedConfiguration: opts?.checkedConfiguration,
+    appConfigurationRead: opts?.appConfigurationRead,
     inputBindings,
     params: paramBindings,
     moduleInputs,
@@ -763,7 +758,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
     inputBindings: resolved.inputBindings,
     params: resolved.params,
     secretSources: resolved.secretSources,
-    checkedConfiguration: resolved.checkedConfiguration,
+    appConfigurationRead: resolved.appConfigurationRead,
   };
 }
 

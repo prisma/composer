@@ -120,6 +120,6 @@ export function loadService(root: ServiceNode, rootId: NodeId): Graph {
     inputBindings: [],
     params: [],
     secretSources: [],
-    checkedConfiguration: { rootInput: [], values: {} },
+    appConfigurationRead: { rootInput: [], configurationKeyText: {} },
   };
 }

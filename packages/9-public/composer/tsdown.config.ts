@@ -14,7 +14,7 @@ export default defineConfig({
   entry: {
     index: 'src/exports/index.ts',
     config: 'src/exports/config.ts',
-    'internal-configuration-file': 'src/exports/internal-configuration-file.ts',
+    'internal-app-configuration-file': 'src/exports/internal-app-configuration-file.ts',
     control: 'src/exports/control.ts',
     deploy: 'src/exports/deploy.ts',
     'local-target': 'src/exports/local-target.ts',

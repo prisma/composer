@@ -3,11 +3,10 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import { localState } from 'alchemy/State/LocalState';
 import * as Layer from 'effect/Layer';
 import {
-  type AppConfiguration,
-  type AppSecrets,
   type ContainerInstance,
   isBuildOnlyExtension,
   type LocalTargetDescriptor,
+  type NamedSecrets,
   type PrismaAppConfig,
 } from './app-config.ts';
 import type { AlchemyStateLayer } from './deploy.ts';
@@ -56,11 +55,16 @@ export function localTargetProviders(
   resolved: ReadonlyMap<string, LocalTargetDescriptor>,
   containers: ReadonlyMap<string, ContainerInstance>,
   devDir: string,
-  configuration: AppConfiguration,
-  secrets: AppSecrets,
+  configurationKeyText: Readonly<Record<string, string>>,
+  namedSecrets: NamedSecrets,
 ): Layer.Layer<never> {
   const layers = [...resolved.entries()].map(([id, descriptor]) =>
-    descriptor.providers({ container: containers.get(id), devDir, configuration, secrets }),
+    descriptor.providers({
+      container: containers.get(id),
+      devDir,
+      configurationKeyText,
+      namedSecrets,
+    }),
   );
   const [first, ...rest] = layers;
   return first === undefined ? Layer.empty : Layer.mergeAll(first, ...rest);

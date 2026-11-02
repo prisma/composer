@@ -17,8 +17,9 @@ import {
   type RunAssembler,
 } from '@internal/assemble';
 import type { Graph } from '@internal/core';
-import { assertAppName, Load, secretsKeys } from '@internal/core';
+import { assertAppName, Load } from '@internal/core';
 import type { AppConfiguration, AppSecrets, PrismaAppConfig } from '@internal/core/config';
+import { secretsKeys } from '@internal/core/deploy';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { readAppConfiguration, readAppSecrets } from './app-configuration.ts';
 import {
@@ -55,7 +56,7 @@ export interface PipelineResult {
   readonly graph: Graph;
   readonly name: string;
   readonly assembled: AssembledServices;
-  /** The app configuration read for this run. In memory only; the configuration file holds only what Load read from it. */
+  /** The app configuration read for this run. In memory only; the app configuration file holds only what Load read from it. */
   readonly configuration: AppConfiguration;
   /** The app secrets read for this run. In memory only: never written to a file, an event, a result or a report. */
   readonly secrets: AppSecrets;

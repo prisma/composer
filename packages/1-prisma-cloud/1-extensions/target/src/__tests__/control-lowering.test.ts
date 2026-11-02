@@ -1548,7 +1548,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     });
   });
 
-  test('the input document reads envParam() leaves from LowerOptions.checkedConfiguration', async () => {
+  test('the input document reads envParam() leaves from LowerOptions.appConfigurationRead', async () => {
     await withEnv({ G: 'shell' }, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const node = compute({
@@ -1576,7 +1576,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           defaultBranchId: undefined,
           branchless: false,
         },
-        opts: { checkedConfiguration: { rootInput: [], values: { G: 'pool' } } },
+        opts: { appConfigurationRead: { rootInput: [], configurationKeyText: { G: 'pool' } } },
       } as unknown as LowerContext;
       const provisioned = {
         projectId: 'shop-project#cloud-id',

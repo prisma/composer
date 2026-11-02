@@ -53,20 +53,16 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
-import { Load, nodeAddresses, secretsKeys } from '@prisma/composer';
+import { Load } from '@prisma/composer';
 import type {
   ContainerInstance,
   ExtensionDescriptor,
   LocalTargetAttachment,
 } from '@prisma/composer/config';
 import { containerEnv, devEnvironmentDir, preflightEnv } from '@prisma/composer/config';
+import { nodeAddresses, secretsKeys } from '@prisma/composer/deploy';
 import { nodeBuild } from '@prisma/composer/node/control';
-import {
-  removeConfigurationFile,
-  renderDevStackFile,
-  secondProcessEnvironment,
-  writeConfigurationFile,
-} from '@prisma/composer-cli/testing';
+import { prepareSecondProcess, renderDevStackFile } from '@prisma/composer-cli/testing';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import { emulatorRegistryRoot } from '@prisma/composer-prisma-cloud/local-target';
 import bgService from './fixtures/local-dev/bg-service.ts';
@@ -500,29 +496,24 @@ async function main(): Promise<void> {
         preflightPayload === undefined ? new Map() : new Map([[descriptor.id, preflightPayload]]),
       ),
     };
-    // The second process gets what the first checked as `prisma dev` hands it over: the
-    // configuration file, written before each converge and deleted after it, and the
-    // node addresses and the app secrets the graph names in its environment.
-    const configurationFile = path.join(devDir, 'configuration.json');
-    const secrets: Record<string, string> = {};
-    for (const key of secretsKeys(graph)) {
-      const value = read.secrets[key];
-      if (value !== undefined && value !== '') secrets[key] = value;
-    }
-    const childEnv = {
-      ...containerEnvVars,
-      ...secondProcessEnvironment({
-        configurationFile,
-        nodeAddresses: nodeAddresses(graph),
-        secrets,
-      }),
-    };
+    // The second process gets its handover through the function `prisma dev` uses: the app
+    // configuration file, written before each converge and deleted after it, and the named
+    // secrets in its environment.
+    const handover = prepareSecondProcess({
+      file: path.join(devDir, 'app-configuration.json'),
+      appConfigurationRead: graph.appConfigurationRead,
+      nodeAddresses: nodeAddresses(graph),
+      secretsKeys: secretsKeys(graph),
+      secretValues: new Set(),
+      appSecrets: read.secrets,
+    });
+    const childEnv = { ...containerEnvVars, ...handover.env };
     const converge = () => {
-      writeConfigurationFile(configurationFile, graph.checkedConfiguration);
+      handover.writeFile();
       try {
         return runAlchemyDeploy(childEnv);
       } finally {
-        removeConfigurationFile(configurationFile);
+        handover.removeFile();
       }
     };
     const first = converge();

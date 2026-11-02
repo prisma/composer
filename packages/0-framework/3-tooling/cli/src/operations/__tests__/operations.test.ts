@@ -11,7 +11,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type Graph, nodeAddresses, type ServiceNode } from '@internal/core';
+import type { Graph, ServiceNode } from '@internal/core';
 import type {
   ContainerDescriptor,
   ContainerInstance,
@@ -20,6 +20,7 @@ import type {
   PrismaAppConfig,
   RunOutcome,
 } from '@internal/core/config';
+import { nodeAddresses } from '@internal/core/deploy';
 import type {
   LocalTargetAttachment,
   LocalTargetCurrentApp,
@@ -27,13 +28,9 @@ import type {
 } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import * as Layer from 'effect/Layer';
+import { APP_CONFIGURATION_FILE_ENV, NAMED_SECRETS_ENV } from '../../app-configuration-file.ts';
 import type { ComposerConfigSource } from '../../composer-config.ts';
 import { dotenv } from '../../config-adapters.ts';
-import {
-  APP_SECRETS_ENV,
-  CONFIGURATION_FILE_ENV,
-  NODE_ADDRESSES_ENV,
-} from '../../configuration-file.ts';
 import {
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
@@ -3876,8 +3873,8 @@ describe.skipIf(process.platform === 'win32')(
   },
 );
 
-/** An app whose root declares `input: type({ GREETING: 'string' })` and binds it, an app configuration key and a secret into its service. */
-function makeSecondProcessAppDir(): { dir: string; entryPath: string } {
+/** An app whose root declares `input: type({ GREETING: 'string' })` and binds it, the configuration key `APP_ORIGIN` and the secrets key `secretsKey` into its service. */
+function makeSecondProcessAppDir(secretsKey = 'S13_SECRET'): { dir: string; entryPath: string } {
   const app = makeAppDir('hello-second');
   fs.writeFileSync(
     app.entryPath,
@@ -3901,7 +3898,7 @@ function makeSecondProcessAppDir(): { dir: string; entryPath: string } {
       "export default module('hello-second', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {",
       '  provision(app, {',
       "    id: 'app',",
-      "    input: { greeting: input.GREETING, origin: configured('APP_ORIGIN'), key: secret('S13_SECRET') },",
+      `    input: { greeting: input.GREETING, origin: configured('APP_ORIGIN'), key: secret(${JSON.stringify(secretsKey)}) },`,
       '  });',
       '});',
       '',
@@ -3919,7 +3916,7 @@ function filesUnder(dir: string): string[] {
   });
 }
 
-describe('the second process reads what the first process checked', () => {
+describe('the second process reads what the first process read', () => {
   const values = () => ({
     GREETING: 'hello',
     APP_ORIGIN: 'https://origin.example',
@@ -3927,11 +3924,11 @@ describe('the second process reads what the first process checked', () => {
   });
 
   for (const exitCode of [0, 1]) {
-    test(`deploy writes the configuration file before the second process starts and deletes it after, mode 0600, holding only what Load read (exit ${String(exitCode)})`, async () => {
+    test(`deploy writes the app configuration file before the second process starts and deletes it after, mode 0600, holding only what Load read (exit ${String(exitCode)})`, async () => {
       const app = makeSecondProcessAppDir();
       let graph: Graph | undefined;
       let file: string | undefined;
-      let seen: { mode: number; json: unknown; addresses: string | undefined } | undefined;
+      let seen: { mode: number; json: unknown } | undefined;
 
       await silently(() =>
         deployWithDeps(
@@ -3952,12 +3949,11 @@ describe('the second process reads what the first process checked', () => {
           {
             runAssembler: fakeAssembler,
             alchemy: async (input) => {
-              file = input.env[CONFIGURATION_FILE_ENV];
-              if (file === undefined) throw new Error('no configuration file named');
+              file = input.env[APP_CONFIGURATION_FILE_ENV];
+              if (file === undefined) throw new Error('no app configuration file named');
               seen = {
                 mode: fs.statSync(file).mode & 0o777,
                 json: JSON.parse(fs.readFileSync(file, 'utf8')),
-                addresses: input.env[NODE_ADDRESSES_ENV],
               };
               return { exitCode, signal: null };
             },
@@ -3969,16 +3965,18 @@ describe('the second process reads what the first process checked', () => {
       expect(seen).toEqual({
         mode: 0o600,
         json: {
-          rootInput: [{ path: ['GREETING'], value: 'hello' }],
-          values: { APP_ORIGIN: 'https://origin.example' },
+          appConfigurationRead: {
+            rootInput: [{ path: ['GREETING'], value: 'hello' }],
+            configurationKeyText: { APP_ORIGIN: 'https://origin.example' },
+          },
+          nodeAddresses: nodeAddresses(graph),
         },
-        addresses: JSON.stringify(nodeAddresses(graph)),
       });
       expect(fs.existsSync(file)).toBe(false);
     });
   }
 
-  test('destroy writes and deletes the configuration file the same way, and reads no secrets', async () => {
+  test('destroy writes and deletes the app configuration file the same way, and reads no secrets', async () => {
     const app = makeSecondProcessAppDir();
     fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
     fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
@@ -4000,8 +3998,8 @@ describe('the second process reads what the first process checked', () => {
         {
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
-            file = input.env[CONFIGURATION_FILE_ENV];
-            if (file === undefined) throw new Error('no configuration file named');
+            file = input.env[APP_CONFIGURATION_FILE_ENV];
+            if (file === undefined) throw new Error('no app configuration file named');
             json = JSON.parse(fs.readFileSync(file, 'utf8'));
             return { exitCode: 0, signal: null };
           },
@@ -4011,12 +4009,80 @@ describe('the second process reads what the first process checked', () => {
 
     expect(result.ok).toBe(true);
     expect(json).toEqual({
-      rootInput: [{ path: ['GREETING'], value: 'hello' }],
-      values: { APP_ORIGIN: 'https://origin.example' },
+      appConfigurationRead: {
+        rootInput: [{ path: ['GREETING'], value: 'hello' }],
+        configurationKeyText: { APP_ORIGIN: 'https://origin.example' },
+      },
+      nodeAddresses: ['hello-second', 'hello-second.app'],
     });
     if (file === undefined) throw new Error('the destroy did not run');
     expect(fs.existsSync(file)).toBe(false);
   });
+
+  test('deploy, destroy and dev each start by deleting the app configuration files that earlier runs left', async () => {
+    const ended = spawnSync(process.execPath, ['-e', '0']).pid;
+    const leftover = (dir: string) => {
+      const file = path.join(dir, `app-configuration-${String(ended)}-forced-exit.json`);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(file, '{}');
+      return file;
+    };
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+    const alchemy = async () => ({ exitCode: 0, signal: null });
+    const runs: Record<string, (dir: string) => Promise<unknown>> = {
+      deploy: (dir: string) =>
+        deployWithDeps(
+          {
+            config: composerConfig({ ...fakeConfig(), config: [values] }),
+            entry: path.join(dir, 'service.ts'),
+            environment: 'staging',
+            cwd: dir,
+          },
+          { runAssembler: fakeAssembler, alchemy },
+        ),
+      destroy: (dir: string) =>
+        destroyWithDeps(
+          {
+            config: composerConfig({ ...fakeConfig(), config: [values] }),
+            entry: path.join(dir, 'service.ts'),
+            environment: 'staging',
+            cwd: dir,
+          },
+          { runAssembler: fakeAssembler, alchemy },
+        ),
+      dev: (dir: string) =>
+        devWithDeps(
+          {
+            config: composerConfig({ ...devConfigWith(attachment), config: [values] }),
+            entry: path.join(dir, 'service.ts'),
+            cwd: dir,
+            detach: true,
+          },
+          { runAssembler: fakeAssembler, alchemy },
+        ),
+    };
+
+    for (const [command, run] of Object.entries(runs)) {
+      if (command === 'dev' && process.platform === 'win32') continue;
+      const app = makeSecondProcessAppDir();
+      const files = [
+        leftover(path.join(app.dir, '.prisma-composer')),
+        leftover(path.join(app.dir, '.prisma-composer', 'dev', 'dev')),
+      ];
+
+      await silently(() => run(app.dir));
+
+      expect({ command, left: files.filter((file) => fs.existsSync(file)) }).toEqual({
+        command,
+        left: [],
+      });
+    }
+  }, 20_000);
 
   const refusedPlainValues = [
     {
@@ -4067,13 +4133,13 @@ describe('the second process reads what the first process checked', () => {
       expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
       expect(started).toBe(false);
       expect(
-        filesUnder(app.dir).filter((file) => path.basename(file).startsWith('configuration')),
+        filesUnder(app.dir).filter((file) => path.basename(file).startsWith('app-configuration')),
       ).toEqual([]);
     });
   }
 
   test.skipIf(process.platform === 'win32')(
-    'dev hands the second process the app secrets the graph names through its environment, never in a file',
+    'dev hands the second process the named secrets through its environment, never in a file',
     async () => {
       const app = makeSecondProcessAppDir();
       const attachment: LocalTargetAttachment = {
@@ -4087,7 +4153,7 @@ describe('the second process reads what the first process checked', () => {
         '.prisma-composer',
         'dev',
         'dev',
-        'configuration.json',
+        `app-configuration-${String(process.pid)}.json`,
       );
       let secretsEnv: string | undefined;
       let fileDuringConverge = false;
@@ -4108,7 +4174,7 @@ describe('the second process reads what the first process checked', () => {
           {
             runAssembler: fakeAssembler,
             alchemy: async (input) => {
-              secretsEnv = input.env[APP_SECRETS_ENV];
+              secretsEnv = input.env[NAMED_SECRETS_ENV];
               fileDuringConverge = fs.existsSync(configurationFile);
               filesHoldingSecret = filesUnder(app.dir).filter((candidate) =>
                 fs.readFileSync(candidate, 'utf8').includes('dev-secret-value'),
@@ -4132,7 +4198,7 @@ describe('the second process reads what the first process checked', () => {
 describe('no known secret is printed', () => {
   const SENTINEL = 'e2e-SENTINEL-5f2a';
 
-  test("no known secret reaches the configuration file, the stack file, the deploy report, the errors or the second process's output", async () => {
+  test("no known secret reaches the app configuration file, the stack file, the deploy report, the errors or the second process's output", async () => {
     const app = makeSecondProcessAppDir();
     const script =
       "process.stdout.write('e2e-SENTI'); setTimeout(() => { process.stdout.write('NEL-5f2a and more\\n'); process.stderr.write('boom e2e-SENTINEL-5f2a\\n'); }, 50);";
@@ -4160,7 +4226,7 @@ describe('no known secret is printed', () => {
           {
             runAssembler: fakeAssembler,
             alchemy: async (input) => {
-              const configurationFile = input.env[CONFIGURATION_FILE_ENV];
+              const configurationFile = input.env[APP_CONFIGURATION_FILE_ENV];
               const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
               if (configurationFile === undefined || resultFile === undefined) {
                 throw new Error('the second process was not told where its files are');
@@ -4214,6 +4280,89 @@ describe('no known secret is printed', () => {
     for (const text of texts) expect(text).not.toContain('SENTINEL');
     expect(succeeded.seen.stdout).toBe('[redacted] and more\n');
     expect(failed.seen.stdout).toBe('[redacted] and more\n');
+  }, 15_000);
+
+  test('with the default lists, a secret known only because an envSecret() names it reaches no file, report, reporter, error or output', async () => {
+    const sentinel = 'default-SENTINEL-7c1e';
+    const app = makeSecondProcessAppDir('MAILER_X');
+    const finished: string[] = [];
+    const reporter: NonNullable<ExtensionDescriptor['reporter']> = {
+      begin: async () => ({
+        childEnv: () => ({}),
+        attach: async () => {},
+        finish: async (outcome) => void finished.push(JSON.stringify(outcome)),
+      }),
+    };
+    const seen = { configurationFile: '', stdout: '', stderr: '' };
+    const outputs = {
+      stdout: { write: (text: string) => (seen.stdout += text) },
+      stderr: { write: (text: string) => (seen.stderr += text) },
+    };
+    const names = ['GREETING', 'APP_ORIGIN', 'MAILER_X'] as const;
+    const previous = names.map((name) => process.env[name]);
+    Object.assign(process.env, {
+      GREETING: 'hello',
+      APP_ORIGIN: 'https://origin.example',
+      MAILER_X: sentinel,
+    });
+    const reportPath = path.join(app.dir, 'report.json');
+    let result: Awaited<ReturnType<typeof deployWithDeps>>;
+    try {
+      result = await silently(() =>
+        deployWithDeps(
+          {
+            config: composerConfig(fakeConfig({ reporter })),
+            entry: app.entryPath,
+            environment: 'staging',
+            cwd: app.dir,
+            reportPath,
+          },
+          {
+            runAssembler: fakeAssembler,
+            alchemy: async (input) => {
+              const configurationFile = input.env[APP_CONFIGURATION_FILE_ENV];
+              const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
+              if (configurationFile === undefined || resultFile === undefined) {
+                throw new Error('the second process was not told where its files are');
+              }
+              seen.configurationFile = fs.readFileSync(configurationFile, 'utf8');
+              await spawnCommandLine(
+                {
+                  command: process.execPath,
+                  args: ['-e', `process.stdout.write(${JSON.stringify(`printed ${sentinel}\n`)})`],
+                  cwd: app.dir,
+                  env: input.env,
+                },
+                input.redactedValues,
+                outputs,
+              );
+              fs.writeFileSync(engineFailureFilePath(resultFile), `error: rejected ${sentinel}`);
+              return { exitCode: 1, signal: null };
+            },
+          },
+        ),
+      );
+    } finally {
+      names.forEach((name, index) => {
+        const value = previous[index];
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      });
+    }
+
+    if (result.ok) throw new Error('the deploy should fail');
+    expect(finished).toHaveLength(1);
+    const texts = [
+      seen.configurationFile,
+      seen.stdout,
+      seen.stderr,
+      fs.readFileSync(reportPath, 'utf8'),
+      ...finished,
+      JSON.stringify(result.failure.toEnvelope()),
+      String(result.failure.meta?.['engineCause']),
+    ];
+    for (const text of texts) expect(text).not.toContain('SENTINEL');
+    expect(seen.stdout).toBe('printed [redacted]\n');
   }, 15_000);
 
   test("an adapter's failure message is redacted with every value a written secrets list returned", async () => {

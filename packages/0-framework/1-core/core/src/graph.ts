@@ -4,10 +4,9 @@ import { loadService } from './load-service.ts';
 import { isNode, type ModuleNode, type ServiceNode, sourceOriginOf } from './node.ts';
 
 export type {
+  AppConfigurationRead,
   AuthoredEdge,
   BoundaryPort,
-  CheckedConfiguration,
-  CheckedRootField,
   Edge,
   Graph,
   GraphNode,
@@ -16,6 +15,7 @@ export type {
   NodeId,
   ParamBinding,
   PortEndpoint,
+  RootInputField,
   SecretSourceUse,
 } from './graph-types.ts';
 export { LoadError, RESOURCE_OUT_PORT } from './graph-types.ts';
@@ -65,7 +65,8 @@ export function Load(root: ServiceNode | ModuleNode, opts?: LoadOptions): Graph 
 export function secretsKeys(graph: Graph): readonly string[] {
   const keys = new Set<string>();
   for (const { source } of graph.secretSources) {
-    const key = sourceOriginOf(source)?.secretsKey;
+    const origin = sourceOriginOf(source);
+    const key = origin?.sourceKind === 'secret' ? origin.secretsKey : undefined;
     if (key !== undefined) keys.add(key);
   }
   return [...keys];

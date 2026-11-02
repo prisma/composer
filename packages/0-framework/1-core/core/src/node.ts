@@ -81,12 +81,7 @@ export function secretSource<P, T = unknown>(
     buildSource(
       SECRET_SOURCE,
       payload,
-      {
-        kind: 'source',
-        label,
-        configurationKey: undefined,
-        secretsKey,
-      },
+      { kind: 'source', sourceKind: 'secret', label, secretsKey },
       'secret',
     ),
   );
@@ -177,7 +172,7 @@ export function paramSource<P, T = unknown>(
     buildSource(
       PARAM_SOURCE,
       payload,
-      { kind: 'source', label, configurationKey, secretsKey: undefined },
+      { kind: 'source', sourceKind: 'param', label, configurationKey },
       configurationKey !== undefined ? undefined : redacted ? 'secret' : 'plain',
     ),
   );
@@ -191,10 +186,16 @@ function sourceLabel(factory: string, label: unknown, fallback: string): string 
   return label;
 }
 
+type SourceOriginWithoutSource = SourceOrigin extends infer O
+  ? O extends SourceOrigin
+    ? Omit<O, 'source'>
+    : never
+  : never;
+
 function buildSource(
   brand: typeof SECRET_SOURCE | typeof PARAM_SOURCE,
   payload: unknown,
-  origin: Omit<SourceOrigin, 'source'>,
+  origin: SourceOriginWithoutSource,
   kind: PointerKind | undefined,
 ): object {
   const source = {
@@ -210,7 +211,7 @@ function buildSource(
   return Object.freeze(source);
 }
 
-function coercions(origin: Omit<SourceOrigin, 'source'>): PropertyDescriptorMap {
+function coercions(origin: SourceOriginWithoutSource): PropertyDescriptorMap {
   const thrower = (what: string) => () => {
     throw sourceMisuse(origin, what);
   };
@@ -227,10 +228,10 @@ function coercions(origin: Omit<SourceOrigin, 'source'>): PropertyDescriptorMap 
 
 const sourceMisuses = new WeakSet<LoadError>();
 
-function sourceMisuse(origin: Omit<SourceOrigin, 'source'>, what: string): LoadError {
+function sourceMisuse(origin: SourceOriginWithoutSource, what: string): LoadError {
   const { label } = origin;
   const error = new LoadError(
-    origin.configurationKey === undefined
+    origin.sourceKind === 'secret' || origin.configurationKey === undefined
       ? `${label} is known only at boot: the deploy holds a pointer to it, never its value, and ${what}. ` +
           'A module body can only pass it on, into a provision() binding; to compute with the value, do it in the service that reads it.'
       : `${label} is a value, not its real value, and ${what}. ` +

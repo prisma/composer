@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { type Graph, nodeAddresses } from '@internal/core';
+import type { Graph } from '@internal/core';
 import type {
   ContainerCredentials,
   ContainerInstance,
@@ -16,15 +16,16 @@ import type {
   RunReporter,
 } from '@internal/core/config';
 import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
+import { nodeAddresses, secretsKeys } from '@internal/core/deploy';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
-import type { ComposerConfigSource } from '../composer-config.ts';
 import {
-  refuseSecretsInConfigurationFile,
-  removeConfigurationFile,
-  secondProcessEnvironment,
-  writeConfigurationFile,
-} from '../configuration-file.ts';
+  deployAppConfigurationFile,
+  prepareSecondProcess,
+  removeLeftoverAppConfigurationFiles,
+  type SecondProcessHandover,
+} from '../app-configuration-file.ts';
+import type { ComposerConfigSource } from '../composer-config.ts';
 import {
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
@@ -384,6 +385,7 @@ async function runStackPipelineInner(
   const { entry, config: composerConfig, name, environment, cwd, onEvent, deps, steps } = opts;
 
   steps.start({ name: 'prepare' });
+  removeLeftoverAppConfigurationFiles(cwd);
   try {
     validateEnvironmentName(environment);
   } catch (error) {
@@ -602,17 +604,20 @@ async function runStackPipelineInner(
     '.prisma-composer',
     `deployment-result-${String(process.pid)}-${randomUUID()}.json`,
   );
-  const configurationFilePath = path.join(
-    cwd,
-    '.prisma-composer',
-    `configuration-${String(process.pid)}-${randomUUID()}.json`,
-  );
+  let handover: SecondProcessHandover | undefined;
   // Every return below funnels through the finally: the child can write the
   // result file via the report hook before a later step fails, so failure
   // paths must remove it too — otherwise each failed run leaves resource
   // ids/URLs on disk and the files accumulate.
   try {
     try {
+      handover = prepareSecondProcess({
+        file: deployAppConfigurationFile(cwd, randomUUID()),
+        appConfigurationRead: pipeline.graph.appConfigurationRead,
+        nodeAddresses: nodeAddresses(pipeline.graph),
+        secretsKeys: secretsKeys(pipeline.graph),
+        secretValues: opts.knownSecrets.certainValues(),
+      });
       stackPath = writeStackFile({
         entryPath: pipeline.entryModule.path,
         cwd,
@@ -621,11 +626,7 @@ async function runStackPipelineInner(
         environment,
         assembled: pipeline.assembled,
       });
-      refuseSecretsInConfigurationFile(
-        pipeline.graph.checkedConfiguration,
-        opts.knownSecrets.certainValues(),
-      );
-      writeConfigurationFile(configurationFilePath, pipeline.graph.checkedConfiguration);
+      handover.writeFile();
     } catch (error) {
       // Stack-file write I/O is structured here, at the catch that knows
       // which file was being written (base-type rule 6).
@@ -641,10 +642,7 @@ async function runStackPipelineInner(
       preflightEnv: preflightTransportEnv,
       env: {
         ...reporterChildEnv(reporters, opts.knownSecrets),
-        ...secondProcessEnvironment({
-          configurationFile: configurationFilePath,
-          nodeAddresses: nodeAddresses(pipeline.graph),
-        }),
+        ...handover.env,
         [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath,
       },
       redactedValues: opts.knownSecrets.values(),
@@ -785,6 +783,6 @@ async function runStackPipelineInner(
     } catch {
       // Best-effort cleanup — never masks the result it wraps.
     }
-    removeConfigurationFile(configurationFilePath);
+    handover?.removeFile();
   }
 }

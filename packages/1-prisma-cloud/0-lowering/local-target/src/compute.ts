@@ -11,11 +11,7 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type {
-  AppConfiguration,
-  AppSecrets,
-  LocalTargetProvidersInput,
-} from '@internal/core/config';
+import type { LocalTargetProvidersInput } from '@internal/core/config';
 import { computeClient } from '@internal/dev-emulators';
 import { App, Deployment, EnvironmentVariable, Project } from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
@@ -221,8 +217,8 @@ export async function materializeEnv(
   devDir: string,
   address: string,
   port: number,
-  configuration: AppConfiguration,
-  secrets: AppSecrets,
+  configuration: Readonly<Record<string, unknown>>,
+  secrets: Readonly<Record<string, string>>,
 ): Promise<Record<string, string>> {
   const rows = await envStore(devDir).read();
   const env: Record<string, string> = scopedEnvRows(rows, address);
@@ -379,8 +375,8 @@ export function LocalDeploymentProvider(
             input.devDir,
             address,
             instance.port,
-            input.configuration,
-            input.secrets,
+            input.configurationKeyText,
+            input.namedSecrets,
           );
           try {
             await computeClient().putDeployment(instance.id, {

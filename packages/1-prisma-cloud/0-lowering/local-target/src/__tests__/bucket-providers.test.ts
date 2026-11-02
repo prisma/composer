@@ -55,8 +55,8 @@ describe.skipIf(process.platform === 'win32')('the local Bucket providers', () =
     input = {
       container,
       devDir: path.join(root, 'project', '.prisma-composer', 'dev', 'dev'),
-      configuration: {},
-      secrets: {},
+      configurationKeyText: {},
+      namedSecrets: {},
     };
   });
 

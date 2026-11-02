@@ -73,14 +73,11 @@ import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
-import { Load, nodeAddresses, secretsKeys } from '@prisma/composer';
+import { Load } from '@prisma/composer';
 import { containerEnv, environmentVariables } from '@prisma/composer/config';
+import { nodeAddresses, secretsKeys } from '@prisma/composer/deploy';
 import { nodeBuild } from '@prisma/composer/node/control';
-import {
-  removeConfigurationFile,
-  secondProcessEnvironment,
-  writeConfigurationFile,
-} from '@prisma/composer-cli/testing';
+import { prepareSecondProcess } from '@prisma/composer-cli/testing';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import { emulatorRegistryRoot } from '@prisma/composer-prisma-cloud/local-target';
 import { prismaBinDir } from './spawn-prisma.ts';
@@ -422,12 +419,12 @@ const PROVING_PRODUCT_ID = 'proving-row';
 const APP_NAME = 'store';
 const catalogDist = path.join(storeDir, 'modules', 'catalog', 'dist', 'server.mjs');
 const DEV_STACK_FILE = path.join(storeDir, '.prisma-composer', 'dev', 'dev', 'alchemy.run.ts');
-const CONFIGURATION_FILE = path.join(
+const APP_CONFIGURATION_FILE = path.join(
   storeDir,
   '.prisma-composer',
   'dev',
   'dev',
-  'configuration.json',
+  'app-configuration-proving-script.json',
 );
 
 /** Walks up from `startDir` looking for `node_modules/.bin/alchemy` — same as local-dev.integration.ts's own helper. */
@@ -505,7 +502,7 @@ async function touchCatalogAndAwaitRealWatchLoop(
 /**
  * What `prisma dev`'s first process hands its second process for the store app, built the
  * same way: the default adapters read for the environment `dev`, a Load with that app
- * configuration, and the configuration-file helpers `prisma dev` itself uses.
+ * configuration, and the handover function `prisma dev` itself uses.
  */
 async function secondProcessHandover() {
   const adapterInput = { environment: 'dev', configDirectory: storeDir };
@@ -513,19 +510,18 @@ async function secondProcessHandover() {
   const appSecrets = await environmentVariables()(adapterInput);
   const { default: root } = await import(path.join(storeDir, 'module.ts'));
   const graph = Load(root, { id: APP_NAME, environment: { name: 'dev' }, configuration });
-  const secrets: Record<string, string> = {};
-  for (const key of secretsKeys(graph)) {
-    const value = appSecrets[key];
-    if (typeof value === 'string' && value !== '') secrets[key] = value;
-  }
-  return {
-    checked: graph.checkedConfiguration,
-    env: secondProcessEnvironment({
-      configurationFile: CONFIGURATION_FILE,
-      nodeAddresses: nodeAddresses(graph),
-      secrets,
-    }),
-  };
+  return prepareSecondProcess({
+    file: APP_CONFIGURATION_FILE,
+    appConfigurationRead: graph.appConfigurationRead,
+    nodeAddresses: nodeAddresses(graph),
+    secretsKeys: secretsKeys(graph),
+    secretValues: new Set(),
+    appSecrets: Object.fromEntries(
+      Object.entries(appSecrets).flatMap(([key, value]) =>
+        typeof value === 'string' ? [[key, value]] : [],
+      ),
+    ),
+  });
 }
 
 async function rebuildCatalogAndReconverge(
@@ -565,9 +561,9 @@ async function rebuildCatalogAndReconverge(
   const dev = await descriptor.localTarget();
   const container = await dev.container.ensure({ appName: APP_NAME, environment: 'dev' });
   const envVars = containerEnv(new Map([[descriptor.id, container]]));
-  const secondProcessEnv = await secondProcessHandover();
+  const handover = await secondProcessHandover();
 
-  writeConfigurationFile(CONFIGURATION_FILE, secondProcessEnv.checked);
+  handover.writeFile();
   let result: ReturnType<typeof spawnSync>;
   try {
     result = spawnSync(
@@ -576,11 +572,11 @@ async function rebuildCatalogAndReconverge(
       {
         cwd: storeDir,
         stdio: 'inherit',
-        env: { ...process.env, ...envVars, ...secondProcessEnv.env },
+        env: { ...process.env, ...envVars, ...handover.env },
       },
     );
   } finally {
-    removeConfigurationFile(CONFIGURATION_FILE);
+    handover.removeFile();
   }
   assert(
     result.status === 0,

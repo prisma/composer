@@ -39,14 +39,23 @@ export type ValueOrigin<T> =
     }
   | {
       readonly kind: 'source';
-      /** How an error names the source, e.g. `envSecret('STRIPE_KEY')`. */
+      readonly sourceKind: 'param';
+      /** How an error names the source, e.g. `envParam('REGION')`. */
       readonly label: string;
       /** The app configuration key whose text at deploy is the real value, as for `envParam()`. `undefined` for a value known only at boot, whose real value is `source`, a pointer. */
       readonly configurationKey: string | undefined;
-      /** The app secrets key that holds a secret source's value, as for `envSecret()`. `undefined` for any other source. */
+      /** The source itself. Not enumerable, so a copy's origin compares equal and the origin holds no cycle. */
+      readonly source: ParamSource;
+    }
+  | {
+      readonly kind: 'source';
+      readonly sourceKind: 'secret';
+      /** How an error names the source, e.g. `envSecret('STRIPE_KEY')`. */
+      readonly label: string;
+      /** The app secrets key that holds the secret's value, as for `envSecret()`. `undefined` for a secret source built without one. */
       readonly secretsKey: string | undefined;
       /** The source itself. Not enumerable, so a copy's origin compares equal and the origin holds no cycle. */
-      readonly source: ParamSource | SecretSource;
+      readonly source: SecretSource;
     };
 
 /** The origin of a module input field. Internal to core. */

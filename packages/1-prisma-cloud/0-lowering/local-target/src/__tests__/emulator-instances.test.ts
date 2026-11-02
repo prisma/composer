@@ -102,8 +102,8 @@ async function deploy(
         LocalDeploymentProvider({
           container: forContainer,
           devDir,
-          configuration: {},
-          secrets: {},
+          configurationKeyText: {},
+          namedSecrets: {},
         }),
       ),
     ),
@@ -122,7 +122,7 @@ async function deploymentDiff(devDir: string, output: Deployment['Attributes']):
   const provider = await Effect.runPromise(
     Deployment.Provider.pipe(
       Effect.provide(
-        LocalDeploymentProvider({ container, devDir, configuration: {}, secrets: {} }),
+        LocalDeploymentProvider({ container, devDir, configurationKeyText: {}, namedSecrets: {} }),
       ),
     ),
   );
@@ -134,7 +134,9 @@ async function deploymentDiff(devDir: string, output: Deployment['Attributes']):
 async function appProvider(devDir: string) {
   return Effect.runPromise(
     App.Provider.pipe(
-      Effect.provide(LocalAppProvider({ container, devDir, configuration: {}, secrets: {} })),
+      Effect.provide(
+        LocalAppProvider({ container, devDir, configurationKeyText: {}, namedSecrets: {} }),
+      ),
     ),
   );
 }
