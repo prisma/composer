@@ -205,18 +205,16 @@ an error, unlike an unused `deps` entry.
 
 ## `provision()` accepts modules
 
-A module overload mirrors the service forms:
+One overload provisions a service or a module, with the same options for both:
 
 ```ts
-provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
-  child: ModuleNode<D, E, I>,
-  opts: {
-    id?: string;
-    deps: DepBindings<D>;                                      // omitted when D is empty
-    input: ModuleInputBinding<StandardSchemaV1.InferInput<I>>; // required when the module declares an input schema
-  },
-): ProvisionedRef<E>;
+provision<N extends ServiceNode | ModuleNode>(
+  node: N,
+  ...args: ProvisionArgs<N>, // `deps` required when the node declares dependencies, `input` when it declares an input schema
+): ProvisionedRef<ExposeOf<N>>;
 ```
+
+The `input` option has the type `InputBindingOf<I>`, the same for a service and a module: it is typed from the schema's input type, so a binding the schema would refuse fails to compile ([ADR-0042](../90-decisions/ADR-0042-service-input-is-one-standard-schema.md)). Two more overloads spell out `deps` and take `input` as optional, for a generic wrapper such as `cron()` whose node type is still a type parameter. The overload above is declared last, so a call no overload accepts reports its error, which names the binding key that does not fit.
 
 The returned ref is indistinguishable from a provisioned service's. Whether an
 id names a service or a sub-module is invisible to sibling wiring, so topologies

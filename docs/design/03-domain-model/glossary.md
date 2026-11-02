@@ -134,12 +134,7 @@ code never reads the environment (no-globals). Each key of a binding takes:
     the environment being deployed, which exists only once the deploy has
     created that service.
 
-A field typed `secretString()` takes only a secret: a secret box, or the
-secret pointer of `envSecret()` or a redacted `generatedParam()`. A
-[wrapped field](#field) also takes a plain pointer, from `serviceOrigin()`
-or a plain `generatedParam()`. A plain field takes neither: at deploy a
-schema checks each value known only at boot as its pointer, so a plain
-field bound to one fails the deploy.
+A binding is typed from the schema's input type, for a Service as for a Module. In a binding, a field typed `secretString()` takes only a secret: the secret pointer of `envSecret()` or a redacted `generatedParam()`, or a module's own secret field passed on. A secret box written in a binding fails to compile, because a secret's value never sits in the code, and no pointer is ever written as a literal. A [wrapped field](#field) also takes a plain runtime value, from `serviceOrigin()` or a plain `generatedParam()`. A plain field takes neither, and a binding that gives it one fails to compile. Where the compiler sees no type, such as a schema without type information or a cast, the deploy checks each value known only at boot as its pointer, so a plain field bound to one fails the deploy.
 
 The older form of input is a service's per-key `params`, each bound to a
 literal or a source
