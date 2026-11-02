@@ -40,7 +40,7 @@ describe('renderStackFile() — a module root', () => {
     expect(content).not.toContain('stage:');
   });
 
-  test('reads the config pool from the adapters and passes it to lower(), directly after the environment, and never reads the secrets pool', () => {
+  test('reads what the CLI checked from the configuration file, after the failure recorder starts, and passes it to lower() directly after the environment', () => {
     const content = renderStackFile({
       entryPath: '/app/module.ts',
       cwd: '/app',
@@ -50,11 +50,17 @@ describe('renderStackFile() — a module root', () => {
       assembled: { devServers: {}, bundles: {} },
     });
 
-    expect(content).toContain("import { readConfigPool } from '@prisma/composer/internal/pools';");
     expect(content).toContain(
-      'const configPool = await readConfigPool(config, { environment: "staging", configFile: "/app/prisma.config.ts" });',
+      "import { readCheckedConfiguration } from '@prisma/composer/internal/configuration-file';",
     );
-    expect(content).toContain('  environment: "staging",\n  configPool,\n');
+    const recorder = content.indexOf('report.captureEngineFailure?.();');
+    const read = content.indexOf('const checked = readCheckedConfiguration(process.env);');
+    expect(recorder).toBeGreaterThan(-1);
+    expect(read).toBeGreaterThan(recorder);
+    expect(content).toContain(
+      '  environment: "staging",\n  checkedConfiguration: checked.configuration,\n  checkedNodeAddresses: checked.nodeAddresses,',
+    );
+    expect(content).not.toContain('readConfigPool');
     expect(content).not.toContain('readSecretsPool');
   });
 

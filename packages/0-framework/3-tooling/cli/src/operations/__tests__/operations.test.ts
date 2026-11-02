@@ -11,7 +11,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ServiceNode } from '@internal/core';
+import { type Graph, nodeAddresses, type ServiceNode } from '@internal/core';
 import type {
   ContainerDescriptor,
   ContainerInstance,
@@ -30,12 +30,17 @@ import * as Layer from 'effect/Layer';
 import type { ComposerConfigSource } from '../../composer-config.ts';
 import { dotenv } from '../../config-adapters.ts';
 import {
+  APP_SECRETS_ENV,
+  CONFIGURATION_FILE_ENV,
+  NODE_ADDRESSES_ENV,
+} from '../../configuration-file.ts';
+import {
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
   engineFailureFilePath,
 } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
-import { type AlchemyInvocation, alchemyCommandLine } from '../../run-alchemy.ts';
+import { type AlchemyInvocation, alchemyCommandLine, spawnCommandLine } from '../../run-alchemy.ts';
 import { RUN_REPORT_VERSION } from '../../run-report.ts';
 import { type DeployEvent, deployWithDeps } from '../deploy.ts';
 import { type DestroyInput, destroyWithDeps } from '../destroy.ts';
@@ -3870,3 +3875,202 @@ describe.skipIf(process.platform === 'win32')(
     }, 20_000);
   },
 );
+
+/** An app whose root declares `input: type({ GREETING: 'string' })` and binds it, an app configuration key and a secret into its service. */
+function makeSecondProcessAppDir(): { dir: string; entryPath: string } {
+  const app = makeAppDir('hello-second');
+  fs.writeFileSync(
+    app.entryPath,
+    [
+      `import { module, paramSource, secretSource, service } from ${JSON.stringify(coreIndex)};`,
+      `import { type } from ${JSON.stringify(arktypeEntry)};`,
+      '',
+      "const configured = (key) => paramSource({ key }, { label: `configured('${key}')`, configurationKey: key });",
+      "const secret = (key) => secretSource({ key }, { label: `secret('${key}')`, secretsKey: key });",
+      '',
+      'const app = service({',
+      "  name: 'app',",
+      "  extension: 'fixture-extension',",
+      "  type: 'fixture/compute',",
+      '  inputs: {},',
+      '  params: {},',
+      "  input: { '~standard': { version: 1, vendor: 'fixture', validate: (value) => ({ value }) } },",
+      "  build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
+      '});',
+      '',
+      "export default module('hello-second', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {",
+      '  provision(app, {',
+      "    id: 'app',",
+      "    input: { greeting: input.GREETING, origin: configured('APP_ORIGIN'), key: secret('S13_SECRET') },",
+      '  });',
+      '});',
+      '',
+    ].join('\n'),
+  );
+  return app;
+}
+
+/** Every file under `dir`, recursively. */
+function filesUnder(dir: string): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return filesUnder(full);
+    return entry.isFile() ? [full] : [];
+  });
+}
+
+describe('the second process reads what the first process checked', () => {
+  const values = () => ({
+    GREETING: 'hello',
+    APP_ORIGIN: 'https://origin.example',
+    UNUSED: 'x',
+  });
+
+  for (const exitCode of [0, 1]) {
+    test(`deploy writes the configuration file before the second process starts and deletes it after, mode 0600, holding only what Load read (exit ${String(exitCode)})`, async () => {
+      const app = makeSecondProcessAppDir();
+      let graph: Graph | undefined;
+      let file: string | undefined;
+      let seen: { mode: number; json: unknown; addresses: string | undefined } | undefined;
+
+      await silently(() =>
+        deployWithDeps(
+          {
+            config: composerConfig({
+              ...fakeConfig({
+                preflight: async (input) => {
+                  graph = input.graph;
+                  return undefined;
+                },
+              }),
+              config: [values],
+            }),
+            entry: app.entryPath,
+            environment: 'staging',
+            cwd: app.dir,
+          },
+          {
+            runAssembler: fakeAssembler,
+            alchemy: async (input) => {
+              file = input.env[CONFIGURATION_FILE_ENV];
+              if (file === undefined) throw new Error('no configuration file named');
+              seen = {
+                mode: fs.statSync(file).mode & 0o777,
+                json: JSON.parse(fs.readFileSync(file, 'utf8')),
+                addresses: input.env[NODE_ADDRESSES_ENV],
+              };
+              return { exitCode, signal: null };
+            },
+          },
+        ),
+      );
+
+      if (graph === undefined || file === undefined) throw new Error('the deploy did not run');
+      expect(seen).toEqual({
+        mode: 0o600,
+        json: {
+          rootInput: [{ path: ['GREETING'], value: 'hello' }],
+          values: { APP_ORIGIN: 'https://origin.example' },
+        },
+        addresses: JSON.stringify(nodeAddresses(graph)),
+      });
+      expect(fs.existsSync(file)).toBe(false);
+    });
+  }
+
+  test('destroy writes and deletes the configuration file the same way, and reads no secrets', async () => {
+    const app = makeSecondProcessAppDir();
+    fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
+    fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
+    let file: string | undefined;
+    let json: unknown;
+
+    const result = await silently(() =>
+      destroyWithDeps(
+        {
+          config: composerConfig({
+            ...fakeConfig(),
+            config: [values],
+            secrets: [throwingAdapter('destroy must not read secrets')],
+          }),
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async (input) => {
+            file = input.env[CONFIGURATION_FILE_ENV];
+            if (file === undefined) throw new Error('no configuration file named');
+            json = JSON.parse(fs.readFileSync(file, 'utf8'));
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(json).toEqual({
+      rootInput: [{ path: ['GREETING'], value: 'hello' }],
+      values: { APP_ORIGIN: 'https://origin.example' },
+    });
+    if (file === undefined) throw new Error('the destroy did not run');
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
+  test.skipIf(process.platform === 'win32')(
+    'dev hands the second process the app secrets the graph names through its environment, never in a file',
+    async () => {
+      const app = makeSecondProcessAppDir();
+      const attachment: LocalTargetAttachment = {
+        startServices: () => Promise.resolve(),
+        stopApp: () => Promise.resolve(),
+        endpoints: () => Promise.resolve([]),
+        logs: async function* () {},
+      };
+      const configurationFile = path.join(
+        app.dir,
+        '.prisma-composer',
+        'dev',
+        'dev',
+        'configuration.json',
+      );
+      let secretsEnv: string | undefined;
+      let fileDuringConverge = false;
+      let filesHoldingSecret: string[] = [];
+
+      const result = await silently(() =>
+        devWithDeps(
+          {
+            config: composerConfig({
+              ...devConfigWith(attachment),
+              config: [values],
+              secrets: [() => ({ S13_SECRET: 'dev-secret-value', OTHER: 'not-named' })],
+            }),
+            entry: app.entryPath,
+            cwd: app.dir,
+            detach: true,
+          },
+          {
+            runAssembler: fakeAssembler,
+            alchemy: async (input) => {
+              secretsEnv = input.env[APP_SECRETS_ENV];
+              fileDuringConverge = fs.existsSync(configurationFile);
+              filesHoldingSecret = filesUnder(app.dir).filter((candidate) =>
+                fs.readFileSync(candidate, 'utf8').includes('dev-secret-value'),
+              );
+              return { exitCode: 0, signal: null };
+            },
+          },
+        ),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(secretsEnv).toBe('{"S13_SECRET":"dev-secret-value"}');
+      expect(filesHoldingSecret).toEqual([]);
+      expect(fileDuringConverge).toBe(true);
+      expect(fs.existsSync(configurationFile)).toBe(false);
+    },
+    15_000,
+  );
+});

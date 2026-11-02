@@ -14,7 +14,7 @@ plugin({
     build.module(
       '@prisma/composer/deploy',
       js(
-        'export const lower = (app, config, opts) => { console.log(JSON.stringify({ app: app.name, extensions: config.extensions.map((e) => e.id), state: config.state.extension, environment: opts.environment, configPool: opts.configPool, ...(globalThis.stubPools === undefined ? {} : { pools: globalThis.stubPools }) })); return {}; };',
+        'export const lower = (app, config, opts) => { console.log(JSON.stringify({ app: app.name, extensions: config.extensions.map((e) => e.id), state: config.state.extension, environment: opts.environment, checkedConfiguration: opts.checkedConfiguration, checkedNodeAddresses: opts.checkedNodeAddresses, ...(globalThis.stubLocal === undefined ? {} : { local: globalThis.stubLocal }) })); return {}; };',
       ),
     );
     build.module(
@@ -26,15 +26,15 @@ plugin({
       js('export const deserializeContainers = () => new Map();'),
     );
     build.module(
-      '@prisma/composer/internal/pools',
+      '@prisma/composer/internal/configuration-file',
       js(
-        "export const readConfigPool = async (section, input) => ({ read: 'config', environment: input.environment, configFile: input.configFile }); export const readSecretsPool = async () => ({ read: 'secrets' });",
+        "export const readCheckedConfiguration = () => ({ configuration: { rootInput: [], values: { read: 'checked' } }, nodeAddresses: ['stub-address'] }); export const appSecretsFromEnvironment = () => ({ read: 'secrets' });",
       ),
     );
     build.module(
       '@prisma/composer/local-target',
       js(
-        "export const devEnvironmentDir = (environment) => '.dev/' + environment; export const devState = () => ({}); export const localTargetProviders = (resolved, containers, devDir, pools) => { globalThis.stubPools = pools; return {}; }; export const resolveLocalTargets = async () => new Map();",
+        "export const devEnvironmentDir = (environment) => '.dev/' + environment; export const devState = () => ({}); export const localTargetProviders = (resolved, containers, devDir, configuration, secrets) => { globalThis.stubLocal = { configuration, secrets }; return {}; }; export const resolveLocalTargets = async () => new Map();",
       ),
     );
   },

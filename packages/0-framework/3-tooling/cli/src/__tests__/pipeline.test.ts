@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
 import { runPipeline } from '../pipeline.ts';
+import { KnownSecrets } from '../redaction.ts';
 import prismaConfig from './fixtures/pipeline/prisma.config.ts';
 import appConfigurationConfig from './fixtures/pipeline-app-configuration/prisma.config.ts';
 import adaptersConfig from './fixtures/pipeline-config-adapters/prisma.config.ts';
@@ -102,5 +103,59 @@ describe('runPipeline()', () => {
     });
     await expect(read).rejects.toMatchObject({ code: 'CONFIG.ADAPTER_FAILED' });
     expect(called).toBe(1);
+  });
+
+  test('runPipeline reads the app secrets before the app configuration', async () => {
+    const composer = appConfigurationConfig.composer;
+    if (composer === undefined) throw new Error('the fixture declares a composer section');
+    const order: string[] = [];
+    const source = {
+      value: {
+        ...composer,
+        config: [
+          () => {
+            order.push('config');
+            return { CONFIG_POOL_PROBE: 'probe' };
+          },
+        ],
+        secrets: [
+          () => {
+            order.push('secrets');
+            return {};
+          },
+        ],
+      },
+      file: path.join(appConfigurationDir, 'prisma.config.ts'),
+    };
+
+    await runPipeline(undefined, undefined, 'staging', appConfigurationDir, source, {
+      ...noAssembly,
+      readSecrets: true,
+    });
+
+    expect(order).toEqual(['secrets', 'config']);
+  });
+
+  test('runPipeline adds the values under every envSecret() name to the known secrets', async () => {
+    const composer = appConfigurationConfig.composer;
+    if (composer === undefined) throw new Error('the fixture declares a composer section');
+    const knownSecrets = new KnownSecrets();
+    const source = {
+      value: {
+        ...composer,
+        config: [() => ({ CONFIG_POOL_PROBE: 'probe', S11_SECRET: 'from-config' })],
+        secrets: [() => ({ S11_SECRET: 'from-secrets' })],
+      },
+      file: path.join(appConfigurationDir, 'prisma.config.ts'),
+    };
+
+    await runPipeline(undefined, undefined, 'staging', appConfigurationDir, source, {
+      ...noAssembly,
+      readSecrets: true,
+      knownSecrets,
+    });
+
+    expect(knownSecrets.values()).toContain('from-config');
+    expect(knownSecrets.values()).toContain('from-secrets');
   });
 });
