@@ -1,5 +1,6 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { expectTypeOf, test } from 'vitest';
+import { string } from '../config.ts';
 import type {
   InputBinding,
   ModuleContext,
@@ -8,7 +9,8 @@ import type {
   SecretString,
   Value,
 } from '../exports/index.ts';
-import { module, SecretBox, secretSource } from '../exports/index.ts';
+import { module, resolve, resource, SecretBox, secretSource, service } from '../exports/index.ts';
+import type { INPUT_DICTIONARY, NotInputDictionary } from '../value.ts';
 
 type ShopOut = {
   EMAIL_FROM: string;
@@ -29,7 +31,7 @@ declare const unionSchema: StandardSchemaV1<
 >;
 declare const flagSchema: StandardSchemaV1<unknown, { flag: boolean; kind: 'a' | 'b' }>;
 declare const fitsSchema: StandardSchemaV1<{ EMAIL_FROM: string }>;
-declare const misfitsSchema: StandardSchemaV1<{ missing: string }>;
+declare const plainSchema: StandardSchemaV1<unknown, { host: string; port: number }>;
 
 let otherField!: ModuleInputField<string>;
 
@@ -51,7 +53,7 @@ test("each input field is a value typed from the schema's output", () => {
     // @ts-expect-error a secret field has no members
     void input.signingKey.expose;
     expectTypeOf<RealValue<typeof input.count>>().toEqualTypeOf<number>();
-    expectTypeOf<RealValue<typeof input>>().toEqualTypeOf<ShopOut>();
+    expectTypeOf(input).not.toExtend<Value<unknown>>();
     // @ts-expect-error the schema has no such field
     void input.nope;
     // @ts-expect-error an input field is read-only
@@ -123,14 +125,50 @@ test('provision() requires input exactly when the module declares it', () => {
   });
 });
 
-test('the whole input forwards into a child whose input type it satisfies', () => {
+test('no binding accepts the whole input, even where its fields would fit', () => {
   const fits = module('fits', { input: fitsSchema }, () => {});
-  const misfits = module('misfits', { input: misfitsSchema }, () => {});
-  module('shop', { input: shopSchema }, ({ input, provision }) => {
-    provision(fits, { input });
-    // @ts-expect-error the input has no `missing` field
-    provision(misfits, { input });
+  const echo = service({
+    name: 'echo',
+    extension: 'test/pack',
+    type: 'fake/compute',
+    inputs: {},
+    params: { label: string() },
+    input: plainSchema,
+    build: {
+      extension: '@prisma/composer/node',
+      type: 'node',
+      module: 'file:///s.ts',
+      entry: 's.js',
+    },
   });
+  module('shop', { input: shopSchema }, ({ input, provision }) => {
+    provision(fits, { input: { EMAIL_FROM: input.EMAIL_FROM } });
+    // @ts-expect-error the whole input is not a value
+    provision(fits, { id: 'two', input });
+  });
+  module('shop', { input: plainSchema }, ({ input, provision }) => {
+    provision(echo, { input: { host: input.host }, params: { label: input.host } });
+    resolve([input.host], ([host]) => host);
+    resource({ name: 'site', extension: 'test/pack', props: { host: input.host } });
+    // @ts-expect-error the whole input is not a value
+    provision(echo, { id: 'two', input });
+    // @ts-expect-error the whole input is not a value, at any depth
+    provision(echo, { id: 'three', input: { all: [input] } });
+    // @ts-expect-error the whole input is not a value
+    provision(echo, { id: 'four', input: {}, params: { label: input } });
+    // @ts-expect-error the whole input is not a value
+    resolve([input], () => 'x');
+    // @ts-expect-error the whole input is not a value
+    resource({ name: 'two', extension: 'test/pack', props: input });
+    // @ts-expect-error the whole input is not a value, at any depth
+    resource({ name: 'three', extension: 'test/pack', props: { all: { nested: input } } });
+  });
+});
+
+test('the type error says to pass the fields on by name', () => {
+  expectTypeOf<
+    NonNullable<NotInputDictionary[typeof INPUT_DICTIONARY]>
+  >().toEqualTypeOf<'the whole input of a module is not a value; pass its fields on by name'>();
 });
 
 test("a service's input binding takes values standing for a secret, an optional field, or a nested object holding a secret", () => {

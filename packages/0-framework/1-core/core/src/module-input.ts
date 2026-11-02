@@ -1,7 +1,13 @@
 import { blindCast } from '@internal/foundation/casts';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { LoadError, type NodeId } from './graph-types.ts';
-import { type InputOrigin, VALUE, VALUE_ORIGIN, type Value } from './value.ts';
+import {
+  type INPUT_DICTIONARY,
+  type InputOrigin,
+  VALUE,
+  VALUE_ORIGIN,
+  type Value,
+} from './value.ts';
 
 const INSPECT = Symbol.for('nodejs.util.inspect.custom');
 
@@ -30,10 +36,14 @@ type Fields<O, Absent> = {
 type FieldType<O, K extends keyof O> =
   Record<never, never> extends Pick<O, K> ? O[K] | undefined : O[K];
 
-/** The `input` a module body receives for its input schema `S`: one value per field, typed from the schema's output (ADR-0061). */
-export type ModuleInput<S extends StandardSchemaV1> = ModuleInputField<
-  StandardSchemaV1.InferOutput<S>
->;
+/**
+ * The `input` a module body receives for its input schema `S`: a dictionary
+ * with one value per field, typed from the schema's output (ADR-0061). It is
+ * not itself a value, and no binding accepts it: pass its fields on by name.
+ */
+export type ModuleInput<S extends StandardSchemaV1> = {
+  readonly [INPUT_DICTIONARY]: true;
+} & FieldsOf<StandardSchemaV1.InferOutput<S>>;
 
 /** `input` or `input.a.b`: how an error names an input field. */
 export function inputFieldLabel(origin: InputOrigin): string {

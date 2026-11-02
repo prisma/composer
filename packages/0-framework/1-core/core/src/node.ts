@@ -14,6 +14,7 @@ import {
   type EnvironmentFacts,
   isPlainObject,
   isValue,
+  type NotInputDictionary,
   originOf,
   type PlainData,
   type SourceOrigin,
@@ -289,7 +290,7 @@ export type InputBinding =
   | SecretSource
   | Value<InputBindingData>
   | readonly InputBinding[]
-  | { readonly [key: string]: InputBinding };
+  | ({ readonly [key: string]: InputBinding } & NotInputDictionary);
 
 /**
  * What `provision(module, { input })` accepts where the module's input schema
@@ -308,7 +309,7 @@ export type ModuleInputBinding<T> =
               readonly [K in keyof T]:
                 | ModuleInputBinding<T[K]>
                 | (Record<never, never> extends Pick<T, K> ? Value<T[K] | undefined> : never);
-            }
+            } & NotInputDictionary
           : T);
 
 /** A module input schema's Standard Schema input type. */
@@ -381,7 +382,7 @@ export interface ResourceNode<
 }
 
 /** A resource's configuration: plain data and values, nested in objects and arrays. */
-export type ResourceProps = { readonly [key: string]: ResourcePropsMember };
+export type ResourceProps = { readonly [key: string]: ResourcePropsMember } & NotInputDictionary;
 export type ResourcePropsMember =
   | string
   | number
@@ -389,7 +390,7 @@ export type ResourcePropsMember =
   | null
   | Value<PlainData>
   | readonly ResourcePropsMember[]
-  | { readonly [key: string]: ResourcePropsMember };
+  | ({ readonly [key: string]: ResourcePropsMember } & NotInputDictionary);
 
 /**
  * A Service: inputs + its own declared params + how it is built. Inspectable,
@@ -481,7 +482,7 @@ export interface ModuleContext<
 > {
   /** The module's declared dependencies as wiring values — pass them into provision(). */
   readonly deps: { [K in keyof D]: InputRef<D[K]> };
-  /** The module's input: one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. A root's input is the config pool, validated by its schema; a root passes on its fields one by one, never its whole input. Pass a field into a provision() binding or list it as a resolve() dependency. */
+  /** The module's input: a dictionary with one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. It is not itself a value: pass its fields on by name, into a provision() binding or, for a plain field, as a resolve() dependency. A root's input is the config pool, validated by its schema. */
   readonly input: I extends StandardSchemaV1 ? ModuleInput<I> : undefined;
   /** The deploy-time facts of the environment, each a value (ADR-0062). List `environment.name` as a `resolve()` dependency. Never environment variables: user code never reads those. */
   readonly environment: EnvironmentFacts;

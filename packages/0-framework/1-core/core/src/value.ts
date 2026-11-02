@@ -12,8 +12,10 @@ const VALUE_ORIGIN: unique symbol = blindCast<never, 'unique-symbol key for a va
 );
 // Type-only, never assigned: carries T so Value<number> is not a Value<string>.
 declare const VALUE_TYPE: unique symbol;
+// Type-only, never assigned: marks a module body's `input`, a dictionary of values that no binding accepts.
+declare const INPUT_DICTIONARY: unique symbol;
 
-export type { VALUE_TYPE };
+export type { INPUT_DICTIONARY, VALUE_TYPE };
 export { VALUE, VALUE_ORIGIN };
 
 /** Where Load gets a value's real value. Internal to core; not re-exported from the public barrel. */
@@ -63,6 +65,11 @@ export interface Value<T> {
   readonly [VALUE_TYPE]?: T;
   readonly [VALUE_ORIGIN]: ValueOrigin<T>;
 }
+
+/** Required of every object a binding accepts, so a module body's whole `input` fits none. The property's type is the message an author sees. */
+export type NotInputDictionary = {
+  readonly [INPUT_DICTIONARY]?: 'the whole input of a module is not a value; pass its fields on by name';
+};
 
 /** A value known only at boot (ADR-0062): its real value at deploy is a `Pointer<T>`, which names the platform variable the service reads at boot. */
 export type RuntimeValue<T> = Value<Pointer<T>>;

@@ -216,7 +216,7 @@ describe("the root's whole input never reaches a binding", () => {
 
   test("the root's whole input as a resolve() dependency is refused", () => {
     const root = module('shop', { input: schema }, ({ input, provision }) => {
-      provision(echoService(), { input: { all: resolve([input], ([i]) => i) } as never });
+      provision(echoService(), { input: { all: resolve([input as never], ([i]) => i) } as never });
     });
 
     expect(loadError(() => Load(root, { configPool: pool })).message).toBe(

@@ -385,3 +385,38 @@ test('the type error says a dependency must be a deploy-time value', () => {
     Dependencies<readonly [Value<{ smtp: { user: string | Pointer<string> } }>]>
   >().toEqualTypeOf<readonly [typeof NOT_DEPLOY_TIME]>();
 });
+
+test('a field read from the input binds, nested or optional, and the whole input does not, in both libraries', () => {
+  const arkNestedChild = module('ark-nested', { input: arkNested }, () => {});
+  const zodNestedChild = module('zod-nested', { input: zodNested }, () => {});
+  module('m', { input: arkNested }, ({ input, provision }) => {
+    expectTypeOf(input.smtp.user).toEqualTypeOf<ModuleInputField<string | Pointer<string>>>();
+    expectTypeOf(input.replyTo).toEqualTypeOf<
+      ModuleInputField<string | Pointer<string> | undefined>
+    >();
+    provision(arkNestedChild, {
+      input: { smtp: input.smtp, replyTo: input.replyTo, tags: input.tags },
+    });
+    provision(arkNestedChild, {
+      id: 'two',
+      input: { smtp: { user: input.smtp.user, password: input.smtp.password }, tags: input.tags },
+    });
+    // @ts-expect-error the whole input is not a value
+    provision(arkNestedChild, { id: 'three', input });
+  });
+  module('m', { input: zodNested }, ({ input, provision }) => {
+    expectTypeOf(input.smtp.user).toEqualTypeOf<ModuleInputField<string | Pointer<string>>>();
+    expectTypeOf(input.replyTo).toEqualTypeOf<
+      ModuleInputField<string | Pointer<string> | undefined>
+    >();
+    provision(zodNestedChild, {
+      input: { smtp: input.smtp, replyTo: input.replyTo, tags: input.tags },
+    });
+    provision(zodNestedChild, {
+      id: 'two',
+      input: { smtp: { user: input.smtp.user, password: input.smtp.password }, tags: input.tags },
+    });
+    // @ts-expect-error the whole input is not a value
+    provision(zodNestedChild, { id: 'three', input });
+  });
+});
