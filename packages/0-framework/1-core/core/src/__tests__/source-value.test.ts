@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { string } from '../config.ts';
-import { Load, LoadError } from '../graph.ts';
+import { Load, LoadError, nodeAddresses, secretsKeys } from '../graph.ts';
 import {
   isParamSource,
   isSecretSource,
@@ -122,5 +122,37 @@ describe('reading a source', () => {
         'literal or String()). A module body can only pass it on: into a provision() binding or ' +
         "as a resolve() dependency. To compute with it, list it: resolve([envParam('G')], ([v]) => …).",
     );
+  });
+});
+
+describe('secret names and node addresses', () => {
+  const secret = (key: string) =>
+    secretSource({ key }, { label: `secret('${key}')`, secretsKey: key });
+
+  test('secretSource() takes a secretsKey, which must be non-empty text', () => {
+    expect(() => secretSource({}, { secretsKey: '' })).toThrow(
+      'secretSource() secretsKey must be a non-empty string.',
+    );
+  });
+
+  test('secretsKeys lists the secrets key of every secret source the graph names, once each', () => {
+    const root = module('shop', ({ provision }) => {
+      provision(echoService(), { id: 'one', input: { key: secret('A') } });
+      provision(echoService(), { id: 'two', input: { key: secret('A') } });
+      provision(echoService(), { id: 'three', input: { key: secret('B') } });
+      provision(echoService(), { id: 'four', input: { key: secretSource({}) } });
+    });
+
+    expect(secretsKeys(Load(root))).toEqual(['A', 'B']);
+  });
+
+  test("nodeAddresses lists every node's address, sorted", () => {
+    const root = module('shop', ({ provision }) => {
+      provision(echoService(), { id: 'zeta', input: {} });
+      provision(echoService(), { id: 'alpha', input: {} });
+    });
+    const graph = Load(root);
+
+    expect(nodeAddresses(graph)).toEqual(graph.nodes.map(({ id }) => id).sort());
   });
 });

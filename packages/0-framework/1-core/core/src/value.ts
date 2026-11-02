@@ -43,6 +43,8 @@ export type ValueOrigin<T> =
       readonly label: string;
       /** The app configuration key whose text at deploy is the real value, as for `envParam()`. `undefined` for a value known only at boot, whose real value is `source`, a pointer. */
       readonly configurationKey: string | undefined;
+      /** The app secrets key that holds a secret source's value, as for `envSecret()`. `undefined` for any other source. */
+      readonly secretsKey: string | undefined;
       /** The source itself. Not enumerable, so a copy's origin compares equal and the origin holds no cycle. */
       readonly source: ParamSource | SecretSource;
     };

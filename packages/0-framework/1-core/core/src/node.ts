@@ -50,6 +50,12 @@ export interface SourceOptions {
   readonly label?: string;
 }
 
+/** What a deploy target says about a secret source it builds. */
+export interface SecretSourceOptions extends SourceOptions {
+  /** The app secrets key that holds this secret's value, as `envSecret('NAME')`'s `NAME`. Composer redacts the value under it wherever it prints, and `prisma dev` hands it to its second process. */
+  readonly secretsKey?: string;
+}
+
 /** What a deploy target says about a param source it builds. */
 export interface ParamSourceOptions extends SourceOptions {
   /** The app configuration key whose text at deploy is the source's real value, as for `envParam()`. Without one the source is known only at boot, and its real value is the source itself, a pointer. */
@@ -61,9 +67,13 @@ export interface ParamSourceOptions extends SourceOptions {
 /** Builds a secret source from a target-defined payload: the SPI a deploy target's own constructor (e.g. `envSecret`) calls. The source is a value whose real value at deploy is itself, a pointer. Core forwards it and never inspects the payload. */
 export function secretSource<P, T = unknown>(
   payload: P,
-  options?: SourceOptions,
+  options?: SecretSourceOptions,
 ): SecretSource<P> & Value<T> {
   const label = sourceLabel('secretSource', options?.label, 'a secret source');
+  const secretsKey = options?.secretsKey;
+  if (secretsKey !== undefined && (typeof secretsKey !== 'string' || secretsKey.length === 0)) {
+    throw new Error('secretSource() secretsKey must be a non-empty string.');
+  }
   return blindCast<
     SecretSource<P> & Value<T>,
     'the frozen object carries the value brand, a source origin whose source is itself, the source brand and the payload, which is the SecretSource and Value shape'
@@ -75,6 +85,7 @@ export function secretSource<P, T = unknown>(
         kind: 'source',
         label,
         configurationKey: undefined,
+        secretsKey,
       },
       'secret',
     ),
@@ -166,7 +177,7 @@ export function paramSource<P, T = unknown>(
     buildSource(
       PARAM_SOURCE,
       payload,
-      { kind: 'source', label, configurationKey },
+      { kind: 'source', label, configurationKey, secretsKey: undefined },
       configurationKey !== undefined ? undefined : redacted ? 'secret' : 'plain',
     ),
   );

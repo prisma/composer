@@ -258,7 +258,9 @@ export function computeDescriptor(
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
           {
             absentSecrets: o().preflight.absentSecrets,
-            ...(ctx.opts.configPool !== undefined ? { env: ctx.opts.configPool } : {}),
+            ...(ctx.opts.checkedConfiguration !== undefined
+              ? { env: ctx.opts.checkedConfiguration.values }
+              : {}),
           },
         );
         if (inputRow !== undefined) {

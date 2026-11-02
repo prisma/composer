@@ -265,3 +265,110 @@ describe('a source with a configuration key reads text', () => {
     );
   });
 });
+
+describe('what Load reads from the app configuration', () => {
+  const schema = type({ A: 'string', 'B?': 'string', C: 'string.integer.parse', D: 'string' });
+  const rootOf = (rootSchema: StandardSchemaV1) =>
+    module('shop', { input: rootSchema }, ({ input, provision }) => {
+      const fields = input as never as Record<string, never>;
+      provision(echoService(), { input: { a: fields['A'], b: fields['B'], c: fields['C'] } });
+    });
+  const configuration = { A: 'a', C: '4', D: 'unused', PATH: '/bin' };
+  const byPath = (left: { path: readonly string[] }, right: { path: readonly string[] }) =>
+    left.path.join('.').localeCompare(right.path.join('.'));
+
+  test('the graph records each root field the body names, with its checked value, and no other', () => {
+    const graph = Load(rootOf(schema), { configuration });
+
+    expect([...graph.checkedConfiguration.rootInput].sort(byPath)).toEqual([
+      { path: ['A'], value: 'a' },
+      { path: ['B'] },
+      { path: ['C'], value: 4 },
+    ]);
+  });
+
+  test('a root field JSON cannot hold exactly fails the Load, naming it', () => {
+    const dated = service({
+      name: 'echo',
+      extension: 'test/pack',
+      type: 'fake/compute',
+      inputs: {},
+      params: {},
+      input: type({ when: 'Date' }),
+      build,
+    });
+    const root = module(
+      'shop',
+      { input: type({ WHEN: type('string').pipe((text) => new Date(text)) }) },
+      ({ input, provision }) => {
+        provision(dated, { input: { when: input.WHEN } });
+      },
+    );
+
+    expect(loadError(() => Load(root, { configuration: { WHEN: '2026-01-01' } })).message).toBe(
+      'input.WHEN of root module "shop" holds an object that is not plain data, which JSON cannot hold exactly. The deploy hands the root\'s checked input to its second process in a JSON file, so a field the root\'s body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.',
+    );
+  });
+
+  test("the second process takes each root field from the checked configuration, without running the root's schema", () => {
+    const calls: unknown[] = [];
+    const counting: StandardSchemaV1 = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate: (value) => {
+          calls.push(value);
+          return { value: {} };
+        },
+      },
+    };
+
+    const graph = Load(rootOf(counting), {
+      checkedConfiguration: {
+        rootInput: [
+          { path: ['A'], value: 'from-file' },
+          { path: ['B'] },
+          { path: ['C'], value: 4 },
+        ],
+        values: {},
+      },
+    });
+
+    expect(calls).toEqual([]);
+    expect(bindingOf(graph)).toEqual({ a: 'from-file', c: 4 });
+  });
+
+  test('a root field missing from the checked configuration fails, saying the two processes built different graphs', () => {
+    const run = () =>
+      Load(rootOf(schema), {
+        checkedConfiguration: { rootInput: [{ path: ['A'], value: 'a' }], values: {} },
+      });
+
+    expect(loadError(run).message).toBe(
+      'input.B of root module "shop" is not in the configuration file. The first process\'s root body did not pass it on, so the deploy\'s two processes built different graphs. A module body must build the same graph every time; one that reads process.env, a file or the clock can build a different one.',
+    );
+  });
+
+  test('Load refuses configuration and checkedConfiguration together', () => {
+    const run = () =>
+      Load(rootOf(schema), {
+        configuration,
+        checkedConfiguration: { rootInput: [], values: {} },
+      });
+
+    expect(loadError(run).message).toBe(
+      'Load takes configuration, in the first process, or checkedConfiguration, in the second, not both.',
+    );
+  });
+
+  test('a root with no input records no fields', () => {
+    const root = module('shop', ({ provision }) => {
+      provision(echoService(), { input: {} });
+    });
+
+    expect(Load(root, { configuration: {} }).checkedConfiguration).toEqual({
+      rootInput: [],
+      values: {},
+    });
+  });
+});

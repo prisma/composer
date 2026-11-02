@@ -671,20 +671,34 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
     );
   }
   const moduleInputs: ProvisionedModuleInput[] = [];
+  if (opts?.configuration !== undefined && opts.checkedConfiguration !== undefined) {
+    throw new LoadError(
+      'Load takes configuration, in the first process, or checkedConfiguration, in the second, not both.',
+    );
+  }
   if (root.inputSchema !== undefined) {
-    if (opts?.configuration === undefined) {
+    if (opts?.checkedConfiguration !== undefined) {
+      moduleInputs.push({
+        moduleAddress: rootId,
+        schema: root.inputSchema,
+        binding: undefined,
+        isRoot: true,
+        checked: opts.checkedConfiguration.rootInput,
+      });
+    } else if (opts?.configuration !== undefined) {
+      moduleInputs.push({
+        moduleAddress: rootId,
+        schema: root.inputSchema,
+        binding: opts.configuration,
+        isRoot: true,
+      });
+    } else {
       throw new LoadError(
         `Module "${root.name}" declares input and is being deployed as the root, but Load was given ` +
           'no app configuration to fill it from. Pass { configuration } to Load; prisma deploy and prisma dev ' +
           'pass the values the `config` adapters return.',
       );
     }
-    moduleInputs.push({
-      moduleAddress: rootId,
-      schema: root.inputSchema,
-      binding: opts.configuration,
-      isRoot: true,
-    });
   }
 
   const nodes: GraphNode[] = [];
@@ -725,6 +739,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   const resolved = resolveValues({
     environment: opts?.environment,
     configuration: opts?.configuration,
+    checkedConfiguration: opts?.checkedConfiguration,
     inputBindings,
     params: paramBindings,
     moduleInputs,
@@ -748,6 +763,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
     inputBindings: resolved.inputBindings,
     params: resolved.params,
     secretSources: resolved.secretSources,
+    checkedConfiguration: resolved.checkedConfiguration,
   };
 }
 
