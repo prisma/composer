@@ -920,7 +920,7 @@ The root's schema checks the app configuration before anything is created, so a 
 
 A deploy reads the adapters once, in the command's own process. `prisma dev` reads them at start and again at each rebuild. The deploy engine runs in a second process, which runs no adapter. It reads the values it needs from the app configuration file, which the first process writes to `.prisma-composer/`. Only you can read that file, and it is deleted when the deploy ends. It is not `prisma.config.ts`. A root field your body passes on must hold data JSON can hold exactly: text, numbers, booleans, null, arrays and plain objects.
 
-The app configuration file never holds a secret. A deploy fails if a root field your body passes on has the same name as an `envSecret()` in the graph, or if any text in the file equals a secret's value (`CONFIG.SECRET_AS_PLAIN_VALUE`). The error names the field, never the value. Read the secret with `envSecret()`, or give the plain value text that is not a secret.
+The app configuration file never holds a secret. A deploy fails if a root field your body passes on has the same name as an `envSecret()` in the graph, or if any value in the file contains a secret's value, such as the password in a URL (`CONFIG.SECRET_AS_PLAIN_VALUE`). The error names the field, never the value. Read the secret with `envSecret()`, or give the plain value text that is not a secret.
 
 A value in `.env` or `.env.local` is read by every environment, including a
 `prisma deploy` to `production` from your machine.

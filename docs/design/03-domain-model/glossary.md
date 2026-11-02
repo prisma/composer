@@ -249,13 +249,29 @@ schema whose leaves are wrapped. For another Standard Schema library,
 
 The merged values the `config` adapters return for the environment, a later adapter winning by top-level key. "App" is what Composer calls the application, the outermost module, whose input it fills. It is the root module's input, checked by the root's schema, and what an `envParam('NAME')` reads `NAME` from, wherever it sits; the name a source reads is its **configuration key** (`paramSource()`'s `configurationKey`). With no `config` list it is the process environment, secrets included, so only the root fields its body passes on by name reach the graph. Only a command's first process reads it; the deploy's and `prisma dev`'s second process reads what the first process's Load read from the **app configuration file**. In code: `AppConfiguration`, `LoadOptions.configuration`.
 
+### Configuration key
+
+The name in the app configuration that a param source reads: `envParam('NAME')` reads `NAME`. See [the app configuration](#the-app-configuration). In code: `paramSource()`'s `configurationKey`, and `AppConfigurationRead.configurationKeyText`, the text the first process read under each one.
+
 ### The app secrets
 
 The merged values the `secrets` adapters return, text only. The name a secret source reads is its **secrets key** (`secretSource()`'s `secretsKey`; `envSecret('NAME')` passes `NAME`). Deploy preflight fills a missing `envSecret()` platform variable from it. `prisma dev` hands its second process only the **named secrets**, the values under the secrets keys the graph's `envSecret()`s name, in one environment variable, `PRISMA_COMPOSER_NAMED_SECRETS` (in code: `NamedSecrets`). Composer never passes it to Load or a schema, never writes its values to a file, and redacts them wherever it prints. With no `secrets` list it is the process environment. In code: `AppSecrets`.
 
+### Secrets key
+
+The name in the app secrets that a secret source reads: `envSecret('NAME')` reads `NAME`. See [the app secrets](#the-app-secrets). In code: `secretSource()`'s `secretsKey`, and `secretsKeys(graph)`, every secrets key a graph reads.
+
+### Named secrets
+
+The app secrets under the secrets keys the graph reads, each with text. Only `prisma dev` hands them to its second process, in one environment variable. See [the app secrets](#the-app-secrets). In code: `NamedSecrets`, `PRISMA_COMPOSER_NAMED_SECRETS`.
+
+### Known secrets
+
+The values one command knows are secrets: each value under a secrets key, and each value a written `secrets` list returns. The CLI refuses to write the app configuration file when a value in it contains a known secret. The CLI redacts the known secrets wherever it prints, together with **credential-looking values**: text of eight characters or more under a variable name that looks like a credential's, which might not be secrets ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). In code: `KnownSecrets`, and `SecretRedaction`, which holds both kinds.
+
 ### The app configuration file
 
-The JSON file a command's first process writes for its second process. It holds what Load read from the app configuration (the root input fields the root's body passes on, and the text of each configuration key the graph reads) and the first process's node addresses. It never holds a secret: Load and the CLI refuse to write one into it. Deploy and destroy write it to `.prisma-composer/app-configuration-<pid>-<uuid>.json` and delete it when the run ends. `prisma dev` writes it to `<dev environment dir>/app-configuration-<pid>.json` before each converge and deletes it as soon as that converge ends. Only its owner can read it. A file a forced exit left behind is deleted at the start of the next deploy, destroy or `prisma dev`. It is not `prisma.config.ts`, which is "the config file". In code: `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, `AppConfigurationRead`, `readAppConfigurationFile`.
+The JSON file a command's first process writes for its second process. It holds what Load read from the app configuration (the root input fields the root's body passes on, and the text of each configuration key the graph reads) and the first process's node addresses. It never holds a secret: Load and the CLI refuse to write one into it. Deploy and destroy write it to `.prisma-composer/app-configuration-<pid>-<uuid>.json` and delete it when the run ends. `prisma dev` writes it to `<dev environment dir>/app-configuration-<pid>.json` before each converge and deletes it as soon as that converge ends. Only its owner can read it. The CLI also deletes it when its process exits. A file left by a process killed outright is deleted at the start of a later deploy, destroy or `prisma dev`, once it is ten minutes old. It is not `prisma.config.ts`, which is "the config file". In code: `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, `AppConfigurationRead`, `readAppConfigurationFile`.
 
 ### Config adapter
 
