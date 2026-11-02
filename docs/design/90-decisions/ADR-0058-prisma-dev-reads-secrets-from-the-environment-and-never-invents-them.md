@@ -1,83 +1,73 @@
-# ADR-0058: `prisma dev` reads secrets from the environment and never invents them
-
-Amended 2026-10-30 (module-input project, fourth slice): under `prisma dev`, a secret comes from the secrets pool and an env-sourced param from the config pool, in the CLI and in the local `Deployment` provider, in place of `process.env`. Both pools default to the process environment, so `import 'dotenv/config'` still works. `dotenv()` is now the documented way to load `.env` files. This partly revisits the rejected "Load `.env` in Composer itself": Composer ships the loader, but the user still names it in `prisma.config.ts`, so the user still chooses where values come from. Listing `.env.<environment>` files per environment also removes this decision's warning for those files: a value in `.env.dev` is never read by `prisma deploy` to `production`. A value in `.env` or `.env.local` still is. When an adapter returns different values at a rebuild than at start, `prisma dev` pauses rebuilds until it is restarted.
-
-## Decision
-
-Under `prisma dev`, a secret's value comes only from the environment variables of the current run: the shell, or a `.env` file that `prisma.config.ts` loads into `process.env`. Composer never makes up a value and never reads one back from an earlier run.
-
-```bash
-npm install dotenv
-```
+# ADR-0058: `prisma dev` reads secrets from the app secrets and never invents them
 
 ```ts
 // prisma.config.ts
-import 'dotenv/config';
-import { defineConfig as composer } from '@prisma/composer/config';
+import { defineConfig as composer, dotenv, environmentVariables } from '@prisma/composer/config';
 // …
+composer({ /* … */ config: [dotenv(), environmentVariables()], secrets: [dotenv(), environmentVariables()] })
 ```
 
 ```text
-$ prisma dev module.ts
+$ prisma dev
 prisma dev cannot start:
 
 required secrets are not set:
   - STRIPE_SECRET_KEY  (required by service "billing": stripeKey must be present (was missing))
 
-Set each missing variable in either of these ways:
-  - export it in the shell you run `prisma dev` from, or
-  - load a .env file from prisma.config.ts: install the dotenv package and add import 'dotenv/config' at the top of prisma.config.ts.
-(process.loadEnvFile('.env') works too, but only when the CLI runs under Node: Bun does not implement it.)
+Set each missing variable where an adapter in prisma.config.ts reads it: the `secrets` list of the `composer` section for a secret, the `config` list for an env-sourced param. environmentVariables() reads the shell you run `prisma dev` from; dotenv() reads .env, .env.local, .env.dev and .env.dev.local beside prisma.config.ts.
 ```
 
-- **A required secret that is unset or empty stops `prisma dev`.** The error lists every missing variable, the service that needs it, the schema's message, and both ways to provide it. Empty counts as unset.
-- **An optional secret that is unset or empty reaches the service as absent.** Its input has no value for that field, and the schema decides what that means, as it does for an unset `envParam` leaf (ADR-0042).
-- **Required or optional is decided by validation, not by reading the schema.** For each service the dev preflight resolves the input binding with every unset secret left out and calls the schema's `validate`. If that passes, the missing secrets were optional. If it fails, the preflight checks each unset secret alone, leaving out only that one, and names as required only the secrets whose absence alone fails. When no single secret fails alone, the error says the service needs some of them, and does not call any one of them required. The framework never looks inside the schema (ADR-0042).
-- **The dev preflight hands the alchemy process a payload.** It travels on the same preflight transport that carries deploy's rotation timestamps (`PRISMA_COMPOSER_PREFLIGHT_<extension>`), with a `dev:` prefix that a deploy payload, always a JSON object, never starts with. It names the absent secrets and carries a fingerprint of the current value of each variable that a service's input or params point at, never the value. The serializer leaves an `envSecret` leaf out of the input document only when this payload names it absent.
-- **Env-sourced params keep their rule and get the same sourcing.** An unset or empty env-sourced param is still always an error. Like secrets, params are read fresh from the run's environment variables, never reused from an earlier run, and fingerprinted, so a changed value redeploys the services that read it.
-- **Composer never reads a secret back from storage.** The `secrets.json` store in `.prisma-composer/dev/` is gone, and `prisma dev` deletes a leftover one when it starts, because it holds credentials in plain text. The local `Deployment` provider reads current values from `process.env` in the alchemy process, which inherits the CLI's environment and re-imports `prisma.config.ts`. Each service gets only the variables its own rows point at: the `$secret` pointers in its input document and its param pointer rows. A service that runs a dev server ([ADR-0056](ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md)) is given the same environment, so the same values reach it, and a changed value restarts it.
-- **A changed value redeploys the services that read it.** Each `Deployment`'s triggers carry a `<name>:updatedAt` member per variable its rows point at. The key name is kept from deploy, where it was introduced; renaming it would redeploy every hosted deployment once. On a hosted deploy it holds the platform variable's `updatedAt`. Under `prisma dev` it holds the fingerprint from the payload: an HMAC-SHA256 of the value under a random 32-byte key that `prisma dev` creates once in `.prisma-composer/dev/<environment>/fingerprint.key`, one per environment that `prisma dev --environment` runs, (mode 0600). The member changes exactly when the value changes, so Alchemy updates that deployment and the local provider gives the service the new environment. Alchemy writes trigger members to its state as given, which is why the fingerprint is keyed: a bare hash of a short secret could be reversed by guessing. A lost key causes one redeploy, and `--fresh` deletes it.
-- **Deploy is unchanged.** Deploy's preflight, its input document and its errors are the same as before. Deploy sends no dev payload, so the serializer leaves nothing out.
+## Decision
 
-This amends the secrets bullet of [ADR-0041](ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md), under which an unset secret got a minted placeholder that was stored and reused, with a printed warning.
+Under `prisma dev`, a secret's value comes only from the app secrets, and an env-sourced param's only from the app configuration ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). `prisma dev` reads both in its first process, from the adapters the `composer` section lists, at start and at each rebuild. By default both lists are `[environmentVariables()]`, the shell; `dotenv()` reads `.env` files. Composer never makes up a value and never reads one back from an earlier run.
+
+- **A required secret that is unset or empty stops `prisma dev`.** The error lists every missing variable, the service that needs it, the schema's message, and where to set it. Empty counts as unset.
+- **An optional secret that is unset or empty reaches the service as absent.** Its input has no value for that field, and the schema decides what that means, as it does for an unset `envParam` leaf ([ADR-0042](ADR-0042-service-input-is-one-standard-schema.md)).
+- **Required or optional is decided by validation, not by reading the schema.** For each service the dev preflight resolves the input binding with every unset secret left out and calls the schema's `validate`. If that passes, the missing secrets were optional. If it fails, the preflight checks each unset secret alone and names as required only the secrets whose absence alone fails. When no single secret fails alone, the error says the service needs some of them, and calls none of them required.
+- **Env-sourced params get the same sourcing.** An unset or empty env-sourced param is always an error. Like secrets, params are read fresh each run and fingerprinted, so a changed value redeploys the services that read it.
+- **The second process receives the values; it reads none.** `prisma dev` runs Alchemy in a second process at start and at each rebuild. That process runs no adapter. It reads the app configuration's checked values from a configuration file, readable only by its owner, which `prisma dev` deletes as soon as that converge ends. It receives each app secret an `envSecret()` in the graph names through its environment, in `PRISMA_COMPOSER_APP_SECRETS`, in memory; no secret is written to a file for it.
+- **The dev preflight hands the second process a payload.** It travels on the preflight transport that carries deploy's rotation timestamps (`PRISMA_COMPOSER_PREFLIGHT_<extension>`), with a `dev:` prefix that a deploy payload, always a JSON object, never starts with. It names the absent secrets and carries a fingerprint of the current value of each variable that a service's input or params point at, never the value. The serializer leaves an `envSecret` leaf out of the input document only when this payload names it absent.
+- **Each service gets only the variables its own rows point at**: the `$secret` pointers in its input document and its param pointer rows. A service that runs a dev server ([ADR-0056](ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md)) is given the same environment, and a changed value restarts it.
+- **A changed value redeploys the services that read it.** Each `Deployment`'s triggers carry a `<name>:updatedAt` member per variable its rows point at. On a hosted deploy it holds the platform variable's `updatedAt`. Under `prisma dev` it holds the fingerprint from the payload: an HMAC-SHA256 of the value under a random 32-byte key that `prisma dev` creates once in `.prisma-composer/dev/<environment>/fingerprint.key` (mode 0600). Alchemy writes trigger members to its state as given, which is why the fingerprint is keyed: a bare hash of a short secret could be reversed by guessing. A lost key causes one redeploy, and `--fresh` deletes it.
+- **A changed adapter value pauses rebuilds.** When what the adapters return at a rebuild differs from what they returned at start, `prisma dev` keeps the values it started with and stops rebuilding until it is restarted, as it does after an edit to `prisma.config.ts`.
+- **Composer never reads a secret back from storage.** The `secrets.json` store in `.prisma-composer/dev/` is gone, and `prisma dev` deletes a leftover one when it starts.
+- **Deploy is unchanged by this decision.** Deploy sends no dev payload, so the serializer leaves nothing out.
 
 ## Reasoning
 
-ADR-0041 chose placeholders so that an app with a real external credential would still boot locally, and only the code that spends the credential would fail. In practice a service cannot tell a made-up value from a real key. A service that turns a feature on when its key is present turned it on with `local-placeholder-<hex>` and then failed in ways that pointed nowhere near the missing variable (prisma/composer#379). The stored value also never reached a service that was already deployed when the real value was set later, because nothing in the deployment's inputs changed (prisma/composer#380).
+An earlier local-dev decision ([ADR-0041](ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md)) gave an unset secret a minted placeholder, so that an app with a real external credential would still boot locally. In practice a service cannot tell a made-up value from a real key. A service that turns a feature on when its key is present turned it on with `local-placeholder-<hex>` and then failed in ways that pointed nowhere near the missing variable (prisma/composer#379). The stored value also never reached a service that was already deployed when the real value was set later (prisma/composer#380). Will rejected the placeholder model outright: users manage their environments themselves.
 
-Will rejected the placeholder model outright: "I think placeholder env vars is fucking insane … Users should manage their environments themselves using eg dotenv, or with the same model as the ORM, where env vars loaded in the config file propagate to the ORM commands' shells."
-
-That puts value management where the user already manages it. The Prisma CLI evaluates `prisma.config.ts` before it runs a command, so whatever the file loads into `process.env` is in the CLI's environment, and the alchemy process inherits it and loads the file again. A shell export and a `.env` loaded by the config file are therefore one mechanism, and the same one the ORM commands use.
+The user names where values come from, in `prisma.config.ts`, and Composer reads them there. Composer ships `dotenv()`, but the user still lists it, so the user still chooses the loader. Reading the adapters once, in the first process, means one read per run: the second process cannot see a value the first process did not check.
 
 Without a made-up value, an unset secret has to be either an error or absent. Which one is the schema's call, because ADR-0042 already makes the schema the only judge of whether a field may be missing. Leaving the secret out and validating asks exactly that question, with the schema treated as a black box.
 
-The engine needs the dev preflight's findings in the alchemy process, which re-imports the config from scratch, so they ride the existing preflight transport rather than a new channel. Deploy and dev keep one lowering (ADR-0041), and the lowering takes two dev-specific inputs from the payload: the absent names, which the serializer leaves out, and the fingerprints, which fill the trigger members through the same lookup that carries deploy's timestamps. Deploy sends neither.
-
-`process.loadEnvFile` is Node's own loader, but Bun does not implement it. When the CLI is started through Bun, Alchemy runs the converge under Bun and a config file that calls `process.loadEnvFile` throws there. `dotenv` works under both, so the error and the docs lead with it.
+The second process needs the dev preflight's findings and the secret values, and it runs no adapter, so the first process hands them over: the findings on the existing preflight transport, the secrets in its environment, in memory. A file would leave secrets on disk if `prisma dev` were killed.
 
 ## Consequences
 
-- Breaking for local dev: an app whose required secret is unset locally used to start with a made-up value and now stops with an error naming the variable. Optional secrets that are unset now arrive absent.
-- A service whose schema marks a secret optional runs locally without it, and sees the field as absent rather than as a value that fails later.
-- Changing a secret in the shell or in `.env` and running `prisma dev` again, without `--fresh`, restarts exactly the services whose rows point at it.
-- A service now receives only the secrets and env-sourced params its own input and params point at. Before, it received every secret and param of the app, so code that read `process.env.X` directly, where `X` is bound by another service, now gets nothing.
-- **A `.env` loaded by `prisma.config.ts` is read by every `prisma` command, including `prisma deploy`.** Deploy's preflight uploads any secret the target environment does not have yet from that environment, so a local-only value in `.env` becomes the hosted value. Keep local-only values out of `.env` before deploying, or deploy from a shell where `.env` is not loaded.
+- An app whose required secret is unset locally stops with an error naming the variable. Optional secrets that are unset arrive absent.
+- Changing a secret and running `prisma dev` again, without `--fresh`, restarts exactly the services whose rows point at it.
+- A service receives only the secrets and env-sourced params its own input and params point at. Code that reads `process.env.X` directly, where `X` is bound by another service, gets nothing.
+- **A value in `.env` or `.env.local` is read by every environment, including `prisma deploy` to `production`.** Deploy's preflight uploads any secret the target environment does not have yet, so a local-only value there becomes the hosted value. Put local-only values in `.env.dev` or `.env.dev.local`, which only the environment `dev` reads. A project that adopts `dotenv()` removes `import 'dotenv/config'` from `prisma.config.ts`, or `.env`'s values reach the shell's place in the order.
 - Each environment's folder under `.prisma-composer/dev/` holds its own fingerprint key, mode 0600. Alchemy's local state holds HMAC fingerprints of secret values, never the values.
 - The compute emulator keeps a copy of each running service's environment, secret values included, in its `instances.json` (mode 0600, in the machine-wide emulator directory, outside the project), so it can restart the service after the emulator itself restarts. Composer never reads that copy back. This is recorded in `.drive/deferred.md`.
-- Dev and deploy now write different input documents for the same app when an optional secret is unset. Given the dev payload, the shared lowering leaves the field out, as ADR-0042 promises for every env-bound leaf. Deploy still writes a `$secret` pointer and fails when the platform does not have the variable. The deferred deploy fix in `.drive/deferred.md` would make the two the same and bring deploy in line with ADR-0042.
+- Dev and deploy write different input documents for the same app when an optional secret is unset: dev leaves the field out, as ADR-0042 promises for every env-bound leaf, and deploy writes a `$secret` pointer and fails when the platform lacks the variable. The deferred deploy fix in `.drive/deferred.md` would make the two the same.
 
 ## Alternatives considered
 
-- **Keep placeholders.** Rejected for the reasons above: a made-up value is indistinguishable from a real one, and it hides the missing variable.
-- **Make every unset secret an error.** Simple, but contradicts ADR-0042, under which an optional field may be absent, and forces developers to invent values for features they do not use.
-- **Decide required or optional by reading the schema.** ADR-0042 forbids introspection: it couples the framework to each schema library's private representation.
-- **A plain SHA-256 fingerprint.** It lands in Alchemy's state inside the project, and a short or guessable secret can be recovered from it.
-- **Load `.env` in Composer itself.** Would add a second, Composer-specific way to set the environment, unlike the ORM, and take the choice of loader away from the user. It would be safer on one point: a `.env` that Composer loaded only under `prisma dev` would never reach `prisma deploy`, so deploy could not upload a local value from it. It was still rejected, because Will chose the ORM's model, in which the user owns their environment.
+- **Keep placeholders.** Rejected: a made-up value is indistinguishable from a real one, and it hides the missing variable.
+- **Make every unset secret an error.** Rejected: it contradicts ADR-0042, under which an optional field may be absent, and forces developers to invent values for features they do not use.
+- **Decide required or optional by reading the schema.** Rejected: ADR-0042 forbids introspection.
+- **A plain SHA-256 fingerprint.** Rejected: it lands in Alchemy's state inside the project, and a short or guessable secret can be recovered from it.
+- **Values only from the run's environment variables, with `import 'dotenv/config'` in `prisma.config.ts` as the way to load `.env`**, which an earlier version of this decision chose, following the ORM's model. Replaced by the adapters: the user still chooses the loader by listing it, and `.env.<environment>` files keep a value meant for `dev` away from `production`.
+- **Load `.env` in Composer itself, without the user naming a loader.** Rejected: it takes the choice of loader away from the user.
+- **The second process runs the adapters again.** Rejected: it could read values the first process never checked, and ask a secrets manager twice.
+- **Write the secrets the second process needs to a file.** Rejected: a killed `prisma dev` would leave them on disk.
 
 ## Related
 
-- [ADR-0041](ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md) — local dev runs the deploy pipeline against local providers; its secrets bullet is amended here.
+- [ADR-0041](ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md) — local dev runs the deploy pipeline against local providers.
 - [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md) — the input schema, the binding, and validation as the only judge of absence.
-- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) — the secrets model; unchanged.
-- [local-dev.md](../10-domains/local-dev.md) — value sourcing and the error surface.
-- [running-locally.md](../../guides/running-locally.md) — how to provide secrets locally.
+- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) — the secrets model.
+- [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md) — the adapters, the app configuration and the app secrets.
+- [local-dev.md](../10-domains/local-dev.md) and [running-locally.md](../../guides/running-locally.md).

@@ -430,7 +430,8 @@ interface Graph {
 interface LoadOptions {
   readonly id?: NodeId                              // the root's address; defaults to its name
   readonly environment?: { readonly name: string }  // required by any value over environment.name
-  readonly configPool?: Readonly<Record<string, unknown>>  // what a source's pool key reads, and the root's input; the commands pass what the config adapters return
+  readonly configuration?: Readonly<Record<string, unknown>>  // what a source's configuration key reads, and the root's input; the first process passes what the config adapters return
+  readonly checkedConfiguration?: CheckedConfiguration       // the second process passes what the first process's Load read, from the configuration file
 }
 function Load(root: ServiceNode | ModuleNode, opts?: LoadOptions): Graph   // throws LoadError
 class LoadError extends Error {}  // code COMPOSE.GRAPH_INVALID; optional `cause`
@@ -683,7 +684,8 @@ interface LowerOptions {
   readonly name: string                                  // stack name (+ Load's root id override)
   readonly environment?: string                          // the environment being deployed, as --environment gave it;
                                                          // Load's environment.name. The generated stack files always pass it.
-  readonly configPool?: Readonly<Record<string, unknown>>       // passed to Load and the serializer; the generated stack files pass readConfigPool()
+  readonly checkedConfiguration?: CheckedConfiguration     // passed to Load and the serializer; the generated stack files read it from the configuration file
+  readonly checkedNodeAddresses?: readonly string[]        // lowering refuses a graph whose addresses differ
   // `prisma deploy` runs each service's build-adapter assembler and writes
   // the resulting bundle dirs here, into the generated stack file it hands to
   // `lower()` — one bundle per provision id (the deploy root is always a

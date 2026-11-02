@@ -96,7 +96,7 @@ An **env-sourced** param mirrors the secrets rail (§ Secrets): the stored row i
 a pointer to the platform variable's NAME (discriminated from a JSON-encoded
 literal by the `@composer-param-pointer:` value prefix, which no JSON output
 can start with), deploy preflight verifies the name exists per environment (filling
-it from the config pool when absent, failing early otherwise), and boot does
+it from the app configuration when absent, failing early otherwise), and boot does
 the double-lookup — pointer, then platform variable. The differences from a
 secret are deliberate: the value reads back through `config()`, **unredacted**;
 the platform variable's **raw string** is handed to the param's own schema (no
@@ -141,7 +141,7 @@ return one object that is both the target's source and a
 
 | Where | `envParam()` | `envSecret()` | `generatedParam()` | `serviceOrigin()` |
 | --- | --- | --- | --- | --- |
-| A service's `input` binding | its string, read at serialize from the config pool; unset or empty leaves the key out | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
+| A service's `input` binding | its string, read at serialize from the app configuration; unset or empty leaves the key out | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
 | A service's `params` | kept; pointer row, as today | kept (fails at deploy, as today) | kept (fails at deploy, as today) | kept (fails at deploy, as today) |
 | A module's `input` binding | its string; unset or empty leaves the key out | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
 | A `resolve()` dependency | its string; unset or empty fails | refused | refused | refused |
@@ -158,7 +158,7 @@ unchanged.
 Where core needs a source's real value, in a module's input, a `resolve()`
 dependency or a resource's props, the source decides what that is.
 `envParam('NAME')` is deploy-time: its real value is the value of the variable
-`NAME` at deploy, read from the config pool Load is given, which the `config` adapters fill, by default from the process environment; an unset or empty variable
+`NAME` at deploy, read from the app configuration Load is given, which the `config` adapters fill, by default from the process environment; an unset or empty variable
 gives no real value. `envSecret('NAME')` is runtime: the deploy never holds the
 secret, so its real value at deploy is a pointer, the source itself, which the
 service dereferences at boot. `generatedParam()` and `serviceOrigin()` are
@@ -297,7 +297,7 @@ The round trip carries only the name, never the value:
    names.
 2. **Preflight.** Before Alchemy runs, the deploy verifies every bound name
    exists on the platform for the target environment's class/branch, filling a name
-   from the secrets pool when the platform lacks it (a direct write-only POST,
+   from the app secrets when the platform lacks it (a direct write-only POST,
    never an Alchemy resource, never overwriting an existing value). A name
    missing from both fails the deploy, listing exactly what's absent.
 3. **Pointer row.** The target writes a pointer per secret field — the generated key
