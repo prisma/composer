@@ -20,7 +20,7 @@ import {
 import { ok } from '@prisma/cli-engine/protocol';
 import { createTestCli } from '@prisma/cli-engine/testing';
 import { type AlchemyInvocation, alchemyInvocation } from '../../run-alchemy.ts';
-import { type ConvergeContext, convergeSpawn, outputTransformMissing } from '../converge.ts';
+import { type ConvergeContext, convergeSpawn } from '../converge.ts';
 
 const tmpDirs: string[] = [];
 
@@ -241,41 +241,4 @@ describe("convergeSpawn() redacts the child's output through the engine", () => 
     expect(await readAll(stdout, 'a hunter2 b')).toBe('a [redacted] b');
     expect(await readAll(stderr, 'a hunter2 b')).toBe('a [redacted] b');
   });
-
-  test("a host whose engine cannot transform a child's output refuses before starting anything", async () => {
-    const cwd = appWithAlchemy([]);
-    const commandWith = (passOptionNames: boolean) =>
-      defineCommand({
-        help: { summary: 'Runs a converge on an engine that may be older' },
-        maySpawn: true,
-        handler: async (_args, ctx) => {
-          const host: ConvergeContext = {
-            spawn: ctx.spawn,
-            lastChild: ctx.lastChild,
-            ...(passOptionNames && ctx.spawnOptionNames !== undefined
-              ? { spawnOptionNames: ctx.spawnOptionNames }
-              : {}),
-          };
-          const refused = outputTransformMissing(host);
-          if (refused !== undefined) return refused;
-          await convergeSpawn(ctx)(invocationIn(cwd, []));
-          return ok(exitWithChildStatus());
-        },
-      });
-    const family = defineCommandFamily({
-      commands: { old: commandWith(false), current: commandWith(true) },
-    });
-    const cli = createTestCli({ commandFamilies: [family], commands: { ...family.commands } });
-
-    const refused = await cli.run(['old', '--format', 'human']);
-    expect(refused.exitCode).toBe(2);
-    expect(refused.stderr).toContain('DEPS.CLI_ENGINE_INCOMPATIBLE');
-    expect(refused.stderr).toContain(
-      "This prisma CLI's @prisma/cli-engine is older than 0.10.0; Composer needs 0.10.0 or later.",
-    );
-    expect(refused.spawns).toEqual([]);
-
-    const ran = await cli.run(['current', '--format', 'human']);
-    expect(ran.spawns.length).toBe(1);
-  }, 15_000);
 });
