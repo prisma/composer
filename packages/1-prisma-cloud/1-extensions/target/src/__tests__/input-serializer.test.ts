@@ -572,6 +572,32 @@ describe('a secret forwarded through a module input', () => {
       key: { $secret: 'EMAIL_KEY' },
     });
   });
+
+  test("an object field passed on as a service's whole binding serializes with its pointers", () => {
+    const smtp = type({ user: field(type('string')), password: secretString() });
+    const email = module('email', { input: type({ smtp }) }, ({ input, provision }) => {
+      provision(svc(smtp), { input: input.smtp });
+    });
+    const graph = Load(
+      module('shop', ({ provision }) => {
+        provision(email, {
+          input: {
+            smtp: { user: serviceOrigin('shop.web'), password: envSecret('SMTP_PASSWORD') },
+          },
+        });
+      }),
+    );
+    const node = graph.nodes.find((entry) => entry.id === 'shop.email.web')?.node as ServiceNode;
+
+    const row = serializeInput(node, 'shop.email.web', graph.inputBindings[0]?.binding, {
+      env: {},
+    });
+
+    expect(JSON.parse(row?.value ?? '')).toEqual({
+      user: { $generated: 'COMPOSER_SHOP_EMAIL_WEB_USER_GENERATED', redacted: false },
+      password: { $secret: 'SMTP_PASSWORD' },
+    });
+  });
 });
 
 describe('an ArkType schema with a morph', () => {
