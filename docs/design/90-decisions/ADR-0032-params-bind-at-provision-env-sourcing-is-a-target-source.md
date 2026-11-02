@@ -1,175 +1,68 @@
 # ADR-0032: Params bind at provision; env-sourcing is a target-owned source
 
-Amended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module no longer declares `paramNeed()` slots; values reach a module through its `input`. `envParam` is unchanged.
-
-Amended 2026-10-29 (module-input project, third slice): `envParam('NAME')` returns a value, `ParamSource & Value<string>`, that is also the source. In a service's input binding and a service's params the target receives the source, so both work as before: an input leaf is read from the deploying shell when the target serializes it, and a param keeps its pointer row, read at boot. In a module's input and as a `resolve()` dependency, its real value is the variable's value at deploy, read from the process environment; an unset or empty variable has none. `paramSource()` takes an optional `label`, `poolKey`, `sentinel` and `redacted`.
-
-Amended 2026-10-30 (module-input project, fourth slice): `envParam('NAME')` reads `NAME` from the config pool everywhere it read the deploy shell: in a service's input when the target serializes it, in a module's input and `resolve()`, and when preflight fills the platform variable an `envParam()` param points at. The value must be text.
-
-Amended 2026-10-30 (module-input project, fifth slice): `paramNeed()`, `ParamNeed`, `ParamNeeds` and `ParamNeedBindings` are removed, with the module `params` slot. A module takes a value as a field of its `input`, which takes a literal as well as a source, so the rule that a module param slot takes only a source is gone with the slot. A service's per-key `params`, `paramSource()` and `envParam()` are unchanged.
-
-Amended 2026-10-30 (module-input project, seventh slice): `paramSource()` no longer takes `sentinel`, which the third-slice note above lists. Its `redacted` option alone sets the pointer's kind: `true` makes the source a secret pointer, and without it the source is a plain pointer ([ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)).
-
-## Decision
-
-A config param can be bound at `provision()` time — to a literal value or to a
-target-owned source such as `envParam('NAME')` — instead of only carrying an
-authoring-time `default`. An env-sourced param is the non-secret sibling of
-ADR-0029's secret: the same need/source split, the same per-stage platform
-variable, the same preflight — but read back through `config()`, validated by
-the param's own schema, and never redacted. Here is the whole lifecycle:
-
 ```ts
-// 1. The service declares the param — a schema, no value, no platform name.
-//    (string() is from @prisma/composer)
-const web = compute({
-  name: 'web',
-  params: { appOrigin: string() },
-  build: /* … */,
-});
+// 1. The service declares the param: a schema, no value, no platform name.
+const web = compute({ name: 'web', params: { appOrigin: string() }, build: /* … */ });
 
-// 2. The application binds it at provision — a literal, or a platform env
-//    var via envParam (from the target, @prisma/composer-prisma-cloud).
+// 2. The application binds it at provision: a literal, or envParam().
 export default module('app', ({ provision }) => {
   provision(web, { params: { appOrigin: envParam('APP_ORIGIN') } });
-  // …or a provision-time literal: { params: { appOrigin: 'https://example.com' } }
+  // …or a literal: { params: { appOrigin: 'https://example.com' } }
 });
 
-// 3. Inside the service, the value reads back through config(), like every
-//    other param — typed, schema-validated, unredacted.
+// 3. Inside the service, the value reads back like every other param.
 const { appOrigin } = web.config();   // string
 ```
 
-A module boundary forwards a param binding down to a child through a nameless
-`paramNeed()` slot, exactly the way it forwards a secret need — the same rail
-(ADR-0016/0029).
+## Decision
+
+A service's per-key param can be bound at `provision()` to a literal or to a target-owned source such as `envParam('NAME')`, instead of only carrying an authoring-time `default`. An env-sourced param is the plain sibling of [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md)'s secret: the same name-carried source, the same per-environment platform variable, the same preflight, but read back unredacted and validated by the param's own schema.
+
+`envParam('NAME')` returns a value, typed `Value<string>`, that is also the source ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). It reads `NAME` from the app configuration, what the `composer` section's `config` adapters return. Where it sits decides when:
+
+- **In a service's per-key params**, the deploy writes a pointer row naming the platform variable. Preflight fills a missing variable from the app configuration. The service reads the variable at boot.
+- **In a service's `input`**, the deploy writes the text into the service's input document. An unset or empty value leaves the key out, and the schema decides.
+- **In a module's `input` or as a `resolve()` dependency**, Load reads the text as the value's real value. An unset or empty value has none: in a binding the key is left out, and listed in `resolve()` it fails the Load, naming the variable.
+
+The value must be text; anything else fails the Load, naming the key and the kind of value, before anything is created. Core knows a source only as an opaque payload; `paramSource(payload, { label, configurationKey, redacted })` is the constructor a target calls. `configurationKey` is the app configuration key whose text is the source's real value at deploy; `redacted` makes a source known only at boot a secret pointer rather than a plain one. Prisma Cloud's `envParam('NAME')` passes `configurationKey: NAME`.
+
+The deploy reads the app configuration once, in its first process, and hands its second process the text of every key the graph reads, in the configuration file ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
 
 ## Reasoning
 
-**Why provision-time binding at all.** A param used to have exactly one source
-of a value: its authoring-time `default`. That made per-stage, per-application
-configuration — the canonical example is an application origin URL that differs
-between production and a preview stage — impossible to express without editing
-the service's own source. (Narrowed by ADR-0039: that example holds only for
-an origin the operator genuinely knows, such as a custom domain they
-provisioned. A service's own *platform-assigned* origin is never operator
-input — the target resolves it and exposes it as `ComputeService.origin()`.) Binding at `provision()` puts the value where the
-composition decision is made: the module declares *what* it needs (a schema),
-the application decides *what it is worth* (a literal) or *where it comes from*
-(a source). A binding beats the param's `default`; the `default` remains the
-fallback when nothing is bound; a param that is neither optional, defaulted,
-nor bound fails loudly when config is built at deploy, naming the param, the
-service, and the fix. (Previously such a param lowered silently with the value
-absent — a latent type-lie, since the typed `Values` said it was present.)
+**Why provision-time binding at all.** A param's only source of a value used to be its authoring-time `default`. That made per-environment configuration impossible without editing the service's own source. Binding at `provision()` puts the value where the composition decision is made: the service declares what it needs, the application decides what it is worth or where it comes from. A binding beats the `default`; the `default` is the fallback when nothing is bound; a param that is neither optional, defaulted nor bound fails the deploy, naming the param, the service and the fix. A service's own platform-assigned origin is not operator input: the target resolves it ([ADR-0039](ADR-0039-a-compute-services-own-origin-is-a-target-resolved-property.md)).
 
-**Why the source constructor is the target's.** Core knows what a `ParamSource`
-is only as an opaque, branded value it forwards; it never reads the payload.
-`envParam('NAME')` — which validates the platform variable name and builds the
-payload — ships with `@prisma/composer-prisma-cloud`, exactly as `envSecret`
-does. A different target could ship its own source kind with no change to core.
-This is ADR-0018/0019's declaration-versus-encoding split, applied to where a
-param's *value* comes from.
+**Why the source constructor is the target's.** Core forwards a `ParamSource` and never reads its payload. `envParam('NAME')` ships with `@prisma/composer-prisma-cloud`, as `envSecret` does. This is [ADR-0018](ADR-0018-config-params-carry-a-caller-owned-schema.md) and [ADR-0019](ADR-0019-the-target-owns-config-serialization.md)'s split between declaration and encoding, applied to where a value comes from.
 
-**Why the read stays `config()`.** An env-sourced param is still just a param:
-its sensitivity did not change, only its provenance. `load()`, `config()`,
-`secrets()` (ADR-0021/0029) split by what the value *is* — a dependency, plain
-config, a secret — not by where it came from. A fourth accessor keyed on
-provenance would force every consumer to know how the application happened to
-bind a value, which is precisely the coupling the need/source split removes.
-No redaction, no `SecretBox`: it's config.
+**The wire: a pointer, told apart by shape.** An env-sourced param's stored row carries the platform variable's name, not a value. It shares its key, `COMPOSER_<address>_<name>`, with a literal-bound param, so writer and reader tell them apart by the stored value. Literal values are JSON-encoded; a pointer row is `@composer-param-pointer:<NAME>`. No `JSON.stringify` output begins with `@`, so the two never collide.
 
-**The wire: a pointer, discriminated by shape.** At deploy, an env-sourced
-param's stored row carries the platform variable's NAME, not a value — the same
-pointer idea as a secret row. Unlike a secret, the row shares its key space
-with literal-bound params (both are the one generated key per param,
-`COMPOSER_<address>_<name>`), so writer and reader must tell a pointer from a
-literal by the stored value alone. Literal values are JSON-encoded; a pointer
-row is written as `@composer-param-pointer:<NAME>`. No `JSON.stringify` output
-can begin with `@` (JSON text begins with a quote, brace, bracket, digit, `-`,
-`t`, `f`, or `n`), so the discriminator is unambiguous and literal rows are
-byte-for-byte unchanged.
+**Boot: double lookup, then the schema, on the raw string.** Boot reads the pointer for the name, reads that platform variable, and hands the raw string to the param's own schema. A `number()` param bound to `envParam` fails at boot with the existing invalid-value error, because the variable is a string. An unset platform variable is a boot error naming the param, the pointer key and the variable. An empty string is a value, which reaches the schema like any other.
 
-**Boot: double-lookup, then the schema — on the raw string.** Boot reads the
-pointer for the name, then reads that platform variable, and hands the raw
-string to the param's own schema. There is no authoring-time restriction to
-string-output schemas and no decode step: a `string()` param works as expected;
-a `number()` or structured param bound to `envParam` fails at boot with the
-existing invalid-value error, because its schema receives a string. That
-failure mode is deliberate — the platform variable *is* a string, and inventing
-a coercion layer (or a static schema-shape check) buys little for the params
-that actually want env-sourcing, which are strings.
-
-Two boot rules differ from secrets, on purpose:
-
-- **An unset platform variable is a boot error** naming the param, the pointer
-  key, and the platform variable — a bound param means the application said the
-  value comes from there.
-- **An empty string is a value, not an absence.** It reaches the schema like
-  any other string and is valid iff the schema accepts it. Secrets treat empty
-  as unprovisioned; config semantics belong to the param's own schema.
-
-**Preflight covers env-sourced params like secrets.** Before anything is
-provisioned, the deploy verifies every env-sourced param's platform name exists
-for the target stage, fills a missing one from the deploy shell with a single
-write-only API call, and fails early — listing the names — when a name is
-absent from both. Param values are not sensitive by contract, but one
-mechanism is simpler, and the stricter write-only path costs nothing.
-Literal-bound params never touch the platform check.
+**Preflight covers env-sourced params as it covers secrets.** Before anything is provisioned, the deploy checks that every env-sourced param's platform name exists for the environment, fills a missing one from the app configuration with one write-only call, and fails early, listing the names, when the app configuration lacks it too.
 
 ## Consequences
 
-- Provision-time literals fix "params are default-only" as a side effect: a
-  literal binding is schema-validated when config is built and beats the
-  `default`.
-- A required param (no `default`, not `optional`) that nothing binds now fails
-  the deploy loudly instead of lowering silently with the value absent.
-- Env-sourced params are stringly at the boundary: bind `envParam` to a
-  non-string-schema param and boot fails validation. Lifting that (target-owned
-  decode before the schema, per ADR-0019) is an additive change if a real
-  consumer needs it.
-- Value changes need a redeploy to materialize — a compute version snapshots
-  its environment at creation. Same platform semantics as secret rotation
-  (ADR-0029).
-- The `@composer-param-pointer:` prefix is reserved only in raw stored-row
-  space, which literals never occupy: every service-owned literal is
-  JSON-encoded, so a string literal that itself starts with the prefix stores
-  with a leading quote, never matches the pointer check, and round-trips
-  intact. No literal value is restricted.
+- A provision-time literal is schema-validated when config is built, and beats the `default`.
+- A required param that nothing binds fails the deploy loudly.
+- Env-sourced params are strings at the boundary. Decoding before the schema, per ADR-0019, is an additive change if a real consumer needs it.
+- A value change needs a redeploy: a compute version snapshots its environment at creation.
+- The `@composer-param-pointer:` prefix is reserved only in raw stored-row space, which literals never occupy.
+- A name may not be read both by `envParam()` and by `envSecret()`; Load refuses it.
 
 ## Alternatives considered
 
-- **A fourth accessor (`env()` / `platformConfig()`).** Rejected: it keys the
-  read API on provenance, forcing consumers to know how the application bound
-  the value. The need/source split exists to keep that knowledge out of the
-  module.
-- **Restricting env-sourced params to string-output schemas at authoring.**
-  Rejected for v1: it needs static schema-shape inspection machinery (Standard
-  Schema exposes none portably), to prevent a failure boot already reports
-  clearly.
-- **A separate pointer key per param (a second row, like secrets).** Rejected:
-  it doubles the rows and leaves the primary key's absent-vs-pointer semantics
-  ambiguous; the value-shape discriminator keeps one key per param and leaves
-  literal rows untouched.
-- **Reusing the secrets channel for env-sourced params.** Rejected: it would
-  wrap plain config in `SecretBox` redaction and impose the non-empty rule,
-  both wrong for config; and a param has a schema to run, which secrets do not.
+- **A fourth accessor (`env()` or `platformConfig()`).** Rejected: it keys the read on provenance, forcing consumers to know how the application bound the value.
+- **Restricting env-sourced params to string-output schemas at authoring.** Rejected: it needs schema inspection, which Standard Schema does not offer portably, to prevent a failure boot already reports.
+- **A separate pointer key per param.** Rejected: it doubles the rows and leaves the primary key's meaning ambiguous.
+- **Reusing the secrets channel for env-sourced params.** Rejected: it would wrap plain config in redaction and impose the non-empty constraint.
+- **`paramNeed()` slots on modules**, which this decision first described as the way a module forwards a param binding. Replaced by fields of the module's `input` ([ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)).
+- **Reading `NAME` from the deploying shell.** Replaced by the app configuration, whose default, `[environmentVariables()]`, is the shell.
+- **A `sentinel` option on `paramSource()`**, a stand-in value schemas checked in place of a pointer. Replaced by pointers, which schemas see as they are ([ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)).
 
 ## Related
 
-- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) — the need/source
-  split, pointer-on-the-wire, and preflight this mirrors.
-- [ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md)
-  — the framework-minted sibling: a `provision` need's value is minted by the
-  framework per dependency edge and lives in deploy state, where an
-  `envParam` value is operator-supplied per stage, never enters deploy state,
-  and is read at boot. A param claiming both channels at once is a loud
-  lowering error.
-- [ADR-0018](ADR-0018-config-params-carry-a-caller-owned-schema.md) /
-  [ADR-0019](ADR-0019-the-target-owns-config-serialization.md) — schema on the
-  declaration, wire owned by the target.
-- [ADR-0021](ADR-0021-params-are-read-through-config-not-load.md) — why the
-  read stays `config()`.
-- [ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md) — the
-  forwarding rail `paramNeed()` rides on.
-- [`../10-domains/config-params.md`](../10-domains/config-params.md) — the
-  config model this extends.
+- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) — the secret this mirrors.
+- [ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md) — framework-minted param values, which live in deploy state.
+- [ADR-0018](ADR-0018-config-params-carry-a-caller-owned-schema.md) and [ADR-0019](ADR-0019-the-target-owns-config-serialization.md) — schema on the declaration, wire owned by the target.
+- [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md) — values and the app configuration.
+- [config-params.md](../10-domains/config-params.md).

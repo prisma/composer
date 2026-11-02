@@ -1,145 +1,74 @@
 # ADR-0029: A secret is an environment-sourced value the framework never stores
 
-Amended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module no longer declares `secret()` slots; a secret reaches a module as a `secretString()` field of its `input`. `envSecret` is unchanged.
-
-Amended 2026-10-29 (module-input project, third slice): `envSecret('NAME')` returns a value, `SecretSource & Value<SecretString>`, that is also the source. Wherever a binding took the source, the target receives the same object, so the pointer and boot are unchanged. Its real value at deploy is a pointer: a `resolve()` function that lists it receives the source itself, which throws when turned into text or a number, and may return it. Deploy preflight checks every `envSecret()` the graph names, including one a function lists but does not return, one in a module's input that no service receives, and one a function in a resource's props lists. `secretSource()` takes an optional `label`, the name errors use.
-
-Amended 2026-10-30 (module-input project, fourth slice): a name missing on the platform is filled from the secrets pool, what the `composer` section's `secrets` adapters return, in place of the deploy shell's environment. The default `secrets` list reads the process environment, so a project that sets no list behaves as before.
-
-Amended 2026-10-30 (module-input project, fifth slice): `secret()`, `SecretNeed`, `Secrets` and `SecretBindings` are removed, with the module `secrets` slot. What the Decision below calls a module's secret need is now a `secretString()` field of the module's `input`, which the module passes on and the root binds with `envSecret('NAME')`. So the module still never learns the platform name. `secretSource()`, `isSecretSource()` and `envSecret()` are unchanged.
-
-Amended 2026-10-30 (module-input project, eighth slice): a `resolve()` function cannot list `envSecret()`, so two statements of the third-slice note no longer hold. A function never receives the source and cannot return it: listing it fails to compile, and Load refuses it. And deploy preflight has no secret that only a function lists, or that a function in a resource's props lists, to check: Load refuses both, so every secret preflight checks is one a binding names ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
-
-## Decision
-
-A **secret** is one specific thing: a value the deployment reads from the
-environment **by name**, whose contents the framework never writes into deploy
-state. It is the sensitive member of the environment-input family —
-`envSecret(NAME)`, the sibling of `envParam(NAME)`. There is exactly one secret
-concept. A value the framework *generates* at deploy is a config param
-([ADR-0030](ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md),
-[ADR-0042](ADR-0042-service-input-is-one-standard-schema.md)) — it may live in
-deploy state and is **not** a secret.
-
-A service declares a secret as a field typed `secretString()` in its input
-schema; the application binds that field to a platform variable with
-`envSecret`; the service reads it back as a redacting box:
-
 ```ts
 // service.ts — the field's type says "a redacted value arrives here"
-const authInput = type({ baseUrl: 'string', signingKey: secretString() });
+const authInput = type({ baseUrl: field(type('string')), signingKey: secretString() });
 export default compute({ name: 'auth', input: authInput, /* … */ });
 
 // module.ts — only the application names the platform variable
-provision(auth, { input: { baseUrl: envParam('APP_ORIGIN'),
-                           signingKey: envSecret('AUTH_SIGNING_KEY') } });
+provision(auth, { input: { baseUrl: serviceOrigin('shop.web'), signingKey: envSecret('AUTH_SIGNING_KEY') } });
 
-// inside the service — one accessor; the value is redacted until asked for
+// inside the service — the value is redacted until asked for
 const { signingKey } = service.input();     // SecretString
 sign(payload, signingKey.expose());         // expose() is the one deliberate read
 ```
 
-Three pieces carry the whole model:
+## Decision
 
-- **`envSecret('NAME')` is the source** — it names the platform variable to
-  read. Only the application writes it, so a reusable module underneath stays
-  free of any platform name. It is the sensitive counterpart of `envParam`:
-  same environment-sourced, name-carried, never-in-state shape, plus redaction.
-- **`secretString()` is the type** — the field is typed as the framework's
-  redacting `SecretString`. Secretness is enforced by *validation*: binding a
-  plain literal where the schema expects a `SecretString` fails the deploy, and
-  binding `envSecret` where the schema expects a plain string fails the same
-  way. Neither side can silently misclassify.
-- **`service.input()` is the read** — one accessor returns the whole validated
-  input, secret fields as `SecretString` boxes. A `SecretString` prints
-  `[REDACTED]` from every stringify path (`toString`, `toJSON`, `valueOf`,
-  `inspect`); `.expose()` is the single call that hands back the raw value.
+A **secret** is a value the deployment reads from a platform variable **by name**, whose contents the framework never writes into deploy state, a file it generates, a log, the deploy report or an error. There is exactly one secret concept. A value the framework generates at deploy is a param ([ADR-0030](ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md), [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md)): it may live in deploy state and is not a secret.
 
-**The framework carries the name, never the value.** At deploy, the service's
-input document gets a *pointer* — the name of the platform variable, not its
-contents — written into the one input row:
+Three pieces carry the model:
+
+- **`envSecret('NAME')` is the source.** It names the platform variable to read. Only the application writes it, so a reusable module underneath stays free of any platform name. It returns a value, typed `RuntimeValue<SecretString>`, whose real value at deploy is a secret pointer ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). A module passes it on through a `secretString()` field of its `input` ([ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)). A `resolve()` function cannot list it.
+- **`secretString()` is the type.** The field is typed as the framework's redacting `SecretString`. A binding is typed from the schema, so binding a plain value where the schema expects a secret fails to compile, and so does binding `envSecret()` where it expects a plain string. Where the compiler sees no type, such as a schema without type information or a cast, validation fails the deploy instead.
+- **`service.input()` is the read.** It returns the whole validated input, secret fields as `SecretString` boxes. A box prints `[REDACTED]` from every stringify path (`toString`, `toJSON`, `valueOf`, `inspect`); `.expose()` is the one call that returns the value.
+
+**The framework carries the name, never the value.** At deploy, the service's input document gets a pointer, the name of the platform variable, not its contents:
 
 ```json
 { "baseUrl": "https://app.example", "signingKey": { "$secret": "AUTH_SIGNING_KEY" } }
 ```
 
-At boot the framework swaps each `$secret` pointer for a redacting box over the
-named variable, which the platform injects into the running instance. So a
-secret's value never passes through the framework's typed config, the generated
-deploy program, deploy state, or a log line — only its name does, and a name is
-as safe to write and diff as any other key. The input document is secret-free by
-construction, so the deploy report prints it verbatim.
+At boot the framework swaps each pointer for a redacting box over the named variable, which the platform injects into the running instance.
 
-Before provisioning, **deploy preflight** checks that every bound name exists on
-the platform for the target stage. A name missing there but present in the
-deploy shell's own environment is pushed up with a single write-only API call —
-never recorded as managed infrastructure, so even then the value never lands in
-deploy state. A name missing from both places fails the deploy early, with the
-list of what to set.
+**Preflight fills a missing variable from the app secrets.** Before anything is provisioned, deploy preflight checks that every name an `envSecret()` in the graph names exists on the platform for the environment. A missing name is filled from the app secrets, what the `composer` section's `secrets` adapters return ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)), with one write-only API call, never recorded as managed infrastructure. A name the app secrets lack fails the deploy early, listing what to set. Preflight fills only a variable that does not exist yet; to change one, change it on the platform.
 
-Finally, the **need lives in core and the source lives in the target.** At a
-module boundary a service still forwards a nameless secret *need* down into a
-child it provisions (`secret()`, core's `@prisma/composer`) exactly as it
-forwards an ordinary input — core treats the source as opaque and never reads
-inside it. The constructor that *builds* a source is the deploy target's:
-Prisma Cloud ships `envSecret('NAME')`, which validates an env-var name and
-brands it. A different target could ship `vaultSecret({ path, key })` with no
-change to core.
+**Composer redacts every secret it knows.** Everywhere it prints, including errors, an adapter's own failure message, the deploy engine's output and the engine's failure cause, Composer replaces with `[redacted]`: under every name an `envSecret()` in the graph names, the value in the app configuration and in the app secrets; and when a project writes its own `secrets` list, every value it returns. A known value is redacted at any length. The deploy engine runs in a second process. The CLI's command engine passes that process's output through Composer's redactor before it prints it, and the redactor holds back the end of each chunk until the next one, so a secret split across two chunks of output is caught too. Composer also still redacts what it redacted before this decision: an app configuration value of eight characters or more under a name that looks like a credential, bearer and basic tokens, JWTs, a password in a URL and `token=` pairs. That is existing behaviour, kept until secrets get a home apart from plain values.
+
+**The need lives in core and the source in the target.** Core's `secretSource(payload, { label, secretsKey })` builds a source from a target's payload, and never reads the payload. `secretsKey` is the app secrets key that holds the secret's value; Composer redacts the value under it, and `prisma dev` hands it to its second process. Prisma Cloud's `envSecret('NAME')` validates the name, brands the payload, and passes `secretsKey: NAME`. A different target could ship `vaultSecret({ path, key })` with no change to core.
 
 ## Reasoning
 
-**Why redaction is a type, not a flag.** A `secret: true` flag on an ordinary
-value makes every place that touches config — logging, serialization, a new
-export added a year from now — responsible for remembering to redact.
-Sensitivity that depends on everyone remembering leaks eventually. Typing the
-field as `SecretString` moves the guarantee into the type: redacted by default,
-`expose()` marking the one place code means to read it.
+**Why redaction is a type, not a flag.** A `secret: true` flag on an ordinary value makes every place that touches config responsible for remembering to redact. Typing the field as `SecretString` moves the guarantee into the type: redacted by default, with `expose()` marking the one place code means to read it.
 
-**Why names cross the boundary and values don't.** The deploy machine, the
-generated deploy program, and deploy state are all things we inspect, diff, and
-sometimes print — none was built to hold a secret safely. Rather than teach each
-of them to guard a value, the framework never carries one; it carries the
-platform variable's *name* and lets the platform inject the value straight into
-the running instance. This is already the shape a secrets-manager integration
-wants: nothing downstream ever held the value, so there is nothing to unwind.
+**Why names cross the boundary and values do not.** The deploy machine, the generated deploy program and deploy state are all things we inspect, diff and sometimes print; none was built to hold a secret. Rather than teach each to guard a value, the framework carries the platform variable's name and lets the platform inject the value into the running instance.
 
-**Why the application binds the name.** If a reusable module hard-coded the
-variable it reads, every application using it would be forced onto that one
-name, and two applications could never give it different secrets. A nameless
-need the composing application binds keeps the module reusable — the same rail
-ordinary inputs forward on.
+**Why Composer also redacts by value.** A secret's value still passes through Composer's process: preflight reads it to fill a missing variable, and `prisma dev` hands it to local services. An adapter's error, the deploy engine's output or a cause chain could carry it. So Composer replaces every value it knows a secret holds, wherever it prints. It cannot replace a secret it was never told about, which is why the set is the values the graph's `envSecret()`s name and the values a project's own secrets list returns; replacing every value in the shell would blank every `1` and `true`.
 
-**Why a secret is environment-sourced, and generated values are not secrets.**
-A secret's defining property is that its value stays out of deploy state — which
-is possible precisely because someone else (the operator, the platform) holds
-the value and the framework only references it. A value the framework itself
-produces at deploy has no external holder to reference; it must be stored to be
-stable. That value is a config param (ADR-0030's service key, a generated
-signing key) — it may be redacted for display, but redaction is a facet, not
-secretness. "Secret" names the environment-sourced, never-stored case alone.
+**Why the application binds the name.** If a reusable module hard-coded the variable it reads, every application using it would be forced onto that one name. A module that takes a `secretString()` field and lets its caller bind it stays reusable.
+
+**Why a secret is environment-sourced, and generated values are not secrets.** A secret's value stays out of deploy state because someone else, the operator or the platform, holds it. A value the framework produces at deploy has no external holder; it must be stored to be stable, so it is a param, which may be redacted for display.
 
 ## Consequences
 
-- Every framework-written variable carries a reserved `COMPOSER_` prefix, so it
-  can never collide with — and silently overwrite — a variable the user
-  provisioned.
-- Every secret field is required unless the schema makes it optional (a union
-  arm or an optional field) — presence is the schema's call, not a flag on the
-  secret.
-- Rotation is: change the value on the platform, then redeploy. A running
-  instance's environment is frozen when the instance is created.
-- Two input fields that normalize to the same platform variable name are a
-  deploy error (the pointer-name collision check), so a secret and a generated
-  param can never quietly share a variable.
+- Every framework-written variable carries a reserved `COMPOSER_` prefix, so it can never overwrite a variable the user provisioned.
+- A secret field is required unless the schema makes it optional; presence is the schema's call.
+- Rotation is: change the value on the platform, then redeploy. A running instance's environment is frozen when the instance is created.
+- Two input fields that normalize to the same platform variable name are a deploy error, so a secret and a generated param never share a variable.
+- A name may not be read both by `envParam()` and by `envSecret()`: Load refuses it, because the deploy hands its second process every plain value it reads, in a file.
+- A short secret is redacted at any length, so a one-character secret blanks that character in everything Composer prints.
+
+## Alternatives considered
+
+- **A forwardable `secret()` slot on modules**, which this decision first described as the need a module declares and its parent binds. Replaced by a `secretString()` field of the module's `input` ([ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)).
+- **A `resolve()` function that receives the secret's source**, which an earlier version of the values decision allowed. Rejected: a function cannot compute anything useful from a value the deploy does not have.
+- **Filling a missing variable from the deploying shell only.** Replaced by the app secrets, whose default, `[environmentVariables()]`, is the shell.
+- **Redacting only values of eight characters or more.** Rejected for known secrets: a secret Composer knows is redacted at any length. The minimum stays for values Composer only guesses are credentials from their names, which is the existing behaviour this decision keeps for now.
 
 ## Related
 
-- [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md) — the one-schema
-  input model a secret field lives in; where redaction-as-a-type is defined.
-- [ADR-0030](ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md)
-  — a generated param (a service key): the framework produces and stores it, so
-  it is config, not a secret.
-- [ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md) — the
-  input-forwarding rail a secret need rides on at a module boundary.
-- [`../10-domains/config-params.md`](../10-domains/config-params.md) — params and
-  their sources; the living vocabulary.
+- [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md) — the one-schema input model a secret field lives in.
+- [ADR-0030](ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md) — a generated param, which is config, not a secret.
+- [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md) and [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md) — module input, values, and the adapters.
+- [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md) — how `prisma dev` reads secrets.
+- [config-params.md](../10-domains/config-params.md).

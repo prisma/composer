@@ -58,7 +58,7 @@ covers those three
 - **`destroy`**, an operation on `@prisma/composer/control` with no command —
   tear an environment down (same derivation, Alchemy destroy); the
   environment is always named explicitly (see § Environments and containers). Users call it from a script.
-  It reads the config pool, because Load validates the root's input; it reads no secrets.
+  It runs the config adapters, because Load checks the root's input; it reads no secrets.
 - **`prisma dev`** — bring up the application whose root node
   is the entry module's default export (found as for deploy), entirely on this machine, credential-free —
   local counterparts of every provisioned resource, real service processes,
@@ -131,9 +131,9 @@ user can rerun it by hand (ADR-0007).
    digits, `-` and `_`; Load refuses any other. An app that uses
    `serviceOrigin()` can't be deployed under `--name`: the addresses in its
    code start with its own name, which then names no node.
-4. **Read the pools.** The CLI calls the `config` adapters, and for `deploy` the `secrets` adapters, in list order, each awaited, and merges what they return by top-level key, a later adapter winning. Both lists default to `[environmentVariables()]`. The config pool is Load's input: the root's input and what `envParam()` reads. The secrets pool is held in memory for preflight. An adapter that throws or returns something other than an object fails with `CONFIG.ADAPTER_FAILED` or `CONFIG.ADAPTER_INVALID`.
+4. **Read the app secrets and the app configuration.** For `deploy` the CLI first calls the `secrets` adapters, then for every command the `config` adapters, in list order, each awaited, and merges what each list returns by top-level key, a later adapter winning. Both lists default to `[environmentVariables()]`. The app configuration is Load's input: the root's input and what `envParam()` reads. The app secrets are held in memory for preflight. Every secret value read is recorded for redaction. An adapter that throws or returns something other than an object fails with `CONFIG.ADAPTER_FAILED` or `CONFIG.ADAPTER_INVALID`. No other process runs an adapter.
 5. **Load.** Core's `Load` walks the graph. The root's schema checks the
-   config pool as the root's input before anything is created. A service with
+   app configuration as the root's input before anything is created. A service with
    an unwired dependency slot (one an enclosing Module normally wires to a
    provisioned producer) fails here, with an error naming the input and
    pointing at the composing Module. The deploy root must be a Module — a bare
@@ -190,7 +190,7 @@ user can rerun it by hand (ADR-0007).
    destroy` re-imports and re-evaluates the same stack, so its target
    reconstruction needs the same containers. The generated file and Alchemy's
    state live in the process's working directory — tool state lives where you
-   run the tool, like any other CLI (ADR-0004). The generated stack file reads the config pool again, from the same adapters; it never reads the secrets pool.
+   run the tool, like any other CLI (ADR-0004). Beside it the CLI writes the configuration file, `.prisma-composer/configuration-<pid>-<uuid>.json`, mode 0600, holding what Load read from the app configuration, and deletes it when the run ends. The second process reads it, runs no adapter, and refuses a graph whose node addresses differ from the list the CLI passes in `PRISMA_COMPOSER_NODE_ADDRESSES`. It never receives the app secrets. The CLI engine passes its output through Composer's redactor, which replaces every secret value the CLI knows, before it prints it.
 
 The pass that assembles a service is the same pass that lowers it, so the
 correlation between services and their built bundles never exists as
@@ -301,8 +301,9 @@ them:
 | Node `(extension, type)` not covered | the extension to add to the `composer` section |
 | Missing extension env | the exact variable(s) the extension factory needed |
 | Built output missing | the expected path, and "run your build" |
-| Root's input refused by its schema | the schema's messages, and that a root's input is the config pool for the environment |
+| Root's input refused by its schema | the schema's messages, and that a root's input is the app configuration for the environment |
 | A config adapter throws or returns something other than an object (`CONFIG.ADAPTER_FAILED`, `CONFIG.ADAPTER_INVALID`) | which list and position, and the fix |
+| The prisma CLI's engine is older than 0.10.0 (`DEPS.CLI_ENGINE_INCOMPATIBLE`) | that Composer needs @prisma/cli-engine 0.10.0 or later to redact the deploy engine's output, and nothing was started |
 
 ## Out of scope (designed around)
 
