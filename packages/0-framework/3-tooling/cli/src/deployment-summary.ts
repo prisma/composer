@@ -14,6 +14,7 @@ import * as fs from 'node:fs';
 import { format, stripVTControlCharacters } from 'node:util';
 import type { DeployedEntity, DeploymentResult } from '@internal/core/deploy';
 import { blindCast } from '@internal/foundation/casts';
+import { redactSecrets } from './redaction.ts';
 
 /** Env var the deploy operation sets on the alchemy child: when present,
  * the report hook also writes the JSON DeploymentSummary there. */
@@ -225,49 +226,4 @@ export function engineFailureCause(
   return cause.length <= ENGINE_FAILURE_CAUSE_LIMIT
     ? cause
     : `${cause.slice(0, ENGINE_FAILURE_CAUSE_LIMIT - 1)}…`;
-}
-
-/** `text` with each value in `values` replaced by `[redacted]` in one pass, longest first, so a short value never matches inside an earlier `[redacted]`. A value is replaced at any length; an empty one is skipped. */
-export function redactValues(text: string, values: Iterable<string>): string {
-  const sorted = [...new Set(values)]
-    .filter((value) => value.length > 0)
-    .sort((a, b) => b.length - a.length);
-  if (sorted.length === 0) return text;
-  const pattern = new RegExp(
-    sorted.map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
-    'g',
-  );
-  return text.replace(pattern, REDACTED);
-}
-
-/** Env var names whose values are credentials: the service token, preflight payloads, and the usual secret spellings. */
-const SECRET_ENV_NAME =
-  /TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|AUTH|API_?KEY|ACCESS_?KEY|_KEY$|DATABASE_URL|_DSN$|^PRISMA_COMPOSER_PREFLIGHT_/i;
-export const REDACTED = '[redacted]';
-
-/** The values of `env`'s variables whose names look like credentials, eight characters or more, so a one-letter placeholder does not blank every matching letter. */
-export function secretNamedValues(env: Readonly<Record<string, string | undefined>>): string[] {
-  return Object.entries(env).flatMap(([name, value]) =>
-    SECRET_ENV_NAME.test(name) && value !== undefined && value.length >= 8 ? [value] : [],
-  );
-}
-
-/**
- * Removes credentials from text that is about to leave the machine: the value
- * of every secret-named env var, bearer/basic tokens, JWTs, the password in a
- * URL, and `token=…`-style pairs. Values shorter than 8 characters are left,
- * so a one-letter placeholder does not blank every matching letter.
- */
-export function redactSecrets(
-  text: string,
-  env: Readonly<Record<string, string | undefined>>,
-): string {
-  return redactValues(text, secretNamedValues(env))
-    .replace(/\b(Bearer|Basic)\s+[\w.~+/=-]+/gi, `$1 ${REDACTED}`)
-    .replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]*/g, REDACTED)
-    .replace(/(\b[a-z][\w+.-]*:\/\/[^\s:/@]*:)[^\s/@]+@/gi, `$1${REDACTED}@`)
-    .replace(
-      /\b((?:[\w-]*[_-])?(?:token|secret|password|passwd|api[_-]?key|access[_-]?key|private[_-]?key)["']?\s*[:=]\s*["']?)[^\s"',;&]+/gi,
-      `$1${REDACTED}`,
-    );
 }

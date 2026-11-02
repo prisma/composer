@@ -34,7 +34,7 @@ import {
 } from '../deployment-summary.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from '../generate-stack.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
-import { KnownSecrets, redactError, redactSummary } from '../redaction.ts';
+import { KnownSecrets, redactError, redactSummary, redactThrown } from '../redaction.ts';
 import {
   type AlchemyOutcome,
   alchemyInvocation,
@@ -149,7 +149,7 @@ export async function executeDeploy(
     reportId: input.reportId,
     reportPath: resolveRunReportPath(input.reportPath, process.env[RUN_REPORT_FILE_ENV], cwd),
     steps: deploySteps(input.onEvent),
-    knownSecrets: new KnownSecrets(),
+    knownSecrets: new KnownSecrets(process.env),
   });
   if (!outcome.ok) return outcome;
   return ok({ summary: outcome.value });
@@ -171,7 +171,7 @@ export async function executeDestroy(
     reportId: undefined,
     reportPath: undefined,
     steps: deploySteps(undefined),
-    knownSecrets: new KnownSecrets(),
+    knownSecrets: new KnownSecrets(process.env),
   });
   if (!outcome.ok) return outcome;
   return okVoid();
@@ -304,11 +304,6 @@ async function finishReporters(
       }
     }),
   );
-}
-
-function redactThrown(error: Error, known: KnownSecrets): void {
-  error.message = known.redact(error.message);
-  if (typeof error.stack === 'string') error.stack = known.redact(error.stack);
 }
 
 /**

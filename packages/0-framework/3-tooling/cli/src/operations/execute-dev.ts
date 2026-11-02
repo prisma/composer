@@ -32,7 +32,7 @@ import {
   watchTargetsFrom,
 } from '../dev/watch.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
-import { KnownSecrets, redactDevEvent, redactError } from '../redaction.ts';
+import { KnownSecrets, redactDevEvent, redactError, redactThrown } from '../redaction.ts';
 import {
   type AlchemyInvocation,
   type AlchemyOutcome,
@@ -153,15 +153,12 @@ export async function executeDev(
   deps: OperationDeps,
   cwd: string,
 ): Promise<Result<DevSession, CliStructuredError>> {
-  const known = new KnownSecrets();
+  const known = new KnownSecrets(process.env);
   try {
     const result = await executeDevInner(input, deps, cwd, known);
     return result.ok ? result : notOk(redactError(result.failure, known));
   } catch (error) {
-    if (error instanceof Error) {
-      error.message = known.redact(error.message);
-      if (error.stack !== undefined) error.stack = known.redact(error.stack);
-    }
+    if (error instanceof Error) redactThrown(error, known);
     throw error;
   }
 }
