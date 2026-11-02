@@ -18,7 +18,6 @@ import * as path from 'node:path';
 import { CliStructuredError } from '@internal/foundation/errors';
 import spawn from 'cross-spawn';
 import { resolveAlchemyBin } from './alchemy-bin.ts';
-import { secretNamedValues } from './deployment-summary.ts';
 import { StreamRedactor } from './redaction.ts';
 
 /** The runtime facts that decide which Node starts Alchemy; injectable for tests. */
@@ -252,9 +251,8 @@ export function spawnCommandLine(
       stdio: ['inherit', 'pipe', 'pipe'],
       env: { ...process.env, ...line.env },
     });
-    const values = [...redactedValues, ...secretNamedValues(process.env)];
-    const stdout = new StreamRedactor(values);
-    const stderr = new StreamRedactor(values);
+    const stdout = new StreamRedactor(redactedValues);
+    const stderr = new StreamRedactor(redactedValues);
     const write = (stream: OutputStreams['stdout'], text: string): void => {
       if (text.length > 0) stream.write(text);
     };

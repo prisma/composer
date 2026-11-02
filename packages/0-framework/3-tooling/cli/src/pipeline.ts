@@ -187,7 +187,7 @@ export async function runPipeline(
 
   // 3. Read the app secrets, then the app configuration. Secrets first, so a config adapter's
   // failure is redacted with every value a written `secrets` list returned.
-  const known = deps.knownSecrets ?? new KnownSecrets();
+  const known = deps.knownSecrets ?? new KnownSecrets(process.env);
   const adapterInput = { environment, configFile: configSource.file };
   const secrets: AppSecrets =
     deps.readSecrets === true ? await readAppSecrets(config, adapterInput, known) : NO_SECRETS;

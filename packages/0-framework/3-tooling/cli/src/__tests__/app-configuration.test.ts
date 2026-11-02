@@ -42,7 +42,7 @@ describe('readAppConfiguration and readAppSecrets', () => {
   test('with no secrets list, the app secrets is the process environment', async () => {
     process.env['S4_PROBE'] = 'probe';
 
-    expect((await readAppSecrets(base, input, new KnownSecrets()))['S4_PROBE']).toBe('probe');
+    expect((await readAppSecrets(base, input, new KnownSecrets({})))['S4_PROBE']).toBe('probe');
   });
 
   test('adapters merge by top-level key in list order, a later adapter winning', async () => {
@@ -117,7 +117,7 @@ describe('readAppConfiguration and readAppSecrets', () => {
     ];
 
     const error = await structuredError(() =>
-      readAppSecrets(section({ secrets }), input, new KnownSecrets()),
+      readAppSecrets(section({ secrets }), input, new KnownSecrets({})),
     );
 
     expect(error.code).toBe('CONFIG.ADAPTER_FAILED');
@@ -174,7 +174,7 @@ describe('readAppConfiguration and readAppSecrets', () => {
     const secrets = [() => ({ TOKEN: 918273645 })];
 
     const error = await structuredError(() =>
-      readAppSecrets(section({ secrets }), input, new KnownSecrets()),
+      readAppSecrets(section({ secrets }), input, new KnownSecrets({})),
     );
 
     expect(error.code).toBe('CONFIG.ADAPTER_INVALID');
@@ -191,7 +191,7 @@ describe('readAppConfiguration and readAppSecrets', () => {
 
     for (const values of [
       await readAppConfiguration(config, input),
-      await readAppSecrets(config, input, new KnownSecrets()),
+      await readAppSecrets(config, input, new KnownSecrets({})),
     ]) {
       expect(Object.isFrozen(values)).toBe(true);
       expect(Object.getPrototypeOf(values)).toBeNull();

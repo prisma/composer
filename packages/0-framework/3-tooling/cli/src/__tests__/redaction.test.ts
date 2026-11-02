@@ -9,12 +9,14 @@ import {
   redactError,
   redactingTransform,
   redactSummary,
+  redactThrown,
+  redactValues,
   StreamRedactor,
   valuesUnderSecretsKeys,
 } from '../redaction.ts';
 
 const knowing = (...values: string[]): KnownSecrets => {
-  const known = new KnownSecrets();
+  const known = new KnownSecrets({});
   known.add(values);
   return known;
 };
@@ -43,6 +45,51 @@ describe('KnownSecrets', () => {
   test('KnownSecrets skips empty values', () => {
     expect(knowing('').values()).toEqual([]);
   });
+
+  test('KnownSecrets hides overlapping secrets whole', () => {
+    expect(knowing('abc', 'bcdef').redact('xxabcdefyy')).toBe('xx[redacted]yy');
+    expect(redactValues('xxabcdefyy', ['abc', 'bcdef'])).toBe('xx[redacted]yy');
+  });
+
+  test('KnownSecrets starts with the credential-looking values of the environment it is given, so every output hides the same set', () => {
+    const known = new KnownSecrets({
+      SHELL_API_TOKEN: 'from-the-shell-123',
+      HOME: '/home/someone',
+    });
+
+    expect(known.values()).toEqual(['from-the-shell-123']);
+    expect(known.redact('t=from-the-shell-123')).toBe('t=[redacted]');
+    expect(known.certainValues().size).toBe(0);
+  });
+});
+
+describe('redactThrown', () => {
+  test('redactThrown redacts the message and stack of a thrown error and of each error in its cause chain and aggregate', () => {
+    const inner = new Error('inner s3cr3t-value');
+    const member = new Error('member s3cr3t-value');
+    const outer = new Error('outer s3cr3t-value', {
+      cause: new AggregateError([member], 'aggregate s3cr3t-value', { cause: inner }),
+    });
+
+    redactThrown(outer, knowing('s3cr3t-value'));
+
+    const aggregate = outer.cause as AggregateError;
+    for (const error of [outer, aggregate, inner, member]) {
+      expect(error.message).not.toContain('s3cr3t-value');
+      expect(error.stack ?? '').not.toContain('s3cr3t-value');
+    }
+  });
+
+  test('redactThrown replaces a cause that is text or plain data with a redacted copy', () => {
+    const text = new Error('x', { cause: 'cause s3cr3t-value' });
+    const data = new Error('x', { cause: { detail: ['s3cr3t-value'] } });
+
+    redactThrown(text, knowing('s3cr3t-value'));
+    redactThrown(data, knowing('s3cr3t-value'));
+
+    expect(text.cause).toBe('cause [redacted]');
+    expect(data.cause).toEqual({ detail: ['[redacted]'] });
+  });
 });
 
 describe('the values a command learns are secrets', () => {
@@ -63,7 +110,7 @@ describe('the values a command learns are secrets', () => {
   });
 
   test('a value added by name is redacted but is not a certain secret', () => {
-    const known = new KnownSecrets();
+    const known = new KnownSecrets({});
     known.addByName(['looks-like-a-credential']);
     known.add(['under-a-secrets-key']);
 
@@ -204,6 +251,39 @@ describe('redacting a stream', () => {
 
     expect(redactor.push('Deploy to production? (y/N) ')).toBe('Deploy to production? (y/N) ');
     expect(redactor.end()).toBe('');
+  });
+
+  test('StreamRedactor hides overlapping secrets whole, at every chunk size', async () => {
+    const text = 'xxabcdefyy and abc and bcdef';
+    for (let size = 1; size <= text.length; size++) {
+      const chunks: string[] = [];
+      for (let start = 0; start < text.length; start += size) {
+        chunks.push(text.slice(start, start + size));
+      }
+      expect(await throughTransform(chunks, ['abc', 'bcdef'])).toBe(
+        'xx[redacted]yy and [redacted] and [redacted]',
+      );
+    }
+  });
+
+  test('StreamRedactor gives the same text as whole-text redaction for random chunks and overlapping secrets', async () => {
+    let seed = 7;
+    const next = (limit: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % limit;
+    };
+    const word = (length: number) => Array.from({ length }, () => 'abc\n'[next(4)]).join('');
+    for (let round = 0; round < 300; round++) {
+      const secrets = Array.from({ length: 1 + next(4) }, () => word(1 + next(5)));
+      const text = word(next(60));
+      const chunks: string[] = [];
+      for (let start = 0; start < text.length; ) {
+        const size = 1 + next(8);
+        chunks.push(text.slice(start, start + size));
+        start += size;
+      }
+      expect(await throughTransform(chunks, secrets)).toBe(redactValues(text, secrets));
+    }
   });
 
   test('StreamRedactor never splits a surrogate pair across two pieces', () => {

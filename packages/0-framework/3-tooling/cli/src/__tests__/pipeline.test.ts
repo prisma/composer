@@ -139,7 +139,7 @@ describe('runPipeline()', () => {
   test('runPipeline adds the values under every envSecret() name to the known secrets', async () => {
     const composer = appConfigurationConfig.composer;
     if (composer === undefined) throw new Error('the fixture declares a composer section');
-    const knownSecrets = new KnownSecrets();
+    const knownSecrets = new KnownSecrets({});
     const source = {
       value: {
         ...composer,

@@ -9,10 +9,9 @@ import {
   engineFailureCause,
   engineFailureFilePath,
   readEngineFailureCause,
-  redactSecrets,
-  redactValues,
   withComposerAdvice,
 } from '../deployment-summary.ts';
+import { redactSecrets, redactValues } from '../redaction.ts';
 
 const ESC = String.fromCharCode(27);
 const red = (text: string) => `${ESC}[31m${text}${ESC}[0m`;

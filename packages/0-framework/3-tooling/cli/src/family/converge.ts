@@ -26,7 +26,6 @@ import type {
 import { exitWithChildStatus } from '@prisma/cli-engine';
 import type { CliStructuredError, NextAction, Result } from '@prisma/cli-engine/protocol';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
-import { secretNamedValues } from '../deployment-summary.ts';
 import { executionDiagnostics, type OperationDeps } from '../operations/shared.ts';
 import { redactingTransform } from '../redaction.ts';
 import { alchemyCommandLine, type RunAlchemy } from '../run-alchemy.ts';
@@ -97,13 +96,12 @@ const STDOUT_TO_STDERR = [
 export function convergeSpawn(ctx: ConvergeContext): RunAlchemy {
   return async (invocation) => {
     const commandLine = alchemyCommandLine(invocation);
-    const values = [...invocation.redactedValues, ...secretNamedValues(process.env)];
     const result = await ctx.spawn({
       command: commandLine.command,
       args: [...STDOUT_TO_STDERR, ...commandLine.args],
       cwd: commandLine.cwd,
       env: commandLine.env,
-      transformOutput: () => redactingTransform(values),
+      transformOutput: () => redactingTransform(invocation.redactedValues),
     });
     return { ...result, commandLine };
   };
