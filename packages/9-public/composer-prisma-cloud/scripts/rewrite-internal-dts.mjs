@@ -11,6 +11,8 @@ const MAP = [
   ['@internal/foundation/secret', '@prisma/composer'],
   ['@internal/foundation/pointer', '@prisma/composer'],
   ['@internal/foundation/assertions', '@prisma/composer/assertions'],
+  ['@internal/foundation/arktype', '@prisma/composer/arktype'],
+  ['@internal/foundation/zod', '@prisma/composer/zod'],
   ['@internal/core/config', '@prisma/composer/config'],
   ['@internal/core/deploy', '@prisma/composer/deploy'],
   ['@internal/core/testing', '@prisma/composer/testing'],
