@@ -971,15 +971,21 @@ The dev configuration file lives only while a converge runs, which is shorter th
 4. `redactValues` and its doc comment become exported, without a minimum length:
 
    ```ts
-   /** `text` with each value in `values` replaced by `[redacted]`, longest first. A value is replaced at any length; an empty one is skipped. */
+   /** `text` with each value in `values` replaced by `[redacted]` in one pass, longest first, so a short value never matches inside an earlier `[redacted]`. A value is replaced at any length; an empty one is skipped. */
    export function redactValues(text: string, values: Iterable<string>): string {
-     let redacted = text;
-     for (const value of [...values].sort((a, b) => b.length - a.length)) {
-       if (value.length > 0) redacted = redacted.replaceAll(value, REDACTED);
-     }
-     return redacted;
+     const sorted = [...new Set(values)]
+       .filter((value) => value.length > 0)
+       .sort((a, b) => b.length - a.length);
+     if (sorted.length === 0) return text;
+     const pattern = new RegExp(
+       sorted.map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+       'g',
+     );
+     return text.replace(pattern, REDACTED);
    }
    ```
+
+   It replaces in one pass so that test 21 holds: replacing `abc` first and then `a` one value at a time would match the `a` inside the first `[redacted]`.
 
 5. New export, before `redactSecrets`:
 
@@ -1128,47 +1134,76 @@ export function redactSummary(
   };
 }
 
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xd800 && code <= 0xdbff;
+}
+
 /**
  * Redacts a stream of text chunk by chunk: every value in `values` becomes `[redacted]`. It holds
- * back at most one fewer character than the longest value, so a value split across two chunks is
- * still replaced. When no value holds a line break, it never holds back a complete line.
- * `push` returns the text that is ready; `end` returns the rest.
+ * back only the longest end of the text that could be the start of a value, so a value split
+ * across two chunks is still replaced, and text that cannot start one, such as a prompt, is
+ * returned at once. It never splits a surrogate pair. `push` returns the text that is ready;
+ * `end` returns the rest.
  */
 export class StreamRedactor {
   private held = '';
+  private readonly sorted: readonly string[];
   private readonly pattern: RegExp | undefined;
-  private readonly keep: number;
-  private readonly cutAtLineEnds: boolean;
 
   constructor(values: readonly string[]) {
-    const sorted = [...new Set(values)]
+    this.sorted = [...new Set(values)]
       .filter((value) => value.length > 0)
       .sort((a, b) => b.length - a.length);
     this.pattern =
-      sorted.length === 0
+      this.sorted.length === 0
         ? undefined
-        : new RegExp(sorted.map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g');
-    this.keep = (sorted[0]?.length ?? 1) - 1;
-    this.cutAtLineEnds = sorted.every((value) => !value.includes('\n'));
+        : new RegExp(
+            this.sorted.map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+            'g',
+          );
+  }
+
+  /** The length of the longest end of `text` that is the start, not the whole, of a value. */
+  private startOfValueAtEnd(text: string): number {
+    let longest = 0;
+    for (const value of this.sorted) {
+      for (let length = Math.min(value.length - 1, text.length); length > longest; length--) {
+        if (text.endsWith(value.slice(0, length))) {
+          longest = length;
+          break;
+        }
+      }
+    }
+    return longest;
   }
 
   push(chunk: string): string {
-    const text = this.held + chunk;
-    let cut = Math.max(0, text.length - this.keep);
-    if (this.cutAtLineEnds) cut = Math.max(cut, text.lastIndexOf('\n') + 1);
+    let text = this.held + chunk;
     let out = '';
-    let from = 0;
-    if (this.pattern !== undefined) {
-      for (const match of text.matchAll(this.pattern)) {
-        if (match.index >= cut) break;
-        out += text.slice(from, match.index) + REDACTED;
-        from = match.index + match[0].length;
-        if (from > cut) cut = from;
+    for (;;) {
+      let cut = text.length - this.startOfValueAtEnd(text);
+      let from = 0;
+      let crossed = false;
+      if (this.pattern !== undefined) {
+        for (const match of text.matchAll(this.pattern)) {
+          if (match.index >= cut) break;
+          out += text.slice(from, match.index) + REDACTED;
+          from = match.index + match[0].length;
+          if (from > cut) {
+            crossed = true;
+            break;
+          }
+        }
       }
+      if (crossed) {
+        text = text.slice(from);
+        continue;
+      }
+      if (cut > from && cut < text.length && isHighSurrogate(text.charCodeAt(cut - 1))) cut -= 1;
+      out += text.slice(from, cut);
+      this.held = text.slice(cut);
+      return out;
     }
-    out += text.slice(from, cut);
-    this.held = text.slice(cut);
-    return out;
   }
 
   end(): string {
@@ -1194,11 +1229,11 @@ export function redactingTransform(values: readonly string[]): TransformStream<s
 }
 ```
 
-Neither `redaction.ts` nor `configuration-file.ts` casts, so `pnpm lint:casts` reports `delta=0`. The redactor never cuts a value in two. A value that starts before the length cut is whole inside `text`, because it is at most `keep + 1` characters long. A value that starts before the line cut ends before the line break, because it holds none. `TransformStream` is a global in Node and Bun, typed by `@types/node`, which the CLI's `tsconfig.json` already loads (§ 18 shows both probes).
+Neither `redaction.ts` nor `configuration-file.ts` casts, so `pnpm lint:casts` reports `delta=0`. The redactor never cuts a value in two. It holds back exactly the longest end of the text that is the start, but not the whole, of some value. A value that starts before that cut cannot still be growing into a longer value, because then the text from its start would be a longer such end. When a match runs past the cut, the redactor starts again on the text after the match. It never ends a piece on the first half of a surrogate pair, so an emoji split across two chunks stays whole. `TransformStream` is a global in Node and Bun, typed by `@types/node`, which the CLI's `tsconfig.json` already loads (§ 18 shows both probes).
 
-Why the line cut: Alchemy prints a line, such as `Creating web`, then waits minutes for the platform. A length cut alone would hold back the end of that line for the whole wait.
+Why it holds back only a possible start of a value: Alchemy prints a line, such as `Creating web`, then waits minutes for the platform, and a prompt such as `Deploy to production? (y/N) ` ends without a line break. A cut by length would hold back the end of either until the next output. Text that cannot start a value is printed at once.
 
-### 9.4 `run-alchemy.ts`
+## 9.4 `run-alchemy.ts`
 
 1. `AlchemyInvocation` gains, after `env`:
 
@@ -1265,7 +1300,7 @@ Why the line cut: Alchemy prints a line, such as `Creating web`, then waits minu
 - Each transform's `flush` runs, and its output is written, before `ctx.spawn` settles, on every path: a normal exit, an abort, a SIGTERM, a stream that fails, and an adapter that rejects.
 - If a transform throws, the engine ends the child as on abort and `ctx.spawn` rejects with that error.
 - Before the transform sees the text, the engine replaces the `PRISMA_SERVICE_TOKEN` it injects for `needs: { credentials: 'child' }` with `[redacted]`.
-- `ctx.spawnOptions` lists the option names `ctx.spawn` accepts, and `ctx.spawn` refuses any other name. A host older than 0.10.0 has no `ctx.spawnOptions` and silently ignores `transformOutput`.
+- `ctx.spawnOptionNames` lists the option names `ctx.spawn` accepts, and `ctx.spawn` refuses any other name. A host older than 0.10.0 has no `ctx.spawnOptionNames` and silently ignores `transformOutput`. The engine's own type declares it `readonly spawnOptionNames?: readonly (keyof SpawnOptions)[]`.
 
 Composer writes nothing itself and maps no stream: the engine owns where the output goes, in every output format.
 
@@ -1283,12 +1318,12 @@ Composer writes nothing itself and maps no stream: the engine owns where the out
        readonly transformOutput?: (stream: ChildStreamName) => TransformStream<string, string>;
      }) => Promise<ChildResult>;
      /** The option names the host's `ctx.spawn` accepts. Absent on an engine older than 0.10.0. */
-     readonly spawnOptions?: readonly string[];
+     readonly spawnOptionNames?: readonly string[];
      readonly lastChild: () => ChildResult | undefined;
    }
    ```
 
-   `lastChild`'s doc comment is unchanged. `ChildStreamName` joins the type import from `@prisma/cli-engine`. The real `ctx` satisfies it structurally; `spawnOptions` is optional here because a 0.9.0 host does not set it.
+   `lastChild`'s doc comment is unchanged. `ChildStreamName` joins the type import from `@prisma/cli-engine`. The real `ctx` satisfies it structurally; `spawnOptionNames` is optional here because a 0.9.0 host does not set it.
 
 2. New export, after `ConvergeContext`:
 
@@ -1299,7 +1334,7 @@ Composer writes nothing itself and maps no stream: the engine owns where the out
     * transform and print the output unredacted.
     */
    export function outputTransformMissing(ctx: ConvergeContext): Result<never, CliStructuredError> | undefined {
-     if (ctx.spawnOptions?.includes('transformOutput') === true) return undefined;
+     if (ctx.spawnOptionNames?.includes('transformOutput') === true) return undefined;
      return notOk(
        toEngineError(
          new ComposerError(
@@ -1360,7 +1395,7 @@ Composer writes nothing itself and maps no stream: the engine owns where the out
 What Composer relies on:
 
 - **The held-back text.** The engine flushes each transform before `ctx.spawn` settles, on every path, so no held-back text is lost, and none is printed after the command's next output.
-- **Report events.** While the child runs, the engine buffers `ctx.report` events and prints them before `ctx.spawn` resolves. Under `prisma dev`, a dev server's output line can be reported during a rebuild converge. The engine reads the child's streams to their end, flushing the transforms, before it prints the buffered events, so the child's last text comes first. With the line cut (§ 9.3), the only text the redactor holds back by then is an unfinished last line. Test 40 checks the order; if it fails, the implementer stops and reports.
+- **Report events.** While the child runs, the engine buffers `ctx.report` events and prints them before `ctx.spawn` resolves. Under `prisma dev`, a dev server's output line can be reported during a rebuild converge. The engine reads the child's streams to their end, flushing the transforms, before it prints the buffered events, so the child's last text comes first. The only text the redactor holds back by then is an end of the output that could start a secret (§ 9.3). Test 40 checks the order; if it fails, the implementer stops and reports.
 - **Abort.** On SIGTERM or an abort of `ctx.signal`, the engine ends the child with SIGTERM, then SIGKILL after a grace period, and still flushes. Composer adds no signal handling.
 - **Failure.** The redactor does not throw. If a transform did, `ctx.spawn` would reject; `runStackPipeline` reports that as a defect, redacted (§ 8.4).
 - **The engine's credential.** The engine redacts the `PRISMA_SERVICE_TOKEN` it injects, including one from `prisma login`, which Composer never sees.
@@ -1934,7 +1969,7 @@ The `code` is the machine-branching surface: hosts driving `@prisma/composer/con
 7. `` `prisma dev`'s second process receives the configuration the same way`` → `` `prisma dev`'s second process receives the app configuration the same way``.
 8. In § The root's input: `the root's binding is the configuration.` → `the root's binding is the app configuration.`; `By default the configuration holds every variable` → `By default the app configuration holds every variable`; `The configuration never holds a pointer` → `The app configuration never holds a pointer`; `because the configuration is plain` → `because the app configuration is plain`.
 9. In the **Redaction.** bullet, `Under the default list only the first kind applies, because redacting every value in the shell would blank every \`1\` and \`true\` in the output.` → `Under the default list only the first kind applies, because redacting every value in the shell would blank every \`1\` and \`true\` in the output. Composer also keeps the redaction it already did, which is not part of this decision: an app configuration value of eight characters or more under a name that looks like a credential, and token shapes such as JWTs.`
-10. The **The second process's output** bullet becomes: `- **The second process's output** passes through Composer's redactor. The CLI's command engine pipes the second process's stdout and stderr, passes each through a transform Composer gives it, and prints the result where it would have printed the output. The redactor holds back at most one fewer character than the longest secret, and never a complete line when no secret holds a line break, so a secret split across two chunks of output is still caught. The second process has no terminal, so Alchemy's progress display and colours change.`
+10. The **The second process's output** bullet becomes: `- **The second process's output** passes through Composer's redactor. The CLI's command engine pipes the second process's stdout and stderr, passes each through a transform Composer gives it, and prints the result where it would have printed the output. The redactor holds back only the end of the output that could be the start of a secret, so a secret split across two chunks of output is still caught, and text that cannot start one, such as a prompt, is printed at once. The second process has no terminal, so Alchemy's progress display and colours change.`
 11. In § Consequences: `- **The configuration is plain.**` → `- **The app configuration is plain.**`.
 12. In the **`dotenv()`** bullet, `` `dotenv-flow`'s `.env.defaults` file is not read. `` → `` `dotenv-flow` lists its `.env.defaults` file first whenever it is given its own default pattern, so `dotenv()` drops that file from the list and never reads it. ``
 13. After the sentence `It holds no secrets.` in the configuration file paragraph: `Load refuses a name that both an \`envParam()\` and an \`envSecret()\` read, because the file would then hold that secret.`
@@ -2026,7 +2061,7 @@ Each quoted string is replaced exactly. The edits make the design say what Will 
 3. Section 9, after the bullet that ends `A value is redacted at any length. There is no minimum.`, two new bullets:
    - `- **How Composer knows a secret's name.** Core sees a secret source only as an opaque payload, so a target tells core which app secrets key holds the value: \`secretSource()\` takes \`secretsKey\`, and \`envSecret('NAME')\` passes \`NAME\`. Composer lists those keys to know what to redact, and which secrets \`prisma dev\` hands its second process.`
    - `- **What Composer already redacted stays, for now.** Composer keeps the redaction S4 shipped: an app configuration value of eight characters or more under a name that looks like a credential, and token shapes such as bearer tokens, JWTs and a password in a URL. That is existing behaviour, not part of this design. A later slice that gives secrets their own home revisits it (section 11).`
-4. Section 9, the bullet that begins `- **The second process's output.** To redact it, Composer reads that output through a pipe and writes it on, instead of letting the second process write to the terminal.` becomes, whole: `- **The second process's output.** The CLI starts the second process through its command engine's \`ctx.spawn\`. From \`@prisma/cli-engine\` 0.10.0 (prisma/prisma-cli#383), \`ctx.spawn\` takes a transform per output stream: the engine pipes the child's stdout and stderr, passes each through the transform, and prints the result where it would have printed the output, in every output format. Composer's transform redacts. The engine still owns the child: stdin stays inherited, and signals, the abort ladder and the exit status work as before. A programmatic host has no engine, so there Composer pipes the output itself through the same redactor. Either way the second process has no terminal, so Alchemy's progress display and colours change. A secret can be split across two chunks of output, so the redactor holds back at most one fewer character than the longest secret until the next chunk or the end of the stream, and never a complete line when no secret holds a line break. A test splits a secret across two chunks.`
+4. Section 9, the bullet that begins `- **The second process's output.** To redact it, Composer reads that output through a pipe and writes it on, instead of letting the second process write to the terminal.` becomes, whole: `- **The second process's output.** The CLI starts the second process through its command engine's \`ctx.spawn\`. From \`@prisma/cli-engine\` 0.10.0 (prisma/prisma-cli#383), \`ctx.spawn\` takes a transform per output stream: the engine pipes the child's stdout and stderr, passes each through the transform, and prints the result where it would have printed the output, in every output format. Composer's transform redacts. The engine still owns the child: stdin stays inherited, and signals, the abort ladder and the exit status work as before. A programmatic host has no engine, so there Composer pipes the output itself through the same redactor. Either way the second process has no terminal, so Alchemy's progress display and colours change. A secret can be split across two chunks of output, so the redactor holds back only the end of the output that could be the start of a secret, until the next chunk or the end of the stream. Text that cannot start a secret, such as a prompt, is printed at once, and an emoji is never split. A test splits a secret across two chunks.`
 5. Section 12, "What this design reverses", a new last bullet: `- **Errors**: a structured error is never transformed between where it is raised and who receives it. Now redaction is the one change: before an operation returns an error, Composer removes every secret value it knows from its text and drops its cause.`
 
 ## 15. Tests
@@ -2064,7 +2099,7 @@ Changes beyond renames:
 - `cli/src/__tests__/stack-file-import.test.ts`: `configPool` (the expected object) becomes `const checked = { configuration: { rootInput: [], values: { read: 'checked' } }, nodeAddresses: ['stub-address'] };`; the deploy test expects `{ app, extensions, state, environment: 'staging', checkedConfiguration: checked.configuration, checkedNodeAddresses: checked.nodeAddresses }`, retitled `the deploy stack passes the composer export of prisma.config.ts, the environment, and what the CLI checked, to lower(), and reads no secrets`; the dev test adds `local: { configuration: { read: 'checked' }, secrets: { read: 'secrets' } }`, retitled likewise.
 - `cli/src/__tests__/run-alchemy.test.ts`: every `alchemyInvocation({ … })` and every hand-built `AlchemyInvocation` gains `redactedValues: []`. `env carries only the ADDITIONS …` drops any expectation of `PRISMA_COMPOSER_PARENT_VALUES`. Every `spawnCommandLine(line)` call becomes `spawnCommandLine(line, [])`.
 - `cli/src/family/__tests__/converge-spawn.test.ts`: both `alchemyInvocation` calls gain `redactedValues: []`. The fake `ConvergeContext` ignores `transformOutput`, so the two tests still check `STDOUT_TO_STDERR` and the reproduce command; their expectations do not change.
-- `cli/src/family/__tests__/*.test.ts` that run `deploy` or `dev` through `createTestCli`: the 0.10.0 harness sets `ctx.spawnOptions`, so they pass the new check unchanged.
+- `cli/src/family/__tests__/*.test.ts` that run `deploy` or `dev` through `createTestCli`: the 0.10.0 harness sets `ctx.spawnOptionNames`, so they pass the new check unchanged.
 - `cli/src/testing/operations-double.ts`: the synthetic `AlchemyInvocation` in `runConverge` gains `redactedValues: []`.
 - `cli/src/operations/__tests__/operations.test.ts`: `deploy hands every extension's preflight both pools` becomes `deploy hands every extension's preflight the app configuration and the app secrets`, recording `{ configuration: input.configuration, secrets: input.secrets }`; `a secrets pool value appears in no event, result or report` becomes `an app secrets value appears in no event, result or report`, reading `input.secrets['S4_SENTINEL']`; `dev hands both pools to preflight and to a dev server` becomes `dev hands the app configuration and the app secrets to preflight and to a dev server`, with `serve: async ({ configuration, secrets }) => { seen.serve = { configuration, secrets }; … }` and the expected `{ configuration: { A: 'a' }, secrets: { S: 's' } }` for both; `an engine failure cause never carries a value the pools read from a dotenv file` becomes `an engine failure cause never carries a secret value read from a dotenv file`, its assertions unchanged. The describe `the operations read the pools from the config adapters` becomes `the operations read the app configuration and the app secrets from the adapters`.
 
@@ -2122,8 +2157,10 @@ New file `cli/src/__tests__/redaction.test.ts`:
 26. `redactSummary redacts entity ids, urls and details`.
 27. `redactingTransform redacts a secret split across two chunks` — a `ReadableStream` of the chunks `'token is s3cr3t-'` and `'value, done\n'`, piped through `redactingTransform(['s3cr3t-value'])`; the text read out equals `'token is [redacted], done\n'`.
 28. `redactingTransform redacts every occurrence at every chunk size` — the text of 2000 parts where every seventh is `SECRETXYZ`, every fiftieth otherwise is `abc\n`, and the rest `abc`; values `['SECRETXYZ', 'SECRET']`; for chunk sizes 1, 2, 3, 5, 8, 9, 10 and 64 the text read out equals the text with every `SECRETXYZ` replaced.
-29. `StreamRedactor holds back one fewer character than the longest secret, and end returns the rest` — values `['abcdef']`; `push('0123456789')` returns `'01234'`, and `end()` returns `'56789'`.
-30. `StreamRedactor returns every complete line at once when no secret holds a line break, holds a line break secret whole, and with no secret returns each chunk as it comes` — values `['abcdef']`: `push('Creating web\n')` returns `'Creating web\n'`. Values `['line1\nline2']`: `push('x line1\n') + push('line2 y\n') + end()` equals `'x [redacted] y\n'`. No values: `push('abc')` returns `'abc'`.
+29. `StreamRedactor holds back only the end of the text that could start a secret, and end returns the rest` — values `['abcdef']`; `push('0123456789')` returns `'0123456789'`, `push('0123abc')` returns `'0123'`, and `end()` returns `'abc'`.
+30. `StreamRedactor returns text that cannot start a secret at once, holds a line break secret whole, and with no secret returns each chunk as it comes` — values `['abcdef']`: `push('Creating web\n')` returns `'Creating web\n'`. Values `['line1\nline2']`: `push('x line1\n') + push('line2 y\n') + end()` equals `'x [redacted] y\n'`. No values: `push('abc')` returns `'abc'`.
+52. `StreamRedactor returns a prompt without a line break at once` — values `['hunter2-secret']`: `push('Deploy to production? (y/N) ')` returns the whole prompt, and `end()` returns `''`.
+53. `StreamRedactor never splits a surrogate pair across two pieces` — values `['🚀X']`: `push('launch ' + the first half of 🚀)`, then `push(the second half of 🚀 + ' done')`, then `end()`: no piece ends with a high surrogate or starts with a low one, and together they are `'launch 🚀 done'`.
 
 New file `cli/src/__tests__/configuration-file.test.ts`:
 
@@ -2138,8 +2175,8 @@ New file `cli/src/__tests__/configuration-file.test.ts`:
 
 `cli/src/family/__tests__/converge-spawn.test.ts`, new, using the engine's test harness (`createTestCli` from `@prisma/cli-engine/testing`). The command under test is defined in the file: `defineCommand({ help: { summary: 'Runs a converge' }, maySpawn: true, handler: async (_args, ctx) => { await convergeSpawn(ctx)(invocation); return ok(exitWithChildStatus()); } })`, where `invocation` is `alchemyInvocation({ command: 'deploy', stackFileRelativePath: '.prisma-composer/alchemy.run.ts', cwd, stage: 'test', containerEnv: {}, redactedValues: ['hunter2-secret'] })` and `cwd` is `appWithAlchemy([])`. The harness's scripted child writes its output with `child.write(stream, chunk)`, which the engine passes through the transform as it would a real child's.
 
-39. `the engine prints the child's output with every known secret redacted, a secret split across two chunks included, in human and json mode` — the scripted child writes `'key=hunter2-'` and then `'secret\n'` to stdout, and `'boom hunter2-secret\n'` to stderr, and exits 0. Run with `--format human` and with `--json`: `result.spawns[0]?.output` is `'engine'`, neither `result.stdout` nor `result.stderr` contains `hunter2`, and together they contain `key=[redacted]\n` and `boom [redacted]\n`. The test does not assert which stream the engine printed to; that is the engine's business.
-40. `the held-back text is printed before ctx.spawn resolves and before the report events the engine buffered` — the handler calls `setTimeout(() => ctx.report({ kind: 'endpoint', name: 'probe', url: 'https://probe.example' }), 5)` before it starts the converge; the scripted child waits 20 ms and writes `'tail-without-newline'` to stderr, with no line break, so the redactor holds it until the stream ends; then it exits 0. In human mode, `result.stderr` contains `tail-without-newline`, and its index is lower than the index of `https://probe.example`.
+39. `the engine prints the child's output with every known secret redacted, a secret split across two chunks included, in human and json mode` — the scripted child writes `'key=hunter2-'` and then `'secret\n'` to stdout, and `'boom hunter2-secret\n'` to stderr, and exits 0. Run with `--format human` and with `--json`: `result.spawns[0]?.output` is `'engine'`, neither `result.stdout` nor `result.stderr` contains `hunter2`, and together they contain `boom [redacted]\n` and, with that line taken out once, `key=[redacted]\n`. In json mode both streams reach stderr with no order between them, and the stdout transform prints `key=` at once, so the stderr line can fall between `key=` and `[redacted]`. The test does not assert which stream the engine printed to; that is the engine's business.
+40. `the held-back text is printed before ctx.spawn resolves and before the report events the engine buffered` — the handler calls `setTimeout(() => ctx.report({ kind: 'endpoint', name: 'probe', url: 'https://probe.example' }), 5)` before it starts the converge; the scripted child waits 20 ms and writes `'tail-without-newline hunter'` to stderr, with no line break and ending in the start of the secret, so the redactor holds `hunter` until the stream ends; then it exits 0. In human mode, `result.stderr` contains `tail-without-newline hunter`, and its index is lower than the index of `https://probe.example`.
 
 `cli/src/__tests__/run-alchemy.test.ts`, new:
 
@@ -2151,7 +2188,7 @@ New file `cli/src/__tests__/configuration-file.test.ts`:
 
 `cli/src/family/__tests__/converge-spawn.test.ts`, new, on the engine's test harness:
 
-43. `a host whose engine cannot transform a child's output refuses before starting anything` — a command defined in the file whose handler calls `outputTransformMissing({ spawn: ctx.spawn, lastChild: ctx.lastChild })`, without `spawnOptions`, as a 0.9.0 host gives, returns the refusal when there is one, and otherwise runs `convergeSpawn(ctx)(invocation)`. Run with `--format human`: the exit code is 2, `result.stderr` holds `DEPS.CLI_ENGINE_INCOMPATIBLE` and the summary of § 12, and `result.spawns` is empty. The same command with `spawnOptions: ctx.spawnOptions` passed through runs the scripted child once.
+43. `a host whose engine cannot transform a child's output refuses before starting anything` — a command defined in the file whose handler calls `outputTransformMissing({ spawn: ctx.spawn, lastChild: ctx.lastChild })`, without `spawnOptionNames`, as a 0.9.0 host gives, returns the refusal when there is one, and otherwise runs `convergeSpawn(ctx)(invocation)`. Run with `--format human`: the exit code is 2, `result.stderr` holds `DEPS.CLI_ENGINE_INCOMPATIBLE` and the summary of § 12, and `result.spawns` is empty. The same command with `spawnOptionNames: ctx.spawnOptionNames` passed through runs the scripted child once.
 
 `cli/src/__tests__/pipeline.test.ts`, new:
 
@@ -2209,7 +2246,7 @@ One scratch worktree at the git-ignored `wip/s11-scratch`, removed afterwards. N
 - **The stream redactor, first version** (`redactor.ts`, `redactor-probe.ts`, run with Bun): a secret split across two chunks was redacted; overlapping secrets `abc` and `abcdef` gave the longest match; a one-character secret was redacted; for chunk sizes 1, 2, 3, 5, 8, 9, 10 and 64 over a 6000-character text, the output equalled the text with every secret replaced.
 - **Alchemy without a terminal** (`alchemy-no-tty.run.ts`): `node node_modules/alchemy/bin/cli.js deploy alchemy.run.ts --yes --stage probe` with stdout and stderr redirected to files and stdin from `/dev/null` exited 0, ran the stack effect (`process.stdout.isTTY` undefined), and printed plain timestamped log lines. Alchemy decides interactivity from `stdin.isTTY && stdout.isTTY` and agent variables, so a piped run is non-interactive, and `--yes` covers the confirmation.
 - **The engine's `ctx.spawn`, 0.9.0** (`dist/report-*.d.ts` and `dist/engine-*.js`): `SpawnOptions` takes `command`, `args`, `cwd` and `env` only; the request's `output` is `"inherit"` or `"diagnostic"`, chosen by the engine from the output format; the engine logs `command` and `args` in debug mode, never `env`; it forwards SIGTERM to its child and, on a programmatic abort, ends it with SIGTERM, then SIGKILL.
-- **The engine change, prisma/prisma-cli#383, final API** (head `415c668a`, read in its `README.md` and with `git diff origin/main...HEAD`): `SpawnOptions.transformOutput?: (stream: ChildStreamName) => TransformStream<string, string>`, called once per stream before the child starts; the spawn request's `output` is `"engine"` and the adapter returns both streams; the result is written where the output format sends the child's output, with backpressure; each transform's `flush` runs before `ctx.spawn` settles on every path; the engine replaces the `PRISMA_SERVICE_TOKEN` it injects with `[redacted]` before the transform; `ctx.spawnOptions` is `SPAWN_OPTION_NAMES` (`command`, `args`, `cwd`, `env`, `transformOutput`), and `ctx.spawn` refuses any other option name. The harness's scripted child has `write(stream, chunk)`, and `SpawnRecord.output` records the request's `output`. The README calls Composer's stdout preload redundant; § 9.5 says why it stays.
+- **The engine change, prisma/prisma-cli#383, final API** (head `415c668a`, read in its `README.md` and with `git diff origin/main...HEAD`): `SpawnOptions.transformOutput?: (stream: ChildStreamName) => TransformStream<string, string>`, called once per stream before the child starts; the spawn request's `output` is `"engine"` and the adapter returns both streams; the result is written where the output format sends the child's output, with backpressure; each transform's `flush` runs before `ctx.spawn` settles on every path; the engine replaces the `PRISMA_SERVICE_TOKEN` it injects with `[redacted]` before the transform; `ctx.spawnOptionNames` is `SPAWN_OPTION_NAMES` (`command`, `args`, `cwd`, `env`, `transformOutput`), and `ctx.spawn` refuses any other option name. The harness's scripted child has `write(stream, chunk)`, and `SpawnRecord.output` records the request's `output`. The README calls Composer's stdout preload redundant; § 9.5 says why it stays.
 
 Checks for this amendment, in a scratch worktree at the git-ignored `wip/s11-amend-scratch`, removed afterwards:
 
@@ -2226,7 +2263,7 @@ S10 is on this branch. It typed a service's binding from its schema, renamed `Se
 ## 20. Decisions this spec records, for the review
 
 1. **Under the CLI, the engine redacts the second process's output with Composer's transform** (§ 9.5), and prints it where it would have. Composer maps no stream and handles no output format. Programmatic hosts pipe in-process through the same redactor (§ 9.4). The secret values stay in the first process; no environment variable, argument or file carries them.
-2. **The redactor never holds back a complete line when no secret holds a line break** (§ 9.3), so a progress line is printed at once, not after the platform's next answer.
+2. **The redactor holds back only an end of the output that could start a secret, and never splits a surrogate pair** (§ 9.3), so a progress line or a prompt is printed at once, not after the platform's next answer.
 3. **`dotenv()` filters `.env.defaults` itself** (§ 3.2): the design's pattern does not keep `dotenv-flow` from listing it (§ 21, finding 1). It parses one file at a time, merged in `dotenv-flow`'s order, so an unreadable file is named, as today.
 4. **The app secrets are read before the app configuration** (§ 7.3), so a config adapter's failure is redacted with a written secrets list's values.
 5. **The redaction set keeps S4's credential-name heuristic** for app configuration values of eight characters or more, and S4's shape patterns. This is existing behaviour, kept for now, not part of the design's redaction. Without it, a value such as `STRIPE_KEY` in the app configuration under the default lists, which no `envSecret()` names, would stop being redacted. The decision records and the design say the same (§ 14.3, § 14.6, § 14.13).
@@ -2253,7 +2290,7 @@ S10 is on this branch. It typed a service's binding from its schema, renamed `Se
 7. **Consequence not stated: the reproduce command no longer works after a run.** It needs the configuration file, which is deleted when the run ends. It already needed the container and preflight variables the CLI passes, so a user could not run it bare before either; the second process's error now says why (§ 12).
 8. **Size.** This is one pull request of nine commits touching core, the CLI, both public packages, the target, the local target, five decision records and three guides. The plan keeps them together, and this spec does too.
 9. **Closed: the credential the engine gives the child.** The first amendment found that a `PRISMA_SERVICE_TOKEN` from `prisma login` never reaches Composer, so its redactor could not match it. #383's final API redacts the credential the engine injects before the command's transform runs (§ 9.5).
-10. **Closed: an older engine.** A 0.9.0 host ignores `transformOutput` and would print the output unredacted. #383's final API adds `ctx.spawnOptions` and refuses unknown option names from 0.10.0 on, and `prisma deploy` and `prisma dev` now refuse with `DEPS.CLI_ENGINE_INCOMPATIBLE` before starting anything when `transformOutput` is not listed (§ 9.5, test 43).
+10. **Closed: an older engine.** A 0.9.0 host ignores `transformOutput` and would print the output unredacted. #383's final API adds `ctx.spawnOptionNames` and refuses unknown option names from 0.10.0 on, and `prisma deploy` and `prisma dev` now refuse with `DEPS.CLI_ENGINE_INCOMPATIBLE` before starting anything when `transformOutput` is not listed (§ 9.5, test 43).
 
 ## Changes since the first version
 
@@ -2261,13 +2298,16 @@ Made on 2026-11-02, after Will's decisions on the first version.
 
 1. **The relay process is gone.** Under the CLI, the engine's per-stream output transform from prisma/prisma-cli#383 redacts the second process's output (§ 9.5). Removed: `output-relay.ts`, `internal/output-relay` and its entries in both packages, `architecture.config.json` and `tsconfig.depcruise.json`, `resolveOutputRelay`, `DEPLOY.OUTPUT_RELAY_MISSING`, `PRISMA_COMPOSER_REDACTED_VALUES`, the relay tests and fixture, and the relay's mentions in the release note, the error table, ADR-0044, `deploy-cli.md` and the findings. Why: Will chose the engine change over a third process.
 2. **The spec pins #383's final API** (head `415c668a`): `transformOutput?: (stream: ChildStreamName) => TransformStream<string, string>`, called once per stream before the child starts; the engine writes the result where the output format sends it, flushes each transform before `ctx.spawn` settles on every path, and redacts the `PRISMA_SERVICE_TOKEN` it injects. Composer maps no stream and handles no output format. Why: #383 replaced the drafted `onOutput` in review.
-3. **The redactor is a `StreamRedactor` plus `redactingTransform`** (§ 9.3), in place of `RedactingWriter`. It returns text instead of writing it, so the engine's transform and the in-process pipe share it. It never holds back a complete line when no secret holds a line break. Why: a transform needs the text back, and a long platform wait must not hold back the end of a progress line.
+3. **The redactor is a `StreamRedactor` plus `redactingTransform`** (§ 9.3), in place of `RedactingWriter`. It returns text instead of writing it, so the engine's transform and the in-process pipe share it. It holds back only an end of the output that could start a secret. Why: a transform needs the text back, and a long platform wait must not hold back the end of a progress line or a prompt.
 4. **Report ordering and abort are specified** (§ 9.5), with test 40 for the order of held-back text and buffered report events.
 5. **`@prisma/cli-engine` goes to 0.10.0** in four places, including the root `pnpm.overrides`, which the first request did not list (§ 8.7). Release order: #383 merges and publishes 0.10.0, then this PR merges; until then it stays a draft.
-11. **Composer refuses an older engine.** `prisma deploy` and `prisma dev` check `ctx.spawnOptions?.includes('transformOutput')` first and otherwise fail with the new `DEPS.CLI_ENGINE_INCOMPATIBLE`, before anything starts (§ 9.5, § 12, ADR-0044's registry, test 43; old tests 43 to 50 are now 44 to 51). The errors decision puts it under `DEPS`, the namespace for the consumer's installed dependency tree. Why: a 0.9.0 host ignores the transform and would print secrets.
+11. **Composer refuses an older engine.** `prisma deploy` and `prisma dev` check `ctx.spawnOptionNames?.includes('transformOutput')` first and otherwise fail with the new `DEPS.CLI_ENGINE_INCOMPATIBLE`, before anything starts (§ 9.5, § 12, ADR-0044's registry, test 43; old tests 43 to 50 are now 44 to 51). The errors decision puts it under `DEPS`, the namespace for the consumer's installed dependency tree. Why: a 0.9.0 host ignores the transform and would print secrets.
 12. **`STDOUT_TO_STDERR` stays**, against #383's README, because the final API still writes the child's stdout to the CLI's stdout in human format, which carries Composer's data lines in a piped run.
 6. **Tests**: 39 to 45 are replaced by four tests, 39 to 42, two of them on the engine's test harness; old tests 46 to 53 are now 43 to 50. Commits gain a first design commit and are renumbered.
 7. **Name-based redaction is described as existing S4 behaviour kept for now** in § 2, § 9.1, § 20 decision 5, ADR-0029's rewrite and ADR-0062's edit, not as part of the new design.
 8. **The design is corrected** (§ 14.13): `dotenv()` drops `.env.defaults` itself, `secretSource()` takes `secretsKey`, Load refuses a name read by both `envParam()` and `envSecret()`, and the output is redacted through the engine's transform. ADR-0062 gets the same three statements (§ 14.6 items 12 to 14).
 9. **Quotes match S10.** `ServiceInputBinding` is `InputBindingUse` in § 5.3; ADR-0029's rewrite says a wrong binding fails to compile; § 19 is rewritten; § 14.9 and § 14.10 no longer count lines that S10 moved.
 10. **Two findings raised and closed** (§ 21, 9 and 10): the credential the engine injects, which #383 now redacts itself, and a host on engine 0.9.0, which Composer now refuses.
+13. **The redactor holds back only what could start a secret, and keeps surrogate pairs whole** (§ 9.3, tests 29, 30, 52 and 53), after the engine's round-2 review. A prompt without a line break, such as `Deploy to production? (y/N) `, is printed at once. This replaces the hold of one fewer character than the longest secret and the line-end rule. Test 40's tail now ends in the start of the secret, so it is still held until the stream ends, and test 39 allows the stderr line to fall inside the stdout text in json mode.
+14. **The engine's support field is `ctx.spawnOptionNames`**, optional in its type, renamed from `spawnOptions` in #383's rework (`44526435`). `outputTransformMissing` checks `ctx.spawnOptionNames?.includes('transformOutput')`.
+15. **`redactValues` replaces in one pass** (§ 9.2). Replacing one value at a time, longest first, matched a short value inside an earlier `[redacted]`, so test 21 failed against the first version's code.

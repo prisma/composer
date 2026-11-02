@@ -8,9 +8,9 @@ import {
   DEPLOYMENT_RESULT_FILE_ENV,
   engineFailureCause,
   engineFailureFilePath,
-  poolSecrets,
   readEngineFailureCause,
   redactSecrets,
+  redactValues,
   withComposerAdvice,
 } from '../deployment-summary.ts';
 
@@ -90,23 +90,6 @@ describe('engineFailureCause', () => {
     const token = `tok_${'s'.repeat(1200)}`;
     const cause = engineFailureCause(`error: ${token}`, { PRISMA_SERVICE_TOKEN: token });
     expect(cause).toBe('error: [redacted]');
-  });
-});
-
-describe('poolSecrets', () => {
-  const pools = {
-    config: { STRIPE_KEY: 'sk_config', WEBHOOK_SIG: 'sig_shared', HOME: '/Users/someone', N: 4 },
-    secrets: { WEBHOOK_SIG: 'sig_shared', SIGNING_SALT: 'salt_value' },
-  };
-
-  test('with a secrets list the author wrote, every secrets pool value and the config values under its keys', () => {
-    expect(poolSecrets(pools, true).sort()).toEqual(
-      ['salt_value', 'sig_shared', 'sig_shared', 'sk_config'].sort(),
-    );
-  });
-
-  test('with the default secrets list, the whole environment, only secret-named config values', () => {
-    expect(poolSecrets(pools, false)).toEqual(['sk_config']);
   });
 });
 
@@ -191,7 +174,7 @@ describe('the failure cause through a real child process', () => {
     expect(child.stderr).toBe(
       '[web] creating\nPlan: 1 to create\nerror: 409 Conflict (Authorization: Bearer real-service-token)\n',
     );
-    expect(readEngineFailureCause(resultFile)).toBe(
+    expect(readEngineFailureCause(resultFile, (text) => redactValues(text, []))).toBe(
       'error: 409 Conflict (Authorization: Bearer [redacted])',
     );
   }, 15_000);
@@ -201,7 +184,7 @@ describe('the failure cause through a real child process', () => {
 
     expect(child.status).toBe(0);
     expect(fs.existsSync(engineFailureFilePath(resultFile))).toBe(false);
-    expect(readEngineFailureCause(resultFile)).toBeUndefined();
+    expect(readEngineFailureCause(resultFile, (text) => redactValues(text, []))).toBeUndefined();
   }, 15_000);
 });
 
