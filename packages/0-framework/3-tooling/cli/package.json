@@ -4,9 +4,9 @@
   "type": "module",
   "description": "Composer's command family and its programmatic deploy, destroy, dev and log operations.",
   "exports": {
+    "./app-configuration-file": "./dist/app-configuration-file.mjs",
     "./app-identity": "./dist/app-identity.mjs",
     "./config": "./dist/config.mjs",
-    "./configuration-file": "./dist/configuration-file.mjs",
     "./control": "./dist/control.mjs",
     "./family": "./dist/family.mjs",
     "./report": "./dist/report.mjs",

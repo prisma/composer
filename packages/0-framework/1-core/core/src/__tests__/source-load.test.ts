@@ -350,7 +350,7 @@ describe('configuration keys Load reads', () => {
       configuration: { IN_MODULE: 'm', IN_SERVICE: 's', IN_PARAM: 'p', OTHER: 'o' },
     });
 
-    expect(graph.checkedConfiguration.values).toEqual({
+    expect(graph.appConfigurationRead.configurationKeyText).toEqual({
       IN_MODULE: 'm',
       IN_SERVICE: 's',
       IN_PARAM: 'p',
@@ -360,7 +360,7 @@ describe('configuration keys Load reads', () => {
   test('an unset or empty key is left out of the recorded values', () => {
     const graph = Load(threePlaces(), { configuration: { IN_MODULE: 'm', IN_SERVICE: '' } });
 
-    expect(graph.checkedConfiguration.values).toEqual({ IN_MODULE: 'm' });
+    expect(graph.appConfigurationRead.configurationKeyText).toEqual({ IN_MODULE: 'm' });
   });
 
   test("a configuration key in a service's input whose value is not text fails at Load", () => {
@@ -397,9 +397,9 @@ describe('configuration keys Load reads', () => {
     expect(message).not.toContain('sk_live_supersecret');
   });
 
-  test('the second process reads configuration keys from the checked values', () => {
+  test('the second process reads configuration keys from what the first process read', () => {
     const graph = Load(threePlaces(), {
-      checkedConfiguration: { rootInput: [], values: { IN_MODULE: 'from-file' } },
+      appConfigurationRead: { rootInput: [], configurationKeyText: { IN_MODULE: 'from-file' } },
     });
 
     expect(bindingOf(graph)['m']).toBe('from-file');

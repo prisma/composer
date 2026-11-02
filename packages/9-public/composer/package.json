@@ -6,7 +6,7 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./config": "./dist/config.mjs",
-    "./internal/configuration-file": "./dist/internal-configuration-file.mjs",
+    "./internal/app-configuration-file": "./dist/internal-app-configuration-file.mjs",
     "./control": "./dist/control.mjs",
     "./deploy": "./dist/deploy.mjs",
     "./local-target": "./dist/local-target.mjs",

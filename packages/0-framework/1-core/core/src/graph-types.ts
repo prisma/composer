@@ -7,7 +7,7 @@ import type { EnvironmentRealValues } from './value.ts';
 export type NodeId = string;
 
 /** One field of the root's input that its body names, with the real value the root's schema produced there. */
-export interface CheckedRootField {
+export interface RootInputField {
   /** The key path inside the root's input, such as `['smtp', 'host']`. */
   readonly path: readonly string[];
   /** The real value; absent when it is `undefined`. */
@@ -15,27 +15,39 @@ export interface CheckedRootField {
 }
 
 /**
- * What a Load read from the app configuration, once the root's schema checked it (ADR-0062).
- * The deploy's and `prisma dev`'s first process writes it to the configuration file, and
- * their second process Loads with it in place of the app configuration.
+ * What a Load read from the app configuration (ADR-0062). The deploy's and `prisma dev`'s
+ * first process writes it to the app configuration file, and their second process Loads with
+ * it in place of the app configuration.
  */
-export interface CheckedConfiguration {
-  /** Each field of the root's input that its body names. Empty when the root declares no input. */
-  readonly rootInput: readonly CheckedRootField[];
+export interface AppConfigurationRead {
+  /** Each field of the root's input that its body names, as the root's schema produced it. Empty when the root declares no input. */
+  readonly rootInput: readonly RootInputField[];
   /** The text the app configuration holds for each configuration key a source reads, such as `envParam('NAME')`'s `NAME`. A key the app configuration does not hold, or holds as `''`, is absent. */
-  readonly values: Readonly<Record<string, string>>;
+  readonly configurationKeyText: Readonly<Record<string, string>>;
 }
 
-export interface LoadOptions {
+interface CommonLoadOptions {
   /** The root's address: the app name. Defaults to the root's `name`. */
   readonly id?: NodeId;
   /** The facts of the environment being loaded. `name` is what `--environment` gave. Required by any value over `environment.name`. */
   readonly environment?: EnvironmentRealValues;
-  /** The app configuration (ADR-0062): what the `config` adapters return. It is the root's input, which the root's schema checks, and what a source with a configuration key, such as `envParam('NAME')`, reads. The deploy's and dev's first process pass it. */
-  readonly configuration?: Readonly<Record<string, unknown>>;
-  /** What the first process's Load read, from the configuration file. The deploy's and dev's second process pass it in place of `configuration`: Load takes each root field from it without running the root's schema. */
-  readonly checkedConfiguration?: CheckedConfiguration;
 }
+
+/** Load's options in the first process, or wherever the app configuration is at hand. */
+export interface FirstProcessLoadOptions extends CommonLoadOptions {
+  /** The app configuration (ADR-0062): what the `config` adapters return. It is the root's input, which the root's schema checks, and what a source with a configuration key, such as `envParam('NAME')`, reads. */
+  readonly configuration?: Readonly<Record<string, unknown>>;
+  readonly appConfigurationRead?: never;
+}
+
+/** Load's options in the deploy's and dev's second process. */
+export interface SecondProcessLoadOptions extends CommonLoadOptions {
+  readonly configuration?: never;
+  /** What the first process's Load read, from the app configuration file. Load takes each root field from it without running the root's schema. */
+  readonly appConfigurationRead: AppConfigurationRead;
+}
+
+export type LoadOptions = FirstProcessLoadOptions | SecondProcessLoadOptions;
 
 export interface GraphNode {
   readonly id: NodeId;
@@ -153,7 +165,7 @@ export interface Graph {
   /** Every secret source a binding names, once each, in the order Load met them (ADR-0029). */
   readonly secretSources: readonly SecretSourceUse[];
   /** What this Load read from the app configuration (ADR-0062). Empty when Load was given none. */
-  readonly checkedConfiguration: CheckedConfiguration;
+  readonly appConfigurationRead: AppConfigurationRead;
 }
 
 /**

@@ -4,12 +4,12 @@ import { isSecretPointer } from '@internal/foundation/pointer';
 import { isSecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import {
-  type CheckedConfiguration,
-  type CheckedRootField,
+  type AppConfigurationRead,
   type InputBindingUse,
   LoadError,
   type NodeId,
   type ParamBinding,
+  type RootInputField,
   type SecretSourceUse,
 } from './graph-types.ts';
 import { inputFieldLabel } from './module-input.ts';
@@ -43,7 +43,7 @@ export interface ProvisionedModuleInput {
   /** True for the root, whose binding is the app configuration. */
   readonly isRoot: boolean;
   /** For the root in the second process: its fields as the first process checked them. The root's schema does not run. */
-  readonly checked?: readonly CheckedRootField[];
+  readonly checked?: readonly RootInputField[];
 }
 
 export interface ValueBindingSite {
@@ -482,7 +482,7 @@ function refusePointersInProps(address: NodeId, props: unknown): void {
 export function resolveValues(input: {
   readonly environment: EnvironmentRealValues | undefined;
   readonly configuration: Readonly<Record<string, unknown>> | undefined;
-  readonly checkedConfiguration: CheckedConfiguration | undefined;
+  readonly appConfigurationRead: AppConfigurationRead | undefined;
   readonly inputBindings: readonly InputBindingUse[];
   readonly params: readonly ParamBinding[];
   readonly moduleInputs: readonly ProvisionedModuleInput[];
@@ -492,10 +492,10 @@ export function resolveValues(input: {
   readonly params: readonly ParamBinding[];
   readonly resourceProps: ReadonlyMap<NodeId, ResourceProps>;
   readonly secretSources: readonly SecretSourceUse[];
-  readonly checkedConfiguration: CheckedConfiguration;
+  readonly appConfigurationRead: AppConfigurationRead;
 } {
   const { environment } = input;
-  const rootFields = new Map<string, CheckedRootField>();
+  const rootFields = new Map<string, RootInputField>();
   const keysRead = new Map<string, { readonly label: string; readonly text: string | undefined }>();
   /** The text the app configuration holds for `key`, recorded; `undefined` when it holds none or `''`. */
   const configurationText = (
@@ -504,7 +504,8 @@ export function resolveValues(input: {
     site: ValueBindingSite,
   ): string | undefined => {
     let raw: unknown;
-    if (input.checkedConfiguration !== undefined) raw = input.checkedConfiguration.values[key];
+    if (input.appConfigurationRead !== undefined)
+      raw = input.appConfigurationRead.configurationKeyText[key];
     else if (input.configuration !== undefined) raw = input.configuration[key];
     else {
       throw new LoadError(
@@ -598,7 +599,7 @@ export function resolveValues(input: {
         break;
       case 'source': {
         if (isSecretSource(origin.source)) recordSecret(origin.source, site);
-        if (origin.configurationKey === undefined) {
+        if (origin.sourceKind === 'secret' || origin.configurationKey === undefined) {
           result = origin.source;
         } else {
           result = configurationText(origin.configurationKey, origin.label, site);
@@ -609,7 +610,7 @@ export function resolveValues(input: {
         const args = origin.dependencies.map((dependency) => {
           const real = resolveOne(dependency, site);
           const source = originOf(dependency);
-          if (real === undefined && source.kind === 'source') {
+          if (real === undefined && source.kind === 'source' && source.sourceKind === 'param') {
             throw new LoadError(
               `${fnLabelFor(site)} lists ${source.label}, but "${source.configurationKey}" is unset or empty, so it has no real value. Set "${source.configurationKey}", or bind ${source.label} directly into an input binding, where an absent value leaves the key out and the schema decides.`,
             );
@@ -648,7 +649,7 @@ export function resolveValues(input: {
           );
           if (field === undefined) {
             throw new LoadError(
-              `${inputFieldLabel(origin)} of root module "${origin.module}" is not in the configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. ${SAME_GRAPH_ADVICE}`,
+              `${inputFieldLabel(origin)} of root module "${origin.module}" is not in the app configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. ${SAME_GRAPH_ADVICE}`,
             );
           }
           result = field.value;
@@ -692,12 +693,12 @@ export function resolveValues(input: {
   const rootModuleAddress = (): string =>
     input.moduleInputs.find((entry) => entry.isRoot)?.moduleAddress ?? '';
 
-  const checkedConfigurationOf = (
+  const appConfigurationReadOf = (
     inputBindings: readonly InputBindingUse[],
     params: readonly ParamBinding[],
     secretSources: readonly SecretSourceUse[],
-  ): CheckedConfiguration => {
-    if (input.configuration !== undefined || input.checkedConfiguration !== undefined) {
+  ): AppConfigurationRead => {
+    if (input.configuration !== undefined || input.appConfigurationRead !== undefined) {
       const kept: { readonly binding: unknown; readonly site: ValueBindingSite }[] = [
         ...inputBindings.map(({ serviceAddress, binding }) => ({
           binding,
@@ -712,7 +713,7 @@ export function resolveValues(input: {
         for (const pointer of pointersIn(binding)) {
           if (!isParamSource(pointer)) continue;
           const origin = sourceOriginOf(pointer);
-          if (origin?.configurationKey !== undefined) {
+          if (origin?.sourceKind === 'param' && origin.configurationKey !== undefined) {
             configurationText(origin.configurationKey, origin.label, site);
           }
         }
@@ -720,11 +721,12 @@ export function resolveValues(input: {
     }
     for (const use of secretSources) {
       const origin = sourceOriginOf(use.source);
-      const key = origin?.secretsKey;
+      if (origin?.sourceKind !== 'secret') continue;
+      const key = origin.secretsKey;
       const read = key === undefined ? undefined : keysRead.get(key);
       if (key !== undefined && read !== undefined) {
         throw new LoadError(
-          `${read.label} reads "${key}" from the app configuration, and ${origin?.label} names "${key}" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every plain value it reads, in a file, and never writes a secret to a file. Give the plain value and the secret different names.`,
+          `${read.label} reads "${key}" from the app configuration, and ${origin.label} names "${key}" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every plain value it reads, in a file, and never writes a secret to a file. Give the plain value and the secret different names.`,
         );
       }
       const field = [...rootFields.values()].find((candidate) => candidate.path[0] === key);
@@ -735,7 +737,7 @@ export function resolveValues(input: {
           path: field.path,
         });
         throw new LoadError(
-          `${label} of root module "${rootModuleAddress()}" reads "${key}" from the app configuration, and ${origin?.label} names "${key}" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every root input field the root's body passes on, in a file, and never writes a secret to a file. Read the secret with ${origin?.label} only, or give the plain value a different name.`,
+          `${label} of root module "${rootModuleAddress()}" reads "${key}" from the app configuration, and ${origin.label} names "${key}" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every root input field the root's body passes on, in a file, and never writes a secret to a file. Read the secret with ${origin.label} only, or give the plain value a different name.`,
         );
       }
     }
@@ -743,13 +745,14 @@ export function resolveValues(input: {
       const kind = 'value' in field ? jsonInexactKind(field.value) : undefined;
       if (kind !== undefined) {
         throw new LoadError(
-          `${inputFieldLabel({ kind: 'input', module: rootModuleAddress(), path: field.path })} of root module "${rootModuleAddress()}" holds ${kind}, which JSON cannot hold exactly. The deploy hands the root's checked input to its second process in a JSON file, so a field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.`,
+          `${inputFieldLabel({ kind: 'input', module: rootModuleAddress(), path: field.path })} of root module "${rootModuleAddress()}" holds ${kind}, which JSON cannot hold exactly. The deploy hands the root's input to its second process in a JSON file, so a field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.`,
         );
       }
     }
-    const values: Record<string, string> = {};
-    for (const [key, { text }] of keysRead) if (text !== undefined) values[key] = text;
-    return { rootInput: [...rootFields.values()], values };
+    const configurationKeyText: Record<string, string> = {};
+    for (const [key, { text }] of keysRead)
+      if (text !== undefined) configurationKeyText[key] = text;
+    return { rootInput: [...rootFields.values()], configurationKeyText };
   };
 
   for (const entry of input.moduleInputs) validatedInputOf(entry);
@@ -766,7 +769,7 @@ export function resolveValues(input: {
       params: input.params,
       resourceProps: authoredProps,
       secretSources,
-      checkedConfiguration: checkedConfigurationOf(
+      appConfigurationRead: appConfigurationReadOf(
         input.inputBindings,
         input.params,
         secretSources,
@@ -811,6 +814,6 @@ export function resolveValues(input: {
     inputBindings,
     params,
     secretSources,
-    checkedConfiguration: checkedConfigurationOf(inputBindings, params, secretSources),
+    appConfigurationRead: appConfigurationReadOf(inputBindings, params, secretSources),
   };
 }

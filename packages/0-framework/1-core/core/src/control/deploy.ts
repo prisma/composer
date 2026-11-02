@@ -8,7 +8,7 @@ import * as Layer from 'effect/Layer';
 import type { Config, ConfigParam } from '../config.ts';
 import { deserializeContainers } from '../container-transport.ts';
 import { type Graph, Load, type NodeId, nodeAddresses } from '../graph.ts';
-import type { CheckedConfiguration } from '../graph-types.ts';
+import type { AppConfigurationRead } from '../graph-types.ts';
 import {
   type BuildAdapter,
   isParamSource,
@@ -215,10 +215,10 @@ export interface LowerOptions {
   readonly name: string;
   /** The environment being deployed, as `--environment` gave it. Required by any value over `environment.name`; the generated stack files always pass it. */
   readonly environment?: string;
-  /** What the first process's Load read from the app configuration (ADR-0062), from the configuration file. Load takes the root's input and every configuration key's text from it, and the Prisma Cloud serializer reads a service's `envParam()` leaves from its `values`. The generated stack files pass it. */
-  readonly checkedConfiguration?: CheckedConfiguration;
-  /** The node addresses the first process checked. When given, lowering refuses a graph whose addresses differ. The generated stack files pass them. */
-  readonly checkedNodeAddresses?: readonly string[];
+  /** What the first process's Load read from the app configuration (ADR-0062), from the app configuration file. Load takes the root's input and every configuration key's text from it, and the Prisma Cloud serializer reads a service's `envParam()` leaves from its `configurationKeyText`. The generated stack files pass it. */
+  readonly appConfigurationRead?: AppConfigurationRead;
+  /** The node addresses of the graph the first process built. When given, lowering refuses a graph whose addresses differ. The generated stack files pass them. */
+  readonly firstProcessNodeAddresses?: readonly string[];
   // One assembled bundle per provisioned service, keyed by the service's
   // full hierarchical address (its graph id).
   readonly bundles: Record<string, Bundle>;
@@ -297,14 +297,14 @@ export class LowerError extends Error {
   }
 }
 
-function assertSameNodeAddresses(built: readonly string[], checked: readonly string[]): void {
-  const onlyBuilt = built.filter((address) => !checked.includes(address));
-  const onlyChecked = checked.filter((address) => !built.includes(address));
-  if (onlyBuilt.length === 0 && onlyChecked.length === 0) return;
+function assertSameNodeAddresses(built: readonly string[], firstProcess: readonly string[]): void {
+  const onlyBuilt = built.filter((address) => !firstProcess.includes(address));
+  const onlyFirst = firstProcess.filter((address) => !built.includes(address));
+  if (onlyBuilt.length === 0 && onlyFirst.length === 0) return;
   const list = (addresses: readonly string[]) =>
     addresses.length === 0 ? 'none' : addresses.map((address) => `"${address}"`).join(', ');
   throw new LowerError(
-    `The deploy's second process built a different graph from the one Composer checked in its first process. Only in the second process: ${list(onlyBuilt)}. Only in the first process: ${list(onlyChecked)}. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.`,
+    `The deploy's second process built a different graph from the one Composer checked in its first process. Only in the second process: ${list(onlyBuilt)}. Only in the first process: ${list(onlyFirst)}. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.`,
   );
 }
 
@@ -672,12 +672,12 @@ export function lowering(
     const graph = Load(root, {
       id: opts.name,
       ...(opts.environment !== undefined ? { environment: { name: opts.environment } } : {}),
-      ...(opts.checkedConfiguration !== undefined
-        ? { checkedConfiguration: opts.checkedConfiguration }
+      ...(opts.appConfigurationRead !== undefined
+        ? { appConfigurationRead: opts.appConfigurationRead }
         : {}),
     });
-    if (opts.checkedNodeAddresses !== undefined) {
-      assertSameNodeAddresses(nodeAddresses(graph), opts.checkedNodeAddresses);
+    if (opts.firstProcessNodeAddresses !== undefined) {
+      assertSameNodeAddresses(nodeAddresses(graph), opts.firstProcessNodeAddresses);
     }
     const extensions = yield* extensionsById(config);
     // Each extension's own resolved container, deserialized once from the

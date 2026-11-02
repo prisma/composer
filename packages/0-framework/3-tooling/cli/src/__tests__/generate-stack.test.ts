@@ -40,7 +40,7 @@ describe('renderStackFile() — a module root', () => {
     expect(content).not.toContain('stage:');
   });
 
-  test('reads what the CLI checked from the configuration file, after the failure recorder starts, and passes it to lower() directly after the environment', () => {
+  test('imports no Composer internal entry except the app configuration file entry, calls no adapter list, and reads the file after the failure recorder starts, and passes it to lower() directly after the environment', () => {
     const content = renderStackFile({
       entryPath: '/app/module.ts',
       cwd: '/app',
@@ -50,18 +50,17 @@ describe('renderStackFile() — a module root', () => {
       assembled: { devServers: {}, bundles: {} },
     });
 
-    expect(content).toContain(
-      "import { readCheckedConfiguration } from '@prisma/composer/internal/configuration-file';",
-    );
+    expect(content.match(/^import .*$/gm)?.filter((line) => line.includes('internal'))).toEqual([
+      "import { readAppConfigurationFile } from '@prisma/composer/internal/app-configuration-file';",
+    ]);
+    expect(content).not.toMatch(/\b(composer|config)\.(config|secrets)\b/);
     const recorder = content.indexOf('report.captureEngineFailure?.();');
-    const read = content.indexOf('const checked = readCheckedConfiguration(process.env);');
+    const read = content.indexOf('const file = readAppConfigurationFile(process.env);');
     expect(recorder).toBeGreaterThan(-1);
     expect(read).toBeGreaterThan(recorder);
     expect(content).toContain(
-      '  environment: "staging",\n  checkedConfiguration: checked.configuration,\n  checkedNodeAddresses: checked.nodeAddresses,',
+      '  environment: "staging",\n  appConfigurationRead: file.appConfigurationRead,\n  firstProcessNodeAddresses: file.nodeAddresses,',
     );
-    expect(content).not.toContain('readConfigPool');
-    expect(content).not.toContain('readSecretsPool');
   });
 
   test('imports alchemy only through @prisma/composer, which the app can resolve under pnpm', () => {

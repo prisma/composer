@@ -612,7 +612,7 @@ describe('lowering a module root — a single service', () => {
     expect(serialize).toMatchObject({ config: { service: { label: 'test' } } });
   });
 
-  test('lowering() passes opts.checkedConfiguration to Load', () => {
+  test('lowering() passes opts.appConfigurationRead to Load', () => {
     const { config, calls } = fakeExtension();
     const relay = module('relay', { input: anyInputSchema }, ({ input, provision }) => {
       const label = (input as never as { label: never }).label;
@@ -627,7 +627,10 @@ describe('lowering a module root — a single service', () => {
       lowering(
         root,
         config,
-        opts({ bundles, checkedConfiguration: { rootInput: [], values: { X: 'probe' } } }),
+        opts({
+          bundles,
+          appConfigurationRead: { rootInput: [], configurationKeyText: { X: 'probe' } },
+        }),
       ),
     );
 
@@ -647,7 +650,7 @@ describe('lowering a module root — a single service', () => {
         lowering(root, config, {
           name: 'shop',
           bundles,
-          checkedNodeAddresses: ['shop', 'shop.gone'],
+          firstProcessNodeAddresses: ['shop', 'shop.gone'],
         }),
       ),
     ).toThrow(
@@ -668,7 +671,7 @@ describe('lowering a module root — a single service', () => {
         lowering(root, config, {
           name: 'shop',
           bundles,
-          checkedNodeAddresses: [...addresses].reverse(),
+          firstProcessNodeAddresses: [...addresses].reverse(),
         }),
       ),
     ).not.toThrow();

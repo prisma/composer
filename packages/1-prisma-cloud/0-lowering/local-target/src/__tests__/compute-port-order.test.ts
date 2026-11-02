@@ -60,7 +60,9 @@ const reconcileInput = (id: string, news: Record<string, unknown>) =>
 async function reconcileApp(container: ContainerInstance, address: string): Promise<number> {
   const provider = await Effect.runPromise(
     App.Provider.pipe(
-      Effect.provide(LocalAppProvider({ container, devDir, configuration: {}, secrets: {} })),
+      Effect.provide(
+        LocalAppProvider({ container, devDir, configurationKeyText: {}, namedSecrets: {} }),
+      ),
     ),
   );
   const attributes: App['Attributes'] = await Effect.runPromise(

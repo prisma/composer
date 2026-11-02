@@ -763,7 +763,7 @@
       "plane": "control"
     },
     {
-      "glob": "packages/9-public/composer/src/exports/internal-configuration-file.ts",
+      "glob": "packages/9-public/composer/src/exports/internal-app-configuration-file.ts",
       "domain": "public",
       "layer": "public",
       "plane": "control"

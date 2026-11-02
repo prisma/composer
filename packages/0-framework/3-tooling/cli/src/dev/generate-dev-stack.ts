@@ -55,8 +55,8 @@ function renderOptions(input: DevStackFileInput): string {
   const lines: string[] = [];
   lines.push(`  name: ${quote(input.name)},`);
   lines.push(`  environment: ${quote(input.environment)},`);
-  lines.push('  checkedConfiguration: checked.configuration,');
-  lines.push('  checkedNodeAddresses: checked.nodeAddresses,');
+  lines.push('  appConfigurationRead: file.appConfigurationRead,');
+  lines.push('  firstProcessNodeAddresses: file.nodeAddresses,');
 
   lines.push('  bundles: {');
   for (const [id, bundle] of Object.entries(input.assembled.bundles)) {
@@ -72,7 +72,7 @@ function renderOptions(input: DevStackFileInput): string {
   }
 
   lines.push(
-    '  providers: localTargetProviders(resolved, containers, devDir, checked.configuration.values, secrets),',
+    '  providers: localTargetProviders(resolved, containers, devDir, file.appConfigurationRead.configurationKeyText, namedSecrets),',
   );
   lines.push('  state: devState(),');
 
@@ -90,7 +90,7 @@ export function renderDevStackFile(input: DevStackFileInput): string {
   const imports = [
     "import * as path from 'node:path';",
     "import { deserializeContainers } from '@prisma/composer/config';",
-    "import { appSecretsFromEnvironment, readCheckedConfiguration } from '@prisma/composer/internal/configuration-file';",
+    "import { namedSecretsFromEnvironment, readAppConfigurationFile } from '@prisma/composer/internal/app-configuration-file';",
     "import { lower } from '@prisma/composer/deploy';",
     "import { devEnvironmentDir, devState, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
     `import prismaConfig from ${quote(configImport)};`,
@@ -104,7 +104,7 @@ export function renderDevStackFile(input: DevStackFileInput): string {
 //   <node> <bin of the alchemy @prisma/composer depends on> deploy ${devStackRelativePath(input.environment)} --yes --stage ${input.environment}
 //
 // bisects a CLI bug from an Alchemy bug (deploy-cli.md § Implementation decisions).
-// It runs no config or secrets adapter: it reads the values the CLI checked from the configuration file named in PRISMA_COMPOSER_CONFIGURATION_FILE, and the app secrets from PRISMA_COMPOSER_APP_SECRETS.
+// It runs no config or secrets adapter: it reads what the first process's Load read from the app configuration file named in PRISMA_COMPOSER_APP_CONFIGURATION_FILE, and the named secrets from PRISMA_COMPOSER_NAMED_SECRETS.
 ${imports}
 
 const config = prismaConfig.composer;
@@ -115,8 +115,8 @@ if (config === undefined) {
 const containers = deserializeContainers(config.extensions, process.env);
 const resolved = await resolveLocalTargets(config);
 const devDir = path.join(process.cwd(), devEnvironmentDir(${quote(input.environment)}));
-const checked = readCheckedConfiguration(process.env);
-const secrets = appSecretsFromEnvironment(process.env);
+const file = readAppConfigurationFile(process.env);
+const namedSecrets = namedSecretsFromEnvironment(process.env);
 
 export default lower(app, config, {
 ${renderOptions(input)}

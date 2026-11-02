@@ -280,7 +280,7 @@ describe('what Load reads from the app configuration', () => {
   test('the graph records each root field the body names, with its checked value, and no other', () => {
     const graph = Load(rootOf(schema), { configuration });
 
-    expect([...graph.checkedConfiguration.rootInput].sort(byPath)).toEqual([
+    expect([...graph.appConfigurationRead.rootInput].sort(byPath)).toEqual([
       { path: ['A'], value: 'a' },
       { path: ['B'] },
       { path: ['C'], value: 4 },
@@ -306,11 +306,11 @@ describe('what Load reads from the app configuration', () => {
     );
 
     expect(loadError(() => Load(root, { configuration: { WHEN: '2026-01-01' } })).message).toBe(
-      'input.WHEN of root module "shop" holds an object that is not plain data, which JSON cannot hold exactly. The deploy hands the root\'s checked input to its second process in a JSON file, so a field the root\'s body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.',
+      'input.WHEN of root module "shop" holds an object that is not plain data, which JSON cannot hold exactly. The deploy hands the root\'s input to its second process in a JSON file, so a field the root\'s body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.',
     );
   });
 
-  test("the second process takes each root field from the checked configuration, without running the root's schema", () => {
+  test("the second process takes each root field from what the first process read, without running the root's schema", () => {
     const calls: unknown[] = [];
     const counting: StandardSchemaV1 = {
       '~standard': {
@@ -324,13 +324,13 @@ describe('what Load reads from the app configuration', () => {
     };
 
     const graph = Load(rootOf(counting), {
-      checkedConfiguration: {
+      appConfigurationRead: {
         rootInput: [
           { path: ['A'], value: 'from-file' },
           { path: ['B'] },
           { path: ['C'], value: 4 },
         ],
-        values: {},
+        configurationKeyText: {},
       },
     });
 
@@ -338,26 +338,17 @@ describe('what Load reads from the app configuration', () => {
     expect(bindingOf(graph)).toEqual({ a: 'from-file', c: 4 });
   });
 
-  test('a root field missing from the checked configuration fails, saying the two processes built different graphs', () => {
+  test('a root field missing from what the first process read fails, saying the two processes built different graphs', () => {
     const run = () =>
       Load(rootOf(schema), {
-        checkedConfiguration: { rootInput: [{ path: ['A'], value: 'a' }], values: {} },
+        appConfigurationRead: {
+          rootInput: [{ path: ['A'], value: 'a' }],
+          configurationKeyText: {},
+        },
       });
 
     expect(loadError(run).message).toBe(
-      'input.B of root module "shop" is not in the configuration file. The first process\'s root body did not pass it on, so the deploy\'s two processes built different graphs. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
-    );
-  });
-
-  test('Load refuses configuration and checkedConfiguration together', () => {
-    const run = () =>
-      Load(rootOf(schema), {
-        configuration,
-        checkedConfiguration: { rootInput: [], values: {} },
-      });
-
-    expect(loadError(run).message).toBe(
-      'Load takes configuration, in the first process, or checkedConfiguration, in the second, not both.',
+      'input.B of root module "shop" is not in the app configuration file. The first process\'s root body did not pass it on, so the deploy\'s two processes built different graphs. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
     );
   });
 
@@ -366,9 +357,9 @@ describe('what Load reads from the app configuration', () => {
       provision(echoService(), { input: {} });
     });
 
-    expect(Load(root, { configuration: {} }).checkedConfiguration).toEqual({
+    expect(Load(root, { configuration: {} }).appConfigurationRead).toEqual({
       rootInput: [],
-      values: {},
+      configurationKeyText: {},
     });
   });
 });

@@ -10,20 +10,21 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { type Graph, nodeAddresses, type ServiceNode, secretsKeys } from '@internal/core';
+import type { Graph, ServiceNode } from '@internal/core';
 import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
 import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
 import type { DevServer } from '@internal/core/deploy';
+import { nodeAddresses, secretsKeys } from '@internal/core/deploy';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import { devEnvironmentDir, resolveLocalTargets } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import {
-  refuseSecretsInConfigurationFile,
-  removeConfigurationFile,
-  secondProcessEnvironment,
-  writeConfigurationFile,
-} from '../configuration-file.ts';
+  devAppConfigurationFile,
+  prepareSecondProcess,
+  removeLeftoverAppConfigurationFiles,
+  type SecondProcessHandover,
+} from '../app-configuration-file.ts';
 import { devStackRelativePath, writeDevStackFile } from '../dev/generate-dev-stack.ts';
 import {
   authoringModuleTargets,
@@ -181,6 +182,7 @@ async function executeDevInner(
   const { onEvent } = input;
   const environment = input.environment ?? DEV_ENVIRONMENT;
   const devDir = path.join(cwd, devEnvironmentDir(environment));
+  removeLeftoverAppConfigurationFiles(cwd);
 
   let pipeline: Awaited<ReturnType<typeof runPipeline>>;
   let resolved: ReadonlyMap<string, LocalTargetDescriptor>;
@@ -317,33 +319,34 @@ async function executeDevInner(
     throw error;
   }
 
-  const configurationFilePath = path.join(devDir, 'configuration.json');
-  const invocationFor = (p: PipelineResult): AlchemyInvocation => {
-    const secrets: Record<string, string> = {};
-    for (const key of secretsKeys(p.graph)) {
-      const value = p.secrets[key];
-      if (value !== undefined && value !== '') secrets[key] = value;
-    }
-    return alchemyInvocation({
+  const invocationFor = (
+    p: PipelineResult,
+  ): { invocation: AlchemyInvocation; handover: SecondProcessHandover } => {
+    const handover = prepareSecondProcess({
+      file: devAppConfigurationFile(devDir),
+      appConfigurationRead: p.graph.appConfigurationRead,
+      nodeAddresses: nodeAddresses(p.graph),
+      secretsKeys: secretsKeys(p.graph),
+      secretValues: known.certainValues(),
+      appSecrets: p.secrets,
+    });
+    const invocation = alchemyInvocation({
       command: 'deploy',
       stackFileRelativePath: devStackRelativePath(environment),
       cwd,
       stage: environment,
       containerEnv: containerEnv(containers),
       preflightEnv: preflightTransportEnv,
-      env: secondProcessEnvironment({
-        configurationFile: configurationFilePath,
-        nodeAddresses: nodeAddresses(p.graph),
-        secrets,
-      }),
+      env: handover.env,
       redactedValues: known.values(),
     });
+    return { invocation, handover };
   };
 
   const converge = async (
     p: PipelineResult,
   ): Promise<{ outcome: AlchemyOutcome; stackPath: string; invocation: AlchemyInvocation }> => {
-    const invocation = invocationFor(p);
+    const { invocation, handover } = invocationFor(p);
     let stackPath: string;
     try {
       claimDevEnvironmentName(devDir, environment);
@@ -355,8 +358,7 @@ async function executeDevInner(
         name: p.name,
         assembled: p.assembled,
       });
-      refuseSecretsInConfigurationFile(p.graph.checkedConfiguration, known.certainValues());
-      writeConfigurationFile(configurationFilePath, p.graph.checkedConfiguration);
+      handover.writeFile();
     } catch (error) {
       // Stack-file write I/O is structured at the catch that knows (rule 6).
       throw toStructured('DEV.STACK_WRITE_FAILED', error);
@@ -378,7 +380,7 @@ async function executeDevInner(
         },
       });
     } finally {
-      removeConfigurationFile(configurationFilePath);
+      handover.removeFile();
     }
     return { outcome, stackPath, invocation };
   };

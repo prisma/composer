@@ -371,7 +371,7 @@ const NO_ABSENT_SECRETS: ReadonlySet<string> = new Set();
 
 /** How `resolveInputBinding`, `serializeInput` and `inputValidationFailure` read the environment and which secrets they leave out. */
 export interface SerializeInputOptions {
-  /** Where `envParam` leaves are read: the app configuration, or in the second process the checked values from the configuration file. The process environment when not given. */
+  /** Where `envParam` leaves are read: the app configuration, or in the second process the configuration key text from the app configuration file. The process environment when not given. */
   readonly env?: Readonly<Record<string, unknown>>;
   /** `envSecret` names to leave out of the document; only `prisma dev` passes any. */
   readonly absentSecrets?: ReadonlySet<string>;

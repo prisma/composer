@@ -43,31 +43,31 @@ function runStack(stackFile: string) {
 }
 
 describe('the generated stack files, evaluated', () => {
-  const checked = {
-    configuration: { rootInput: [], values: { read: 'checked' } },
+  const file = {
+    appConfigurationRead: { rootInput: [], configurationKeyText: { read: 'from-file' } },
     nodeAddresses: ['stub-address'],
   };
 
-  test('the deploy stack passes the composer export of prisma.config.ts, the environment, and what the CLI checked, to lower(), and reads no secrets', () => {
+  test('the deploy stack passes the composer export of prisma.config.ts, the environment, and the app configuration file, to lower(), and runs no adapter', () => {
     expect(runStack(writeStackFile(stackInput))).toEqual({
       app: 'fixture-module',
       extensions: ['fixture-extension'],
       state: 'fixture-extension',
       environment: 'staging',
-      checkedConfiguration: checked.configuration,
-      checkedNodeAddresses: checked.nodeAddresses,
+      appConfigurationRead: file.appConfigurationRead,
+      firstProcessNodeAddresses: file.nodeAddresses,
     });
   });
 
-  test('the dev stack passes the composer export of prisma.config.ts, the environment, and what the CLI checked, to lower(), and the app configuration and the app secrets to the local providers', () => {
+  test('the dev stack passes the composer export of prisma.config.ts, the environment, and the app configuration file, to lower(), the configuration key text and the named secrets to the local providers, and runs no adapter', () => {
     expect(runStack(writeDevStackFile(stackInput))).toEqual({
       app: 'fixture-module',
       extensions: ['fixture-extension'],
       state: 'fixture-extension',
       environment: 'staging',
-      checkedConfiguration: checked.configuration,
-      checkedNodeAddresses: checked.nodeAddresses,
-      local: { configuration: { read: 'checked' }, secrets: { read: 'secrets' } },
+      appConfigurationRead: file.appConfigurationRead,
+      firstProcessNodeAddresses: file.nodeAddresses,
+      local: { configurationKeyText: { read: 'from-file' }, namedSecrets: { read: 'secrets' } },
     });
   });
 
