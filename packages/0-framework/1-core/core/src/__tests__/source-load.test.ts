@@ -220,6 +220,18 @@ describe("a module's input and runtime param sources", () => {
         'the platform has at boot, so it has no fields and can only be passed on unchanged.',
     );
   });
+
+  test('a field of an input whose schema outputs a runtime param source fails, saying the schema must output an object', () => {
+    const email = module('email', { input: anyInputSchema }, ({ input, provision }) => {
+      provision(echoService(), { input: { from: (input as never as { from: never }).from } });
+    });
+
+    expect(loadError(() => Load(shopWith(email, origin()))).message).toBe(
+      'input.from of module "shop.email" does not exist: input stands for a value only the ' +
+        "platform has at boot, so it has no fields. The module's input schema must output a " +
+        'plain object for its body to read fields.',
+    );
+  });
 });
 
 describe('props', () => {

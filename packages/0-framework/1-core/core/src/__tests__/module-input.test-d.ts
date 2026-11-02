@@ -4,13 +4,15 @@ import { string } from '../config.ts';
 import type {
   InputBinding,
   ModuleContext,
+  ModuleInputBinding,
   ModuleInputField,
   ModuleNode,
+  ResourceProps,
   SecretString,
   Value,
 } from '../exports/index.ts';
 import { module, resolve, resource, SecretBox, secretSource, service } from '../exports/index.ts';
-import type { INPUT_DICTIONARY, NotInputDictionary } from '../value.ts';
+import type { MODULE_INPUT, ModuleInput, NotModuleInput } from '../module-input.ts';
 
 type ShopOut = {
   EMAIL_FROM: string;
@@ -165,10 +167,31 @@ test('no binding accepts the whole input, even where its fields would fit', () =
   });
 });
 
+test('the same input without the brand fits, so the brand alone refuses it', () => {
+  type ShopInput = ModuleInput<typeof shopSchema>;
+  type Unbranded = Omit<ShopInput, typeof MODULE_INPUT>;
+  type FitsBinding = ModuleInputBinding<{ EMAIL_FROM: string }>;
+  expectTypeOf<Unbranded>().toExtend<FitsBinding>();
+  expectTypeOf<ShopInput>().not.toExtend<FitsBinding>();
+  type PlainInput = ModuleInput<typeof plainSchema>;
+  expectTypeOf<Omit<PlainInput, typeof MODULE_INPUT>>().toExtend<ResourceProps>();
+  expectTypeOf<PlainInput>().not.toExtend<ResourceProps>();
+});
+
+const WHOLE_INPUT =
+  'the whole input of a module is not a value; pass its fields on by name' as const;
+
 test('the type error says to pass the fields on by name', () => {
-  expectTypeOf<
-    NonNullable<NotInputDictionary[typeof INPUT_DICTIONARY]>
-  >().toEqualTypeOf<'the whole input of a module is not a value; pass its fields on by name'>();
+  expectTypeOf<NonNullable<NotModuleInput[typeof MODULE_INPUT]>>().toEqualTypeOf<
+    typeof WHOLE_INPUT
+  >();
+});
+
+test('resolve() refuses the whole input with the same message', () => {
+  type Dependencies = Parameters<
+    typeof resolve<readonly [ModuleInput<typeof plainSchema>], string>
+  >[0];
+  expectTypeOf<Dependencies>().toEqualTypeOf<readonly [typeof WHOLE_INPUT]>();
 });
 
 test("a service's input binding takes values standing for a secret, an optional field, or a nested object holding a secret", () => {
