@@ -20,7 +20,7 @@ src/s10-qa.ts(35,7): error TS2769: No overload matches this call.
       Type 'SecretSource<EnvSecretPayload> & RuntimeValue<SecretString>' is not assignable to type 'Value<string | Pointer<string>>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
         Types of property '[VALUE_TYPE]' are incompatible.
           Type 'Pointer<SecretString>' is not assignable to type 'string | Pointer<string>'.
-            Type 'PointerWithKind<SecretString, "plain">' is not assignable to type 'Pointer<string>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+            Type 'PointerWithKind<SecretString, "secret">' is not assignable to type 'Pointer<string>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
               Type 'SecretString' is not assignable to type 'string'.
                 Type 'ParamSource<OriginParamPayload> & RuntimeValue<string>' is not assignable to type 'InputBinding<string>'.
                   Type 'ParamSource<OriginParamPayload> & RuntimeValue<string>' is not assignable to type 'Value<string>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
@@ -32,7 +32,7 @@ src/s10-qa.ts(36,7): error TS2769: No overload matches this call.
       Type 'SecretSource<EnvSecretPayload> & RuntimeValue<SecretString>' is not assignable to type 'Value<string | Pointer<string>>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
         Types of property '[VALUE_TYPE]' are incompatible.
           Type 'Pointer<SecretString>' is not assignable to type 'string | Pointer<string>'.
-            Type 'PointerWithKind<SecretString, "plain">' is not assignable to type 'Pointer<string>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+            Type 'PointerWithKind<SecretString, "secret">' is not assignable to type 'Pointer<string>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
               Type 'SecretString' is not assignable to type 'string'.
                 Type 'ParamSource<OriginParamPayload> & RuntimeValue<string>' is not assignable to type 'InputBinding<string>'.
                   Type 'ParamSource<OriginParamPayload> & RuntimeValue<string>' is not assignable to type 'Value<string>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
@@ -48,6 +48,10 @@ the input binding of service "shop.relay.relay" depends on the whole input of mo
 
 Then `src/s10-qa.ts` was deleted.
 
+Rerun 2026-11-02 after the review fixes, with the same file and commands. The errors are at the same places and end the same way. One line in each chain changed: the secret pointer of `envSecret()` now reads `PointerWithKind<SecretString, "secret">`, where the first run printed `"plain"`. The first run compiled against a `@prisma/composer-prisma-cloud` whose bundled types carried a second copy of `SecretBox`, so the pointer's kind came out wrong (review finding F01). The chains above are from the rerun. The Load message is unchanged.
+
 ## 2. The examples still type-check, and the auth example loads
+
+Rerun after the review fixes: `pnpm turbo run typecheck test:types` passed 84 of 84 tasks, which includes the four examples, and `bun test tests/module.test.ts` in `examples/auth` passed.
 
 `pnpm --filter @prisma/example-email typecheck`, `pnpm --filter @prisma/example-auth typecheck`, `pnpm --filter @prisma/example-storefront-auth typecheck` and `pnpm --filter @prisma/example-cron typecheck` each exited 0. `bun test tests/module.test.ts` in `examples/auth` passed, 1 test. `git status` showed only this slice's changes, beside another session's untracked S11 to S13 spec folder.

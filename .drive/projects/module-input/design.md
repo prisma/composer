@@ -122,7 +122,7 @@ A service's `input` binding is typed from the service's schema, as a module's is
 - In a binding type, `SecretString` and `Pointer` are leaves: the mapping never looks inside them. A `secretString()` field takes a secret runtime value, or a module's secret field passed on. It never takes a literal: a `SecretBox` written in a binding fails to compile. A pointer is never written as a literal either.
 - A service's schema uses `field()` the same way a module's does. A field bound to `generatedParam()` or `serviceOrigin()` must be wrapped, or be a `secretString()` field for a redacted `generatedParam()`.
 - `service.input()` returns the schema's output with every pointer removed, at any depth, because at boot every pointer has been replaced by the variable's text. So a wrapped `from` is `string` in service code, and a `secretString()` field is `SecretString`. Testing helpers that build a service's input use the same type.
-- The deploy check still tells the two pointer kinds apart, as "Secrets" above says. It catches the bindings the compiler cannot see: a schema without type information, or a cast.
+- The deploy check still tells the two pointer kinds apart, as "Secrets" above says. It catches the bindings the compiler cannot see: a refinement the type does not carry, such as a URL format, a schema without type information, or a cast.
 
 ### When the input is checked, and what a field's real value is
 
@@ -280,7 +280,8 @@ This breaks `@prisma/composer` for:
 - any module that used the slots;
 - any code that calls `isRuntimeValue()`;
 - any service schema with a field bound to `generatedParam()` or `serviceOrigin()`, which must now be wrapped;
-- any service binding that type-checks only because of the loose type.
+- any service binding that type-checks only because of the loose type;
+- any binding of `envParam()` to a field narrower than text, such as `email()`'s `deliveryMode`; read such a value through the root's input.
 
 The release note shows each change before and after.
 

@@ -52,7 +52,7 @@ error TS2769: No overload matches this call.
 - **So the design's cases fail to compile.** A wrong literal; an `envSecret()` in a plain or wrapped text field, because `Pointer<SecretString>` is neither text nor `Pointer<string>`; a `serviceOrigin()` or plain `generatedParam()` in a plain field, because `Pointer<string>` is not text; a `serviceOrigin()` in a `secretString()` field; a `SecretBox` or a pointer written in the code; and an `envParam()`, which may hold any text, in a field of a narrower type.
 - **A schema without type information takes any binding.** `InputBinding<unknown>` is `unknown`. The deploy check catches what the compiler cannot see, as S7 built it, and Load still refuses a module's whole `input` (S9). This is the limit S9 recorded for modules.
 - **The deferred S9 items are closed.** An object field with a wrapped leaf binds into a service's binding, because `InputBinding<T>` maps the field's type instead of requiring loose data. A field may be a service's whole binding, `input: input.smtp`: the top level of `InputBinding<T>` takes a `Value<T>`, and Load and the serializer already handle it (tests 9 and 12). A module's whole `input` in a service's binding shows the message, because the last `provision()` overload is now one generic overload for services and modules, and TypeScript reports the last overload's error.
-- **The `provision()` overloads.** Four, in this order: the resource overload; the two overloads with `deps` spelled out, for generic wrappers such as `cron()`, unchanged except that `input` is typed; and one overload for every service and module, `provision<N extends ServiceNode | ModuleNode>(node: N, ...args: ProvisionArgs<N>)`, which replaces the two primary overloads. TypeScript reports the last overload's error when more than three overloads apply, so a failed service or module call reports the generic overload's error, which names the binding key that does not fit. Placing the service overload last instead would have hidden the module's message, which S9 shows.
+- **The `provision()` overloads.** Eight, in this order: the resource overload; the two primary overloads, one for a service and one for a module, typed with `InputBindingOf<I>`, which infer the node's type parameters separately, so a generic wrapper without `deps` resolves; two service overloads and two module overloads with `deps` written out, for generic wrappers such as `cron()`, of which one requires `input` and the other, for a node without an input schema, refuses it; and one overload for every service and module, `provision<N extends ServiceNode | ModuleNode>(node: N, ...args: ProvisionArgs<N>)`, declared last. TypeScript reports the last overload's error when more than three overloads apply, so a failed service or module call reports the generic overload's error, which names the binding key that does not fit or shows S9's message. Placing the service overload last instead would have hidden the module's message, which S9 shows. (Changed by the review fixes, § 18.)
 - **`service.input()` does not change.** It already returns the schema's output with every pointer removed (S7, `InputValueOf<I>`), and `mockService()`'s input double has the same type. `field.test-d.ts` already pins both.
 - **Deploy output does not change.** No input document, stack file or deploy report changes. The auth example's delivery mode moves from `envParam('EMAIL_DELIVERY_MODE')` to a root input field reading the same configuration value, which reaches the service's input document as the same text.
 
@@ -114,7 +114,7 @@ error TS2769: No overload matches this call.
          : never;
    ```
 
-5. `ModuleBuilder` becomes, in full:
+5. `ModuleBuilder` becomes, in full (as changed by the review fixes, § 18):
 
    ```ts
    export interface ModuleBuilder {
@@ -123,42 +123,35 @@ error TS2769: No overload matches this call.
        resource: ResourceNode<C>,
        opts?: { id?: string },
      ): { readonly id: string } & (C extends AnyContract ? RefPort<C> : Record<never, never>);
-     /**
-      * The service call with `deps`/`input` spelled out. `ProvisionArgs` below
-      * cannot resolve while `D`/`I` are still unbound type parameters — a
-      * generic wrapper like `cron()` provisioning a caller-supplied service — so
-      * that call site resolves to this concrete overload instead.
-      */
-     provision<
-       D extends Deps,
-       P extends Params,
-       E extends Expose,
-       I extends StandardSchemaV1 | undefined,
-     >(
+     /** Registers an owned service; … */
+     provision<D extends Deps, P extends Params, E extends Expose, I extends StandardSchemaV1 | undefined>(
        service: ServiceNode<D, P, E, I>,
-       opts: {
-         id?: string;
-         deps: DepBindings<D>;
-         input?: InputBindingOf<I>;
-         params?: ParamBindings<P>;
-       },
+       ...args: ServiceProvisionArgs<D, I, ParamBindings<P>>
      ): ProvisionedRef<E>;
-     /** The child-module call with `deps` spelled out — the same generic-wrapper escape as the service overload above. */
+     /** Registers an owned child module; … */
      provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
        child: ModuleNode<D, E, I>,
-       opts: {
-         id?: string;
-         deps: DepBindings<D>;
-         input?: InputBindingOf<I>;
-       },
+       ...args: ModuleProvisionArgs<D, I>
      ): ProvisionedRef<E>;
-     /**
-      * Registers an owned service or child module; its id defaults to the node's
-      * `name`; `deps` and `input` are required iff it declares them; a service's
-      * reserved param may be bound (literal or `ParamSource`), overriding its
-      * default. Declared last, so a call no overload accepts reports this
-      * overload's error, which names the binding key that does not fit.
-      */
+     /** The service call with `deps` written out, for a generic wrapper such as `cron()`. */
+     provision<D extends Deps, P extends Params, E extends Expose, I extends StandardSchemaV1 | undefined>(
+       service: ServiceNode<D, P, E, I>,
+       opts: { id?: string; deps: DepBindings<D>; input: InputBindingOf<I>; params?: ParamBindings<P> },
+     ): ProvisionedRef<E>;
+     provision<D extends Deps, P extends Params, E extends Expose>(
+       service: ServiceNode<D, P, E, undefined>,
+       opts: { id?: string; deps: DepBindings<D>; input?: never; params?: ParamBindings<P> },
+     ): ProvisionedRef<E>;
+     /** The child-module call with `deps` written out. */
+     provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
+       child: ModuleNode<D, E, I>,
+       opts: { id?: string; deps: DepBindings<D>; input: InputBindingOf<I> },
+     ): ProvisionedRef<E>;
+     provision<D extends Deps, E extends Expose>(
+       child: ModuleNode<D, E, undefined>,
+       opts: { id?: string; deps: DepBindings<D>; input?: never },
+     ): ProvisionedRef<E>;
+     /** Any service or child module. Declared last, so a call no overload accepts reports this overload's error. */
      provision<N extends ServiceNode | ModuleNode>(
        node: N,
        ...args: ProvisionArgs<N>
@@ -171,7 +164,7 @@ No other line of `node.ts` changes. `Pointer`, `SecretString` and `SecretSource`
 ### 3.2 `packages/0-framework/1-core/core/src/graph-types.ts`
 
 1. The import from `./node.ts` becomes `import type { DependencyEnd, ModuleNode, ResourceNode, SecretSource, ServiceNode } from './node.ts';`.
-2. In `ServiceInputBinding`, `readonly binding: InputBinding;` becomes `readonly binding: unknown;`. The doc comments do not change. The binding is recorded data that the target walks; no type describes every service's binding.
+2. In `ServiceInputBinding`, `readonly binding: InputBinding;` becomes `readonly binding: unknown;`. The review fixes (§ 18) rename the type `InputBindingUse` and rewrite its doc comment. The binding is recorded data that the target walks; no type describes every service's binding.
 
 ### 3.3 `packages/0-framework/1-core/core/src/load-module.ts`
 
@@ -243,11 +236,13 @@ In the type export from `../node.ts`, `  InputBindingData,` becomes `  InputBind
        const runner = provision(runnerNode, {
    ```
 
+   The review fixes (§ 18) replace the conditional spread of `opts.input` with `input: opts.input`, so the call matches the overload that requires `input`.
+
    The widening is needed: inside `cron()`, `opts.input` reads as `unknown`, because `InputBindingOf<I>` of an unbound `I` resolves to `InputBinding<unknown>`. Widened to the default schema type, the runner's binding is `unknown` too, so `opts.input` fits it. The caller's binding is still checked against the runner's schema, at the `cron({ … })` call.
 
 ### 5.2 `packages/1-prisma-cloud/2-shared-modules/email/src/email-module.ts`
 
-`  deliveryMode: field(type('string')),` becomes `  deliveryMode: field(type("'resend'|'smtp'|'none'")),`.
+`  deliveryMode: field(type('string')),` becomes `  deliveryMode: field(type("'resend'|'smtp'|'none'")),`. The review fixes (§ 18) build both schemas from the exported `emailDeliveryModes` instead: `field(type.enumerated(...emailDeliveryModes))`.
 
 The email service's schema declares `deliveryMode: field(type("'resend'|'smtp'|'none'"))`. With the service's binding typed, the module's `input.deliveryMode`, a `Value<string | Pointer<string>>`, no longer fits it: any text would fail the service's schema at deploy. So the module declares the same three values. An `envParam()` may hold any text, so it no longer binds to `deliveryMode` (§ 10, item 4).
 
@@ -306,6 +301,8 @@ export default module(
 );
 ```
 
+The review fixes (§ 18) declare `EMAIL_DELIVERY_MODE` as `type.enumerated(...emailDeliveryModes)`, imported from `@prisma/composer-prisma-cloud/email`.
+
 The example already depends on `arktype`, and its `prisma.config.ts` already lists `dotenv()` and `environmentVariables()` as config adapters, and its `.env.example` sets `EMAIL_DELIVERY_MODE=none`. `examples/auth/tests/module.test.ts` already passes `EMAIL_DELIVERY_MODE` in `configPool` and does not change. The example keeps `serviceOrigin()` and `envParam()` inside `input`, as design section 10 says.
 
 ## 7. What breaks, and what does not
@@ -314,8 +311,9 @@ Breaks, each shown in the release note (§ 10):
 
 1. A service binding that type-checked only because of the loose type: a wrong literal, an `envSecret()` in a plain or wrapped text field, a `serviceOrigin()` or plain `generatedParam()` in a plain or `secretString()` field, a `SecretBox`, an `envParam()` in a field narrower than text, a missing required key, or a key the schema does not declare.
 2. A pointer written as a literal in any binding, a module's included. A module's binding took one before.
-3. The types: `InputBinding` takes a type parameter; `ModuleInputBinding` is renamed `InputBinding`; `InputBindingData` is removed; `InputBindingOf<I>` is new; `ServiceInputBinding['binding']` is `unknown`; `BootstrapConfig` takes the schema's type and `bootstrapService()`'s `input` is typed from the service's schema; `ModuleBuilder['provision']` has four overloads, of which the last is generic over the node.
-4. `email()`'s `deliveryMode` is `'resend' | 'smtp' | 'none'`: an `envParam()` or a field typed as text no longer binds to it.
+3. The types: `InputBinding` takes a type parameter; `ModuleInputBinding` is renamed `InputBinding`; `InputBindingData` is removed; `InputBindingOf<I>` is new; `ServiceInputBinding` is renamed `InputBindingUse`, and its `binding` is `unknown`; `BootstrapConfig` takes the schema's type and `bootstrapService()`'s `input` is typed from the service's schema; `ModuleBuilder['provision']` has eight overloads, of which the last is generic over the node.
+4. `email()`'s `deliveryMode` is `'resend' | 'smtp' | 'none'`, exported as `emailDeliveryModes` and `EmailDeliveryMode`: an `envParam()` or a field typed as text no longer binds to it.
+5. A service or module that declares both dependencies and an input schema, provisioned without `input`, fails to compile. Before, it compiled and Load refused it. A generic wrapper must pass `input` whenever its node's type may declare a schema.
 
 Unchanged:
 
@@ -710,7 +708,7 @@ S9 and S10 ship as one pull request, prisma/composer#412, whose description alre
 
   5. The sentence: `A service's input binding is now typed from the service's schema, with the same type a module's binding has. A wrong literal, a missing or undeclared key, envSecret() in a text field, serviceOrigin() or a plain generatedParam() in a plain or secretString() field, and envParam() in a field narrower than text now fail to compile; before, they failed at deploy. A schema without type information still takes any binding, and the deploy still checks it.`
   6. The sentence: `A SecretBox or a pointer written as a literal in any binding fails to compile. A module's binding took a pointer literal before.`
-  7. The sentence: `The type InputBinding now takes the schema's input type, InputBinding<T>, and replaces ModuleInputBinding<T>, which is removed. InputBindingData is removed. InputBindingOf<I> is the binding of a node whose input schema is I. ServiceInputBinding's binding is unknown. bootstrapService()'s input is typed from the service's schema, and BootstrapConfig takes the schema's type. ModuleBuilder's provision() has four overloads, of which the last is generic over a service or module node.`
+  7. The sentence: `The type InputBinding now takes the schema's input type, InputBinding<T>, and replaces ModuleInputBinding<T>, which is removed. InputBindingData is removed. InputBindingOf<I> is the binding of a node whose input schema is I. ServiceInputBinding is renamed InputBindingUse, and its binding is unknown. bootstrapService()'s input is typed from the service's schema, and BootstrapConfig takes the schema's type. ModuleBuilder's provision() has eight overloads, of which the last is generic over a service or module node.`
   8. The before and after for `email()`:
 
      ```ts
@@ -718,12 +716,13 @@ S9 and S10 ship as one pull request, prisma/composer#412, whose description alre
      provision(email(), { input: { deliveryMode: envParam('EMAIL_DELIVERY_MODE'), from: envParam('EMAIL_FROM'), deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') } });
 
      // after: deliveryMode is 'resend' | 'smtp' | 'none'; read it through the root's input
-     export default module('app', { input: type({ EMAIL_DELIVERY_MODE: "'resend' | 'smtp' | 'none'" }) }, ({ input, provision }) => {
+     export default module('app', { input: type({ EMAIL_DELIVERY_MODE: type.enumerated(...emailDeliveryModes) }) }, ({ input, provision }) => {
        provision(email(), { input: { deliveryMode: input.EMAIL_DELIVERY_MODE, from: envParam('EMAIL_FROM'), deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') } });
      });
      ```
 
-  9. The sentence: `email()'s deliveryMode is now typed 'resend' | 'smtp' | 'none', as the email service's schema always required. An envParam() may hold any text, so it no longer binds to deliveryMode; bind a literal, or a root input field declared with the same three values.`
+  9. The sentence: `email()'s deliveryMode is now typed 'resend' | 'smtp' | 'none', as the email service's schema always required. An envParam() may hold any text, so it no longer binds to deliveryMode; bind a literal, or a root input field declared from emailDeliveryModes, which the email package now exports with the type EmailDeliveryMode.`
+  10. The sentence: `A service or module that declares both dependencies and an input schema must be bound: provision() without input fails to compile. Before, it compiled and Load refused it.`
 
 The implementer edits the pull request with `gh pr edit 412 --title … --body-file <file>`, with the body file written under the worktree's git-ignored `wip/`, after reading the current body with `gh pr view 412 --json body`. Only the title and the breaking-changes section change; the rest of the body stays as it is. The description ends with the line `Agent: <name>` directly above the closing attribution line, as it does now.
 
@@ -1212,7 +1211,7 @@ Tests 2 to 5 cover the design's requirement 4 for services in both libraries: a 
 
 In: `packages/0-framework/1-core/core` (§ 3, tests); the Prisma Cloud target's `testing.ts` and tests (§ 4, § 11.4); the cron and email shared modules (§ 5, tests) and the email README; `examples/auth/module.ts` (§ 6); `docs/`; `skills/`; `deferred.md`; the pull request's title and description.
 
-Out: `dotenv-flow` (S11); the configuration file and the "pool" names (S12), so the docs keep "config pool"; redaction (S13); the missing-`input` gap of § 9.10 item 4, recorded for later; the other decision records the project touched (secrets, params, the `composer` config section, dev secrets), whose behaviour this slice does not change; `module-composition.md`'s and `config-params.md`'s own amendment notes at their tops.
+Out: `dotenv-flow` (S11); the configuration file and the "pool" names (S12), so the docs keep "config pool"; redaction (S13); the other decision records the project touched (secrets, params, the `composer` config section, dev secrets), whose behaviour this slice does not change; `module-composition.md`'s and `config-params.md`'s own amendment notes at their tops.
 
 ## 13. Commits, in order
 
@@ -1316,7 +1315,7 @@ One scratch worktree of this branch, at its git-ignored `wip/s10-scratch`, with 
 10. **The auth example reads the delivery mode through its root's input** (§ 6), because `envParam()` no longer fits `deliveryMode`. It keeps `envParam()` for `from` and `serviceOrigin()` for `baseUrl`, as design section 10 says.
 11. **ADR-0042 and ADR-0016 are rewritten in full, not amended** (§ 9.1, § 9.2), following Will's instruction and the ADR-0061 and ADR-0062 precedent. ADR-0042's rewrite also corrects text that had gone stale: `envParam()` reads the configuration, not "the deploy shell"; `serviceOrigin()` is written as a `$generated` marker; the sentinels are gone. ADR-0016's example used a `provision()` signature that no longer exists. Both use "the configuration", as ADR-0062 does, and say "config pool" nowhere.
 12. **The cron tests' runner schema becomes `secretString()`** (§ 11.1). They bound `envSecret()` to a text field, which the deploy refuses; the new type caught it.
-13. **The missing-`input` gap is recorded, not fixed** (§ 9.10). It is outside "a service's binding is typed from its schema", and making `input` required in the spelled-out overloads would change every generic wrapper's call.
+13. **The missing-`input` gap is recorded, not fixed** (§ 9.10). It is outside "a service's binding is typed from its schema", and making `input` required in the spelled-out overloads would change every generic wrapper's call. Reversed by the review fixes (§ 18): the gap is closed.
 
 ## 17. What the design does not say, found while checking it against the code
 
@@ -1326,3 +1325,15 @@ One scratch worktree of this branch, at its git-ignored `wip/s10-scratch`, with 
 4. **A node with dependencies and an input schema, provisioned without `input`, compiles** (§ 9.10 item 4). Load refuses it. It predates this project and is a gap in requirement 4 that the design does not mention.
 5. **The design's "`ModuleInputBinding`" is renamed** (§ 16, decision 1). design.md does not use the name for any other purpose, so no design text needs to change.
 6. **ADR-0042 still said the deploy reads `envParam()` "from the deploy shell" and that `serviceOrigin()` used sentinels**, though S4 and S7 changed both. The rewrite (§ 9.1) states the current behaviour.
+
+## 18. Review fixes
+
+The system-design and code reviews of this slice (`reviews/`, not committed) found defects that the sections above now reflect where they changed names, overloads or files. Each fix, and its commit:
+
+1. **F01.** The bundled types of `@prisma/composer-prisma-cloud` carried their own copy of `SecretBox`, so a redacted `generatedParam()` did not fit a `secretString()` field in an app using the published packages. `packages/9-public/composer-prisma-cloud/tsdown.config.ts` and `scripts/rewrite-internal-dts.mjs` map `@internal/foundation/secret` and `@internal/foundation/pointer` to `@prisma/composer`. `examples/email/tests/secret-bindings.ts`, compiled by the example's typecheck against the built packages, binds a redacted `generatedParam()` and an `envSecret()` to a service's `secretString()` field. Of the other public packages, `@prisma/composer` holds the one copy, and `@prisma/composer-cli` inlines its own copy of core, whose types no user value crosses. Commit `fix(prisma-cloud): the published types import SecretBox and Pointer from @prisma/composer`.
+2. **F02, D02 and D03.** The two primary overloads are back, typed with `InputBindingOf<I>` (§ 3.1 item 5), so a generic wrapper without `deps` compiles. Each overload with `deps` written out is split in two: one requires `input`, one, for a node without an input schema, refuses it. So a node with dependencies and an input schema, provisioned without `input`, fails to compile. `cron()` passes `input: opts.input`. `field.test-d.ts` adds a service and a module with dependencies and an input schema, refused with a wrong literal, the wrong kind of runtime value, a missing `input` and the whole input, and generic wrappers with and without dependencies. Commit `fix(core)!: a generic wrapper provisions a node without deps, and a node with deps and an input schema must be bound`.
+3. **D04.** `ServiceInputBinding` is `InputBindingUse`. Commit `refactor(core)!: ServiceInputBinding is InputBindingUse`.
+4. **D06.** The email package exports `emailDeliveryModes` and `EmailDeliveryMode` from `src/delivery-mode.ts`; the service's and the module's schemas, the handlers, the delivery URL check, the README and the auth and email examples use them. Commit `feat(email): export emailDeliveryModes and EmailDeliveryMode`.
+5. **D01, D05, D10 and D12.** ADR-0042, ADR-0016, `module-composition.md` and `config-params.md` say the type checks shape and kind, and that a refinement such as a URL format is checked only at deploy. ADR-0042 and ADR-0016 say "input" for a node's input and "the app configuration" for what the config adapters return. ADR-0061's and ADR-0063's Related lines and the index say ADR-0016's and ADR-0042's current text includes their changes. `module-composition.md` lists the overloads and says how to write a generic wrapper with `InputBindingOf<I>`. Commit `docs(design): …`.
+6. **D07 and D08.** The guide's `chatInput` declares `appOrigin`, and `gotchas.md` binds `deliveryMode` through the root's input. Commit `docs: …`.
+7. **D09 and D11.** `design.md` section 10 lists the `envParam()` break; `deferred.md` records the missing-`input` gap as closed, and `InputRef` and `ModuleOutputs` as later work. Committed with this section.
