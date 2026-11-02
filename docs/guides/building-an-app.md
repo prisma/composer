@@ -632,8 +632,8 @@ Because the input is a real schema, legality can be conditional — "no
 and `service.input()` narrows it like any other TypeScript union:
 
 ```ts
-const chatInput = type({ stripeEnabled: 'false' }).or(
-  type({ stripeEnabled: 'true', stripeSecretKey: secretString() }),
+const chatInput = type({ stripeEnabled: 'false', appOrigin: 'string' }).or(
+  type({ stripeEnabled: 'true', appOrigin: 'string', stripeSecretKey: secretString() }),
 );
 
 const chat = compute({ name: 'chat', input: chatInput, /* ... */ });
@@ -649,7 +649,7 @@ standalone `server.js`, which binds `PORT` itself.)
 
 ### Binding the input at provision
 
-The service declares what shapes are legal; the place that provisions it decides where each value comes from. The binding is a plain object mirroring the schema's shape whose leaves are literals, `envParam(...)`, `envSecret(...)`, or values from `resolve()` ([below](#values-that-differ-per-environment)). It is typed from the schema, as a module's binding is, so a binding the schema would refuse fails to compile:
+The service declares what shapes are legal; the place that provisions it decides where each value comes from. The binding is a plain object mirroring the schema's shape whose leaves are literals, `envParam(...)`, `envSecret(...)`, or values from `resolve()` ([below](#values-that-differ-per-environment)). It is typed from the schema, as a module's binding is. So a binding of the wrong shape or kind fails to compile: a missing or undeclared key, a literal of the wrong type, a source in the wrong kind of field. A refinement the type cannot carry, such as a URL format, is checked by the deploy:
 
 ```ts
 import { envParam, envSecret } from '@prisma/composer-prisma-cloud';
