@@ -56,7 +56,7 @@ A module declares the same boundary a service does:
 - **Modules stay root-only wiring scripts**, with no boundary. Rejected: a module that cannot be wired cannot be installed, faked or nested, so every application would inline the topology of everything it uses.
 - **A separate "package" or "component" concept beside the module.** Rejected: a second boundary to learn, wire and check, duplicating what services already have.
 - **Forwarding as declared mappings**, a table linking each dependency to a child and each child's port to an exposed interface. Rejected: it is easier to inspect, but it adds a wiring language where a function already serves, and the body still has to exist for `provision()`.
-- **Per-key `params` and `secrets` slots on modules**, which an earlier version of the module boundary had. Rejected: a module would take configuration in a different shape from a service ([ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)).
+- **Per-key `params` and `secrets` slots on modules**, which an earlier version of the module boundary had. Rejected: a module would take its input in a different shape from a service ([ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)).
 - **A typed binding for modules and a loosely typed one for services**, which an earlier version had. Rejected: the same binding would type-check for one kind of node and not the other, and a service binding that type-checked could still fail the deploy.
 - **Naming the two ends of a connection "input" and "output"**, which an earlier version did. Rejected: two traditions give the same ends opposite names ([ADR-0063](ADR-0063-a-node-depends-on-an-interface-or-exposes-one.md)).
 
