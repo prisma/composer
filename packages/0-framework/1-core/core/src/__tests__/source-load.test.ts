@@ -383,6 +383,20 @@ describe('configuration keys Load reads', () => {
     );
   });
 
+  test('a root input field named as a secrets key fails at Load, and the message holds no value', () => {
+    const root = module('shop', { input: anyInputSchema }, ({ input, provision }) => {
+      provision(echoService(), { id: 'plain', input: { key: (input as never)['API_KEY'] } });
+      provision(echoService(), { id: 'secret', input: { key: secret('API_KEY') } });
+    });
+    const run = () => Load(root, { configuration: { API_KEY: 'sk_live_supersecret' } });
+
+    const message = loadError(run).message;
+    expect(message).toBe(
+      `input.API_KEY of root module "shop" reads "API_KEY" from the app configuration, and secret('API_KEY') names "API_KEY" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every root input field the root's body passes on, in a file, and never writes a secret to a file. Read the secret with secret('API_KEY') only, or give the plain value a different name.`,
+    );
+    expect(message).not.toContain('sk_live_supersecret');
+  });
+
   test('the second process reads configuration keys from the checked values', () => {
     const graph = Load(threePlaces(), {
       checkedConfiguration: { rootInput: [], values: { IN_MODULE: 'from-file' } },

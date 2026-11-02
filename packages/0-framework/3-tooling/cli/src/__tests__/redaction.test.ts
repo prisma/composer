@@ -3,13 +3,14 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import type { DeploymentSummary } from '../deployment-summary.ts';
 import type { DevEvent } from '../operations/dev.ts';
 import {
+  credentialNamedValuesIn,
   KnownSecrets,
   redactDevEvent,
   redactError,
   redactingTransform,
   redactSummary,
   StreamRedactor,
-  secretValuesIn,
+  valuesUnderSecretsKeys,
 } from '../redaction.ts';
 
 const knowing = (...values: string[]): KnownSecrets => {
@@ -44,15 +45,30 @@ describe('KnownSecrets', () => {
   });
 });
 
-describe('secretValuesIn', () => {
-  test('secretValuesIn takes the values under each secrets key from both, and credential-looking app configuration values of eight characters or more', () => {
-    const values = secretValuesIn(
-      { STRIPE_KEY: 'sk_live_123456', WEBHOOK: 'w', API_TOKEN: 'short', N: 4 },
+describe('the values a command learns are secrets', () => {
+  test('valuesUnderSecretsKeys takes the value under each secrets key from both, at any length', () => {
+    const values = valuesUnderSecretsKeys(
+      { STRIPE_KEY: 'sk_live_123456', WEBHOOK: 'w', N: 4 },
       { WEBHOOK: 'w2' },
       ['WEBHOOK'],
     );
 
-    expect(values.sort()).toEqual(['sk_live_123456', 'w', 'w2'].sort());
+    expect(values.sort()).toEqual(['w', 'w2']);
+  });
+
+  test('credentialNamedValuesIn takes credential-looking app configuration values of eight characters or more', () => {
+    expect(
+      credentialNamedValuesIn({ STRIPE_KEY: 'sk_live_123456', API_TOKEN: 'short', N: 4 }),
+    ).toEqual(['sk_live_123456']);
+  });
+
+  test('a value added by name is redacted but is not a certain secret', () => {
+    const known = new KnownSecrets();
+    known.addByName(['looks-like-a-credential']);
+    known.add(['under-a-secrets-key']);
+
+    expect(known.redact('looks-like-a-credential')).toBe('[redacted]');
+    expect([...known.certainValues()]).toEqual(['under-a-secrets-key']);
   });
 });
 

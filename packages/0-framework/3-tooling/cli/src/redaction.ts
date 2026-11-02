@@ -15,9 +15,19 @@ import type { DevEvent } from './operations/dev.ts';
  */
 export class KnownSecrets {
   private readonly known = new Set<string>();
+  private readonly certain = new Set<string>();
 
-  /** Adds each value that is not empty. */
+  /** Adds each value that is not empty and that Composer knows is a secret: one under a secrets key, or one a written `secrets` list returned. */
   add(values: Iterable<string>): void {
+    for (const value of values) {
+      if (value.length === 0) continue;
+      this.known.add(value);
+      this.certain.add(value);
+    }
+  }
+
+  /** Adds each value that is not empty and only looks like a secret, by the name it is under. */
+  addByName(values: Iterable<string>): void {
     for (const value of values) if (value.length > 0) this.known.add(value);
   }
 
@@ -26,31 +36,40 @@ export class KnownSecrets {
     return [...this.known].sort((a, b) => b.length - a.length);
   }
 
+  /** The values added with `add`: those Composer knows are secrets, not only by their name. */
+  certainValues(): ReadonlySet<string> {
+    return this.certain;
+  }
+
   /** `text` with every known value replaced by `[redacted]` at any length, then whatever `redactSecrets` finds by name and by shape. */
   redact(text: string): string {
     return redactSecrets(redactValues(text, this.known), process.env);
   }
 }
 
-/**
- * The secret values the app configuration and the app secrets hold: under each name in
- * `secretsKeys`, the value in either, at any length; and each app configuration value of
- * eight characters or more under a name that looks like a credential.
- */
-export function secretValuesIn(
-  configuration: AppConfiguration,
-  secrets: AppSecrets,
-  secretsKeys: readonly string[],
-): string[] {
-  const text = Object.fromEntries(
+function textOf(configuration: AppConfiguration): Record<string, string> {
+  return Object.fromEntries(
     Object.entries(configuration).flatMap(([name, value]) =>
       typeof value === 'string' ? [[name, value]] : [],
     ),
   );
-  const named = secretsKeys.flatMap((key) =>
+}
+
+/** The value under each name in `secretsKeys`, in the app configuration and in the app secrets, at any length. */
+export function valuesUnderSecretsKeys(
+  configuration: AppConfiguration,
+  secrets: AppSecrets,
+  secretsKeys: readonly string[],
+): string[] {
+  const text = textOf(configuration);
+  return secretsKeys.flatMap((key) =>
     [text[key], secrets[key]].filter((value): value is string => value !== undefined),
   );
-  return [...named, ...secretNamedValues(text)];
+}
+
+/** Each app configuration value of eight characters or more under a name that looks like a credential. */
+export function credentialNamedValuesIn(configuration: AppConfiguration): string[] {
+  return secretNamedValues(textOf(configuration));
 }
 
 function redactData(value: unknown, known: KnownSecrets): unknown {

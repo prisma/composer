@@ -20,6 +20,7 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../composer-config.ts';
 import {
+  refuseSecretsInConfigurationFile,
   removeConfigurationFile,
   secondProcessEnvironment,
   writeConfigurationFile,
@@ -625,6 +626,10 @@ async function runStackPipelineInner(
         environment,
         assembled: pipeline.assembled,
       });
+      refuseSecretsInConfigurationFile(
+        pipeline.graph.checkedConfiguration,
+        opts.knownSecrets.certainValues(),
+      );
       writeConfigurationFile(configurationFilePath, pipeline.graph.checkedConfiguration);
     } catch (error) {
       // Stack-file write I/O is structured here, at the catch that knows
