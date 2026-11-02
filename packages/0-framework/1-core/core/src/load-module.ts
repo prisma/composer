@@ -670,6 +670,11 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
         `"${root.name}" from another module that provisions and wires it instead.`,
     );
   }
+  if (opts?.configuration !== undefined && opts.appConfigurationRead !== undefined) {
+    throw new LoadError(
+      'Load takes configuration, in the first process, or appConfigurationRead, in the second, not both.',
+    );
+  }
   const moduleInputs: ProvisionedModuleInput[] = [];
   if (root.inputSchema !== undefined) {
     if (opts?.appConfigurationRead !== undefined) {

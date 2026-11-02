@@ -4,6 +4,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { string } from '../config.ts';
 import { type Graph, Load, LoadError } from '../graph.ts';
+import type { LoadOptions } from '../graph-types.ts';
 import { module, paramSource, service } from '../node.ts';
 import { resolve } from '../value.ts';
 import { anyInputSchema } from './helpers.ts';
@@ -349,6 +350,17 @@ describe('what Load reads from the app configuration', () => {
 
     expect(loadError(run).message).toBe(
       'input.B of root module "shop" is not in the app configuration file. The first process\'s root body did not pass it on, so the deploy\'s two processes built different graphs. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
+    );
+  });
+
+  test('Load refuses configuration and appConfigurationRead together, which a caller without type checks can pass', () => {
+    const both = {
+      configuration,
+      appConfigurationRead: { rootInput: [], configurationKeyText: {} },
+    } as unknown as LoadOptions;
+
+    expect(loadError(() => Load(rootOf(schema), both)).message).toBe(
+      'Load takes configuration, in the first process, or appConfigurationRead, in the second, not both.',
     );
   });
 
