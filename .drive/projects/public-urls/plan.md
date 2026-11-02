@@ -26,22 +26,22 @@ Already done or running: the upstream Alchemy fix that lets a custom domain atta
 
 ## Increment 3. A Composer author declares a hostname before DNS, and it goes live on its own
 
-**Started.** The RoutingUrl table and the stored status of RoutingUrls and domain ownerships merged in prisma/pdp-control-plane#5860. The RoutingUrl repository is the draft prisma/pdp-control-plane#5870.
+**Started.** The RoutingUrl table and the stored status of RoutingUrls and domain ownerships merged in prisma/pdp-control-plane#5860. The platform plan was re-cut into one pull request per slice in prisma/pdp-control-plane#5880; the drafts prisma/pdp-control-plane#5870 (the RoutingUrl repository) and prisma/pdp-control-plane#5868 (Foundry lost replies) come from the earlier layer-by-layer plan.
 
-- **Platform slice 3.** The `RoutingUrl` record, its repository, interactors and routes; `syncRoutingUrl` on the sync queue that slice 2 built; the alerts and the backfill; and today's custom-domain interactors, the existing Console page's backend and the old routes moved onto the records without changing what users see. A RoutingUrl is pending until its conditions are met and active once they are. A change of the service's live deployment does not change its status; it only re-points the Foundry custom domain. Nothing is sent to Foundry for a new RoutingUrl until its domain ownership is verified. Custom domains attached before the TXT check shipped on 24 October 2026 get a grandfathered domain ownership and an already-active RoutingUrl, so they keep serving with nothing for the customer to do. A grandfathered domain ownership has no end date. Checks run on it as on any other, but a missing record never revokes it. Only a conflict does: another workspace publishing its own value at the record name. It does not count as verified, so a new or changed hostname under it is not sent to Foundry. When an active RoutingUrl's domain ownership becomes pending, because its record is gone or a grandfathered one lost a conflict, the RoutingUrl goes back to pending and its custom domain is removed.
+- **Platform slice 3. Hostnames through the API.** Create, check, update and delete a hostname for a service through the Management API, before its DNS exists. A hostname is pending until every condition is met, and active once a covering domain ownership is verified and Foundry has registered the custom domain and issued its certificate. Nothing is sent to Foundry for a pending hostname whose domain ownership is not verified. Create and update take `createDomainOwnership`, default `true`; Composer passes `false` and creates the domain ownership through the workspace route. Check never creates anything. When the covering domain ownership becomes pending, the hostname goes back to pending and its custom domain is removed. `syncRoutingUrl` runs on the sync queue slice 2 built. Just before the slice, the domain ownership status `grandfathered` is renamed `unverified_allowed`. The rest of what this increment used to hold moves to later platform slices: existing custom domains onto RoutingUrls, with the backfill and the "stopped serving" email (slice 4); hostnames following the live deployment (slice 5); today's Console page and routes reading RoutingUrls (slice 6); the alerts and runbook (slice 9). A custom domain attached before the TXT check shipped on 24 October 2026 gets an `unverified_allowed` domain ownership and an already-active RoutingUrl in slice 4, so it keeps serving with nothing for the customer to do. An `unverified_allowed` domain ownership has no end date; a missing record never revokes it, only a conflict does, and it does not count as verified.
 - **U2. The Alchemy RoutingUrl resource.** Create with no DNS, read conditions and the records to publish, update hostname or service, delete; found by `logicalId`; adopts a live row on the same service with the same hostname and no `logicalId` by writing the `logicalId` on it; refuses to change the hostname of a row that is serving to one that cannot serve yet, naming both hostnames and the records to publish, unless the platform refuses that update itself (design note 12). Written to Alchemy's own testing conventions with live credentials confirmed before dispatch, and released. Builds on platform slice 3 deployed.
 - **P2. Pending hostnames.** A named hostname lowers to `Prisma.RoutingUrl`; the deploy output names the first unmet condition and prints every record still to publish, with name, type and value; a deploy declaring a hostname nobody has set up yet succeeds and says how to prove ownership and which CNAME to publish; a change from a serving hostname to one that cannot serve fails the deploy (design note 12), switching a public URL from `Prisma.CustomDomain` to `Prisma.RoutingUrl` drops the custom domain from Alchemy state without calling its delete, because the delete would remove the platform row the RoutingUrl has just adopted and take the hostname out of service, with a test that proves no delete is sent; the RoutingUrl's Alchemy resource id is the node's address alone, not the address plus the hostname as in P1; `prisma deploy list` shows each public URL's hostname and platform id, joining the RoutingUrl row by its `logicalId`, which a P1 custom domain row lacks; `origin()` is unchanged. Builds on P1 and U2.
 - **Demo:** the spec's example app deploys production before `shop.com`'s DNS exists and succeeds; the author publishes the two records printed by the deploy; the hostname goes active with no further deploy and no Console.
 
 ## Increment 4. A Console user proves a domain and manages hostnames, behind a feature flag, then the old page goes
 
-The platform's slice 4, owned by Søren from the platform's Console brief: the Domains page in workspace settings and the service page's hostname section, built in Storybook from the start and wired to the slice 2 and slice 3 interactors when they exist; then the cutover that removes the existing domains page and deprecates the old routes.
+The platform's slice 7, owned by Søren from the platform's Console brief: the Domains page in workspace settings and the service page's hostname section, built in Storybook from the start and wired to the domain ownership and hostname interactors after platform slice 6; then the cutover that removes the existing domains page and deprecates the old routes.
 
 - **Demo:** prove `shop.com` from the Domains page and watch it appear once the record is found; add a hostname on the service page before DNS, see the records to publish, and watch it go active after one press of check.
 
 ## Increment 5. A service nobody declared public has no public hostname
 
-- **Platform slice 5.** The `prisma.build` endpoint becomes a RoutingUrl a service can lack, with the backfill of existing endpoints into rows with no `logicalId`.
+- **Platform slice 8.** The `prisma.build` endpoint becomes a RoutingUrl a service can lack, with the backfill of existing endpoints into rows with no `logicalId`.
 - **P3. `publicUrl.prismaBuild()` lowers to that RoutingUrl**, and U2's adoption takes over the row the backfill made for an existing service. The deploy output names every service that has no public URL, saying whether it is still reachable at its platform hostname (ADR-0060 asks for this; P1 left it out because until P3 every service is reachable and the message would change). Specified against [step-two-migration-scenarios.md](design/step-two-migration-scenarios.md) once increment 3 has landed.
 - **Demo:** a new service with no `publicUrl()` answers on no hostname; an existing app's services keep their addresses through the upgrade; every migration scenario holds against a real Branch.
 
@@ -62,12 +62,13 @@ The platform's slice 4, owned by Søren from the platform's Console brief: the D
 | Work | Starts when |
 | --- | --- |
 | C1, P1, platform slices 0, 1 and 2 | merged |
-| platform slice 3 | started |
+| platform slice 3 | next, after the `unverified_allowed` rename |
+| platform slices 4, 5, 6 and 9 | in that order, after slice 3 |
 | Søren's Storybook views | now |
 | U2 | platform slice 3 is deployed |
 | P2 | P1 and U2 have merged |
-| the Console wiring and cutover | slices 2 and 3 have merged |
-| platform slice 5, then P3 | increment 3 has landed |
+| the Console wiring and cutover (platform slice 7) | platform slice 6 has merged |
+| platform slice 8, then P3 | platform slice 3 has landed |
 
 ## Close-out
 
