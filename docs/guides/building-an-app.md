@@ -404,9 +404,8 @@ export default module('shop', ({ provision }) => {
 `{ from: 'staging+shop@example.com', deliveryCredential:
 envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
 
-- The body receives each field as a [value](#values-that-differ-per-environment).
-  It can pass a field into a `provision()` binding, or, if the field is
-  plain, list it as a `resolve()` dependency to compute with it.
+- The body receives `input`, a dictionary with one [value](#values-that-differ-per-environment) per field. It can pass a field into a `provision()` binding, or, if the field is plain, list it as a `resolve()` dependency to compute with it.
+- `input` itself is not a value. Pass each field on by name, as `input: { from: sender, replyTo: input.replyTo, deliveryCredential: input.deliveryCredential }` does above. Passing the whole `input` on, as in `provision(child, { input })`, fails to compile, and the deploy refuses it if a cast gets it past the compiler.
 - Reading a field in the body fails the deploy with a message naming the
   field: a template literal, `String()`, arithmetic, `JSON.stringify` or
   `Object.keys` on `input.domain` reports that `input.domain` of the module is
@@ -967,10 +966,7 @@ deploy, and give `prisma dev` its secrets.
 A root's input takes no secret, so bind `envSecret()` inside the body, as
 `stripeKey` is above.
 
-Pass the root's input fields on one by one, as `from: input.EMAIL_FROM` is
-above. The root's whole `input` is every value the `config` adapters
-return, which by default is every variable of the shell, secrets included, so
-Load refuses it in a binding or a `resolve()` dependency.
+Pass the root's input fields on by name, as `from: input.EMAIL_FROM` is above. No module can pass its whole `input` on, and for the root it matters most: its whole `input` is every value the `config` adapters return, which by default is every variable of the shell, secrets included.
 
 The root's schema checks the config pool before anything is created, so a
 missing value fails with the schema's message.
