@@ -10,10 +10,11 @@ import { field, secretString } from '@internal/foundation/arktype';
 import { rawPostgres } from '@internal/prisma-cloud';
 import { type } from 'arktype';
 import { emailOutboxContract, emailSendContract } from './contract.ts';
+import { emailDeliveryModes } from './delivery-mode.ts';
 import { emailService } from './email-service.ts';
 
 const emailModuleInput = type({
-  deliveryMode: field(type("'resend'|'smtp'|'none'")),
+  deliveryMode: field(type.enumerated(...emailDeliveryModes)),
   from: field(type('string')),
   deliveryCredential: secretString(),
 });

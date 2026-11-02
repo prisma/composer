@@ -15,9 +15,10 @@ import node from '@internal/node';
 import { compute, rawPostgres } from '@internal/prisma-cloud';
 import { type } from 'arktype';
 import { emailOutboxContract, emailSendContract } from './contract.ts';
+import { emailDeliveryModes } from './delivery-mode.ts';
 
 const emailInputSchema = type({
-  deliveryMode: field(type("'resend'|'smtp'|'none'")),
+  deliveryMode: field(type.enumerated(...emailDeliveryModes)),
   deliveryUrl: 'string',
   from: field(type('string')),
   deliveryCredential: secretString(),
