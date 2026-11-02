@@ -6,9 +6,12 @@ import { defineConfig } from 'tsdown';
 // resolve hook rewrites them to the public `@prisma/composer` subpaths and
 // marks them external, so both the emitted JS and the rolled .d.mts reference
 // the one installed framework copy (type identity: core's node brand is a
-// unique symbol; two bundled declaration copies would not unify).
+// unique symbol, and `SecretBox` has a private member; two bundled
+// declaration copies would not unify).
 const FRAMEWORK: Record<string, string> = {
   '@internal/foundation/casts': '@prisma/composer/casts',
+  '@internal/foundation/secret': '@prisma/composer',
+  '@internal/foundation/pointer': '@prisma/composer',
   '@internal/foundation/assertions': '@prisma/composer/assertions',
   '@internal/core/config': '@prisma/composer/config',
   '@internal/core/deploy': '@prisma/composer/deploy',
