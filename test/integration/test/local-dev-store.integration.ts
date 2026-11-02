@@ -77,7 +77,7 @@ import { Load } from '@prisma/composer';
 import { containerEnv, environmentVariables } from '@prisma/composer/config';
 import { nodeAddresses, secretsKeys } from '@prisma/composer/deploy';
 import { nodeBuild } from '@prisma/composer/node/control';
-import { prepareSecondProcess } from '@prisma/composer-cli/testing';
+import { KnownSecrets, prepareSecondProcess } from '@prisma/composer-cli/testing';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import { emulatorRegistryRoot } from '@prisma/composer-prisma-cloud/local-target';
 import { prismaBinDir } from './spawn-prisma.ts';
@@ -515,7 +515,7 @@ async function secondProcessHandover() {
     appConfigurationRead: graph.appConfigurationRead,
     nodeAddresses: nodeAddresses(graph),
     secretsKeys: secretsKeys(graph),
-    secretValues: new Set(),
+    knownSecrets: new KnownSecrets(),
     appSecrets: Object.fromEntries(
       Object.entries(appSecrets).flatMap(([key, value]) =>
         typeof value === 'string' ? [[key, value]] : [],

@@ -11,7 +11,7 @@ import {
   readEngineFailureCause,
   withComposerAdvice,
 } from '../deployment-summary.ts';
-import { redactSecrets, redactValues } from '../redaction.ts';
+import { redactCredentialLooking, redactValues } from '../redaction.ts';
 
 const ESC = String.fromCharCode(27);
 const red = (text: string) => `${ESC}[31m${text}${ESC}[0m`;
@@ -92,7 +92,7 @@ describe('engineFailureCause', () => {
   });
 });
 
-describe('redactSecrets', () => {
+describe('redactCredentialLooking', () => {
   test('removes the values of secret-named env vars, including the service token and preflight payloads', () => {
     const env = {
       PRISMA_SERVICE_TOKEN: 'svc-token-0123456789',
@@ -103,13 +103,13 @@ describe('redactSecrets', () => {
     const text =
       'token svc-token-0123456789 payload {"STRIPE":"2024-01-01"} key stripe-secret-value at https://api.prisma.io';
 
-    expect(redactSecrets(text, env)).toBe(
+    expect(redactCredentialLooking(text, env)).toBe(
       'token [redacted] payload [redacted] key [redacted] at https://api.prisma.io',
     );
   });
 
   test('leaves short values alone, so a placeholder does not blank every match', () => {
-    expect(redactSecrets('status: pending', { API_TOKEN: 'pe' })).toBe('status: pending');
+    expect(redactCredentialLooking('status: pending', { API_TOKEN: 'pe' })).toBe('status: pending');
   });
 
   test('removes bearer tokens, JWTs, URL passwords and token=value pairs whatever their source', () => {
@@ -121,7 +121,7 @@ describe('redactSecrets', () => {
       '{"client_secret": "shh-its-secret"}',
     ].join('\n');
 
-    expect(redactSecrets(text, {})).toBe(
+    expect(redactCredentialLooking(text, {})).toBe(
       [
         'Authorization: Bearer [redacted]',
         'token [redacted]',

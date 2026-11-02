@@ -62,7 +62,11 @@ import type {
 import { containerEnv, devEnvironmentDir, preflightEnv } from '@prisma/composer/config';
 import { nodeAddresses, secretsKeys } from '@prisma/composer/deploy';
 import { nodeBuild } from '@prisma/composer/node/control';
-import { prepareSecondProcess, renderDevStackFile } from '@prisma/composer-cli/testing';
+import {
+  KnownSecrets,
+  prepareSecondProcess,
+  renderDevStackFile,
+} from '@prisma/composer-cli/testing';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import { emulatorRegistryRoot } from '@prisma/composer-prisma-cloud/local-target';
 import bgService from './fixtures/local-dev/bg-service.ts';
@@ -504,7 +508,7 @@ async function main(): Promise<void> {
       appConfigurationRead: graph.appConfigurationRead,
       nodeAddresses: nodeAddresses(graph),
       secretsKeys: secretsKeys(graph),
-      secretValues: new Set(),
+      knownSecrets: new KnownSecrets(),
       appSecrets: read.secrets,
     });
     const childEnv = { ...containerEnvVars, ...handover.env };

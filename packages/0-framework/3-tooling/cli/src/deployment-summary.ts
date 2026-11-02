@@ -14,7 +14,7 @@ import * as fs from 'node:fs';
 import { format, stripVTControlCharacters } from 'node:util';
 import type { DeployedEntity, DeploymentResult } from '@internal/core/deploy';
 import { blindCast } from '@internal/foundation/casts';
-import { redactSecrets } from './redaction.ts';
+import { redactCredentialLooking } from './redaction.ts';
 
 /** Env var the deploy operation sets on the alchemy child: when present,
  * the report hook also writes the JSON DeploymentSummary there. */
@@ -158,7 +158,7 @@ export function captureEngineFailure(): void {
       const text = format(...args);
       const shown = withComposerAdvice(text);
       // Redacted per record, so the tail cut can never leave half a secret behind.
-      tail = `${tail}${redactSecrets(shown, process.env)}\n`.slice(-OUTPUT_TAIL_LIMIT);
+      tail = `${tail}${redactCredentialLooking(shown, process.env)}\n`.slice(-OUTPUT_TAIL_LIMIT);
       if (shown === text) original.apply(console, args);
       else original.call(console, shown);
     };
@@ -222,7 +222,7 @@ export function engineFailureCause(
   const start = lines.findIndex((line) => line.failure);
   const kept = start === -1 ? lines.slice(-5) : lines.slice(start).filter((line) => !line.info);
   if (kept.length === 0) return undefined;
-  const cause = redactSecrets(kept.map((line) => line.text).join('\n'), env);
+  const cause = redactCredentialLooking(kept.map((line) => line.text).join('\n'), env);
   return cause.length <= ENGINE_FAILURE_CAUSE_LIMIT
     ? cause
     : `${cause.slice(0, ENGINE_FAILURE_CAUSE_LIMIT - 1)}…`;

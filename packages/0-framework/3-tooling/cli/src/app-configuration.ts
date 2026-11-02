@@ -7,7 +7,7 @@ import type {
 } from '@internal/core/config';
 import { CliStructuredError, describeKind, InternalError } from '@internal/foundation/errors';
 import { environmentVariables } from './config-adapters.ts';
-import type { KnownSecrets } from './redaction.ts';
+import type { SecretRedaction } from './redaction.ts';
 
 /** What the adapters are read for. */
 export interface AdapterReadInput {
@@ -118,18 +118,18 @@ export function readAppConfiguration(
 /**
  * Calls the section's `secrets` adapters (default `[environmentVariables()]`) and merges what they
  * return: the app secrets. Every value must be text. When the section writes its own list, each
- * value is added to `known` as soon as its adapter returns it.
+ * value is added to `redaction`'s known secrets as soon as its adapter returns it.
  */
 export async function readAppSecrets(
   section: PrismaAppConfig,
   input: AdapterReadInput,
-  known: KnownSecrets,
+  redaction: SecretRedaction,
 ): Promise<AppSecrets> {
   const merged = await readAdapters(
     'secrets',
     section.secrets ?? [environmentVariables()],
     input,
-    section.secrets === undefined ? undefined : (value) => known.add([value]),
+    section.secrets === undefined ? undefined : (value) => redaction.addKnownSecrets([value]),
   );
   if (!isText(merged)) throw new InternalError('readAdapters admitted a secret that is not text');
   return merged;

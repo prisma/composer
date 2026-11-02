@@ -28,7 +28,11 @@ import type {
 } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import * as Layer from 'effect/Layer';
-import { APP_CONFIGURATION_FILE_ENV, NAMED_SECRETS_ENV } from '../../app-configuration-file.ts';
+import {
+  APP_CONFIGURATION_FILE_ENV,
+  LEFTOVER_APP_CONFIGURATION_FILE_AGE_MS,
+  NAMED_SECRETS_ENV,
+} from '../../app-configuration-file.ts';
 import type { ComposerConfigSource } from '../../composer-config.ts';
 import { dotenv } from '../../config-adapters.ts';
 import {
@@ -4025,6 +4029,8 @@ describe('the second process reads what the first process read', () => {
       const file = path.join(dir, `app-configuration-${String(ended)}-forced-exit.json`);
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(file, '{}');
+      const old = new Date(Date.now() - LEFTOVER_APP_CONFIGURATION_FILE_AGE_MS - 60_000);
+      fs.utimesSync(file, old, old);
       return file;
     };
     const attachment: LocalTargetAttachment = {
@@ -4128,7 +4134,7 @@ describe('the second process reads what the first process read', () => {
       if (result.ok) throw new Error('the deploy should fail');
       expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
       expect(result.failure.message).toBe(
-        `${where} holds the text of a secret. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
+        `${where} holds a secret. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
       );
       expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
       expect(started).toBe(false);

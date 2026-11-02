@@ -30,7 +30,7 @@ import {
   entryMissing,
 } from './composer-config.ts';
 import { type LoadedEntry, loadEntry } from './load-entry.ts';
-import { credentialNamedValuesIn, KnownSecrets, valuesUnderSecretsKeys } from './redaction.ts';
+import { credentialNamedValues, SecretRedaction, valuesUnderSecretsKeys } from './redaction.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
 
 /** The app is loaded and checked, and assemble is about to start; then one assemble event per service. */
@@ -46,7 +46,7 @@ export interface PipelineDeps {
   /** Read the app secrets too: `deploy` and `dev` do; `destroy` does not, and its `secrets` is empty. */
   readonly readSecrets?: boolean | undefined;
   /** Collects every secret value the run reads, for redaction. A new one when not given. */
-  readonly knownSecrets?: KnownSecrets | undefined;
+  readonly redaction?: SecretRedaction | undefined;
 }
 
 export interface PipelineResult {
@@ -188,12 +188,12 @@ export async function runPipeline(
 
   // 3. Read the app secrets, then the app configuration. Secrets first, so a config adapter's
   // failure is redacted with every value a written `secrets` list returned.
-  const known = deps.knownSecrets ?? new KnownSecrets(process.env);
+  const redaction = deps.redaction ?? new SecretRedaction(process.env);
   const adapterInput = { environment, configFile: configSource.file };
   const secrets: AppSecrets =
-    deps.readSecrets === true ? await readAppSecrets(config, adapterInput, known) : NO_SECRETS;
+    deps.readSecrets === true ? await readAppSecrets(config, adapterInput, redaction) : NO_SECRETS;
   const configuration = await readAppConfiguration(config, adapterInput);
-  known.addByName(credentialNamedValuesIn(configuration));
+  redaction.addCredentialLooking(credentialNamedValues(configuration));
 
   // 4. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
   const graph = Load(entryModule.root, {
@@ -208,7 +208,7 @@ export async function runPipeline(
         "export default module('name', ({ provision }) => { provision(service); }).",
     });
   }
-  known.add(valuesUnderSecretsKeys(configuration, secrets, secretsKeys(graph)));
+  redaction.addKnownSecrets(valuesUnderSecretsKeys(configuration, secrets, secretsKeys(graph)));
 
   // 5. Registry coverage: every node/build in the graph has a matching descriptor in the config.
   validateRegistryCoverage(graph, config);
