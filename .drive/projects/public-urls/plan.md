@@ -55,6 +55,7 @@ The platform's slice 4, owned by Søren from the platform's Console brief: the D
 - A pending domain ownership the platform polls for, so the user can close the Domains page.
 - Composer publishing a hostname's records through a DNS adapter.
 - A third kind of object on the consistency mechanism.
+- After this project: rename `name` to `id` on every node with an identity, with an ADR superseding ADR-0006's reasoning. `publicUrl()` takes `id` from the start.
 
 ## Order
 
