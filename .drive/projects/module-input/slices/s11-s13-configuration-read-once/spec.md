@@ -2,11 +2,13 @@
 
 Parent: [module-input spec](../../spec.md) and [plan](../../plan.md). Design: [design.md](../../design.md), which is authoritative; these slices build section 8 ("The two adapters that ship", "Which commands run which adapters", "The deploy's two processes", "`prisma dev`'s two processes"), section 9, the section 10 items "The 'pool' names in code" and "The second process's own run of the config adapters", and the section 12 changes to the decisions on secrets, env-sourced params, the `composer` config section, dev secrets and errors, with the glossary. Decisions: [ADR-0062](../../../../../docs/design/90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md), [ADR-0049](../../../../../docs/design/90-decisions/ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md), [ADR-0058](../../../../../docs/design/90-decisions/ADR-0058-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md), [ADR-0029](../../../../../docs/design/90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md), [ADR-0032](../../../../../docs/design/90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md) and [ADR-0044](../../../../../docs/design/90-decisions/ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md).
 
-The three slices ship as one pull request. It is built on a new branch cut from main after prisma/composer#412 (S9 and S10) merges. This spec is grounded in `claude/module-input-s9` at `e435d04b`, which holds S9; § 19 lists where S10 can touch the same files.
+The three slices ship as one pull request. It is built on `claude/module-input-s11-s13`, stacked on prisma/composer#412 (S9 and S10). This spec is grounded in that branch at `78166d80`, which holds S9 and S10; § 19 says what S10 changed.
+
+The pull request cannot merge until `@prisma/cli-engine` 0.10.0 is published. prisma/prisma-cli#383 adds the output transform this PR uses (§ 9.5), and merging it publishes 0.10.0.
 
 This spec leaves nothing to the implementer's judgement. Every file, type, signature, error message, document edit, test and commit is pinned. Where the implementer finds the spec and the code in conflict, the implementer stops and reports; it does not choose. § 20 lists the decisions this spec takes, and § 21 what it found that the design gets wrong or does not say.
 
-Read for this spec: `CLAUDE.md`; `docs/design/01-principles/`; `design.md` in full; `plan.md`; `spec.md`; the S4, S8 and S9 slice specs; ADR-0029, ADR-0032, ADR-0044, ADR-0049, ADR-0058, ADR-0061 and ADR-0062; the glossary entries Input, Value, Config pool, Secrets pool and Config adapter; `config-params.md`, `deploy-cli.md`, `local-dev.md`; the code each section names; `@prisma/cli-engine` 0.9.0's `ctx.spawn` types and implementation; `dotenv-flow` 4.1.0's `lib/dotenv-flow.js`; Alchemy 2.0.0-beta.83's `src/Util/interactive.ts` and `src/Cli/CliKit/layer.ts`.
+Read for this spec: `CLAUDE.md`; `docs/design/01-principles/`; `design.md` in full; `plan.md`; `spec.md`; the S4, S8 and S9 slice specs; ADR-0029, ADR-0032, ADR-0044, ADR-0049, ADR-0058, ADR-0061 and ADR-0062; the glossary entries Input, Value, Config pool, Secrets pool and Config adapter; `config-params.md`, `deploy-cli.md`, `local-dev.md`; the code each section names; `@prisma/cli-engine`'s `ctx.spawn` types and implementation, as prisma/prisma-cli#383 changes them for 0.10.0; `dotenv-flow` 4.1.0's `lib/dotenv-flow.js`; Alchemy 2.0.0-beta.83's `src/Util/interactive.ts` and `src/Cli/CliKit/layer.ts`.
 
 ## 1. At a glance
 
@@ -29,7 +31,7 @@ $ prisma deploy --environment staging
    ```
 
 4. It starts the second process with `PRISMA_COMPOSER_CONFIGURATION_FILE` naming that file and `PRISMA_COMPOSER_NODE_ADDRESSES` listing the node addresses it checked. The second process runs no adapter. It Loads the graph with the file's values, without running the root's schema, and refuses to deploy a graph whose node addresses differ.
-5. The second process's output reaches the terminal through Composer, which redacts every secret value it knows, including one split across two chunks of output.
+5. The CLI engine passes the second process's output through Composer's redactor before it prints it. The redactor replaces every secret value Composer knows, including one split across two chunks of output.
 6. When the deploy ends, success or failure, the first process deletes the configuration file.
 
 What the user sees when the second process prints a secret, and when an adapter's error holds one:
@@ -50,8 +52,8 @@ api key is [redacted]
 - **The second process Loads with `checkedConfiguration`** instead of `configuration`. Load then takes each root field from the record without running the root's schema, and reads each configuration key from the record's text. A root field the record lacks is an error: the two processes built different graphs (§ 5.4).
 - **The second process checks the node addresses.** `lower()` takes `checkedNodeAddresses` and refuses a graph whose addresses differ (§ 6.2).
 - **Core knows each secret's name.** `secretSource()` takes `secretsKey`, the app secrets key that holds the secret's value; `envSecret('NAME')` passes `NAME`. Core's `secretsKeys(graph)` lists them. The CLI uses it to know what to redact and, under `prisma dev`, which secrets to hand the second process (§ 6.1).
-- **Redaction** (§ 9). A `KnownSecrets` object per command collects every secret value the command reads: under every name an `envSecret()` in the graph names, the value in the app configuration and in the app secrets, at any length; with a written `secrets` list, every value it returns, at any length; and every app configuration value of eight characters or more under a name that looks like a credential, as S4 did. Every error an operation returns, every event `prisma dev` emits, the run report, the deploy reporter's message, the deployment summary and the second process's output pass through it.
-- **The second process's output goes through a pipe.** For programmatic hosts, `spawnAlchemy` pipes it in-process. For the CLI, the engine's `ctx.spawn` can only hand a child the terminal, so Composer starts a small relay process from the app's `@prisma/composer` (`internal/output-relay`), which runs Alchemy with piped output and writes it on, redacted (§ 9.5, § 21 finding 2).
+- **Redaction** (§ 9). A `KnownSecrets` object per command collects every secret value the command reads: under every name an `envSecret()` in the graph names, the value in the app configuration and in the app secrets, at any length; and with a written `secrets` list, every value it returns, at any length. Every error an operation returns, every event `prisma dev` emits, the run report, the deploy reporter's message, the deployment summary and the second process's output pass through it. Composer also keeps the redaction S4 shipped: each app configuration value of eight characters or more under a name that looks like a credential, and the shapes `redactSecrets` finds. That is existing behaviour, kept for now; it is not part of this design.
+- **The second process's output passes through a stream redactor.** For the CLI, the engine's `ctx.spawn` takes a per-stream output transform (prisma/prisma-cli#383, `@prisma/cli-engine` 0.10.0). Composer hands it a transform that redacts, and the engine prints the result where it would have printed the output, in every output format (§ 9.5). For programmatic hosts, `spawnAlchemy` pipes the output in-process through the same redactor (§ 9.4).
 - **`environmentVariables()` no longer reads `PRISMA_COMPOSER_PARENT_VALUES`.** That variable existed so the child's second run of the adapters returned the parent's values. No child runs an adapter now, so it goes (§ 7.1).
 
 ## 3. S11: `dotenv()` delegates to `dotenv-flow`
@@ -134,7 +136,7 @@ Its doc comment becomes `/** The config adapters (ADR-0062), imported by prisma.
 
 ### 3.4 `run-alchemy.ts`
 
-The import of `childEnvironment` goes. In `alchemyInvocation`, `env: childEnvironment({ ...input.containerEnv, ...input.preflightEnv, ...input.env })` becomes `env: { ...input.containerEnv, ...input.preflightEnv, ...input.env }` (§ 9.6 adds `redactedValues`).
+The import of `childEnvironment` goes. In `alchemyInvocation`, `env: childEnvironment({ ...input.containerEnv, ...input.preflightEnv, ...input.env })` becomes `env: { ...input.containerEnv, ...input.preflightEnv, ...input.env }` (§ 9.4 adds `redactedValues`).
 
 ## 4. The rename: "pool" becomes "the app configuration" and "the app secrets"
 
@@ -160,7 +162,7 @@ The import of `childEnvironment` goes. In `alchemyInvocation`, `env: childEnviro
 | `PipelineResult.pools` | `PipelineResult.configuration` and `PipelineResult.secrets` | CLI `pipeline.ts`, operations |
 | `samePools` | `sameValues` | CLI `execute-dev.ts` |
 | `poolSecrets` | removed (§ 9.2) | CLI `deployment-summary.ts` |
-| `src/exports/pools.ts` (`@internal/cli/pools`) and `packages/9-public/composer/src/exports/internal-pools.ts` (`@prisma/composer/internal/pools`) | removed; § 8.6 adds `internal/configuration-file` and `internal/output-relay` | CLI, public composer |
+| `src/exports/pools.ts` (`@internal/cli/pools`) and `packages/9-public/composer/src/exports/internal-pools.ts` (`@prisma/composer/internal/pools`) | removed; § 8.6 adds `internal/configuration-file` | CLI, public composer |
 | `pool-text.ts`, `poolText(pool, name, notText)` | `configuration-text.ts`, `configurationText(configuration, name, notText)` | Prisma Cloud target |
 | `poolValue` (preflight's map) | `valueOf` | target `preflight.ts` |
 | the test fixture folder `pipeline-config-pool` | `pipeline-app-configuration` | CLI tests |
@@ -391,7 +393,7 @@ The module-child push in `flatten` sets `isRoot: false` in place of `fromConfigP
 
     ```ts
       const checkedConfigurationOf = (
-        inputBindings: readonly ServiceInputBinding[],
+        inputBindings: readonly InputBindingUse[],
         params: readonly ParamBinding[],
         secretSources: readonly SecretSourceUse[],
       ): CheckedConfiguration => {
@@ -928,27 +930,16 @@ The dev configuration file lives only while a converge runs, which is shorter th
    } from '../configuration-file.ts';
    ```
 
-   New `src/exports/output-relay.ts`:
+2. `packages/0-framework/3-tooling/cli/tsdown.config.ts`: the entry `pools: 'src/exports/pools.ts',` becomes `'configuration-file': 'src/exports/configuration-file.ts',`. Run `pnpm --filter @internal/cli build`; it regenerates `package.json#exports` with `./configuration-file` and without `./pools`. Commit the regenerated file; do not hand-edit it.
+3. `packages/9-public/composer/src/exports/internal-pools.ts` is deleted. New `internal-configuration-file.ts`: `export * from '@internal/cli/configuration-file';`.
+4. `packages/9-public/composer/tsdown.config.ts`: `'internal-pools': 'src/exports/internal-pools.ts',` becomes `'internal-configuration-file': 'src/exports/internal-configuration-file.ts',`.
+5. `packages/9-public/composer/package.json#exports`: `"./internal/pools": "./dist/internal-pools.mjs",` becomes `"./internal/configuration-file": "./dist/internal-configuration-file.mjs",`.
+6. `architecture.config.json`: the entry for `packages/9-public/composer/src/exports/internal-pools.ts` becomes the same entry for `internal-configuration-file.ts`, `"domain": "public", "layer": "public", "plane": "control"`.
+7. `tsconfig.depcruise.json`: the `@prisma/composer/internal/pools` path becomes `@prisma/composer/internal/configuration-file` → `./packages/9-public/composer/src/exports/internal-configuration-file.ts`.
 
-   ```ts
-   /** The relay the CLI runs the deploy engine through. Not public API: `@prisma/composer/internal/output-relay` runs it. */
-   export { runOutputRelay } from '../output-relay.ts';
-   ```
+### 8.7 The engine version
 
-2. `packages/0-framework/3-tooling/cli/tsdown.config.ts`: the entry `pools: 'src/exports/pools.ts',` becomes `'configuration-file': 'src/exports/configuration-file.ts',` and `'output-relay': 'src/exports/output-relay.ts',`. Run `pnpm --filter @internal/cli build`; it regenerates `package.json#exports` with `./configuration-file` and `./output-relay` and without `./pools`. Commit the regenerated file; do not hand-edit it.
-3. `packages/9-public/composer/src/exports/internal-pools.ts` is deleted. New `internal-configuration-file.ts`: `export * from '@internal/cli/configuration-file';`. New `internal-output-relay.ts`:
-
-   ```ts
-   /** Run as a process, never imported: `node <this file> <command> <args…>`. */
-   import { runOutputRelay } from '@internal/cli/output-relay';
-
-   runOutputRelay(process.argv.slice(2), process.env);
-   ```
-
-4. `packages/9-public/composer/tsdown.config.ts`: `'internal-pools': 'src/exports/internal-pools.ts',` becomes `'internal-configuration-file': 'src/exports/internal-configuration-file.ts',` and `'internal-output-relay': 'src/exports/internal-output-relay.ts',`.
-5. `packages/9-public/composer/package.json#exports`: `"./internal/pools": "./dist/internal-pools.mjs",` becomes `"./internal/configuration-file": "./dist/internal-configuration-file.mjs",` and `"./internal/output-relay": "./dist/internal-output-relay.mjs",`.
-6. `architecture.config.json`: the entry for `packages/9-public/composer/src/exports/internal-pools.ts` becomes two entries, for `internal-configuration-file.ts` and `internal-output-relay.ts`, each `"domain": "public", "layer": "public", "plane": "control"`.
-7. `tsconfig.depcruise.json`: the `@prisma/composer/internal/pools` path becomes `@prisma/composer/internal/configuration-file` → `./packages/9-public/composer/src/exports/internal-configuration-file.ts`, and a new `@prisma/composer/internal/output-relay` → `./packages/9-public/composer/src/exports/internal-output-relay.ts`.
+`@prisma/cli-engine` goes from `0.9.0` to `0.10.0`, exactly, in four places: the `dependencies` of `packages/0-framework/3-tooling/cli/package.json`; the `devDependencies` of `packages/1-prisma-cloud/1-extensions/target/package.json`; both the `peerDependencies` and the `devDependencies` of `packages/9-public/composer-cli/package.json`; and the root `package.json`'s `pnpm.overrides`. Run `pnpm install` so the lockfile records it. `pnpm check:cli-engine-pin` checks that the declarations agree and that the installed `prisma` host loads the same engine copy as the family. 0.10.0 must be published first: until prisma/prisma-cli#383 merges, the implementer builds and tests against a local build of that branch (for example a `link:` override, never committed) and the pull request stays a draft.
 
 ## 9. CLI: Composer redacts every secret it knows
 
@@ -957,10 +948,10 @@ The dev configuration file lives only while a converge runs, which is shorter th
 | Values | When they are added | Length |
 | --- | --- | --- |
 | Every value a written `secrets` list returns | as each adapter returns, in `readAppSecrets` | any |
-| Each app configuration value under a name that looks like a credential (`SECRET_ENV_NAME`, S4's list) | after the app configuration is read | eight characters or more |
 | Under each name `secretsKeys(graph)` lists, the value in the app configuration and the value in the app secrets | after Load | any |
+| Each app configuration value under a name that looks like a credential (`SECRET_ENV_NAME`). Existing S4 behaviour, kept for now; not part of this design | after the app configuration is read | eight characters or more |
 
-`KnownSecrets.redact(text)` also applies `redactSecrets(text, process.env)`: the values of this process's own variables under credential-looking names, eight characters or more, bearer and basic tokens, JWTs, a password in a URL, and `token=…` pairs, as today. The stream redactor (§ 9.4) uses exact values only: the known values and `secretNamedValues` of its own environment.
+`KnownSecrets.redact(text)` also applies `redactSecrets(text, process.env)`, as today: the values of this process's own variables under credential-looking names, eight characters or more, bearer and basic tokens, JWTs, a password in a URL, and `token=…` pairs. That too is existing S4 behaviour, kept for now. The stream redactor (§ 9.3) uses exact values only: the known values and `secretNamedValues(process.env)`.
 
 ### 9.2 `deployment-summary.ts`
 
@@ -1138,19 +1129,18 @@ export function redactSummary(
 }
 
 /**
- * Writes a stream of text on with every value in `values` replaced by `[redacted]`. It holds
- * back one fewer character than the longest value, so a value split across two chunks is still
- * replaced; `end` writes what it held back.
+ * Redacts a stream of text chunk by chunk: every value in `values` becomes `[redacted]`. It holds
+ * back at most one fewer character than the longest value, so a value split across two chunks is
+ * still replaced. When no value holds a line break, it never holds back a complete line.
+ * `push` returns the text that is ready; `end` returns the rest.
  */
-export class RedactingWriter {
+export class StreamRedactor {
   private held = '';
   private readonly pattern: RegExp | undefined;
   private readonly keep: number;
+  private readonly cutAtLineEnds: boolean;
 
-  constructor(
-    values: readonly string[],
-    private readonly write: (text: string) => void,
-  ) {
+  constructor(values: readonly string[]) {
     const sorted = [...new Set(values)]
       .filter((value) => value.length > 0)
       .sort((a, b) => b.length - a.length);
@@ -1159,11 +1149,13 @@ export class RedactingWriter {
         ? undefined
         : new RegExp(sorted.map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g');
     this.keep = (sorted[0]?.length ?? 1) - 1;
+    this.cutAtLineEnds = sorted.every((value) => !value.includes('\n'));
   }
 
-  push(chunk: string): void {
+  push(chunk: string): string {
     const text = this.held + chunk;
     let cut = Math.max(0, text.length - this.keep);
+    if (this.cutAtLineEnds) cut = Math.max(cut, text.lastIndexOf('\n') + 1);
     let out = '';
     let from = 0;
     if (this.pattern !== undefined) {
@@ -1176,26 +1168,42 @@ export class RedactingWriter {
     }
     out += text.slice(from, cut);
     this.held = text.slice(cut);
-    if (out.length > 0) this.write(out);
+    return out;
   }
 
-  end(): void {
+  end(): string {
     const text = this.held;
     this.held = '';
-    const out = this.pattern === undefined ? text : text.replace(this.pattern, REDACTED);
-    if (out.length > 0) this.write(out);
+    return this.pattern === undefined ? text : text.replace(this.pattern, REDACTED);
   }
+}
+
+/** A transform that redacts one output stream with a `StreamRedactor`, and writes what it held back when the stream ends. */
+export function redactingTransform(values: readonly string[]): TransformStream<string, string> {
+  const redactor = new StreamRedactor(values);
+  return new TransformStream<string, string>({
+    transform(chunk, controller) {
+      const out = redactor.push(chunk);
+      if (out.length > 0) controller.enqueue(out);
+    },
+    flush(controller) {
+      const out = redactor.end();
+      if (out.length > 0) controller.enqueue(out);
+    },
+  });
 }
 ```
 
-Neither `redaction.ts` nor `configuration-file.ts` casts, so `pnpm lint:casts` reports `delta=0`. A value that starts before the cut is always whole inside `text`, because it is at most `keep + 1` characters long, so the redactor never cuts a value in two (§ 18 shows the probe).
+Neither `redaction.ts` nor `configuration-file.ts` casts, so `pnpm lint:casts` reports `delta=0`. The redactor never cuts a value in two. A value that starts before the length cut is whole inside `text`, because it is at most `keep + 1` characters long. A value that starts before the line cut ends before the line break, because it holds none. `TransformStream` is a global in Node and Bun, typed by `@types/node`, which the CLI's `tsconfig.json` already loads (§ 18 shows both probes).
+
+Why the line cut: Alchemy prints a line, such as `Creating web`, then waits minutes for the platform. A length cut alone would hold back the end of that line for the whole wait.
 
 ### 9.4 `run-alchemy.ts`
 
 1. `AlchemyInvocation` gains, after `env`:
 
    ```ts
-     /** Every secret value the command knows, for the output pipe to redact. Never in `env` or on the command line, which the engine may log. */
+     /** Every secret value the command knows, for the output redactor. Never in `env` or on the command line, which the engine may log. */
      readonly redactedValues: readonly string[];
    ```
 
@@ -1226,165 +1234,88 @@ Neither `redaction.ts` nor `configuration-file.ts` casts, so `pnpm lint:casts` r
          env: { ...process.env, ...line.env },
        });
        const values = [...redactedValues, ...secretNamedValues(process.env)];
-       const stdout = new RedactingWriter(values, (text) => outputs.stdout.write(text));
-       const stderr = new RedactingWriter(values, (text) => outputs.stderr.write(text));
-       child.stdout?.setEncoding('utf8').on('data', (chunk: string) => stdout.push(chunk));
-       child.stderr?.setEncoding('utf8').on('data', (chunk: string) => stderr.push(chunk));
+       const stdout = new StreamRedactor(values);
+       const stderr = new StreamRedactor(values);
+       const write = (stream: OutputStreams['stdout'], text: string): void => {
+         if (text.length > 0) stream.write(text);
+       };
+       child.stdout?.setEncoding('utf8').on('data', (chunk: string) => write(outputs.stdout, stdout.push(chunk)));
+       child.stderr?.setEncoding('utf8').on('data', (chunk: string) => write(outputs.stderr, stderr.push(chunk)));
        child.on('error', reject);
        child.on('close', (exitCode, signal) => {
-         stdout.end();
-         stderr.end();
+         write(outputs.stdout, stdout.end());
+         write(outputs.stderr, stderr.end());
          resolve({ exitCode, signal });
        });
      });
    }
    ```
 
-   It imports `secretNamedValues` from `./deployment-summary.ts` and `RedactingWriter` from `./redaction.ts`.
+   It imports `secretNamedValues` from `./deployment-summary.ts` and `StreamRedactor` from `./redaction.ts`.
 4. `spawnAlchemy` becomes `return { ...(await spawnCommandLine(commandLine, invocation.redactedValues)), commandLine };`, and its doc comment's "inherited stdio" becomes "stdin inherited and output piped through redaction".
 5. The file header's "hand the terminal to the generated stack file" becomes "run the generated stack file, with its output piped through redaction".
 
-### 9.5 The output relay, for the CLI
+### 9.5 The engine's output transform, for the CLI
 
-The engine's `ctx.spawn` hands its child the terminal (human mode) or routes its output to the engine's diagnostic stream (JSON mode); it cannot pipe it to Composer. So the CLI's child is a relay, which pipes Alchemy's output and writes it on.
+`@prisma/cli-engine` 0.10.0 lets a command hand `ctx.spawn` a transform for each of the child's output streams (prisma/prisma-cli#383). The engine starts the child with stdin inherited and stdout and stderr piped, passes each stream's text through the transform the command gave for it, and writes the result where it would have written the child's output without one: the terminal in human mode, stderr in json mode. At the end of each stream it flushes the transform. Composer writes nothing itself and maps no stream: the engine owns where the output goes, in every output format.
 
-New file `packages/0-framework/3-tooling/cli/src/output-relay.ts`:
+The engine's signature is named in one place, the `spawn` member of `ConvergeContext` in `family/converge.ts`. It is written here per prisma/prisma-cli#383's final API, which may still change in review; when #383 merges, the implementer matches this member's option name and type to it and changes nothing else:
 
 ```ts
-import spawn from 'cross-spawn';
-import { secretNamedValues } from './deployment-summary.ts';
-import { RedactingWriter } from './redaction.ts';
-
-/** Names the JSON list of values the relay redacts. The relay removes it from its child's environment. */
-export const REDACTED_VALUES_ENV = 'PRISMA_COMPOSER_REDACTED_VALUES';
-
-function listedValues(text: string | undefined): readonly string[] | undefined {
-  if (text === undefined) return [];
-  try {
-    const parsed: unknown = JSON.parse(text);
-    return Array.isArray(parsed) && parsed.every((value) => typeof value === 'string') ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Runs `argv[0]` with the rest of `argv`, its stdin inherited and its output piped, and writes
- * that output on with every known secret replaced by `[redacted]`. The child's stdout goes to
- * this process's stdout when that is a terminal, and to its stderr otherwise, because a piped
- * stdout carries the CLI's data lines. The terminal's signals reach the child directly; SIGTERM,
- * which has no such path, is forwarded. The relay ends as the child did: with its status, or by
- * its signal.
- */
-export function runOutputRelay(argv: readonly string[], env: NodeJS.ProcessEnv): void {
-  const [command, ...args] = argv;
-  const { [REDACTED_VALUES_ENV]: listed, ...childEnv } = env;
-  const known = listedValues(listed);
-  if (command === undefined || known === undefined) {
-    process.stderr.write(
-      command === undefined
-        ? 'output-relay: no command to run.\n'
-        : `output-relay: ${REDACTED_VALUES_ENV} is not a JSON list of text.\n`,
-    );
-    process.exitCode = 2;
-    return;
-  }
-  const values = [...known, ...secretNamedValues(childEnv)];
-  const child = spawn(command, args, { stdio: ['inherit', 'pipe', 'pipe'], env: childEnv });
-  const stdoutTarget = process.stdout.isTTY === true ? process.stdout : process.stderr;
-  const stdout = new RedactingWriter(values, (text) => stdoutTarget.write(text));
-  const stderr = new RedactingWriter(values, (text) => process.stderr.write(text));
-  child.stdout?.setEncoding('utf8').on('data', (chunk: string) => stdout.push(chunk));
-  child.stderr?.setEncoding('utf8').on('data', (chunk: string) => stderr.push(chunk));
-  const leaveToChild = (): void => {};
-  for (const signal of ['SIGINT', 'SIGQUIT', 'SIGHUP'] as const) process.on(signal, leaveToChild);
-  process.on('SIGTERM', () => child.kill('SIGTERM'));
-  child.on('error', (error) => {
-    process.stderr.write(`output-relay: could not start ${command}: ${error.message}\n`);
-    process.exitCode = 1;
-  });
-  child.on('close', (exitCode, signal) => {
-    stdout.end();
-    stderr.end();
-    if (signal !== null) {
-      process.removeAllListeners(signal);
-      process.kill(process.pid, signal);
-      return;
-    }
-    process.exitCode = exitCode ?? 1;
-  });
+export interface ConvergeContext {
+  readonly spawn: (options: {
+    readonly command: string;
+    readonly args?: readonly string[];
+    readonly cwd?: string;
+    readonly env?: Readonly<Record<string, string | undefined>>;
+    readonly transformOutput?: (stream: 'stdout' | 'stderr') => TransformStream<string, string>;
+  }) => Promise<ChildResult>;
+  readonly lastChild: () => ChildResult | undefined;
 }
 ```
 
-`alchemy-bin.ts` gains:
+The real `ctx` satisfies it structurally; `lastChild`'s doc comment is unchanged.
+
+`convergeSpawn` and its doc comment become:
 
 ```ts
 /**
- * The relay the CLI runs the deploy engine through, from the app's own `@prisma/composer`, found
- * as `resolveAlchemyBin` finds Alchemy. Raises DEPLOY.OUTPUT_RELAY_MISSING when it cannot be resolved.
+ * The adapter the operations call, backed by the engine's `ctx.spawn`, so the engine owns
+ * signal policy and where the output goes. The engine passes each of the child's output
+ * streams through Composer's redactor before it prints it. The secret values reach the
+ * redactor in this process, never the child's environment or command line.
  */
-export function resolveOutputRelay(appDir: string): string {
-  try {
-    return createRequire(path.join(appDir, 'package.json')).resolve(
-      '@prisma/composer/internal/output-relay',
-    );
-  } catch {
-    throw new CliStructuredError(
-      'DEPLOY.OUTPUT_RELAY_MISSING',
-      `Could not resolve @prisma/composer/internal/output-relay from "${appDir}".`,
-      {
-        why: "Composer runs the deploy engine through this relay, which removes known secrets from the engine's output. The app's @prisma/composer is older than @prisma/composer-cli, or is not installed.",
-        fix: 'Install the same version of @prisma/composer as of @prisma/composer-cli.',
-      },
-    );
-  }
+export function convergeSpawn(ctx: ConvergeContext): RunAlchemy {
+  return async (invocation) => {
+    const commandLine = alchemyCommandLine(invocation);
+    const values = [...invocation.redactedValues, ...secretNamedValues(process.env)];
+    const result = await ctx.spawn({
+      command: commandLine.command,
+      args: [...STDOUT_TO_STDERR, ...commandLine.args],
+      cwd: commandLine.cwd,
+      env: commandLine.env,
+      transformOutput: () => redactingTransform(values),
+    });
+    return { ...result, commandLine };
+  };
 }
 ```
 
-`family/converge.ts`:
+`converge.ts` imports `secretNamedValues` from `../deployment-summary.ts` and `redactingTransform` from `../redaction.ts`. Each call of `transformOutput` returns a new transform, so each stream has its own held-back text.
 
-1. Imports gain `REDACTED_VALUES_ENV` from `../output-relay.ts` and `resolveOutputRelay` from `../alchemy-bin.ts`.
-2. `convergeSpawn` and its doc comment become, with a new exported type and a module-private default:
+`STDOUT_TO_STDERR` stays. The child's stdout is now always a pipe, so the `--import` always sends the child's stdout to its stderr, and the engine prints it as stderr. That keeps the CLI's own stdout for its data lines in a piped human run, as today. Its doc comment becomes `Node's \`--import\` of a module that sends the child's stdout to stderr when stdout is not a terminal. Under the engine's output transform the child's stdout is always a pipe, so all of Alchemy's output reaches the engine as stderr, and the CLI's own stdout keeps only its data lines.`
 
-   ```ts
-   /** How the engine starts the output relay: a command and the arguments before the Alchemy command line. */
-   export interface RelayCommand {
-     readonly command: string;
-     readonly args: readonly string[];
-   }
+What the engine guarantees, from #383, and what Composer relies on:
 
-   const appOutputRelay = (line: AlchemyCommandLine): RelayCommand => ({
-     command: line.command,
-     args: [resolveOutputRelay(line.cwd)],
-   });
+- **Order.** Text from one stream reaches its transform in the order the child wrote it. There is no order between the two streams; the redactor needs none.
+- **The held-back text.** The engine flushes each transform when its stream ends, and both streams end before the engine counts the child as ended. `ctx.spawn` resolves after that, so no held-back text is lost or printed after the command's next output.
+- **Report events.** While the child runs, the engine buffers `ctx.report` events and prints them before `ctx.spawn` resolves. Under `prisma dev`, a dev server's output line can be reported during a rebuild converge. The transforms are flushed before the buffered events are printed, so the child's last text comes before them. With the line cut (§ 9.3), the only text the redactor holds back at that point is an unfinished last line. Test 40 checks the order; if #383's final API flushes later, the implementer stops and reports.
+- **Abort.** On SIGTERM or an abort of `ctx.signal`, the engine ends the child with SIGTERM, then SIGKILL after a grace period. The streams end when the child exits, or after the adapter's drain grace when a grandchild holds them open, and the transforms flush then. Composer adds no signal handling.
+- **Failure.** The redactor does not throw. If a transform did, the engine would end the child and `ctx.spawn` would reject; `runStackPipeline` reports that as a defect, redacted (§ 8.4).
 
-   /**
-    * The adapter the operations call, backed by the engine's `ctx.spawn`, so the engine owns
-    * signal policy. The engine's child is the output relay, which runs Alchemy with its output
-    * piped and writes it on with every known secret redacted. The values travel in the relay's
-    * environment, never on its command line, which the engine may log.
-    */
-   export function convergeSpawn(
-     ctx: ConvergeContext,
-     outputRelay: (line: AlchemyCommandLine) => RelayCommand = appOutputRelay,
-   ): RunAlchemy {
-     return async (invocation) => {
-       const commandLine = alchemyCommandLine(invocation);
-       const relay = outputRelay(commandLine);
-       const result = await ctx.spawn({
-         command: relay.command,
-         args: [...relay.args, commandLine.command, ...STDOUT_TO_STDERR, ...commandLine.args],
-         cwd: commandLine.cwd,
-         env: { ...commandLine.env, [REDACTED_VALUES_ENV]: JSON.stringify(invocation.redactedValues) },
-       });
-       return { ...result, commandLine };
-     };
-   }
-   ```
+`reproduceCommand` keeps printing the Alchemy command line, which `outcome.commandLine` carries. Alchemy's stdout and stderr are pipes, so it shows plain progress lines without colour (§ 18 shows Alchemy deploying with piped output).
 
-   `converge.ts` imports `type AlchemyCommandLine` from `../run-alchemy.ts`. Tests pass a relay that Bun runs from source (§ 15.3).
-
-`reproduceCommand` keeps printing the Alchemy command line, which `outcome.commandLine` carries. Under the relay, Alchemy's stdout is a pipe, so `STDOUT_TO_STDERR` and `captureEngineFailure` send its output to stderr, and Alchemy shows plain progress lines without colour (§ 18 shows Alchemy deploying with piped output).
+`alchemy-bin.ts` does not change.
 
 ## 10. The Prisma Cloud target and the local target
 
@@ -1426,14 +1357,15 @@ Breaks:
 3. `ConfigPool`, `SecretsPool` and `ConfigPools` are now `AppConfiguration` and `AppSecrets`; `PreflightInput`, `LocalTargetProvidersInput` and a local attachment's `serve` input take `configuration` and `secrets` in place of `pools`; `localTargetProviders()` takes them as two arguments. This touches extension authors only.
 4. `@prisma/composer/internal/pools` is gone. It was not public API.
 5. `dotenv()` now skips `.env.local` for the environment `test`, and parses with `dotenv` 16 through `dotenv-flow`.
-6. The deploy engine's output reaches the terminal through a pipe: Alchemy shows plain progress lines, without colour or a live progress display.
+6. The deploy engine's output reaches the terminal through the CLI engine's output transform, so Alchemy's stdout and stderr are pipes: it shows plain progress lines, without colour or a live progress display.
 7. A known secret is redacted at any length. A one-character secret blanks that character everywhere in the output.
 8. A module body that builds a different graph in the second process fails the deploy, naming the addresses.
 9. A root field whose real value JSON cannot hold exactly, such as a `Date`, fails the Load in the first process.
 10. A name read both by `envParam()` and by `envSecret()` fails the Load.
 11. An `envParam()` in a service's input or params whose app configuration value is not text fails at Load, in the first process. Before, it failed later, in the serializer or preflight.
 12. A config adapter now runs after the secrets adapters, so a broken secrets adapter is reported before a broken config adapter.
-13. The app's `@prisma/composer` must be at least the version that ships `internal/output-relay` and `internal/configuration-file`; an older one fails with `DEPLOY.OUTPUT_RELAY_MISSING` under the CLI, or when the second process imports the stack file.
+13. The app's `@prisma/composer` must be at least the version that ships `internal/configuration-file`; with an older one the second process fails when it imports the stack file.
+14. `@prisma/composer-cli` declares `@prisma/cli-engine` 0.10.0 as its exact peer, so the `prisma` host that mounts it must carry 0.10.0.
 
 Unchanged:
 
@@ -1465,13 +1397,9 @@ The only existing tests this PR changes are those § 15.1 lists. If any other ex
 | `readCheckedConfiguration` | addresses not a list of text | `PRISMA_COMPOSER_NODE_ADDRESSES is not a JSON list of node addresses.` |
 | `appSecretsFromEnvironment` | no `PRISMA_COMPOSER_APP_SECRETS` | `PRISMA_COMPOSER_APP_SECRETS is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which hands the app secrets the local services need there.` |
 | `appSecretsFromEnvironment` | not an object of text | `PRISMA_COMPOSER_APP_SECRETS is not a JSON object of text.` |
-| `resolveOutputRelay` | `DEPLOY.OUTPUT_RELAY_MISSING` | summary `Could not resolve @prisma/composer/internal/output-relay from "<appDir>".`; why ``Composer runs the deploy engine through this relay, which removes known secrets from the engine's output. The app's @prisma/composer is older than @prisma/composer-cli, or is not installed.``; fix `Install the same version of @prisma/composer as of @prisma/composer-cli.` |
-| `runOutputRelay` | no command | `output-relay: no command to run.` (stderr, exit 2) |
-| `runOutputRelay` | a bad values list | `output-relay: PRISMA_COMPOSER_REDACTED_VALUES is not a JSON list of text.` (stderr, exit 2) |
-| `runOutputRelay` | the child cannot start | `output-relay: could not start <command>: <message>` (stderr, exit 1) |
 | `dotenv()` | a file `dotenv-flow` lists cannot be read | `dotenv() could not read <absolute path>: <message>` (unchanged) |
 
-The `LoadError`s carry `COMPOSE.GRAPH_INVALID`. The `LowerError` and the second process's plain `Error`s reach the user as the cause of `DEPLOY.ENGINE_FAILED` or `DEV.CONVERGE_FAILED`. The one new code is `DEPLOY.OUTPUT_RELAY_MISSING`.
+The `LoadError`s carry `COMPOSE.GRAPH_INVALID`. The `LowerError` and the second process's plain `Error`s reach the user as the cause of `DEPLOY.ENGINE_FAILED` or `DEV.CONVERGE_FAILED`. This PR adds no error code.
 
 ## 13. The release note
 
@@ -1491,9 +1419,9 @@ The repo has no changesets; the pull request description carries the release not
   2. `If prisma.config.ts has import 'dotenv/config' and you adopt dotenv() in config or secrets, remove the import. Otherwise it puts .env's values into the process environment, environmentVariables() returns them last, and they override .env.<environment>.` with the before and after of a `prisma.config.ts` head: `import 'dotenv/config';` and `config: [environmentVariables()]` before, `config: [dotenv(), environmentVariables()]` and no import after.
   3. `dotenv() reads its files through dotenv-flow 4.1.0, in the same order as before: .env, .env.local, .env.<environment>, .env.<environment>.local. It now skips .env.local for the environment test, as dotenv-flow does. It never reads .env.defaults.`
   4. `The deploy's second process no longer runs the config adapters. It reads the values the first process checked from a configuration file in .prisma-composer/, readable only by you and deleted when the deploy ends, and refuses to deploy a graph whose node addresses differ from the first process's. A module body that reads process.env, a file or the clock and builds a different graph now fails the deploy.`
-  5. `Composer redacts every secret it knows wherever it prints: every value under a name an envSecret() names, every value your own secrets list returns, at any length. The deploy engine's output now reaches the terminal through a pipe, so Alchemy shows plain progress lines without colour.`
+  5. `Composer redacts every secret it knows wherever it prints: every value under a name an envSecret() names, every value your own secrets list returns, at any length. The deploy engine's output now passes through Composer's redactor before the CLI prints it, so Alchemy shows plain progress lines without colour.`
   6. `A root field the body passes on must hold data JSON can hold exactly; a name may not be read both by envParam() and by envSecret(); and a non-text envParam() value in a service's input now fails before anything is created.`
-  7. `@prisma/composer and @prisma/composer-cli must be the same version: the CLI runs the deploy engine through @prisma/composer/internal/output-relay.`
+  7. `@prisma/composer and @prisma/composer-cli must be the same version: the generated stack file imports @prisma/composer/internal/configuration-file. @prisma/composer-cli needs @prisma/cli-engine 0.10.0, so use a prisma CLI that carries it.`
 
 ## 14. Documentation
 
@@ -1695,7 +1623,7 @@ A **secret** is a value the deployment reads from a platform variable **by name*
 Three pieces carry the model:
 
 - **`envSecret('NAME')` is the source.** It names the platform variable to read. Only the application writes it, so a reusable module underneath stays free of any platform name. It returns a value, typed `RuntimeValue<SecretString>`, whose real value at deploy is a secret pointer ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). A module passes it on through a `secretString()` field of its `input` ([ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)). A `resolve()` function cannot list it.
-- **`secretString()` is the type.** The field is typed as the framework's redacting `SecretString`. Secretness is enforced by validation: binding a plain value where the schema expects a secret fails the deploy, and so does binding `envSecret()` where it expects a plain string.
+- **`secretString()` is the type.** The field is typed as the framework's redacting `SecretString`. A binding is typed from the schema, so binding a plain value where the schema expects a secret fails to compile, and so does binding `envSecret()` where it expects a plain string. Where the compiler sees no type, such as a schema without type information or a cast, validation fails the deploy instead.
 - **`service.input()` is the read.** It returns the whole validated input, secret fields as `SecretString` boxes. A box prints `[REDACTED]` from every stringify path (`toString`, `toJSON`, `valueOf`, `inspect`); `.expose()` is the one call that returns the value.
 
 **The framework carries the name, never the value.** At deploy, the service's input document gets a pointer, the name of the platform variable, not its contents:
@@ -1708,7 +1636,7 @@ At boot the framework swaps each pointer for a redacting box over the named vari
 
 **Preflight fills a missing variable from the app secrets.** Before anything is provisioned, deploy preflight checks that every name an `envSecret()` in the graph names exists on the platform for the environment. A missing name is filled from the app secrets, what the `composer` section's `secrets` adapters return ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)), with one write-only API call, never recorded as managed infrastructure. A name the app secrets lack fails the deploy early, listing what to set. Preflight fills only a variable that does not exist yet; to change one, change it on the platform.
 
-**Composer redacts every secret it knows.** Everywhere it prints, including errors, an adapter's own failure message, the deploy engine's output and the engine's failure cause, Composer replaces with `[redacted]`: under every name an `envSecret()` in the graph names, the value in the app configuration and in the app secrets; when a project writes its own `secrets` list, every value it returns; and any app configuration value of eight characters or more under a name that looks like a credential. A known value is redacted at any length. The deploy engine runs in a second process, whose output Composer reads through a pipe and writes on, so a secret split across two chunks of output is caught too.
+**Composer redacts every secret it knows.** Everywhere it prints, including errors, an adapter's own failure message, the deploy engine's output and the engine's failure cause, Composer replaces with `[redacted]`: under every name an `envSecret()` in the graph names, the value in the app configuration and in the app secrets; and when a project writes its own `secrets` list, every value it returns. A known value is redacted at any length. The deploy engine runs in a second process. The CLI's command engine passes that process's output through Composer's redactor before it prints it, and the redactor holds back the end of each chunk until the next one, so a secret split across two chunks of output is caught too. Composer also still redacts what it redacted before this decision: an app configuration value of eight characters or more under a name that looks like a credential, bearer and basic tokens, JWTs, a password in a URL and `token=` pairs. That is existing behaviour, kept until secrets get a home apart from plain values.
 
 **The need lives in core and the source in the target.** Core's `secretSource(payload, { label, secretsKey })` builds a source from a target's payload, and never reads the payload. `secretsKey` is the app secrets key that holds the secret's value; Composer redacts the value under it, and `prisma dev` hands it to its second process. Prisma Cloud's `envSecret('NAME')` validates the name, brands the payload, and passes `secretsKey: NAME`. A different target could ship `vaultSecret({ path, key })` with no change to core.
 
@@ -1738,7 +1666,7 @@ At boot the framework swaps each pointer for a redacting box over the named vari
 - **A forwardable `secret()` slot on modules**, which this decision first described as the need a module declares and its parent binds. Replaced by a `secretString()` field of the module's `input` ([ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)).
 - **A `resolve()` function that receives the secret's source**, which an earlier version of the values decision allowed. Rejected: a function cannot compute anything useful from a value the deploy does not have.
 - **Filling a missing variable from the deploying shell only.** Replaced by the app secrets, whose default, `[environmentVariables()]`, is the shell.
-- **Redacting only values of eight characters or more.** Rejected for known secrets: a secret Composer knows is redacted at any length. The minimum stays for values Composer only guesses are credentials from their names.
+- **Redacting only values of eight characters or more.** Rejected for known secrets: a secret Composer knows is redacted at any length. The minimum stays for values Composer only guesses are credentials from their names, which is the existing behaviour this decision keeps for now.
 
 ## Related
 
@@ -1826,7 +1754,7 @@ The deploy reads the app configuration once, in its first process, and hands its
 
 ### 14.5 ADR-0044, rewritten
 
-`docs/design/90-decisions/ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md`. The text below keeps every statement of the current record, folds its three amendment notes into the registry, adds `DEPLOY.OUTPUT_RELAY_MISSING`, and replaces "A structured error is never transformed" with the one transformation this PR adds, redaction.
+`docs/design/90-decisions/ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md`. The text below keeps every statement of the current record, folds its three amendment notes into the registry, and replaces "A structured error is never transformed" with the one transformation this PR adds, redaction.
 
 ~~~markdown
 # ADR-0044: Errors are structural envelopes with dotted namespace codes
@@ -1890,7 +1818,7 @@ Closed subcode registry:
 - `CONFIG` — SECTION_MISSING, FIELD_INVALID, FIELD_UNKNOWN, FIELD_RETIRED, FILE_MISSING, FILE_RETIRED, EXTENSION_DUPLICATE, EXTENSION_MISSING, DESCRIPTOR_MISSING, DESCRIPTOR_KIND_MISMATCH, ENTRY_MISSING, ADAPTER_FAILED, ADAPTER_INVALID *(EXPORT_INVALID, PATH_MISMATCH and EVALUATION_FAILED retired by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*. ENTRY_MISSING: neither `entry` in the `composer` section nor `--entry`, or the operation's `entry` input, names the entry module. ADAPTER_FAILED: a config or secrets adapter threw or rejected; its message is redacted. ADAPTER_INVALID: an adapter returned something other than an object of values, or a secrets adapter returned a value that is not text.
 - `COMPOSE` — ENTRY_UNLOADABLE, ENTRY_EXPORT_INVALID, ROOT_NOT_MODULE, NAME_MISSING, GRAPH_INVALID
 - `ASSEMBLE` — EXTENSION_MISSING, DESCRIPTOR_MISSING, DESCRIPTOR_KIND_MISMATCH, SERVICE_MISSING, BUILD_FAILED
-- `DEPLOY` — FLAG_INVALID, TARGET_CONFLICT, TARGET_MISSING, TARGET_NOT_FOUND, ENVIRONMENT_INVALID, ENVIRONMENT_UNVALIDATABLE, ENVIRONMENT_REQUIRED, CONTAINER_FAILED, PREFLIGHT_FAILED, ENGINE_FAILED, TEARDOWN_FAILED, CONTAINER_REMOVE_FAILED, BUILD_REQUIRED, ALCHEMY_BIN_MISSING, NODE_MISSING, OUTPUT_RELAY_MISSING, STACK_WRITE_FAILED *(STAGE_INVALID, STAGE_UNVALIDATABLE and SCOPE_MISSING retired by [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md))*. ENVIRONMENT_REQUIRED: a `destroy` call names no environment. OUTPUT_RELAY_MISSING: the CLI cannot resolve `@prisma/composer/internal/output-relay` from the app, which it runs the deploy engine through. STACK_WRITE_FAILED covers the configuration file as well as the stack file. `prisma dev` starts the deploy engine the same way `deploy` does, so it raises ALCHEMY_BIN_MISSING, NODE_MISSING and OUTPUT_RELAY_MISSING under `DEPLOY` too.
+- `DEPLOY` — FLAG_INVALID, TARGET_CONFLICT, TARGET_MISSING, TARGET_NOT_FOUND, ENVIRONMENT_INVALID, ENVIRONMENT_UNVALIDATABLE, ENVIRONMENT_REQUIRED, CONTAINER_FAILED, PREFLIGHT_FAILED, ENGINE_FAILED, TEARDOWN_FAILED, CONTAINER_REMOVE_FAILED, BUILD_REQUIRED, ALCHEMY_BIN_MISSING, NODE_MISSING, STACK_WRITE_FAILED *(STAGE_INVALID, STAGE_UNVALIDATABLE and SCOPE_MISSING retired by [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md))*. ENVIRONMENT_REQUIRED: a `destroy` call names no environment. STACK_WRITE_FAILED covers the configuration file as well as the stack file. `prisma dev` starts the deploy engine the same way `deploy` does, so it raises ALCHEMY_BIN_MISSING and NODE_MISSING under `DEPLOY` too.
 - `DEV` — PLATFORM_UNSUPPORTED, TARGET_UNSUPPORTED, CONTAINER_FAILED, TEARDOWN_FAILED, PREFLIGHT_FAILED, EMULATOR_FAILED, SERVICE_START_FAILED, CONVERGE_FAILED, ATTACH_FAILED, STACK_WRITE_FAILED, EMULATORS_DIR_INVALID, EMULATOR_UNREACHABLE, SERVICE_READY_TIMEOUT_INVALID, NOT_STARTED_HERE, ADDRESS_UNKNOWN, NOT_RUNNING. EMULATOR_UNREACHABLE is raised by the emulator client when it cannot connect, so `log` raises it under `DEV` too; for a connection failure it takes the place of SERVICE_START_FAILED, ATTACH_FAILED and `LOG.ATTACH_FAILED`. `devUrl` also raises it when the emulator a node runs on is not running. NOT_STARTED_HERE (no `prisma dev` has recorded an app in the directory) is raised by `devUrl` and `devStop`; ADDRESS_UNKNOWN (the recorded app has no node at that address; the known addresses are listed) and NOT_RUNNING (the node exists but is not running; its state is named, and the reason and fix depend on it) by `devUrl` alone ([ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md)). Both operations raise EMULATOR_FAILED when the local target fails without a code. `emulator list` fails only with EMULATORS_DIR_INVALID; an emulator it cannot list is reported in that emulator's entry with EMULATOR_UNREACHABLE or EMULATOR_FAILED.
 - `LOG` — PLATFORM_UNSUPPORTED, ATTACH_FAILED, ADDRESS_UNKNOWN
 - `DEPS` — EXECUTOR_UNLOADABLE, EXTENSION_INCOMPATIBLE *(EFFECT_VERSION_CONFLICT retired by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*. EXTENSION_INCOMPATIBLE: an installed extension is older than the Composer running the deploy or destroy, so the container it resolved, rebuilt through its own `deserialize`, does not name the environment that was asked for.
@@ -1901,7 +1829,7 @@ Adding a subcode is an edit to this list; adding a namespace is an edit to this 
 
 The exit-code convention is the shared one (prisma/prisma's CLI Style Guide), and it governs statuses the CLI itself generates: `0` OK, `1` internal error/bug only, `2` expected failure (usage errors and structured failures alike), `3` user abort, `130`/`143` signals.
 
-**Documented exception:** when the spawned deploy engine (Alchemy) exits nonzero, the CLI prints the two reproduce-hint lines and passes the child's own exit status through unchanged. The child's status is the operator's signal, and renumbering it would erase information. A passthrough status is the child's number, not a statement in the CLI's own code space: an expected engine failure may therefore surface as `1` (or any other value) without contradicting the convention above. The output relay that runs the engine ends with the engine's status, or by its signal, so the passthrough is unchanged.
+**Documented exception:** when the spawned deploy engine (Alchemy) exits nonzero, the CLI prints the two reproduce-hint lines and passes the child's own exit status through unchanged. The child's status is the operator's signal, and renumbering it would erase information. A passthrough status is the child's number, not a statement in the CLI's own code space: an expected engine failure may therefore surface as `1` (or any other value) without contradicting the convention above.
 
 The human rendering of an envelope (`render-error.ts`) is the shared layout:
 
@@ -1952,9 +1880,12 @@ The `code` is the machine-branching surface: hosts driving `@prisma/composer/con
 6. `It holds only what the graph reads from the configuration:` → `It holds only what the graph reads from the app configuration:`.
 7. `` `prisma dev`'s second process receives the configuration the same way`` → `` `prisma dev`'s second process receives the app configuration the same way``.
 8. In § The root's input: `the root's binding is the configuration.` → `the root's binding is the app configuration.`; `By default the configuration holds every variable` → `By default the app configuration holds every variable`; `The configuration never holds a pointer` → `The app configuration never holds a pointer`; `because the configuration is plain` → `because the app configuration is plain`.
-9. The **Redaction.** bullet's `and every value a project's own secrets adapters return.` → `every value a project's own secrets adapters return, and every app configuration value of eight characters or more under a name that looks like a credential.`
-10. The **The second process's output** bullet becomes: `- **The second process's output** passes through Composer, which redacts it. The CLI's command engine can only hand a child process the terminal, so the CLI runs the deploy engine through a small relay process, from the app's \`@prisma/composer\`, that reads the engine's output through a pipe and writes it on. A secret split across two chunks of output is still caught. The engine has no terminal, so Alchemy's progress display and colours change.`
+9. In the **Redaction.** bullet, `Under the default list only the first kind applies, because redacting every value in the shell would blank every \`1\` and \`true\` in the output.` → `Under the default list only the first kind applies, because redacting every value in the shell would blank every \`1\` and \`true\` in the output. Composer also keeps the redaction it already did, which is not part of this decision: an app configuration value of eight characters or more under a name that looks like a credential, and token shapes such as JWTs.`
+10. The **The second process's output** bullet becomes: `- **The second process's output** passes through Composer's redactor. The CLI's command engine pipes the second process's stdout and stderr, passes each through a transform Composer gives it, and prints the result where it would have printed the output. The redactor holds back at most one fewer character than the longest secret, and never a complete line when no secret holds a line break, so a secret split across two chunks of output is still caught. The second process has no terminal, so Alchemy's progress display and colours change.`
 11. In § Consequences: `- **The configuration is plain.**` → `- **The app configuration is plain.**`.
+12. In the **`dotenv()`** bullet, `` `dotenv-flow`'s `.env.defaults` file is not read. `` → `` `dotenv-flow` lists its `.env.defaults` file first whenever it is given its own default pattern, so `dotenv()` drops that file from the list and never reads it. ``
+13. After the sentence `It holds no secrets.` in the configuration file paragraph: `Load refuses a name that both an \`envParam()\` and an \`envSecret()\` read, because the file would then hold that secret.`
+14. In § Keeping secrets out, after the **Redaction.** bullet, a new bullet: `- **Core knows each secret's name.** A target's secret source tells core which app secrets key holds its value: \`secretSource()\` takes \`secretsKey\`, and \`envSecret('NAME')\` passes \`NAME\`. That is how Composer knows what to redact, and which secrets \`prisma dev\` hands its second process.`
 
 `git grep -n -E 'the configuration[^ ]? |the secrets[^ ]? ' docs/design/90-decisions/ADR-0062*` afterwards shows only "the configuration file", "the secrets adapters", "the `config` adapters" and "the secrets manager".
 
@@ -1963,7 +1894,7 @@ The `code` is the machine-branching surface: hosts driving `@prisma/composer/con
 Each whole line, from `- [ADR-00NN](` to the end of the line, becomes:
 
 ```markdown
-- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) — A secret is a value the deployment reads from a platform variable by name, whose contents the framework never writes into deploy state, a generated file, a log, the deploy report or an error. A service types the field `secretString()`; the application binds it with `envSecret('NAME')`, a value whose real value is a secret pointer; the service reads a redacting `SecretString`. The input document carries `{ "$secret": NAME }`; preflight fills a missing platform variable from the app secrets with a write-only call. Composer redacts every secret it knows wherever it prints, at any length, including the deploy engine's output, which it reads through a pipe. `secretSource()` takes a `secretsKey`, the app secrets key that holds the value.
+- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) — A secret is a value the deployment reads from a platform variable by name, whose contents the framework never writes into deploy state, a generated file, a log, the deploy report or an error. A service types the field `secretString()`; the application binds it with `envSecret('NAME')`, a value whose real value is a secret pointer; the service reads a redacting `SecretString`. The input document carries `{ "$secret": NAME }`; preflight fills a missing platform variable from the app secrets with a write-only call. Composer redacts every secret it knows wherever it prints, at any length, including the deploy engine's output, which the CLI's command engine passes through Composer's redactor. `secretSource()` takes a `secretsKey`, the app secrets key that holds the value.
 - [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md) — A service's per-key param can be bound at `provision()` to a literal or to a target-owned source such as `envParam('NAME')`, which reads `NAME` from the app configuration: a pointer row in params, filled by preflight and read at boot; the text in a service's input document; the real value in a module's input or a `resolve()`. Non-text fails the Load. `paramSource()` takes `configurationKey` and `redacted`.
 - [ADR-0044](ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md) — Errors are structural envelopes with dotted `NAMESPACE.SUBCODE` codes from a closed registry, structured at origin with why/fix splits, no catch-all codes; bugs carry no code (exit 1); recognition is structural; operation results ride the `Result` `ok` discriminator; expected failures exit 2, with the deploy engine's status passed through. The one change between origin and consumer is redaction of known secrets, which also drops the cause.
 - [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md) — Composer's configuration is the `composer` section of `prisma.config.ts`, loaded by the Prisma CLI engine: `extensions`, `state`, and optional `entry`, `config` and `secrets` adapter lists. The validator checks only what identifies each value, passes the file's own objects through, never calls an adapter, rejects unknown keys, takes the nearest declaring file's section whole, and returns `{ value, file }`; the programmatic operations take the same input. The old config file is refused, not migrated. Only the first process runs adapters; the second process imports the file for its descriptors and reads the checked values from a configuration file.
@@ -2003,14 +1934,14 @@ Each whole line, from `- [ADR-00NN](` to the end of the line, becomes:
    - `It reads the config pool, because Load validates the root's input; it reads no secrets.` → `It runs the config adapters, because Load checks the root's input; it reads no secrets.`
    - Pipeline step 4 becomes one line: `4. **Read the app secrets and the app configuration.** For \`deploy\` the CLI first calls the \`secrets\` adapters, then for every command the \`config\` adapters, in list order, each awaited, and merges what each list returns by top-level key, a later adapter winning. Both lists default to \`[environmentVariables()]\`. The app configuration is Load's input: the root's input and what \`envParam()\` reads. The app secrets are held in memory for preflight. Every secret value read is recorded for redaction. An adapter that throws or returns something other than an object fails with \`CONFIG.ADAPTER_FAILED\` or \`CONFIG.ADAPTER_INVALID\`. No other process runs an adapter.`
    - Step 5's `config pool as the root's input` → `app configuration as the root's input`.
-   - `The generated stack file reads the config pool again, from the same adapters; it never reads the secrets pool.` → `Beside it the CLI writes the configuration file, \`.prisma-composer/configuration-<pid>-<uuid>.json\`, mode 0600, holding what Load read from the app configuration, and deletes it when the run ends. The second process reads it, runs no adapter, and refuses a graph whose node addresses differ from the list the CLI passes in \`PRISMA_COMPOSER_NODE_ADDRESSES\`. It never receives the app secrets. Its output reaches the terminal through the output relay (\`@prisma/composer/internal/output-relay\`), which redacts every secret value the CLI knows.`
-   - The error table row `| Root's input refused by its schema | the schema's messages, and that a root's input is the config pool for the environment |` → `| Root's input refused by its schema | the schema's messages, and that a root's input is the app configuration for the environment |`. A new row after the adapter row: `| The relay cannot be resolved (\`DEPLOY.OUTPUT_RELAY_MISSING\`) | that @prisma/composer and @prisma/composer-cli must be the same version |`.
+   - `The generated stack file reads the config pool again, from the same adapters; it never reads the secrets pool.` → `Beside it the CLI writes the configuration file, \`.prisma-composer/configuration-<pid>-<uuid>.json\`, mode 0600, holding what Load read from the app configuration, and deletes it when the run ends. The second process reads it, runs no adapter, and refuses a graph whose node addresses differ from the list the CLI passes in \`PRISMA_COMPOSER_NODE_ADDRESSES\`. It never receives the app secrets. The CLI engine passes its output through Composer's redactor, which replaces every secret value the CLI knows, before it prints it.`
+   - The error table row `| Root's input refused by its schema | the schema's messages, and that a root's input is the config pool for the environment |` → `| Root's input refused by its schema | the schema's messages, and that a root's input is the app configuration for the environment |`.
 2. `docs/design/10-domains/local-dev.md`:
    - The second note at the top, `> Amended by the module-input project (2026-10-30): …`, is removed; its content is in the body below.
    - The table rows: `| \`envParam\` sources (ADR-0032) | the config pool, same names; …` → `| \`envParam\` sources (ADR-0032) | the app configuration, same names; …` (the rest of the row unchanged); `| secrets (ADR-0029, ADR-0058) | the secrets pool: by default the shell, …` → `| secrets (ADR-0029, ADR-0058) | the app secrets: by default the shell, …`.
    - `The local \`Deployment\` provider reads current values from the pools the dev stack file read and gives each service only the variables its own input and params point at.` → `The dev second process runs no adapter. It reads the checked values of the app configuration from \`.prisma-composer/dev/<environment>/configuration.json\`, which \`prisma dev\` writes before each converge and deletes after it, and receives the app secrets the graph's \`envSecret()\`s name in \`PRISMA_COMPOSER_APP_SECRETS\`. The local \`Deployment\` provider gives each service only the variables its own input and params point at.`
    - `It reads \`.env\`, \`.env.local\`, \`.env.<environment>\` and \`.env.<environment>.local\` beside \`prisma.config.ts\`.` → `It reads \`.env\`, \`.env.local\`, \`.env.<environment>\` and \`.env.<environment>.local\` beside \`prisma.config.ts\`, through \`dotenv-flow\`, and skips \`.env.local\` for the environment \`test\`.` and `` `import 'dotenv/config'` at the top of `prisma.config.ts` still works with the default lists.`` → `` `import 'dotenv/config'` at the top of `prisma.config.ts` still works with the default lists; remove it when you list `dotenv()`.``
-3. `docs/design/10-domains/config-params.md`: the four lines § 4.3's grep finds take § 4.2's words; line 165's `read from the config pool Load is given` becomes `read from the app configuration Load is given`.
+3. `docs/design/10-domains/config-params.md`: the four lines § 4.3's grep finds (99, 144, 161 and 300 at `78166d80`) take § 4.2's words; line 161's `read from the config pool Load is given` becomes `read from the app configuration Load is given`.
 4. `docs/design/10-domains/core-model.md`, the `LowerOptions` sketch: `readonly configPool?: Readonly<Record<string, unknown>>       // passed to Load and the serializer; the generated stack files pass readConfigPool()` becomes two lines: `readonly checkedConfiguration?: CheckedConfiguration     // passed to Load and the serializer; the generated stack files read it from the configuration file` and `readonly checkedNodeAddresses?: readonly string[]        // lowering refuses a graph whose addresses differ`.
 5. `docs/design/10-domains/module-composition.md`: `A root's input is the config pool, validated by its schema before any other module's binding.` → `A root's input is the app configuration, checked by its schema before any other module's binding.`; and the `ModuleContext.input` doc comment's last sentence, as in `node.ts`, becomes `A root's input is the app configuration, validated by its schema.`
 
@@ -2019,7 +1950,7 @@ The same sentence in `node.ts`'s `ModuleContext.input` doc comment changes the s
 ### 14.10 Guides
 
 1. `docs/guides/building-an-app.md`:
-   - § 4.2's words replace "config pool" and "secrets pool" in the six places § 4.3's grep finds.
+   - § 4.2's words replace "config pool" and "secrets pool" on every line § 4.3's grep finds (eleven at `78166d80`).
    - `` `dotenv()` reads `.env`, `.env.local`, `.env.<environment>` and\n`.env.<environment>.local` beside `prisma.config.ts`, in that order, and a\nlater file wins. An environment name with `/` is encoded in the file name:\nthe environment `feature/x` reads `.env.feature%2Fx`.`` becomes one paragraph: `` `dotenv()` reads `.env`, `.env.local`, `.env.<environment>` and `.env.<environment>.local` beside `prisma.config.ts`, in that order, through `dotenv-flow`, and a later file wins. It skips `.env.local` for the environment `test`, and never reads `.env.defaults`. An environment name with `/` is encoded in the file name: the environment `feature/x` reads `.env.feature%2Fx`. If `prisma.config.ts` has `import 'dotenv/config'`, remove it when you list `dotenv()`: the import puts `.env` into the shell's values, which `environmentVariables()` returns last, so `.env` would override `.env.<environment>`.``
    - After `The root's schema checks the app configuration before anything is created, so a missing value fails with the schema's message.` (as § 4.2 leaves it), a new paragraph: `Composer reads the adapters once, in the command's own process. The deploy engine runs in a second process, which reads only what the first process checked, from a file in \`.prisma-composer/\` that only you can read and that is deleted when the deploy ends. A root field your body passes on must hold data JSON can hold exactly: text, numbers, booleans, null, arrays and plain objects.`
 2. `docs/guides/deploying.md`: § 4.2's words in the paragraph that begins `One extra: if your app binds \`envSecret\``; and in the paragraph about `DEPLOY.ENGINE_FAILED`, `with credentials redacted and capped at 1000 characters` becomes `with every secret Composer knows redacted, and capped at 1000 characters`. A new paragraph after it: `The deploy engine's own output passes through Composer on its way to your terminal, with every secret Composer knows replaced by \`[redacted]\`: each value an \`envSecret()\` names, and every value your own \`secrets\` list returns, however short. So the engine shows plain progress lines, without colour.`
@@ -2032,6 +1963,18 @@ Written to `skills/README.md`. § 4.2's words replace "config pool", "secrets po
 ### 14.12 Examples
 
 No example adopts or drops `dotenv()` in this PR. `examples/storefront-auth` keeps `import 'dotenv/config'` with the default lists, which still works. The comment `// AUTH_SIGNING_SECRET; preflight fills it from the secrets pool when missing.` in `examples/storefront-auth/module.ts` becomes `// AUTH_SIGNING_SECRET; preflight fills it from the app secrets when missing.` The examples' tests take § 4.1's names.
+
+### 14.13 The project design, `.drive/projects/module-input/design.md`
+
+Each quoted string is replaced exactly. The edits make the design say what Will accepted on 2026-11-02.
+
+1. Section 8, "The two adapters that ship": `Composer passes the pattern \`.env[.node_env][.local]\`, so \`dotenv-flow\`'s \`.env.defaults\` file is not read.` → `` `listFiles` lists `dotenv-flow`'s `.env.defaults` file first whenever it is given its own default pattern, `.env[.node_env][.local]`, so `dotenv()` drops that file from the list. It never reads `.env.defaults`. ``
+2. Section 8, "The deploy's two processes": `- The second process never needs the app secrets, so the file holds none.` → `- The second process never needs the app secrets, so the file holds none. Load refuses a name that both an \`envParam()\` and an \`envSecret()\` read, because the file would then hold that secret.`
+3. Section 9, after the bullet that ends `A value is redacted at any length. There is no minimum.`, two new bullets:
+   - `- **How Composer knows a secret's name.** Core sees a secret source only as an opaque payload, so a target tells core which app secrets key holds the value: \`secretSource()\` takes \`secretsKey\`, and \`envSecret('NAME')\` passes \`NAME\`. Composer lists those keys to know what to redact, and which secrets \`prisma dev\` hands its second process.`
+   - `- **What Composer already redacted stays, for now.** Composer keeps the redaction S4 shipped: an app configuration value of eight characters or more under a name that looks like a credential, and token shapes such as bearer tokens, JWTs and a password in a URL. That is existing behaviour, not part of this design. A later slice that gives secrets their own home revisits it (section 11).`
+4. Section 9, the bullet that begins `- **The second process's output.** To redact it, Composer reads that output through a pipe and writes it on, instead of letting the second process write to the terminal.` becomes, whole: `- **The second process's output.** The CLI starts the second process through its command engine's \`ctx.spawn\`. From \`@prisma/cli-engine\` 0.10.0 (prisma/prisma-cli#383), \`ctx.spawn\` takes a transform per output stream: the engine pipes the child's stdout and stderr, passes each through the transform, and prints the result where it would have printed the output, in every output format. Composer's transform redacts. The engine still owns the child: stdin stays inherited, and signals, the abort ladder and the exit status work as before. A programmatic host has no engine, so there Composer pipes the output itself through the same redactor. Either way the second process has no terminal, so Alchemy's progress display and colours change. A secret can be split across two chunks of output, so the redactor holds back at most one fewer character than the longest secret until the next chunk or the end of the stream, and never a complete line when no secret holds a line break. A test splits a secret across two chunks.`
+5. Section 12, "What this design reverses", a new last bullet: `- **Errors**: a structured error is never transformed between where it is raised and who receives it. Now redaction is the one change: before an operation returns an error, Composer removes every secret value it knows from its text and drops its cause.`
 
 ## 15. Tests
 
@@ -2067,8 +2010,8 @@ Changes beyond renames:
 - `cli/src/__tests__/fixtures/stack-import/stub-composer.ts`: the `@prisma/composer/internal/pools` module becomes `@prisma/composer/internal/configuration-file`, with `export const readCheckedConfiguration = () => ({ configuration: { rootInput: [], values: { read: 'checked' } }, nodeAddresses: ['stub-address'] }); export const appSecretsFromEnvironment = () => ({ read: 'secrets' });`. The `lower` stub prints `checkedConfiguration: opts.checkedConfiguration, checkedNodeAddresses: opts.checkedNodeAddresses` in place of `configPool: opts.configPool`, and `...(globalThis.stubLocal === undefined ? {} : { local: globalThis.stubLocal })` in place of the `stubPools` spread. `localTargetProviders` becomes `(resolved, containers, devDir, configuration, secrets) => { globalThis.stubLocal = { configuration, secrets }; return {}; }`.
 - `cli/src/__tests__/stack-file-import.test.ts`: `configPool` (the expected object) becomes `const checked = { configuration: { rootInput: [], values: { read: 'checked' } }, nodeAddresses: ['stub-address'] };`; the deploy test expects `{ app, extensions, state, environment: 'staging', checkedConfiguration: checked.configuration, checkedNodeAddresses: checked.nodeAddresses }`, retitled `the deploy stack passes the composer export of prisma.config.ts, the environment, and what the CLI checked, to lower(), and reads no secrets`; the dev test adds `local: { configuration: { read: 'checked' }, secrets: { read: 'secrets' } }`, retitled likewise.
 - `cli/src/__tests__/run-alchemy.test.ts`: every `alchemyInvocation({ … })` and every hand-built `AlchemyInvocation` gains `redactedValues: []`. `env carries only the ADDITIONS …` drops any expectation of `PRISMA_COMPOSER_PARENT_VALUES`. Every `spawnCommandLine(line)` call becomes `spawnCommandLine(line, [])`.
-- `cli/src/family/__tests__/converge-spawn.test.ts`: both tests pass `convergeSpawn(ctx, bunRelay)`, where `const bunRelay = () => ({ command: process.execPath, args: [path.join(import.meta.dir, 'fixtures', 'output-relay-main.ts')] });`, and both `alchemyInvocation` calls gain `redactedValues: []`. Their expectations do not change.
-- `cli/src/family/__tests__/deploy.test.ts`: the `CWD` fixture's fake `@prisma/composer/package.json` exports become `{ './package.json': './package.json', './internal/output-relay': './output-relay.mjs' }`, and it writes an empty `output-relay.mjs` beside it. The scripted child never runs it. The test `a failed converge renders the reproduce hint and no failure envelope` still finds the Alchemy bin and arguments in the hint.
+- `cli/src/family/__tests__/converge-spawn.test.ts`: both `alchemyInvocation` calls gain `redactedValues: []`. The fake `ConvergeContext` ignores `transformOutput`, so the two tests still check `STDOUT_TO_STDERR` and the reproduce command; their expectations do not change.
+- `cli/src/testing/operations-double.ts`: the synthetic `AlchemyInvocation` in `runConverge` gains `redactedValues: []`.
 - `cli/src/operations/__tests__/operations.test.ts`: `deploy hands every extension's preflight both pools` becomes `deploy hands every extension's preflight the app configuration and the app secrets`, recording `{ configuration: input.configuration, secrets: input.secrets }`; `a secrets pool value appears in no event, result or report` becomes `an app secrets value appears in no event, result or report`, reading `input.secrets['S4_SENTINEL']`; `dev hands both pools to preflight and to a dev server` becomes `dev hands the app configuration and the app secrets to preflight and to a dev server`, with `serve: async ({ configuration, secrets }) => { seen.serve = { configuration, secrets }; … }` and the expected `{ configuration: { A: 'a' }, secrets: { S: 's' } }` for both; `an engine failure cause never carries a value the pools read from a dotenv file` becomes `an engine failure cause never carries a secret value read from a dotenv file`, its assertions unchanged. The describe `the operations read the pools from the config adapters` becomes `the operations read the app configuration and the app secrets from the adapters`.
 
 - `core/src/__tests__/lowering.test.ts`: `lowering() passes opts.configPool to Load` becomes `lowering() passes opts.checkedConfiguration to Load`, and `opts({ bundles, configPool: { X: 'probe' } })` becomes `opts({ bundles, checkedConfiguration: { rootInput: [], values: { X: 'probe' } } })`; its assertion does not change.
@@ -2123,10 +2066,10 @@ New file `cli/src/__tests__/redaction.test.ts`:
 24. `redactError removes known values from the summary, why, fix and meta, and keeps the code, severity and where` — an error `CONFIG.ADAPTER_FAILED` with secret `hunter2` in each text field and in `meta.nested.list[0]`; the result's `JSON.stringify(toEnvelope())` does not contain `hunter2`, its `code`, `severity` and `where` are the original's, and `cause` is `undefined`.
 25. `redactDevEvent redacts messages and dev server output, and leaves other events as they are`.
 26. `redactSummary redacts entity ids, urls and details`.
-27. `RedactingWriter redacts a secret split across two chunks` — values `['s3cr3t-value']`; chunks `'token is s3cr3t-'` and `'value, done\n'`; the written text equals `'token is [redacted], done\n'`.
-28. `RedactingWriter redacts every occurrence at every chunk size` — the text of 2000 parts where every seventh is `SECRETXYZ` and the rest `abc`; for chunk sizes 1, 2, 3, 5, 8, 9, 10 and 64 the written text equals the text with every `SECRETXYZ` replaced.
-29. `RedactingWriter holds back one fewer character than the longest secret, and end writes the rest` — values `['abcdef']`; after `push('0123456789')` the written text is `'01234'`; after `end()` it is `'0123456789'`.
-30. `RedactingWriter with no secret writes each chunk as it comes`.
+27. `redactingTransform redacts a secret split across two chunks` — a `ReadableStream` of the chunks `'token is s3cr3t-'` and `'value, done\n'`, piped through `redactingTransform(['s3cr3t-value'])`; the text read out equals `'token is [redacted], done\n'`.
+28. `redactingTransform redacts every occurrence at every chunk size` — the text of 2000 parts where every seventh is `SECRETXYZ`, every fiftieth otherwise is `abc\n`, and the rest `abc`; values `['SECRETXYZ', 'SECRET']`; for chunk sizes 1, 2, 3, 5, 8, 9, 10 and 64 the text read out equals the text with every `SECRETXYZ` replaced.
+29. `StreamRedactor holds back one fewer character than the longest secret, and end returns the rest` — values `['abcdef']`; `push('0123456789')` returns `'01234'`, and `end()` returns `'56789'`.
+30. `StreamRedactor returns every complete line at once when no secret holds a line break, holds a line break secret whole, and with no secret returns each chunk as it comes` — values `['abcdef']`: `push('Creating web\n')` returns `'Creating web\n'`. Values `['line1\nline2']`: `push('x line1\n') + push('line2 y\n') + end()` equals `'x [redacted] y\n'`. No values: `push('abc')` returns `'abc'`.
 
 New file `cli/src/__tests__/configuration-file.test.ts`:
 
@@ -2139,69 +2082,61 @@ New file `cli/src/__tests__/configuration-file.test.ts`:
 37. `secondProcessEnvironment names the file and the node addresses, and the app secrets only when given`.
 38. `appSecretsFromEnvironment reads the object, and refuses one that is not text`.
 
-New file `cli/src/__tests__/output-relay.test.ts`. Each test runs `Bun.spawn([process.execPath, fixture, process.execPath, '-e', script], { env: { ...process.env, PRISMA_COMPOSER_REDACTED_VALUES: JSON.stringify(['hunter2-secret']) }, stdout: 'pipe', stderr: 'pipe' })`, where `fixture` is `family/__tests__/fixtures/output-relay-main.ts`:
+`cli/src/family/__tests__/converge-spawn.test.ts`, new, using the engine's test harness (`createTestCli` from `@prisma/cli-engine/testing`). The command under test is defined in the file: `defineCommand({ help: { summary: 'Runs a converge' }, maySpawn: true, handler: async (_args, ctx) => { await convergeSpawn(ctx)(invocation); return ok(exitWithChildStatus()); } })`, where `invocation` is `alchemyInvocation({ command: 'deploy', stackFileRelativePath: '.prisma-composer/alchemy.run.ts', cwd, stage: 'test', containerEnv: {}, redactedValues: ['hunter2-secret'] })` and `cwd` is `appWithAlchemy([])`. The harness's scripted child writes its output with `child.write(stream, chunk)`, which the engine passes through the transform as it would a real child's.
 
-```ts
-import { runOutputRelay } from '../../../output-relay.ts';
-
-runOutputRelay(process.argv.slice(2), process.env);
-```
-
-39. `the relay writes the child's output on with known secrets redacted, a secret split across two writes included` — the script writes `hunter2-` and, after `setTimeout(…, 50)`, `secret\n` to stderr, and `stdout says hunter2-secret\n` to stdout; the relay's stderr contains `[redacted]` twice (the relay's stdout is a pipe, so the child's stdout goes to stderr), and neither stream contains `hunter2`.
-40. `the relay's child does not see the values variable` — the script prints `String(process.env.PRISMA_COMPOSER_REDACTED_VALUES)`; the output is `undefined\n`.
-41. `the relay exits with the child's status` — `process.exit(7)`; exit code 7.
-42. `the relay forwards SIGTERM and ends by the same signal` — the script sets a 10-second timer; the test sends `SIGTERM` to the relay after 500 ms; the relay's `signalCode` is `SIGTERM`.
-43. `a SIGINT to the process group reaches the child once, and the relay ends as the child did` — started with `node:child_process` `spawn(…, { detached: true })`; after 500 ms `process.kill(-relay.pid, 'SIGINT')`; the script's `process.on('SIGINT', () => { console.log('child got SIGINT'); process.exit(130); })` runs once; the relay exits 130.
+39. `the engine prints the child's output with every known secret redacted, a secret split across two chunks included, in human and json mode` — the scripted child writes `'key=hunter2-'` and then `'secret\n'` to stdout, and `'boom hunter2-secret\n'` to stderr, and exits 0. Run with `--format human` and with `--json`: `result.spawns[0]?.output` is the piped mode, neither `result.stdout` nor `result.stderr` contains `hunter2`, and together they contain `key=[redacted]\n` and `boom [redacted]\n`. The test does not assert which stream the engine printed to; that is the engine's business.
+40. `the held-back text is printed before ctx.spawn resolves and before the report events the engine buffered` — the handler calls `setTimeout(() => ctx.report({ kind: 'endpoint', name: 'probe', url: 'https://probe.example' }), 5)` before it starts the converge; the scripted child waits 20 ms and writes `'tail-without-newline'` to stderr, with no line break, so the redactor holds it until the stream ends; then it exits 0. In human mode, `result.stderr` contains `tail-without-newline`, and its index is lower than the index of `https://probe.example`.
 
 `cli/src/__tests__/run-alchemy.test.ts`, new:
 
-44. `spawnCommandLine pipes the child's output through redaction, a secret split across chunks included` — a `node -e` child writing `key=hunter2-` then, 50 ms later, `secret\n` to stdout; `spawnCommandLine(line, ['hunter2-secret'], outputs)` with `outputs` collecting into strings; the collected stdout is `key=[redacted]\n`.
+41. `spawnCommandLine pipes the child's output through redaction, a secret split across chunks included` — a `node -e` child writing `key=hunter2-` then, 50 ms later, `secret\n` to stdout; `spawnCommandLine(line, ['hunter2-secret'], outputs)` with `outputs` collecting into strings; the collected stdout is `key=[redacted]\n`.
 
 `cli/src/family/__tests__/converge-spawn.test.ts`, new:
 
-45. `convergeSpawn starts the relay with the Alchemy command line after it, and passes the secret values in the relay's environment, never on its command line` — a `ConvergeContext` whose `spawn` records its options and resolves `{ exitCode: 0, signal: null }`; with `alchemyInvocation({ …, redactedValues: ['hunter2'] })` and a relay `() => ({ command: 'relay-node', args: ['/relay.mjs'] })`, the recorded `command` is `'relay-node'`, `args[0]` is `'/relay.mjs'`, `args[1]` is the resolved Node, `args` does not contain `'hunter2'`, and `env.PRISMA_COMPOSER_REDACTED_VALUES` is `'["hunter2"]'`.
+42. `convergeSpawn gives the engine a transform per stream, and passes the secret values neither on the child's command line nor in its environment` — a `ConvergeContext` whose `spawn` records its options and resolves `{ exitCode: 0, signal: null }`; with `redactedValues: ['hunter2']`, the recorded `args` and the values of the recorded `env` do not contain `'hunter2'`; `transformOutput('stdout')` and `transformOutput('stderr')` return two different `TransformStream`s, and text `'a hunter2 b'` written through either reads out as `'a [redacted] b'`.
 
 `cli/src/__tests__/pipeline.test.ts`, new:
 
-46. `runPipeline reads the app secrets before the app configuration` — adapters that push `'secrets'` and `'config'` to an order array; with `readSecrets: true` the array is `['secrets', 'config']`.
-47. `runPipeline adds the values under every envSecret() name to the known secrets` — the `pipeline-app-configuration` fixture module binds `secretSource({}, { label: 'secret', secretsKey: 'S11_SECRET' })`; the config adapter returns `{ S11_SECRET: 'from-config' }` and the secrets adapter `{ S11_SECRET: 'from-secrets' }`; the `knownSecrets` passed in has both values.
+43. `runPipeline reads the app secrets before the app configuration` — adapters that push `'secrets'` and `'config'` to an order array; with `readSecrets: true` the array is `['secrets', 'config']`.
+44. `runPipeline adds the values under every envSecret() name to the known secrets` — the `pipeline-app-configuration` fixture module binds `secretSource({}, { label: 'secret', secretsKey: 'S11_SECRET' })`; the config adapter returns `{ S11_SECRET: 'from-config' }` and the secrets adapter `{ S11_SECRET: 'from-secrets' }`; the `knownSecrets` passed in has both values.
 
 `cli/src/operations/__tests__/operations.test.ts`, a new `describe('the second process reads what the first process checked', …)`, using a fixture app whose root declares `input: type({ GREETING: 'string' })`, binds `{ greeting: input.GREETING, origin: configured('APP_ORIGIN'), key: secret('S13_SECRET') }` into its service (the helpers of § 15.2, built from core), and whose `config` adapter returns `{ GREETING: 'hello', APP_ORIGIN: 'https://origin.example', UNUSED: 'x' }`:
 
-48. `deploy writes the configuration file before the second process starts and deletes it after, mode 0600, holding only what Load read` — in the fake `alchemy`, `const file = input.env[CONFIGURATION_FILE_ENV]`; while it runs, the file exists, its mode is `0o600`, and its JSON equals `{ rootInput: [{ path: ['GREETING'], value: 'hello' }], values: { APP_ORIGIN: 'https://origin.example' } }`; `input.env[NODE_ADDRESSES_ENV]` equals `JSON.stringify(nodeAddresses(graph))` for the fixture's graph; after `deploy` returns, the file does not exist. The same holds when the fake returns `{ exitCode: 1, signal: null }`.
-49. `destroy writes and deletes the configuration file the same way, and reads no secrets`.
-50. `dev hands the second process the app secrets the graph names through its environment, never in a file` — `secrets: [() => ({ S13_SECRET: 'dev-secret-value', OTHER: 'not-named' })]`; in the fake `alchemy`, `input.env[APP_SECRETS_ENV]` equals `'{"S13_SECRET":"dev-secret-value"}'`, and no file under the app directory contains `dev-secret-value`; `.prisma-composer/dev/dev/configuration.json` exists during the converge and not after it.
-51. **The end-to-end test.** `no known secret reaches the configuration file, the stack file, the deploy report, the errors or the second process's output`. The app's `secrets` adapter returns `{ S13_SECRET: 'e2e-SENTINEL-5f2a' }` and `config` returns the values above. The fake `alchemy` (a) copies the configuration file's text and the stack file's text into variables; (b) runs `spawnCommandLine({ command: process.execPath, args: ['-e', script], cwd, env: input.env }, input.redactedValues, outputs)`, where `script` writes `e2e-SENTI` and, after 50 ms, `NEL-5f2a and more\n` to stdout and `boom e2e-SENTINEL-5f2a\n` to stderr, and `outputs` collects both streams; (c) writes to the result file a deployment summary whose one entity has `id: 'svc'` and `details: { note: 'e2e-SENTINEL-5f2a' }`, and beside it the failure cause `error: rejected e2e-SENTINEL-5f2a`; and (d) returns the status the test sets. The test deploys twice, each with `reportPath` set to a file in the app directory: once with status 0 and once with status 1. Afterwards none of these contains `SENTINEL`: the copied configuration file and stack file texts of both runs, the collected stdout and stderr, both run report files, `JSON.stringify(result.value.summary)` of the first run, and `JSON.stringify(result.failure.toEnvelope())` and `String(result.failure.meta?.['engineCause'])` of the second. The collected stdout of each run is `[redacted] and more\n`.
-52. `an adapter's failure message is redacted with every value a written secrets list returned` — `secrets: [() => ({ TOKEN_X: 'adapter-SENTINEL-1' })]`, `config: [() => { throw new Error('bad adapter-SENTINEL-1'); }]`; the failure is `CONFIG.ADAPTER_FAILED` and `JSON.stringify(result.failure.toEnvelope())` does not contain `SENTINEL`.
-53. `a dev event's message is redacted` — a dev server output line holding the secret reaches `onEvent` as `[redacted]`.
+45. `deploy writes the configuration file before the second process starts and deletes it after, mode 0600, holding only what Load read` — in the fake `alchemy`, `const file = input.env[CONFIGURATION_FILE_ENV]`; while it runs, the file exists, its mode is `0o600`, and its JSON equals `{ rootInput: [{ path: ['GREETING'], value: 'hello' }], values: { APP_ORIGIN: 'https://origin.example' } }`; `input.env[NODE_ADDRESSES_ENV]` equals `JSON.stringify(nodeAddresses(graph))` for the fixture's graph; after `deploy` returns, the file does not exist. The same holds when the fake returns `{ exitCode: 1, signal: null }`.
+46. `destroy writes and deletes the configuration file the same way, and reads no secrets`.
+47. `dev hands the second process the app secrets the graph names through its environment, never in a file` — `secrets: [() => ({ S13_SECRET: 'dev-secret-value', OTHER: 'not-named' })]`; in the fake `alchemy`, `input.env[APP_SECRETS_ENV]` equals `'{"S13_SECRET":"dev-secret-value"}'`, and no file under the app directory contains `dev-secret-value`; `.prisma-composer/dev/dev/configuration.json` exists during the converge and not after it.
+48. **The end-to-end test.** `no known secret reaches the configuration file, the stack file, the deploy report, the errors or the second process's output`. The app's `secrets` adapter returns `{ S13_SECRET: 'e2e-SENTINEL-5f2a' }` and `config` returns the values above. The fake `alchemy` (a) copies the configuration file's text and the stack file's text into variables; (b) runs `spawnCommandLine({ command: process.execPath, args: ['-e', script], cwd, env: input.env }, input.redactedValues, outputs)`, where `script` writes `e2e-SENTI` and, after 50 ms, `NEL-5f2a and more\n` to stdout and `boom e2e-SENTINEL-5f2a\n` to stderr, and `outputs` collects both streams; (c) writes to the result file a deployment summary whose one entity has `id: 'svc'` and `details: { note: 'e2e-SENTINEL-5f2a' }`, and beside it the failure cause `error: rejected e2e-SENTINEL-5f2a`; and (d) returns the status the test sets. The test deploys twice, each with `reportPath` set to a file in the app directory: once with status 0 and once with status 1. Afterwards none of these contains `SENTINEL`: the copied configuration file and stack file texts of both runs, the collected stdout and stderr, both run report files, `JSON.stringify(result.value.summary)` of the first run, and `JSON.stringify(result.failure.toEnvelope())` and `String(result.failure.meta?.['engineCause'])` of the second. The collected stdout of each run is `[redacted] and more\n`.
+49. `an adapter's failure message is redacted with every value a written secrets list returned` — `secrets: [() => ({ TOKEN_X: 'adapter-SENTINEL-1' })]`, `config: [() => { throw new Error('bad adapter-SENTINEL-1'); }]`; the failure is `CONFIG.ADAPTER_FAILED` and `JSON.stringify(result.failure.toEnvelope())` does not contain `SENTINEL`.
+50. `a dev event's message is redacted` — a dev server output line holding the secret reaches `onEvent` as `[redacted]`.
 
 ## 16. Scope and commits
 
-In: core (`packages/0-framework/1-core/core`), the CLI (`packages/0-framework/3-tooling/cli`), `@prisma/composer`'s entries, the Prisma Cloud target and the local target, the tests of § 15, `docs/`, `skills/`, `examples/storefront-auth/module.ts`'s comment, `architecture.config.json`, `tsconfig.depcruise.json`, the lockfile.
+In: core (`packages/0-framework/1-core/core`), the CLI (`packages/0-framework/3-tooling/cli`), `@prisma/composer`'s entries, the Prisma Cloud target and the local target, the tests of § 15, `docs/`, `skills/`, `examples/storefront-auth/module.ts`'s comment, `architecture.config.json`, `tsconfig.depcruise.json`, the four `@prisma/cli-engine` declarations of § 8.7, the lockfile, and the project's `design.md` (§ 14.13).
 
-Out, as the plan and Will's rulings assign: `prisma dev` watching inputs (S14); a developer's `.env.local` secret reaching another environment (S15); a home for secrets apart from plain values (S16); `secretString()` becoming `secret(schema)` (S17); `dotenv-flow` skipping `.env.local` for `test`; `destroy` needing a valid configuration; `KEY=` giving `''`; filtering `environmentVariables()`; any change to `envParam()`'s deploy-time reading. Also out: changing `@prisma/cli-engine` so `ctx.spawn` can pipe a child's output (§ 21, finding 2).
+Out, as the plan and Will's rulings assign: `prisma dev` watching inputs (S14); a developer's `.env.local` secret reaching another environment (S15); a home for secrets apart from plain values (S16); `secretString()` becoming `secret(schema)` (S17); `dotenv-flow` skipping `.env.local` for `test`; `destroy` needing a valid configuration; `KEY=` giving `''`; filtering `environmentVariables()`; any change to `envParam()`'s deploy-time reading. Also out: the engine change itself, which is prisma/prisma-cli#383.
 
 Each commit is made with `git commit -s --trailer "Signed-off-by: Will Madden <madden@prisma.io>"` and has no `Co-Authored-By` line. Before each commit, run `pnpm lint:fix` and keep the formatting it writes. Only the branch tip must be green.
 
-1. `feat(cli)!: dotenv() reads its files through dotenv-flow` — § 3, its tests (15.1's `config-adapters.test.ts` changes, tests 17 to 20), the lockfile.
-2. `refactor!: the config pool and the secrets pool are the app configuration and the app secrets` — § 4 and § 10 items 1, 3 to 11, with every rename-only test change of § 15.1.
-3. `feat(core): Load records what it read from the app configuration, and the second process Loads with it` — § 5, § 6, § 10 item 2, tests 1 to 16.
-4. `feat(cli)!: the second process reads a configuration file and runs no adapter` — § 7, § 8, the `generate-stack`, `generate-dev-stack`, `stack-file-import`, `app-configuration` and `pipeline` changes of § 15.1, tests 31 to 38 and 46 to 50.
-5. `feat(cli): Composer redacts every secret it knows, in errors, events and the second process's output` — § 9, § 10 item 12, the `deployment-summary`, `run-alchemy`, `converge-spawn`, `deploy` and `operations` changes of § 15.1, tests 21 to 30, 39 to 45 and 51 to 53.
-6. `docs(design): one current record for secrets, env-sourced params, errors, the composer section and dev secrets; the app configuration and the app secrets` — § 14.1 to § 14.9.
-7. `docs: guides and the agent skill read configuration once and redact known secrets` — § 14.10 to § 14.12.
-8. `docs(drive): module-input S11 to S13 manual QA` — `qa.md` in this slice's folder (§ 17).
+1. `docs(drive): the module-input design says dotenv() drops .env.defaults, names secretsKey, refuses a name read as both, and redacts through the engine's output transform` — § 14.13.
+2. `feat(cli)!: dotenv() reads its files through dotenv-flow` — § 3, its tests (15.1's `config-adapters.test.ts` changes, tests 17 to 20), the lockfile.
+3. `refactor!: the config pool and the secrets pool are the app configuration and the app secrets` — § 4 and § 10 items 1, 3 to 11, with every rename-only test change of § 15.1.
+4. `feat(core): Load records what it read from the app configuration, and the second process Loads with it` — § 5, § 6, § 10 item 2, tests 1 to 16.
+5. `feat(cli)!: the second process reads a configuration file and runs no adapter` — § 7, § 8.1 to § 8.6, the `generate-stack`, `generate-dev-stack`, `stack-file-import`, `app-configuration` and `pipeline` changes of § 15.1, tests 31 to 38 and 43 to 47.
+6. `feat(cli): Composer redacts every secret it knows, in errors, events and the second process's output` — § 8.7, § 9, § 10 item 12, the `deployment-summary`, `run-alchemy`, `converge-spawn`, `operations-double` and `operations` changes of § 15.1, tests 21 to 30, 39 to 42 and 48 to 50, the lockfile.
+7. `docs(design): one current record for secrets, env-sourced params, errors, the composer section and dev secrets; the app configuration and the app secrets` — § 14.1 to § 14.9.
+8. `docs: guides and the agent skill read configuration once and redact known secrets` — § 14.10 to § 14.12.
+9. `docs(drive): module-input S11 to S13 manual QA` — `qa.md` in this slice's folder (§ 17).
 
 ## 17. Done when
 
-- Tests 1 to 53 pass, and every test changed in § 15.1 passes. At the root: `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm lint:casts`, `pnpm lint:deps`, `pnpm test`, `pnpm turbo run test:types`, `pnpm check:floor-imports`, `pnpm check:publish-deps`, `pnpm check:skill-packaging`, `pnpm check:family-static-graph` and `pnpm check:cli-engine-pin` are green. `pnpm lint:casts` reports `delta=0`. `pnpm lint` reports the same warning and info counts as main.
+- Tests 1 to 50 pass, and every test changed in § 15.1 passes. At the root: `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm lint:casts`, `pnpm lint:deps`, `pnpm test`, `pnpm turbo run test:types`, `pnpm check:floor-imports`, `pnpm check:publish-deps`, `pnpm check:skill-packaging`, `pnpm check:family-static-graph` and `pnpm check:cli-engine-pin` are green. `pnpm lint:casts` reports `delta=0`. `pnpm lint` reports the same warning and info counts as main.
 - § 4.3's grep finds nothing.
 - Run `pnpm test` from this worktree, not from a scratch copy. Some target and local-target tests start emulator daemons. Stop no emulator you did not start; if tests fail because of an emulator this run did not start, record it and report. Never run `pnpm test:integration`, `pnpm test:e2e` or `pnpm test:all`. `test/integration/test/local-dev.integration.ts` changes only in comments and runs in CI.
-- The built relay runs: after `pnpm build`, `node packages/9-public/composer/dist/internal-output-relay.mjs node -e "console.log('x')"` prints `x` on stderr (its stdout is not a terminal in the check) and exits 0.
+- `@prisma/cli-engine` 0.10.0 is published and installed from the registry, with no local link left in any manifest or the lockfile. Until then the pull request stays a draft.
 - Every document in § 14 is updated. The pull request carries § 13.
 - **Manual QA**, recorded in `qa.md` in this slice's folder, after `pnpm build`. Credentials: `set -a; . ~/.config/prisma-compose/deploy.env; set +a`, never printing a value, with `PRISMA_REGION=us-east-1`. Every hosted step runs from `examples/email`, after `pnpm turbo run build --filter @prisma/example-email...`, as `( set -a; . ~/.config/prisma-compose/deploy.env; set +a; PRISMA_REGION=us-east-1 bun ../../node_modules/.bin/prisma deploy --name s13qa-email --environment s13-qa )`, called "the deploy" below. The name `s13qa-email` keeps the workspace's existing `email-example` project untouched. The secret value is generated once: `export S13_QA_SECRET="s13qa-$(openssl rand -hex 8)"`; `qa.md` records only its first five characters.
   1. **Files, deployed to Prisma Cloud.** Write `examples/email/.env.s13-qa` with `EMAIL_DELIVERY_MODE=none` and `EMAIL_FROM=s13qa@example.com`, and `examples/email/.env.s13-qa.local` with `EMAIL_DELIVERY_CREDENTIAL=$S13_QA_SECRET` (the value, written by the shell). Write `.env.defaults` with `EMAIL_FROM=defaults-must-not-win@example.com`. In a second shell, from `examples/email`, run `while true; do cp .prisma-composer/configuration-*.json ../../wip/s13-qa-configuration.json 2>/dev/null; sleep 0.2; done`. Run the deploy. Stop the loop. Record: the deploy succeeded; `wip/s13-qa-configuration.json` holds `rootInput` with `EMAIL_DELIVERY_MODE` and `EMAIL_FROM` set to `s13qa@example.com` (not the `.env.defaults` value), and `values` `{}`; `ls -l` showed mode `-rw-------` on it while it existed; `ls .prisma-composer/configuration-*.json` finds nothing after the deploy; `grep -r "$S13_QA_SECRET" .prisma-composer ../../wip/s13-qa-configuration.json` finds nothing; the Management API lists `EMAIL_DELIVERY_CREDENTIAL` on the `s13-qa` Branch (metadata only).
-  2. **The second process's output is redacted.** Add, for this step only, at the end of `examples/email/prisma.config.ts`: `if (process.env.PRISMA_COMPOSER_CONFIGURATION_FILE !== undefined) console.log('qa secret in the second process:', process.env.EMAIL_DELIVERY_CREDENTIAL);`, export `EMAIL_DELIVERY_CREDENTIAL="$S13_QA_SECRET"` in the shell, and run the deploy again under `script -q ../../wip/s13-qa-output.txt bash -c '<the deploy>'`, so the terminal is a real one and its text is captured. Record: the output shows `qa secret in the second process: [redacted]`; `grep -c "$S13_QA_SECRET" ../../wip/s13-qa-output.txt` is 0; Alchemy's progress lines appear without colour. Remove the line and unset the variable.
+  2. **The second process's output is redacted.** Add, for this step only, at the end of `examples/email/prisma.config.ts`: `if (process.env.PRISMA_COMPOSER_CONFIGURATION_FILE !== undefined) console.log('qa secret in the second process:', process.env.EMAIL_DELIVERY_CREDENTIAL);`, export `EMAIL_DELIVERY_CREDENTIAL="$S13_QA_SECRET"` in the shell, and run the deploy again under `script -q ../../wip/s13-qa-output.txt bash -c '<the deploy>'`, so the terminal is a real one and its text is captured. Record: the output shows `qa secret in the second process: [redacted]`; `grep -c "$S13_QA_SECRET" ../../wip/s13-qa-output.txt` is 0; Alchemy's progress lines appear without colour. Run the deploy once more with `--json`, its stdout to `../../wip/s13-qa-stdout.json` and its stderr to `../../wip/s13-qa-stderr.txt`, and record that neither file holds the value and that the stdout file holds only JSON lines. Remove the line and unset the variable.
   3. **An adapter's error is redacted.** Put, for this step only, `config: [() => { throw new Error(\`cannot use ${process.env.EMAIL_DELIVERY_CREDENTIAL}\`); }, dotenv(), environmentVariables()]` in `prisma.config.ts`, export the variable again, and deploy. Record the `CONFIG.ADAPTER_FAILED` output: its `Why:` line reads `It threw: cannot use [redacted]`. Restore `prisma.config.ts` and unset the variable.
   4. **A different graph is refused.** Add, for this step only, to the root body in `examples/email/module.ts`: `if (process.env.PRISMA_COMPOSER_CONFIGURATION_FILE !== undefined) provision(email(), { id: 'extra', input: { deliveryMode: input.EMAIL_DELIVERY_MODE, from: input.EMAIL_FROM, deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') } });`, and deploy. Record that it fails with `DEPLOY.ENGINE_FAILED`, whose cause names `"s13qa-email.extra"` (and the nodes under it) as only in the second process, and that nothing new was created on the Branch. Restore `module.ts`.
   5. **`prisma dev`.** Write `examples/email/.env.dev` with the same two plain values, `EMAIL_FROM=dev-qa@example.com`, and `.env.dev.local` with `EMAIL_DELIVERY_CREDENTIAL=$S13_QA_SECRET`. Run `prisma dev --detach` from `examples/email`. Record: it started; `.prisma-composer/dev/dev/configuration.json` does not exist after it returns; `grep -r "$S13_QA_SECRET" .prisma-composer .alchemy` finds nothing (the compute emulator's own copy lives outside the project, as ADR-0058 records); `curl -s -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"email":"qa@example.com","name":"QA"}' "$(prisma dev url email-example.mailer)/signup"` prints a 2xx status. Then `prisma dev stop`.
@@ -2213,24 +2148,30 @@ One scratch worktree at the git-ignored `wip/s11-scratch`, removed afterwards. N
 
 - **`dotenv-flow` 4.1.0** (`dotenv-flow-order.mjs`), with `.env.defaults`, `.env`, `.env.local`, `.env.production`, `.env.production.local`, `.env.test`, `.env.test.local` and `.env.defaults.local` in one folder. Given the pattern `.env[.node_env][.local]`, `listFiles` returned `.env.defaults` first for every environment: that string equals `dotenv-flow`'s `DEFAULT_PATTERN`, and `listFiles` adds `.env.defaults` exactly when the pattern equals it. The order after it was `.env`, `.env.local`, `.env.<environment>`, `.env.<environment>.local`; for `test` it skipped `.env.local`; for an environment named `defaults` it listed `.env.defaults` twice, first as the defaults file and later as the environment's file. `parse([])` returned `{}`, and `process.env` was untouched.
 - **The filter** (`dotenv-flow-filter.mjs`): dropping the first entry when it is `<dir>/.env.defaults` gave `.env, .env.local, .env.production, .env.production.local` for `production`, kept the environment's own file for `defaults`, and changed nothing once `.env.defaults` was removed.
-- **The stream redactor** (`redactor.ts`, `redactor-probe.ts`, run with Bun): a secret split across two chunks was redacted; overlapping secrets `abc` and `abcdef` gave the longest match; a one-character secret was redacted; for chunk sizes 1, 2, 3, 5, 8, 9, 10 and 64 over a 6000-character text, the output equalled the text with every secret replaced.
-- **The relay's signals** (`relay.mjs`, `child.mjs`, `parent.mjs`, `group.mjs`): with the values in `PRISMA_COMPOSER_REDACTED_VALUES`, the child did not see the variable and its output was redacted; SIGTERM sent to the relay reached the child and the relay ended by SIGTERM; SIGINT sent to the process group reached the child once (the relay ignored it) and the relay exited 130, as the child did.
+- **The stream redactor, first version** (`redactor.ts`, `redactor-probe.ts`, run with Bun): a secret split across two chunks was redacted; overlapping secrets `abc` and `abcdef` gave the longest match; a one-character secret was redacted; for chunk sizes 1, 2, 3, 5, 8, 9, 10 and 64 over a 6000-character text, the output equalled the text with every secret replaced.
 - **Alchemy without a terminal** (`alchemy-no-tty.run.ts`): `node node_modules/alchemy/bin/cli.js deploy alchemy.run.ts --yes --stage probe` with stdout and stderr redirected to files and stdin from `/dev/null` exited 0, ran the stack effect (`process.stdout.isTTY` undefined), and printed plain timestamped log lines. Alchemy decides interactivity from `stdin.isTTY && stdout.isTTY` and agent variables, so a piped run is non-interactive, and `--yes` covers the confirmation.
-- **Resolution of an internal entry from an app**: `createRequire('<repo>/examples/email/package.json').resolve('@prisma/composer/internal/pools')` returned `packages/9-public/composer/dist/internal-pools.mjs`, so `resolveOutputRelay` resolves the same way.
-- **The engine's `ctx.spawn`** (`@prisma/cli-engine` 0.9.0 `dist/report-*.d.ts` and `dist/engine-*.js`): `SpawnOptions` takes `command`, `args`, `cwd` and `env` only; the request's `output` is `"inherit"` or `"diagnostic"`, chosen by the engine from the output format; the engine logs `command` and `args` in debug mode, never `env`; it forwards SIGTERM to its child and, on a programmatic abort, ends it with SIGTERM, then SIGKILL.
-- **Not run**: the implementation as a whole, `pnpm test`, a build of the new entries, and any deploy. The code in this spec was written against the files it names at `e435d04b`, and the probes above cover the parts the design could not settle by reading.
+- **The engine's `ctx.spawn`, 0.9.0** (`dist/report-*.d.ts` and `dist/engine-*.js`): `SpawnOptions` takes `command`, `args`, `cwd` and `env` only; the request's `output` is `"inherit"` or `"diagnostic"`, chosen by the engine from the output format; the engine logs `command` and `args` in debug mode, never `env`; it forwards SIGTERM to its child and, on a programmatic abort, ends it with SIGTERM, then SIGKILL.
+- **The engine change, prisma/prisma-cli#383** (branch `claude/cli-engine-pipe-output`, read with `git diff origin/main...HEAD`, and its built `dist/`). As drafted, it adds `onOutput(chunk, stream)` and an `output: "pipe"` spawn request; the request's adapter returns both streams, and `ended` waits for them to close. The engine buffers `ctx.report` events while a child runs and prints them in a `finally` after the child's streams are read, before `ctx.spawn` resolves. The test harness's scripted child gains `write(stream, chunk)`, and `SpawnRecord` records the request's `output`. The orchestrator reports that review will replace `onOutput` with a per-stream transform the engine writes out itself; § 9.5 is written against that shape and names it in one place.
 
-## 19. Where S10 touches the same code
+Checks for this amendment, in a scratch worktree at the git-ignored `wip/s11-amend-scratch`, removed afterwards:
 
-S10 (in prisma/composer#412) types a service's binding from its schema and removes `InputBinding`. It edits `packages/0-framework/1-core/core/src/node.ts`, the type tests, the examples and the guides. This PR edits `node.ts`'s `SourceOptions`, `ParamSourceOptions`, `paramSource()`, `secretSource()` and the `ModuleContext.input` comment, which S10 does not change, so a rebase conflict is textual at most. If S10 changes `source-load.test.ts`, `pointer.test.ts` or `building-an-app.md` where § 15.1 or § 14.10 edits them, the implementer applies this spec's edits to S10's text and reports any sentence this spec quotes that S10 removed. Nothing in S10 changes how Load resolves a value, the stack files, the operations or redaction.
+- **The stream redactor and its transform** (`redactor.ts` and `probe.ts`, run with Bun): § 9.3's `StreamRedactor` and `redactingTransform`, piped from a `ReadableStream`, redacted a secret split across two chunks; with the values `SECRETXYZ` and `SECRET` over a 2000-part text with line breaks, chunk sizes 1, 2, 3, 5, 8, 9, 10 and 64 gave the text with every `SECRETXYZ` replaced; `push('0123456789')` with `abcdef` returned `01234` and `end()` returned `56789`; a complete line came out at once; a secret with a line break, split at the break, was redacted whole; overlapping `a`, `abc` and `abcdef` gave the longest match.
+- **Types**: `redactor.ts` type-checks with the repo's TypeScript 6.0.3 under `strict`, `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, once with the DOM library and once with only `@types/node`, so `TransformStream` and `match.index` need no cast.
+- **Pins**: `@prisma/cli-engine` is `0.9.0` in `packages/0-framework/3-tooling/cli` (`dependencies`), `packages/1-prisma-cloud/1-extensions/target` (`devDependencies`), `packages/9-public/composer-cli` (`peerDependencies` and `devDependencies`) and the root `pnpm.overrides`.
+- **Quotes against S10**: every code and document quote in § 5, § 10 and § 14 was checked against this branch at `78166d80` (§ 19).
+- **Not run**: the implementation as a whole, `pnpm test`, a build of the new entries, any deploy, and the redactor against the engine, whose final API is not merged.
+
+## 19. What S10 changed
+
+S10 is on this branch. It typed a service's binding from its schema, renamed `ServiceInputBinding` to `InputBindingUse` and typed its `binding` as `unknown`. § 5.3's `checkedConfigurationOf` now takes `readonly InputBindingUse[]`. S10 did not change `SourceOptions`, `ParamSourceOptions`, `secretSource()`, `paramSource()`, `value.ts`'s source origin, `resolveValues`'s `configPool` reading, `loadModule`'s root input block, the CLI, the stack files, the operations or redaction, so every other quote in § 5 and § 10 matches the code. In the documents, S10 rewrote the binding sentences of `config-params.md` and the glossary; the lines § 14.8 and § 14.9 quote are still there, and `config-params.md` has four pool lines, at 99, 144, 161 and 300. `building-an-app.md` and the agent skill still hold every sentence § 14.10 and § 14.11 quote. ADR-0029's rewrite (§ 14.3) now says a wrong binding fails to compile, as S10 made it.
 
 ## 20. Decisions this spec records, for the review
 
-1. **The second process's output is piped through a relay process under the CLI** (§ 9.5), because `ctx.spawn` cannot pipe. Programmatic hosts pipe in-process (§ 9.4). The relay comes from the app's `@prisma/composer`, as Alchemy's bin does, so the stack file, Alchemy and the relay come from one install.
-2. **The relay receives the secret values in `PRISMA_COMPOSER_REDACTED_VALUES`**, removes the variable before starting Alchemy, and never takes them as arguments, which the engine logs. No file holds them.
+1. **Under the CLI, the engine redacts the second process's output with Composer's transform** (§ 9.5), and prints it where it would have. Composer maps no stream and handles no output format. Programmatic hosts pipe in-process through the same redactor (§ 9.4). The secret values stay in the first process; no environment variable, argument or file carries them.
+2. **The redactor never holds back a complete line when no secret holds a line break** (§ 9.3), so a progress line is printed at once, not after the platform's next answer.
 3. **`dotenv()` filters `.env.defaults` itself** (§ 3.2): the design's pattern does not keep `dotenv-flow` from listing it (§ 21, finding 1). It parses one file at a time, merged in `dotenv-flow`'s order, so an unreadable file is named, as today.
 4. **The app secrets are read before the app configuration** (§ 7.3), so a config adapter's failure is redacted with a written secrets list's values.
-5. **The redaction set keeps S4's credential-name heuristic** for app configuration values of eight characters or more, on top of the design's two kinds. Without it, a value such as `STRIPE_KEY` in the app configuration under the default lists, which no `envSecret()` names, would stop being redacted.
+5. **The redaction set keeps S4's credential-name heuristic** for app configuration values of eight characters or more, and S4's shape patterns. This is existing behaviour, kept for now, not part of the design's redaction. Without it, a value such as `STRIPE_KEY` in the app configuration under the default lists, which no `envSecret()` names, would stop being redacted. The decision records and the design say the same (§ 14.3, § 14.6, § 14.13).
 6. **The stream redactor matches exact values only**; the shape patterns (bearer tokens, JWTs, URL passwords) apply to whole texts: errors, events and failure causes. A pattern cannot be held back across chunks by a length.
 7. **Core gains `secretSource()`'s `secretsKey`** (§ 5.5), so the CLI can list the names `envSecret()`s name without knowing a target's payload, as `paramSource()`'s `configurationKey` already does for params.
 8. **Load records what it read on the graph** (`graph.checkedConfiguration`), so the first process writes exactly that and the second process Loads with it; core imports no `node:` module and reads no environment variable for this.
@@ -2245,11 +2186,28 @@ S10 (in prisma/composer#412) types a service's binding from its schema and remov
 
 ## 21. What the design gets wrong or does not say
 
-1. **Wrong: the pattern does not exclude `.env.defaults`.** Design section 8 says passing `.env[.node_env][.local]` keeps `dotenv-flow` from reading `.env.defaults`. That string is `dotenv-flow`'s own default, and `listFiles` adds `.env.defaults` exactly when the pattern equals the default (§ 18). This spec filters it out (§ 3.2). The design text and ADR-0062 should say `dotenv()` drops it, not that the pattern does.
-2. **Not possible as written: "Composer reads that output through a pipe" under the CLI.** `@prisma/cli-engine` 0.9.0's `ctx.spawn` hands its child the terminal or the engine's diagnostic stream, never a pipe to the handler, and the deploy command must spawn through it so the engine records the child's status. This spec adds a relay process between the engine and Alchemy (§ 9.5). Its costs: a third process holds the secret values in its environment for the length of the deploy; a SIGKILL of the relay (the engine's last step on a programmatic abort) can leave Alchemy running without its output pipe; and the app's `@prisma/composer` must ship the relay, which adds `DEPLOY.OUTPUT_RELAY_MISSING`. The alternative is a `@prisma/cli-engine` change that lets a command pipe its child's output, which needs a release of prisma/prisma-cli first. Recommendation: ship the relay now, and record the engine change in `deferred.md`.
-3. **Not said: how the CLI knows the names an `envSecret()` names.** Core sees only an opaque payload. This spec adds `secretsKey` to `secretSource()` (§ 20, decision 7), a core SPI change.
+1. **Wrong: the pattern does not exclude `.env.defaults`.** Design section 8 said passing `.env[.node_env][.local]` keeps `dotenv-flow` from reading `.env.defaults`. That string is `dotenv-flow`'s own default, and `listFiles` adds `.env.defaults` exactly when the pattern equals the default (§ 18). This spec filters it out (§ 3.2). Will accepted the correction; § 14.13 and § 14.6 item 12 make the design and ADR-0062 say `dotenv()` drops it.
+2. **Resolved: "Composer reads that output through a pipe" under the CLI.** `@prisma/cli-engine` 0.9.0's `ctx.spawn` cannot hand a command its child's output. The first version of this spec added a relay process. Will chose the engine change instead: prisma/prisma-cli#383 adds the output transform (§ 9.5), and this PR waits for 0.10.0. § 14.13 replaces the design's "reads that output through a pipe".
+3. **Not said: how the CLI knows the names an `envSecret()` names.** Core sees only an opaque payload. This spec adds `secretsKey` to `secretSource()` (§ 20, decision 7), a core SPI change. Will accepted it; § 14.13 adds it to the design.
 4. **Not said: what is redacted before the graph exists.** An adapter failure or a Load error happens before the CLI knows any `envSecret()` name. Under the default lists, only the credential-name heuristic applies then; with a written secrets list, its values apply too, because it is read first (§ 20, decision 4).
 5. **Conflict with a recorded decision: ADR-0044 says a structured error is never transformed between its origin and the consumer.** Redaction transforms it. § 14.5 rewrites that statement; this reverses it for redaction only.
-6. **Not said: a name read by both `envParam()` and `envSecret()`.** Without a refusal, the configuration file would hold a secret (§ 20, decision 11).
+6. **Not said: a name read by both `envParam()` and `envSecret()`.** Without a refusal, the configuration file would hold a secret (§ 20, decision 11). Will accepted the refusal; § 14.13 adds it to the design.
 7. **Consequence not stated: the reproduce command no longer works after a run.** It needs the configuration file, which is deleted when the run ends. It already needed the container and preflight variables the CLI passes, so a user could not run it bare before either; the second process's error now says why (§ 12).
-8. **Size.** This is one pull request of eight commits touching core, the CLI, both public packages, the target, the local target, five decision records and three guides. The relay (§ 9.5, tests 39 to 45, and the output parts of 51) can move to its own pull request if the review asks, leaving the in-process pipe for programmatic hosts; the plan keeps them together, and this spec does too.
+8. **Size.** This is one pull request of nine commits touching core, the CLI, both public packages, the target, the local target, five decision records and three guides. The plan keeps them together, and this spec does too.
+9. **Not covered: the credential the engine gives the child.** The engine adds `PRISMA_SERVICE_TOKEN` to the child's environment. When it comes from the shell, Composer's redactor knows it through `secretNamedValues(process.env)`. When it comes from `prisma login`, Composer never sees its value, and the stream redactor matches exact values only, so a child that printed it would print it in clear. Alchemy does not print it today. Recommendation: ask in prisma/prisma-cli#383 that the engine redact the credential it injects, or record it in `deferred.md`.
+10. **Not covered: an older engine.** A `prisma` host that carries `@prisma/cli-engine` 0.9.0 and mounts this `@prisma/composer-cli` breaks its exact peer. Under pnpm that is a warning, and 0.9.0 ignores the unknown spawn option, so the output reaches the terminal unredacted, as it does on main today. Composer cannot detect it before the output flows. Recommendation: the release note names the engine version (§ 13 item 7), and #383's final API should refuse an unknown spawn option from then on, so a future option cannot be dropped the same way.
+
+## Changes since the first version
+
+Made on 2026-11-02, after Will's decisions on the first version.
+
+1. **The relay process is gone.** Under the CLI, the engine's per-stream output transform from prisma/prisma-cli#383 redacts the second process's output (§ 9.5). Removed: `output-relay.ts`, `internal/output-relay` and its entries in both packages, `architecture.config.json` and `tsconfig.depcruise.json`, `resolveOutputRelay`, `DEPLOY.OUTPUT_RELAY_MISSING`, `PRISMA_COMPOSER_REDACTED_VALUES`, the relay tests and fixture, and the relay's mentions in the release note, the error table, ADR-0044, `deploy-cli.md` and the findings. Why: Will chose the engine change over a third process.
+2. **The engine's API is named in one place.** `ConvergeContext.spawn`'s `transformOutput` member is written against the transform shape the orchestrator reported for #383's final API, not the drafted `onOutput`. Composer maps no stream and handles no output format; the engine does. Why: the orchestrator reported that #383 will change after review.
+3. **The redactor is a `StreamRedactor` plus `redactingTransform`** (§ 9.3), in place of `RedactingWriter`. It returns text instead of writing it, so the engine's transform and the in-process pipe share it. It never holds back a complete line when no secret holds a line break. Why: a transform needs the text back, and a long platform wait must not hold back the end of a progress line.
+4. **Report ordering and abort are specified** (§ 9.5), with test 40 for the order of held-back text and buffered report events.
+5. **`@prisma/cli-engine` goes to 0.10.0** in four places, including the root `pnpm.overrides`, which the first request did not list (§ 8.7). The pull request stays a draft until 0.10.0 is published.
+6. **Tests**: 39 to 45 are replaced by four tests, 39 to 42, two of them on the engine's test harness; old tests 46 to 53 are now 43 to 50. Commits gain a first design commit and are renumbered.
+7. **Name-based redaction is described as existing S4 behaviour kept for now** in § 2, § 9.1, § 20 decision 5, ADR-0029's rewrite and ADR-0062's edit, not as part of the new design.
+8. **The design is corrected** (§ 14.13): `dotenv()` drops `.env.defaults` itself, `secretSource()` takes `secretsKey`, Load refuses a name read by both `envParam()` and `envSecret()`, and the output is redacted through the engine's transform. ADR-0062 gets the same three statements (§ 14.6 items 12 to 14).
+9. **Quotes match S10.** `ServiceInputBinding` is `InputBindingUse` in § 5.3; ADR-0029's rewrite says a wrong binding fails to compile; § 19 is rewritten; § 14.9 and § 14.10 no longer count lines that S10 moved.
+10. **Two new findings** (§ 21, 9 and 10): the credential the engine injects is not in Composer's redaction set when it comes from `prisma login`, and a host on engine 0.9.0 drops the transform silently.
