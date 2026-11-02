@@ -136,21 +136,9 @@ binding `{ from: 'staging+shop@example.com', deliveryCredential:
 envSecret('EMAIL_DELIVERY_CREDENTIAL') }`. The binding has no `replyTo` key,
 because the root left that optional field out.
 
-The body holds one value for each key of the schema: `input.from`,
-`input.smtp.host`, or `input` itself for the whole input. Each is a
-[value](../03-domain-model/glossary.md#value), the same kind as
-`environment.name` and a `resolve()` result, and a provided one: the body is
-handed it. Its real value is the data at that key path in the module's
-validated input, which is the module's binding with its values replaced by
-their real values and passed through the module's schema. A real value is the
-schema's output, so a field typed `number` by a `string.integer.parse` schema
-receives `4`, not `'4'`. An input field bound to a deploy-time value is
-deploy-time: its real value is known by the end of Load. A field bound to
-`envSecret()`, `generatedParam()` or `serviceOrigin()` is a runtime value: the
-data is known only at boot, so its real value is a pointer, and its type says
-so: a
-wrapped field's type includes `Pointer<In>`, and a `secretString()` field's
-includes `Pointer<SecretString>`.
+The body holds `input`, a dictionary with one value for each key of the schema, such as `input.from` or `input.smtp.host`. Each is a [value](../03-domain-model/glossary.md#value), the same kind as `environment.name` and a `resolve()` result, and a provided one: the body is handed it. Its real value is the data at that key path in the module's validated input, which is the module's binding with its values replaced by their real values and passed through the module's schema. A real value is the schema's output, so a field typed `number` by a `string.integer.parse` schema receives `4`, not `'4'`. An input field bound to a deploy-time value is deploy-time: its real value is known by the end of Load. A field bound to `envSecret()`, `generatedParam()` or `serviceOrigin()` is a runtime value: the data is known only at boot, so its real value is a pointer, and its type says so: a wrapped field's type includes `Pointer<In>`, and a `secretString()` field's includes `Pointer<SecretString>`.
+
+`input` itself is not a value. Its type, `ModuleInput<S>`, carries a brand that every binding type refuses, so passing the whole `input` into a child module's or a service's `input`, a service param, a resource's props or a `resolve()` dependency fails to compile, for every module, the root included. A cast gets past the compiler, so Load refuses it too, naming where it was passed and saying to pass its fields on by name. A binding slot typed `unknown` accepts anything, so there only Load refuses it. A module receives the input it needs and no more: its body names each field it passes on.
 
 A leaf field can be **wrapped**: its schema is `field(inner)`, from
 `@prisma/composer/arktype` or `@prisma/composer/zod`
@@ -177,8 +165,8 @@ narrow inside a `resolve()` function.
 
 An input field is accepted in four places:
 
-- **a service's `input` binding**, at any depth, including the whole binding;
-- **a module's `input` binding**, at any depth, including the whole binding;
+- **a service's `input` binding**, at any depth; a field may be the whole binding, as in `input: input.smtp`;
+- **a module's `input` binding**, at any depth; a field may be the whole binding;
 - **a `resolve()` dependency**, for a plain field: `fn` receives the real
   value. Listing a field wrapped with `field()` or typed `secretString()`
   fails to compile, and Load refuses a listed field whose real value holds a

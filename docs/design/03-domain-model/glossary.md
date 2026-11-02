@@ -35,10 +35,7 @@ distinct type, with composition behaviours a Service doesn't have.
 - **Nesting.** A wrapped node's dependencies and exposed interfaces connect either to the
   parent Module's own or to a sibling (Service, Resource, or Module) inside the same Module; a
   wrapped node reaches outside the Module only through the parent's boundary.
-- **Input.** A Module declares its [Input](#input) as one `input` Standard
-  Schema, as a Service does, and whoever provisions it binds it. Its body
-  receives one [value](#value) per input field and can only pass it on: into a `provision()`
-  binding or, for a [plain field](#field), as a `resolve()` dependency.
+- **Input.** A Module declares its [Input](#input) as one `input` Standard Schema, as a Service does, and whoever provisions it binds it. Its body receives `input`, a dictionary with one [value](#value) per input field, and can only pass a field on, by name: into a `provision()` binding or, for a [plain field](#field), as a `resolve()` dependency. The dictionary itself is not a value: passing it on whole fails to compile, and Load refuses it.
 - **Composite, not atomic.** Where a Service is a leaf (opaque), a Module is
   transparent: the framework sees its dependencies and exposed interfaces *and* the internal topology it owns. The
   Module decides how the Services, Resources, and Modules it wraps connect; its
@@ -188,14 +185,7 @@ whatever inputs Composer is given
 ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
 The data a value stands for is its **real value**.
 
-- **Provided or computed.** A provided value is handed to the module body:
-  `environment.name` is one, a deploy-time fact of the environment, and each
-  field of a module's `input` is another, whose real value is read from the
-  module's input after its schema has validated it. A root's input is the
-  config pool. A computed
-  value is what `resolve(dependencies, fn)` returns; Load runs `fn` with its
-  dependencies' real values after every module body has run, with `provision`
-  disabled. `resolve()` declares a computed value; Load resolves every value.
+- **Provided or computed.** A provided value is handed to the module body: `environment.name` is one, a deploy-time fact of the environment, and each field of a module's `input` is another, whose real value is read from the module's input after its schema has validated it. The `input` itself is a dictionary of these values, not a value, so no binding accepts it. A root's input is the config pool. A computed value is what `resolve(dependencies, fn)` returns; Load runs `fn` with its dependencies' real values after every module body has run, with `provision` disabled. `resolve()` declares a computed value; Load resolves every value.
 - **Deploy-time or runtime.** A deploy-time value has its real value by the
   end of Load: `environment.name`, a `resolve()` result, `envParam()`, whose
   real value is the variable's value at deploy, and a module input field
