@@ -4371,6 +4371,57 @@ describe('no known secret is printed', () => {
     expect(seen.stdout).toBe('printed [redacted]\n');
   }, 15_000);
 
+  test('a thrown string holding a known secret is redacted before it is rethrown or sent to a reporter', async () => {
+    const app = makeAppDir();
+    const finished: string[] = [];
+    const reporter: NonNullable<ExtensionDescriptor['reporter']> = {
+      begin: async () => ({
+        childEnv: () => ({}),
+        attach: async () => {},
+        finish: async (outcome) => void finished.push(JSON.stringify(outcome)),
+      }),
+    };
+
+    const config = fakeConfig({ reporter });
+    const extension = config.extensions[0];
+    if (extension === undefined) throw new Error('unreachable');
+    const brokenContainer: ContainerDescriptor = {
+      ...fakeContainerDescriptor(),
+      ensure: async (input) => ({
+        input,
+        get alchemyStage(): string {
+          throw 'failed with thrown-SENTINEL-3';
+        },
+        serialize: () => JSON.stringify({ input }),
+      }),
+    };
+
+    const thrown = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig({
+            ...config,
+            extensions: [
+              { ...extension, container: brokenContainer },
+              ...config.extensions.slice(1),
+            ],
+            secrets: [() => ({ TOKEN_X: 'thrown-SENTINEL-3' })],
+          }),
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      ),
+    ).catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect(String(thrown)).toBe('Error: failed with [redacted]');
+    expect(finished).toHaveLength(1);
+    expect(finished[0]).toContain('failed with [redacted]');
+    expect(finished.join('')).not.toContain('SENTINEL');
+  });
+
   test("an adapter's failure message is redacted with every value a written secrets list returned", async () => {
     const app = makeAppDir();
 

@@ -30,7 +30,7 @@ import {
   entryMissing,
 } from './composer-config.ts';
 import { type LoadedEntry, loadEntry } from './load-entry.ts';
-import { credentialNamedValues, SecretRedaction, valuesUnderSecretsKeys } from './redaction.ts';
+import { credentialLookingValues, SecretRedaction, valuesUnderSecretsKeys } from './redaction.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
 
 /** The app is loaded and checked, and assemble is about to start; then one assemble event per service. */
@@ -193,7 +193,7 @@ export async function runPipeline(
   const secrets: AppSecrets =
     deps.readSecrets === true ? await readAppSecrets(config, adapterInput, redaction) : NO_SECRETS;
   const configuration = await readAppConfiguration(config, adapterInput);
-  redaction.addCredentialLooking(credentialNamedValues(configuration));
+  redaction.addCredentialLookingValues(credentialLookingValues(configuration));
 
   // 4. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
   const graph = Load(entryModule.root, {

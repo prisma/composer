@@ -3,7 +3,7 @@
  * fixture-backed double of the operations the command family calls, for hosts that test how they
  * mount the command family without running real deploys; and
  * `renderDevStackFile`, the dev stack file `dev` writes, with `prepareSecondProcess`,
- * the handover to the second process `dev` uses, with `KnownSecrets`, the secrets it refuses to
- * write, for tests that drive Alchemy directly.
+ * the handover to the second process `dev` uses, for tests that drive Alchemy directly.
+ * `KnownSecrets` is here only to build the known secrets `prepareSecondProcess` refuses to write.
  */
 export * from '@internal/cli/testing';

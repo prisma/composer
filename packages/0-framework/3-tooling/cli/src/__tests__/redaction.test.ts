@@ -3,7 +3,7 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import type { DeploymentSummary } from '../deployment-summary.ts';
 import type { DevEvent } from '../operations/dev.ts';
 import {
-  credentialNamedValues,
+  credentialLookingValues,
   KnownSecrets,
   redactDevEvent,
   redactError,
@@ -139,6 +139,57 @@ describe('redactThrown', () => {
   });
 });
 
+describe('redactThrown never throws', () => {
+  test('a thrown string, number or plain object becomes an Error whose message is its redacted text', () => {
+    const redaction = knowing('s3cr3t-value');
+
+    expect(redactThrown('failed with s3cr3t-value', redaction).message).toBe(
+      'failed with [redacted]',
+    );
+    expect(redactThrown(42, knowing('42')).message).toBe('[redacted]');
+    const fromObject = redactThrown({ detail: 's3cr3t-value' }, redaction);
+    expect(fromObject).toBeInstanceOf(Error);
+    expect(fromObject.message).not.toContain('s3cr3t-value');
+  });
+
+  test('a message that is not text is redacted as text', () => {
+    const error = new Error('x');
+    Object.defineProperty(error, 'message', { value: { toString: () => 'about s3cr3t-value' } });
+
+    expect(redactThrown(error, knowing('s3cr3t-value')).message).toBe('about [redacted]');
+  });
+
+  test.each(['message', 'cause', 'stack'])(
+    'a %s getter that throws gives a new Error holding no secret',
+    (property) => {
+      const error = new Error('failed with s3cr3t-value');
+      Object.defineProperty(error, property, {
+        get: () => {
+          throw new Error('getter broke on s3cr3t-value');
+        },
+      });
+
+      const thrown = redactThrown(error, knowing('s3cr3t-value'));
+
+      expect(thrown).toBeInstanceOf(Error);
+      expect(thrown.message).not.toContain('s3cr3t-value');
+      expect(thrown.stack ?? '').not.toContain('s3cr3t-value');
+    },
+  );
+
+  test('a revoked proxy as the cause or as the thrown value gives a new Error holding no secret', () => {
+    const { proxy, revoke } = Proxy.revocable(new Error('cause s3cr3t-value'), {});
+    revoke();
+    const error = new Error('failed with s3cr3t-value', { cause: proxy });
+
+    const fromCause = redactThrown(error, knowing('s3cr3t-value'));
+    const fromProxy = redactThrown(proxy, knowing('s3cr3t-value'));
+
+    expect(fromCause.message).not.toContain('s3cr3t-value');
+    expect(fromProxy.message).toBe('A value was thrown that cannot be turned into text.');
+  });
+});
+
 describe('the values a command learns are secrets', () => {
   test('valuesUnderSecretsKeys takes the value under each secrets key from both, at any length', () => {
     const values = valuesUnderSecretsKeys(
@@ -150,15 +201,15 @@ describe('the values a command learns are secrets', () => {
     expect(values.sort()).toEqual(['w', 'w2']);
   });
 
-  test('credentialNamedValues takes text of eight characters or more under credential-looking names', () => {
+  test('credentialLookingValues takes text of eight characters or more under credential-looking names', () => {
     expect(
-      credentialNamedValues({ STRIPE_KEY: 'sk_live_123456', API_TOKEN: 'short', N: 4 }),
+      credentialLookingValues({ STRIPE_KEY: 'sk_live_123456', API_TOKEN: 'short', N: 4 }),
     ).toEqual(['sk_live_123456']);
   });
 
   test('a credential-looking value is redacted but is not a known secret', () => {
     const redaction = new SecretRedaction({});
-    redaction.addCredentialLooking(['looks-like-a-credential']);
+    redaction.addCredentialLookingValues(['looks-like-a-credential']);
     redaction.addKnownSecrets(['under-a-secrets-key']);
 
     expect(redaction.redact('looks-like-a-credential')).toBe('[redacted]');
