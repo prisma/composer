@@ -17,7 +17,7 @@ import {
   type RunAssembler,
 } from '@internal/assemble';
 import type { Graph } from '@internal/core';
-import { assertAppName, Load } from '@internal/core';
+import { assertAppName, Load, secretsKeys } from '@internal/core';
 import type { AppConfiguration, AppSecrets, PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { readAppConfiguration, readAppSecrets } from './app-configuration.ts';
@@ -29,6 +29,7 @@ import {
   entryMissing,
 } from './composer-config.ts';
 import { type LoadedEntry, loadEntry } from './load-entry.ts';
+import { KnownSecrets, secretValuesIn } from './redaction.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
 
 /** The app is loaded and checked, and assemble is about to start; then one assemble event per service. */
@@ -43,6 +44,8 @@ export interface PipelineDeps {
   readonly devServers?: boolean | undefined;
   /** Read the app secrets too: `deploy` and `dev` do; `destroy` does not, and its `secrets` is empty. */
   readonly readSecrets?: boolean | undefined;
+  /** Collects every secret value the run reads, for redaction. A new one when not given. */
+  readonly knownSecrets?: KnownSecrets | undefined;
 }
 
 export interface PipelineResult {
@@ -182,11 +185,14 @@ export async function runPipeline(
     });
   }
 
-  // 3. Read the app configuration, Load's input, and the app secrets, preflight's.
+  // 3. Read the app secrets, then the app configuration. Secrets first, so a config adapter's
+  // failure is redacted with every value a written `secrets` list returned.
+  const known = deps.knownSecrets ?? new KnownSecrets();
   const adapterInput = { environment, configFile: configSource.file };
-  const configuration = await readAppConfiguration(config, adapterInput);
   const secrets: AppSecrets =
-    deps.readSecrets === true ? await readAppSecrets(config, adapterInput) : NO_SECRETS;
+    deps.readSecrets === true ? await readAppSecrets(config, adapterInput, known) : NO_SECRETS;
+  const configuration = await readAppConfiguration(config, adapterInput);
+  known.add(secretValuesIn(configuration, secrets, []));
 
   // 4. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
   const graph = Load(entryModule.root, {
@@ -201,6 +207,7 @@ export async function runPipeline(
         "export default module('name', ({ provision }) => { provision(service); }).",
     });
   }
+  known.add(secretValuesIn(configuration, secrets, secretsKeys(graph)));
 
   // 5. Registry coverage: every node/build in the graph has a matching descriptor in the config.
   validateRegistryCoverage(graph, config);

@@ -1,4 +1,4 @@
-import { module, paramSource, service } from '@internal/core';
+import { module, paramSource, secretSource, service } from '@internal/core';
 
 const anyInput = {
   '~standard': {
@@ -42,5 +42,9 @@ export default module('pipeline-app-configuration-fixture', ({ provision }) => {
         { configurationKey: 'CONFIG_POOL_PROBE' },
       ),
     },
+  });
+  provision(echo, {
+    id: 'keyed',
+    input: { key: secretSource({}, { label: 'secret', secretsKey: 'S11_SECRET' }) },
   });
 });

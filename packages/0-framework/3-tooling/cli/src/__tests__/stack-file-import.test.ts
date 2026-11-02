@@ -43,30 +43,31 @@ function runStack(stackFile: string) {
 }
 
 describe('the generated stack files, evaluated', () => {
-  const configPool = {
-    read: 'config',
-    environment: 'staging',
-    configFile: path.join(fixtureDir, 'prisma.config.ts'),
+  const checked = {
+    configuration: { rootInput: [], values: { read: 'checked' } },
+    nodeAddresses: ['stub-address'],
   };
 
-  test('the deploy stack passes the composer export of prisma.config.ts, the environment, and the config pool it reads, to lower(), and reads no secrets', () => {
+  test('the deploy stack passes the composer export of prisma.config.ts, the environment, and what the CLI checked, to lower(), and reads no secrets', () => {
     expect(runStack(writeStackFile(stackInput))).toEqual({
       app: 'fixture-module',
       extensions: ['fixture-extension'],
       state: 'fixture-extension',
       environment: 'staging',
-      configPool,
+      checkedConfiguration: checked.configuration,
+      checkedNodeAddresses: checked.nodeAddresses,
     });
   });
 
-  test('the dev stack passes the composer export of prisma.config.ts, the environment, and the config pool it reads, to lower(), and both pools to the local providers', () => {
+  test('the dev stack passes the composer export of prisma.config.ts, the environment, and what the CLI checked, to lower(), and the app configuration and the app secrets to the local providers', () => {
     expect(runStack(writeDevStackFile(stackInput))).toEqual({
       app: 'fixture-module',
       extensions: ['fixture-extension'],
       state: 'fixture-extension',
       environment: 'staging',
-      configPool,
-      pools: { config: configPool, secrets: { read: 'secrets' } },
+      checkedConfiguration: checked.configuration,
+      checkedNodeAddresses: checked.nodeAddresses,
+      local: { configuration: { read: 'checked' }, secrets: { read: 'secrets' } },
     });
   });
 

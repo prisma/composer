@@ -8,7 +8,7 @@ export default defineConfig({
     'app-identity': 'src/exports/app-identity.ts',
     report: 'src/exports/render-deployment.ts',
     config: 'src/exports/config.ts',
-    pools: 'src/exports/pools.ts',
+    'configuration-file': 'src/exports/configuration-file.ts',
     control: 'src/exports/control.ts',
     family: 'src/exports/family.ts',
     testing: 'src/exports/testing.ts',

@@ -6,9 +6,9 @@
   "exports": {
     "./app-identity": "./dist/app-identity.mjs",
     "./config": "./dist/config.mjs",
+    "./configuration-file": "./dist/configuration-file.mjs",
     "./control": "./dist/control.mjs",
     "./family": "./dist/family.mjs",
-    "./pools": "./dist/pools.mjs",
     "./report": "./dist/report.mjs",
     "./testing": "./dist/testing.mjs",
     "./package.json": "./package.json"

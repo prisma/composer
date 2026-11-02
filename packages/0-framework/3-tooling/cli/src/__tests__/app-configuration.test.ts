@@ -4,7 +4,8 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import { readAppConfiguration, readAppSecrets } from '../app-configuration.ts';
 import { dotenv } from '../config-adapters.ts';
 import * as configEntry from '../exports/config.ts';
-import * as poolsEntry from '../exports/pools.ts';
+import * as configurationFileEntry from '../exports/configuration-file.ts';
+import { KnownSecrets } from '../redaction.ts';
 
 const base: PrismaAppConfig = {
   extensions: [],
@@ -41,7 +42,7 @@ describe('readAppConfiguration and readAppSecrets', () => {
   test('with no secrets list, the app secrets is the process environment', async () => {
     process.env['S4_PROBE'] = 'probe';
 
-    expect((await readAppSecrets(base, input))['S4_PROBE']).toBe('probe');
+    expect((await readAppSecrets(base, input, new KnownSecrets()))['S4_PROBE']).toBe('probe');
   });
 
   test('adapters merge by top-level key in list order, a later adapter winning', async () => {
@@ -115,7 +116,9 @@ describe('readAppConfiguration and readAppSecrets', () => {
       },
     ];
 
-    const error = await structuredError(() => readAppSecrets(section({ secrets }), input));
+    const error = await structuredError(() =>
+      readAppSecrets(section({ secrets }), input, new KnownSecrets()),
+    );
 
     expect(error.code).toBe('CONFIG.ADAPTER_FAILED');
     expect(error.message).toBe(
@@ -170,7 +173,9 @@ describe('readAppConfiguration and readAppSecrets', () => {
   test('a secrets adapter that returns a value that is not text fails naming the key and its kind, never the value', async () => {
     const secrets = [() => ({ TOKEN: 918273645 })];
 
-    const error = await structuredError(() => readAppSecrets(section({ secrets }), input));
+    const error = await structuredError(() =>
+      readAppSecrets(section({ secrets }), input, new KnownSecrets()),
+    );
 
     expect(error.code).toBe('CONFIG.ADAPTER_INVALID');
     expect(error.message).toBe(
@@ -186,7 +191,7 @@ describe('readAppConfiguration and readAppSecrets', () => {
 
     for (const values of [
       await readAppConfiguration(config, input),
-      await readAppSecrets(config, input),
+      await readAppSecrets(config, input, new KnownSecrets()),
     ]) {
       expect(Object.isFrozen(values)).toBe(true);
       expect(Object.getPrototypeOf(values)).toBeNull();
@@ -208,9 +213,12 @@ describe('readAppConfiguration and readAppSecrets', () => {
   });
 });
 
-describe('where the pool readers are published', () => {
-  test('the public config entry exports the adapters only; the pool readers are on the internal pools entry', () => {
+describe('where the readers are published', () => {
+  test('the public config entry exports the adapters only, and the second process reads through the configuration-file entry', () => {
     expect(Object.keys(configEntry).sort()).toEqual(['dotenv', 'environmentVariables']);
-    expect(Object.keys(poolsEntry).sort()).toEqual(['readAppConfiguration', 'readAppSecrets']);
+    expect(Object.keys(configurationFileEntry).sort()).toEqual([
+      'appSecretsFromEnvironment',
+      'readCheckedConfiguration',
+    ]);
   });
 });
