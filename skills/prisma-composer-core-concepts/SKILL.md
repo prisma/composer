@@ -142,21 +142,8 @@ platform variable and never carries the value.
 
 Rules that bite:
 
-1. **Secretness is enforced by validation.** A literal bound where the schema
-   expects `SecretString` fails the deploy; `envSecret` bound to a plain
-   string field fails the same way. An ArkType schema with a `SecretString`
-   field cannot also transform its input: a morph anywhere in it
-   (`'string.trim'`, `.pipe()`, `field(type('string.integer.parse'))`) or
-   `'+': 'delete'` copies the input, the copied secret loses its value, and
-   the deploy refuses it. Transform in the service code instead; a Zod schema
-   keeps the box.
-2. **`envParam` values arrive as raw strings**; bind them to string fields. In
-   a service's `input`, the deploy reads the variable from the config pool
-   on every deploy and writes its value into the input document. As a service
-   param, the deploy writes a pointer row to a platform variable, which the
-   service reads at boot. `envSecret` always lives on the platform: each
-   environment keeps its own copy, and the secrets pool only seeds a missing
-   name (the deploy fails early, naming the variable, when both lack it).
+1. **Secretness is checked by the binding's type and by the deploy.** A `provision()` binding, a service's or a module's, is typed from the schema: a literal or a `SecretBox` where the schema expects `SecretString`, or `envSecret` in a text field, fails to compile, and the deploy refuses it where the schema has no types. An ArkType schema with a `SecretString` field cannot also transform its input: a morph anywhere in it (`'string.trim'`, `.pipe()`, `field(type('string.integer.parse'))`) or `'+': 'delete'` copies the input, the copied secret loses its value, and the deploy refuses it. Transform in the service code instead; a Zod schema keeps the box.
+2. **`envParam` values arrive as raw strings**; bind them to string fields. A field of a narrower type, such as `'none' | 'smtp'`, refuses `envParam` at compile time; declare that field in the root's `input` instead. In a service's `input`, the deploy reads the variable from the config pool on every deploy and writes its value into the input document. As a service param, the deploy writes a pointer row to a platform variable, which the service reads at boot. `envSecret` always lives on the platform: each environment keeps its own copy, and the secrets pool only seeds a missing name (the deploy fails early, naming the variable, when both lack it).
 3. **Absence is the schema's call.** An env-bound field whose variable is
    unset or empty resolves to *key omitted*, which is legal only if the
    schema allows it (optional field, union arm). The deploy report prints the
@@ -172,11 +159,7 @@ Rules that bite:
    refuse both, naming `input`. A service's `params` stay.
 6. `input.apiKey.expose()` is the only way to a secret's value; the box
    redacts everywhere else (logs, JSON, errors).
-7. **A field bound to `serviceOrigin()` or a plain `generatedParam()` is
-   wrapped**: `field(type('string'))`. At deploy the schema sees a pointer,
-   and a plain `'string'` field refuses it (a deploy error, and a compile
-   error in a module's binding). `service.input()` and `mockService`'s input
-   double read the field as its inner type.
+7. **A field bound to `serviceOrigin()` or a plain `generatedParam()` is wrapped**: `field(type('string'))`. At deploy the schema sees a pointer, and a plain `'string'` field refuses it: a compile error in a service's or a module's binding, and a deploy error where the schema has no types. `service.input()` and `mockService`'s input double read the field as its inner type.
 
 ### Values that differ per environment
 
