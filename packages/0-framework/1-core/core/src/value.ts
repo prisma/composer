@@ -32,7 +32,7 @@ export type ValueOrigin<T> =
       readonly kind: 'input';
       /** The address of the module whose input this field is. */
       readonly module: string;
-      /** The key path inside that module's input; `[]` is the whole input. */
+      /** The key path inside that module's input; `[]` is the whole input, which Load refuses wherever it is passed on. */
       readonly path: readonly string[];
     }
   | {

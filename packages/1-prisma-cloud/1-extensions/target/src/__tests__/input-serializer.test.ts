@@ -595,7 +595,10 @@ describe('an ArkType schema with a morph', () => {
 describe('a source forwarded through a module input', () => {
   const forwarded = (schema: StandardSchemaV1, binding: Record<string, unknown>) => {
     const login = module('login', { input: schema }, ({ input, provision }) => {
-      provision(svc(schema), { input: input as never });
+      const fields = input as never as Record<string, unknown>;
+      provision(svc(schema), {
+        input: Object.fromEntries(Object.keys(binding).map((key) => [key, fields[key]])) as never,
+      });
     });
     const graph = Load(
       module('shop', ({ provision }) => {

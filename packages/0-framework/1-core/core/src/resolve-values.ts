@@ -304,9 +304,12 @@ function readPath(data: unknown, origin: InputOrigin): unknown {
       );
     }
     if (!isPlainObject(current)) {
+      const advice =
+        index === 0
+          ? `The module's input schema must output a plain object for its body to read fields.`
+          : `To compute with it, it must be a plain field, not a wrapped or secret one; list it: resolve([${parent}], ([v]) => …).`;
       throw new LoadError(
-        `${missing}: ${parent} is ${describeData(current)}, not a plain object, so it has no ` +
-          `fields. To compute with it, it must be a plain field, not a wrapped or secret one; list it: resolve([${parent}], ([v]) => …).`,
+        `${missing}: ${parent} is ${describeData(current)}, not a plain object, so it has no fields. ${advice}`,
       );
     }
     if (!Object.hasOwn(current, key)) return undefined;
@@ -586,9 +589,12 @@ export function resolveValues(input: {
             `${describeSite(site)} depends on ${inputFieldLabel(origin)} of module "${origin.module}", which this Load does not provision. An input field can be passed on only inside the body of the module that received it.`,
           );
         }
-        if (entry.fromConfigPool && origin.path.length === 0) {
+        if (origin.path.length === 0) {
+          const everyVariable = entry.fromConfigPool
+            ? " The root's input is every value the `config` adapters return, which by default is every variable of the process environment, secrets included."
+            : '';
           throw new LoadError(
-            `${describeSite(site)} depends on the whole input of root module "${origin.module}". The root's input is every value the \`config\` adapters return, which by default is every variable of the process environment, secrets included. Pass on the fields the root declares one by one, such as input.EMAIL_FROM.`,
+            `${describeSite(site)} depends on the whole input of module "${origin.module}". A module body's input is a dictionary of values, not a value, so it cannot be passed on whole.${everyVariable} Pass its fields on by name, such as input.from.`,
           );
         }
         result = readPath(validatedInputOf(entry), origin);

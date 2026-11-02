@@ -61,10 +61,13 @@ const echoWith = (input: unknown): ModuleNode =>
     provision(echoService(), { input: input as never });
   });
 
-/** A module `email` whose `input` schema is `schema` and whose body forwards the whole input to `echo`. */
-const forwarding = (schema: StandardSchemaV1): ModuleNode =>
+/** A module `email` whose `input` schema is `schema` and whose body passes each of `keys` on to `echo` by name. */
+const forwarding = (schema: StandardSchemaV1, keys: readonly string[]): ModuleNode =>
   module('email', { input: schema }, ({ input, provision }) => {
-    provision(echoService(), { input: input as never });
+    const fields = input as never as Record<string, unknown>;
+    provision(echoService(), {
+      input: Object.fromEntries(keys.map((key) => [key, fields[key]])) as never,
+    });
   });
 
 const bindingOf = (graph: Graph, index = 0): Record<string, unknown> =>
@@ -104,7 +107,7 @@ describe('sources a service takes stay in place', () => {
 describe('real values', () => {
   test("envParam() in a module's input is its config pool value", () => {
     const graph = Load(
-      shopWith(forwarding(type({ greeting: 'string' })), { greeting: variable('G') }),
+      shopWith(forwarding(type({ greeting: 'string' }), ['greeting']), { greeting: variable('G') }),
       {
         configPool: { G: 'hi' },
       },
@@ -116,7 +119,9 @@ describe('real values', () => {
   test("an unset or empty variable in a module's input leaves the key out", () => {
     for (const configPool of [{}, { G: '' }]) {
       const graph = Load(
-        shopWith(forwarding(type({ 'greeting?': 'string' })), { greeting: variable('G') }),
+        shopWith(forwarding(type({ 'greeting?': 'string' }), ['greeting']), {
+          greeting: variable('G'),
+        }),
         { configPool },
       );
 
@@ -125,7 +130,9 @@ describe('real values', () => {
   });
 
   test("a variable in a module's input fails when Load has no config pool", () => {
-    const root = shopWith(forwarding(type({ greeting: 'string' })), { greeting: variable('G') });
+    const root = shopWith(forwarding(type({ greeting: 'string' }), ['greeting']), {
+      greeting: variable('G'),
+    });
 
     expect(loadError(() => Load(root)).message).toBe(
       `input key "greeting" of module "shop.email" depends on envParam('G'), but Load was given ` +
@@ -173,7 +180,7 @@ describe("a module's input and runtime param sources", () => {
     const seen: unknown[] = [];
     const base = origin();
 
-    const graph = Load(shopWith(forwarding(recording(seen)), { base }));
+    const graph = Load(shopWith(forwarding(recording(seen), ['base']), { base }));
 
     expect((seen[0] as Record<string, unknown>)['base']).toBe(base);
     expect(bindingOf(graph)['base']).toBe(base);
@@ -197,7 +204,7 @@ describe("a module's input and runtime param sources", () => {
   test("a raw param source in a module's input is a plain pointer and reaches the service as the same source", () => {
     const from = paramSource({ name: 'X' });
 
-    const graph = Load(shopWith(forwarding(anyInputSchema), { from }));
+    const graph = Load(shopWith(forwarding(anyInputSchema, ['from']), { from }));
 
     expect(bindingOf(graph)['from']).toBe(from);
   });
@@ -284,7 +291,7 @@ describe('the secret list and forwarded slots', () => {
   test("a secret source a service receives through a module's input is listed under the service", () => {
     const key = pointer('K');
 
-    const graph = Load(shopWith(forwarding(type({ key: secretString() })), { key }));
+    const graph = Load(shopWith(forwarding(type({ key: secretString() }), ['key']), { key }));
 
     expect(graph.secretSources).toEqual([
       { source: key, address: 'shop.email.echo', nodeKind: 'service' },

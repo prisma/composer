@@ -41,6 +41,12 @@ export function inputFieldLabel(origin: InputOrigin): string {
 }
 
 function misuse(origin: InputOrigin, what: string): LoadError {
+  if (origin.path.length === 0) {
+    return new LoadError(
+      `input of module "${origin.module}" is a dictionary of values, not data, and ${what}. ` +
+        'A module body can only pass the fields of its input on, by name: into a provision() binding or, for a plain field, as a resolve() dependency.',
+    );
+  }
   const field = inputFieldLabel(origin);
   return new LoadError(
     `${field} of module "${origin.module}" is a value, not its real value, and ${what}. ` +
@@ -143,6 +149,6 @@ export function buildModuleInput(moduleAddress: NodeId): ModuleInput<StandardSch
 
   return blindCast<
     ModuleInput<StandardSchemaV1>,
-    'the proxy answers the value brand and origin, and returns a further proxy for every string key, which is the shape ModuleInput describes'
+    'the proxy returns a further proxy, a value with its origin, for every string key, which is the shape ModuleInput describes; the dictionary brand is type-only'
   >(valueAt([]));
 }
