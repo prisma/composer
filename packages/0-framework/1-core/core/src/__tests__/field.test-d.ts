@@ -420,3 +420,234 @@ test('a field read from the input binds, nested or optional, and the whole input
     provision(zodNestedChild, { id: 'three', input });
   });
 });
+
+const arkService = service({
+  name: 'ark-service',
+  extension: 'test/pack',
+  type: 'fake/compute',
+  inputs: {},
+  params: {},
+  input: arkSchema,
+  build,
+});
+const zodService = service({
+  name: 'zod-service',
+  extension: 'test/pack',
+  type: 'fake/compute',
+  inputs: {},
+  params: {},
+  input: zodSchema,
+  build,
+});
+const arkNestedService = service({
+  name: 'ark-nested-service',
+  extension: 'test/pack',
+  type: 'fake/compute',
+  inputs: {},
+  params: {},
+  input: arkNested,
+  build,
+});
+const zodNestedService = service({
+  name: 'zod-nested-service',
+  extension: 'test/pack',
+  type: 'fake/compute',
+  inputs: {},
+  params: {},
+  input: zodNested,
+  build,
+});
+
+test("a service's binding takes a literal, a deploy-time value and a plain runtime value in a wrapped field, and a secret runtime value in a secretString() field", () => {
+  module('shop', ({ provision }) => {
+    provision(arkService, {
+      id: 'a',
+      input: { from: 'x', port: '1', host: 'h', key: secretRuntime },
+    });
+    provision(arkService, {
+      id: 'b',
+      input: { from: text, port: text, host: text, key: secretValue },
+    });
+    provision(arkService, {
+      id: 'c',
+      input: { from: plainRuntime, port: plainRuntime, host: 'h', key: secretRuntime },
+    });
+    provision(zodService, {
+      id: 'd',
+      input: { from: 'x', port: '1', host: 'h', key: secretRuntime },
+    });
+    provision(zodService, {
+      id: 'e',
+      input: { from: text, port: text, host: text, key: secretValue },
+    });
+    provision(zodService, {
+      id: 'f',
+      input: { from: plainRuntime, port: plainRuntime, host: 'h', key: secretRuntime },
+    });
+  });
+});
+
+test("a service's binding refuses a wrong literal", () => {
+  module('shop', ({ provision }) => {
+    provision(arkService, {
+      id: 'a',
+      // @ts-expect-error a text field takes no number
+      input: { from: 'x', port: '1', host: 4, key: secretRuntime },
+    });
+    provision(zodService, {
+      id: 'b',
+      // @ts-expect-error a text field takes no number
+      input: { from: 4, port: '1', host: 'h', key: secretRuntime },
+    });
+    // @ts-expect-error a required field must be bound
+    provision(arkService, { id: 'c', input: { from: 'x', port: '1', key: secretRuntime } });
+  });
+});
+
+test("a service's binding refuses a secret runtime value in a plain or a wrapped text field", () => {
+  module('shop', ({ provision }) => {
+    provision(arkService, {
+      id: 'a',
+      // @ts-expect-error a plain field takes no runtime value
+      input: { from: 'x', port: '1', host: secretRuntime, key: secretRuntime },
+    });
+    provision(arkService, {
+      id: 'b',
+      // @ts-expect-error a wrapped text field takes no secret runtime value
+      input: { from: secretRuntime, port: '1', host: 'h', key: secretRuntime },
+    });
+    provision(zodService, {
+      id: 'c',
+      // @ts-expect-error a plain field takes no runtime value
+      input: { from: 'x', port: '1', host: secretRuntime, key: secretRuntime },
+    });
+    provision(zodService, {
+      id: 'd',
+      // @ts-expect-error a wrapped text field takes no secret runtime value
+      input: { from: secretRuntime, port: '1', host: 'h', key: secretRuntime },
+    });
+  });
+});
+
+test("a service's binding refuses a plain runtime value in a plain or a secretString() field", () => {
+  module('shop', ({ provision }) => {
+    provision(arkService, {
+      id: 'a',
+      // @ts-expect-error a plain field takes no runtime value
+      input: { from: 'x', port: '1', host: plainRuntime, key: secretRuntime },
+    });
+    provision(arkService, {
+      id: 'b',
+      // @ts-expect-error a secret field takes no plain runtime value
+      input: { from: 'x', port: '1', host: 'h', key: plainRuntime },
+    });
+    provision(zodService, {
+      id: 'c',
+      // @ts-expect-error a plain field takes no runtime value
+      input: { from: 'x', port: '1', host: plainRuntime, key: secretRuntime },
+    });
+    provision(zodService, {
+      id: 'd',
+      // @ts-expect-error a secret field takes no plain runtime value
+      input: { from: 'x', port: '1', host: 'h', key: plainRuntime },
+    });
+  });
+});
+
+declare const pointer: Pointer<string>;
+declare const secretPointer: Pointer<SecretString>;
+declare const box: SecretString;
+
+test('no binding takes a SecretBox or a pointer written as a literal', () => {
+  module('shop', ({ provision }) => {
+    // @ts-expect-error a secret's value never sits in the code
+    provision(arkService, { id: 'a', input: { from: 'x', port: '1', host: 'h', key: box } });
+    provision(arkService, {
+      id: 'b',
+      // @ts-expect-error a pointer is never a literal
+      input: { from: pointer, port: '1', host: 'h', key: secretRuntime },
+    });
+    provision(arkService, {
+      id: 'c',
+      // @ts-expect-error a pointer is never a literal
+      input: { from: 'x', port: '1', host: 'h', key: secretPointer },
+    });
+    // @ts-expect-error a secret's value never sits in the code
+    provision(arkChild, { id: 'd', input: { from: 'x', port: '1', host: 'h', key: box } });
+    provision(arkChild, {
+      id: 'e',
+      // @ts-expect-error a pointer is never a literal
+      input: { from: pointer, port: '1', host: 'h', key: secretRuntime },
+    });
+    provision(arkChild, {
+      id: 'f',
+      // @ts-expect-error a pointer is never a literal
+      input: { from: 'x', port: '1', host: 'h', key: secretPointer },
+    });
+    provision(arkNestedService, {
+      id: 'g',
+      // @ts-expect-error a pointer is never a literal, in an array either
+      input: { smtp: { user: 'u', password: secretRuntime }, tags: [pointer] },
+    });
+  });
+});
+
+test("a module passes its fields on into a service's binding, nested, optional or whole, in both libraries", () => {
+  module('m', { input: arkNested }, ({ input, provision }) => {
+    provision(arkNestedService, {
+      input: { smtp: input.smtp, replyTo: input.replyTo, tags: input.tags },
+    });
+    provision(arkNestedService, {
+      id: 'two',
+      input: { smtp: { user: input.smtp.user, password: input.smtp.password }, tags: input.tags },
+    });
+    // @ts-expect-error the whole input is not a value
+    provision(arkNestedService, { id: 'three', input });
+  });
+  module('m', { input: zodNested }, ({ input, provision }) => {
+    provision(zodNestedService, {
+      input: { smtp: input.smtp, replyTo: input.replyTo, tags: input.tags },
+    });
+    provision(zodNestedService, {
+      id: 'two',
+      input: { smtp: { user: input.smtp.user, password: input.smtp.password }, tags: input.tags },
+    });
+    // @ts-expect-error the whole input is not a value
+    provision(zodNestedService, { id: 'three', input });
+  });
+});
+
+const arkSmtp = type({ user: arkField(type('string')), password: arkSecretString() });
+const smtpService = service({
+  name: 'smtp',
+  extension: 'test/pack',
+  type: 'fake/compute',
+  inputs: {},
+  params: {},
+  input: arkSmtp,
+  build,
+});
+
+test("a module's object field may be a service's whole binding", () => {
+  module('m', { input: arkNested }, ({ input, provision }) => {
+    provision(smtpService, { input: input.smtp });
+    // @ts-expect-error a wrapped field is not an object
+    provision(smtpService, { id: 'two', input: input.replyTo });
+  });
+});
+
+test('a service whose schema carries no type information takes any binding, the whole input included; Load refuses that', () => {
+  const untyped = service({
+    name: 'untyped',
+    extension: 'test/pack',
+    type: 'fake/compute',
+    inputs: {},
+    params: {},
+    input: {} as StandardSchemaV1,
+    build,
+  });
+  module('m', { input: arkNested }, ({ input, provision }) => {
+    provision(untyped, { input: { anything: 4, key: secretRuntime } });
+    provision(untyped, { id: 'two', input });
+  });
+});

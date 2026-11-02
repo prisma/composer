@@ -496,13 +496,7 @@ function flatten(
         );
       }
       if (provisionInput !== undefined) {
-        inputBindings.push({
-          serviceAddress: fullAddress,
-          binding: blindCast<
-            ServiceInputBinding['binding'],
-            'the provision overloads type the binding as InputBinding; the collector receives it untyped'
-          >(provisionInput),
-        });
+        inputBindings.push({ serviceAddress: fullAddress, binding: provisionInput });
       }
       // A service param binding is optional per slot (default is the
       // fallback), so this only rejects a name that isn't a real param —

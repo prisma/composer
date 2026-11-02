@@ -279,6 +279,22 @@ describe('forwarding and the second pass', () => {
     expect(bindingOf(graph)['key']).toBe(source);
   });
 
+  test("an object field passed on as a service's whole binding reaches it as the module's validated output", () => {
+    const email = module(
+      'email',
+      { input: type({ smtp: { user: 'string', password: secretString() } }) },
+      ({ input, provision }) => {
+        provision(echoService(), { input: input.smtp });
+      },
+    );
+    const password = secretSource({ name: 'SMTP_PASSWORD' });
+
+    const graph = Load(shopWith(email, { smtp: { user: 'mailer', password } }));
+
+    expect(bindingOf(graph)).toEqual({ user: 'mailer', password });
+    expect(bindingOf(graph)['password']).toBe(password);
+  });
+
   test("a real value is the schema's output", () => {
     const email = module(
       'email',

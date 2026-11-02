@@ -1,13 +1,6 @@
 import { CliStructuredError } from '@internal/foundation/errors';
 import type { ContractStyle } from './contract.ts';
-import type {
-  DependencyEnd,
-  InputBinding,
-  ModuleNode,
-  ResourceNode,
-  SecretSource,
-  ServiceNode,
-} from './node.ts';
+import type { DependencyEnd, ModuleNode, ResourceNode, SecretSource, ServiceNode } from './node.ts';
 import type { EnvironmentRealValues } from './value.ts';
 
 /** Path-derived: root-scope children are bare ids ("auth", "db"); a nested module's own children dot-join under its address ("auth.db"). */
@@ -94,7 +87,7 @@ export interface ServiceInputBinding {
   /** The graph address of the service that declares the input schema. */
   readonly serviceAddress: NodeId;
   /** The binding object supplied at provision. */
-  readonly binding: InputBinding;
+  readonly binding: unknown;
 }
 
 /**

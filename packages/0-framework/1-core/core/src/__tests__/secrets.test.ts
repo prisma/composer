@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { blindCast } from '@internal/foundation/casts';
 import { Load } from '../graph.ts';
-import type { InputBinding } from '../node.ts';
 import { isSecretSource, module, resource, secretSource, service } from '../node.ts';
 import { anyInputSchema, providerContract } from './helpers.ts';
 
@@ -69,10 +68,7 @@ describe('Load validates input bindings and secret forwarding', () => {
       module('root', ({ provision }) => {
         provision(svcWithInput('inner'), {
           id: 'inner',
-          input: blindCast<
-            InputBinding,
-            'a deliberately self-referential binding to exercise the cycle guard'
-          >(cyclic),
+          input: cyclic,
         });
       }),
     );
@@ -92,7 +88,7 @@ describe('Load validates input bindings and secret forwarding', () => {
           provision(
             auth,
             blindCast<
-              { id: string; input: InputBinding },
+              { id: string; input: unknown },
               'deliberately omit the binding to exercise the runtime not-bound check'
             >({ id: 'auth' }),
           );
@@ -125,7 +121,7 @@ describe('Load validates input bindings and secret forwarding', () => {
           provision(
             auth,
             blindCast<
-              { id: string; input: InputBinding },
+              { id: string; input: unknown },
               'inject the removed secrets option to exercise the runtime rejection'
             >({ id: 'auth', input: {}, secrets: { key: secretSource('K') } }),
           );

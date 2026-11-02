@@ -4,7 +4,6 @@ import { string } from '../config.ts';
 import type {
   InputBinding,
   ModuleContext,
-  ModuleInputBinding,
   ModuleInputField,
   ModuleNode,
   ResourceProps,
@@ -34,6 +33,11 @@ declare const unionSchema: StandardSchemaV1<
 declare const flagSchema: StandardSchemaV1<unknown, { flag: boolean; kind: 'a' | 'b' }>;
 declare const fitsSchema: StandardSchemaV1<{ EMAIL_FROM: string }>;
 declare const plainSchema: StandardSchemaV1<unknown, { host: string; port: number }>;
+declare const echoSchema: StandardSchemaV1<{
+  host: string;
+  port: number;
+  nested?: { host: string; port: number };
+}>;
 
 let otherField!: ModuleInputField<string>;
 
@@ -135,7 +139,7 @@ test('no binding accepts the whole input, even where its fields would fit', () =
     type: 'fake/compute',
     inputs: {},
     params: { label: string() },
-    input: plainSchema,
+    input: echoSchema,
     build: {
       extension: '@prisma/composer/node',
       type: 'node',
@@ -149,15 +153,22 @@ test('no binding accepts the whole input, even where its fields would fit', () =
     provision(fits, { id: 'two', input });
   });
   module('shop', { input: plainSchema }, ({ input, provision }) => {
-    provision(echo, { input: { host: input.host }, params: { label: input.host } });
+    provision(echo, {
+      input: { host: input.host, port: input.port },
+      params: { label: input.host },
+    });
     resolve([input.host], ([host]) => host);
     resource({ name: 'site', extension: 'test/pack', props: { host: input.host } });
     // @ts-expect-error the whole input is not a value
     provision(echo, { id: 'two', input });
     // @ts-expect-error the whole input is not a value, at any depth
-    provision(echo, { id: 'three', input: { all: [input] } });
-    // @ts-expect-error the whole input is not a value
-    provision(echo, { id: 'four', input: {}, params: { label: input } });
+    provision(echo, { id: 'three', input: { host: input.host, port: input.port, nested: input } });
+    provision(echo, {
+      id: 'four',
+      input: { host: input.host, port: input.port },
+      // @ts-expect-error the whole input is not a value
+      params: { label: input },
+    });
     // @ts-expect-error the whole input is not a value
     resolve([input], () => 'x');
     // @ts-expect-error the whole input is not a value
@@ -170,7 +181,7 @@ test('no binding accepts the whole input, even where its fields would fit', () =
 test('the same input without the brand fits, so the brand alone refuses it', () => {
   type ShopInput = ModuleInput<typeof shopSchema>;
   type Unbranded = Omit<ShopInput, typeof MODULE_INPUT>;
-  type FitsBinding = ModuleInputBinding<{ EMAIL_FROM: string }>;
+  type FitsBinding = InputBinding<{ EMAIL_FROM: string }>;
   expectTypeOf<Unbranded>().toExtend<FitsBinding>();
   expectTypeOf<ShopInput>().not.toExtend<FitsBinding>();
   type PlainInput = ModuleInput<typeof plainSchema>;
@@ -194,10 +205,12 @@ test('resolve() refuses the whole input with the same message', () => {
   expectTypeOf<Dependencies>().toEqualTypeOf<readonly [typeof WHOLE_INPUT]>();
 });
 
-test("a service's input binding takes values standing for a secret, an optional field, or a nested object holding a secret", () => {
-  expectTypeOf<{ k: Value<SecretString> }>().toExtend<InputBinding>();
-  expectTypeOf<{ k: Value<string | undefined> }>().toExtend<InputBinding>();
-  expectTypeOf<{ smtp: Value<{ host: string; key: SecretString }> }>().toExtend<InputBinding>();
+test('a binding takes values standing for a secret, an optional field, or a nested object holding a secret', () => {
+  expectTypeOf<{ k: Value<SecretString> }>().toExtend<InputBinding<{ k: SecretString }>>();
+  expectTypeOf<{ k: Value<string | undefined> }>().toExtend<InputBinding<{ k?: string }>>();
+  expectTypeOf<{ smtp: Value<{ host: string; key: SecretString }> }>().toExtend<
+    InputBinding<{ smtp: { host: string; key: SecretString } }>
+  >();
 });
 
 test('a module with an input schema is a ModuleNode', () => {
