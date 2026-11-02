@@ -297,16 +297,17 @@ function readPath(data: unknown, origin: InputOrigin): unknown {
     if (current === undefined || current === null) return undefined;
     const missing = `${inputFieldLabel(origin)} of module "${origin.module}" does not exist`;
     const parent = inputFieldLabel({ ...origin, path: origin.path.slice(0, index) });
+    const schemaAdvice = `The module's input schema must output a plain object for its body to read fields.`;
     if (isSecretSource(current) || isParamSource(current)) {
       throw new LoadError(
-        `${missing}: ${parent} stands for a value only the platform has at boot, so it has no ` +
-          'fields and can only be passed on unchanged.',
+        `${missing}: ${parent} stands for a value only the platform has at boot, so it has no fields` +
+          (index === 0 ? `. ${schemaAdvice}` : ' and can only be passed on unchanged.'),
       );
     }
     if (!isPlainObject(current)) {
       const advice =
         index === 0
-          ? `The module's input schema must output a plain object for its body to read fields.`
+          ? schemaAdvice
           : `To compute with it, it must be a plain field, not a wrapped or secret one; list it: resolve([${parent}], ([v]) => …).`;
       throw new LoadError(
         `${missing}: ${parent} is ${describeData(current)}, not a plain object, so it has no fields. ${advice}`,

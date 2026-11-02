@@ -1,5 +1,7 @@
 import { blindCast } from '@internal/foundation/casts';
 import type { Pointer } from '@internal/foundation/pointer';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { ModuleInput, ModuleInputIsNotAValue } from './module-input.ts';
 import type { ParamSource, SecretSource } from './node.ts';
 
 // Brands, Symbol.for so a check survives duplicated module instances (as NODE in node.ts).
@@ -12,10 +14,8 @@ const VALUE_ORIGIN: unique symbol = blindCast<never, 'unique-symbol key for a va
 );
 // Type-only, never assigned: carries T so Value<number> is not a Value<string>.
 declare const VALUE_TYPE: unique symbol;
-// Type-only, never assigned: marks a module body's `input`, a dictionary of values that no binding accepts.
-declare const INPUT_DICTIONARY: unique symbol;
 
-export type { INPUT_DICTIONARY, VALUE_TYPE };
+export type { VALUE_TYPE };
 export { VALUE, VALUE_ORIGIN };
 
 /** Where Load gets a value's real value. Internal to core; not re-exported from the public barrel. */
@@ -66,16 +66,11 @@ export interface Value<T> {
   readonly [VALUE_ORIGIN]: ValueOrigin<T>;
 }
 
-/** Required of every object a binding accepts, so a module body's whole `input` fits none. The property's type is the message an author sees. */
-export type NotInputDictionary = {
-  readonly [INPUT_DICTIONARY]?: 'the whole input of a module is not a value; pass its fields on by name';
-};
-
 /** A value known only at boot (ADR-0062): its real value at deploy is a `Pointer<T>`, which names the platform variable the service reads at boot. */
 export type RuntimeValue<T> = Value<Pointer<T>>;
 
 /** The tuple of real-value types a dependency tuple stands for: what `resolve()`'s `fn` receives. */
-export type RealValuesOf<D extends readonly Value<unknown>[]> = {
+export type RealValuesOf<D extends readonly unknown[]> = {
   readonly [K in keyof D]: D[K] extends Value<infer T> ? T : never;
 };
 
@@ -100,13 +95,18 @@ type IsDeployTime<T> = 0 extends 1 & T ? true : true extends HoldsPointer<T> ? f
 type NotDeployTime =
   'a resolve() dependency must be a deploy-time value, never a value known only at boot or a field wrapped with field(); to compute with an input field, declare it plain';
 
+/** A dependency `resolve()` accepts only to refuse it with a message: a module body's whole `input`. */
+type RefusedDependency = ModuleInput<StandardSchemaV1>;
+
 /** `D` with each dependency that is not a deploy-time value replaced by the message saying so. */
-type DeployTimeDependencies<D extends readonly Value<unknown>[]> = {
+type DeployTimeDependencies<D extends readonly (Value<unknown> | RefusedDependency)[]> = {
   readonly [K in keyof D]: D[K] extends Value<infer T>
     ? IsDeployTime<T> extends true
       ? D[K]
       : NotDeployTime
-    : D[K];
+    : D[K] extends RefusedDependency
+      ? ModuleInputIsNotAValue
+      : D[K];
 };
 
 /** Plain data: what a `resolve()` function may return. */
@@ -127,7 +127,7 @@ export type PlainData =
  * disabled (ADR-0062). `fn` must be a pure function of its dependencies: a
  * deploy runs it in two processes.
  */
-export function resolve<const D extends readonly Value<unknown>[], T>(
+export function resolve<const D extends readonly (Value<unknown> | RefusedDependency)[], T>(
   dependencies: DeployTimeDependencies<D>,
   fn: (values: RealValuesOf<D>) => T,
 ): Value<T> {

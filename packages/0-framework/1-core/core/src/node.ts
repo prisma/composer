@@ -9,12 +9,11 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { ConfigParam, Connection, Params } from './config.ts';
 import type { Contract } from './contract.ts';
 import { LoadError } from './graph-types.ts';
-import { type ModuleInput, primitiveMisuse } from './module-input.ts';
+import { type ModuleInput, type NotModuleInput, primitiveMisuse } from './module-input.ts';
 import {
   type EnvironmentFacts,
   isPlainObject,
   isValue,
-  type NotInputDictionary,
   originOf,
   type PlainData,
   type SourceOrigin,
@@ -290,7 +289,7 @@ export type InputBinding =
   | SecretSource
   | Value<InputBindingData>
   | readonly InputBinding[]
-  | ({ readonly [key: string]: InputBinding } & NotInputDictionary);
+  | ({ readonly [key: string]: InputBinding } & NotModuleInput);
 
 /**
  * What `provision(module, { input })` accepts where the module's input schema
@@ -309,7 +308,7 @@ export type ModuleInputBinding<T> =
               readonly [K in keyof T]:
                 | ModuleInputBinding<T[K]>
                 | (Record<never, never> extends Pick<T, K> ? Value<T[K] | undefined> : never);
-            } & NotInputDictionary
+            } & NotModuleInput
           : T);
 
 /** A module input schema's Standard Schema input type. */
@@ -382,7 +381,7 @@ export interface ResourceNode<
 }
 
 /** A resource's configuration: plain data and values, nested in objects and arrays. */
-export type ResourceProps = { readonly [key: string]: ResourcePropsMember } & NotInputDictionary;
+export type ResourceProps = { readonly [key: string]: ResourcePropsMember } & NotModuleInput;
 export type ResourcePropsMember =
   | string
   | number
@@ -390,7 +389,7 @@ export type ResourcePropsMember =
   | null
   | Value<PlainData>
   | readonly ResourcePropsMember[]
-  | ({ readonly [key: string]: ResourcePropsMember } & NotInputDictionary);
+  | ({ readonly [key: string]: ResourcePropsMember } & NotModuleInput);
 
 /**
  * A Service: inputs + its own declared params + how it is built. Inspectable,
