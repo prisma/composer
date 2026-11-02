@@ -2,15 +2,15 @@
 
 **Design:** [design.md](design.md), which is authoritative. **Spec:** [spec.md](spec.md).
 
-Each slice is one PR. A slice's PR opens after the slice before it has merged, so each builds on merged work. Each PR amends the decision records whose behaviour it changes, as design section 12 lists them, and adds its breaking changes to the release note.
+A PR delivers one capability a user would notice, so slices whose limits the next slice closes ship together. S9 and S10 ship as one PR, prisma/composer#412: every binding is checked against its schema, and only named fields pass on. S11, S12 and S13 ship as one PR: configuration from `.env` files is read once, in a fixed order, and no known secret is printed. A PR opens after the one before it has merged, so each builds on merged work. Each PR amends the decision records whose behaviour it changes, as design section 12 lists them, and adds its breaking changes to the release note.
 
 ## Where it stands
 
 - **S1** is done: [slices/s1-spike/report.md](slices/s1-spike/report.md).
 - **S2** is merged: prisma/composer#401.
 - **S3 to S8** are merged as one PR: prisma/composer#403.
-- **S9** is built and in review.
-- **S10 to S13** are not built. [deferred.md](deferred.md) lists items S10 must cover.
+- **S9** is built and in review as prisma/composer#412. **S10** is built in the same PR.
+- **S11 to S13** are not built. [deferred.md](deferred.md) lists items S10 must cover.
 - **S14 to S17** are designed with Will before they are specified.
 
 ## S1. Spike: an input field as an opaque typed value
