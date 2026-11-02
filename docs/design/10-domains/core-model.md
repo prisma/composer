@@ -427,17 +427,22 @@ interface Graph {
   readonly edges: readonly Edge[]
 }
 
-interface LoadBaseOptions {
+interface CommonLoadOptions {
   readonly id?: NodeId                              // the root's address; defaults to its name
   readonly environment?: { readonly name: string }  // required by any value over environment.name
 }
-// configuration and appConfigurationRead cannot both be passed
-type LoadOptions = LoadBaseOptions & (
-  | { readonly configuration?: Readonly<Record<string, unknown>>; readonly appConfigurationRead?: never }
-      // what a source's configuration key reads, and the root's input; the first process passes what the config adapters return
-  | { readonly appConfigurationRead: AppConfigurationRead; readonly configuration?: never }
-      // the second process passes what the first process's Load read, from the app configuration file
-)
+interface FirstProcessLoadOptions extends CommonLoadOptions {
+  readonly configuration?: Readonly<Record<string, unknown>>
+      // the root's input, and what a source's configuration key reads; the first process passes what the config adapters return
+  readonly appConfigurationRead?: never
+}
+interface SecondProcessLoadOptions extends CommonLoadOptions {
+  readonly configuration?: never
+  readonly appConfigurationRead: AppConfigurationRead
+      // what the first process's Load read, from the app configuration file
+}
+type LoadOptions = FirstProcessLoadOptions | SecondProcessLoadOptions
+      // Load also refuses both at runtime, for a caller without type checks
 function Load(root: ServiceNode | ModuleNode, opts?: LoadOptions): Graph   // throws LoadError
 class LoadError extends Error {}  // code COMPOSE.GRAPH_INVALID; optional `cause`
 ```
