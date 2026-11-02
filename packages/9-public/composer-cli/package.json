@@ -20,10 +20,10 @@
   },
   "dependencies": {
     "@prisma/composer": "workspace:0.36.0",
-    "@prisma/management-api-sdk": "^1.80.0",
+    "@prisma/management-api-sdk": "^1.84.0",
     "alchemy": "2.0.0-beta.83",
     "cross-spawn": "^7.0.6",
-    "effect": "4.0.3",
+    "effect": "4.0.6",
     "esbuild": "^0.28.1"
   },
   "peerDependencies": {
@@ -38,7 +38,7 @@
     "@types/bun": "^1.3.13",
     "@prisma/cli-engine": "0.9.0",
     "@types/node": "^26.0.1",
-    "tsdown": "^0.22.7",
+    "tsdown": "^0.23.1",
     "typescript": "^6.0.3"
   },
   "license": "Apache-2.0",

@@ -22,7 +22,7 @@
     "test": "bun test"
   },
   "peerDependencies": {
-    "arktype": "^2.2.3",
+    "arktype": "^2.2.9",
     "zod": "^4.4.3"
   },
   "peerDependenciesMeta": {
@@ -35,9 +35,9 @@
   },
   "devDependencies": {
     "typescript": "^6.0.3",
-    "tsdown": "^0.22.7",
+    "tsdown": "^0.23.1",
     "@internal/tsdown-config": "workspace:0.36.0",
-    "arktype": "^2.2.3",
+    "arktype": "^2.2.9",
     "zod": "^4.4.3"
   }
 }

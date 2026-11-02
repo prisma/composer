@@ -36,19 +36,19 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/sql-d1": "4.0.3",
-    "@effect/sql-sqlite-do": "4.0.3",
-    "@effect/vitest": "4.0.3",
+    "@effect/sql-d1": "4.0.6",
+    "@effect/sql-sqlite-do": "4.0.6",
+    "@effect/vitest": "4.0.6",
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "2.0.0-beta.83",
     "cross-spawn": "^7.0.6",
     "dotenv": "^17.4.2",
-    "effect": "4.0.3",
+    "effect": "4.0.6",
     "esbuild": "^0.28.1",
-    "@prisma/management-api-sdk": "^1.80.0"
+    "@prisma/management-api-sdk": "^1.84.0"
   },
   "peerDependencies": {
-    "arktype": "^2.2.3",
+    "arktype": "^2.2.9",
     "zod": "^4.4.3"
   },
   "peerDependenciesMeta": {
@@ -71,9 +71,9 @@
     "@internal/service-rpc": "workspace:0.36.0",
     "@internal/tsdown-config": "workspace:0.36.0",
     "@types/node": "^26.0.1",
-    "tsdown": "^0.22.7",
+    "tsdown": "^0.23.1",
     "typescript": "^6.0.3",
-    "arktype": "^2.2.3",
+    "arktype": "^2.2.9",
     "zod": "^4.4.3"
   },
   "license": "Apache-2.0",

@@ -15,8 +15,8 @@
     "@prisma/composer": "workspace:0.36.0",
     "@prisma/composer-prisma-cloud": "workspace:0.36.0",
     "@react-email/components": "^1.0.12",
-    "@react-email/render": "^2.1.0",
-    "arktype": "^2.2.3",
+    "@react-email/render": "^2.1.1",
+    "arktype": "^2.2.9",
     "hono": "^4.12.31",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

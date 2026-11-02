@@ -20,14 +20,14 @@
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "2.0.0-beta.83",
-    "effect": "4.0.3",
+    "effect": "4.0.6",
     "@internal/foundation": "workspace:0.36.0"
   },
   "devDependencies": {
     "@internal/tsdown-config": "workspace:0.36.0",
     "@types/bun": "^1.3.13",
-    "arktype": "^2.2.3",
-    "tsdown": "^0.22.7",
+    "arktype": "^2.2.9",
+    "tsdown": "^0.23.1",
     "typescript": "^6.0.3",
     "vitest": "^5.0.4",
     "zod": "^4.4.3"

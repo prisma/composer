@@ -11,11 +11,11 @@
     "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts --environment production ${STORAGE_STACK_NAME:+--name \"$STORAGE_STACK_NAME\"} )"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1085.0",
+    "@aws-sdk/client-s3": "^3.1156.0",
     "@prisma/composer": "workspace:0.36.0",
     "@prisma/composer-prisma-cloud": "workspace:0.36.0",
     "alchemy": "2.0.0-beta.83",
-    "effect": "4.0.3"
+    "effect": "4.0.6"
   },
   "devDependencies": {
     "@prisma/composer": "workspace:0.36.0",
