@@ -5,17 +5,32 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { expectTypeOf, test } from 'vitest';
 import { z } from 'zod';
+import { string } from '../config.ts';
 import type {
+  Deps,
+  Expose,
+  InputBindingOf,
   InputValueOf,
   ModuleInputField,
+  ModuleNode,
   PlainData,
   Pointer,
   RuntimeValue,
   SecretString,
+  ServiceNode,
   Value,
 } from '../exports/index.ts';
-import { isPlainPointer, isSecretPointer, module, resolve, service } from '../exports/index.ts';
+import {
+  dependency,
+  isPlainPointer,
+  isSecretPointer,
+  module,
+  resolve,
+  resource,
+  service,
+} from '../exports/index.ts';
 import type { LoadOverrides } from '../exports/testing.ts';
+import { conn, providerContract } from './helpers.ts';
 
 declare const plainRuntime: RuntimeValue<string>;
 declare const secretRuntime: RuntimeValue<SecretString>;
@@ -650,4 +665,129 @@ test('a service whose schema carries no type information takes any binding, the 
     provision(untyped, { input: { anything: 4, key: secretRuntime } });
     provision(untyped, { id: 'two', input });
   });
+});
+
+const pgContract = providerContract('fake/postgres', { url: '' });
+const pgNode = resource({ name: 'db', extension: 'test/pack', provides: pgContract });
+const pgDep = dependency({
+  name: 'db',
+  type: 'fake/postgres',
+  connection: conn({ url: string() }, (v) => ({ url: v.url })),
+  required: pgContract,
+});
+const arkServiceWithDeps = service({
+  name: 'ark-service-with-deps',
+  extension: 'test/pack',
+  type: 'fake/compute',
+  inputs: { db: pgDep },
+  params: {},
+  input: arkSchema,
+  build,
+});
+const arkChildWithDeps = module(
+  'ark-child-with-deps',
+  { deps: { db: pgDep }, input: arkSchema },
+  () => {},
+);
+
+test('a service and a module with dependencies take a binding typed from their schema', () => {
+  module('shop', ({ provision }) => {
+    const db = provision(pgNode);
+    provision(arkServiceWithDeps, {
+      deps: { db },
+      input: { from: plainRuntime, port: '1', host: 'h', key: secretRuntime },
+    });
+    provision(arkChildWithDeps, {
+      deps: { db },
+      input: { from: plainRuntime, port: '1', host: 'h', key: secretRuntime },
+    });
+  });
+});
+
+test('a service and a module with dependencies refuse a wrong literal, the wrong kind of runtime value, and a missing input', () => {
+  module('shop', ({ provision }) => {
+    const db = provision(pgNode);
+    provision(arkServiceWithDeps, {
+      id: 'a',
+      deps: { db },
+      // @ts-expect-error a text field takes no number
+      input: { from: 'x', port: '1', host: 4, key: secretRuntime },
+    });
+    provision(arkServiceWithDeps, {
+      id: 'b',
+      deps: { db },
+      // @ts-expect-error a secret field takes no plain runtime value
+      input: { from: 'x', port: '1', host: 'h', key: plainRuntime },
+    });
+    // @ts-expect-error a node that declares an input schema must be bound
+    provision(arkServiceWithDeps, { id: 'c', deps: { db } });
+    provision(arkChildWithDeps, {
+      id: 'd',
+      deps: { db },
+      // @ts-expect-error a text field takes no number
+      input: { from: 'x', port: '1', host: 4, key: secretRuntime },
+    });
+    provision(arkChildWithDeps, {
+      id: 'e',
+      deps: { db },
+      // @ts-expect-error a wrapped text field takes no secret runtime value
+      input: { from: secretRuntime, port: '1', host: 'h', key: secretRuntime },
+    });
+    // @ts-expect-error a node that declares an input schema must be bound
+    provision(arkChildWithDeps, { id: 'f', deps: { db } });
+  });
+});
+
+test('a service and a module with dependencies refuse the whole input of a module', () => {
+  module('m', { input: arkSchema }, ({ input, provision }) => {
+    const db = provision(pgNode);
+    // @ts-expect-error the whole input is not a value
+    provision(arkServiceWithDeps, { deps: { db }, input });
+    // @ts-expect-error the whole input is not a value
+    provision(arkChildWithDeps, { deps: { db }, input });
+  });
+});
+
+test('a generic wrapper provisions a service or a module that declares no dependencies and no input', () => {
+  type None = Record<never, never>;
+  function wrapService<E extends Expose>(s: ServiceNode<None, None, E, undefined>) {
+    return module('w', ({ provision }) => {
+      provision(s);
+    });
+  }
+  function wrapModule<E extends Expose>(m: ModuleNode<None, E, undefined>) {
+    return module('w', ({ provision }) => {
+      provision(m);
+    });
+  }
+  expectTypeOf(wrapService).toBeFunction();
+  expectTypeOf(wrapModule).toBeFunction();
+});
+
+test('a generic wrapper with dependencies passes on a binding typed InputBindingOf<I>, or none for a node without an input schema', () => {
+  type None = Record<never, never>;
+  function wrapService<D extends Deps, I extends StandardSchemaV1 | undefined>(
+    s: ServiceNode<D, None, None, I>,
+    input: InputBindingOf<I>,
+  ) {
+    return module('w', { deps: s.inputs }, ({ deps, provision }) => {
+      provision(s, { deps, input });
+    });
+  }
+  function wrapModule<D extends Deps, I extends StandardSchemaV1 | undefined>(
+    m: ModuleNode<D, None, I>,
+    input: InputBindingOf<I>,
+  ) {
+    return module('w', { deps: m.deps }, ({ deps, provision }) => {
+      provision(m, { deps, input });
+    });
+  }
+  function wrapUnbound<D extends Deps>(s: ServiceNode<D, None, None, undefined>) {
+    return module('w', { deps: s.inputs }, ({ deps, provision }) => {
+      provision(s, { deps });
+    });
+  }
+  expectTypeOf(wrapService).toBeFunction();
+  expectTypeOf(wrapModule).toBeFunction();
+  expectTypeOf(wrapUnbound).toBeFunction();
 });

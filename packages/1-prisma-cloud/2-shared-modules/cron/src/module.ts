@@ -45,7 +45,7 @@ export function cron<
     const runner = provision(runnerNode, {
       id: 'runner',
       deps,
-      ...(opts.input !== undefined ? { input: opts.input } : {}),
+      input: opts.input,
     });
     provision(cronScheduler(), {
       id: 'scheduler',

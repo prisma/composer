@@ -561,11 +561,27 @@ export interface ModuleBuilder {
     resource: ResourceNode<C>,
     opts?: { id?: string },
   ): { readonly id: string } & (C extends AnyContract ? RefPort<C> : Record<never, never>);
+  /** Registers an owned service; its id defaults to the node's `name`; `deps`/`input` are required iff it declares them; a reserved param may be bound (literal or `ParamSource`), overriding its default. */
+  provision<
+    D extends Deps,
+    P extends Params,
+    E extends Expose,
+    I extends StandardSchemaV1 | undefined,
+  >(
+    service: ServiceNode<D, P, E, I>,
+    ...args: ServiceProvisionArgs<D, I, ParamBindings<P>>
+  ): ProvisionedRef<E>;
+  /** Registers an owned child module; its id defaults to the node's `name`; `deps` and `input` are required iff it declares them. */
+  provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
+    child: ModuleNode<D, E, I>,
+    ...args: ModuleProvisionArgs<D, I>
+  ): ProvisionedRef<E>;
   /**
-   * The service call with `deps`/`input` spelled out. `ProvisionArgs` below
-   * cannot resolve while `D`/`I` are still unbound type parameters — a
+   * The service call with `deps` written out. `ServiceProvisionArgs` above
+   * cannot resolve while `D` or `I` is still an unbound type parameter — a
    * generic wrapper like `cron()` provisioning a caller-supplied service — so
-   * that call site resolves to this concrete overload instead.
+   * that call site resolves to this overload, or to the next one for a
+   * service without an input schema.
    */
   provision<
     D extends Deps,
@@ -577,25 +593,27 @@ export interface ModuleBuilder {
     opts: {
       id?: string;
       deps: DepBindings<D>;
-      input?: InputBindingOf<I>;
+      input: InputBindingOf<I>;
       params?: ParamBindings<P>;
     },
   ): ProvisionedRef<E>;
-  /** The child-module call with `deps` spelled out — the same generic-wrapper escape as the service overload above. */
+  provision<D extends Deps, P extends Params, E extends Expose>(
+    service: ServiceNode<D, P, E, undefined>,
+    opts: { id?: string; deps: DepBindings<D>; input?: never; params?: ParamBindings<P> },
+  ): ProvisionedRef<E>;
+  /** The child-module call with `deps` written out — the same generic-wrapper escape as the two service overloads above. */
   provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
     child: ModuleNode<D, E, I>,
-    opts: {
-      id?: string;
-      deps: DepBindings<D>;
-      input?: InputBindingOf<I>;
-    },
+    opts: { id?: string; deps: DepBindings<D>; input: InputBindingOf<I> },
+  ): ProvisionedRef<E>;
+  provision<D extends Deps, E extends Expose>(
+    child: ModuleNode<D, E, undefined>,
+    opts: { id?: string; deps: DepBindings<D>; input?: never },
   ): ProvisionedRef<E>;
   /**
-   * Registers an owned service or child module; its id defaults to the node's
-   * `name`; `deps` and `input` are required iff it declares them; a service's
-   * reserved param may be bound (literal or `ParamSource`), overriding its
-   * default. Declared last, so a call no overload accepts reports this
-   * overload's error, which names the binding key that does not fit.
+   * Any service or child module. Declared last, so a call no overload accepts
+   * reports this overload's error, which names the binding key that does not
+   * fit, or says a module's whole input is not a value.
    */
   provision<N extends ServiceNode | ModuleNode>(
     node: N,
