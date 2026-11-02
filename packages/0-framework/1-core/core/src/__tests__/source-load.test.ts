@@ -327,3 +327,67 @@ describe('the secret list and forwarded slots', () => {
     ]);
   });
 });
+
+describe('configuration keys Load reads', () => {
+  const configured = (key: string) =>
+    paramSource({ key }, { label: `configured('${key}')`, configurationKey: key });
+  const secret = (key: string) =>
+    secretSource({ key }, { label: `secret('${key}')`, secretsKey: key });
+
+  /** `shop` binds IN_MODULE into the module `email`'s input, which binds it, IN_SERVICE and IN_PARAM into `echo`. */
+  const threePlaces = (): ModuleNode => {
+    const email = module('email', { input: type({ 'm?': 'string' }) }, ({ input, provision }) => {
+      provision(echoService(), {
+        input: { m: input.m, s: configured('IN_SERVICE') } as never,
+        params: { label: configured('IN_PARAM') },
+      });
+    });
+    return shopWith(email, { m: configured('IN_MODULE') });
+  };
+
+  test("the graph records the text of every configuration key a source reads, in a module's input, a service's input and a service's params", () => {
+    const graph = Load(threePlaces(), {
+      configuration: { IN_MODULE: 'm', IN_SERVICE: 's', IN_PARAM: 'p', OTHER: 'o' },
+    });
+
+    expect(graph.checkedConfiguration.values).toEqual({
+      IN_MODULE: 'm',
+      IN_SERVICE: 's',
+      IN_PARAM: 'p',
+    });
+  });
+
+  test('an unset or empty key is left out of the recorded values', () => {
+    const graph = Load(threePlaces(), { configuration: { IN_MODULE: 'm', IN_SERVICE: '' } });
+
+    expect(graph.checkedConfiguration.values).toEqual({ IN_MODULE: 'm' });
+  });
+
+  test("a configuration key in a service's input whose value is not text fails at Load", () => {
+    const run = () =>
+      Load(threePlaces(), { configuration: { IN_MODULE: 'm', IN_SERVICE: 4, IN_PARAM: 'p' } });
+
+    expect(loadError(run).message).toBe(
+      `the input binding of service "shop.email.echo" depends on configured('IN_SERVICE'), which reads "IN_SERVICE" from the values the \`config\` adapters return, but they return a number for it, not text. configured('IN_SERVICE') reads text; to pass other data, declare it in the root module's input.`,
+    );
+  });
+
+  test('a name read as a configuration key and named as a secrets key fails at Load', () => {
+    const run = () =>
+      Load(echoWith({ plain: configured('SHARED'), key: secret('SHARED') }), {
+        configuration: { SHARED: 'shared' },
+      });
+
+    expect(loadError(run).message).toBe(
+      `configured('SHARED') reads "SHARED" from the app configuration, and secret('SHARED') names "SHARED" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every plain value it reads, in a file, and never writes a secret to a file. Give the plain value and the secret different names.`,
+    );
+  });
+
+  test('the second process reads configuration keys from the checked values', () => {
+    const graph = Load(threePlaces(), {
+      checkedConfiguration: { rootInput: [], values: { IN_MODULE: 'from-file' } },
+    });
+
+    expect(bindingOf(graph)['m']).toBe('from-file');
+  });
+});

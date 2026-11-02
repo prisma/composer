@@ -6,6 +6,26 @@ import type { EnvironmentRealValues } from './value.ts';
 /** Path-derived: root-scope children are bare ids ("auth", "db"); a nested module's own children dot-join under its address ("auth.db"). */
 export type NodeId = string;
 
+/** One field of the root's input that its body names, with the real value the root's schema produced there. */
+export interface CheckedRootField {
+  /** The key path inside the root's input, such as `['smtp', 'host']`. */
+  readonly path: readonly string[];
+  /** The real value; absent when it is `undefined`. */
+  readonly value?: unknown;
+}
+
+/**
+ * What a Load read from the app configuration, once the root's schema checked it (ADR-0062).
+ * The deploy's and `prisma dev`'s first process writes it to the configuration file, and
+ * their second process Loads with it in place of the app configuration.
+ */
+export interface CheckedConfiguration {
+  /** Each field of the root's input that its body names. Empty when the root declares no input. */
+  readonly rootInput: readonly CheckedRootField[];
+  /** The text the app configuration holds for each configuration key a source reads, such as `envParam('NAME')`'s `NAME`. A key the app configuration does not hold, or holds as `''`, is absent. */
+  readonly values: Readonly<Record<string, string>>;
+}
+
 export interface LoadOptions {
   /** The root's address: the app name. Defaults to the root's `name`. */
   readonly id?: NodeId;
@@ -13,6 +33,8 @@ export interface LoadOptions {
   readonly environment?: EnvironmentRealValues;
   /** The app configuration (ADR-0062): what the `config` adapters return. It is the root's input, which the root's schema checks, and what a source with a configuration key, such as `envParam('NAME')`, reads. The deploy's and dev's first process pass it. */
   readonly configuration?: Readonly<Record<string, unknown>>;
+  /** What the first process's Load read, from the configuration file. The deploy's and dev's second process pass it in place of `configuration`: Load takes each root field from it without running the root's schema. */
+  readonly checkedConfiguration?: CheckedConfiguration;
 }
 
 export interface GraphNode {
@@ -130,6 +152,8 @@ export interface Graph {
   readonly params: readonly ParamBinding[];
   /** Every secret source a binding names, once each, in the order Load met them (ADR-0029). */
   readonly secretSources: readonly SecretSourceUse[];
+  /** What this Load read from the app configuration (ADR-0062). Empty when Load was given none. */
+  readonly checkedConfiguration: CheckedConfiguration;
 }
 
 /**

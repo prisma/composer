@@ -4,6 +4,8 @@ import { isSecretPointer } from '@internal/foundation/pointer';
 import { isSecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import {
+  type CheckedConfiguration,
+  type CheckedRootField,
   type InputBindingUse,
   LoadError,
   type NodeId,
@@ -40,6 +42,8 @@ export interface ProvisionedModuleInput {
   readonly binding: unknown;
   /** True for the root, whose binding is the app configuration. */
   readonly isRoot: boolean;
+  /** For the root in the second process: its fields as the first process checked them. The root's schema does not run. */
+  readonly checked?: readonly CheckedRootField[];
 }
 
 export interface ValueBindingSite {
@@ -121,6 +125,32 @@ function describeNotPlain(value: unknown): string | undefined {
       return undefined;
   }
 }
+
+/** How `value` would not survive `JSON.stringify` and `JSON.parse` unchanged, or `undefined` when it would. A key whose value is `undefined` is dropped, which a body cannot tell from absent. */
+function jsonInexactKind(value: unknown): string | undefined {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return undefined;
+  if (typeof value === 'number') return Number.isFinite(value) ? undefined : 'a non-finite number';
+  if (Array.isArray(value)) {
+    for (const member of value) {
+      if (member === undefined) return 'an array with a missing member';
+      const kind = jsonInexactKind(member);
+      if (kind !== undefined) return kind;
+    }
+    return undefined;
+  }
+  if (isPlainObject(value)) {
+    for (const member of Object.values(value)) {
+      if (member === undefined) continue;
+      const kind = jsonInexactKind(member);
+      if (kind !== undefined) return kind;
+    }
+    return undefined;
+  }
+  return describeNotPlain(value) ?? describeKind(value);
+}
+
+const SAME_GRAPH_ADVICE =
+  'A module body must build the same graph every time; one that reads process.env, a file or the clock can build a different one.';
 
 function isThenable(value: unknown): boolean {
   if (isValue(value)) return false;
@@ -452,6 +482,7 @@ function refusePointersInProps(address: NodeId, props: unknown): void {
 export function resolveValues(input: {
   readonly environment: EnvironmentRealValues | undefined;
   readonly configuration: Readonly<Record<string, unknown>> | undefined;
+  readonly checkedConfiguration: CheckedConfiguration | undefined;
   readonly inputBindings: readonly InputBindingUse[];
   readonly params: readonly ParamBinding[];
   readonly moduleInputs: readonly ProvisionedModuleInput[];
@@ -461,8 +492,34 @@ export function resolveValues(input: {
   readonly params: readonly ParamBinding[];
   readonly resourceProps: ReadonlyMap<NodeId, ResourceProps>;
   readonly secretSources: readonly SecretSourceUse[];
+  readonly checkedConfiguration: CheckedConfiguration;
 } {
-  const { environment, configuration } = input;
+  const { environment } = input;
+  const rootFields = new Map<string, CheckedRootField>();
+  const keysRead = new Map<string, { readonly label: string; readonly text: string | undefined }>();
+  /** The text the app configuration holds for `key`, recorded; `undefined` when it holds none or `''`. */
+  const configurationText = (
+    key: string,
+    label: string,
+    site: ValueBindingSite,
+  ): string | undefined => {
+    let raw: unknown;
+    if (input.checkedConfiguration !== undefined) raw = input.checkedConfiguration.values[key];
+    else if (input.configuration !== undefined) raw = input.configuration[key];
+    else {
+      throw new LoadError(
+        `${describeSite(site)} depends on ${label}, but Load was given no app configuration to read "${key}" from. Pass { configuration } to Load; the deploy and dev commands pass the values the \`config\` adapters return.`,
+      );
+    }
+    if (raw !== undefined && raw !== '' && typeof raw !== 'string') {
+      throw new LoadError(
+        `${describeSite(site)} depends on ${label}, which reads "${key}" from the values the \`config\` adapters return, but they return ${describeKind(raw)} for it, not text. ${label} reads text; to pass other data, declare it in the root module's input.`,
+      );
+    }
+    const text = raw === undefined || raw === '' ? undefined : raw;
+    keysRead.set(key, { label, text });
+    return text;
+  };
   const secretUses = new Map<SecretSource, SecretSourceUse>();
   const recordSecret = (source: SecretSource, site: ValueBindingSite): void => {
     const canonical = canonicalSecret(source);
@@ -543,21 +600,8 @@ export function resolveValues(input: {
         if (isSecretSource(origin.source)) recordSecret(origin.source, site);
         if (origin.configurationKey === undefined) {
           result = origin.source;
-        } else if (configuration === undefined) {
-          throw new LoadError(
-            `${describeSite(site)} depends on ${origin.label}, but Load was given no app configuration to read "${origin.configurationKey}" from. Pass { configuration } to Load; the deploy and dev commands pass the values the \`config\` adapters return.`,
-          );
         } else {
-          const raw = configuration[origin.configurationKey];
-          if (raw === undefined || raw === '') {
-            result = undefined;
-          } else if (typeof raw === 'string') {
-            result = raw;
-          } else {
-            throw new LoadError(
-              `${describeSite(site)} depends on ${origin.label}, which reads "${origin.configurationKey}" from the values the \`config\` adapters return, but they return ${describeKind(raw)} for it, not text. ${origin.label} reads text; to pass other data, declare it in the root module's input.`,
-            );
-          }
+          result = configurationText(origin.configurationKey, origin.label, site);
         }
         break;
       }
@@ -598,7 +642,25 @@ export function resolveValues(input: {
             `${describeSite(site)} depends on the whole input of module "${origin.module}". A module body's input is a dictionary of values, not a value, so it cannot be passed on whole.${everyVariable} Pass its fields on by name, such as input.from.`,
           );
         }
-        result = readPath(validatedInputOf(entry), origin);
+        if (entry.checked !== undefined) {
+          const field = entry.checked.find(
+            (candidate) => candidate.path.join('\0') === origin.path.join('\0'),
+          );
+          if (field === undefined) {
+            throw new LoadError(
+              `${inputFieldLabel(origin)} of root module "${origin.module}" is not in the configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. ${SAME_GRAPH_ADVICE}`,
+            );
+          }
+          result = field.value;
+        } else {
+          result = readPath(validatedInputOf(entry), origin);
+          if (entry.isRoot) {
+            rootFields.set(
+              origin.path.join('\0'),
+              result === undefined ? { path: origin.path } : { path: origin.path, value: result },
+            );
+          }
+        }
         break;
       }
     }
@@ -608,6 +670,7 @@ export function resolveValues(input: {
   };
 
   const validatedInputOf = (entry: ProvisionedModuleInput): unknown => {
+    if (entry.checked !== undefined) return undefined;
     if (validatedInputs.has(entry.moduleAddress)) return validatedInputs.get(entry.moduleAddress);
     if (validating.has(entry.moduleAddress)) {
       throw new LoadError(
@@ -626,6 +689,58 @@ export function resolveValues(input: {
     return validated;
   };
 
+  const rootModuleAddress = (): string =>
+    input.moduleInputs.find((entry) => entry.isRoot)?.moduleAddress ?? '';
+
+  const checkedConfigurationOf = (
+    inputBindings: readonly InputBindingUse[],
+    params: readonly ParamBinding[],
+    secretSources: readonly SecretSourceUse[],
+  ): CheckedConfiguration => {
+    if (input.configuration !== undefined || input.checkedConfiguration !== undefined) {
+      const kept: { readonly binding: unknown; readonly site: ValueBindingSite }[] = [
+        ...inputBindings.map(({ serviceAddress, binding }) => ({
+          binding,
+          site: { address: serviceAddress, kind: 'serviceInput' as const, path: '' },
+        })),
+        ...params.map(({ serviceAddress, slot, binding }) => ({
+          binding,
+          site: { address: serviceAddress, kind: 'param' as const, path: slot },
+        })),
+      ];
+      for (const { binding, site } of kept) {
+        for (const pointer of pointersIn(binding)) {
+          if (!isParamSource(pointer)) continue;
+          const origin = sourceOriginOf(pointer);
+          if (origin?.configurationKey !== undefined) {
+            configurationText(origin.configurationKey, origin.label, site);
+          }
+        }
+      }
+    }
+    for (const use of secretSources) {
+      const origin = sourceOriginOf(use.source);
+      const key = origin?.secretsKey;
+      const read = key === undefined ? undefined : keysRead.get(key);
+      if (key !== undefined && read !== undefined) {
+        throw new LoadError(
+          `${read.label} reads "${key}" from the app configuration, and ${origin?.label} names "${key}" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every plain value it reads, in a file, and never writes a secret to a file. Give the plain value and the secret different names.`,
+        );
+      }
+    }
+    for (const field of rootFields.values()) {
+      const kind = 'value' in field ? jsonInexactKind(field.value) : undefined;
+      if (kind !== undefined) {
+        throw new LoadError(
+          `${inputFieldLabel({ kind: 'input', module: rootModuleAddress(), path: field.path })} of root module "${rootModuleAddress()}" holds ${kind}, which JSON cannot hold exactly. The deploy hands the root's checked input to its second process in a JSON file, so a field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.`,
+        );
+      }
+    }
+    const values: Record<string, string> = {};
+    for (const [key, { text }] of keysRead) if (text !== undefined) values[key] = text;
+    return { rootInput: [...rootFields.values()], values };
+  };
+
   for (const entry of input.moduleInputs) validatedInputOf(entry);
   for (const { value, site } of found) resolveOne(value, site);
 
@@ -634,11 +749,17 @@ export function resolveValues(input: {
   );
   if (found.length === 0) {
     for (const [address, props] of authoredProps) refusePointersInProps(address, props);
+    const secretSources = secretSourcesReceivedBy(input.inputBindings, input.params);
     return {
       inputBindings: input.inputBindings,
       params: input.params,
       resourceProps: authoredProps,
-      secretSources: secretSourcesReceivedBy(input.inputBindings, input.params),
+      secretSources,
+      checkedConfiguration: checkedConfigurationOf(
+        input.inputBindings,
+        input.params,
+        secretSources,
+      ),
     };
   }
 
@@ -673,10 +794,12 @@ export function resolveValues(input: {
     if (binding === undefined && isValue(entry.binding)) return [];
     return [binding === entry.binding ? entry : { ...entry, binding }];
   });
+  const secretSources = secretSourcesReceivedBy(inputBindings, params);
   return {
     resourceProps,
     inputBindings,
     params,
-    secretSources: secretSourcesReceivedBy(inputBindings, params),
+    secretSources,
+    checkedConfiguration: checkedConfigurationOf(inputBindings, params, secretSources),
   };
 }
