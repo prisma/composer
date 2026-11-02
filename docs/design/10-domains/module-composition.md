@@ -205,7 +205,7 @@ an error, unlike an unused `deps` entry.
 
 ## `provision()` accepts modules
 
-One overload provisions a service or a module, with the same options for both:
+`provision()` takes a service or a module with the same options for both. Every service and module call can resolve to this overload:
 
 ```ts
 provision<N extends ServiceNode | ModuleNode>(
@@ -214,7 +214,9 @@ provision<N extends ServiceNode | ModuleNode>(
 ): ProvisionedRef<ExposeOf<N>>;
 ```
 
-The `input` option has the type `InputBindingOf<I>`, the same for a service and a module: it is typed from the schema's input type, so a binding the schema would refuse fails to compile ([ADR-0042](../90-decisions/ADR-0042-service-input-is-one-standard-schema.md)). Two more overloads spell out `deps` and take `input` as optional, for a generic wrapper such as `cron()` whose node type is still a type parameter. The overload above is declared last, so a call no overload accepts reports its error, which names the binding key that does not fit.
+The `input` option has the type `InputBindingOf<I>`, the same for a service and a module. It is typed from the schema's input type, so a binding whose shape or kind the schema refuses fails to compile: a wrong literal type, a missing or undeclared key, a source in the wrong kind of field, or a missing `input` ([ADR-0042](../90-decisions/ADR-0042-service-input-is-one-standard-schema.md)). A refinement the type cannot express, such as a URL format, is checked by the deploy. The overload above is declared last, so a call no overload accepts reports its error, which names the binding key that does not fit, or says that a module's whole input is not a value. The overloads before it serve generic wrappers: one for a service and one for a module, which infer the node's type parameters separately, so a wrapper generic in what the node exposes resolves; and, for a wrapper whose node's dependencies are a type parameter, one pair each with `deps` written out, of which one requires `input` and the other, for a node without an input schema, refuses it.
+
+A generic wrapper that takes a caller's node and its binding, such as `cron()`, types its own `input` option as `InputBindingOf<I>`, so the caller's binding is checked against the node's schema at the wrapper's call. Inside, it passes the node on widened to the default schema type, `ServiceNode<D, P, E>`, whose binding type is `unknown`, and passes `input: opts.input` whether or not it is set. The wrapper's own option is the only compile-time check of the binding, and Load checks it again.
 
 The returned ref is indistinguishable from a provisioned service's. Whether an
 id names a service or a sub-module is invisible to sibling wiring, so topologies

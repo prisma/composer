@@ -74,8 +74,8 @@ A module declares all of its incoming configuration as **one Standard Schema**, 
 
 ## Related
 
-- [ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md): a module has the same boundary as a service. Amended by this ADR.
-- [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md): service input is one standard schema. Extended to modules by this ADR.
+- [ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md): a module has the same boundary as a service. Its current text includes this decision: a module's input is one Standard Schema, bound at `provision()`.
+- [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md): service input is one standard schema. Its current text includes this decision: a module's binding has the same type as a service's.
 - [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) and [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md): the forwardable secret and param slots this replaces on modules; their sources (`envSecret`, `envParam`) remain.
 - [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): values, `resolve()`, and how the root's input is bound.
 - [module-composition.md](../10-domains/module-composition.md) and [config-params.md](../10-domains/config-params.md).

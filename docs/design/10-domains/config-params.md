@@ -147,7 +147,7 @@ return one object that is both the target's source and a
 | A `resolve()` dependency | its string; unset or empty fails | refused | refused | refused |
 | A resource's `props` | its string; unset or empty leaves the key out | refused by the type | refused by the type | refused at Load |
 
-In a service's and a module's input, the schema checks each of the three runtime sources as its pointer. A plain field refuses a pointer, so a field bound to `generatedParam()` or `serviceOrigin()` is wrapped with `field()`, or is a `secretString()` field for a redacted `generatedParam()` ([glossary](../03-domain-model/glossary.md#field)). Both bindings are typed from the schema, so a source bound to a field that refuses it fails to compile, and so does an `envParam()` bound to a field narrower than text. The deploy check catches what the compiler cannot see: a schema without type information, or a cast.
+In a service's and a module's input, the schema checks each of the three runtime sources as its pointer. A plain field refuses a pointer, so a field bound to `generatedParam()` or `serviceOrigin()` is wrapped with `field()`, or is a `secretString()` field for a redacted `generatedParam()` ([glossary](../03-domain-model/glossary.md#field)). Both bindings are typed from the schema, so a source bound to a field that refuses it fails to compile, and so does an `envParam()` bound to a field narrower than text. The deploy check catches what the compiler cannot see: a refinement the type does not carry, such as a URL format, a schema without type information, or a cast.
 
 A service's input binding and a service's params receive the source itself,
 the same object they received before
