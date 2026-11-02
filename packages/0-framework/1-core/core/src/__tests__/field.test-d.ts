@@ -791,3 +791,27 @@ test('a generic wrapper with dependencies passes on a binding typed InputBinding
   expectTypeOf(wrapModule).toBeFunction();
   expectTypeOf(wrapUnbound).toBeFunction();
 });
+
+test('a generic wrapper passes on a node widened to the default schema type, with input: opts.input', () => {
+  type None = Record<never, never>;
+  function wrapService<I extends StandardSchemaV1>(
+    s: ServiceNode<None, None, None, I>,
+    input: InputBindingOf<I>,
+  ) {
+    return module('w', ({ provision }) => {
+      const widened: ServiceNode<None, None, None> = s;
+      provision(widened, { input });
+    });
+  }
+  function wrapModule<I extends StandardSchemaV1>(
+    m: ModuleNode<None, None, I>,
+    input: InputBindingOf<I>,
+  ) {
+    return module('w', ({ provision }) => {
+      const widened: ModuleNode<None, None> = m;
+      provision(widened, { input });
+    });
+  }
+  expectTypeOf(wrapService).toBeFunction();
+  expectTypeOf(wrapModule).toBeFunction();
+});

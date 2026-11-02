@@ -528,16 +528,17 @@ type ServiceProvisionArgs<D extends Deps, I extends StandardSchemaV1 | undefined
 type ModuleProvisionOptions<D extends Deps, I extends StandardSchemaV1 | undefined> = {
   id?: string;
 } & ([keyof D] extends [never] ? unknown : { deps: DepBindings<D> }) &
-  ([I] extends [StandardSchemaV1] ? { input: InputBindingOf<I> } : unknown);
+  (I extends StandardSchemaV1 ? { input: InputBindingOf<I> } : unknown);
 
 /** The options are optional exactly when nothing is required. */
-type ModuleProvisionArgs<D extends Deps, I extends StandardSchemaV1 | undefined> = [
-  keyof D,
-] extends [never]
-  ? [I] extends [StandardSchemaV1]
-    ? [opts: ModuleProvisionOptions<D, I>]
-    : [opts?: ModuleProvisionOptions<D, I>]
-  : [opts: ModuleProvisionOptions<D, I>];
+type ModuleProvisionArgs<
+  D extends Deps,
+  I extends StandardSchemaV1 | undefined,
+> = I extends StandardSchemaV1
+  ? [opts: ModuleProvisionOptions<D, I>]
+  : [keyof D] extends [never]
+    ? [opts?: ModuleProvisionOptions<D, I>]
+    : [opts: ModuleProvisionOptions<D, I>];
 
 /** The options `provision()` takes after a service or module node `N`. */
 type ProvisionArgs<N> =
