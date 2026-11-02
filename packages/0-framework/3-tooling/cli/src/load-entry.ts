@@ -1,5 +1,5 @@
 /**
- * Pipeline step 1 (deploy-cli.md § The pipeline): import the entry module
+ * Pipeline step 2 (deploy-cli.md § The pipeline): import the entry module
  * (resolved against cwd) and require its default export to be a node — a
  * service or module, branded by core's factories. Whatever this module exports
  * IS the application; nothing else marks a root (ADR-0003).

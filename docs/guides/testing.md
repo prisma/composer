@@ -22,7 +22,7 @@ supply under the reserved `input` key (one flat object — dependency names
 route to `load()`, `input` to `input()`; the input double is handed over
 as-is, not validated). The fakes are type-checked against the service's
 declared dependencies and its input schema, so a double with the wrong shape
-doesn't compile.
+doesn't compile. The input double has the type `service.input()` returns: a wrapped field is its inner type and a `secretString()` field a `SecretString`, never a pointer.
 
 Substituting the mocked service for the real one is your test runner's job —
 `vi.mock` in Vitest, `mock.module` in bun test. A Vitest example, testing a

@@ -8,26 +8,13 @@ import { appContract } from './src/contract.ts';
 import opsService from './src/ops/service.ts';
 
 /**
- * The auth example: a dedicated Prisma ORM database carrying ONLY the auth
- * extension pack (empty app space), the `auth()` module wired to it, the
- * `email()` module wired as its `email` boundary dep (verification/reset/
- * magic-link delivery — the module-depends-on-module proof), and two
- * consumer services proving least-privilege wiring:
- *
- *   - `api` — the app origin: proxies `/api/auth/*` to the auth service,
- *     JWT-verifies `/me`, and answers session lookups. Holds the `api` +
- *     `session` ports and the verifier; CANNOT touch admin ops.
- *   - `ops` — the back office: holds the `admin` port (plus the smoke's
- *     read-only outbox dep).
- *
- * `baseUrl` is the PUBLIC origin browsers would see (the api service's, per environment).
- * `deliveryMode`/`from` are the email module's own boundary params, bound to
- * env vars like the email example, so an environment changes delivery without
- * changing the topology;
- * `deliveryCredential` is a boundary secret, unconditionally required even
- * in `none` mode (the junk-credential wart shared with the email example —
- * the env file binds a junk value for `none`). A closed root: no boundary
- * argument, no return — it only provisions.
+ * The auth example: a database carrying only the auth extension pack, the
+ * `auth()` module wired to it, and the `email()` module as auth's email
+ * dependency. `api` holds the `api` and `session` ports and the verifier; `ops`
+ * holds `admin` and the smoke's read-only outbox. `baseUrl` is the api
+ * service's public origin. The email module's input reads its delivery mode
+ * and sender with envParam(), from the config adapters in prisma.config.ts;
+ * its credential is required even in `none` mode.
  */
 export default module('auth-example', ({ provision }) => {
   const db = provision(
@@ -36,16 +23,16 @@ export default module('auth-example', ({ provision }) => {
   );
   const mail = provision(email(), {
     id: 'mail',
-    params: {
+    input: {
       deliveryMode: envParam('EMAIL_DELIVERY_MODE'),
       from: envParam('EMAIL_FROM'),
+      deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
     },
-    secrets: { deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') },
   });
   const identity = provision(auth(), {
     id: 'auth',
     deps: { db, email: mail.send },
-    params: { baseUrl: serviceOrigin('auth-example.api') },
+    input: { baseUrl: serviceOrigin('auth-example.api') },
   });
   provision(apiService, {
     id: 'api',

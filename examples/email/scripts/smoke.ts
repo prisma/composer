@@ -55,11 +55,13 @@ if (branch === undefined) throw new Error('project has no default branch');
 const branchId = asId(branch['id'], 'branch.id');
 
 const candidates = rows(await get(`/apps?projectId=${projectId}&limit=100`)).filter(
-  (s) => s['name'] === 'mailer',
+  (s) => s['name'] === `${stack}.mailer`,
 );
 const service = candidates.find((s) => s['branchId'] === branchId);
 if (service === undefined) {
-  throw new Error(`no "mailer" app on the production branch (candidates: ${candidates.length})`);
+  throw new Error(
+    `no "${stack}.mailer" app on the production branch (candidates: ${candidates.length})`,
+  );
 }
 const domain = service['appEndpointDomain'];
 if (typeof domain !== 'string' || domain === '')

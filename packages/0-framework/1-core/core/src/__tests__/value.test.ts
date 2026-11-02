@@ -38,11 +38,11 @@ describe('resolve()', () => {
 });
 
 describe('isValue()', () => {
-  test('isValue() recognises environment.name and a resolve() result and nothing else', () => {
+  test('isValue() recognises environment.name, a resolve() result and a source, and nothing else', () => {
     expect(isValue(environmentFacts.name)).toBe(true);
     expect(isValue(resolve([environmentFacts.name], ([name]) => name))).toBe(true);
     expect(isValue({ kind: 'computed' })).toBe(false);
     expect(isValue(null)).toBe(false);
-    expect(isValue(secretSource({ name: 'X' }))).toBe(false);
+    expect(isValue(secretSource({ name: 'X' }))).toBe(true);
   });
 });

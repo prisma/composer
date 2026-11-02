@@ -2,6 +2,14 @@
 
 Amended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module no longer declares `secret()` slots; a secret reaches a module as a `secretString()` field of its `input`. `envSecret` is unchanged.
 
+Amended 2026-10-29 (module-input project, third slice): `envSecret('NAME')` returns a value, `SecretSource & Value<SecretString>`, that is also the source. Wherever a binding took the source, the target receives the same object, so the pointer and boot are unchanged. Its real value at deploy is a pointer: a `resolve()` function that lists it receives the source itself, which throws when turned into text or a number, and may return it. Deploy preflight checks every `envSecret()` the graph names, including one a function lists but does not return, one in a module's input that no service receives, and one a function in a resource's props lists. `secretSource()` takes an optional `label`, the name errors use.
+
+Amended 2026-10-30 (module-input project, fourth slice): a name missing on the platform is filled from the secrets pool, what the `composer` section's `secrets` adapters return, in place of the deploy shell's environment. The default `secrets` list reads the process environment, so a project that sets no list behaves as before.
+
+Amended 2026-10-30 (module-input project, fifth slice): `secret()`, `SecretNeed`, `Secrets` and `SecretBindings` are removed, with the module `secrets` slot. What the Decision below calls a module's secret need is now a `secretString()` field of the module's `input`, which the module passes on and the root binds with `envSecret('NAME')`. So the module still never learns the platform name. `secretSource()`, `isSecretSource()` and `envSecret()` are unchanged.
+
+Amended 2026-10-30 (module-input project, eighth slice): a `resolve()` function cannot list `envSecret()`, so two statements of the third-slice note no longer hold. A function never receives the source and cannot return it: listing it fails to compile, and Load refuses it. And deploy preflight has no secret that only a function lists, or that a function in a resource's props lists, to check: Load refuses both, so every secret preflight checks is one a binding names ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
+
 ## Decision
 
 A **secret** is one specific thing: a value the deployment reads from the

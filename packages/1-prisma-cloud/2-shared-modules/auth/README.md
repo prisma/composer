@@ -67,7 +67,7 @@ export default module('app', ({ provision }) => {
   const identity = provision(auth(), {
     id: 'auth',
     deps: { db },
-    params: { baseUrl: serviceOrigin('app.api') }, // the PUBLIC app origin
+    input: { baseUrl: serviceOrigin('app.api') }, // the PUBLIC app origin
   });
   provision(apiService, {
     id: 'api',
@@ -142,7 +142,7 @@ Invite-only applications close self-service sign-up with a module setting,
 enforced by Better Auth itself, instead of filtering their proxy:
 
 ```ts
-provision(auth({ signUp: 'closed' }), { id: 'auth', deps: { db, email: mail.send }, params: { … } });
+provision(auth({ signUp: 'closed' }), { id: 'auth', deps: { db, email: mail.send }, input: { baseUrl: … } });
 ```
 
 `signUp: 'closed'` sets `emailAndPassword.disableSignUp` and the magic-link
@@ -285,11 +285,11 @@ Verification, password reset, and magic-link emails deliver through the
 [email module](../email/README.md), wired as a boundary dependency:
 
 ```ts
-const mail = provision(email(), { id: 'mail', params: /* … */, secrets: /* … */ });
+const mail = provision(email(), { id: 'mail', input: { /* deliveryMode, from, deliveryCredential */ } });
 const identity = provision(auth(), {
   id: 'auth',
   deps: { db, email: mail.send },
-  params: { baseUrl: envParam('AUTH_BASE_URL') },
+  input: { baseUrl: envParam('AUTH_BASE_URL') },
 });
 ```
 

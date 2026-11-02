@@ -129,8 +129,7 @@ describe('invariant 4: environment touches are confined to the config serializer
   // document's env-sourced leaves and boot reads), control/extension.ts
   // (optional PRISMA_WORKSPACE_ID and PRISMA_REGION, and the preflight
   // transport), container.ts (PRISMA_WORKSPACE_ID, PRISMA_SERVICE_TOKEN),
-  // preflight.ts (the deploy shell's values), local-target/preflight.ts (the
-  // dev run's values), local-target/attach.ts (the shell environment a dev
+  // preflight.ts (PRISMA_SERVICE_TOKEN; values come from the pools), local-target/attach.ts (the shell environment a dev
   // server keeps under its Composer rows, ADR-0056), compute.ts (run()
   // applies stashRows to the environment), testing.ts (bootstrapService).
   test('the environment is read only in the files listed below', () => {
@@ -148,8 +147,7 @@ describe('invariant 4: environment touches are confined to the config serializer
       { file: 'container.ts', count: 3 },
       { file: 'control/extension.ts', count: 3 },
       { file: 'local-target/attach.ts', count: 1 },
-      { file: 'local-target/preflight.ts', count: 1 },
-      { file: 'preflight.ts', count: 2 },
+      { file: 'preflight.ts', count: 1 },
       { file: 'serializer.ts', count: 9 },
       { file: 'testing.ts', count: 5 },
     ]);

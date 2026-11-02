@@ -3,6 +3,7 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import { localState } from 'alchemy/State/LocalState';
 import * as Layer from 'effect/Layer';
 import {
+  type ConfigPools,
   type ContainerInstance,
   isBuildOnlyExtension,
   type LocalTargetDescriptor,
@@ -54,9 +55,10 @@ export function localTargetProviders(
   resolved: ReadonlyMap<string, LocalTargetDescriptor>,
   containers: ReadonlyMap<string, ContainerInstance>,
   devDir: string,
+  pools: ConfigPools,
 ): Layer.Layer<never> {
   const layers = [...resolved.entries()].map(([id, descriptor]) =>
-    descriptor.providers({ container: containers.get(id), devDir }),
+    descriptor.providers({ container: containers.get(id), devDir, pools }),
   );
   const [first, ...rest] = layers;
   return first === undefined ? Layer.empty : Layer.mergeAll(first, ...rest);

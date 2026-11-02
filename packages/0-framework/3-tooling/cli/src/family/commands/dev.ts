@@ -153,6 +153,14 @@ function reportDevEvent(
         });
         return;
 
+      case 'values-changed':
+        report({
+          kind: 'message',
+          severity: 'warn',
+          text: 'The values the config or secrets adapters return changed since dev started. Restart dev to apply them; rebuilds are paused until then.',
+        });
+        return;
+
       case 'watch-error':
         report({ kind: 'message', severity: 'warn', text: `Watch error: ${event.message}` });
         return;

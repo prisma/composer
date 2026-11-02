@@ -461,8 +461,9 @@ Locally there is nothing to build: `prisma dev` runs `next dev` for
 the service, on its URL, with hot reload and its output in your terminal, and
 `service.load()` and `service.input()` return what they will in production.
 Drop any `process.env` fallback you kept for plain `next dev` — run the app
-through `prisma dev` instead. A secret the app reads must be in the shell
-`prisma` runs in, or in a `.env` your `prisma.config.ts` loads; Next's own
+through `prisma dev` instead. A secret the app reads must be where a
+`secrets` adapter in `prisma.config.ts` reads it: the shell by default, or
+`.env.dev` with `dotenv()`; Next's own
 `.env` loading comes too late
 ([Dev servers](running-locally.md#dev-servers)). `next build` is only needed
 for `prisma deploy`.

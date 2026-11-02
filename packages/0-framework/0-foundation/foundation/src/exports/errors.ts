@@ -4,6 +4,7 @@ export type {
   CliErrorEnvelope,
 } from '../cli-structured-error.ts';
 export { CliStructuredError } from '../cli-structured-error.ts';
+export { describeKind } from '../describe-kind.ts';
 export { assertNever, InternalError, isInternalError } from '../internal-error.ts';
 export type { StructuredError, StructuredErrorOptions } from '../structured-error.ts';
 export {

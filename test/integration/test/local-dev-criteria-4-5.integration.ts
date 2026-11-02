@@ -281,8 +281,8 @@ function assertNamesMissing(log: string, variable: string, service: string): voi
   const named = new RegExp(`${variable}\\s+\\(required by service \\\\?"${service}\\\\?"`);
   assert(named.test(log), `the error must name ${variable} and service "${service}"`);
   assert(
-    log.includes('export it in the shell you run `prisma dev` from'),
-    'the error must say how to set it in the shell',
+    log.includes('environmentVariables() reads the shell you run `prisma dev` from'),
+    'the error must say the default adapter reads the shell',
   );
   assert(
     log.includes('prisma.config.ts'),

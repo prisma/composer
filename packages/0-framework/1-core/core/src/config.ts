@@ -11,7 +11,7 @@
  * `envSecret(...)` leaves (ADR-0042). A param is never secret.
  */
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import type { Graph, ParamBinding, ServiceInputBinding } from './graph-types.ts';
+import type { Graph, ParamBinding, SecretSourceUse, ServiceInputBinding } from './graph-types.ts';
 import type { ProvisionNeed, ServiceNode } from './node.ts';
 
 /**
@@ -63,7 +63,7 @@ export interface Connection<P extends Params = Params, C = unknown> {
  * absent). `schema` is a data-only projection of the param's Standard Schema
  * (JSON Schema when the vendor supports the optional conversion, a `{ vendor }`
  * tag otherwise) — never the param's functions. Physical locations are the
- * target pack's business. Secrets are not here — they live on their own slot.
+ * target pack's business. Secrets are not here: they are `secretString()` fields of a service's input, bound with `envSecret()`.
  */
 export interface ConfigDeclaration {
   readonly owner: 'service' | { readonly input: string };
@@ -159,6 +159,15 @@ export function inputManifest(graph: Graph): readonly ServiceInputBinding[] {
  */
 export function paramManifest(graph: Graph): readonly ParamBinding[] {
   return graph.params;
+}
+
+/**
+ * Every secret source a binding in the graph names, wherever it sits: what a
+ * deploy target's preflight checks.
+ * Pure graph introspection, TARGET-AGNOSTIC.
+ */
+export function secretSourceManifest(graph: Graph): readonly SecretSourceUse[] {
+  return graph.secretSources;
 }
 
 // ——— Param constructors: plain data, target-agnostic (ADR-0018/0019). ———
