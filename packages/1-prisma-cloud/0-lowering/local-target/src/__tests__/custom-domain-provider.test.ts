@@ -15,7 +15,8 @@ const container: ContainerInstance = {
 const input: LocalTargetProvidersInput = {
   container,
   devDir: '/nonexistent/.prisma-composer/dev/dev',
-  pools: { config: {}, secrets: {} },
+  configuration: {},
+  secrets: {},
 };
 
 /** The stack program, with the provider requirement that `localTargetProviders`' erased layer satisfies. */

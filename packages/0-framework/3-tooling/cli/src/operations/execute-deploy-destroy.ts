@@ -525,7 +525,8 @@ async function runStackPipelineInner(
             graph,
             container: containers.get(extension.id),
             environment,
-            pools: pipeline.pools,
+            configuration: pipeline.configuration,
+            secrets: pipeline.secrets,
             credentials: deps.credentials,
             report,
           });

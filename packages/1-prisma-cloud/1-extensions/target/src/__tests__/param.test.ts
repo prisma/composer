@@ -70,7 +70,7 @@ describe('envParam (Prisma Cloud param source)', () => {
 });
 
 describe('envParam() in a module input', () => {
-  test("envParam() in a module's input is the variable's value in the config pool", () => {
+  test("envParam() in a module's input is the variable's value in the app configuration", () => {
     const web = service({
       name: 'web',
       extension: '@prisma/composer-prisma-cloud',
@@ -96,7 +96,7 @@ describe('envParam() in a module input', () => {
       provision(site, { input: { appOrigin: envParam('APP_ORIGIN') } });
     });
 
-    const graph = Load(root, { configPool: { APP_ORIGIN: 'https://shop.example' } });
+    const graph = Load(root, { configuration: { APP_ORIGIN: 'https://shop.example' } });
 
     expect(graph.inputBindings[0]?.binding).toEqual({ appOrigin: 'https://shop.example' });
   });

@@ -120,7 +120,7 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
   });
 });
 
-describe('resolveInputBinding — envParam() reads the config pool', () => {
+describe('resolveInputBinding — envParam() reads the app configuration', () => {
   test('an envParam() leaf reads the env it is given', async () => {
     const row = await withEnv({ G: 'shell' }, () =>
       serializeInput(

@@ -11,7 +11,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import type { Graph, ServiceNode } from '@internal/core';
-import type { ConfigPools, ContainerInstance, PrismaAppConfig } from '@internal/core/config';
+import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
 import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
 import type { DevServer } from '@internal/core/deploy';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
@@ -25,7 +25,7 @@ import {
   type WatchHandle,
   watchTargetsFrom,
 } from '../dev/watch.ts';
-import { type PipelineDeps, runPipeline } from '../pipeline.ts';
+import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
 import {
   type AlchemyOutcome,
   alchemyInvocation,
@@ -133,9 +133,10 @@ function contentHash(file: string): string | undefined {
   }
 }
 
-function samePools(started: ConfigPools, now: ConfigPools): boolean {
+function sameValues(started: PipelineResult, now: PipelineResult): boolean {
   return (
-    isDeepStrictEqual(started.config, now.config) && isDeepStrictEqual(started.secrets, now.secrets)
+    isDeepStrictEqual(started.configuration, now.configuration) &&
+    isDeepStrictEqual(started.secrets, now.secrets)
   );
 }
 
@@ -239,7 +240,8 @@ export async function executeDev(
           graph,
           container: containers.get(id),
           environment,
-          pools: pipeline.pools,
+          configuration: pipeline.configuration,
+          secrets: pipeline.secrets,
           warn: (message) => emit({ kind: 'target-warning', message }),
         });
         if (payload !== undefined) preflightPayloads.set(id, payload);
@@ -369,7 +371,13 @@ export async function executeDev(
       let restarted: boolean;
       try {
         ({ restarted } = await withEmulatorRetry(() =>
-          serve({ address, node, server, pools: pipeline.pools }),
+          serve({
+            address,
+            node,
+            server,
+            configuration: pipeline.configuration,
+            secrets: pipeline.secrets,
+          }),
         ));
       } catch (error) {
         throw toStructured('DEV.SERVICE_START_FAILED', error);
@@ -531,7 +539,7 @@ export async function executeDev(
           input.config,
           watchDeps,
         );
-        if (!samePools(pipeline.pools, rePipeline.pools)) {
+        if (!sameValues(pipeline, rePipeline)) {
           if (!valuesChanged) emit({ kind: 'values-changed' });
           valuesChanged = true;
           return;

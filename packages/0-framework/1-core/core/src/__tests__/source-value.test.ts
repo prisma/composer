@@ -42,7 +42,7 @@ const loadError = (run: () => unknown): LoadError => {
 
 const pointer = (name: string) => secretSource({ name }, { label: `envSecret('${name}')` });
 const variable = (name: string) =>
-  paramSource({ name }, { label: `envParam('${name}')`, poolKey: name });
+  paramSource({ name }, { label: `envParam('${name}')`, configurationKey: name });
 
 describe('building a source', () => {
   test('secretSource() and paramSource() return values that are also sources', () => {
@@ -71,9 +71,9 @@ describe('building a source', () => {
     expect(copy.payload).toEqual({ name: 'X' });
   });
 
-  test('paramSource() refuses a pool key beside redacted, and an empty label or pool key', () => {
-    expect(() => paramSource({}, { poolKey: 'X', redacted: true })).toThrow(
-      'paramSource() takes poolKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.',
+  test('paramSource() refuses a configuration key beside redacted, and an empty label or configuration key', () => {
+    expect(() => paramSource({}, { configurationKey: 'X', redacted: true })).toThrow(
+      'paramSource() takes configurationKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.',
     );
     expect(() => paramSource({}, { label: '' })).toThrow(
       'paramSource() label must be a non-empty string.',
@@ -81,8 +81,8 @@ describe('building a source', () => {
     expect(() => secretSource({}, { label: '' })).toThrow(
       'secretSource() label must be a non-empty string.',
     );
-    expect(() => paramSource({}, { poolKey: '' })).toThrow(
-      'paramSource() poolKey must be a non-empty string.',
+    expect(() => paramSource({}, { configurationKey: '' })).toThrow(
+      'paramSource() configurationKey must be a non-empty string.',
     );
   });
 });

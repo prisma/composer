@@ -41,8 +41,8 @@ export type ValueOrigin<T> =
       readonly kind: 'source';
       /** How an error names the source, e.g. `envSecret('STRIPE_KEY')`. */
       readonly label: string;
-      /** The config pool key whose value at deploy is the real value, as for `envParam()`. `undefined` for a value known only at boot, whose real value is `source`, a pointer. */
-      readonly poolKey: string | undefined;
+      /** The app configuration key whose text at deploy is the real value, as for `envParam()`. `undefined` for a value known only at boot, whose real value is `source`, a pointer. */
+      readonly configurationKey: string | undefined;
       /** The source itself. Not enumerable, so a copy's origin compares equal and the origin holds no cycle. */
       readonly source: ParamSource | SecretSource;
     };

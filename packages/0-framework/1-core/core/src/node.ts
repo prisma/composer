@@ -52,8 +52,8 @@ export interface SourceOptions {
 
 /** What a deploy target says about a param source it builds. */
 export interface ParamSourceOptions extends SourceOptions {
-  /** The config pool key whose value at deploy is the source's real value, as for `envParam()`. Without one the source is known only at boot, and its real value is the source itself, a pointer. */
-  readonly poolKey?: string;
+  /** The app configuration key whose text at deploy is the source's real value, as for `envParam()`. Without one the source is known only at boot, and its real value is the source itself, a pointer. */
+  readonly configurationKey?: string;
   /** For a source known only at boot: `true` makes the source a secret pointer, whose variable holds a secret; otherwise it is a plain pointer. */
   readonly redacted?: boolean;
 }
@@ -74,7 +74,7 @@ export function secretSource<P, T = unknown>(
       {
         kind: 'source',
         label,
-        poolKey: undefined,
+        configurationKey: undefined,
       },
       'secret',
     ),
@@ -133,7 +133,7 @@ const PARAM_SOURCE: unique symbol = blindCast<never, 'unique-symbol brand for a 
   Symbol.for('prisma:param-source'),
 );
 
-/** A param's source: a target-defined payload core forwards but never inspects. It is a value too: known at deploy when it names a config pool key (`envParam`), otherwise known only at boot, with the source itself as its real value: a secret pointer when it is redacted, a plain pointer otherwise. A target builds one with `paramSource()`. */
+/** A param's source: a target-defined payload core forwards but never inspects. It is a value too: known at deploy when it names an app configuration key (`envParam`), otherwise known only at boot, with the source itself as its real value: a secret pointer when it is redacted, a plain pointer otherwise. A target builds one with `paramSource()`. */
 export interface ParamSource<T = unknown> extends Value<unknown> {
   readonly [PARAM_SOURCE]: true;
   /** Target-defined. Core never reads this; the target that authored the source reads it back. */
@@ -146,14 +146,17 @@ export function paramSource<P, T = unknown>(
   options?: ParamSourceOptions,
 ): ParamSource<P> & Value<T> {
   const label = sourceLabel('paramSource', options?.label, 'a param source');
-  const poolKey = options?.poolKey;
-  if (poolKey !== undefined && (typeof poolKey !== 'string' || poolKey.length === 0)) {
-    throw new Error('paramSource() poolKey must be a non-empty string.');
+  const configurationKey = options?.configurationKey;
+  if (
+    configurationKey !== undefined &&
+    (typeof configurationKey !== 'string' || configurationKey.length === 0)
+  ) {
+    throw new Error('paramSource() configurationKey must be a non-empty string.');
   }
   const redacted = options?.redacted === true;
-  if (poolKey !== undefined && redacted) {
+  if (configurationKey !== undefined && redacted) {
     throw new Error(
-      'paramSource() takes poolKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.',
+      'paramSource() takes configurationKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.',
     );
   }
   return blindCast<
@@ -163,8 +166,8 @@ export function paramSource<P, T = unknown>(
     buildSource(
       PARAM_SOURCE,
       payload,
-      { kind: 'source', label, poolKey },
-      poolKey !== undefined ? undefined : redacted ? 'secret' : 'plain',
+      { kind: 'source', label, configurationKey },
+      configurationKey !== undefined ? undefined : redacted ? 'secret' : 'plain',
     ),
   );
 }
@@ -216,7 +219,7 @@ const sourceMisuses = new WeakSet<LoadError>();
 function sourceMisuse(origin: Omit<SourceOrigin, 'source'>, what: string): LoadError {
   const { label } = origin;
   const error = new LoadError(
-    origin.poolKey === undefined
+    origin.configurationKey === undefined
       ? `${label} is known only at boot: the deploy holds a pointer to it, never its value, and ${what}. ` +
           'A module body can only pass it on, into a provision() binding; to compute with the value, do it in the service that reads it.'
       : `${label} is a value, not its real value, and ${what}. ` +
@@ -453,7 +456,7 @@ export interface ModuleContext<
 > {
   /** The module's declared dependencies as wiring values — pass them into provision(). */
   readonly deps: { [K in keyof D]: InputRef<D[K]> };
-  /** The module's input: a dictionary with one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. It is not itself a value: pass its fields on by name, into a provision() binding or, for a plain field, as a resolve() dependency. A root's input is the config pool, validated by its schema. */
+  /** The module's input: a dictionary with one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. It is not itself a value: pass its fields on by name, into a provision() binding or, for a plain field, as a resolve() dependency. A root's input is the app configuration, validated by its schema. */
   readonly input: I extends StandardSchemaV1 ? ModuleInput<I> : undefined;
   /** The deploy-time facts of the environment, each a value (ADR-0062). List `environment.name` as a `resolve()` dependency. Never environment variables: user code never reads those. */
   readonly environment: EnvironmentFacts;
