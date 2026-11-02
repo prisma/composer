@@ -105,7 +105,8 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
       address: 'gateway',
       node: gateway,
       server: server(['bun', 'server.js']),
-      pools: { config: {}, secrets },
+      configuration: {},
+      secrets,
     })) ?? { restarted: undefined };
 
     expect(restarted).toBe(true);
@@ -133,7 +134,8 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
         address: 'gateway',
         node: gateway,
         server: server(['bun', 'server.js']),
-        pools: { config: {}, secrets },
+        configuration: {},
+        secrets,
       });
 
     await serve();
@@ -157,7 +159,8 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
       address: 'gateway',
       node: gateway,
       server: server(['bun', 'server.js']),
-      pools: { config: {}, secrets },
+      configuration: {},
+      secrets,
     });
 
     const env = await (await fetch(`http://127.0.0.1:${String(instance.port)}`)).json();
@@ -170,19 +173,22 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
       address: 'gateway',
       node: gateway,
       server: server(['bun', 'server.js']),
-      pools: { config: {}, secrets },
+      configuration: {},
+      secrets,
     });
     const same = await attachment.serve?.({
       address: 'gateway',
       node: gateway,
       server: server(['bun', 'server.js']),
-      pools: { config: {}, secrets },
+      configuration: {},
+      secrets,
     });
     const changed = await attachment.serve?.({
       address: 'gateway',
       node: gateway,
       server: server(['bun', '--smol', 'server.js']),
-      pools: { config: {}, secrets },
+      configuration: {},
+      secrets,
     });
 
     expect([first?.restarted, same?.restarted, changed?.restarted]).toEqual([true, false, true]);
@@ -194,7 +200,8 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
       address: 'gateway',
       node: gateway,
       server: server(['bun', 'server.js']),
-      pools: { config: {}, secrets },
+      configuration: {},
+      secrets,
     });
     const controller = new AbortController();
 
@@ -218,7 +225,8 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
         address: 'gateway',
         node: gateway,
         server: server(['no-such-dev-binary']),
-        pools: { config: {}, secrets },
+        configuration: {},
+        secrets,
       })
       .catch((e: unknown) => e);
 

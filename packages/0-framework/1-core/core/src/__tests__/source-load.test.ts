@@ -75,7 +75,7 @@ const bindingOf = (graph: Graph, index = 0): Record<string, unknown> =>
 
 const pointer = (name: string) => secretSource({ name }, { label: `envSecret('${name}')` });
 const variable = (name: string) =>
-  paramSource({ name }, { label: `envParam('${name}')`, poolKey: name });
+  paramSource({ name }, { label: `envParam('${name}')`, configurationKey: name });
 
 const origin = () => paramSource({}, { label: "serviceOrigin('shop.web')" });
 
@@ -92,7 +92,7 @@ describe('sources a service takes stay in place', () => {
     expect(bindingOf(graph)['greeting']).toBe(greeting);
   });
 
-  test("a source in a service's params reaches the graph as the same object, with no config pool", () => {
+  test("a source in a service's params reaches the graph as the same object, with no app configuration", () => {
     const label = variable('G');
     const root = module('shop', ({ provision }) => {
       provision(echoService(), { input: {}, params: { label } });
@@ -105,11 +105,11 @@ describe('sources a service takes stay in place', () => {
 });
 
 describe('real values', () => {
-  test("envParam() in a module's input is its config pool value", () => {
+  test("envParam() in a module's input is its app configuration value", () => {
     const graph = Load(
       shopWith(forwarding(type({ greeting: 'string' }), ['greeting']), { greeting: variable('G') }),
       {
-        configPool: { G: 'hi' },
+        configuration: { G: 'hi' },
       },
     );
 
@@ -117,26 +117,26 @@ describe('real values', () => {
   });
 
   test("an unset or empty variable in a module's input leaves the key out", () => {
-    for (const configPool of [{}, { G: '' }]) {
+    for (const configuration of [{}, { G: '' }]) {
       const graph = Load(
         shopWith(forwarding(type({ 'greeting?': 'string' }), ['greeting']), {
           greeting: variable('G'),
         }),
-        { configPool },
+        { configuration },
       );
 
       expect('greeting' in bindingOf(graph)).toBe(false);
     }
   });
 
-  test("a variable in a module's input fails when Load has no config pool", () => {
+  test("a variable in a module's input fails when Load has no app configuration", () => {
     const root = shopWith(forwarding(type({ greeting: 'string' }), ['greeting']), {
       greeting: variable('G'),
     });
 
     expect(loadError(() => Load(root)).message).toBe(
       `input key "greeting" of module "shop.email" depends on envParam('G'), but Load was given ` +
-        'no values from the `config` adapters to read "G" from. Pass { configPool } to Load; ' +
+        'no app configuration to read "G" from. Pass { configuration } to Load; ' +
         'the deploy and dev ' +
         'commands pass the values the `config` adapters return.',
     );
@@ -145,7 +145,7 @@ describe('real values', () => {
   test('resolve() over envParam() receives the string', () => {
     const greeting = resolve([variable('G')], ([g]) => (g as string).toUpperCase());
 
-    const graph = Load(echoWith({ greeting }), { configPool: { G: 'hi' } });
+    const graph = Load(echoWith({ greeting }), { configuration: { G: 'hi' } });
 
     expect(bindingOf(graph)['greeting']).toBe('HI');
   });
@@ -153,7 +153,7 @@ describe('real values', () => {
   test('resolve() over an unset variable fails naming it', () => {
     const greeting = resolve([variable('G')], ([g]) => (g as string).toUpperCase());
 
-    expect(loadError(() => Load(echoWith({ greeting }), { configPool: {} })).message).toBe(
+    expect(loadError(() => Load(echoWith({ greeting }), { configuration: {} })).message).toBe(
       'The resolve() function for input key "greeting" of service "shop.echo" lists ' +
         `envParam('G'), but "G" is unset or empty, so it has no real value. Set "G", or bind ` +
         `envParam('G') directly into an input binding, where an absent value leaves the key out ` +
@@ -248,8 +248,10 @@ describe('props', () => {
       );
     });
 
-  test("envParam() in a resource's props is its config pool value", () => {
-    const graph = Load(site({ url: variable('U') }), { configPool: { U: 'https://shop.example' } });
+  test("envParam() in a resource's props is its app configuration value", () => {
+    const graph = Load(site({ url: variable('U') }), {
+      configuration: { U: 'https://shop.example' },
+    });
 
     const node = graph.nodes.find((entry) => entry.id === 'shop.site')?.node;
     expect(node?.kind === 'resource' ? node.props['url'] : undefined).toBe('https://shop.example');

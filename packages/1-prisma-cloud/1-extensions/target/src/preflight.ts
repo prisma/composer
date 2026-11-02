@@ -4,7 +4,7 @@
  * app's manifests (each a platform env-var NAME) exists on Prisma Cloud for
  * the target environment. A literal-bound param never touches the platform — only
  * `envParam(...)` sources are checked here.
- * A name absent on the platform but present in its pool (the secrets pool for a secret, the config pool for an env-sourced param) is provisioned
+ * A name absent on the platform but present in what the command read (the app secrets for a secret, the app configuration for an env-sourced param) is provisioned
  * via a direct Management API POST — NEVER an Alchemy resource, so the value
  * never lands in hosted deploy state. A name absent from both fails the deploy,
  * listing exactly what is missing and where to set it.
@@ -33,11 +33,11 @@ import {
 } from '@internal/lowering';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
+import { configurationText } from './configuration-text.ts';
 import { prismaCloudContainerOf } from './container.ts';
 import { type EnvKeyClash, findEnvKeyClashes } from './env-key-clash.ts';
 import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
-import { poolText } from './pool-text.ts';
 import { collectPreflightNames, envParamNotTextError } from './preflight-names.ts';
 import { checkPublicUrls } from './public-url.ts';
 
@@ -360,9 +360,9 @@ async function managementClient(): Promise<ManagementApiClient> {
  * name with the first entry winning the reported address, plus
  * `paramManifest` filtered to env-sourced reserved params. It checks each
  * platform name against the platform, fills from the
- * pools where possible, and fails loudly on anything absent from both.
+ * app configuration and the app secrets where possible, and fails loudly on anything absent from both.
  * `envParam` leaves of an input binding are NOT checked here — they resolve
- * from the config pool at serialize, and an unset one is an omitted key the
+ * from the app configuration at serialize, and an unset one is an omitted key the
  * schema arbitrates. Uses the caller's client (`input.credentials`), then an
  * injected one for tests, then a client built from env.
  */
@@ -381,17 +381,17 @@ export async function runPreflight(
   // secrets first.
   const collected = collectPreflightNames(input.graph);
   const names = new Map<string, MissingBinding>();
-  const poolValue = new Map<string, () => string | undefined>();
+  const valueFor = new Map<string, () => string | undefined>();
   for (const meta of collected.secrets) {
     if (names.has(meta.name)) continue;
     names.set(meta.name, meta);
-    poolValue.set(meta.name, () => input.pools.secrets[meta.name]);
+    valueFor.set(meta.name, () => input.secrets[meta.name]);
   }
   for (const meta of collected.envParams) {
     if (names.has(meta.name)) continue;
     names.set(meta.name, meta);
-    poolValue.set(meta.name, () =>
-      poolText(input.pools.config, meta.name, (kind) =>
+    valueFor.set(meta.name, () =>
+      configurationText(input.configuration, meta.name, (kind) =>
         envParamNotTextError(meta.name, meta.address, kind),
       ),
     );
@@ -414,7 +414,7 @@ export async function runPreflight(
       if (platform.updatedAt !== undefined) updatedAt.set(meta.name, platform.updatedAt);
       continue;
     }
-    const value = poolValue.get(meta.name)?.();
+    const value = valueFor.get(meta.name)?.();
     if (value !== undefined && value.length > 0) {
       const filledAt = await fillMissing(client, projectId, branchId, meta.name, value);
       if (filledAt !== undefined) {

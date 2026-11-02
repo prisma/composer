@@ -34,12 +34,12 @@ const greeter = module('greeter', { input: greetingInput }, ({ input, provision 
   provision(echo, { input: { greeting: input.greeting } });
 });
 
-export default module('pipeline-config-pool-fixture', ({ provision }) => {
+export default module('pipeline-app-configuration-fixture', ({ provision }) => {
   provision(greeter, {
     input: {
       greeting: paramSource<{ name: string }, string>(
         { name: 'CONFIG_POOL_PROBE' },
-        { poolKey: 'CONFIG_POOL_PROBE' },
+        { configurationKey: 'CONFIG_POOL_PROBE' },
       ),
     },
   });

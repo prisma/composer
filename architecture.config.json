@@ -205,7 +205,7 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/pool-text.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/configuration-text.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "shared"

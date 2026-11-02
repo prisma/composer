@@ -843,7 +843,7 @@ describe('deploy()', () => {
     expect(fs.existsSync(failureFile ?? '')).toBe(false);
   });
 
-  test('an engine failure cause never carries a value the pools read from a dotenv file', async () => {
+  test('an engine failure cause never carries a secret value read from a dotenv file', async () => {
     const app = makeAppDir();
     const onlyInDotenvFile = 'dotenv-only-SENTINEL-4f1c';
     const inBothPools = 'shared-name-SENTINEL-77ab';
@@ -3536,7 +3536,7 @@ const throwingAdapter = (message: string) => () => {
   throw new Error(message);
 };
 
-describe('the operations read the pools from the config adapters', () => {
+describe('the operations read the app configuration and the app secrets from the adapters', () => {
   test("deploy fills the root's input from the config adapters", async () => {
     const app = makeInputAppDir();
     const bindings: unknown[] = [];
@@ -3573,7 +3573,7 @@ describe('the operations read the pools from the config adapters', () => {
     expect(bindings).toEqual([{ greeting: 'from-adapter' }]);
   });
 
-  test("deploy hands every extension's preflight both pools", async () => {
+  test("deploy hands every extension's preflight the app configuration and the app secrets", async () => {
     const app = makeAppDir();
     const seen: unknown[] = [];
 
@@ -3583,7 +3583,7 @@ describe('the operations read the pools from the config adapters', () => {
           config: composerConfig({
             ...fakeConfig({
               preflight: async (input) => {
-                seen.push(input.pools);
+                seen.push({ configuration: input.configuration, secrets: input.secrets });
                 return undefined;
               },
             }),
@@ -3599,7 +3599,7 @@ describe('the operations read the pools from the config adapters', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(seen).toEqual([{ config: { A: 'a', B: 'later' }, secrets: { S: 's' } }]);
+    expect(seen).toEqual([{ configuration: { A: 'a', B: 'later' }, secrets: { S: 's' } }]);
   });
 
   test('destroy reads no secrets', async () => {
@@ -3633,7 +3633,7 @@ describe('the operations read the pools from the config adapters', () => {
     expect(alchemyRan).toBe(true);
   });
 
-  test('a secrets pool value appears in no event, result or report', async () => {
+  test('an app secrets value appears in no event, result or report', async () => {
     const app = makeAppDir();
     const sentinel = 'never-printed-7f3a';
     const events: DeployEvent[] = [];
@@ -3646,7 +3646,7 @@ describe('the operations read the pools from the config adapters', () => {
           config: composerConfig({
             ...fakeConfig({
               preflight: async (input) => {
-                const value = input.pools.secrets['S4_SENTINEL'];
+                const value = input.secrets['S4_SENTINEL'];
                 if (value !== undefined) received.push(value);
                 input.report?.({ checked: 1, filled: 1, missing: 0 });
                 return undefined;
@@ -3763,13 +3763,13 @@ describe.skipIf(process.platform === 'win32')(
       logs: async function* () {},
     };
 
-    test('dev hands both pools to preflight and to a dev server', async () => {
+    test('dev hands the app configuration and the app secrets to preflight and to a dev server', async () => {
       const app = makeAppDir('hello-dev');
       const seen: { preflight?: unknown; serve?: unknown } = {};
       const serving: LocalTargetAttachment = {
         ...runningAttachment,
-        serve: async ({ pools }) => {
-          seen.serve = pools;
+        serve: async ({ configuration, secrets }) => {
+          seen.serve = { configuration, secrets };
           return { restarted: false };
         },
       };
@@ -3789,7 +3789,7 @@ describe.skipIf(process.platform === 'win32')(
             localTarget: async () => ({
               ...(await localTarget()),
               preflight: async (input) => {
-                seen.preflight = input.pools;
+                seen.preflight = { configuration: input.configuration, secrets: input.secrets };
                 return undefined;
               },
             }),
@@ -3806,8 +3806,8 @@ describe.skipIf(process.platform === 'win32')(
       );
 
       expect(result.ok).toBe(true);
-      const pools = { config: { A: 'a' }, secrets: { S: 's' } };
-      expect(seen).toEqual({ preflight: pools, serve: pools });
+      const expected = { configuration: { A: 'a' }, secrets: { S: 's' } };
+      expect(seen).toEqual({ preflight: expected, serve: expected });
     }, 15_000);
 
     test('a value an adapter returns differently at a rebuild is reported, and rebuilds stop until dev restarts', async () => {

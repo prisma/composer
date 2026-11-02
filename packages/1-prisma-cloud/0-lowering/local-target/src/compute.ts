@@ -11,7 +11,11 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { ConfigPools, LocalTargetProvidersInput } from '@internal/core/config';
+import type {
+  AppConfiguration,
+  AppSecrets,
+  LocalTargetProvidersInput,
+} from '@internal/core/config';
 import { computeClient } from '@internal/dev-emulators';
 import { App, Deployment, EnvironmentVariable, Project } from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
@@ -217,7 +221,8 @@ export async function materializeEnv(
   devDir: string,
   address: string,
   port: number,
-  pools: ConfigPools,
+  configuration: AppConfiguration,
+  secrets: AppSecrets,
 ): Promise<Record<string, string>> {
   const rows = await envStore(devDir).read();
   const env: Record<string, string> = scopedEnvRows(rows, address);
@@ -226,9 +231,9 @@ export async function materializeEnv(
   const setIfText = (name: string, value: unknown): void => {
     if (typeof value === 'string' && value.length > 0) env[name] = value;
   };
-  for (const name of pointed.secrets) setIfText(name, pools.secrets[name]);
+  for (const name of pointed.secrets) setIfText(name, secrets[name]);
   for (const name of pointed.params) {
-    if (!pointed.secrets.has(name)) setIfText(name, pools.config[name]);
+    if (!pointed.secrets.has(name)) setIfText(name, configuration[name]);
   }
   if (process.env['PATH'] !== undefined) env['PATH'] = process.env['PATH'];
   if (process.env['HOME'] !== undefined) env['HOME'] = process.env['HOME'];
@@ -370,7 +375,13 @@ export function LocalDeploymentProvider(
           const { address, listens } = readComputeManifest(artifactDir);
 
           const { instance } = await ensureServiceInstance(appScopeOf(input), appId);
-          const env = await materializeEnv(input.devDir, address, instance.port, input.pools);
+          const env = await materializeEnv(
+            input.devDir,
+            address,
+            instance.port,
+            input.configuration,
+            input.secrets,
+          );
           try {
             await computeClient().putDeployment(instance.id, {
               artifactDir,

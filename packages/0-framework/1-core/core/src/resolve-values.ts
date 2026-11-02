@@ -38,8 +38,8 @@ export interface ProvisionedModuleInput {
   readonly schema: StandardSchemaV1;
   /** The binding the provision() call supplied, values in place. */
   readonly binding: unknown;
-  /** True for the root, whose binding is the config pool. */
-  readonly fromConfigPool: boolean;
+  /** True for the root, whose binding is the app configuration. */
+  readonly isRoot: boolean;
 }
 
 export interface ValueBindingSite {
@@ -374,7 +374,7 @@ function validateModuleInput(
   }
   if (result.issues !== undefined) {
     const messages = result.issues.map((issue) => issue.message).join('; ');
-    if (entry.fromConfigPool) {
+    if (entry.isRoot) {
       const forEnvironment =
         environment === undefined ? '' : ` for the environment "${environment.name}"`;
       throw new LoadError(
@@ -451,7 +451,7 @@ function refusePointersInProps(address: NodeId, props: unknown): void {
  */
 export function resolveValues(input: {
   readonly environment: EnvironmentRealValues | undefined;
-  readonly configPool: Readonly<Record<string, unknown>> | undefined;
+  readonly configuration: Readonly<Record<string, unknown>> | undefined;
   readonly inputBindings: readonly InputBindingUse[];
   readonly params: readonly ParamBinding[];
   readonly moduleInputs: readonly ProvisionedModuleInput[];
@@ -462,7 +462,7 @@ export function resolveValues(input: {
   readonly resourceProps: ReadonlyMap<NodeId, ResourceProps>;
   readonly secretSources: readonly SecretSourceUse[];
 } {
-  const { environment, configPool } = input;
+  const { environment, configuration } = input;
   const secretUses = new Map<SecretSource, SecretSourceUse>();
   const recordSecret = (source: SecretSource, site: ValueBindingSite): void => {
     const canonical = canonicalSecret(source);
@@ -541,21 +541,21 @@ export function resolveValues(input: {
         break;
       case 'source': {
         if (isSecretSource(origin.source)) recordSecret(origin.source, site);
-        if (origin.poolKey === undefined) {
+        if (origin.configurationKey === undefined) {
           result = origin.source;
-        } else if (configPool === undefined) {
+        } else if (configuration === undefined) {
           throw new LoadError(
-            `${describeSite(site)} depends on ${origin.label}, but Load was given no values from the \`config\` adapters to read "${origin.poolKey}" from. Pass { configPool } to Load; the deploy and dev commands pass the values the \`config\` adapters return.`,
+            `${describeSite(site)} depends on ${origin.label}, but Load was given no app configuration to read "${origin.configurationKey}" from. Pass { configuration } to Load; the deploy and dev commands pass the values the \`config\` adapters return.`,
           );
         } else {
-          const raw = configPool[origin.poolKey];
+          const raw = configuration[origin.configurationKey];
           if (raw === undefined || raw === '') {
             result = undefined;
           } else if (typeof raw === 'string') {
             result = raw;
           } else {
             throw new LoadError(
-              `${describeSite(site)} depends on ${origin.label}, which reads "${origin.poolKey}" from the values the \`config\` adapters return, but they return ${describeKind(raw)} for it, not text. ${origin.label} reads text; to pass other data, declare it in the root module's input.`,
+              `${describeSite(site)} depends on ${origin.label}, which reads "${origin.configurationKey}" from the values the \`config\` adapters return, but they return ${describeKind(raw)} for it, not text. ${origin.label} reads text; to pass other data, declare it in the root module's input.`,
             );
           }
         }
@@ -567,7 +567,7 @@ export function resolveValues(input: {
           const source = originOf(dependency);
           if (real === undefined && source.kind === 'source') {
             throw new LoadError(
-              `${fnLabelFor(site)} lists ${source.label}, but "${source.poolKey}" is unset or empty, so it has no real value. Set "${source.poolKey}", or bind ${source.label} directly into an input binding, where an absent value leaves the key out and the schema decides.`,
+              `${fnLabelFor(site)} lists ${source.label}, but "${source.configurationKey}" is unset or empty, so it has no real value. Set "${source.configurationKey}", or bind ${source.label} directly into an input binding, where an absent value leaves the key out and the schema decides.`,
             );
           }
           refusePointerDependency(fnLabelFor(site), dependency, real);
@@ -591,7 +591,7 @@ export function resolveValues(input: {
           );
         }
         if (origin.path.length === 0) {
-          const everyVariable = entry.fromConfigPool
+          const everyVariable = entry.isRoot
             ? " The root's input is every value the `config` adapters return, which by default is every variable of the process environment, secrets included."
             : '';
           throw new LoadError(

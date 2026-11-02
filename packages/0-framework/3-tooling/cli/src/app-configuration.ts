@@ -1,27 +1,27 @@
 import * as path from 'node:path';
 import type {
+  AppConfiguration,
+  AppSecrets,
   ConfigAdapter,
-  ConfigPool,
   PrismaAppConfig,
-  SecretsPool,
 } from '@internal/core/config';
 import { CliStructuredError, describeKind, InternalError } from '@internal/foundation/errors';
 import { environmentVariables } from './config-adapters.ts';
 
-/** Where a pool is read for. */
-export interface PoolReadInput {
+/** What the adapters are read for. */
+export interface AdapterReadInput {
   /** The environment's name. */
   readonly environment: string;
   /** The absolute path of the prisma.config.ts that declares the section. */
   readonly configFile: string;
 }
 
-type PoolList = 'config' | 'secrets';
+type AdapterList = 'config' | 'secrets';
 
 function adapterInvalid(
-  list: PoolList,
+  list: AdapterList,
   index: number,
-  input: PoolReadInput,
+  input: AdapterReadInput,
   summary: string,
   fix: string,
 ): CliStructuredError {
@@ -36,21 +36,21 @@ function isValues(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isText(pool: Readonly<Record<string, unknown>>): pool is SecretsPool {
-  return Object.values(pool).every((value) => typeof value === 'string');
+function isText(values: Readonly<Record<string, unknown>>): values is AppSecrets {
+  return Object.values(values).every((value) => typeof value === 'string');
 }
 
-async function readPool(
-  list: PoolList,
+async function readAdapters(
+  list: AdapterList,
   adapters: readonly ConfigAdapter[],
-  input: PoolReadInput,
+  input: AdapterReadInput,
 ): Promise<Readonly<Record<string, unknown>>> {
   const adapterInput = Object.freeze({
     environment: input.environment,
     configDirectory: path.dirname(input.configFile),
   });
   // A key such as __proto__ or toString from an adapter is a value like any other, never an inherited property.
-  const pool: Record<string, unknown> = Object.create(null);
+  const merged: Record<string, unknown> = Object.create(null);
   for (const [index, adapter] of adapters.entries()) {
     const field = `composer.${list}[${index}]`;
     let values: unknown;
@@ -98,26 +98,26 @@ async function readPool(
           'Return the secret as a string. A platform variable holds text.',
         );
       }
-      pool[key] = value;
+      merged[key] = value;
     }
   }
-  return Object.freeze(pool);
+  return Object.freeze(merged);
 }
 
-/** Calls the section's `config` adapters (default `[environmentVariables()]`) and merges what they return: the config pool. */
-export function readConfigPool(
+/** Calls the section's `config` adapters (default `[environmentVariables()]`) and merges what they return: the app configuration. */
+export function readAppConfiguration(
   section: PrismaAppConfig,
-  input: PoolReadInput,
-): Promise<ConfigPool> {
-  return readPool('config', section.config ?? [environmentVariables()], input);
+  input: AdapterReadInput,
+): Promise<AppConfiguration> {
+  return readAdapters('config', section.config ?? [environmentVariables()], input);
 }
 
-/** Calls the section's `secrets` adapters (default `[environmentVariables()]`) and merges what they return: the secrets pool. Every value must be text. */
-export async function readSecretsPool(
+/** Calls the section's `secrets` adapters (default `[environmentVariables()]`) and merges what they return: the app secrets. Every value must be text. */
+export async function readAppSecrets(
   section: PrismaAppConfig,
-  input: PoolReadInput,
-): Promise<SecretsPool> {
-  const pool = await readPool('secrets', section.secrets ?? [environmentVariables()], input);
-  if (!isText(pool)) throw new InternalError('readPool admitted a secret that is not text');
-  return pool;
+  input: AdapterReadInput,
+): Promise<AppSecrets> {
+  const merged = await readAdapters('secrets', section.secrets ?? [environmentVariables()], input);
+  if (!isText(merged)) throw new InternalError('readAdapters admitted a secret that is not text');
+  return merged;
 }

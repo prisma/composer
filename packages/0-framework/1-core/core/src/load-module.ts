@@ -551,7 +551,7 @@ function flatten(
         moduleAddress: fullAddress,
         schema: childInputSchema,
         binding: provisionInput,
-        fromConfigPool: false,
+        isRoot: false,
       });
     }
     edges.push(...wiringEdges(localWiring, fullAddress));
@@ -672,18 +672,18 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   }
   const moduleInputs: ProvisionedModuleInput[] = [];
   if (root.inputSchema !== undefined) {
-    if (opts?.configPool === undefined) {
+    if (opts?.configuration === undefined) {
       throw new LoadError(
         `Module "${root.name}" declares input and is being deployed as the root, but Load was given ` +
-          'no values from the `config` adapters to fill it from. Pass { configPool } to Load; prisma deploy and prisma dev ' +
+          'no app configuration to fill it from. Pass { configuration } to Load; prisma deploy and prisma dev ' +
           'pass the values the `config` adapters return.',
       );
     }
     moduleInputs.push({
       moduleAddress: rootId,
       schema: root.inputSchema,
-      binding: opts.configPool,
-      fromConfigPool: true,
+      binding: opts.configuration,
+      isRoot: true,
     });
   }
 
@@ -724,7 +724,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   }
   const resolved = resolveValues({
     environment: opts?.environment,
-    configPool: opts?.configPool,
+    configuration: opts?.configuration,
     inputBindings,
     params: paramBindings,
     moduleInputs,

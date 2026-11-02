@@ -18,8 +18,9 @@ import {
 } from '@internal/assemble';
 import type { Graph } from '@internal/core';
 import { assertAppName, Load } from '@internal/core';
-import type { ConfigPools, PrismaAppConfig } from '@internal/core/config';
+import type { AppConfiguration, AppSecrets, PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
+import { readAppConfiguration, readAppSecrets } from './app-configuration.ts';
 import {
   type ComposerConfigSource,
   type ConfigFinding,
@@ -27,7 +28,6 @@ import {
   configFileMissing,
   entryMissing,
 } from './composer-config.ts';
-import { readConfigPool, readSecretsPool } from './config-pools.ts';
 import { type LoadedEntry, loadEntry } from './load-entry.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
 
@@ -41,7 +41,7 @@ export interface PipelineDeps {
   readonly onEvent?: ((event: PipelineEvent) => void) | undefined;
   /** `prisma dev`: a service whose build adapter declares a dev server is recorded instead of assembled (ADR-0056). */
   readonly devServers?: boolean | undefined;
-  /** Read the secrets pool too: `deploy` and `dev` do; `destroy` does not, and its `pools.secrets` is empty. */
+  /** Read the app secrets too: `deploy` and `dev` do; `destroy` does not, and its `secrets` is empty. */
   readonly readSecrets?: boolean | undefined;
 }
 
@@ -52,8 +52,10 @@ export interface PipelineResult {
   readonly graph: Graph;
   readonly name: string;
   readonly assembled: AssembledServices;
-  /** The pools read for this run. In memory only: never written to a file, an event, a result or a report. */
-  readonly pools: ConfigPools;
+  /** The app configuration read for this run. In memory only; the configuration file holds only what Load read from it. */
+  readonly configuration: AppConfiguration;
+  /** The app secrets read for this run. In memory only: never written to a file, an event, a result or a report. */
+  readonly secrets: AppSecrets;
 }
 
 const NO_SECRETS = Object.freeze({});
@@ -180,18 +182,17 @@ export async function runPipeline(
     });
   }
 
-  // 3. Read the pools. The config pool is Load's input; the secrets pool is preflight's.
-  const poolInput = { environment, configFile: configSource.file };
-  const pools: ConfigPools = {
-    config: await readConfigPool(config, poolInput),
-    secrets: deps.readSecrets === true ? await readSecretsPool(config, poolInput) : NO_SECRETS,
-  };
+  // 3. Read the app configuration, Load's input, and the app secrets, preflight's.
+  const adapterInput = { environment, configFile: configSource.file };
+  const configuration = await readAppConfiguration(config, adapterInput);
+  const secrets: AppSecrets =
+    deps.readSecrets === true ? await readAppSecrets(config, adapterInput) : NO_SECRETS;
 
   // 4. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
   const graph = Load(entryModule.root, {
     id: name,
     environment: { name: environment },
-    configPool: pools.config,
+    configuration,
   });
   if (graph.root.node.kind !== 'module') {
     throw new CliStructuredError('COMPOSE.ROOT_NOT_MODULE', 'The deploy root must be a module.', {
@@ -218,5 +219,5 @@ export async function runPipeline(
     throw error;
   }
 
-  return { configSource, entryModule, graph, name, assembled, pools };
+  return { configSource, entryModule, graph, name, assembled, configuration, secrets };
 }

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { Load, module } from '@internal/core';
-import type { ConfigPool, ConfigPools, SecretsPool } from '@internal/core/config';
+import type { AppConfiguration, AppSecrets } from '@internal/core/config';
 import { secretString } from '@internal/foundation/arktype';
 import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
@@ -42,7 +42,7 @@ interface Row {
 /** What a row the test did not date reads as. */
 const DEFAULT_UPDATED_AT = '2026-01-01T00:00:00.000Z';
 
-/** What the fake platform stamps on a row preflight creates from a pool. */
+/** What the fake platform stamps on a row preflight creates from the app configuration or the app secrets. */
 const CREATED_UPDATED_AT = '2026-03-03T00:00:00.000Z';
 
 interface FakeState {
@@ -191,25 +191,30 @@ const literalParamGraph = () =>
     }),
   );
 
-const NO_POOLS: ConfigPools = { config: {}, secrets: {} };
-let pools: ConfigPools = NO_POOLS;
+interface ReadValues {
+  readonly configuration: AppConfiguration;
+  readonly secrets: AppSecrets;
+}
 
-/** Runs preflight with the pools `withPools` set, or empty ones. */
+const NO_VALUES: ReadValues = { configuration: {}, secrets: {} };
+let read: ReadValues = NO_VALUES;
+
+/** Runs preflight with the app configuration and the app secrets `withValues` set, or empty ones. */
 const preflightWith = (
-  input: Omit<PrismaCloudPreflightInput, 'pools'>,
+  input: Omit<PrismaCloudPreflightInput, 'configuration' | 'secrets'>,
   deps?: Parameters<typeof runPreflight>[1],
-) => runPreflight({ ...input, pools }, deps);
+) => runPreflight({ ...input, ...read }, deps);
 
-/** Sets the pools preflight reads for the duration of `fn`. */
-async function withPools<T>(
-  values: { readonly config?: ConfigPool; readonly secrets?: SecretsPool },
+/** Sets the app configuration and the app secrets preflight reads for the duration of `fn`. */
+async function withValues<T>(
+  values: { readonly configuration?: AppConfiguration; readonly secrets?: AppSecrets },
   fn: () => Promise<T> | T,
 ): Promise<T> {
-  pools = { config: values.config ?? {}, secrets: values.secrets ?? {} };
+  read = { configuration: values.configuration ?? {}, secrets: values.secrets ?? {} };
   try {
     return await fn();
   } finally {
-    pools = NO_POOLS;
+    read = NO_VALUES;
   }
 }
 
@@ -282,10 +287,10 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toEqual([]);
   });
 
-  test('fill-missing (named environment): absent-but-in-the-secrets-pool is POSTed as a preview branch override', async () => {
+  test('fill-missing (named environment): absent-but-in-the-app-secrets is POSTed as a preview branch override', async () => {
     state.rows = [];
 
-    await withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
+    await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
       preflightWith(
         { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
         { client: fakeClient(state) },
@@ -306,7 +311,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
   test('fill-missing (production): POSTed as a production template, no branchId', async () => {
     state.rows = [];
 
-    await withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
+    await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
       preflightWith(
         {
           graph: secretGraph(),
@@ -322,12 +327,12 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     ]);
   });
 
-  test('present on the platform is never overwritten, even when also in the secrets pool', async () => {
+  test('present on the platform is never overwritten, even when also in the app secrets', async () => {
     state.rows = [
       { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
 
-    await withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_ignored' } }, () =>
+    await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_ignored' } }, () =>
       preflightWith(
         {
           graph: secretGraph(),
@@ -341,7 +346,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toEqual([]);
   });
 
-  test('absent from both platform and secrets pool fails, naming the missing name, service, and scope', async () => {
+  test('absent from both platform and the app secrets fails, naming the missing name, service, and scope', async () => {
     state.rows = [];
 
     const error: unknown = await preflightWith(
@@ -381,7 +386,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     );
   });
 
-  test('reports how many names it checked, filled from the pools, and found missing', async () => {
+  test('reports how many names it checked, filled from the app configuration and the app secrets, and found missing', async () => {
     const reports: Readonly<Record<string, number>>[] = [];
     const run = () =>
       preflightWith(
@@ -394,7 +399,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
         { client: fakeClient(state) },
       );
 
-    await withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, run);
+    await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, run);
     state.rows = [
       { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
@@ -443,7 +448,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
     const reports: Readonly<Record<string, number>>[] = [];
 
-    await withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_race' } }, () =>
+    await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_race' } }, () =>
       preflightWith(
         {
           graph: secretGraph(),
@@ -463,7 +468,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
   test('a failed fill names the key and its pool, never the value', async () => {
     state.postStatus = 500;
 
-    const run = withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_SENTINEL' } }, () =>
+    const run = withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_SENTINEL' } }, () =>
       preflightWith(
         {
           graph: secretGraph(),
@@ -546,7 +551,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.gets).toHaveLength(1);
   });
 
-  test('env-sourced param: missing on the platform and absent from the config pool fails, naming the platform var', async () => {
+  test('env-sourced param: missing on the platform and absent from the app configuration fails, naming the platform var', async () => {
     state.rows = [];
 
     const error: unknown = await preflightWith(
@@ -565,10 +570,10 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toEqual([]);
   });
 
-  test('env-sourced param: absent on the platform but present in the config pool is filled from it', async () => {
+  test('env-sourced param: absent on the platform but present in the app configuration is filled from it', async () => {
     state.rows = [];
 
-    await withPools({ config: { APP_ORIGIN: 'https://preview.example.com' } }, () =>
+    await withValues({ configuration: { APP_ORIGIN: 'https://preview.example.com' } }, () =>
       preflightWith(
         {
           graph: paramGraph(),
@@ -833,10 +838,10 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       expect(timestamps.get('STRIPE_SECRET_KEY')).toBe('2026-05-05T12:00:00.000Z');
     });
 
-    test('a name preflight fills from the secrets pool reports the created row\u2019s time', async () => {
+    test('a name preflight fills from the app secrets reports the created row\u2019s time', async () => {
       state.rows = [];
 
-      const timestamps = await withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
+      const timestamps = await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
         preflightWith(
           {
             graph: secretGraph(),
@@ -854,7 +859,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       state.rows = [];
       state.postStatus = 409;
 
-      const timestamps = await withPools({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
+      const timestamps = await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
         preflightWith(
           {
             graph: secretGraph(),
@@ -884,7 +889,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     test('no VALUE is ever handed back — the API returns none and preflight asks for none', async () => {
       state.rows = [];
 
-      const timestamps = await withPools(
+      const timestamps = await withValues(
         { secrets: { STRIPE_SECRET_KEY: 'sk_live_sentinel' } },
         () =>
           preflightWith(
@@ -1047,7 +1052,7 @@ describe('runPreflight — a chain of COMPOSER_ keys that change owner', () => {
   });
 });
 
-describe('runPreflight — values come from the pools, never the shell', () => {
+describe('runPreflight — values come from the app configuration and the app secrets, never the shell', () => {
   let state: FakeState;
 
   beforeEach(() => {
@@ -1077,9 +1082,9 @@ describe('runPreflight — values come from the pools, never the shell', () => {
     }
   }
 
-  test('a missing secret is filled from the secrets pool, not the shell', async () => {
+  test('a missing secret is filled from the app secrets, not the shell', async () => {
     await withShell({ STRIPE_SECRET_KEY: 'shell' }, () =>
-      withPools({ secrets: { STRIPE_SECRET_KEY: 'pool' } }, () =>
+      withValues({ secrets: { STRIPE_SECRET_KEY: 'pool' } }, () =>
         preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) }),
       ),
     );
@@ -1089,7 +1094,7 @@ describe('runPreflight — values come from the pools, never the shell', () => {
     ]);
   });
 
-  test('a missing secret the secrets pool lacks fails, even when the shell has it', async () => {
+  test('a missing secret the app secrets lacks fails, even when the shell has it', async () => {
     const error = await withShell({ STRIPE_SECRET_KEY: 'shell' }, () =>
       preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) }).catch(
         (e: unknown) => e,
@@ -1102,9 +1107,9 @@ describe('runPreflight — values come from the pools, never the shell', () => {
     expect(state.posts).toEqual([]);
   });
 
-  test('a missing env-sourced param is filled from the config pool', async () => {
+  test('a missing env-sourced param is filled from the app configuration', async () => {
     await withShell({ APP_ORIGIN: 'shell' }, () =>
-      withPools({ config: { APP_ORIGIN: 'https://pool.example' } }, () =>
+      withValues({ configuration: { APP_ORIGIN: 'https://pool.example' } }, () =>
         preflightWith({ graph: paramGraph(), ...production }, { client: fakeClient(state) }),
       ),
     );
@@ -1114,9 +1119,9 @@ describe('runPreflight — values come from the pools, never the shell', () => {
     ]);
   });
 
-  test('a name bound as a secret and as an env-sourced param is filled from the secrets pool', async () => {
-    await withPools(
-      { secrets: { SHARED: 'from-secrets' }, config: { SHARED: 'from-config' } },
+  test('a name bound as a secret and as an env-sourced param is filled from the app secrets', async () => {
+    await withValues(
+      { secrets: { SHARED: 'from-secrets' }, configuration: { SHARED: 'from-config' } },
       () =>
         preflightWith({ graph: sharedNameGraph(), ...production }, { client: fakeClient(state) }),
     );
@@ -1126,8 +1131,8 @@ describe('runPreflight — values come from the pools, never the shell', () => {
     ]);
   });
 
-  test('an env-sourced param whose config pool value is not text fails naming its kind', async () => {
-    const error = await withPools({ config: { APP_ORIGIN: 4 } }, () =>
+  test('an env-sourced param whose app configuration value is not text fails naming its kind', async () => {
+    const error = await withValues({ configuration: { APP_ORIGIN: 4 } }, () =>
       preflightWith({ graph: paramGraph(), ...production }, { client: fakeClient(state) }).catch(
         (e: unknown) => e,
       ),

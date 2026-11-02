@@ -11,8 +11,8 @@ export interface LoadOptions {
   readonly id?: NodeId;
   /** The facts of the environment being loaded. `name` is what `--environment` gave. Required by any value over `environment.name`. */
   readonly environment?: EnvironmentRealValues;
-  /** The config pool: the values a source with a pool key, such as `envParam('NAME')`, reads by name at deploy, and the root's input. Required by any such source whose real value Load needs, and by a root that declares input. The deploy and dev commands pass what the `config` adapters return. */
-  readonly configPool?: Readonly<Record<string, unknown>>;
+  /** The app configuration (ADR-0062): what the `config` adapters return. It is the root's input, which the root's schema checks, and what a source with a configuration key, such as `envParam('NAME')`, reads. The deploy's and dev's first process pass it. */
+  readonly configuration?: Readonly<Record<string, unknown>>;
 }
 
 export interface GraphNode {
