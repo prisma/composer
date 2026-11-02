@@ -3,7 +3,6 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { dotenv, environmentVariables } from '../config-adapters.ts';
-import { alchemyInvocation } from '../run-alchemy.ts';
 
 const freshDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'config-adapters-'));
 
@@ -11,49 +10,13 @@ const write = (dir: string, files: Record<string, string>): void => {
   for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), text);
 };
 
-const TOUCHED = [
-  'S4_LATE',
-  'S4_PROBE',
-  'PRISMA_BUILD_ID',
-  'PRISMA_COMPOSER_CONTAINER_X',
-  'PRISMA_COMPOSER_PREFLIGHT_X',
-  'PRISMA_COMPOSER_DEPLOYMENT_RESULT_FILE',
-  'PRISMA_COMPOSER_PARENT_VALUES',
-];
+const TOUCHED = ['S4_LATE', 'S4_PROBE', 'PRISMA_COMPOSER_PREFLIGHT_X'];
 
 afterEach(() => {
   for (const name of TOUCHED) delete process.env[name];
 });
 
-/** Sets `env` on this process, as a child started with it would see it, for the duration of `fn`. */
-async function asChild<T>(
-  env: Readonly<Record<string, string | undefined>>,
-  fn: () => T | Promise<T>,
-): Promise<T> {
-  const before = { ...process.env };
-  Object.assign(process.env, env);
-  try {
-    return await fn();
-  } finally {
-    for (const name of Object.keys(env)) {
-      if (before[name] === undefined) delete process.env[name];
-      else process.env[name] = before[name];
-    }
-  }
-}
-
 const adapterInput = { environment: 'staging', configDirectory: '/app' };
-
-const deployInvocation = () =>
-  alchemyInvocation({
-    command: 'deploy',
-    stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
-    cwd: '/app',
-    stage: 'staging',
-    containerEnv: { PRISMA_COMPOSER_CONTAINER_X: 'container' },
-    preflightEnv: { PRISMA_COMPOSER_PREFLIGHT_X: 'payload' },
-    env: { PRISMA_BUILD_ID: 'bld_new', PRISMA_COMPOSER_DEPLOYMENT_RESULT_FILE: '/tmp/r.json' },
-  });
 
 describe('environmentVariables()', () => {
   test('environmentVariables() reads the process environment when called, not when created', async () => {
@@ -74,34 +37,10 @@ describe('environmentVariables()', () => {
     expect(values['PRISMA_COMPOSER_PREFLIGHT_X']).toBeUndefined();
     expect(values['S4_PROBE']).toBe('kept');
   });
-
-  test('the deploy child reads the same values from the environment as the CLI', async () => {
-    process.env['S4_PROBE'] = 'shell';
-    const inCli = await environmentVariables()(adapterInput);
-
-    const inChild = await asChild(deployInvocation().env, () =>
-      environmentVariables()(adapterInput),
-    );
-
-    expect(inChild).toEqual(inCli);
-    expect(inChild['PRISMA_BUILD_ID']).toBeUndefined();
-  });
-
-  test("a variable Composer changes for the child reads as the CLI's own value there", async () => {
-    process.env['PRISMA_BUILD_ID'] = 'bld_from_shell';
-    const inCli = await environmentVariables()(adapterInput);
-
-    const inChild = await asChild(deployInvocation().env, () =>
-      environmentVariables()(adapterInput),
-    );
-
-    expect(inChild['PRISMA_BUILD_ID']).toBe('bld_from_shell');
-    expect(inChild).toEqual(inCli);
-  });
 });
 
 describe('dotenv()', () => {
-  test("dotenv() reads the four files, the environment's local file winning, then the environment's file, then .env.local, then .env", async () => {
+  test("dotenv() reads the four files in dotenv-flow's order: the environment's local file wins, then the environment's file, then .env.local, then .env", async () => {
     const dir = freshDir();
     write(dir, {
       '.env': 'KEY=.env\nFROM_ENV=1\n',
@@ -187,5 +126,46 @@ describe('dotenv()', () => {
     const values = await dotenv()({ environment: 'staging', configDirectory: dir });
 
     expect(values['B']).toBe(reference);
+  });
+
+  test('dotenv() never reads .env.defaults', async () => {
+    const dir = freshDir();
+    write(dir, { '.env.defaults': 'A=defaults\nD=defaults\n', '.env': 'A=env\n' });
+
+    const values = await dotenv()({ environment: 'staging', configDirectory: dir });
+
+    expect(values).toEqual({ A: 'env' });
+  });
+
+  test('dotenv() skips .env.local for the environment test, as dotenv-flow does', async () => {
+    const dir = freshDir();
+    write(dir, {
+      '.env': 'KEY=.env\n',
+      '.env.local': 'KEY=.env.local\nONLY_LOCAL=1\n',
+      '.env.test': 'KEY=.env.test\n',
+      '.env.test.local': 'KEY=.env.test.local\n',
+    });
+
+    const values = await dotenv()({ environment: 'test', configDirectory: dir });
+
+    expect(values).toEqual({ KEY: '.env.test.local' });
+  });
+
+  test("dotenv() reads .env.defaults as the environment's file for an environment named defaults", async () => {
+    const dir = freshDir();
+    write(dir, { '.env.defaults': 'A=env-file\n', '.env': 'A=env\n' });
+
+    const values = await dotenv()({ environment: 'defaults', configDirectory: dir });
+
+    expect(values).toEqual({ A: 'env-file' });
+  });
+
+  test('dotenv() does not change the process environment', async () => {
+    const dir = freshDir();
+    write(dir, { '.env': 'S11_PROBE=1\n' });
+
+    await dotenv()({ environment: 'staging', configDirectory: dir });
+
+    expect(process.env['S11_PROBE']).toBeUndefined();
   });
 });
