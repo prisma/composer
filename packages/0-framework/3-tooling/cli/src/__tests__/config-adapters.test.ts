@@ -28,13 +28,13 @@ describe('environmentVariables()', () => {
     expect(values['S4_LATE']).toBe('late');
   });
 
-  test("environmentVariables() leaves out Composer's own PRISMA_COMPOSER_ variables", async () => {
+  test('environmentVariables() returns every variable of the process environment, PRISMA_COMPOSER_ ones too', async () => {
     process.env['PRISMA_COMPOSER_PREFLIGHT_X'] = 'payload';
     process.env['S4_PROBE'] = 'kept';
 
     const values = await environmentVariables()(adapterInput);
 
-    expect(values['PRISMA_COMPOSER_PREFLIGHT_X']).toBeUndefined();
+    expect(values['PRISMA_COMPOSER_PREFLIGHT_X']).toBe('payload');
     expect(values['S4_PROBE']).toBe('kept');
   });
 });

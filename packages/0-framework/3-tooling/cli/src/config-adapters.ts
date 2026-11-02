@@ -2,18 +2,12 @@ import * as path from 'node:path';
 import type { ConfigAdapter, ConfigValues } from '@internal/core/config';
 import { listFiles, parse } from 'dotenv-flow';
 
-/** The prefix of the variables Composer sets for its own second process. */
-const COMPOSER_PREFIX = 'PRISMA_COMPOSER_';
-
-/**
- * Reads the process environment when called: every variable whose value is a string,
- * except Composer's own `PRISMA_COMPOSER_` variables. The default for both `config` and `secrets`.
- */
+/** Reads the process environment when called: every variable whose value is a string. The default for both `config` and `secrets`. */
 export function environmentVariables(): ConfigAdapter {
   return () => {
     const values: Record<string, string> = {};
     for (const [name, value] of Object.entries(process.env)) {
-      if (typeof value === 'string' && !name.startsWith(COMPOSER_PREFIX)) values[name] = value;
+      if (typeof value === 'string') values[name] = value;
     }
     return values;
   };
