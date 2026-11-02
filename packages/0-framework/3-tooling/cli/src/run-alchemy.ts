@@ -7,11 +7,9 @@
  * `node_modules/.bin` link, which pnpm creates only for an app's direct
  * dependencies.
  *
- * This module composes the invocation; it does not decide how the child is
- * started. Under the CLI the engine starts it (`ctx.spawn`), which is what
- * makes Ctrl-C reach the child natively and keeps signal policy in one place.
- * `spawnAlchemy` is the default for programmatic hosts driving
- * `@prisma/composer/control`, which have no engine to borrow.
+ * Only `destroy` still runs Alchemy in a child; `deploy` and `dev` converge
+ * in-process (ADR-0064). This module composes the invocation; `spawnAlchemy`
+ * starts it, and tests substitute their own runner.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -152,8 +150,7 @@ export interface AlchemyOutcome {
   readonly commandLine?: AlchemyCommandLine;
 }
 
-/** Starts the converge and resolves when it ends. The CLI supplies one backed
- *  by `ctx.spawn`; hosts get `spawnAlchemy`. */
+/** Starts the converge and resolves when it ends; `spawnAlchemy` by default. */
 export type RunAlchemy = (invocation: AlchemyInvocation) => Promise<AlchemyOutcome>;
 
 export interface AlchemyInvocationInput {
@@ -162,7 +159,7 @@ export interface AlchemyInvocationInput {
   readonly cwd: string;
   readonly stage: string;
   readonly containerEnv: Readonly<Record<string, string>>;
-  /** What each extension's deploy or dev preflight handed back, serialized — one env var per extension (core's preflight-transport naming). Absent for destroy, which runs no preflight. Content-blind, like `containerEnv`. */
+  /** Each extension's preflight transport variable, one per extension (core's preflight-transport naming). Destroy runs no preflight and blanks every one, so a stale value in the shell cannot pass for a payload. Content-blind, like `containerEnv`. */
   readonly preflightEnv?: Readonly<Record<string, string>>;
   /** Extra additions beyond the containers — the deployment-result pointer. */
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;

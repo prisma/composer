@@ -3,10 +3,11 @@
  * user interrupts it.
  *
  * The watch loop, the emulators and the live attachments stay the operation's
- * state. What the handler owns is the boundary: the converge child goes out
- * through `ctx.spawn`, so the terminal reaches alchemy natively and the engine
- * owns signal policy; the operation's events become engine events; and the
- * session settles on how it actually ended.
+ * state. What the handler owns is the boundary: the operation's events become
+ * engine events, Ctrl-C reaches a running converge through `ctx.signal`, and
+ * the session settles on how it actually ended. Every converge runs in this
+ * process, so `console`'s stdout methods write to stderr for the whole
+ * session, as they do for `deploy`.
  *
  * Windows is refused inside the operation itself (DEV.PLATFORM_UNSUPPORTED),
  * which is why nothing here reads the platform.
@@ -14,15 +15,15 @@
  * `dev` is credential-free: everything it starts runs on this machine.
  */
 import * as path from 'node:path';
-import type { ChildResult, EngineEvent } from '@prisma/cli-engine';
+import type { EngineEvent } from '@prisma/cli-engine';
 import { defineSessionCommand, flag } from '@prisma/cli-engine';
-import { ok } from '@prisma/cli-engine/protocol';
+import { notOk, ok } from '@prisma/cli-engine/protocol';
 import type { DevEvent, DevInput } from '../../operations/dev.ts';
 import { DEV_ENVIRONMENT, type ServiceEndpoint } from '../../operations/shared.ts';
-import type { AlchemyInvocation, AlchemyOutcome, RunAlchemy } from '../../run-alchemy.ts';
-import { convergeSpawn, settleConvergeFailure } from '../dev-converge-child.ts';
+import { withConsoleOnStderr } from '../console-to-stderr.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
+import { toEngineError } from '../translate-error.ts';
 
 const STOP_STEP = "Stopping the app's services — emulators and data stay up";
 
@@ -32,43 +33,6 @@ function stopRequested(signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     signal.addEventListener('abort', () => resolve(), { once: true });
   });
-}
-
-/**
- * One converge at a time. `ctx.spawn` refuses a second live child, and the
- * watch loop can well fire a rebuild while the previous converge is still
- * running — so a request that arrives during a live converge joins the single
- * queued follow-up instead of starting its own. That extends the coalescing
- * the watcher already does across a burst of edits to cover the converge
- * itself, and it is sound because every dev converge is the SAME invocation:
- * one stack file at one fixed path, rewritten in place before each request.
- */
-function coalescedConverge(run: RunAlchemy): RunAlchemy {
-  let live: Promise<void> | undefined;
-  let queued: Promise<AlchemyOutcome> | undefined;
-
-  const start = (invocation: AlchemyInvocation): Promise<AlchemyOutcome> => {
-    const outcome = run(invocation);
-    const settled = outcome.then(
-      () => undefined,
-      () => undefined,
-    );
-    live = settled;
-    void settled.then(() => {
-      if (live === settled) live = undefined;
-    });
-    return outcome;
-  };
-
-  return (invocation) => {
-    const running = live;
-    if (running === undefined) return start(invocation);
-    queued ??= running.then(() => {
-      queued = undefined;
-      return start(invocation);
-    });
-    return queued;
-  };
 }
 
 /** The front door, ordered by address depth (fewest dots first) then lexicographically. */
@@ -86,10 +50,10 @@ function frontDoorOrder(endpoints: readonly ServiceEndpoint[]): readonly Service
  */
 function reportDevEvent(
   report: (event: EngineEvent) => void,
-  lastChild: () => ChildResult | undefined,
   cwd: string,
 ): (event: DevEvent) => void {
   let stopFailed = false;
+  const openResources = new Set<string>();
 
   return (event) => {
     switch (event.kind) {
@@ -165,32 +129,47 @@ function reportDevEvent(
         report({ kind: 'message', severity: 'warn', text: `Watch error: ${event.message}` });
         return;
 
-      case 'converge-failed': {
-        const child = lastChild();
-        // A signal-killed converge is the user shutting the session down, not
-        // a converge that failed — the engine replays that signal into
-        // ctx.signal the moment the child ends, and the teardown below is what
-        // reports it.
-        if (child !== undefined && child.signal !== null) return;
+      case 'definition-changed':
         report({
           kind: 'message',
           severity: 'warn',
-          text:
-            'Converge failed — the running app is untouched; still watching.\n' +
-            `Generated stack file: ${event.stackFilePath}\n` +
-            `Run \`${event.reproduceCommand}\` from ${event.cwd} to reproduce this directly.`,
-        });
-        report({
-          kind: 'remediation',
-          action: {
-            kind: 'run-command',
-            label: `Run the converge directly from ${event.cwd} to reproduce this`,
-            command: event.reproduceCommand,
-            reason: `Generated stack file: ${event.stackFilePath}`,
-          },
+          text: `${event.files.join(', ')} changed. dev loaded the app's definition when it started and cannot load it again; restart dev to apply it. Rebuilds are paused until then.`,
         });
         return;
+
+      case 'converge-resource': {
+        const id = `dev.converge.${event.fqn}`;
+        const step = `${event.status} ${event.fqn}`;
+        if (!openResources.has(id)) {
+          openResources.add(id);
+          report({ kind: 'step-started', step, id, data: { resourceType: event.resourceType } });
+        }
+        if (event.phase === 'running') return;
+        openResources.delete(id);
+        report({
+          kind: 'step-finished',
+          step,
+          id,
+          outcome: event.phase === 'done' ? 'ok' : 'failed',
+        });
+        if (event.message !== undefined) {
+          report({ kind: 'message', severity: 'warn', text: `${event.fqn}: ${event.message}` });
+        }
+        return;
       }
+
+      case 'converge-message':
+        report({ kind: 'message', severity: event.severity, text: event.text });
+        return;
+
+      case 'converge-failed':
+        report({
+          kind: 'message',
+          severity: 'warn',
+          text: `Converge failed; the running app is untouched and dev is still watching.\n${event.message}`,
+          data: { reasons: event.reasons },
+        });
+        return;
 
       case 'stopping':
         report({ kind: 'step-started', step: STOP_STEP, id: 'dev-stop' });
@@ -243,7 +222,9 @@ export const createDevCommand = (operations: ComposerOperations) =>
         "Bring up the application whose root node is the entry module's default export, entirely on " +
         'this machine.',
       description:
-        'Runs credential-free and watches the app for changes, reconverging on every edit. ' +
+        'Runs credential-free and watches the app for changes, reconverging when a ' +
+        "service's build output changes. An edit to the entry module or to a file a service " +
+        'is declared in needs a restart of dev, which says so. ' +
         "A service whose build adapter declares a dev server (Next.js's `next dev`, or the " +
         '`dev` command written on node()) runs that instead of its build, and its output is ' +
         'shown here, prefixed with its address. ' +
@@ -302,49 +283,57 @@ export const createDevCommand = (operations: ComposerOperations) =>
       },
     },
     needs: { config: composerSection },
-    maySpawn: true,
-    handler: async (args, ctx) => {
-      const alchemy = convergeSpawn(ctx);
-      const result = await operations.dev(
-        {
-          entry: args.flags.entry,
-          config: ctx.config,
-          name: args.flags.name,
-          environment: args.flags.environment,
-          fresh: args.flags.fresh,
-          detach: args.flags.detach,
-          cwd: ctx.cwd,
-          onEvent: reportDevEvent(ctx.report, ctx.lastChild, ctx.cwd),
-        },
-        { alchemy: coalescedConverge(alchemy) },
-      );
+    handler: (args, ctx) =>
+      withConsoleOnStderr(async () => {
+        const result = await operations.dev(
+          {
+            entry: args.flags.entry,
+            config: ctx.config,
+            name: args.flags.name,
+            environment: args.flags.environment,
+            fresh: args.flags.fresh,
+            detach: args.flags.detach,
+            cwd: ctx.cwd,
+            onEvent: reportDevEvent(ctx.report, ctx.cwd),
+            signal: ctx.signal,
+          },
+          {},
+        );
 
-      // Nothing is live yet, so the ending is the converge's — settled by the
-      // same decision deploy and destroy settle by, which is what keeps the
-      // three from drifting. A signal-killed converge needs no branch: the
-      // engine settles the run from its own record of the signal.
-      if (!result.ok) return settleConvergeFailure(result.failure, ctx);
-
-      if (args.flags.detach) {
-        if (ctx.signal.aborted) {
-          await stopDetachedApp(
-            operations,
-            {
-              entry: args.flags.entry,
-              name: args.flags.name,
-              environment: args.flags.environment,
-            },
-            ctx,
-          );
+        // Ctrl-C during the first converge: the engine settles 130 from its
+        // own record of the signal, so the interruption is only reported.
+        if (!result.ok) {
+          if (result.failure.code === 'DEV.INTERRUPTED' && ctx.signal.aborted) {
+            ctx.report({
+              kind: 'message',
+              severity: 'warn',
+              text: `${result.failure.message} ${result.failure.fix ?? ''}`.trim(),
+            });
+            return ok(undefined);
+          }
+          return notOk(toEngineError(result.failure));
         }
-        return ok(undefined);
-      }
 
-      await stopRequested(ctx.signal);
-      await result.value.stop();
-      // Ctrl-C settles 130 because the engine records the signal that fired and
-      // settles at 128 + it, including for a handler that cleaned up and
-      // returned. Reporting the termination is not this handler's to do.
-      return ok(undefined);
-    },
+        if (args.flags.detach) {
+          if (ctx.signal.aborted) {
+            await stopDetachedApp(
+              operations,
+              {
+                entry: args.flags.entry,
+                name: args.flags.name,
+                environment: args.flags.environment,
+              },
+              ctx,
+            );
+          }
+          return ok(undefined);
+        }
+
+        await stopRequested(ctx.signal);
+        await result.value.stop();
+        // Ctrl-C settles 130 because the engine records the signal that fired and
+        // settles at 128 + it, including for a handler that cleaned up and
+        // returned. Reporting the termination is not this handler's to do.
+        return ok(undefined);
+      }),
   });

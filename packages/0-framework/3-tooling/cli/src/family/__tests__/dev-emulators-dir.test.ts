@@ -15,6 +15,7 @@ import type { LocalTargetDescriptor } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { createTestCli } from '@prisma/cli-engine/testing';
 import * as Layer from 'effect/Layer';
+import type { AppConverge } from '../../app-converge.ts';
 import { devWithDeps } from '../../operations/dev.ts';
 import { createComposerFamily, realOperations } from '../family.ts';
 import { commandAt } from './command-at.ts';
@@ -110,6 +111,13 @@ function configWhoseEmulatorsThrow(): PrismaAppConfig {
   };
 }
 
+const notReached: AppConverge = {
+  lower: unused,
+  converge: unused,
+  localTargetProviders: unused,
+  devState: unused,
+};
+
 const fakeAssembler = async (node: ServiceNode) => ({
   dir: path.join(path.dirname(fileURLToPath(node.build.module)), 'dist', 'bundle'),
   entry: 'server.js',
@@ -123,7 +131,8 @@ describe.skipIf(process.platform === 'win32')(
       const family = createComposerFamily({
         operations: {
           ...realOperations,
-          dev: (input, deps) => devWithDeps(input, { ...deps, runAssembler: fakeAssembler }),
+          dev: (input, deps) =>
+            devWithDeps(input, { ...deps, runAssembler: fakeAssembler, converge: notReached }),
         },
       });
       const cli = createTestCli({

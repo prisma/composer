@@ -1,5 +1,6 @@
 /** The in-process converge the CLI loads from the app's install. Not public API: published as `@prisma/composer/internal/converge`, it may change in any release. */
 export { lower } from '@internal/core/deploy';
+export { devState, localTargetProviders } from '@internal/core/local-target';
 export type {
   Converge,
   ConvergeEvent,

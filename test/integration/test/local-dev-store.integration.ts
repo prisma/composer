@@ -26,22 +26,17 @@
  *      after a cold start restarted catalog's RPC consumers too, even though
  *      nothing about them had changed.
  *
- *      Attempt 1 drives the CLI's own real chokidar-based watch loop: the
+ *      Both attempts drive the CLI's own real chokidar-based watch loop: the
  *      catalog build adapter declares `Bundle.watch: [runnable.source]` —
  *      the built artifact path itself (build.ts) — so touching
  *      `modules/catalog/dist/server.mjs` is exactly the file session 1's own
  *      running `prisma dev` process is already watching. The script
  *      only touches the file and polls the compute emulator for the new pid
  *      — it never calls assemble or alchemy itself; the running process's
- *      own debounce, re-assemble, and re-converge are what's under test.
- *      Attempt 2 is the direct-converge variant kept as a fallback assertion:
- *      the artifact is touched, the watch loop's own rebuild for that touch
- *      is awaited (the two would otherwise rewrite and read the same
- *      artifact directories at once), then the SAME dev stack file is
- *      re-converged directly with the real `alchemy` binary (matching
- *      local-dev.integration.ts's own pattern) — this re-hashes catalog's now-different bundle bytes and
- *      PUTs a fresh deployment for every service, letting the emulator's own
- *      (untouched) hash/env diffing decide which one(s) actually restart.
+ *      own debounce, re-assemble, and in-process re-converge are what's
+ *      under test. The converge PUTs a fresh deployment for every service,
+ *      letting the emulator's own hash/env diffing decide which one(s)
+ *      actually restart.
  *      Session 1's services are NEVER stopped in between (SIGINT is
  *      app-scoped and unconditionally restarts every service on the next
  *      redeploy — S3's own pinned "a stopped service always starts on
@@ -73,8 +68,6 @@ import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
-import { containerEnv } from '@prisma/composer/config';
-import { nodeBuild } from '@prisma/composer/node/control';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import { emulatorRegistryRoot } from '@prisma/composer-prisma-cloud/local-target';
 import { prismaBinDir } from './spawn-prisma.ts';
@@ -417,35 +410,6 @@ const APP_NAME = 'store';
 const catalogDist = path.join(storeDir, 'modules', 'catalog', 'dist', 'server.mjs');
 const DEV_STACK_FILE = path.join(storeDir, '.prisma-composer', 'dev', 'dev', 'alchemy.run.ts');
 
-/** Walks up from `startDir` looking for `node_modules/.bin/alchemy` — same as local-dev.integration.ts's own helper. */
-function alchemyBin(startDir: string): string {
-  let dir = startDir;
-  for (;;) {
-    const candidate = path.join(dir, 'node_modules', '.bin', 'alchemy');
-    if (fs.existsSync(candidate)) return candidate;
-    const parent = path.dirname(dir);
-    if (parent === dir)
-      throw new Error(`could not find node_modules/.bin/alchemy above ${startDir}`);
-    dir = parent;
-  }
-}
-
-/**
- * Touches ONLY catalog's built artifact (append a harmless comment — its
- * content hash moves, nothing else's does), re-runs the node build
- * adapter's OWN `assemble()` for catalog specifically (it copies the built
- * runnable into `.prisma-composer/artifacts/catalog.service/bundle/` —
- * touching the source alone does not move anything alchemy actually reads;
- * the copy must be refreshed), then re-converges the SAME dev stack file
- * session 1's own `prisma dev` already wrote, directly with the
- * real `alchemy` binary — no CLI re-invocation, no SIGINT, session 1's
- * services stay running throughout. The stack file's `bundles` map needs no
- * edit: `assemble()`'s output directory is a deterministic function of the
- * address, so it already points at the freshly-copied bytes. Re-hashing
- * catalog's now-different bundle and PUTting a fresh deployment for every
- * service lets the emulator's own (untouched) hash/env diffing decide which
- * one(s) restart. Returns every service's pid AFTER the converge.
- */
 const REAL_WATCH_TIMEOUT_MS = 30_000;
 
 /**
@@ -489,62 +453,6 @@ async function touchCatalogAndAwaitRealWatchLoop(
   }, 15_000);
 }
 
-async function rebuildCatalogAndReconverge(
-  session: DevSession,
-): Promise<Record<string, number | undefined>> {
-  // The touch also fires session 1's own watch loop, which re-assembles every
-  // service's artifact directory. Converging directly while it does races
-  // that rewrite (seen as "no main.js/main.mjs found in bundle dir
-  // .../artifacts/storefront", and as an unrelated service restarting), so
-  // the direct converge starts only after the loop's own front-door reprint.
-  const beforeLineCount = readLog(session.logPath).split('\n').length;
-  fs.appendFileSync(catalogDist, `\n// proving-script touch ${Date.now()}\n`);
-  await waitForAsync(async () => {
-    const newLines = readLog(session.logPath).split('\n').slice(beforeLineCount);
-    return parseFrontDoor(newLines.join('\n'));
-  }, REAL_WATCH_TIMEOUT_MS);
-
-  const catalogServiceModule = path.join(storeDir, 'modules', 'catalog', 'src', 'service.ts');
-  const buildDescriptor = nodeBuild().nodes['node'];
-  assert(
-    buildDescriptor !== undefined && buildDescriptor.kind === 'build',
-    'nodeBuild() must declare a "node" build descriptor',
-  );
-  await buildDescriptor.assemble({
-    build: {
-      extension: '@prisma/composer/node',
-      type: 'node',
-      module: `file://${catalogServiceModule}`,
-      entry: '../dist/server.mjs',
-    },
-    address: 'store.catalog.service',
-    cwd: storeDir,
-  });
-
-  const descriptor = prismaCloud();
-  if (descriptor.localTarget === undefined) throw new Error('no localTarget descriptor');
-  const dev = await descriptor.localTarget();
-  const container = await dev.container.ensure({ appName: APP_NAME, environment: 'dev' });
-  const envVars = containerEnv(new Map([[descriptor.id, container]]));
-
-  const result = spawnSync(
-    alchemyBin(storeDir),
-    ['deploy', path.relative(storeDir, DEV_STACK_FILE), '--yes', '--stage', 'dev'],
-    { cwd: storeDir, stdio: 'inherit', env: { ...process.env, ...envVars } },
-  );
-  assert(
-    result.status === 0,
-    `re-converge (alchemy deploy) failed with status ${String(result.status)}`,
-  );
-
-  // The pid the emulator reports settles a moment after the converge
-  // completes (the restarted child still needs to actually start).
-  return waitForAsync(async () => {
-    const pids = await pidsByAddress(APP_NAME);
-    return pids['store.catalog.service'] !== undefined ? pids : undefined;
-  }, 15_000);
-}
-
 async function main(): Promise<void> {
   console.log('local dev (S5 proving): examples/store via the real prisma dev');
 
@@ -567,6 +475,10 @@ async function main(): Promise<void> {
       15_000,
     );
     assertEqual(health.status, 200, 'the storefront HTTP round-trip');
+    assert(
+      !fs.existsSync(DEV_STACK_FILE),
+      'prisma dev converges in process and writes no alchemy.run.ts',
+    );
     console.log('[proving] PASS criterion 1: credential-free bring-up + HTTP round-trip');
 
     const firstPortsByAddress = Object.fromEntries(
@@ -595,23 +507,11 @@ async function main(): Promise<void> {
     assert(activeSession !== undefined, 'session 1 must be running before criterion 2');
 
     let pidsBefore = pidsBaseline;
-    const RECONVERGE_STRATEGIES = [
-      {
-        label: 'real watch loop',
-        run: (before: Record<string, number | undefined>) =>
-          touchCatalogAndAwaitRealWatchLoop(activeSession, before),
-      },
-      {
-        label: 'direct converge (fallback)',
-        run: () => rebuildCatalogAndReconverge(activeSession),
-      },
-    ] as const;
-    for (const [index, strategy] of RECONVERGE_STRATEGIES.entries()) {
-      const attempt = index + 1;
-      const pidsAfter = await strategy.run(pidsBefore);
+    for (const attempt of [1, 2]) {
+      const pidsAfter = await touchCatalogAndAwaitRealWatchLoop(activeSession, pidsBefore);
       assert(
         pidsAfter['store.catalog.service'] !== pidsBefore['store.catalog.service'],
-        `criterion 2 (attempt ${attempt}, ${strategy.label}): catalog.service must restart (new pid)`,
+        `criterion 2 (attempt ${attempt}, real watch loop): catalog.service must restart (new pid)`,
       );
       for (const address of [
         'store.storefront',
@@ -622,11 +522,11 @@ async function main(): Promise<void> {
         assertEqual(
           pidsAfter[address],
           pidsBefore[address],
-          `criterion 2 (attempt ${attempt}, ${strategy.label}): ${address}'s pid must NOT change — only catalog.service was rebuilt`,
+          `criterion 2 (attempt ${attempt}, real watch loop): ${address}'s pid must NOT change — only catalog.service was rebuilt`,
         );
       }
       console.log(
-        `[proving] PASS criterion 2 (attempt ${attempt}, ${strategy.label}): exactly catalog.service restarted, all four others unchanged`,
+        `[proving] PASS criterion 2 (attempt ${attempt}, real watch loop): exactly catalog.service restarted, all four others unchanged`,
       );
       pidsBefore = pidsAfter;
     }

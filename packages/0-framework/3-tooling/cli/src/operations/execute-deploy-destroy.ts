@@ -20,12 +20,7 @@ import { CliStructuredError, InternalError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
 import { type AppConverge, loadAppConverge } from '../app-converge.ts';
 import type { ComposerConfigSource } from '../composer-config.ts';
-import type {
-  ConvergeEvent,
-  ConvergeFailureReason,
-  ConvergeOutcome,
-  LoweredStack,
-} from '../converge-in-process.ts';
+import type { ConvergeEvent, ConvergeOutcome, LoweredStack } from '../converge-in-process.ts';
 import {
   capFailureCause,
   convergeRedactor,
@@ -61,6 +56,7 @@ import {
 } from './deploy.ts';
 import type { DestroyEvent, DestroyInput } from './destroy.ts';
 import {
+  convergeReasonsText,
   type ExtensionId,
   type OperationDeps,
   requireContainerForEnvironment,
@@ -863,16 +859,6 @@ function reportConvergeEvent(
   }
 }
 
-function reasonsText(reasons: readonly ConvergeFailureReason[]): string {
-  return reasons
-    .map(({ tag, message }) =>
-      tag === 'Error' || tag === 'Unknown' || message.startsWith(tag)
-        ? message
-        : `${tag}: ${message}`,
-    )
-    .join('\n');
-}
-
 /** The structured failure a converge that did not apply settles as. */
 function convergeFailure(
   outcome: Exclude<ConvergeOutcome, { readonly kind: 'applied' }>,
@@ -903,7 +889,9 @@ function convergeFailure(
             },
           );
     case 'failed': {
-      const cause = capFailureCause(redact(withComposerAdvice(reasonsText(outcome.reasons))));
+      const cause = capFailureCause(
+        redact(withComposerAdvice(convergeReasonsText(outcome.reasons))),
+      );
       return new CliStructuredError(
         'DEPLOY.ENGINE_FAILED',
         `Alchemy could not deploy the app.\n${cause}`,

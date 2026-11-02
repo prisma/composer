@@ -1,10 +1,10 @@
 /**
  * The S4 integration proof (local-dev spec, plan.md's S4 outcome; no CLI —
  * the `prisma dev` command itself is S5's scope): a fixture
- * topology (compute × 2, postgres, bucket) lowered with `dev: true` and
- * driven through the real `alchemy` binary against the dev stack module
- * `dev` itself writes (`renderDevStackFile` from
- * `@prisma/composer-cli/testing`).
+ * topology (compute × 2, postgres, bucket) lowered against the local target
+ * and converged in this process, the way `prisma dev` converges: `lower`,
+ * `localTargetProviders`, `devState` and `convergeInProcess` from
+ * `@prisma/composer/internal/converge` (ADR-0064).
  *
  * Only `@prisma/composer`, `@prisma/composer-cli` and `@prisma/composer-prisma-cloud` (9-public) are
  * imported (ADR-0028: examples/website/test import only the published
@@ -27,7 +27,8 @@
  *
  * WHY THIS IS A STANDALONE SCRIPT, NOT A `bun:test` FILE:
  *
- * `bun test` was tried first. Under `bun test` specifically, a daemon
+ * `bun test` was tried first, when this script still ran the converge in an
+ * Alchemy child. Under `bun test` specifically, a daemon
  * spawned deep inside the alchemy child's own Effect runtime (originally
  * `LocalDatabaseProvider`'s own `prisma dev --name <x> --detach` subprocess,
  * pre-REVISION — operator review of #162; the same class of issue applies
@@ -49,23 +50,30 @@
  * timeouts as before, just not started via `bun test`'s own harness.
  */
 
-import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
 import { Load } from '@prisma/composer';
 import type {
+  ConfigPools,
   ContainerInstance,
   ExtensionDescriptor,
   LocalTargetAttachment,
 } from '@prisma/composer/config';
-import { containerEnv, devEnvironmentDir, preflightEnv } from '@prisma/composer/config';
+import { devEnvironmentDir } from '@prisma/composer/config';
+import {
+  convergeInProcess,
+  devState,
+  localTargetProviders,
+  lower,
+} from '@prisma/composer/internal/converge';
+import { resolveLocalTargets } from '@prisma/composer/local-target';
 import { nodeBuild } from '@prisma/composer/node/control';
-import { renderDevStackFile } from '@prisma/composer-cli/testing';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import { emulatorRegistryRoot } from '@prisma/composer-prisma-cloud/local-target';
 import bgService from './fixtures/local-dev/bg-service.ts';
 import appModule from './fixtures/local-dev/module.ts';
+import prismaConfig from './fixtures/local-dev/prisma.config.ts';
 import webService from './fixtures/local-dev/web-service.ts';
 
 // ——— Minimal plain-assert harness (no bun:test / describe / expect). Every
@@ -91,34 +99,11 @@ const BKG = `${APP_NAME}.bkg`;
 const integrationDir = path.resolve(import.meta.dir, '..');
 const fixtureDir = path.join(integrationDir, 'test', 'fixtures', 'local-dev');
 const devDir = path.join(fixtureDir, devEnvironmentDir('dev'));
-const stackDir = devDir;
-const stackFile = path.join(stackDir, 'alchemy.run.ts');
-const stackFileRel = path.relative(fixtureDir, stackFile);
-const configFile = path.join(fixtureDir, 'prisma.config.ts');
 const webEntryFile = path.join(fixtureDir, 'built', 'web-server.mjs');
 const logDir = path.join(devDir, 'logs');
-const ALCHEMY_TIMEOUT_MS = 60_000;
+const CONVERGE_TIMEOUT_MS = 60_000;
 
 let convergeCount = 0;
-
-function resolveBin(name: string): string | undefined {
-  let dir = integrationDir;
-  for (;;) {
-    const candidate = path.join(dir, 'node_modules', '.bin', name);
-    if (fs.existsSync(candidate)) return candidate;
-    const parent = path.dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-}
-
-function alchemyBin(): string {
-  const bin = resolveBin('alchemy');
-  if (bin === undefined) {
-    throw new Error(`could not find node_modules/.bin/alchemy above ${integrationDir}`);
-  }
-  return bin;
-}
 
 /** Last `n` lines of a file, or a note explaining why there's nothing to show — never throws. */
 function tailOf(filePath: string, n = 60): string {
@@ -186,64 +171,52 @@ async function assembleFixture(): Promise<Record<string, FixtureBundle>> {
   return { [WEB]: web, [BKG]: bkg };
 }
 
-/** The dev stack file `dev` itself writes, from the real generator. */
-function renderStack(bundles: Record<string, FixtureBundle>): string {
-  return renderDevStackFile({
-    entryPath: path.join(fixtureDir, 'module.ts'),
-    cwd: fixtureDir,
-    configFile,
-    name: APP_NAME,
-    environment: 'dev',
-    assembled: { bundles, devServers: {} },
-  });
+interface DevConvergeInput {
+  readonly containers: ReadonlyMap<string, ContainerInstance>;
+  readonly preflight: ReadonlyMap<string, string>;
+  readonly pools: ConfigPools;
 }
 
 /**
- * Runs one `alchemy deploy` against the generated dev stack file, exactly
- * as a real dev session would (--stage dev, always — D3), against the
- * emulator registry `emulatorRegistryRoot()` names.
- *
- * stdout/stderr are redirected straight to a log FILE (raw file descriptors,
- * not Node's `encoding: 'utf8'` pipe-and-buffer capture) — confirmed live
- * that piped capture silently loses output from a deeply nested grandchild
- * (alchemy's own foreground-child watchdog, in turn running the stack file,
- * in turn ensuring the emulator daemons, including `postgres-main`)
- * specifically when the OUTER process is `bun test`; the identical command
- * run from a plain shell, or with output going straight to a file, does not
- * lose it. Bounded (never a silent indefinite hang — the chief risk is a
- * daemon downloading/starting engines on first use with no visible output)
- * regardless.
+ * One converge, exactly as a real dev session runs it: the app lowered
+ * against the local target's providers and Alchemy's local state store, then
+ * planned and applied in this process at the stage dev (D3). Alchemy's events
+ * and log lines go to a log file for the diagnostics dump. Bounded: a converge
+ * still running after CONVERGE_TIMEOUT_MS is interrupted.
  */
-function runAlchemyDeploy(containerEnvVars: Readonly<Record<string, string>>): {
-  status: number | null;
-  timedOut: boolean;
-  stdout: string;
-  stderr: string;
-  logFile: string;
-} {
+async function converge(
+  bundles: Record<string, FixtureBundle>,
+  input: DevConvergeInput,
+): Promise<{ ok: boolean; detail: string; logFile: string }> {
   convergeCount += 1;
   fs.mkdirSync(logDir, { recursive: true });
   const logFile = path.join(logDir, `converge-${convergeCount}.log`);
-  const logFd = fs.openSync(logFile, 'w');
-  let result: ReturnType<typeof spawnSync>;
-  try {
-    result = spawnSync(alchemyBin(), ['deploy', stackFileRel, '--yes', '--stage', 'dev'], {
-      cwd: fixtureDir,
-      stdio: ['ignore', logFd, logFd],
-      timeout: ALCHEMY_TIMEOUT_MS,
-      env: { ...process.env, ...containerEnvVars },
-    });
-  } finally {
-    fs.closeSync(logFd);
-  }
-  const output = fs.readFileSync(logFile, 'utf8');
-  return {
-    status: result.status,
-    timedOut: result.signal === 'SIGTERM',
-    stdout: output,
-    stderr: '',
-    logFile,
-  };
+  const lines: string[] = [];
+  const config = prismaConfig.composer;
+  if (config === undefined) throw new Error('the fixture prisma.config.ts has no composer section');
+  const resolved = await resolveLocalTargets(config);
+  const stack = lower(appModule, config, {
+    name: APP_NAME,
+    environment: 'dev',
+    configPool: input.pools.config,
+    bundles,
+    containers: input.containers,
+    preflight: input.preflight,
+    providers: localTargetProviders(resolved, input.containers, devDir, input.pools),
+    state: devState(),
+  });
+  const outcome = await convergeInProcess({
+    operation: 'deploy',
+    stack,
+    stage: 'dev',
+    cwd: fixtureDir,
+    env: {},
+    signal: AbortSignal.timeout(CONVERGE_TIMEOUT_MS),
+    onEvent: (event) => void lines.push(JSON.stringify(event)),
+  });
+  lines.push(JSON.stringify(outcome));
+  fs.writeFileSync(logFile, `${lines.join('\n')}\n`);
+  return { ok: outcome.kind === 'applied', detail: JSON.stringify(outcome), logFile };
 }
 
 function readJson(file: string): unknown {
@@ -383,7 +356,7 @@ function probeTcp(host: string, port: number, timeoutMs: number): Promise<boolea
 
 async function main(): Promise<void> {
   console.log(
-    'local dev (S4): compute + postgres + bucket, lowered with dev: true through a real alchemy converge',
+    'local dev (S4): compute + postgres + bucket, lowered against the local target and converged in process',
   );
 
   let descriptor: ExtensionDescriptor | undefined;
@@ -479,22 +452,21 @@ async function main(): Promise<void> {
     assert(readEmulatorEntry('buckets') !== undefined, 'buckets emulator must be registered');
     assert(readEmulatorEntry('postgres') !== undefined, 'postgres emulator must be registered');
 
-    // 7. Write the dev stack file and converge through the REAL alchemy binary.
-    fs.mkdirSync(stackDir, { recursive: true });
-    fs.writeFileSync(stackFile, renderStack(bundles));
-    // The CLI hands the alchemy process the preflight's payload this way too.
-    const containerEnvVars = {
-      ...containerEnv(new Map([[descriptor.id, devContainer]])),
-      ...preflightEnv(
+    // 7. Converge in this process, as `prisma dev` does.
+    const convergeInput: DevConvergeInput = {
+      containers: new Map([[descriptor.id, devContainer]]),
+      preflight:
         preflightPayload === undefined ? new Map() : new Map([[descriptor.id, preflightPayload]]),
-      ),
+      pools,
     };
-    const first = runAlchemyDeploy(containerEnvVars);
-    if (first.status !== 0) {
-      throw new Error(
-        `alchemy deploy (first converge) failed (timedOut=${String(first.timedOut)}); see ${first.logFile}:\n${first.stdout}\n${first.stderr}`,
-      );
+    const first = await converge(bundles, convergeInput);
+    if (!first.ok) {
+      throw new Error(`first converge failed: ${first.detail}; see ${first.logFile}`);
     }
+    assert(
+      !fs.existsSync(path.join(devDir, 'alchemy.run.ts')),
+      'a dev converge writes no alchemy.run.ts',
+    );
 
     // 8. SERVING: attach and HTTP round-trip the web service. A freshly
     // deployed child needs a moment to start listening, so both the health
@@ -586,11 +558,9 @@ async function main(): Promise<void> {
     );
 
     // 12. Second converge, unchanged build: full no-op — same pids.
-    const second = runAlchemyDeploy(containerEnvVars);
-    if (second.status !== 0) {
-      throw new Error(
-        `alchemy deploy (no-op converge) failed (timedOut=${String(second.timedOut)}); see ${second.logFile}:\n${second.stdout}\n${second.stderr}`,
-      );
+    const second = await converge(bundles, convergeInput);
+    if (!second.ok) {
+      throw new Error(`no-op converge failed: ${second.detail}; see ${second.logFile}`);
     }
     const servicesAfterNoop = await waitFor(async () => {
       const services = await listComputeServices();
@@ -617,12 +587,9 @@ async function main(): Promise<void> {
     );
     try {
       const rebundled = await assembleFixture();
-      fs.writeFileSync(stackFile, renderStack(rebundled));
-      const third = runAlchemyDeploy(containerEnvVars);
-      if (third.status !== 0) {
-        throw new Error(
-          `alchemy deploy (changed-artifact converge) failed (timedOut=${String(third.timedOut)}); see ${third.logFile}:\n${third.stdout}\n${third.stderr}`,
-        );
+      const third = await converge(rebundled, convergeInput);
+      if (!third.ok) {
+        throw new Error(`changed-artifact converge failed: ${third.detail}; see ${third.logFile}`);
       }
 
       const servicesAfterChange = await waitFor(async () => {

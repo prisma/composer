@@ -14,7 +14,7 @@ plugin({
     build.module(
       '@prisma/composer/deploy',
       js(
-        'export const lower = (app, config, opts) => { console.log(JSON.stringify({ app: app.name, extensions: config.extensions.map((e) => e.id), state: config.state.extension, environment: opts.environment, configPool: opts.configPool, ...(globalThis.stubPools === undefined ? {} : { pools: globalThis.stubPools }) })); return {}; }; export const transportedLowerInputs = () => ({ containers: new Map(), preflight: new Map() });',
+        'export const lower = (app, config, opts) => { console.log(JSON.stringify({ app: app.name, extensions: config.extensions.map((e) => e.id), state: config.state.extension, environment: opts.environment, configPool: opts.configPool, })); return {}; }; export const transportedLowerInputs = () => ({ containers: new Map(), preflight: new Map() });',
       ),
     );
     build.module(
@@ -25,12 +25,6 @@ plugin({
       '@prisma/composer/internal/pools',
       js(
         "export const readConfigPool = async (section, input) => ({ read: 'config', environment: input.environment, configFile: input.configFile }); export const readSecretsPool = async () => ({ read: 'secrets' });",
-      ),
-    );
-    build.module(
-      '@prisma/composer/local-target',
-      js(
-        "export const devEnvironmentDir = (environment) => '.dev/' + environment; export const devState = () => ({}); export const localTargetProviders = (resolved, containers, devDir, pools) => { globalThis.stubPools = pools; return {}; }; export const resolveLocalTargets = async () => new Map();",
       ),
     );
   },

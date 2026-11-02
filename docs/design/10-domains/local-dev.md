@@ -107,7 +107,7 @@ and hooks receive, and it is Alchemy's stage, so Alchemy keeps each copy's
 state at `.alchemy/state/<app>/<environment>`. Every other local file that
 belongs to one copy lives in `.prisma-composer/dev/<environment>/`: the record
 of instances, the environment variable values, the fingerprint key
-(ADR-0058), the generated stack file, the artifacts and the bucket objects. The folder name is
+(ADR-0058), the artifacts and the bucket objects. The folder name is
 the environment name, encoded, because an environment name may contain `/`.
 Alchemy keeps the stage `feature/x` inside the folder of the stage `feature`,
 so `--fresh` removes only the files directly in its own stage's folder.
@@ -162,12 +162,12 @@ Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
    A recorded database the last session stopped is started here: on a warm
    start the converge may change nothing and never call the Database
    provider.
-5. **Lower + converge** — a dev-generated stack file (ADR-0007's pattern, at
-   `.prisma-composer/dev/<environment>/alchemy.run.ts`), driven with the extension's
-   `localTarget.providers()` layer and `devState()` (Alchemy's built-in file store, exported by `@prisma/composer/local-target`),
-   with the environment name as Alchemy's stage. Providers provision emulator instances (a running
+5. **Lower + converge** — in the `prisma` process
+   ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)): `lower()` with the
+   extensions' `localTarget.providers()` layers (`localTargetProviders`) and `devState()` (Alchemy's built-in file store), all from the app's install of `@prisma/composer/internal/converge`,
+   then Alchemy's plan and apply with the environment name as Alchemy's stage. No stack file is written and no child is started. Providers provision emulator instances (a running
    service, a database, a bucket) by talking to the emulators; converge
-   terminates as always, and the Compute emulator keeps serving. The dev stack file reads both pools again and passes them to the local providers.
+   terminates as always, and the Compute emulator keeps serving. The local providers get both pools as values. Each rebuild converges the same way, one at a time; Alchemy's progress reaches the user through the dev operation's events.
 6. **Attach** — new, dev-only: through `localTarget.attach`, render the front
    door (every service's endpoint) and watch for rebuilds, loop. Ctrl-C,
    SIGTERM or a failure stops the app's service processes and database
@@ -433,9 +433,9 @@ instances had generated ids is discarded when it loads.
 
 ### Process lifetimes
 
-1. **Converge-scoped** — the Alchemy child (ADR-0007), started as
-   [deploy-cli.md § Runtime](deploy-cli.md) describes. Providers run here;
-   nothing started here survives its exit.
+1. **Converge-scoped** — each converge's scope, in the `prisma` process
+   (ADR-0064). Providers run here, and the state lease is held only while a
+   converge runs; nothing started here outlives the scope.
 2. **Machine-scoped emulators** — one per node kind per registry root,
    multi-tenant, holding every long-lived process: the Compute emulator
    (service children), the Postgres emulator (one `@prisma/dev` server per
@@ -550,7 +550,7 @@ The same table the port's hand-rolled script implemented, now standard:
 | minted needs (ADR-0030/0031: service keys, streams keys) | minted locally by the unchanged provisioners |
 | origin (ADR-0039) | `http://localhost:<port>` via the unchanged origin channel |
 
-Whether a missing secret is required is decided by validation, not by reading the schema (ADR-0042): the dev preflight validates each service's input with every missing secret left out, and then with each one left out alone, and names as required only the secrets whose absence alone fails. The preflight sends the alchemy process, on the preflight transport, the names of the absent secrets and an HMAC-SHA256 fingerprint of the value of each variable that a service's input or params point at, keyed by the environment's own `.prisma-composer/dev/<environment>/fingerprint.key`. The serializer leaves out the absent secrets, and the fingerprint fills each deployment's `<name>:updatedAt` trigger member, so a value changed between two runs redeploys exactly the services that read it. The local `Deployment` provider reads current values from the pools the dev stack file read and gives each service only the variables its own input and params point at.
+Whether a missing secret is required is decided by validation, not by reading the schema (ADR-0042): the dev preflight validates each service's input with every missing secret left out, and then with each one left out alone, and names as required only the secrets whose absence alone fails. The preflight hands the lowering, as its payload, the names of the absent secrets and an HMAC-SHA256 fingerprint of the value of each variable that a service's input or params point at, keyed by the environment's own `.prisma-composer/dev/<environment>/fingerprint.key`. The serializer leaves out the absent secrets, and the fingerprint fills each deployment's `<name>:updatedAt` trigger member, so a value changed between two runs redeploys exactly the services that read it. The local `Deployment` provider reads current values from the pools dev read and gives each service only the variables its own input and params point at.
 
 To load `.env` files, list `dotenv()` in `config` and `secrets`, with `environmentVariables()` after it to keep the shell. It reads `.env`, `.env.local`, `.env.<environment>` and `.env.<environment>.local` beside `prisma.config.ts`. Values in `.env.dev` are read only by the environment `dev`; values in `.env` and `.env.local` are read by every environment, `prisma deploy` to `production` included, whose preflight uploads any secret the environment does not have yet. `import 'dotenv/config'` at the top of `prisma.config.ts` still works with the default lists.
 
@@ -579,6 +579,10 @@ Deploy's rule holds: every failure names its fix.
 | required secret unset or empty | hard error listing every missing variable, the service that needs it, the schema's message, and where an adapter in `secrets` reads it; an optional one is not an error |
 | env-sourced param unbound | hard error listing the missing names, deploy-preflight style |
 | an adapter returns different values at a rebuild than at start | that the values changed and rebuilds are paused until dev restarts |
+| the entry module or a file a service is declared in changes while dev runs | which files changed, that dev cannot load the app's definition again, and that rebuilds are paused until dev restarts |
+| the first converge fails | `DEV.CONVERGE_FAILED`, with Alchemy's errors in the message and in `meta.reasons`; `dev` stops the app's services before it returns the failure |
+| a rebuild's converge fails | a warning with Alchemy's errors; the running app is kept and dev keeps watching |
+| Ctrl-C during the first converge | `DEV.INTERRUPTED`, reported as a message; `prisma dev` exits 130 |
 | a service exits before it listens, or does not listen within the readiness timeout | the address, the port, the exit code if it exited, and the log path; `dev` stops the app's services before it returns the failure |
 | an emulator does not accept connections (retried briefly; an error response from the emulator is never retried) | `DEV.EMULATOR_UNREACHABLE`, with the emulator's URL, from `dev` and `log` alike |
 | `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` is not a positive whole number | `DEV.SERVICE_READY_TIMEOUT_INVALID`, with the value |
@@ -630,13 +634,13 @@ The design's founding claim was proven against open-chat — a real, pre-existin
   loop picks rebuilds up on its own. A build descriptor that still returns
   no `watch` entries reports `[dev] <address> has no watchable inputs` at
   startup and needs its rebuilds triggered manually.
-- **A topology edit reconverges, but the session's own view of the app is
-  the one it started with.** The entry module is imported once per process,
-  so after an edit to `module.ts` or a `service.ts` the Alchemy child (a fresh
-  process) converges the new topology while the session keeps the graph, the
-  bundles and the dev servers it loaded. Edits that keep the set of services
-  and their build adapters — wiring, inputs, bindings — apply fully; adding,
-  removing or re-adapting a service needs `prisma dev` restarted.
+- **An edit to the app's definition needs a restart.** The entry module is
+  imported once per process, and the converge runs in that process, so a
+  rebuild cannot see an edit to it. Dev hashes the entry module and each
+  service's declaring file when it starts; when one changes it says so and
+  pauses rebuilds until `prisma dev` is restarted (ADR-0064). An edit to
+  another file the entry imports, such as a sub-module's `module.ts`, is not
+  detected and takes effect at the next start.
 - **App-owned migrations are not run by `dev`** (by design — ADR-0022, spec
   § 4's `OrmMigration` line is for framework-run migrations only). An app that
   runs its own migrations (e.g. via `prisma db init`, like the

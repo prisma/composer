@@ -25,12 +25,29 @@ export type DevEvent =
   | { readonly kind: 'config-changed'; readonly file: string }
   /** What the `config` or `secrets` adapters return changed since the session started. The session keeps the values it started with and stops rebuilding until it is restarted. */
   | { readonly kind: 'values-changed' }
-  /** The app keeps running, still watching. */
+  /** A file that defines the app (the entry module, or a file a service is declared in) changed. The session keeps the app it loaded at start and stops rebuilding until it is restarted. */
+  | { readonly kind: 'definition-changed'; readonly files: readonly string[] }
+  /** One resource's progress in a converge: the first one, or a rebuild's. */
+  | {
+      readonly kind: 'converge-resource';
+      readonly fqn: string;
+      readonly resourceType: string;
+      /** Alchemy's own status word, such as `creating` or `updated`. */
+      readonly status: string;
+      readonly phase: 'running' | 'done' | 'failed';
+      readonly message?: string | undefined;
+    }
+  /** A line Alchemy logged during a converge. */
+  | {
+      readonly kind: 'converge-message';
+      readonly severity: 'info' | 'warn' | 'verbose';
+      readonly text: string;
+    }
+  /** A rebuild's converge failed. The app keeps running, still watching. */
   | {
       readonly kind: 'converge-failed';
-      readonly stackFilePath: string;
-      readonly reproduceCommand: string;
-      readonly cwd: string;
+      readonly message: string;
+      readonly reasons: readonly { readonly tag: string; readonly message: string }[];
     }
   /** Once per service that runs its build adapter's dev server, before the first converge (ADR-0056). `cwd` is absolute. */
   | {
@@ -68,15 +85,16 @@ export interface DevInput {
   readonly detach?: boolean | undefined;
   readonly cwd?: string | undefined;
   readonly onEvent?: ((event: DevEvent) => void) | undefined;
+  /** Interrupts a running converge. The first converge then fails with `DEV.INTERRUPTED`; a rebuild's ends quietly. It does not stop the session: `stop()` does. */
+  readonly signal?: AbortSignal | undefined;
 }
 
-/** A running dev session. The operation NEVER touches process signal handlers —
- * the host owns signals (and must evict alchemy's import-time SIGINT/SIGTERM
- * listeners before installing its own; see run-dev.ts). */
+/** A running dev session. The operation NEVER touches process signal handlers: the host owns signals. */
 export interface DevSession {
   /** The initial front door, already merged across attachments. */
   readonly endpoints: readonly ServiceEndpoint[];
   /** Stop the watch loop and the app's services (emulators and data stay up).
+   * A converge still running is interrupted and awaited first, so its state lease is released.
    * Idempotent; emits 'stopping'/'stopped'; resolves `closed`. A no-op for a detached session. */
   stop(): Promise<void>;
   /** Settles when the session has fully stopped (via stop()); already settled for a detached session. */

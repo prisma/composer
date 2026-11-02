@@ -1,6 +1,6 @@
 /**
- * The generated stack files import the declaring prisma.config.ts and hand its
- * `composer` export to lower(). These tests run the generated files in a child
+ * The generated stack file (destroy's) imports the declaring prisma.config.ts and hand its
+ * `composer` export to lower(). These tests run the generated file in a child
  * process against a real prisma.config.ts, with the heavy imports stubbed, so
  * the import itself is executed rather than string-matched.
  */
@@ -8,7 +8,6 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { writeDevStackFile } from '../dev/generate-dev-stack.ts';
 import { writeStackFile } from '../generate-stack.ts';
 
 const fixtureDir = path.join(import.meta.dir, 'fixtures', 'stack-import');
@@ -42,31 +41,20 @@ function runStack(stackFile: string) {
   return JSON.parse(child.stdout.trim());
 }
 
-describe('the generated stack files, evaluated', () => {
+describe('the generated stack file, evaluated', () => {
   const configPool = {
     read: 'config',
     environment: 'staging',
     configFile: path.join(fixtureDir, 'prisma.config.ts'),
   };
 
-  test('the deploy stack passes the composer export of prisma.config.ts, the environment, and the config pool it reads, to lower(), and reads no secrets', () => {
+  test('the stack passes the composer export of prisma.config.ts, the environment, and the config pool it reads, to lower(), and reads no secrets', () => {
     expect(runStack(writeStackFile(stackInput))).toEqual({
       app: 'fixture-module',
       extensions: ['fixture-extension'],
       state: 'fixture-extension',
       environment: 'staging',
       configPool,
-    });
-  });
-
-  test('the dev stack passes the composer export of prisma.config.ts, the environment, and the config pool it reads, to lower(), and both pools to the local providers', () => {
-    expect(runStack(writeDevStackFile(stackInput))).toEqual({
-      app: 'fixture-module',
-      extensions: ['fixture-extension'],
-      state: 'fixture-extension',
-      environment: 'staging',
-      configPool,
-      pools: { config: configPool, secrets: { read: 'secrets' } },
     });
   });
 
@@ -77,17 +65,12 @@ describe('the generated stack files, evaluated', () => {
    * programmatic caller naming the wrong file, would otherwise fail inside
    * lower() with a TypeError.
    */
-  for (const [stack, write] of [
-    ['deploy', writeStackFile],
-    ['dev', writeDevStackFile],
-  ] as const) {
-    test(`the ${stack} stack refuses a prisma.config.ts that declares no composer section, naming it`, () => {
-      const child = spawnStack(write({ ...stackInput, configFile: noSectionFile }));
-      expect(child.status).not.toBe(0);
-      expect(child.stdout).toBe('');
-      expect(child.stderr).toContain(
-        `${noSectionFile} declares no \`composer\` section. Pass the prisma.config.ts that declares it.`,
-      );
-    });
-  }
+  test('the stack refuses a prisma.config.ts that declares no composer section, naming it', () => {
+    const child = spawnStack(writeStackFile({ ...stackInput, configFile: noSectionFile }));
+    expect(child.status).not.toBe(0);
+    expect(child.stdout).toBe('');
+    expect(child.stderr).toContain(
+      `${noSectionFile} declares no \`composer\` section. Pass the prisma.config.ts that declares it.`,
+    );
+  });
 });

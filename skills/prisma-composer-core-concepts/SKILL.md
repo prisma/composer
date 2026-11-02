@@ -507,12 +507,14 @@ environment as production, so deploy and destroy refuse it with
 
 **The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (a preview build of 2.0.0-beta.84, commit `972f294`, at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
-`prisma deploy` runs alchemy inside the `prisma` process through alchemy's
-programmatic API: no generated file and no child process. Its progress prints
-as one step per resource, and a failure is `DEPLOY.ENGINE_FAILED` carrying the
+`prisma deploy` and `prisma dev` run alchemy inside the `prisma` process through alchemy's
+programmatic API: no generated file and no child process. Their progress prints
+as one step per resource. A failed deploy is `DEPLOY.ENGINE_FAILED` carrying the
 engine's own errors (credentials redacted, capped at 1000 characters), or
-`DEPLOY.INTERRUPTED` after Ctrl-C, which releases the environment's lease.
-For `prisma dev` and `destroy`, Composer runs the alchemy package installed beside the app's
+`DEPLOY.INTERRUPTED` after Ctrl-C, which releases the environment's lease. A failed
+first `dev` converge is `DEV.CONVERGE_FAILED` with the engine's errors; a failed rebuild
+is a warning and the running app is kept.
+For `destroy`, Composer runs the alchemy package installed beside the app's
 `@prisma/composer` and starts it with Node (the first `node` on PATH when `prisma` runs
 under Bun; `DEPLOY.NODE_MISSING` if none), so the app needs no direct
 `alchemy` dependency and no `.bin` link. No global Alchemy installation is
@@ -520,12 +522,11 @@ needed.
 
 1. The destroy operation writes the pipeline's results to a generated, gitignored
    stack file at `.prisma-composer/alchemy.run.ts`, then runs the alchemy CLI
-   against it as a child process; `dev` does the same at
-   `.prisma-composer/dev/<environment>/alchemy.run.ts` with local providers. The file
+   against it as a child process. The file
    carries the computed values as literals but reads credentials via
    `fromEnv()`, so nothing sensitive lands on disk, and it is regenerated
    every run: output, not configuration, never edited.
-2. Failures are bisectable through that file. A failing destroy or dev converge names its
+2. Failures are bisectable through that file. A failing destroy names its
    path and prints a reproduce command: Node running the bin of the `alchemy`
    Composer depends on, with `destroy .prisma-composer/alchemy.run.ts --yes
    --stage <stage>` (Alchemy's own flag; on Prisma Cloud its value is the
@@ -600,9 +601,9 @@ that surprise:
    environment variables; Composer's values win. `dev` prints ``<address>: runs
    `<command>` in <dir>`` before the app comes up and streams the dev
    server's output prefixed `[<address>]` (other services' logs are not
-   streamed). Source edits are the dev server's own hot reload; `dev` watches
-   the entry and every service's authoring module, reconverges on a topology
-   edit, and restarts a dev server only when its environment variables changed
+   streamed). Source edits are the dev server's own hot reload; an edit to the
+   entry or a service's authoring module needs `dev` restarted (it says so),
+   and `dev` restarts a dev server only when its environment variables changed
    (``<address>: its environment changed; `<command>` restarted``). It has no
    terminal (no colours or key shortcuts). The standalone build is not run
    locally, so a standalone-only bug surfaces at `prisma deploy`. Next.js
@@ -613,7 +614,7 @@ that surprise:
    in its PORT variable.`; `DEV.DEV_SERVER_UNAVAILABLE` (e.g. `next` not
    installed in `appDir`); `DEV.DEV_SERVER_UNSUPPORTED` (the service's package
    is too old; the message names it).
-   `ready` prints only once every service accepts connections on its port, except a service declared `compute({ ..., listens: false })` (one that never listens, like the cron scheduler), which counts as running once its process starts. A service that exits before it listens, or does not listen within 30 seconds, fails `dev` (and stops the app's other services) with a message naming the service, its port, and its log file: on a first start it is in the deploy engine's output, before the error that the deploy engine exited (`DEV.CONVERGE_FAILED` from the `dev` operation); on a warm start it is the `DEV.SERVICE_START_FAILED` message. `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` raises the 30-second limit (milliseconds); the compute emulator reads it when it starts, so a running emulator keeps its old value until its process ends. An emulator that does not accept connections fails `dev` and `log` with `DEV.EMULATOR_UNREACHABLE` after a few seconds of retries; nothing else is retried.
+   `ready` prints only once every service accepts connections on its port, except a service declared `compute({ ..., listens: false })` (one that never listens, like the cron scheduler), which counts as running once its process starts. A service that exits before it listens, or does not listen within 30 seconds, fails `dev` (and stops the app's other services) with a message naming the service, its port, and its log file: on a first start it is in the message of the error that the app could not be converged (`DEV.CONVERGE_FAILED` from the `dev` operation); on a warm start it is the `DEV.SERVICE_START_FAILED` message. `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` raises the 30-second limit (milliseconds); the compute emulator reads it when it starts, so a running emulator keeps its old value until its process ends. An emulator that does not accept connections fails `dev` and `log` with `DEV.EMULATOR_UNREACHABLE` after a few seconds of retries; nothing else is retried.
 2. Ctrl-C (or `dev` ending on SIGTERM or a failure) stops the app's service processes and its local Postgres servers and keeps their data and ports: the next `dev` is a warm start. Starting clean, wiping this app's local instances and data in this environment first, is an explicit opt-in flag (`--fresh`). On a fresh start, each service gets the lowest free port from 3000 up, in dependency order: a service before the services that call it, otherwise provision order. A warm start keeps the ports services already have.
    Services, databases and buckets belong to the directory `dev` runs in: two checkouts of one app (two git worktrees) run separate processes on separate ports, with separate databases and buckets, and never restart or write into each other's. `.prisma-composer/dev/<environment>/emulator-instances.json` records which local instance backs each node. A service or database keeps its port in its directory across runs, even while stopped. If a local instance is gone (a Composer upgrade discarded an emulator's state), the next `dev` re-creates it, empty, and asks for the old port, and a Prisma ORM database's (`postgres()`) committed migrations run again (a `rawPostgres()` database stays empty); when another directory has taken the port, the instance gets the lowest free one and `dev` prints `[dev] service "<address>" now uses port <new>: its previous port <old> is in use` (`database "<address>"` for a database). `dev` runs as the environment `dev`; `--environment <name>` runs a complete, separate local copy with its own services, databases, buckets and ports, beside any other. Running a different app or environment stops nothing. For tests that must not touch working data, use `prisma dev --environment test --fresh --detach`, and pass the same `--environment` to `dev url` and `dev stop`. `--fresh` wipes only the app it starts, in its environment. Names that differ only in case share one folder on a case-insensitive filesystem (macOS), so a name that differs from the one the folder records is refused with `DEV.ENVIRONMENT_NAME_MISMATCH`. Everything local to one copy lives in `.prisma-composer/dev/<environment>/`; the first `dev`, `dev url`, `dev stop` or `log` after upgrading from a version with one copy per directory moves the existing local state into `dev`, keeping its data. An older `@prisma/composer-prisma-cloud` is refused with `DEPS.EXTENSION_INCOMPATIBLE`. A stopped instance keeps its port reserved and a database its data, so a deleted checkout's instances keep theirs; there is no command to remove them yet.
 3. `dev` does not print the logs of services that run their artifact. The
@@ -654,8 +655,9 @@ that surprise:
    app, including one an earlier `--detach` left running (a failed redeploy
    has already replaced that service's process), and exits non-zero: fix the
    build and run `prisma dev --detach` again.
-4. `dev` reads `prisma.config.ts` once, at start, and watches it: after an
-   edit it says so and pauses rebuilds until you restart `dev`.
+4. `dev` reads `prisma.config.ts` and loads the app's definition (the entry
+   and each service's authoring module) once, at start, and watches them:
+   after an edit it says so and pauses rebuilds until you restart `dev`.
 5. `dev` reads secrets only from the `secrets` adapters. Put them where a `secrets` adapter reads them: the shell by default, or `.env.dev` with `secrets: [dotenv(), environmentVariables()]`. A required secret that is unset or empty stops `dev` with an error naming it; an optional one reaches the service as absent. A changed value takes effect on the next `prisma dev`. A `.env` that only the framework loads (Next.js) does not count: Composer reads secrets before the dev server starts.
 6. The emulators are machine-wide daemons shared by every `dev`, registered
    under `~/.prisma-composer/emulators`. Set `PRISMA_COMPOSER_EMULATORS_DIR`
