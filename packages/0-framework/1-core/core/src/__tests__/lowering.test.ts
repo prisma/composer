@@ -651,7 +651,7 @@ describe('lowering a module root — a single service', () => {
         }),
       ),
     ).toThrow(
-      'The deploy\'s second process built a different graph from the one Composer checked in its first process. Only in the second process: "shop.echo". Only in the first process: "shop.gone". A module body must build the same graph every time; one that reads process.env, a file or the clock can build a different one.',
+      'The deploy\'s second process built a different graph from the one Composer checked in its first process. Only in the second process: "shop.echo". Only in the first process: "shop.gone". A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
     );
   });
 

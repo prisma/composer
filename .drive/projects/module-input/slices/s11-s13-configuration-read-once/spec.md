@@ -314,7 +314,7 @@ The module-child push in `flatten` sets `isRoot: false` in place of `fromConfigP
    }
 
    const SAME_GRAPH_ADVICE =
-     'A module body must build the same graph every time; one that reads process.env, a file or the clock can build a different one.';
+     'A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.';
    ```
 
 4. `validateModuleInput`: `entry.fromConfigPool` becomes `entry.isRoot`.
@@ -574,12 +574,12 @@ export function nodeAddresses(graph: Graph): readonly string[] {
      const list = (addresses: readonly string[]) =>
        addresses.length === 0 ? 'none' : addresses.map((address) => `"${address}"`).join(', ');
      throw new LowerError(
-       `The deploy's second process built a different graph from the one Composer checked in its first process. Only in the second process: ${list(onlyBuilt)}. Only in the first process: ${list(onlyChecked)}. A module body must build the same graph every time; one that reads process.env, a file or the clock can build a different one.`,
+       `The deploy's second process built a different graph from the one Composer checked in its first process. Only in the second process: ${list(onlyBuilt)}. Only in the first process: ${list(onlyChecked)}. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.`,
      );
    }
    ```
 
-   `deploy.ts` imports `nodeAddresses` from `../graph.ts` and the type `CheckedConfiguration` from `../graph-types.ts`. Core's `process.env` count stays `control/deploy.ts`, 2 (`invariants.test.ts` is unchanged): the addresses reach `lower()` as an option.
+   `deploy.ts` imports `nodeAddresses` from `../graph.ts` and the type `CheckedConfiguration` from `../graph-types.ts`. Core's `process.env` count stays `control/deploy.ts`, 2 (`invariants.test.ts` is unchanged): the addresses reach `lower()` as an option, and the messages say "the process environment", not `process.env`, because the invariant counts the text.
 
 ### 6.3 `control/app-config.ts`
 
@@ -1470,13 +1470,13 @@ The only existing tests this PR changes are those § 15.1 lists. If any other ex
 | `loadModule` | a root with `input` and neither | ``Module "<root>" declares input and is being deployed as the root, but Load was given no app configuration to fill it from. Pass { configuration } to Load; prisma deploy and prisma dev pass the values the `config` adapters return.`` |
 | `configurationText` | no app configuration | ``<site> depends on <label>, but Load was given no app configuration to read "<key>" from. Pass { configuration } to Load; the deploy and dev commands pass the values the `config` adapters return.`` |
 | `configurationText` | the value is not text (unchanged text; now also for a service's input and params) | ``<site> depends on <label>, which reads "<key>" from the values the `config` adapters return, but they return <kind> for it, not text. <label> reads text; to pass other data, declare it in the root module's input.`` |
-| `resolveOne`, second process | a root field missing from the file | `<input.path> of root module "<m>" is not in the configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. A module body must build the same graph every time; one that reads process.env, a file or the clock can build a different one.` |
+| `resolveOne`, second process | a root field missing from the file | `<input.path> of root module "<m>" is not in the configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.` |
 | `checkedConfigurationOf` | a key read as both | `<param label> reads "<key>" from the app configuration, and <secret label> names "<key>" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every plain value it reads, in a file, and never writes a secret to a file. Give the plain value and the secret different names.` |
 | `checkedConfigurationOf` | a root field JSON cannot hold | `<input.path> of root module "<m>" holds <kind>, which JSON cannot hold exactly. The deploy hands the root's checked input to its second process in a JSON file, so a field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.` `<kind>` is `a non-finite number`, `an array with a missing member`, `a function`, `a symbol`, `a bigint` or `an object that is not plain data`. |
 | `secretSource()` | an empty `secretsKey` | `secretSource() secretsKey must be a non-empty string.` |
 | `paramSource()` | an empty `configurationKey` | `paramSource() configurationKey must be a non-empty string.` |
 | `paramSource()` | `configurationKey` and `redacted` | `paramSource() takes configurationKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.` |
-| `lowering` | the addresses differ | `The deploy's second process built a different graph from the one Composer checked in its first process. Only in the second process: <list>. Only in the first process: <list>. A module body must build the same graph every time; one that reads process.env, a file or the clock can build a different one.` `<list>` is `none`, or the addresses sorted, each in double quotes, joined by `, `. |
+| `lowering` | the addresses differ | `The deploy's second process built a different graph from the one Composer checked in its first process. Only in the second process: <list>. Only in the first process: <list>. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.` `<list>` is `none`, or the addresses sorted, each in double quotes, joined by `, `. |
 | `readCheckedConfiguration` | no `PRISMA_COMPOSER_CONFIGURATION_FILE` | `PRISMA_COMPOSER_CONFIGURATION_FILE is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which names the configuration file it wrote there.` |
 | `readCheckedConfiguration` | the file cannot be read | `Could not read the configuration file <file>: <message>. Composer deletes it when the run ends, so a stack file run by hand after that cannot read it; run the command again.` |
 | `readCheckedConfiguration` | not what Composer writes | `The configuration file <file> is not one Composer wrote: <it is not JSON | rootInput is not a list of fields | values is not an object of text>.` |
@@ -2115,7 +2115,7 @@ In `root-input.test.ts`, a new `describe("what Load reads from the app configura
 1. `the graph records each root field the body names, with its checked value, and no other` — `[...graph.checkedConfiguration.rootInput].sort(byPath)` equals `[{ path: ['A'], value: 'a' }, { path: ['B'] }, { path: ['C'], value: 4 }]`, where `byPath` compares `path.join('.')`. `D` and `PATH` are absent.
 2. `a root field JSON cannot hold exactly fails the Load, naming it` — schema `type({ WHEN: type('string').pipe((text) => new Date(text)) })`, body binds `{ when: input.WHEN }` into a service whose schema is `type({ when: 'Date' })`; Load with `{ configuration: { WHEN: '2026-01-01' } }` fails with exactly `input.WHEN of root module "shop" holds an object that is not plain data, which JSON cannot hold exactly. The deploy hands the root's checked input to its second process in a JSON file, so a field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.`
 3. `the second process takes each root field from the checked configuration, without running the root's schema` — a Standard Schema whose `validate` pushes to a `calls` array and returns `{ value: {} }`; `Load(root, { checkedConfiguration: { rootInput: [{ path: ['A'], value: 'from-file' }, { path: ['B'] }, { path: ['C'], value: 4 }], values: {} } })`; `calls` stays `[]`, and the echo service's binding is `{ a: 'from-file', c: 4 }`.
-4. `a root field missing from the checked configuration fails, saying the two processes built different graphs` — the same Load with `rootInput: [{ path: ['A'], value: 'a' }]` fails with exactly `input.B of root module "shop" is not in the configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. A module body must build the same graph every time; one that reads process.env, a file or the clock can build a different one.`
+4. `a root field missing from the checked configuration fails, saying the two processes built different graphs` — the same Load with `rootInput: [{ path: ['A'], value: 'a' }]` fails with exactly `input.B of root module "shop" is not in the configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.`
 5. `Load refuses configuration and checkedConfiguration together` — exact message from § 12.
 6. `a root with no input records no fields` — `Load(rootWithoutInput, { configuration: {} }).graph.checkedConfiguration` equals `{ rootInput: [], values: {} }`.
 

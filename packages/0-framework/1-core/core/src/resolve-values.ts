@@ -150,7 +150,7 @@ function jsonInexactKind(value: unknown): string | undefined {
 }
 
 const SAME_GRAPH_ADVICE =
-  'A module body must build the same graph every time; one that reads process.env, a file or the clock can build a different one.';
+  'A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.';
 
 function isThenable(value: unknown): boolean {
   if (isValue(value)) return false;
