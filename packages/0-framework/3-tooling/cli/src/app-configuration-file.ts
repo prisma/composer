@@ -143,9 +143,10 @@ export interface SecondProcessHandover {
  * `file` holds what Load read and the graph's node addresses. With `appSecrets`, which only
  * `prisma dev` passes, the environment also carries the named secrets: the app secrets under
  * the graph's secrets keys, each with text. Refuses when the file would hold any of
- * `knownSecrets`. Every input is plain data from the graph, such as `graph.appConfigurationRead`,
- * `nodeAddresses(graph)` and `secretsKeys(graph)`, so a caller with its own copy of Composer's
- * core can pass them.
+ * `knownSecrets`. Every other input is plain data from the graph, such as
+ * `graph.appConfigurationRead`, `nodeAddresses(graph)` and `secretsKeys(graph)`, so a caller with
+ * its own copy of Composer's core can pass them. The exception is `knownSecrets`, a
+ * `KnownSecrets`, which such a caller builds from the testing entry.
  */
 export function prepareSecondProcess(input: {
   readonly file: string;

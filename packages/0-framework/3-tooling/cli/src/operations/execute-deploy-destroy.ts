@@ -325,7 +325,7 @@ async function runStackPipeline(
   } catch (error) {
     opts.steps.failOpen();
     opts.steps.start({ name: 'record' });
-    const thrown = error instanceof Error ? redactThrown(error, opts.redaction) : error;
+    const thrown = redactThrown(error, opts.redaction);
     // A defect, not a structured failure — still the end of the run, and the
     // only chance to record that it ended at all.
     await finishReporters(
@@ -334,7 +334,7 @@ async function runStackPipeline(
         ok: false,
         cancelled: false,
         code: 'DEPLOY.UNEXPECTED',
-        message: thrown instanceof Error ? thrown.message : String(thrown),
+        message: thrown.message,
       },
       opts.redaction,
     );

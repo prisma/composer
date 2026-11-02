@@ -159,7 +159,7 @@ export async function executeDev(
     const result = await executeDevInner(input, deps, cwd, redaction);
     return result.ok ? result : notOk(redactError(result.failure, redaction));
   } catch (error) {
-    throw error instanceof Error ? redactThrown(error, redaction) : error;
+    throw redactThrown(error, redaction);
   }
 }
 

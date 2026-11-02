@@ -14,7 +14,7 @@ const SECRET_ENV_NAME =
  * that looks like a credential's. The length limit keeps a one-letter placeholder from blanking
  * every matching letter.
  */
-export function credentialNamedValues(variables: Readonly<Record<string, unknown>>): string[] {
+export function credentialLookingValues(variables: Readonly<Record<string, unknown>>): string[] {
   return Object.entries(variables).flatMap(([name, value]) =>
     SECRET_ENV_NAME.test(name) && typeof value === 'string' && value.length >= 8 ? [value] : [],
   );
@@ -108,7 +108,7 @@ export function redactCredentialLooking(
   text: string,
   env: Readonly<Record<string, string | undefined>>,
 ): string {
-  return redactShapes(redactValues(text, credentialNamedValues(env)));
+  return redactShapes(redactValues(text, credentialLookingValues(env)));
 }
 
 /**
@@ -157,14 +157,14 @@ export class SecretRedaction {
   private matcher: { readonly size: number; readonly matcher: SecretMatcher } | undefined;
 
   constructor(env: Readonly<Record<string, string | undefined>>) {
-    this.addCredentialLooking(credentialNamedValues(env));
+    this.addCredentialLookingValues(credentialLookingValues(env));
   }
 
   addKnownSecrets(values: Iterable<string>): void {
     this.knownSecrets.add(values);
   }
 
-  addCredentialLooking(values: Iterable<string>): void {
+  addCredentialLookingValues(values: Iterable<string>): void {
     for (const value of values) if (value.length > 0) this.credentialLooking.add(value);
   }
 
@@ -240,32 +240,60 @@ function setOwn(error: Error, name: string, value: unknown): void {
   Object.defineProperty(error, name, { value, writable: true, configurable: true });
 }
 
+const UNPRINTABLE = 'A value was thrown that cannot be turned into text.';
+
+function safeString(value: unknown): string {
+  try {
+    return String(value);
+  } catch {
+    try {
+      return Object.prototype.toString.call(value);
+    } catch {
+      return UNPRINTABLE;
+    }
+  }
+}
+
 /**
  * The error to rethrow in place of a thrown defect, with every secret removed from its message
  * and stack, and from those of each error in its `cause` chain and in an `AggregateError`'s
  * `errors`. A cause that is text or plain data becomes a redacted copy. Each error is redacted
  * in place where it can be. One whose properties cannot change, such as a frozen error, is
- * replaced by a new error with the redacted message, stack and cause. Never throws.
+ * replaced by a new error with the redacted message, stack and cause. A thrown value that is not
+ * an `Error` becomes an `Error` whose message is its redacted text. Never throws: when reading
+ * the error fails, the result is a new `Error` holding the redacted text of what was thrown.
  */
-export function redactThrown(
+export function redactThrown(thrown: unknown, redaction: SecretRedaction): Error {
+  try {
+    return thrown instanceof Error
+      ? redactErrorChain(thrown, redaction, new Map())
+      : new Error(redaction.redact(safeString(thrown)));
+  } catch {
+    return new Error(redaction.redact(safeString(thrown)));
+  }
+}
+
+function redactErrorChain(
   error: Error,
   redaction: SecretRedaction,
-  seen = new Map<Error, Error>(),
+  seen: Map<Error, Error>,
 ): Error {
   const done = seen.get(error);
   if (done !== undefined) return done;
   seen.set(error, error);
-  const message = redaction.redact(error.message);
+  const message = redaction.redact(
+    typeof error.message === 'string' ? error.message : safeString(error.message),
+  );
   const stack = typeof error.stack === 'string' ? redaction.redact(error.stack) : undefined;
   const cause =
     error.cause instanceof Error
-      ? redactThrown(error.cause, redaction, seen)
+      ? redactErrorChain(error.cause, redaction, seen)
       : redactData(error.cause, redaction);
   const members =
     error instanceof AggregateError
       ? error.errors.map((member: unknown) =>
           member instanceof Error
-            ? redactThrown(member, redaction, seen)
+            ? redactErrorChain(member, redaction, seen)
             : redactData(member, redaction),
         )
       : undefined;
