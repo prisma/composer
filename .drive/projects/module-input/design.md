@@ -207,7 +207,7 @@ The `composer` section of `prisma.config.ts` gains two lists: `config`, a list o
 
 ### The two adapters that ship
 
-- **`environmentVariables()`** returns the process environment, except the variables whose names start with `PRISMA_COMPOSER_`, which Composer uses to pass data to its own second process.
+- **`environmentVariables()`** returns the whole process environment, with no exception.
 - **`dotenv()`** reads `.env` files from the folder of `prisma.config.ts`. It delegates to `dotenv-flow`, pinned to one version, because `dotenv-flow`'s file order becomes Composer's. `listFiles` gives the files for the environment, and `parse` merges them without touching the process environment. `listFiles` lists `dotenv-flow`'s `.env.defaults` file first whenever it is given its own default pattern, `.env[.node_env][.local]`, so `dotenv()` drops that file from the list. It never reads `.env.defaults`. The order, lowest first, is `.env`, `.env.local`, `.env.<environment>`, `.env.<environment>.local`. Following `dotenv-flow`, `.env.local` is skipped when the environment is `test`. `dotenv()` reads files only.
 - A project that loads `.env` with `import 'dotenv/config'` in `prisma.config.ts` must remove that import when it adopts `dotenv()`. Otherwise the import puts `.env`'s values into the process environment, `environmentVariables()` returns them last, and they override `.env.<environment>`. The release note says so.
 
@@ -222,40 +222,43 @@ In `prisma dev`, a changed adapter value pauses rebuilds until dev is restarted,
 
 ### The deploy's two processes
 
-`prisma deploy` runs the adapters in its own process, to check the root's input and run preflight. It then starts a second process, which loads `prisma.config.ts` and the graph again, and runs Alchemy to do the deploy. The second process runs no adapter.
+`prisma deploy` runs the adapters once, in its own process, to check the root's input and run preflight. It then starts a second process, which loads `prisma.config.ts` and the graph again, and runs Alchemy to do the deploy. The second process runs no adapter.
 
-Instead, the first process writes a **configuration file** beside the generated stack file, in `.prisma-composer/`. It holds only the values the graph reads from the app configuration:
+Instead, the first process writes the **app configuration file**, `.prisma-composer/app-configuration-<pid>-<uuid>.json`, beside the generated stack file, and passes its path in `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`. It is not `prisma.config.ts`. It holds what Load read from the app configuration (`AppConfigurationRead`) and the first process's node addresses:
 
-- for each path of the root's input that the root's body names, the real value the first process's check produced;
-- for each name an `envParam()` in the graph reads, that name's value in the app configuration.
+- `rootInput`: for each path of the root's input that the root's body passes on, the real value the first process's check produced;
+- `configurationKeyText`: for each configuration key an `envParam()` in the graph reads, its text in the app configuration;
+- the list of node addresses the first process's graph has.
 
 The second process takes the root's real values from the file and does not run the root's schema again. It could not: the file lacks the fields the body never names, and a required one among them would fail the check. The first process has already checked the whole configuration.
 
 - The file is JSON. A root field whose real value JSON cannot hold exactly, such as a `Date` a transform produced, fails the deploy in the first process, naming the field.
 - The file is readable only by its owner (mode 0600). The first process deletes it when the deploy ends, whether the deploy succeeds or fails.
-- The second process never needs the app secrets, so the file holds none. Load refuses a name that both an `envParam()` and an `envSecret()` read, because the file would then hold that secret. It inherits the shell's environment, as today, so a secret in the shell is present in it; it reads none.
-- The second process reads the values the first process checked, so a `.env` file edited during the deploy, or an adapter that would return something else a second time, cannot change what is deployed.
-- The first process also passes the second the list of node addresses it checked, in a `PRISMA_COMPOSER_` environment variable, as it passes the preflight payload. The second process refuses to deploy a graph whose list differs. A body that reads `process.env` directly is the way this can still happen (section 2).
+- The second process never needs the app secrets, so the file holds none. Load refuses, with `COMPOSE.GRAPH_INVALID`, a name that both an `envParam()` and an `envSecret()` read, and a root input field the root's body passes on when an `envSecret()` in the graph reads the same name, because the file would then hold that secret. The CLI refuses to write the file, with `CONFIG.SECRET_AS_PLAIN_VALUE`, when any text in it equals a value under a secrets key or a value a written `secrets` list returned. Both refusals name the field, never the value. It inherits the shell's environment, as today, so a secret in the shell is present in it; it reads none.
+- The second process reads what the first process's Load read, so a `.env` file edited during the deploy, or an adapter that would return something else a second time, cannot change what is deployed.
+- The second process refuses to deploy a graph whose node addresses differ from the list in the file. A body that reads `process.env` directly is the way this can still happen (section 2).
 
 `destroy`'s second process receives the app configuration through the same file.
 
+A run stopped by a forced exit cannot delete its file. At the start of each deploy, destroy and `prisma dev`, the CLI deletes the app configuration files under `.prisma-composer/` and each dev environment directory whose process id, in the file name, is no longer running.
+
 ### `prisma dev`'s two processes
 
-`prisma dev` starts a second process at start and at each rebuild. That process receives the app configuration through the same kind of file, which `prisma dev` deletes when it stops. Unlike the deploy's second process, it needs the app secrets, because the local services run with them. The first process passes the value of each name an `envSecret()` in the graph names through the second process's environment, in memory. Neither process writes a secret to a file for this.
+`prisma dev` starts a second process at start and at each rebuild. That process receives the app configuration through the same kind of file, `<dev environment dir>/app-configuration-<pid>.json`, which `prisma dev` writes before each converge and deletes as soon as that converge ends. Unlike the deploy's second process, it needs secrets, because the local services run with them. The first process passes the **named secrets**, the value of each secrets key an `envSecret()` in the graph names, in one environment variable, `PRISMA_COMPOSER_NAMED_SECRETS`, in memory. Neither process writes a secret to a file for this. So the handover is one file, plus one variable under `prisma dev`. The dev stack file passes the local target `configurationKeyText` and `namedSecrets: NamedSecrets`, never the whole app configuration or app secrets.
 
 ## 9. Keeping secret values out
 
-- A secret's value enters no file Composer writes for a deploy, no deploy state, no deploy report and no log line. An `envSecret()` reaches the service's input document as a pointer. The configuration file holds no secrets (section 8).
+- A secret's value enters no file Composer writes for a deploy, no deploy state, no deploy report and no log line. An `envSecret()` reaches the service's input document as a pointer. The app configuration file holds no secrets (section 8).
 - **What Composer redacts.** Everywhere it prints, Composer redacts:
   - every value under a name that an `envSecret()` in the graph names, whether in the app configuration or in the app secrets;
   - every value a project's own secrets adapters return, when the project writes a `secrets` list.
 
   The default list, `[environmentVariables()]`, only supplies the values of the names `envSecret()` names, so under it only those values are redacted. Redacting every value in the shell would blank every `1` and `true` in the output.
 
-  A value is redacted at any length. There is no minimum.
+  A value is redacted at any length. There is no minimum. When two known secrets overlap in the text, the redactor hides every character either one covers.
 - **How Composer knows a secret's name.** Core sees a secret source only as an opaque payload, so a target tells core which app secrets key holds the value: `secretSource()` takes `secretsKey`, and `envSecret('NAME')` passes `NAME`. Composer lists those keys to know what to redact, and which secrets `prisma dev` hands its second process.
-- **What Composer already redacted stays, for now.** Composer keeps the redaction S4 shipped: an app configuration value of eight characters or more under a name that looks like a credential, and token shapes such as bearer tokens, JWTs and a password in a URL. That is existing behaviour, not part of this design. A later slice that gives secrets their own home revisits it (section 11).
-- **Where.** Errors, adapter failures including an adapter's own message, the second process's output, and the second process's failure cause.
+- **What Composer already redacted stays, for now.** Composer keeps the redaction S4 shipped: a value of eight characters or more under a name that looks like a credential, in the app configuration or the process environment, and token shapes such as bearer tokens, JWTs and a password in a URL. That is existing behaviour, not part of this design. A later slice that gives secrets their own home revisits it (section 11).
+- **Where.** Errors, events, adapter failures including an adapter's own message, a thrown defect's cause chain, the second process's output, and the second process's failure cause. Every output uses the same set of known secrets.
 - **Plain values are redacted too, for now.** Composer redacts by value, and a `.env` file often holds secrets and plain values side by side. When a project's own secrets list reads such a file, every value in it is redacted, the plain ones included. A later slice gives secrets a home distinct from plain values, so that only secrets are redacted (section 11).
 - **The second process's output.** The CLI starts the second process through its command engine's `ctx.spawn`. From `@prisma/cli-engine` 0.10.0 (prisma/prisma-cli#383), `ctx.spawn` takes a transform per output stream: the engine pipes the child's stdout and stderr, passes each through the transform, and prints the result where it would have printed the output, in every output format. Composer's transform redacts. The engine still owns the child: stdin stays inherited, and signals, the abort ladder and the exit status work as before. A programmatic host has no engine, so there Composer pipes the output itself through the same redactor. Either way the second process has no terminal, so Alchemy's progress display and colours change. A secret can be split across two chunks of output, so the redactor holds back only the end of the output that could be the start of a secret, until the next chunk or the end of the stream. Text that cannot start a secret, such as a prompt, is printed at once, and an emoji is never split. A test splits a secret across two chunks.
 - A schema's refusal of a `secretString()` field says what kind of value it got, never the value.
@@ -271,7 +274,7 @@ This design also removes or replaces the following. All but the last were built 
 - **A `resolve()` function returning a pointer it received**, and Load's special case that accepts one.
 - **Forwarding a non-root module's whole `input`**, which S2 to S5 allow and test.
 - **The stand-in values** that a module's and a service's schema check in place of a runtime value. Schemas see pointers instead. `paramSource()`'s `sentinel` option goes, and its `redacted` option decides the kind of pointer the source gives.
-- **The "pool" names in code**: `LoadOptions.configPool`, `paramSource()`'s `poolKey` option, and `readConfigPool` and `readSecretsPool` on `@prisma/composer/internal/pools`, which the generated stack files import. The code takes the names "the app configuration" and "the app secrets", and the generated stack files read the configuration file instead.
+- **The "pool" names in code**: `LoadOptions.configPool`, `paramSource()`'s `poolKey` option, and `readConfigPool` and `readSecretsPool` on `@prisma/composer/internal/pools`, which the generated stack files import. The code takes the names "the app configuration" and "the app secrets", and the generated stack files read the app configuration file instead.
 - **The second process's own run of the config adapters**, and the requirement that adapters return the same values in both processes.
 - **A service binding's loose type, `InputBinding`**, which accepts any source in any key.
 
@@ -304,7 +307,7 @@ Outside this project:
 - Routing runtime secrets to a secret store such as Doppler.
 - A secret box that survives an ArkType copy.
 - Listing an unset `envParam()` in a module's input among the deploy report's absent keys.
-- Running the deploy through Alchemy's programmatic API, in Composer's own process. That removes the second process, and with it the configuration file and the piping of its output.
+- Running the deploy through Alchemy's programmatic API, in Composer's own process. That removes the second process, and with it the app configuration file and the piping of its output.
 
 ## 12. Decision records and glossary this amends
 
@@ -322,7 +325,7 @@ Each amendment says plainly which recorded statement it reverses:
 - **Module input**, as amended by S2: "to narrow, forward the whole `input`". Now the whole `input` is refused everywhere a value goes. A module declares a flat schema and passes fields by name.
 - **Service input**: at deploy the schema sees each secret as an opaque `SecretString` stand-in. Now it sees a pointer, and a field bound to `generatedParam()` or `serviceOrigin()` must be wrapped. A service's binding is also now typed from its schema.
 - **Service input**: an env-sourced value that is unset or empty is left out. The root's input keeps the empty text from a `.env` line such as `KEY=`.
-- **The `composer` config section**, as amended by S4: the second process reads the adapters again, and an adapter must return the same values for the same environment in both processes. Now the second process reads the configuration file and runs no adapter.
+- **The `composer` config section**, as amended by S4: the second process reads the adapters again, and an adapter must return the same values for the same environment in both processes. Now the second process reads the app configuration file and runs no adapter.
 - **Dev secrets**: it rejected "Load `.env` in Composer itself", and told projects to add `import 'dotenv/config'`. `dotenv()` partly reverses the first: Composer ships the loader, but the user still names it in `prisma.config.ts`. A project that adopts `dotenv()` removes the import. The dev second process now receives its secrets from the first process, not from its own environment or adapters.
 - **Errors**: a structured error is never transformed between where it is raised and who receives it. Now redaction is the one change: before an operation returns an error, Composer removes every secret value it knows from its text and drops its cause.
 

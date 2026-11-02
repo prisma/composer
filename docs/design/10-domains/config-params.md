@@ -14,7 +14,7 @@ read back at boot. Rests on
 deploy target owns serialization),
 [ADR-0021](../90-decisions/ADR-0021-params-are-read-through-config-not-load.md)
 (params are read through `config()`),
-[ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md) (a secret
+[ADR-0029](../90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) (a secret
 is carried by name only, never by value), and
 [ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)
 (a param binds at provision — a literal or an env source).
@@ -111,7 +111,7 @@ from: a **literal** (in the binding); an **`envParam`**
 ([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md),
 operator-supplied per environment, read at boot, **never in deploy state**); an
 **`envSecret`**
-([ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md), the
+([ADR-0029](../90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md), the
 platform secret store, redacted, **never in deploy state** — the only secret);
 and a **generated param**
 ([ADR-0042](../90-decisions/ADR-0042-service-input-is-one-standard-schema.md) §
@@ -317,7 +317,7 @@ user-provisioned platform variable.
 at creation and never re-resolves it, so changing a secret's value is the
 platform's own semantics: `PATCH` the value, then create a new version.
 
-See [ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md) for the full design and its
+See [ADR-0029](../90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) for the full design and its
 alternatives.
 
 ## Introspection
@@ -349,7 +349,7 @@ Three lines the model holds everywhere:
   [ADR-0019](../90-decisions/ADR-0019-the-target-owns-config-serialization.md),
   [ADR-0021](../90-decisions/ADR-0021-params-are-read-through-config-not-load.md) —
   the decisions this documents.
-- [ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md) — the
+- [ADR-0029](../90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) — the
   secrets model this document's § Secrets summarizes.
 - [ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)
   — provision-time binding and env-sourcing, summarized in § Binding a param at

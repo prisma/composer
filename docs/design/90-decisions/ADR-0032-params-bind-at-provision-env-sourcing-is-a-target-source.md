@@ -16,7 +16,7 @@ const { appOrigin } = web.config();   // string
 
 ## Decision
 
-A service's per-key param can be bound at `provision()` to a literal or to a target-owned source such as `envParam('NAME')`, instead of only carrying an authoring-time `default`. An env-sourced param is the plain sibling of [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md)'s secret: the same name-carried source, the same per-environment platform variable, the same preflight, but read back unredacted and validated by the param's own schema.
+A service's per-key param can be bound at `provision()` to a literal or to a target-owned source such as `envParam('NAME')`, instead of only carrying an authoring-time `default`. An env-sourced param is the plain sibling of [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md)'s secret: the same name-carried source, the same per-environment platform variable, the same preflight, but read back unredacted and validated by the param's own schema.
 
 `envParam('NAME')` returns a value, typed `Value<string>`, that is also the source ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). It reads `NAME` from the app configuration, what the `composer` section's `config` adapters return. Where it sits decides when:
 
@@ -26,7 +26,7 @@ A service's per-key param can be bound at `provision()` to a literal or to a tar
 
 The value must be text; anything else fails the Load, naming the key and the kind of value, before anything is created. Core knows a source only as an opaque payload; `paramSource(payload, { label, configurationKey, redacted })` is the constructor a target calls. `configurationKey` is the app configuration key whose text is the source's real value at deploy; `redacted` makes a source known only at boot a secret pointer rather than a plain one. Prisma Cloud's `envParam('NAME')` passes `configurationKey: NAME`.
 
-The deploy reads the app configuration once, in its first process, and hands its second process the text of every key the graph reads, in the configuration file ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
+The deploy reads the app configuration once, in its first process, and hands its second process the text of every configuration key the graph reads, in the app configuration file ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
 
 ## Reasoning
 
@@ -61,7 +61,7 @@ The deploy reads the app configuration once, in its first process, and hands its
 
 ## Related
 
-- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) — the secret this mirrors.
+- [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) — the secret this mirrors.
 - [ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md) — framework-minted param values, which live in deploy state.
 - [ADR-0018](ADR-0018-config-params-carry-a-caller-owned-schema.md) and [ADR-0019](ADR-0019-the-target-owns-config-serialization.md) — schema on the declaration, wire owned by the target.
 - [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md) — values and the app configuration.

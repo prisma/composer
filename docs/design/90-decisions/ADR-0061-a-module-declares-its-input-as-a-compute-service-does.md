@@ -59,7 +59,7 @@ A module declares all of its input as **one Standard Schema**, `input`, exactly 
 
 - **`module()` takes `input`**, and `provision(module, …)` takes one `input` binding, typed from the schema. `ModuleNode<D, E, I>` and `ModuleContext<D, I>` carry the schema's type. `module()` refuses a `params` or `secrets` key, and `provision()` of a module refuses a `params` or `secrets` map, each with an error naming `input`. `paramNeed()` and the module form of `secret()` are gone.
 - **The body's `input` has the type `ModuleInput<S>`, which is not a `Value`.** Every binding type refuses it. Where the compiler sees no type, such as a binding slot typed `unknown`, only Load refuses it.
-- **`paramSource()` and `secretSource()`**, which targets use to build their sources, each return one object that is both the source and a value. `secretSource()` takes a `label`. `paramSource()` takes `label`, `poolKey` and `redacted`; `redacted` says whether the source is a secret pointer or a plain one.
+- **`paramSource()` and `secretSource()`**, which targets use to build their sources, each return one object that is both the source and a value. `secretSource()` takes `label` and `secretsKey`, the app secrets key that holds the secret. `paramSource()` takes `label`, `configurationKey` and `redacted`: `configurationKey` is the app configuration key whose text is the source's real value at deploy, and `redacted` says whether a source known only at boot is a secret pointer or a plain one.
 - **Load accepts `input` on a root** and binds it to the app configuration, which the root's schema checks before any other module's binding. Load still refuses `deps` on a root.
 - **A value passed on is checked twice**, by the module's schema and by the child's. Both run at deploy, before anything is created.
 
@@ -76,6 +76,6 @@ A module declares all of its input as **one Standard Schema**, `input`, exactly 
 
 - [ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md): a module has the same boundary as a service. Its current text includes this decision: a module's input is one Standard Schema, bound at `provision()`.
 - [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md): service input is one standard schema. Its current text includes this decision: a module's binding has the same type as a service's.
-- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) and [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md): the forwardable secret and param slots this replaces on modules; their sources (`envSecret`, `envParam`) remain.
+- [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) and [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md): the forwardable secret and param slots this replaces on modules; their sources (`envSecret`, `envParam`) remain.
 - [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): values, `resolve()`, and how the root's input is bound.
 - [module-composition.md](../10-domains/module-composition.md) and [config-params.md](../10-domains/config-params.md).

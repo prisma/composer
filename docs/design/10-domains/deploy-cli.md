@@ -190,7 +190,7 @@ user can rerun it by hand (ADR-0007).
    destroy` re-imports and re-evaluates the same stack, so its target
    reconstruction needs the same containers. The generated file and Alchemy's
    state live in the process's working directory — tool state lives where you
-   run the tool, like any other CLI (ADR-0004). Beside it the CLI writes the configuration file, `.prisma-composer/configuration-<pid>-<uuid>.json`, mode 0600, holding what Load read from the app configuration, and deletes it when the run ends. The second process reads it, runs no adapter, and refuses a graph whose node addresses differ from the list the CLI passes in `PRISMA_COMPOSER_NODE_ADDRESSES`. It never receives the app secrets. The CLI engine passes its output through Composer's redactor, which replaces every secret value the CLI knows, before it prints it.
+   run the tool, like any other CLI (ADR-0004). Beside it the CLI writes the app configuration file, `.prisma-composer/app-configuration-<pid>-<uuid>.json`, mode 0600, and deletes it when the run ends. It holds what Load read from the app configuration and the first process's node addresses; it is not `prisma.config.ts`. The CLI passes its path in `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`. The second process reads it, runs no adapter, and refuses a graph whose node addresses differ from the first process's. It never receives the app secrets. The CLI refuses to write the file when any text in it equals a secret's value (`CONFIG.SECRET_AS_PLAIN_VALUE`). At the start of each `deploy` and `destroy` it deletes the app configuration files an earlier run left in `.prisma-composer/`, when the process id in the file name is no longer running. The CLI engine passes its output through Composer's redactor, which replaces every secret value the CLI knows, before it prints it.
 
 The pass that assembles a service is the same pass that lowers it, so the
 correlation between services and their built bundles never exists as
@@ -303,6 +303,7 @@ them:
 | Built output missing | the expected path, and "run your build" |
 | Root's input refused by its schema | the schema's messages, and that a root's input is the app configuration for the environment |
 | A config adapter throws or returns something other than an object (`CONFIG.ADAPTER_FAILED`, `CONFIG.ADAPTER_INVALID`) | which list and position, and the fix |
+| The app configuration file would hold a secret's text (`CONFIG.SECRET_AS_PLAIN_VALUE`) | which root input field or configuration key holds a secret's text, never the value, and the fix: read the secret with `envSecret()`, or give the plain value text that is not a secret |
 | The prisma CLI's engine is older than 0.10.0 (`DEPS.CLI_ENGINE_INCOMPATIBLE`) | that Composer needs @prisma/cli-engine 0.10.0 or later to redact the deploy engine's output, and nothing was started |
 
 ## Out of scope (designed around)
