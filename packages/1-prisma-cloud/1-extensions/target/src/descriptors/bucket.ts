@@ -1,9 +1,9 @@
 /** The `bucket` node kind's descriptor: one Prisma Object Store Bucket (plus its BucketAccessKey), provisioned before any consumer deploys. */
 
+import * as Prisma from '@alchemy.run/prisma';
 import type { NodeDescriptor } from '@internal/core/config';
 import type { Lowering } from '@internal/core/deploy';
 import * as Output from 'alchemy/Output';
-import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { fromLegacyId, legacyNodeResourceId } from '../legacy-resource-ids.ts';

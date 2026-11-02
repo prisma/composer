@@ -19,8 +19,9 @@
     "@internal/lowering": "workspace:0.36.0",
     "@internal/s3-protocol": "workspace:0.36.0",
     "@prisma/dev": "^0.25.2",
-    "alchemy": "2.0.0-beta.83",
-    "effect": "4.0.3",
+    "@alchemy.run/prisma": "2.0.0-beta.84",
+    "alchemy": "2.0.0-beta.84",
+    "effect": "4.0.5",
     "tar": "^7.5.21"
   },
   "devDependencies": {

@@ -1,5 +1,6 @@
 /** The `compute` node kind's descriptor: the four service hooks — provision, serialize, package, deploy — plus `reserve`, which stands in for the last two when the service runs a dev server (ADR-0056). */
 
+import * as Prisma from '@alchemy.run/prisma';
 import { isParamSource } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
 import {
@@ -8,7 +9,6 @@ import {
   packageComputeArtifact,
 } from '@internal/lowering';
 import * as Output from 'alchemy/Output';
-import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { GeneratedParam } from '../generated-param-resource.ts';

@@ -1,9 +1,9 @@
 /** Pins the upstream `Prisma.Database` semantics the database descriptors depend on — real provider, fake Management client. */
 import { describe, expect, test } from 'bun:test';
+import type { PrismaManagementClient } from '@alchemy.run/prisma/Client';
+import { Database, DatabaseProvider } from '@alchemy.run/prisma/Database';
+import type { Database as ApiDatabase } from '@alchemy.run/prisma/Types';
 import { Credentials, Retry } from '@distilled.cloud/prisma';
-import type { PrismaManagementClient } from 'alchemy/Prisma/Client';
-import { Database, DatabaseProvider } from 'alchemy/Prisma/Database';
-import type { Database as ApiDatabase } from 'alchemy/Prisma/Types';
 import { ResourceContext } from 'alchemy/ResourceContext';
 import { Stack } from 'alchemy/Stack';
 import { Stage } from 'alchemy/Stage';
