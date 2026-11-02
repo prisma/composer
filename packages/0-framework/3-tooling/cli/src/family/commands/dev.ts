@@ -20,7 +20,7 @@ import { ok } from '@prisma/cli-engine/protocol';
 import type { DevEvent, DevInput } from '../../operations/dev.ts';
 import { DEV_ENVIRONMENT, type ServiceEndpoint } from '../../operations/shared.ts';
 import type { AlchemyInvocation, AlchemyOutcome, RunAlchemy } from '../../run-alchemy.ts';
-import { convergeSpawn, settleConvergeFailure } from '../converge.ts';
+import { convergeSpawn, outputTransformMissing, settleConvergeFailure } from '../converge.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
 
@@ -304,6 +304,8 @@ export const createDevCommand = (operations: ComposerOperations) =>
     needs: { config: composerSection },
     maySpawn: true,
     handler: async (args, ctx) => {
+      const refused = outputTransformMissing(ctx);
+      if (refused !== undefined) return refused;
       const alchemy = convergeSpawn(ctx);
       const result = await operations.dev(
         {

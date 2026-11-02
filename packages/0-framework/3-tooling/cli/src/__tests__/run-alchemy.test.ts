@@ -162,6 +162,7 @@ describe('alchemyInvocation()', () => {
         cwd: dir,
         stage: 'ci-42',
         containerEnv: {},
+        redactedValues: [],
       }),
     ).toEqual({
       action: 'deploy',
@@ -169,6 +170,7 @@ describe('alchemyInvocation()', () => {
       cwd: dir,
       stage: 'ci-42',
       env: {},
+      redactedValues: [],
     });
   });
 
@@ -184,6 +186,7 @@ describe('alchemyInvocation()', () => {
           cwd: dir,
           stage: 'ci-42',
           containerEnv: {},
+          redactedValues: [],
         }),
         entry,
         '/opt/node/bin/node',
@@ -208,6 +211,7 @@ describe('alchemyInvocation()', () => {
           cwd: dir,
           stage: 'br_test123',
           containerEnv: {},
+          redactedValues: [],
         }),
         entry,
       ).args,
@@ -232,6 +236,7 @@ describe('alchemyInvocation()', () => {
         cwd: dir,
         stage: 'br_test123',
         containerEnv: {},
+        redactedValues: [],
       }),
       entry,
     ).args;
@@ -258,6 +263,7 @@ describe('alchemyInvocation()', () => {
         stage: 'staging',
         containerEnv: { PRISMA_COMPOSER_CONTAINER_FOO: 'serialized-instance' },
         env: { PRISMA_COMPOSER_DEPLOYMENT_RESULT: '/tmp/result.json' },
+        redactedValues: [],
       }).env,
     ).toEqual({
       PRISMA_COMPOSER_CONTAINER_FOO: 'serialized-instance',
@@ -273,6 +279,7 @@ describe('reproduceCommand()', () => {
     cwd: '/app',
     stage: 'ci-7',
     containerEnv: {},
+    redactedValues: [],
   });
 
   test('is the command line the adapter started, quoting arguments with spaces', () => {
@@ -333,7 +340,7 @@ describe('spawnCommandLine()', () => {
     entry: string,
     invocation: Parameters<typeof spawnAlchemy>[0],
   ): ReturnType<typeof spawnAlchemy> {
-    return spawnCommandLine(alchemyCommandLine(invocation, entry));
+    return spawnCommandLine(alchemyCommandLine(invocation, entry), []);
   }
 
   test('runs the invocation in its cwd with its env additions merged over the invoking environment', async () => {
@@ -358,6 +365,7 @@ describe('spawnCommandLine()', () => {
         stage: 'spaces & symbols',
         cwd: dir,
         env: { PRISMA_COMPOSER_CONTAINER_FOO: 'serialized-instance' },
+        redactedValues: [],
       });
 
       expect(outcome).toEqual({ exitCode: 0, signal: null });
@@ -389,6 +397,7 @@ describe('spawnCommandLine()', () => {
         stage: 'test',
         cwd: dir,
         env: {},
+        redactedValues: [],
       }),
     ).toEqual({
       exitCode: 3,
@@ -417,6 +426,7 @@ describe('spawnCommandLine()', () => {
           stage: 'test',
           cwd: dir,
           env: {},
+          redactedValues: [],
         }),
       ).toEqual({
         exitCode: null,
@@ -424,4 +434,25 @@ describe('spawnCommandLine()', () => {
       });
     },
   );
+});
+
+describe('spawnCommandLine() redaction', () => {
+  test("spawnCommandLine pipes the child's output through redaction, a secret split across chunks included", async () => {
+    const collected = { stdout: '', stderr: '' };
+    const outputs = {
+      stdout: { write: (text: string) => (collected.stdout += text) },
+      stderr: { write: (text: string) => (collected.stderr += text) },
+    };
+    const script =
+      "process.stdout.write('key=hunter2-'); setTimeout(() => process.stdout.write('secret\\n'), 50);";
+
+    const outcome = await spawnCommandLine(
+      { command: process.execPath, args: ['-e', script], cwd: process.cwd(), env: {} },
+      ['hunter2-secret'],
+      outputs,
+    );
+
+    expect(outcome).toEqual({ exitCode: 0, signal: null });
+    expect(collected.stdout).toBe('key=[redacted]\n');
+  });
 });

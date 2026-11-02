@@ -3885,8 +3885,8 @@ function makeSecondProcessAppDir(): { dir: string; entryPath: string } {
       `import { module, paramSource, secretSource, service } from ${JSON.stringify(coreIndex)};`,
       `import { type } from ${JSON.stringify(arktypeEntry)};`,
       '',
-      "const configured = (key) => paramSource({ key }, { label: `configured('${key}')`, configurationKey: key });",
-      "const secret = (key) => secretSource({ key }, { label: `secret('${key}')`, secretsKey: key });",
+      'const configured = (key) => paramSource({ key }, { label: "configured(\'" + key + "\')", configurationKey: key });',
+      'const secret = (key) => secretSource({ key }, { label: "secret(\'" + key + "\')", secretsKey: key });',
       '',
       'const app = service({',
       "  name: 'app',",
@@ -4070,6 +4070,168 @@ describe('the second process reads what the first process checked', () => {
       expect(filesHoldingSecret).toEqual([]);
       expect(fileDuringConverge).toBe(true);
       expect(fs.existsSync(configurationFile)).toBe(false);
+    },
+    15_000,
+  );
+});
+
+describe('no known secret is printed', () => {
+  const SENTINEL = 'e2e-SENTINEL-5f2a';
+
+  test("no known secret reaches the configuration file, the stack file, the deploy report, the errors or the second process's output", async () => {
+    const app = makeSecondProcessAppDir();
+    const script =
+      "process.stdout.write('e2e-SENTI'); setTimeout(() => { process.stdout.write('NEL-5f2a and more\\n'); process.stderr.write('boom e2e-SENTINEL-5f2a\\n'); }, 50);";
+    const runOnce = async (status: number, reportPath: string) => {
+      const seen = { configurationFile: '', stackFile: '', stdout: '', stderr: '' };
+      const outputs = {
+        stdout: { write: (text: string) => (seen.stdout += text) },
+        stderr: { write: (text: string) => (seen.stderr += text) },
+      };
+      const result = await silently(() =>
+        deployWithDeps(
+          {
+            config: composerConfig({
+              ...fakeConfig(),
+              config: [
+                () => ({ GREETING: 'hello', APP_ORIGIN: 'https://origin.example', UNUSED: 'x' }),
+              ],
+              secrets: [() => ({ S13_SECRET: SENTINEL })],
+            }),
+            entry: app.entryPath,
+            environment: 'staging',
+            cwd: app.dir,
+            reportPath,
+          },
+          {
+            runAssembler: fakeAssembler,
+            alchemy: async (input) => {
+              const configurationFile = input.env[CONFIGURATION_FILE_ENV];
+              const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
+              if (configurationFile === undefined || resultFile === undefined) {
+                throw new Error('the second process was not told where its files are');
+              }
+              seen.configurationFile = fs.readFileSync(configurationFile, 'utf8');
+              seen.stackFile = fs.readFileSync(
+                path.join(app.dir, input.stackFileRelativePath),
+                'utf8',
+              );
+              await spawnCommandLine(
+                { command: process.execPath, args: ['-e', script], cwd: app.dir, env: input.env },
+                input.redactedValues,
+                outputs,
+              );
+              const summary: DeploymentSummary = {
+                app: 'hello-second',
+                nodes: [
+                  {
+                    address: 'hello-second.app',
+                    entities: [{ kind: 'compute-service', id: 'svc', details: { note: SENTINEL } }],
+                  },
+                ],
+              };
+              fs.writeFileSync(resultFile, JSON.stringify(summary));
+              fs.writeFileSync(engineFailureFilePath(resultFile), `error: rejected ${SENTINEL}`);
+              return { exitCode: status, signal: null };
+            },
+          },
+        ),
+      );
+      return { result, seen, report: fs.readFileSync(reportPath, 'utf8') };
+    };
+
+    const succeeded = await runOnce(0, path.join(app.dir, 'succeeded.json'));
+    const failed = await runOnce(1, path.join(app.dir, 'failed.json'));
+
+    if (!succeeded.result.ok) throw new Error('the first deploy should succeed');
+    if (failed.result.ok) throw new Error('the second deploy should fail');
+    const texts = [
+      ...[succeeded, failed].flatMap(({ seen, report }) => [
+        seen.configurationFile,
+        seen.stackFile,
+        seen.stdout,
+        seen.stderr,
+        report,
+      ]),
+      JSON.stringify(succeeded.result.value.summary),
+      JSON.stringify(failed.result.failure.toEnvelope()),
+      String(failed.result.failure.meta?.['engineCause']),
+    ];
+    for (const text of texts) expect(text).not.toContain('SENTINEL');
+    expect(succeeded.seen.stdout).toBe('[redacted] and more\n');
+    expect(failed.seen.stdout).toBe('[redacted] and more\n');
+  }, 15_000);
+
+  test("an adapter's failure message is redacted with every value a written secrets list returned", async () => {
+    const app = makeAppDir();
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig({
+            ...fakeConfig(),
+            secrets: [() => ({ TOKEN_X: 'adapter-SENTINEL-1' })],
+            config: [throwingAdapter('bad adapter-SENTINEL-1')],
+          }),
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      ),
+    );
+
+    if (result.ok) throw new Error('the deploy should fail');
+    expect(result.failure.code).toBe('CONFIG.ADAPTER_FAILED');
+    expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SENTINEL');
+  });
+
+  test.skipIf(process.platform === 'win32')(
+    "a dev event's message is redacted",
+    async () => {
+      const app = makeAppDir('hello-dev');
+      const attachment: LocalTargetAttachment = {
+        startServices: () => Promise.resolve(),
+        stopApp: () => Promise.resolve(),
+        endpoints: () => Promise.resolve([]),
+        logs: async function* () {
+          yield { service: 'hello-dev.app', line: 'key dev-SENTINEL-51' };
+        },
+        serve: async () => ({ restarted: false }),
+      };
+      const events: DevEvent[] = [];
+
+      await silently(async () => {
+        const start = await devWithDeps(
+          {
+            config: composerConfig({
+              ...devServerConfigWith(attachment),
+              secrets: [() => ({ DEV_TOKEN: 'dev-SENTINEL-51' })],
+            }),
+            entry: app.entryPath,
+            cwd: app.dir,
+            onEvent: (event) => void events.push(event),
+          },
+          {
+            runAssembler: () =>
+              Promise.reject(new Error('a service with a dev server is not assembled')),
+            alchemy: async () => ({ exitCode: 0, signal: null }),
+          },
+        );
+        if (!start.ok) throw new Error(`expected a started session: ${start.failure.message}`);
+        for (let tries = 0; tries < 100; tries++) {
+          if (events.some((event) => event.kind === 'dev-server-output')) break;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        await start.value.stop();
+      });
+
+      expect(events).toContainEqual({
+        kind: 'dev-server-output',
+        address: 'hello-dev.app',
+        line: 'key [redacted]',
+      });
+      expect(JSON.stringify(events)).not.toContain('SENTINEL');
     },
     15_000,
   );

@@ -11,9 +11,16 @@ import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { ChildResult } from '@prisma/cli-engine';
-import { alchemyInvocation } from '../../run-alchemy.ts';
-import { type ConvergeContext, convergeSpawn } from '../converge.ts';
+import {
+  type ChildResult,
+  defineCommand,
+  defineCommandFamily,
+  exitWithChildStatus,
+} from '@prisma/cli-engine';
+import { ok } from '@prisma/cli-engine/protocol';
+import { createTestCli } from '@prisma/cli-engine/testing';
+import { type AlchemyInvocation, alchemyInvocation } from '../../run-alchemy.ts';
+import { type ConvergeContext, convergeSpawn, outputTransformMissing } from '../converge.ts';
 
 const tmpDirs: string[] = [];
 
@@ -81,6 +88,7 @@ describe('convergeSpawn() with a piped stdout', () => {
         cwd,
         stage: 'test',
         containerEnv: {},
+        redactedValues: [],
       }),
     );
 
@@ -102,6 +110,7 @@ describe('convergeSpawn() with a piped stdout', () => {
         cwd,
         stage: 'test',
         containerEnv: {},
+        redactedValues: [],
       }),
     );
 
@@ -112,5 +121,161 @@ describe('convergeSpawn() with a piped stdout', () => {
       '--stage',
       'test',
     ]);
+  }, 15_000);
+});
+
+const invocationIn = (cwd: string, redactedValues: readonly string[]): AlchemyInvocation =>
+  alchemyInvocation({
+    command: 'deploy',
+    stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
+    cwd,
+    stage: 'test',
+    containerEnv: {},
+    redactedValues,
+  });
+
+async function readAll(stream: TransformStream<string, string>, text: string): Promise<string> {
+  const writer = stream.writable.getWriter();
+  void writer.write(text);
+  void writer.close();
+  let out = '';
+  const reader = stream.readable.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return out;
+    out += value;
+  }
+}
+
+describe("convergeSpawn() redacts the child's output through the engine", () => {
+  const SECRET = 'hunter2-secret';
+
+  function cliRunning(
+    cwd: string,
+    script: Parameters<typeof createTestCli>[0]['spawnScript'],
+    beforeConverge: (ctx: {
+      report: (event: { kind: 'endpoint'; name: string; url: string }) => void;
+    }) => void = () => {},
+  ) {
+    const converge = defineCommand({
+      help: { summary: 'Runs a converge' },
+      maySpawn: true,
+      handler: async (_args, ctx) => {
+        beforeConverge(ctx);
+        await convergeSpawn(ctx)(invocationIn(cwd, [SECRET]));
+        return ok(exitWithChildStatus());
+      },
+    });
+    const family = defineCommandFamily({ commands: { converge } });
+    return createTestCli({
+      commandFamilies: [family],
+      commands: { ...family.commands },
+      ...(script === undefined ? {} : { spawnScript: script }),
+    });
+  }
+
+  test("the engine prints the child's output with every known secret redacted, a secret split across two chunks included, in human and json mode", async () => {
+    const cwd = appWithAlchemy([]);
+    const cli = cliRunning(cwd, (_request, child) => {
+      child.write('stdout', 'key=hunter2-');
+      child.write('stdout', 'secret\n');
+      child.write('stderr', `boom ${SECRET}\n`);
+      return { exitCode: 0, signal: null };
+    });
+
+    for (const format of [['--format', 'human'], ['--json']]) {
+      const result = await cli.run(['converge', ...format]);
+      const printed = result.stdout + result.stderr;
+
+      expect(result.spawns[0]?.output).toBe('engine');
+      expect(printed).not.toContain('hunter2');
+      expect(printed).toContain('boom [redacted]\n');
+      // In json mode both streams reach stderr, so the stderr line can fall inside the stdout text.
+      expect(printed.replace('boom [redacted]\n', '')).toContain('key=[redacted]\n');
+    }
+  }, 15_000);
+
+  test('the held-back text is printed before ctx.spawn resolves and before the report events the engine buffered', async () => {
+    const cwd = appWithAlchemy([]);
+    const cli = cliRunning(
+      cwd,
+      async (_request, child) => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        child.write('stderr', 'tail-without-newline hunter');
+        return { exitCode: 0, signal: null };
+      },
+      (ctx) => {
+        setTimeout(
+          () => ctx.report({ kind: 'endpoint', name: 'probe', url: 'https://probe.example' }),
+          5,
+        );
+      },
+    );
+
+    const result = await cli.run(['converge', '--format', 'human']);
+
+    const tail = result.stderr.indexOf('tail-without-newline hunter');
+    expect(tail).toBeGreaterThan(-1);
+    expect(tail).toBeLessThan(result.stderr.indexOf('https://probe.example'));
+  }, 15_000);
+
+  test("convergeSpawn gives the engine a transform per stream, and passes the secret values neither on the child's command line nor in its environment", async () => {
+    const cwd = appWithAlchemy([]);
+    let recorded: Parameters<ConvergeContext['spawn']>[0] | undefined;
+    const ctx: ConvergeContext = {
+      lastChild: () => undefined,
+      spawn: async (options) => {
+        recorded = options;
+        return { exitCode: 0, signal: null };
+      },
+    };
+
+    await convergeSpawn(ctx)(invocationIn(cwd, ['hunter2']));
+
+    if (recorded?.transformOutput === undefined) throw new Error('no transform was given');
+    expect(JSON.stringify(recorded.args)).not.toContain('hunter2');
+    expect(Object.values(recorded.env ?? {}).join('\n')).not.toContain('hunter2');
+    const stdout = recorded.transformOutput('stdout');
+    const stderr = recorded.transformOutput('stderr');
+    expect(stdout).not.toBe(stderr);
+    expect(await readAll(stdout, 'a hunter2 b')).toBe('a [redacted] b');
+    expect(await readAll(stderr, 'a hunter2 b')).toBe('a [redacted] b');
+  });
+
+  test("a host whose engine cannot transform a child's output refuses before starting anything", async () => {
+    const cwd = appWithAlchemy([]);
+    const commandWith = (passOptionNames: boolean) =>
+      defineCommand({
+        help: { summary: 'Runs a converge on an engine that may be older' },
+        maySpawn: true,
+        handler: async (_args, ctx) => {
+          const host: ConvergeContext = {
+            spawn: ctx.spawn,
+            lastChild: ctx.lastChild,
+            ...(passOptionNames && ctx.spawnOptionNames !== undefined
+              ? { spawnOptionNames: ctx.spawnOptionNames }
+              : {}),
+          };
+          const refused = outputTransformMissing(host);
+          if (refused !== undefined) return refused;
+          await convergeSpawn(ctx)(invocationIn(cwd, []));
+          return ok(exitWithChildStatus());
+        },
+      });
+    const family = defineCommandFamily({
+      commands: { old: commandWith(false), current: commandWith(true) },
+    });
+    const cli = createTestCli({ commandFamilies: [family], commands: { ...family.commands } });
+
+    const refused = await cli.run(['old', '--format', 'human']);
+    expect(refused.exitCode).toBe(2);
+    expect(refused.stderr).toContain('DEPS.CLI_ENGINE_INCOMPATIBLE');
+    expect(refused.stderr).toContain(
+      "This prisma CLI's @prisma/cli-engine is older than 0.10.0; Composer needs 0.10.0 or later.",
+    );
+    expect(refused.spawns).toEqual([]);
+
+    const ran = await cli.run(['current', '--format', 'human']);
+    expect(ran.spawns.length).toBe(1);
   }, 15_000);
 });

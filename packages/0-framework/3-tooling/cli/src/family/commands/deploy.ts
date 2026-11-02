@@ -12,7 +12,12 @@ import {
   type DeployEvent,
   type DeployStep,
 } from '../../operations/deploy.ts';
-import { convergeSpawn, operationDeps, settleConverge } from '../converge.ts';
+import {
+  convergeSpawn,
+  operationDeps,
+  outputTransformMissing,
+  settleConverge,
+} from '../converge.ts';
 import { dataLine } from '../data-lines.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
@@ -118,6 +123,8 @@ export const createDeployCommand = (operations: ComposerOperations) =>
     needs: { config: composerSection, credentials: 'child' },
     maySpawn: true,
     handler: async (args, ctx) => {
+      const refused = outputTransformMissing(ctx);
+      if (refused !== undefined) return refused;
       const alchemy = convergeSpawn(ctx);
       const result = await operations.deploy(
         {
