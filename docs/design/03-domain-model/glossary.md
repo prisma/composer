@@ -247,11 +247,15 @@ schema whose leaves are wrapped. For another Standard Schema library,
 
 ### The app configuration
 
-The merged values the `config` adapters return for the environment, a later adapter winning by top-level key. "App" is what Composer calls the application, the outermost module, whose input it fills. It is the root module's input, checked by the root's schema, and what an `envParam('NAME')` reads `NAME` from, wherever it sits; the name a source reads is its **configuration key** (`paramSource()`'s `configurationKey`). With no `config` list it is the process environment, secrets included, so only the root fields its body passes on by name reach the graph. Only a command's first process reads it; the deploy's and `prisma dev`'s second process reads what the first checked from the **configuration file**, readable only by its owner and deleted when the run ends. In code: `AppConfiguration`, `LoadOptions.configuration`.
+The merged values the `config` adapters return for the environment, a later adapter winning by top-level key. "App" is what Composer calls the application, the outermost module, whose input it fills. It is the root module's input, checked by the root's schema, and what an `envParam('NAME')` reads `NAME` from, wherever it sits; the name a source reads is its **configuration key** (`paramSource()`'s `configurationKey`). With no `config` list it is the process environment, secrets included, so only the root fields its body passes on by name reach the graph. Only a command's first process reads it; the deploy's and `prisma dev`'s second process reads what the first process's Load read from the **app configuration file**. In code: `AppConfiguration`, `LoadOptions.configuration`.
 
 ### The app secrets
 
-The merged values the `secrets` adapters return, text only. Deploy preflight fills a missing `envSecret()` platform variable from it, and `prisma dev` hands its second process the values the graph's `envSecret()`s name, through that process's environment. Composer never passes it to Load or a schema, never writes its values to a file, and redacts them wherever it prints. With no `secrets` list it is the process environment. In code: `AppSecrets`.
+The merged values the `secrets` adapters return, text only. The name a secret source reads is its **secrets key** (`secretSource()`'s `secretsKey`; `envSecret('NAME')` passes `NAME`). Deploy preflight fills a missing `envSecret()` platform variable from it. `prisma dev` hands its second process only the **named secrets**, the values under the secrets keys the graph's `envSecret()`s name, in one environment variable, `PRISMA_COMPOSER_NAMED_SECRETS` (in code: `NamedSecrets`). Composer never passes it to Load or a schema, never writes its values to a file, and redacts them wherever it prints. With no `secrets` list it is the process environment. In code: `AppSecrets`.
+
+### The app configuration file
+
+The JSON file a command's first process writes for its second process. It holds what Load read from the app configuration (the root input fields the root's body passes on, and the text of each configuration key the graph reads) and the first process's node addresses. It never holds a secret: Load and the CLI refuse to write one into it. Deploy and destroy write it to `.prisma-composer/app-configuration-<pid>-<uuid>.json` and delete it when the run ends. `prisma dev` writes it to `<dev environment dir>/app-configuration-<pid>.json` before each converge and deletes it as soon as that converge ends. Only its owner can read it. A file a forced exit left behind is deleted at the start of the next deploy, destroy or `prisma dev`. It is not `prisma.config.ts`, which is "the config file". In code: `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, `AppConfigurationRead`, `readAppConfigurationFile`.
 
 ### Config adapter
 
@@ -259,7 +263,7 @@ A function in the `config` list of the `composer` section. It receives the envir
 
 ### Secrets adapter
 
-A function in the `secrets` list of the `composer` section, with the same shape as a config adapter. What the secrets adapters return merges into the app secrets; every value must be text. When a project writes its own `secrets` list, Composer redacts every value it returns.
+A function in the `secrets` list of the `composer` section, with the same shape as a config adapter. Both lists use the `ConfigAdapter` type. What the secrets adapters return merges into the app secrets; every value must be text. When a project writes its own `secrets` list, Composer redacts every value it returns.
 
 ### Topology
 
