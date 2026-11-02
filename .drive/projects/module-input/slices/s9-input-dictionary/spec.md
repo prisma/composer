@@ -26,7 +26,7 @@ What the author sees for the second line:
 ```text
 error TS2769: No overload matches this call.
   …
-          Types of property '[INPUT_DICTIONARY]' are incompatible.
+          Types of property '[MODULE_INPUT]' are incompatible.
             Type 'true' is not assignable to type '"the whole input of a module is not a value; pass its fields on by name"'.
 ```
 
@@ -41,7 +41,7 @@ Today the root's whole input is refused at Load only, and a module that is not t
 ## 2. The model
 
 - **`input` is a dictionary, not a value.** Its type, `ModuleInput<S>`, becomes a brand plus one `ModuleInputField` per field of the schema's output. It is no longer a `Value`. Each field read from it, `input.from` or `input.smtp.user`, is still a `ModuleInputField<T>`, which is a `Value<T>`, and binds as before.
-- **Every binding type refuses the brand.** The brand is a type-only property, `[INPUT_DICTIONARY]: true`. Every object branch of a binding type is intersected with `NotInputDictionary`, which declares the same property optional and typed as the message. So the dictionary is not assignable to any object a binding accepts, and the type error ends with the message. `resolve()` refuses it because it is not a `Value`. A service param refuses it because it is neither the param's data type, a `ParamSource` nor a `Value`.
+- **Every binding type refuses the brand.** The brand is a type-only property, `[MODULE_INPUT]: true`. Every object branch of a binding type is intersected with `NotModuleInput`, which declares the same property optional and typed as the message. So the dictionary is not assignable to any object a binding accepts, and the type error ends with the message. `resolve()` accepts it in its dependency type only to map it to the same message. A service param refuses it because it is neither the param's data type, a `ParamSource` nor a `Value`.
 - **Where the compiler sees no type, only Load refuses it.** A binding slot typed `unknown` or `any`, such as a child module whose schema has no type information, accepts anything, the dictionary included. This is the same limit S8 recorded for `resolve()`.
 - **Load refuses it for every module.** At run time the dictionary is still the proxy S2 built, which answers the value brand with the origin path `[]`. So Load finds it wherever a binding holds it, at any depth, in a service's or a module's `input`, a service param, a resource's props, or a `resolve()` dependency, and refuses it in one place: the `'input'` case of `resolveOne`. Today that check applies to the root only. It now applies to every module, and the root keeps one more sentence explaining why its input matters most.
 - **Misuse of the whole `input` gets its own advice.** Today `Object.keys(input)` or `{ ...input }` reports that "input of module … is a value, not its real value" and advises `resolve([input], …)`, which this slice refuses. The misuse error for the path `[]` now says the input is a dictionary of values and to pass its fields on by name. The same advice changes in `readPath` for an input whose schema outputs no object.
@@ -51,41 +51,41 @@ Today the root's whole input is refused at Load only, and a module that is not t
 
 ### 3.1 `packages/0-framework/1-core/core/src/value.ts`
 
-1. After `declare const VALUE_TYPE: unique symbol;`, two new lines:
+1. In `ValueOrigin`'s `'input'` member, the doc comment of `path` becomes `      /** The key path inside that module's input; \`[]\` is the whole input, which Load refuses wherever it is passed on. */`.
+2. The imports gain `import type { StandardSchemaV1 } from '@standard-schema/spec';` and `import type { ModuleInput, ModuleInputIsNotAValue } from './module-input.ts';`. The cycle with `module-input.ts` is type-only.
+3. `RealValuesOf<D extends readonly Value<unknown>[]>` becomes `RealValuesOf<D extends readonly unknown[]>`; its body does not change.
+4. Before `DeployTimeDependencies`, and replacing it:
 
    ```ts
-   // Type-only, never assigned: marks a module body's `input`, a dictionary of values that no binding accepts.
-   declare const INPUT_DICTIONARY: unique symbol;
-   ```
+   /** A dependency `resolve()` accepts only to refuse it with a message: a module body's whole `input`. */
+   type RefusedDependency = ModuleInput<StandardSchemaV1>;
 
-2. `export type { VALUE_TYPE };` becomes `export type { INPUT_DICTIONARY, VALUE_TYPE };`.
-3. In `ValueOrigin`'s `'input'` member, the doc comment of `path` becomes `      /** The key path inside that module's input; \`[]\` is the whole input, which Load refuses wherever it is passed on. */`.
-4. Directly after the closing brace of `export interface Value<T>` and its blank line, before the `RuntimeValue` doc comment:
-
-   ```ts
-   /** Required of every object a binding accepts, so a module body's whole `input` fits none. The property's type is the message an author sees. */
-   export type NotInputDictionary = {
-     readonly [INPUT_DICTIONARY]?: 'the whole input of a module is not a value; pass its fields on by name';
+   /** `D` with each dependency that is not a deploy-time value replaced by the message saying so. */
+   type DeployTimeDependencies<D extends readonly (Value<unknown> | RefusedDependency)[]> = {
+     readonly [K in keyof D]: D[K] extends Value<infer T>
+       ? IsDeployTime<T> extends true
+         ? D[K]
+         : NotDeployTime
+       : D[K] extends RefusedDependency
+         ? ModuleInputIsNotAValue
+         : D[K];
    };
    ```
 
-`NotInputDictionary` and `INPUT_DICTIONARY` are not added to `exports/index.ts`. The declaration build inlines them where the exported binding types use them; § 13 records that `pnpm build` passes.
+5. `resolve`'s type parameter becomes `const D extends readonly (Value<unknown> | RefusedDependency)[]`.
 
 ### 3.2 `packages/0-framework/1-core/core/src/module-input.ts`
 
-1. The value import becomes:
+1. The value import becomes `import { type InputOrigin, VALUE, VALUE_ORIGIN, type Value } from './value.ts';`.
+2. Before `type PlainObject`:
 
    ```ts
-   import {
-     type INPUT_DICTIONARY,
-     type InputOrigin,
-     VALUE,
-     VALUE_ORIGIN,
-     type Value,
-   } from './value.ts';
+   // Type-only, never assigned: brands a module body's input.
+   declare const MODULE_INPUT: unique symbol;
+   export type { MODULE_INPUT };
    ```
 
-2. `ModuleInput` and its doc comment become:
+3. `ModuleInput` and its doc comment become, followed by the message and the constraint:
 
    ```ts
    /**
@@ -94,20 +94,34 @@ Today the root's whole input is refused at Load only, and a module that is not t
     * not itself a value, and no binding accepts it: pass its fields on by name.
     */
    export type ModuleInput<S extends StandardSchemaV1> = {
-     readonly [INPUT_DICTIONARY]: true;
+     readonly [MODULE_INPUT]: true;
    } & FieldsOf<StandardSchemaV1.InferOutput<S>>;
+
+   /** The type error an author sees for a module body's whole input passed where a value is accepted. */
+   export type ModuleInputIsNotAValue =
+     'the whole input of a module is not a value; pass its fields on by name';
+
+   /**
+    * Required of every object a binding accepts, so a module body's whole `input`
+    * fits none. Unlike `NotDeployTime`, a message string, it is an object
+    * constraint: its property's type is the message.
+    */
+   export type NotModuleInput = {
+     readonly [MODULE_INPUT]?: ModuleInputIsNotAValue;
+   };
    ```
 
-   `ModuleInputField`, `FieldsOf`, `Fields` and `FieldType` do not change.
-3. In `buildModuleInput`, the reason of the final `blindCast` becomes `'the proxy returns a further proxy, a value with its origin, for every string key, which is the shape ModuleInput describes; the dictionary brand is type-only'`.
+   `ModuleInputField`, `FieldsOf`, `Fields` and `FieldType` do not change. `NotModuleInput`, `ModuleInputIsNotAValue` and `MODULE_INPUT` are not added to `exports/index.ts`. The declaration build inlines them where the exported binding types use them; § 13 records that `pnpm build` passes.
+4. `buildModuleInput`'s doc comment gains a last sentence: `At run time the whole input still answers the value brand, at path \`[]\`, so Load can find and refuse it wherever it is passed on.`
+5. In `buildModuleInput`, the reason of the final `blindCast` becomes `'the proxy returns a further proxy, a value with its origin, for every string key, which is the shape ModuleInput describes; the dictionary brand is type-only'`.
 
 (§ 4.2 changes `misuse` in the same file.)
 
 ### 3.3 `packages/0-framework/1-core/core/src/node.ts`
 
-1. The `./value.ts` import gains `  type NotInputDictionary,` after `  isValue,`.
-2. `InputBinding`'s last member, `  | { readonly [key: string]: InputBinding };`, becomes `  | ({ readonly [key: string]: InputBinding } & NotInputDictionary);`.
-3. In `ModuleInputBinding<T>`, the object branch's closing `            }` before `          : T);` becomes `            } & NotInputDictionary`. The whole type then reads:
+1. The `./module-input.ts` import becomes `import { type ModuleInput, type NotModuleInput, primitiveMisuse } from './module-input.ts';`.
+2. `InputBinding`'s last member, `  | { readonly [key: string]: InputBinding };`, becomes `  | ({ readonly [key: string]: InputBinding } & NotModuleInput);`.
+3. In `ModuleInputBinding<T>`, the object branch's closing `            }` before `          : T);` becomes `            } & NotModuleInput`. The whole type then reads:
 
    ```ts
    export type ModuleInputBinding<T> =
@@ -121,25 +135,25 @@ Today the root's whole input is refused at Load only, and a module that is not t
                  readonly [K in keyof T]:
                    | ModuleInputBinding<T[K]>
                    | (Record<never, never> extends Pick<T, K> ? Value<T[K] | undefined> : never);
-               } & NotInputDictionary
+               } & NotModuleInput
              : T);
    ```
 
-4. `export type ResourceProps = { readonly [key: string]: ResourcePropsMember };` becomes `export type ResourceProps = { readonly [key: string]: ResourcePropsMember } & NotInputDictionary;`.
-5. `ResourcePropsMember`'s last member, `  | { readonly [key: string]: ResourcePropsMember };`, becomes `  | ({ readonly [key: string]: ResourcePropsMember } & NotInputDictionary);`.
+4. `export type ResourceProps = { readonly [key: string]: ResourcePropsMember };` becomes `export type ResourceProps = { readonly [key: string]: ResourcePropsMember } & NotModuleInput;`.
+5. `ResourcePropsMember`'s last member, `  | { readonly [key: string]: ResourcePropsMember };`, becomes `  | ({ readonly [key: string]: ResourcePropsMember } & NotModuleInput);`.
 6. `ModuleContext`'s `input` doc comment becomes:
 
    ```ts
      /** The module's input: a dictionary with one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. It is not itself a value: pass its fields on by name, into a provision() binding or, for a plain field, as a resolve() dependency. A root's input is the config pool, validated by its schema. */
    ```
 
-`ParamBindings` does not change: the dictionary is neither a param's data type, a `ParamSource` nor a `Value`, so a typed param already refuses it (test 9). `resolve()` does not change: its dependencies must be `Value`s.
+`ParamBindings` does not change: the dictionary is neither a param's data type, a `ParamSource` nor a `Value`, so a typed param already refuses it (test 9). `resolve()` changes in § 3.1.
 
 How the types behave, each checked with `tsc` (§ 13):
 
 - `ResourceProps` needs the intersection as well as `ResourcePropsMember`. Without it, `resource({ props: input })` compiles for a schema whose fields are all plain data, because `P` is inferred as the dictionary type and every field is a `Value<PlainData>`.
-- A props object or binding that never mentions the brand still fits: the property is optional, and nothing can write it, because `INPUT_DICTIONARY` exists only as a type.
-- For a module child the error ends with the message (§ 1). For a service, TypeScript reports the last overload of `provision()`, the module overload, so the error reads `Argument of type 'ServiceNode<…>' is not assignable to parameter of type 'ModuleNode<…>'` and does not show the message. For `resolve()` it reads `Type 'ModuleInput<…>' is missing the following properties from type 'Value<unknown>': [VALUE], [VALUE_ORIGIN]`. For a resource prop it names the index signature or `NotInputDictionary`. Each still fails to compile; § 15, finding 2.
+- A props object or binding that never mentions the brand still fits: the property is optional, and nothing can write it, because `MODULE_INPUT` exists only as a type.
+- For a module child the error ends with the message (§ 1). For a service, TypeScript reports the last overload of `provision()`, the module overload, so the error reads `Argument of type 'ServiceNode<…>' is not assignable to parameter of type 'ModuleNode<…>'` and does not show the message. For `resolve()` it reads `Type 'ModuleInput<…>' is not assignable to type '"the whole input of a module is not a value; pass its fields on by name"'`. For a resource prop it names the index signature or `NotModuleInput`. Each still fails to compile; § 15, finding 2.
 - A child whose binding keys differ from the dictionary's fields fails on the missing keys before the brand, so its error does not show the message either.
 
 ## 4. Core: Load refuses the whole input for every module
@@ -173,13 +187,20 @@ becomes
 
 ### 4.2 `packages/0-framework/1-core/core/src/resolve-values.ts`, `readPath`
 
-The `!isPlainObject(current)` branch becomes:
+The source branch and the `!isPlainObject(current)` branch become:
 
 ```ts
+    const schemaAdvice = `The module's input schema must output a plain object for its body to read fields.`;
+    if (isSecretSource(current) || isParamSource(current)) {
+      throw new LoadError(
+        `${missing}: ${parent} stands for a value only the platform has at boot, so it has no fields` +
+          (index === 0 ? `. ${schemaAdvice}` : ' and can only be passed on unchanged.'),
+      );
+    }
     if (!isPlainObject(current)) {
       const advice =
         index === 0
-          ? `The module's input schema must output a plain object for its body to read fields.`
+          ? schemaAdvice
           : `To compute with it, it must be a plain field, not a wrapped or secret one; list it: resolve([${parent}], ([v]) => …).`;
       throw new LoadError(
         `${missing}: ${parent} is ${describeData(current)}, not a plain object, so it has no fields. ${advice}`,
@@ -232,9 +253,10 @@ The only existing tests this slice changes are listed in § 9.1. If any other ex
 | `resolveOne`, `'input'` | a module that is not the root | none: Load accepted it | `<site> depends on the whole input of module "<m>". A module body's input is a dictionary of values, not a value, so it cannot be passed on whole. Pass its fields on by name, such as input.from.` |
 | `resolveOne`, `'input'` | the root | `<site> depends on the whole input of root module "<m>". The root's input is every value the \`config\` adapters return, which by default is every variable of the process environment, secrets included. Pass on the fields the root declares one by one, such as input.EMAIL_FROM.` | `<site> depends on the whole input of module "<m>". A module body's input is a dictionary of values, not a value, so it cannot be passed on whole. The root's input is every value the \`config\` adapters return, which by default is every variable of the process environment, secrets included. Pass its fields on by name, such as input.from.` |
 | `misuse`, path `[]` | the whole input turned into text, spread, iterated, and so on | `input of module "<m>" is a value, not its real value, and <what>. A module body can only pass an input field on: into a provision() binding or as a resolve() dependency. To compute with it, it must be a plain field, not a wrapped or secret one; list it: resolve([input], ([v]) => …).` | `input of module "<m>" is a dictionary of values, not data, and <what>. A module body can only pass the fields of its input on, by name: into a provision() binding or, for a plain field, as a resolve() dependency.` |
+| `readPath` | a field of an input whose schema outputs a secret or param source | `<path> of module "<m>" does not exist: input stands for a value only the platform has at boot, so it has no fields and can only be passed on unchanged.` | `<path> of module "<m>" does not exist: input stands for a value only the platform has at boot, so it has no fields. The module's input schema must output a plain object for its body to read fields.` |
 | `readPath` | a field of an input whose schema outputs no plain object | `<path> of module "<m>" does not exist: input is <kind>, not a plain object, so it has no fields. To compute with it, it must be a plain field, not a wrapped or secret one; list it: resolve([input], ([v]) => …).` | `<path> of module "<m>" does not exist: input is <kind>, not a plain object, so it has no fields. The module's input schema must output a plain object for its body to read fields.` |
 
-The compile error's message is the type of `NotInputDictionary`'s property: `the whole input of a module is not a value; pass its fields on by name`. Test 10 pins it.
+The compile error's message is `ModuleInputIsNotAValue`, the type of `NotModuleInput`'s property and of a refused `resolve()` dependency: `the whole input of a module is not a value; pass its fields on by name`. Tests 10 and 13 pin it.
 
 ## 7. Documentation
 
@@ -350,7 +372,7 @@ The whole ADR-0061 line, from `- [ADR-0061](` to the end of the line, becomes:
    - **Provided or computed.** A provided value is handed to the module body: `environment.name` is one, a deploy-time fact of the environment, and each field of a module's `input` is another, whose real value is read from the module's input after its schema has validated it. The `input` itself is a dictionary of these values, not a value, so no binding accepts it. A root's input is the config pool. A computed value is what `resolve(dependencies, fn)` returns; Load runs `fn` with its dependencies' real values after every module body has run, with `provision` disabled. `resolve()` declares a computed value; Load resolves every value.
    ```
 
-The **Config pool** entry is left as it is: its last sentence, that Load refuses the root's whole input, stays true, and S12 replaces the entry.
+In the **Config pool** entry, the last clause `Load refuses the root's whole input.` becomes `No module can pass its whole input on: it fails to compile, and Load refuses it.`, and the paragraph is unwrapped to one line. S12 renames the entry.
 
 ### 7.4 `docs/design/10-domains/module-composition.md`, § Input
 
@@ -393,6 +415,14 @@ Written to `skills/README.md`. Both in § Values that differ per environment:
 2. In the bullet that begins `` - `composer({ config: [...], secrets: [...] })` ``, `pass the root's input fields on one by one, because Load refuses its whole \`input\` (the whole pool, by default every shell variable).` becomes `pass the root's input fields on by name, as every module does; its whole \`input\` would be the whole pool, by default every shell variable.`
 
 No other document teaches passing the whole `input` on. A search of `docs/`, `skills/`, `website/`, `examples/`, the package READMEs and the root markdown files for `whole input`, `whole \`input\``, `forward the whole`, `{ input }` and `input: input` finds only the places above, ADR-0062 (which already states this slice's behaviour: "Passing the whole `input` where a value is accepted fails to compile, and Load refuses it"), and `building-an-app.md`'s text about ArkType copying "the whole input", which is about schemas.
+
+### 7.7 Review fixes
+
+- ADR-0061 Reasoning, after `Nothing stands for the whole input.`: `A field such as \`input.smtp\` may be passed on whole because it is a unit the schema declares; the whole input is not a field but everything the schema outputs.`
+- ADR-0061, first use of "the app configuration": it links ADR-0062, with the parenthetical that it is the merged values of the config adapters, called "the configuration" in ADR-0062 and "config pool" in code until it is renamed.
+- `module-composition.md` code sketch: `ModuleContext.input`'s doc comment matches the code's (§ 3.3, item 6).
+- `core-model.md` header: "receives opaque per-key references in its body" becomes "receives `input` in its body, a dictionary with one value per field".
+- `90-decisions/README.md`: "append-only decision records" becomes: each record is kept as one current record; when a decision changes, its record is rewritten in full, the reversed position moves to "Alternatives considered", and git history keeps the earlier versions.
 
 ## 8. The release note
 
@@ -484,7 +514,7 @@ Runtime tests use `bun test`; type tests use vitest `expectTypeOf` and `@ts-expe
 
   and its six calls pass the keys: `forwarding(type({ greeting: 'string' }), ['greeting'])` (twice), `forwarding(type({ 'greeting?': 'string' }), ['greeting'])`, `forwarding(recording(seen), ['base'])`, `forwarding(anyInputSchema, ['from'])` and `forwarding(type({ key: secretString() }), ['key'])`. No assertion changes. In `an unset or empty variable in a module's input leaves the key out`, the binding still has no `greeting` key: the field's real value is `undefined`, and `substitute` leaves out a key whose value has no real value.
 - `module-input.test-d.ts`, in commit 2:
-  - The imports gain `import { string } from '../config.ts';` after the vitest import; the value import becomes `import { module, resolve, resource, SecretBox, secretSource, service } from '../exports/index.ts';`; and after it, `import type { INPUT_DICTIONARY, NotInputDictionary } from '../value.ts';`.
+  - The imports gain `import { string } from '../config.ts';` after the vitest import; the value import becomes `import { module, resolve, resource, SecretBox, secretSource, service } from '../exports/index.ts';`; and after it, `import type { MODULE_INPUT, ModuleInput, NotModuleInput } from '../module-input.ts';`. The type import from `../exports/index.ts` gains `ModuleInputBinding` and `ResourceProps`.
   - `declare const misfitsSchema: StandardSchemaV1<{ missing: string }>;` becomes `declare const plainSchema: StandardSchemaV1<unknown, { host: string; port: number }>;`.
   - In `each input field is a value typed from the schema's output`, `expectTypeOf<RealValue<typeof input>>().toEqualTypeOf<ShopOut>();` becomes `expectTypeOf(input).not.toExtend<Value<unknown>>();`.
   - `the whole input forwards into a child whose input type it satisfies` is replaced by tests 9 and 10.
@@ -645,13 +675,25 @@ In `module-input.test-d.ts`, in place of the removed test:
 
     ```ts
     test('the type error says to pass the fields on by name', () => {
-      expectTypeOf<
-        NonNullable<NotInputDictionary[typeof INPUT_DICTIONARY]>
-      >().toEqualTypeOf<'the whole input of a module is not a value; pass its fields on by name'>();
+      expectTypeOf<NonNullable<NotModuleInput[typeof MODULE_INPUT]>>().toEqualTypeOf<
+        typeof WHOLE_INPUT
+      >();
     });
     ```
 
-    This pins the message: a change to its text fails the type test.
+    `WHOLE_INPUT` is a module-level `const` holding the message, declared before test 10. This pins the message: a change to its text fails the type test.
+
+    Before test 10, a control:
+
+12. `the same input without the brand fits, so the brand alone refuses it`: `Omit<ModuleInput<typeof shopSchema>, typeof MODULE_INPUT>` extends `ModuleInputBinding<{ EMAIL_FROM: string }>` and the branded type does not; `Omit<ModuleInput<typeof plainSchema>, typeof MODULE_INPUT>` extends `ResourceProps` and the branded type does not.
+
+    After test 10:
+
+13. `resolve() refuses the whole input with the same message`: `Parameters<typeof resolve<readonly [ModuleInput<typeof plainSchema>], string>>[0]` equals `readonly ['the whole input of a module is not a value; pass its fields on by name']`.
+
+In `source-load.test.ts`, after `a path through a runtime param source fails naming the path`:
+
+14. `a field of an input whose schema outputs a runtime param source fails, saying the schema must output an object`: `Load(shopWith(email, origin()))` with `anyInputSchema`, where the body reads `input.from` through a cast, throws the `readPath` source-branch message of § 6.
 
 At the end of `field.test-d.ts`, using its existing `arkNested` and `zodNested`:
 
@@ -786,7 +828,7 @@ Each commit is made with `git commit -s --trailer "Signed-off-by: Will Madden <m
 One scratch worktree of this branch, at its git-ignored `wip/s9-scratch`, with its own `pnpm install --frozen-lockfile`, removed afterwards. No process was left running from it. The whole change to code and tests, as one patch against this branch, is kept at `wip/s9-spec-probe/final.patch` (git-ignored) for the review to compare with; the spec, not the patch, is what the implementer follows.
 
 - **The types.** A probe file in core's tests checked, for an ArkType and a Zod schema with a wrapped field, a plain field, an optional wrapped field, a `secretString()` field and a nested object with a wrapped leaf and an optional nested object: each field read, nested or optional, keeps its `ModuleInputField` type and binds into a child module, a service binding, a service param, a `resolve()` and a resource's props; and the whole input fails to compile in a child module's binding, a service's binding, nested at any depth in a service binding, a service param, `resolve()`, a resource prop, and as a resource's whole props. The probe also confirmed the limit: a child whose schema is typed `unknown` accepts the whole input. Before § 3.3 item 4, `resource({ props: input })` compiled for a schema of plain fields.
-- **The message.** With `NotInputDictionary`'s property typed `never`, the error ended `Type 'true' is not assignable to type 'never'`. Typed as the message, it ends with the message (§ 1).
+- **The message.** With `NotModuleInput`'s property typed `never`, the error ended `Type 'true' is not assignable to type 'never'`. Typed as the message, it ends with the message (§ 1).
 - **Everything green after the whole change**, after `pnpm lint:fix`: `pnpm build`, 39 of 39 tasks; `pnpm turbo run typecheck test:types --continue`, 84 of 84 tasks; `pnpm lint`, 40 warnings and 20 infos; `pnpm lint:casts`, `current=18 merge-base=18 delta=0`; core's `bun test`, 413 pass; core's `vitest --typecheck`, 81 pass; the target's `input-serializer.test.ts`, 59 pass, and its other test files that call `Load` (`control-lowering`, `env-key-clash`, `local-target-preflight`, `orm-postgres`, `param`, `pack-preflight`, `preflight`, `provisioned-edges`, `preflight-payload`, `public-url`, `raw-http`, `secret`, `extension`), green except two files that could not load `@internal/local-target` in the scratch copy, which do not pass a whole input; `bun test` in auth (132), cron (26), email (99), storage (49), streams (22) and the CLI (411); and `examples/storefront-auth/module.test.ts`.
 - **Before the change**, with only the Load check of § 4.1 applied, core's `bun test` showed exactly the 13 failures that § 9.1 fixes, and the target's `input-serializer.test.ts` the 2.
 - **Not run:** `pnpm test` at the root, and the target's and local-target's whole `bun test`, which start emulator daemons.
@@ -794,7 +836,7 @@ One scratch worktree of this branch, at its git-ignored `wip/s9-scratch`, with i
 
 ## 14. Decisions this spec records, for the review
 
-1. **The brand is a type-only property refused by an intersection on every object branch** (§ 3). A brand alone does not refuse anything: a type with an extra property is still assignable to an object type. So each binding type declares the brand's key optional, with a type the brand's `true` cannot fit. The dictionary also stops being a `Value`, which refuses it in `resolve()` and in every `Value<…>` branch with no further change. Design section 3 says `input` itself is not a value.
+1. **The brand is a type-only property refused by an intersection on every object branch** (§ 3). A brand alone does not refuse anything: a type with an extra property is still assignable to an object type. So each binding type declares the brand's key optional, with a type the brand's `true` cannot fit. The dictionary also stops being a `Value`, which refuses it in every `Value<…>` branch with no further change. `resolve()` accepts it in its dependency type only to map it to the message (§ 3.1). Design section 3 says `input` itself is not a value.
 2. **The property's type is the message** (§ 3.1), as S8 did with `NotDeployTime`. TypeScript prints the target type of a failed assignment.
 3. **A slot typed `unknown` or `any` is not refused by the compiler** (§ 2). Nothing is refused by `unknown`. Mapping `unknown` to "any data but the dictionary" was considered and not taken: it would catch only the top level, not the dictionary nested in an object or array under that slot, and `any` would still pass. Load refuses all of these.
 4. **At run time the dictionary still carries the value brand, at path `[]`** (§ 2). That is how Load finds it in any binding and refuses it in one place, with one message. Making it answer no value brand would send it into Load's object walk, where `ownKeys` throws the misuse error "its keys were listed", and make `resolve()` throw its generic "is not a value" error instead of the designed one. So `isValue(input)` stays `true` at run time; the existing test that asserted it no longer does, because the design says `input` is not a value.
@@ -802,13 +844,14 @@ One scratch worktree of this branch, at its git-ignored `wip/s9-scratch`, with i
 6. **The example field in the advice is `input.from`** (§ 6), a generic name, because Load cannot list a schema's keys and so cannot name a real field.
 7. **The misuse and `readPath` advice change** (§ 4.2, § 4.3). Both advised `resolve([input], …)`, which this slice refuses. No plan line names them, but leaving them would have the framework give advice that fails.
 8. **ADR-0061 is rewritten in full, not amended** (§ 7.1), following Will's instruction for decision records and the ADR-0062 precedent. Its six amendment notes are folded in. The rewrite uses "the app configuration", the design's term, though the code says "config pool" until S12 and ADR-0062 says "the configuration".
-9. **`ParamBindings` and `resolve()` are not changed** (§ 3.3). They already refuse the dictionary once it is not a `Value`; test 9 shows it.
+9. **`ParamBindings` is not changed** (§ 3.3). It already refuses the dictionary once it is not a `Value`; test 9 shows it. `resolve()` changes so its error shows the message (§ 3.1).
 10. **Tests that forwarded a whole input only as a fixture now pass named fields** (§ 9.1). What those tests check, a source or a pointer reaching a service through a module, does not depend on forwarding the whole input.
-11. **No `.drive/deferred.md` entry.** Nothing is deferred beyond what § 15 reports.
+11. **Deferred items go in the project's `deferred.md`**: what § 15 reports for S10, and `module()` not refusing an input schema whose output is not an object.
+12. **The brand and `NotModuleInput` live in `module-input.ts`**, beside `ModuleInput`, which they describe. `value.ts` imports their types for `resolve()`; the cycle is type-only.
 
 ## 15. What the design does not say, found while checking it against the code
 
 1. **"Every binding type refuses" the brand holds only where the binding has a type.** A child module or a field whose schema is typed `unknown` or `any` accepts the whole `input` at compile time, and so will a service whose schema has no type information once S10 types service bindings from schemas. Load refuses all of these. The design's "a field typed `unknown`" caveat for `resolve()` applies here too, but section 3 does not say so. This spec says so in the docs (§ 7.4) and the decision record (§ 7.1). For the orchestrator: the design text could gain the same caveat.
-2. **For a service binding, the type error does not show the message.** `provision()` has four overloads, and TypeScript reports the last one, the module overload, for a failed service call: `Argument of type 'ServiceNode<…>' is not assignable to parameter of type 'ModuleNode<…>'`. It still fails to compile. `resolve()`'s error says the dictionary lacks `[VALUE]` and `[VALUE_ORIGIN]`, and a resource prop's names the index signature. Only a module child's error ends with the message, and only when its keys match. S10 rewrites the service overloads and could make that error clearer; this spec does not.
+2. **For a service binding, the type error does not show the message.** `provision()` has four overloads, and TypeScript reports the last one, the module overload, for a failed service call: `Argument of type 'ServiceNode<…>' is not assignable to parameter of type 'ModuleNode<…>'`. It still fails to compile. `resolve()`'s error ends with the message (§ 3.1), and a resource prop's names the index signature. Only a module child's and `resolve()`'s errors end with the message, a module child's only when its keys match. S10 rewrites the service overloads and could make that error clearer; this spec does not.
 3. **The plan says nothing about the misuse and `readPath` advice** that pointed at `resolve([input], …)` (§ 14, decision 7). This spec changes both.
 4. **ADR-0062 already describes this slice's behaviour** ("Passing the whole `input` where a value is accepted fails to compile"), written before the code did. It needs no edit.

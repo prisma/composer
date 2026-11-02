@@ -10,9 +10,9 @@ Run 2026-11-02 in the `claude/module-input-s9` worktree, after `pnpm build`. No 
 src/s9-qa.ts(17,26): error TS2769: No overload matches this call.
   The last overload gave the following error.
     Type 'ModuleInput<Type<{ deliveryMode: string | Pointer<string>; from: string | Pointer<string>; deliveryCredential: SecretString | Pointer<SecretString>; }, {}>>' is not assignable to type 'ModuleInputBinding<{ deliveryMode: string | Pointer<string>; from: string | Pointer<string>; deliveryCredential: SecretString | Pointer<SecretString>; }>'.
-      Type 'ModuleInput<Type<{ deliveryMode: string | Pointer<string>; from: string | Pointer<string>; deliveryCredential: SecretString | Pointer<SecretString>; }, {}>>' is not assignable to type '{ readonly deliveryMode: ModuleInputBinding<string | Pointer<string>>; readonly from: ModuleInputBinding<string | Pointer<string>>; readonly deliveryCredential: ModuleInputBinding<...>; } & NotInputDictionary'.
-        Type 'ModuleInput<Type<{ deliveryMode: string | Pointer<string>; from: string | Pointer<string>; deliveryCredential: SecretString | Pointer<SecretString>; }, {}>>' is not assignable to type 'NotInputDictionary'.
-          Types of property '[INPUT_DICTIONARY]' are incompatible.
+      Type 'ModuleInput<Type<{ deliveryMode: string | Pointer<string>; from: string | Pointer<string>; deliveryCredential: SecretString | Pointer<SecretString>; }, {}>>' is not assignable to type '{ readonly deliveryMode: ModuleInputBinding<string | Pointer<string>>; readonly from: ModuleInputBinding<string | Pointer<string>>; readonly deliveryCredential: ModuleInputBinding<...>; } & NotModuleInput'.
+        Type 'ModuleInput<Type<{ deliveryMode: string | Pointer<string>; from: string | Pointer<string>; deliveryCredential: SecretString | Pointer<SecretString>; }, {}>>' is not assignable to type 'NotModuleInput'.
+          Types of property '[MODULE_INPUT]' are incompatible.
             Type 'true' is not assignable to type '"the whole input of a module is not a value; pass its fields on by name"'.
 ```
 
