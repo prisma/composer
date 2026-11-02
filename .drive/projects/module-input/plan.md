@@ -7,10 +7,11 @@ Each slice is one PR. A slice's PR opens after the slice before it has merged, s
 ## Where it stands
 
 - **S1** is done: [slices/s1-spike/report.md](slices/s1-spike/report.md).
-- **S2** is built and in review as prisma/composer#401.
-- **S3, S4 and S5** are built, on the stacked branches `claude/module-input-s3`, `claude/module-input-s4` and `claude/module-input-s5`. They were built against an earlier version of the design. They merge as built, in order, and S6 to S13 change what they built to match `design.md`.
-- **S6 to S13** are not built.
-- **S14 to S16** are designed with Will after S13. The earlier plan called S14 and S15 "S6" and "S7".
+- **S2** is merged: prisma/composer#401.
+- **S3 to S8** are merged as one PR: prisma/composer#403.
+- **S9** is built and in review.
+- **S10 to S13** are not built. [deferred.md](deferred.md) lists items S10 must cover.
+- **S14 to S17** are designed with Will before they are specified.
 
 ## S1. Spike: an input field as an opaque typed value
 
