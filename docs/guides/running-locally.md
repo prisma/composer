@@ -66,11 +66,12 @@ and watches the file. When the file changes, `dev` prints that it changed and
 must be restarted, and it stops rebuilding: until you stop `dev` and start it
 again, a build change only repeats that notice.
 
-`dev` also loads your app's definition once: the entry module and the
-files your services are declared in, such as `module.ts` and each
-`service.ts`. When one of them changes, `dev` prints which file changed and
-that it must be restarted, and it stops rebuilding in the same way. An edit
-to another file your entry imports takes effect the next time `dev` starts.
+`dev` also loads your app definition files once: your entry module and
+every file of yours it imports, directly or through other files, such as
+each module's `module.ts`, each `service.ts` and their helpers (files in
+`node_modules` are not included). When one of them changes, `dev` prints
+which file changed and that it must be restarted, and it stops rebuilding in
+the same way.
 
 `Ctrl-C` stops your app's service processes and its local Postgres servers,
 and exits; so does `dev` ending on SIGTERM or a failure. The data stays, and
@@ -154,8 +155,8 @@ What else changes for such a service:
   adds `A dev server must listen on the port in its PORT variable.` A dev
   server that crashes later is restarted with backoff, as an artifact is.
 - **Edits to your source are the dev server's business.** `dev` does not
-  rebuild for them. A change to `module.ts` or a `service.ts` needs `dev`
-  restarted, as above. When a rebuild of another service changes what a dev
+  rebuild for them. A change to an app definition file, such as `module.ts`
+  or a `service.ts`, needs `dev` restarted, as above. When a rebuild of another service changes what a dev
   server's environment holds, such as a dependency's URL, the dev server is
   restarted: `` shop.web: its environment changed; `next dev` restarted ``.
 - **It has no terminal.** Its output goes through the service's log, so a dev

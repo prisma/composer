@@ -421,7 +421,11 @@ to a plan.
 
 ### Converge
 
-Making an environment match the lowered stack: Alchemy plans what to create, update, replace and delete, then applies it. `prisma deploy` and `prisma dev` converge in their own process through Alchemy's programmatic API; `destroy` converges in an Alchemy child process. The *app converge* is the app install's `lower` and in-process converge, with the local target's providers and state store for dev, which `deploy` and `dev` load from `@prisma/composer/internal/converge` ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)). Codes: `DEV.CONVERGE_FAILED`, `DEV.INTERRUPTED`, `DEPLOY.CONVERGE_RUNNING`, `DEPS.CONVERGE_UNRESOLVABLE`, `DEPS.CONVERGE_CONTRACT_MISMATCH`.
+Making an environment match the lowered stack: Alchemy plans what to create, update, replace and delete, then applies it. `prisma deploy` and `prisma dev` converge in their own process through Alchemy's programmatic API; `destroy` converges in an Alchemy child process. The *app converge* is the app install's `lower` and in-process converge, with the local target's providers and state store for dev, which `deploy` and `dev` load from `@prisma/composer/internal/converge` ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)). Codes: `DEV.CONVERGE_FAILED`, `DEV.INTERRUPTED`, `DEV.CONVERGE_RUNNING`, `DEV.WORKER_THREAD`, `DEPLOY.CONVERGE_RUNNING`, `DEPS.CONVERGE_UNRESOLVABLE`, `DEPS.CONVERGE_CONTRACT_MISMATCH`.
+
+### App definition files
+
+The files that define an app for `prisma dev`: every module outside `node_modules` that importing the entry module loaded, static and dynamic imports alike, plus each service's authoring module. Dev imports them once per process, so an edit to one cannot reach a rebuild; dev reports it (`definition-changed`) and pauses rebuilds until it is restarted ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)).
 
 ### Control plane / Execution plane
 

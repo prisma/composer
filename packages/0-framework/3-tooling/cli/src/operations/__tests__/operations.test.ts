@@ -2368,7 +2368,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     }
   };
 
-  test("a rebuild's converge progress reaches the event stream", async () => {
+  test('each converge is a step around its resources, and a failed one closes every step it opened', async () => {
     const app = makeAppDir('hello-dev');
     const events: DevEvent[] = [];
     let converges = 0;
@@ -2389,43 +2389,89 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
             kind: 'resource',
             fqn: 'hello-dev.app',
             resourceType: 'Local.Compute',
-            status: 'updated',
-            phase: 'done',
+            status: converges === 1 ? 'created' : 'updating',
+            phase: converges === 1 ? 'done' : 'running',
           });
           request.onEvent?.({ kind: 'log', severity: 'info', text: 'applied' });
-          return APPLIED;
+          return converges === 1 ? APPLIED : FAILED;
         },
         events,
       );
       if (!start.ok) throw start.failure;
       change();
-      await waitUntil(
-        () => converges === 2 && events.filter((e) => e.kind === 'ready').length === 2,
-      );
+      await waitUntil(() => events.some((event) => event.kind === 'converge-failed'));
       await start.value.stop();
     });
 
-    const progress = events.filter(
-      (event) => event.kind === 'converge-resource' || event.kind === 'converge-message',
-    );
-    expect(progress).toEqual([
-      {
-        kind: 'converge-resource',
-        fqn: 'hello-dev.app',
-        resourceType: 'Local.Compute',
-        status: 'updated',
-        phase: 'done',
-      },
-      { kind: 'converge-message', severity: 'info', text: 'applied' },
-      {
-        kind: 'converge-resource',
-        fqn: 'hello-dev.app',
-        resourceType: 'Local.Compute',
-        status: 'updated',
-        phase: 'done',
-      },
-      { kind: 'converge-message', severity: 'info', text: 'applied' },
+    const steps = events.flatMap((event): object[] => {
+      if (event.kind === 'step-started') return [{ started: event.step }];
+      if (event.kind === 'step-finished') return [{ finished: event.step, outcome: event.outcome }];
+      if (event.kind === 'message') return [{ message: event.text }];
+      return [];
+    });
+    const resource = (converge: string, status: string) => ({
+      name: 'apply-resource',
+      converge,
+      fqn: 'hello-dev.app',
+      resourceType: 'Local.Compute',
+      status,
+    });
+    expect(steps).toEqual([
+      { started: { name: 'converge', id: 'dev.converge' } },
+      { started: resource('dev.converge', 'created') },
+      { finished: resource('dev.converge', 'created'), outcome: 'ok' },
+      { message: 'applied' },
+      { finished: { name: 'converge', id: 'dev.converge' }, outcome: 'ok' },
+      { started: { name: 'converge', id: 'dev.rebuild.1' } },
+      { started: resource('dev.rebuild.1', 'updating') },
+      { message: 'applied' },
+      { finished: resource('dev.rebuild.1', 'updating'), outcome: 'failed' },
+      { finished: { name: 'converge', id: 'dev.rebuild.1' }, outcome: 'failed' },
     ]);
+  }, 15_000);
+
+  test("stopping during a rebuild's pipeline returns without waiting for it, and the rebuild does not converge", async () => {
+    const app = makeAppDir('hello-dev');
+    let change: () => void = () => undefined;
+    let assembles = 0;
+    let release: () => void = () => undefined;
+    const assembling = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let converges = 0;
+
+    await silently(async () => {
+      const start = await devWithDeps(
+        {
+          config: composerConfig(devConfigWith(runningAttachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        {
+          runAssembler: async (node: ServiceNode) => {
+            assembles += 1;
+            if (assembles > 1) await assembling;
+            return fakeAssembler(node);
+          },
+          converge: appConverge(async () => {
+            converges += 1;
+            return APPLIED;
+          }),
+          watch: (targets, onChange) => {
+            if (targets.some((target) => target.paths.includes(app.entryPath))) change = onChange;
+            return { ready: Promise.resolve(), stop: () => undefined };
+          },
+        },
+      );
+      if (!start.ok) throw start.failure;
+      change();
+      await waitUntil(() => assembles === 2);
+      await start.value.stop();
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(converges).toBe(1);
   }, 15_000);
 
   test('a failed rebuild is reported with its cause, keeps the app running, and the next change converges again', async () => {
@@ -2455,6 +2501,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(events.filter((event) => event.kind === 'converge-failed')).toEqual([
       {
         kind: 'converge-failed',
+        code: 'DEV.CONVERGE_FAILED',
         message: 'ProviderError: the provider refused',
         reasons: [{ tag: 'ProviderError', message: 'the provider refused' }],
       },
@@ -2573,6 +2620,95 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       { kind: 'definition-changed', files: [app.entryPath] },
     ]);
     expect(converges).toBe(1);
+  }, 15_000);
+
+  test('an edit to any app file the entry loaded is reported, not only the entry and service files', async () => {
+    const app = makeAppDir('hello-dev');
+    const helper = path.join(app.dir, 'inputs.ts');
+    fs.writeFileSync(helper, 'export const inputs = {};\n');
+    fs.writeFileSync(
+      app.entryPath,
+      fs
+        .readFileSync(app.entryPath, 'utf8')
+        .replace('      inputs: {},', '      inputs,')
+        .replace('\nexport default', "\nimport { inputs } from './inputs.ts';\nexport default"),
+    );
+    const events: DevEvent[] = [];
+    let converges = 0;
+
+    await silently(async () => {
+      const { start, change } = await devWithBuildWatch(
+        app,
+        async () => {
+          converges += 1;
+          return APPLIED;
+        },
+        events,
+      );
+      if (!start.ok) throw start.failure;
+      fs.appendFileSync(helper, '// an edit\n');
+      change();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await start.value.stop();
+    });
+
+    expect(events.filter((event) => event.kind === 'definition-changed')).toEqual([
+      { kind: 'definition-changed', files: [helper] },
+    ]);
+    expect(converges).toBe(1);
+  }, 15_000);
+
+  test.each([
+    ['already-running', 'DEV.CONVERGE_RUNNING'],
+    ['worker-thread', 'DEV.WORKER_THREAD'],
+  ] as const)(
+    'a first converge refused as %s is %s',
+    async (reason, code) => {
+      const app = makeAppDir('hello-dev');
+
+      const result = await silently(async () => {
+        const { start } = await devWithBuildWatch(
+          app,
+          async () => ({ kind: 'refused', reason }),
+          [],
+        );
+        return start;
+      });
+
+      if (result.ok) throw new Error('expected a refusal');
+      expect(result.failure.code).toBe(code);
+    },
+    15_000,
+  );
+
+  test("a refused rebuild's converge-failed carries the refusal's code", async () => {
+    const app = makeAppDir('hello-dev');
+    const events: DevEvent[] = [];
+    let converges = 0;
+
+    await silently(async () => {
+      const { start, change } = await devWithBuildWatch(
+        app,
+        async () => {
+          converges += 1;
+          return converges === 1 ? APPLIED : { kind: 'refused', reason: 'already-running' };
+        },
+        events,
+      );
+      if (!start.ok) throw start.failure;
+      change();
+      await waitUntil(() => events.some((event) => event.kind === 'converge-failed'));
+      await start.value.stop();
+    });
+
+    expect(events.filter((event) => event.kind === 'converge-failed')).toEqual([
+      {
+        kind: 'converge-failed',
+        code: 'DEV.CONVERGE_RUNNING',
+        message: 'Another converge is already running in this process.',
+        reasons: [],
+      },
+    ]);
   }, 15_000);
 
   test('a save that leaves the definition files unchanged still rebuilds', async () => {
@@ -2744,7 +2880,15 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(events).toEqual(['ready', 'unwatchable', 'stopping', 'stop-error', 'stopped']);
+    expect(events).toEqual([
+      'step-started',
+      'step-finished',
+      'ready',
+      'unwatchable',
+      'stopping',
+      'stop-error',
+      'stopped',
+    ]);
   }, 15_000);
 
   test('the DevSession contract: closed settles only via stop(), stop() is idempotent, and no process signal handler is ever registered', async () => {
@@ -2837,7 +2981,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
 
     expect(watches).toBe(0);
     expect(stops).toBe(0);
-    expect(events).toEqual(['ready']);
+    expect(events).toEqual(['step-started', 'step-finished', 'ready']);
   }, 15_000);
 
   test('a host onEvent that throws cannot prevent closed from settling', async () => {
@@ -2903,7 +3047,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
-    expect(result.failure.code).toBe('DEV.STATE_WRITE_FAILED');
+    expect(result.failure.code).toBe('DEV.ENVIRONMENT_WRITE_FAILED');
     expect(convergeRan).toBe(false);
   }, 15_000);
 });

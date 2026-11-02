@@ -579,9 +579,9 @@ Deploy's rule holds: every failure names its fix.
 | required secret unset or empty | hard error listing every missing variable, the service that needs it, the schema's message, and where an adapter in `secrets` reads it; an optional one is not an error |
 | env-sourced param unbound | hard error listing the missing names, deploy-preflight style |
 | an adapter returns different values at a rebuild than at start | that the values changed and rebuilds are paused until dev restarts |
-| the entry module or a file a service is declared in changes while dev runs | which files changed, that dev cannot load the app's definition again, and that rebuilds are paused until dev restarts |
+| an app definition file (an app file the entry loaded) changes while dev runs | which files changed, that dev cannot load them again, and that rebuilds are paused until dev restarts |
 | the first converge fails | `DEV.CONVERGE_FAILED`, with Alchemy's errors in the message and in `meta.reasons`; `dev` stops the app's services before it returns the failure |
-| a rebuild's converge fails | a warning with Alchemy's errors; the running app is kept and dev keeps watching |
+| a rebuild's converge fails or is refused | a warning with the code and Alchemy's errors; the running app is kept and dev keeps watching |
 | Ctrl-C during the first converge | `DEV.INTERRUPTED`, reported as a message; `prisma dev` exits 130 |
 | a service exits before it listens, or does not listen within the readiness timeout | the address, the port, the exit code if it exited, and the log path; `dev` stops the app's services before it returns the failure |
 | an emulator does not accept connections (retried briefly; an error response from the emulator is never retried) | `DEV.EMULATOR_UNREACHABLE`, with the emulator's URL, from `dev` and `log` alike |
@@ -634,13 +634,14 @@ The design's founding claim was proven against open-chat — a real, pre-existin
   loop picks rebuilds up on its own. A build descriptor that still returns
   no `watch` entries reports `[dev] <address> has no watchable inputs` at
   startup and needs its rebuilds triggered manually.
-- **An edit to the app's definition needs a restart.** The entry module is
+- **An edit to an app definition file needs a restart.** The entry module is
   imported once per process, and the converge runs in that process, so a
-  rebuild cannot see an edit to it. Dev hashes the entry module and each
-  service's declaring file when it starts; when one changes it says so and
-  pauses rebuilds until `prisma dev` is restarted (ADR-0064). An edit to
-  another file the entry imports, such as a sub-module's `module.ts`, is not
-  detected and takes effect at the next start.
+  rebuild cannot see an edit to it. The app definition files are every app
+  file (outside `node_modules`) that importing the entry loaded, plus each
+  service's authoring module. Dev records them while it imports the entry,
+  hashes and watches them, and when one changes it says so and pauses
+  rebuilds until `prisma dev` is restarted (ADR-0064). A file already loaded
+  before the entry, such as one `prisma.config.ts` imports, is not recorded.
 - **App-owned migrations are not run by `dev`** (by design — ADR-0022, spec
   § 4's `OrmMigration` line is for framework-run migrations only). An app that
   runs its own migrations (e.g. via `prisma db init`, like the

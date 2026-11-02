@@ -41,6 +41,9 @@
  *      app-scoped and unconditionally restarts every service on the next
  *      redeploy — S3's own pinned "a stopped service always starts on
  *      redeploy" behavior — which would defeat this proof entirely).
+ *   A sub-module's `module.ts` is an app definition file: an edit to it
+ *      while dev runs is reported as needing a restart, and a later artifact
+ *      touch converges nothing (the app is imported once per process).
  *   3. Postgres persistence: a row is written directly against the real
  *      local Postgres URL (read from the postgres-main daemon's own
  *      database listing — the daemon owns instance state, REVISED —
@@ -411,6 +414,69 @@ const catalogDist = path.join(storeDir, 'modules', 'catalog', 'dist', 'server.mj
 const DEV_STACK_FILE = path.join(storeDir, '.prisma-composer', 'dev', 'dev', 'alchemy.run.ts');
 
 const REAL_WATCH_TIMEOUT_MS = 30_000;
+const catalogModule = path.join(storeDir, 'modules', 'catalog', 'src', 'module.ts');
+
+/** The `--json` frames written after the first `from` characters of the session's log. */
+function framesAfter(session: DevSession, from: number): Record<string, unknown>[] {
+  return readLog(session.logPath)
+    .slice(from)
+    .split('\n')
+    .flatMap((line) => {
+      if (!line.startsWith('{')) return [];
+      try {
+        return [JSON.parse(line) as Record<string, unknown>];
+      } catch {
+        return [];
+      }
+    });
+}
+
+/**
+ * Edits catalog's `module.ts`, which the store's entry imports through the
+ * `@store/catalog` workspace package, and waits for dev's restart notice
+ * naming it. Then touches catalog's built artifact and checks that no
+ * rebuild converges and catalog keeps its pid. Restores the file after.
+ */
+async function editSubModuleAndAwaitRestartNotice(
+  session: DevSession,
+  pidsBefore: Record<string, number | undefined>,
+): Promise<void> {
+  const from = readLog(session.logPath).length;
+  const original = fs.readFileSync(catalogModule, 'utf8');
+  try {
+    fs.writeFileSync(catalogModule, `${original}\n// proving-script definition edit\n`);
+    await waitForAsync(async () => {
+      const notice = framesAfter(session, from).find(
+        (frame) =>
+          frame['kind'] === 'message' &&
+          typeof frame['text'] === 'string' &&
+          frame['text'].includes(catalogModule) &&
+          frame['text'].includes('restart dev'),
+      );
+      return notice === undefined ? undefined : true;
+    }, REAL_WATCH_TIMEOUT_MS);
+
+    fs.appendFileSync(
+      catalogDist,
+      `\n// proving-script touch after a definition edit ${Date.now()}\n`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+    const rebuilt = framesAfter(session, from).some(
+      (frame) =>
+        frame['kind'] === 'endpoint' ||
+        (typeof frame['id'] === 'string' && frame['id'].startsWith('dev.rebuild.')),
+    );
+    assert(!rebuilt, 'no rebuild converges after an app definition file changed');
+    const pids = await pidsByAddress(APP_NAME);
+    assertEqual(
+      pids['store.catalog.service'],
+      pidsBefore['store.catalog.service'],
+      'catalog.service keeps its pid after an app definition file changed',
+    );
+  } finally {
+    fs.writeFileSync(catalogModule, original);
+  }
+}
 
 /**
  * Touches ONLY catalog's built artifact — the same file the running
@@ -530,6 +596,14 @@ async function main(): Promise<void> {
       );
       pidsBefore = pidsAfter;
     }
+
+    // ——— A sub-module's module.ts is an app definition file ———
+    // The app is imported once, in the prisma process, so dev cannot apply an
+    // edit to it: it must say so and stop converging, not rebuild the old graph.
+    await editSubModuleAndAwaitRestartNotice(activeSession, pidsBefore);
+    console.log(
+      "[proving] PASS: an edit to a sub-module's module.ts is reported as needing a restart, and nothing converges",
+    );
 
     // ——— Criterion 3 (write half): a row through the real local Postgres URL ———
     const dbUrl = await readCatalogDbUrl();

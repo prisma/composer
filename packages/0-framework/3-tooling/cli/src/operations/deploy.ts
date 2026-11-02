@@ -11,6 +11,7 @@ import { notOk, ok, type Result } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../composer-config.ts';
 import type { DeploymentSummary } from '../deployment-summary.ts';
 import { executorLoadFailure, type OperationDeps } from './shared.ts';
+import type { StepEvent } from './steps.ts';
 
 /** A deploy step. `assemble-service` steps run inside `assemble`, one per service, and `apply-resource` steps inside `apply`, one per resource Alchemy touches. */
 export type DeployStep =
@@ -25,22 +26,7 @@ export type DeployStep =
       readonly status: string;
     };
 
-export type DeployEvent =
-  | { readonly kind: 'step-started'; readonly step: DeployStep }
-  | {
-      readonly kind: 'message';
-      readonly severity: 'info' | 'warn' | 'verbose';
-      /** A line Alchemy logged while it planned or applied. */
-      readonly text: string;
-    }
-  | {
-      readonly kind: 'step-finished';
-      readonly step: DeployStep;
-      readonly outcome: 'ok' | 'failed';
-      readonly durationMs: number;
-      /** What the step measured, as its build adapter or deploy target reported it. The fields vary by adapter and target. */
-      readonly data?: Readonly<Record<string, string | number>> | undefined;
-    };
+export type DeployEvent = StepEvent<DeployStep>;
 
 /** The environment `deploy` targets when none is named. */
 export const DEFAULT_DEPLOY_ENVIRONMENT = 'production';

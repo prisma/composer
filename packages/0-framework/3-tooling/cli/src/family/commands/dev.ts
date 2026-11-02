@@ -18,7 +18,7 @@ import * as path from 'node:path';
 import type { EngineEvent } from '@prisma/cli-engine';
 import { defineSessionCommand, flag } from '@prisma/cli-engine';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
-import type { DevEvent, DevInput } from '../../operations/dev.ts';
+import type { DevEvent, DevInput, DevStep } from '../../operations/dev.ts';
 import { DEV_ENVIRONMENT, type ServiceEndpoint } from '../../operations/shared.ts';
 import { withConsoleOnStderr } from '../console-to-stderr.ts';
 import type { ComposerOperations } from '../family.ts';
@@ -33,6 +33,15 @@ function stopRequested(signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     signal.addEventListener('abort', () => resolve(), { once: true });
   });
+}
+
+function devStepId(step: DevStep): string {
+  return step.name === 'converge' ? step.id : `${step.converge}.${step.fqn}`;
+}
+
+function devStepLabel(step: DevStep): string {
+  if (step.name === 'apply-resource') return `${step.status} ${step.fqn}`;
+  return step.id === 'dev.converge' ? 'converge' : step.id.replace(/^dev\.rebuild\./, 'rebuild ');
 }
 
 /** The front door, ordered by address depth (fewest dots first) then lexicographically. */
@@ -53,7 +62,6 @@ function reportDevEvent(
   cwd: string,
 ): (event: DevEvent) => void {
   let stopFailed = false;
-  const openResources = new Set<string>();
 
   return (event) => {
     switch (event.kind) {
@@ -133,32 +141,32 @@ function reportDevEvent(
         report({
           kind: 'message',
           severity: 'warn',
-          text: `${event.files.join(', ')} changed. dev loaded the app's definition when it started and cannot load it again; restart dev to apply it. Rebuilds are paused until then.`,
+          text: `${event.files.join(', ')} changed. dev loaded the app definition files when it started and cannot load them again; restart dev to apply the change. Rebuilds are paused until then.`,
         });
         return;
 
-      case 'converge-resource': {
-        const id = `dev.converge.${event.fqn}`;
-        const step = `${event.status} ${event.fqn}`;
-        if (!openResources.has(id)) {
-          openResources.add(id);
-          report({ kind: 'step-started', step, id, data: { resourceType: event.resourceType } });
-        }
-        if (event.phase === 'running') return;
-        openResources.delete(id);
+      case 'step-started':
+        report({
+          kind: 'step-started',
+          step: devStepLabel(event.step),
+          id: devStepId(event.step),
+          ...(event.step.name === 'apply-resource'
+            ? { parentId: event.step.converge, data: { resourceType: event.step.resourceType } }
+            : {}),
+        });
+        return;
+
+      case 'step-finished':
         report({
           kind: 'step-finished',
-          step,
-          id,
-          outcome: event.phase === 'done' ? 'ok' : 'failed',
+          step: devStepLabel(event.step),
+          id: devStepId(event.step),
+          outcome: event.outcome,
+          data: { durationMs: event.durationMs },
         });
-        if (event.message !== undefined) {
-          report({ kind: 'message', severity: 'warn', text: `${event.fqn}: ${event.message}` });
-        }
         return;
-      }
 
-      case 'converge-message':
+      case 'message':
         report({ kind: 'message', severity: event.severity, text: event.text });
         return;
 
@@ -167,7 +175,7 @@ function reportDevEvent(
           kind: 'message',
           severity: 'warn',
           text: `Converge failed; the running app is untouched and dev is still watching.\n${event.message}`,
-          data: { reasons: event.reasons },
+          data: { code: event.code, reasons: event.reasons },
         });
         return;
 
@@ -223,8 +231,8 @@ export const createDevCommand = (operations: ComposerOperations) =>
         'this machine.',
       description:
         'Runs credential-free and watches the app for changes, reconverging when a ' +
-        "service's build output changes. An edit to the entry module or to a file a service " +
-        'is declared in needs a restart of dev, which says so. ' +
+        "service's build output changes. An edit to an app definition file (the entry module, " +
+        'or any other app file it loaded) needs a restart of dev, which says so. ' +
         "A service whose build adapter declares a dev server (Next.js's `next dev`, or the " +
         '`dev` command written on node()) runs that instead of its build, and its output is ' +
         'shown here, prefixed with its address. ' +

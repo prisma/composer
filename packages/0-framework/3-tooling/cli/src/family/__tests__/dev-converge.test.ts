@@ -55,64 +55,54 @@ describe('dev — converging in process', () => {
     expect(result.exitCode).toBe(130);
   });
 
-  test('each resource is a step, a failed one with its message, and log lines are messages', async () => {
+  test('each converge is a step with its resources inside it, and log lines are messages', async () => {
+    const rebuild = { name: 'converge', id: 'dev.rebuild.2' } as const;
+    const web = {
+      name: 'apply-resource',
+      converge: 'dev.rebuild.2',
+      fqn: 'shop.web',
+      resourceType: 'Local.Compute',
+    } as const;
     const { result } = await runWithEvents(
       [
+        { kind: 'step-started', step: rebuild },
+        { kind: 'step-started', step: { ...web, status: 'updating' } },
+        { kind: 'message', severity: 'info', text: 'Plan: 1 to update' },
         {
-          kind: 'converge-resource',
-          fqn: 'shop.web',
-          resourceType: 'Local.Compute',
-          status: 'updating',
-          phase: 'running',
+          kind: 'step-finished',
+          step: { ...web, status: 'updated' },
+          outcome: 'ok',
+          durationMs: 5,
         },
-        {
-          kind: 'converge-resource',
-          fqn: 'shop.web',
-          resourceType: 'Local.Compute',
-          status: 'updated',
-          phase: 'done',
-        },
-        {
-          kind: 'converge-resource',
-          fqn: 'shop.db',
-          resourceType: 'Local.Postgres',
-          status: 'fail',
-          phase: 'failed',
-          message: 'port in use',
-        },
-        { kind: 'converge-message', severity: 'info', text: 'Plan: 1 to update' },
+        { kind: 'step-finished', step: rebuild, outcome: 'ok', durationMs: 9 },
       ],
-      (event) => event.kind === 'message' && event.text === 'Plan: 1 to update',
+      (event) => event.kind === 'step-finished' && event.id === 'dev.rebuild.2',
     );
 
     expect(result.events).toContainEqual({
       kind: 'step-started',
+      step: 'rebuild 2',
+      id: 'dev.rebuild.2',
+    });
+    expect(result.events).toContainEqual({
+      kind: 'step-started',
       step: 'updating shop.web',
-      id: 'dev.converge.shop.web',
+      id: 'dev.rebuild.2.shop.web',
+      parentId: 'dev.rebuild.2',
       data: { resourceType: 'Local.Compute' },
     });
     expect(result.events).toContainEqual({
       kind: 'step-finished',
       step: 'updated shop.web',
-      id: 'dev.converge.shop.web',
+      id: 'dev.rebuild.2.shop.web',
       outcome: 'ok',
-    });
-    expect(result.events).toContainEqual({
-      kind: 'step-finished',
-      step: 'fail shop.db',
-      id: 'dev.converge.shop.db',
-      outcome: 'failed',
+      data: { durationMs: 5 },
     });
     expect(result.events).toContainEqual({
       kind: 'message',
-      severity: 'warn',
-      text: 'shop.db: port in use',
+      severity: 'info',
+      text: 'Plan: 1 to update',
     });
-    expect(
-      result.events.filter(
-        (event) => event.kind === 'step-started' && event.id === 'dev.converge.shop.web',
-      ),
-    ).toHaveLength(1);
   });
 
   test('a failed rebuild is a warning with the cause, and no reproduce command', async () => {
@@ -122,6 +112,7 @@ describe('dev — converging in process', () => {
       [
         {
           kind: 'converge-failed',
+          code: 'DEV.CONVERGE_FAILED',
           message: 'ProviderError: the provider refused',
           reasons: [{ tag: 'ProviderError', message: 'the provider refused' }],
         },
@@ -133,14 +124,17 @@ describe('dev — converging in process', () => {
       kind: 'message',
       severity: 'warn',
       text,
-      data: { reasons: [{ tag: 'ProviderError', message: 'the provider refused' }] },
+      data: {
+        code: 'DEV.CONVERGE_FAILED',
+        reasons: [{ tag: 'ProviderError', message: 'the provider refused' }],
+      },
     });
     expect(result.events.some((event) => event.kind === 'remediation')).toBe(false);
   });
 
   test('an edit to the app definition renders as a warning that asks for a restart', async () => {
     const text =
-      "/repo/shop/src/service.ts changed. dev loaded the app's definition when it started and cannot load it again; restart dev to apply it. Rebuilds are paused until then.";
+      '/repo/shop/src/service.ts changed. dev loaded the app definition files when it started and cannot load them again; restart dev to apply the change. Rebuilds are paused until then.';
     const { result } = await runWithEvents(
       [{ kind: 'definition-changed', files: ['/repo/shop/src/service.ts'] }],
       (event) => event.kind === 'message' && event.text === text,

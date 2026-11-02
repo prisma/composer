@@ -601,8 +601,9 @@ that surprise:
    environment variables; Composer's values win. `dev` prints ``<address>: runs
    `<command>` in <dir>`` before the app comes up and streams the dev
    server's output prefixed `[<address>]` (other services' logs are not
-   streamed). Source edits are the dev server's own hot reload; an edit to the
-   entry or a service's authoring module needs `dev` restarted (it says so),
+   streamed). Source edits are the dev server's own hot reload; an edit to an
+   app definition file (the entry or any app file it imports) needs `dev`
+   restarted (it says so),
    and `dev` restarts a dev server only when its environment variables changed
    (``<address>: its environment changed; `<command>` restarted``). It has no
    terminal (no colours or key shortcuts). The standalone build is not run
@@ -655,8 +656,9 @@ that surprise:
    app, including one an earlier `--detach` left running (a failed redeploy
    has already replaced that service's process), and exits non-zero: fix the
    build and run `prisma dev --detach` again.
-4. `dev` reads `prisma.config.ts` and loads the app's definition (the entry
-   and each service's authoring module) once, at start, and watches them:
+4. `dev` reads `prisma.config.ts` and loads the app definition files (the
+   entry and every app file it imports, outside `node_modules`) once, at
+   start, and watches them:
    after an edit it says so and pauses rebuilds until you restart `dev`.
 5. `dev` reads secrets only from the `secrets` adapters. Put them where a `secrets` adapter reads them: the shell by default, or `.env.dev` with `secrets: [dotenv(), environmentVariables()]`. A required secret that is unset or empty stops `dev` with an error naming it; an optional one reaches the service as absent. A changed value takes effect on the next `prisma dev`. A `.env` that only the framework loads (Next.js) does not count: Composer reads secrets before the dev server starts.
 6. The emulators are machine-wide daemons shared by every `dev`, registered
