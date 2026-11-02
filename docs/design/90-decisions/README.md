@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADRs)
 
-This directory contains append-only decision records.
+This directory contains decision records. Each is kept as one current record. When a decision changes, its record is rewritten in full, the reversed position moves to "Alternatives considered", and git history keeps the earlier versions.
 
 ## When to write an ADR
 

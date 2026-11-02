@@ -23,7 +23,7 @@ export function module<D extends Deps, E extends Expose, I extends StandardSchem
 interface ModuleContext<D extends Deps, I extends StandardSchemaV1 | undefined> {
   /** The module's declared dependencies as wiring values — pass them into provision(). */
   readonly deps: { [K in keyof D]: InputRef<D[K]> };
-  /** The module's input: one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. Pass a field into a provision() binding or list it as a resolve() dependency. */
+  /** The module's input: a dictionary with one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. It is not itself a value: pass its fields on by name, into a provision() binding or, for a plain field, as a resolve() dependency. A root's input is the config pool, validated by its schema. */
   readonly input: I extends StandardSchemaV1 ? ModuleInput<I> : undefined;
   /** The deploy-time facts of the environment, each a value: today only `environment.name`. */
   readonly environment: EnvironmentFacts;

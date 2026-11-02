@@ -252,16 +252,7 @@ schema whose leaves are wrapped. For another Standard Schema library,
 
 ### Config pool
 
-The merged values the `config` adapters return for the environment being
-deployed, a later adapter winning by top-level key. It is the root module's
-input, validated by the root's schema, and what an `envParam('NAME')` reads
-`NAME` from, wherever it sits. With no `config` list in the `composer` section
-it is the process environment. In code it is `LoadOptions.configPool`, and the
-name a source reads is its **pool key** (`paramSource()`'s `poolKey` option).
-Composer reads it in the CLI and again in the deploy engine's process. It holds
-whatever the adapters return, which by default is the whole process
-environment, secrets included, so only the root's fields that its body passes
-on one by one reach the graph; Load refuses the root's whole input.
+The merged values the `config` adapters return for the environment being deployed, a later adapter winning by top-level key. It is the root module's input, validated by the root's schema, and what an `envParam('NAME')` reads `NAME` from, wherever it sits. With no `config` list in the `composer` section it is the process environment. In code it is `LoadOptions.configPool`, and the name a source reads is its **pool key** (`paramSource()`'s `poolKey` option). Composer reads it in the CLI and again in the deploy engine's process. It holds whatever the adapters return, which by default is the whole process environment, secrets included, so only the root's fields that its body passes on one by one reach the graph. No module can pass its whole input on: it fails to compile, and Load refuses it.
 
 ### Secrets pool
 
