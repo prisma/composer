@@ -4,7 +4,7 @@ Parent: [module-input spec](../../spec.md) and [plan](../../plan.md). Design: [d
 
 The three slices ship as one pull request. It is built on `claude/module-input-s11-s13`, stacked on prisma/composer#412 (S9 and S10). This spec is grounded in that branch at `78166d80`, which holds S9 and S10; § 19 says what S10 changed.
 
-The pull request cannot merge until `@prisma/cli-engine` 0.10.0 is published. prisma/prisma-cli#383 adds the output transform this PR uses (§ 9.5), and merging it publishes 0.10.0.
+Release order: prisma/prisma-cli#383 merges first and publishes `@prisma/cli-engine` 0.10.0, which adds the output transform this PR uses (§ 9.5); this PR merges after that.
 
 This spec leaves nothing to the implementer's judgement. Every file, type, signature, error message, document edit, test and commit is pinned. Where the implementer finds the spec and the code in conflict, the implementer stops and reports; it does not choose. § 20 lists the decisions this spec takes, and § 21 what it found that the design gets wrong or does not say.
 
@@ -939,7 +939,7 @@ The dev configuration file lives only while a converge runs, which is shorter th
 
 ### 8.7 The engine version
 
-`@prisma/cli-engine` goes from `0.9.0` to `0.10.0`, exactly, in four places: the `dependencies` of `packages/0-framework/3-tooling/cli/package.json`; the `devDependencies` of `packages/1-prisma-cloud/1-extensions/target/package.json`; both the `peerDependencies` and the `devDependencies` of `packages/9-public/composer-cli/package.json`; and the root `package.json`'s `pnpm.overrides`. Run `pnpm install` so the lockfile records it. `pnpm check:cli-engine-pin` checks that the declarations agree and that the installed `prisma` host loads the same engine copy as the family. 0.10.0 must be published first: until prisma/prisma-cli#383 merges, the implementer builds and tests against a local build of that branch (for example a `link:` override, never committed) and the pull request stays a draft.
+`@prisma/cli-engine` goes from `0.9.0` to `0.10.0`, exactly, in four places: the `dependencies` of `packages/0-framework/3-tooling/cli/package.json`; the `devDependencies` of `packages/1-prisma-cloud/1-extensions/target/package.json`; both the `peerDependencies` and the `devDependencies` of `packages/9-public/composer-cli/package.json`; and the root `package.json`'s `pnpm.overrides`. Run `pnpm install` so the lockfile records it. `pnpm check:cli-engine-pin` checks that the declarations agree and that the installed `prisma` host loads the same engine copy as the family. 0.10.0 must be published first: until prisma/prisma-cli#383 merges and publishes it, the implementer builds and tests against a local build of that branch at `415c668a` or later (for example a `link:` override, never committed) and the pull request stays a draft.
 
 ## 9. CLI: Composer redacts every secret it knows
 
@@ -1257,61 +1257,113 @@ Why the line cut: Alchemy prints a line, such as `Creating web`, then waits minu
 
 ### 9.5 The engine's output transform, for the CLI
 
-`@prisma/cli-engine` 0.10.0 lets a command hand `ctx.spawn` a transform for each of the child's output streams (prisma/prisma-cli#383). The engine starts the child with stdin inherited and stdout and stderr piped, passes each stream's text through the transform the command gave for it, and writes the result where it would have written the child's output without one: the terminal in human mode, stderr in json mode. At the end of each stream it flushes the transform. Composer writes nothing itself and maps no stream: the engine owns where the output goes, in every output format.
+`@prisma/cli-engine` 0.10.0 (prisma/prisma-cli#383, final API at `415c668a`) adds `transformOutput?: (stream: ChildStreamName) => TransformStream<string, string>` to `ctx.spawn`'s options, where `ChildStreamName` is `"stdout" | "stderr"`. What the engine does with it:
 
-The engine's signature is named in one place, the `spawn` member of `ConvergeContext` in `family/converge.ts`. It is written here per prisma/prisma-cli#383's final API, which may still change in review; when #383 merges, the implementer matches this member's option name and type to it and changes nothing else:
+- It calls `transformOutput` once per stream, before the child starts. It starts the child with stdin inherited and stdout and stderr piped, and passes each stream, decoded as UTF-8, through its transform.
+- It writes the result where the child's output goes without a transform: in human and markdown format, the child's stdout to stdout and its stderr to stderr; in json format, both to stderr, so stdout carries only the engine's NDJSON. It reads the child only as fast as the terminal takes the text.
+- Each stream keeps its own order; there is no order between the two.
+- Each transform's `flush` runs, and its output is written, before `ctx.spawn` settles, on every path: a normal exit, an abort, a SIGTERM, a stream that fails, and an adapter that rejects.
+- If a transform throws, the engine ends the child as on abort and `ctx.spawn` rejects with that error.
+- Before the transform sees the text, the engine replaces the `PRISMA_SERVICE_TOKEN` it injects for `needs: { credentials: 'child' }` with `[redacted]`.
+- `ctx.spawnOptions` lists the option names `ctx.spawn` accepts, and `ctx.spawn` refuses any other name. A host older than 0.10.0 has no `ctx.spawnOptions` and silently ignores `transformOutput`.
 
-```ts
-export interface ConvergeContext {
-  readonly spawn: (options: {
-    readonly command: string;
-    readonly args?: readonly string[];
-    readonly cwd?: string;
-    readonly env?: Readonly<Record<string, string | undefined>>;
-    readonly transformOutput?: (stream: 'stdout' | 'stderr') => TransformStream<string, string>;
-  }) => Promise<ChildResult>;
-  readonly lastChild: () => ChildResult | undefined;
-}
-```
+Composer writes nothing itself and maps no stream: the engine owns where the output goes, in every output format.
 
-The real `ctx` satisfies it structurally; `lastChild`'s doc comment is unchanged.
+`family/converge.ts`:
 
-`convergeSpawn` and its doc comment become:
+1. `ConvergeContext` becomes:
 
-```ts
-/**
- * The adapter the operations call, backed by the engine's `ctx.spawn`, so the engine owns
- * signal policy and where the output goes. The engine passes each of the child's output
- * streams through Composer's redactor before it prints it. The secret values reach the
- * redactor in this process, never the child's environment or command line.
- */
-export function convergeSpawn(ctx: ConvergeContext): RunAlchemy {
-  return async (invocation) => {
-    const commandLine = alchemyCommandLine(invocation);
-    const values = [...invocation.redactedValues, ...secretNamedValues(process.env)];
-    const result = await ctx.spawn({
-      command: commandLine.command,
-      args: [...STDOUT_TO_STDERR, ...commandLine.args],
-      cwd: commandLine.cwd,
-      env: commandLine.env,
-      transformOutput: () => redactingTransform(values),
-    });
-    return { ...result, commandLine };
-  };
-}
-```
+   ```ts
+   export interface ConvergeContext {
+     readonly spawn: (options: {
+       readonly command: string;
+       readonly args?: readonly string[];
+       readonly cwd?: string;
+       readonly env?: Readonly<Record<string, string | undefined>>;
+       readonly transformOutput?: (stream: ChildStreamName) => TransformStream<string, string>;
+     }) => Promise<ChildResult>;
+     /** The option names the host's `ctx.spawn` accepts. Absent on an engine older than 0.10.0. */
+     readonly spawnOptions?: readonly string[];
+     readonly lastChild: () => ChildResult | undefined;
+   }
+   ```
 
-`converge.ts` imports `secretNamedValues` from `../deployment-summary.ts` and `redactingTransform` from `../redaction.ts`. Each call of `transformOutput` returns a new transform, so each stream has its own held-back text.
+   `lastChild`'s doc comment is unchanged. `ChildStreamName` joins the type import from `@prisma/cli-engine`. The real `ctx` satisfies it structurally; `spawnOptions` is optional here because a 0.9.0 host does not set it.
 
-`STDOUT_TO_STDERR` stays. The child's stdout is now always a pipe, so the `--import` always sends the child's stdout to its stderr, and the engine prints it as stderr. That keeps the CLI's own stdout for its data lines in a piped human run, as today. Its doc comment becomes `Node's \`--import\` of a module that sends the child's stdout to stderr when stdout is not a terminal. Under the engine's output transform the child's stdout is always a pipe, so all of Alchemy's output reaches the engine as stderr, and the CLI's own stdout keeps only its data lines.`
+2. New export, after `ConvergeContext`:
 
-What the engine guarantees, from #383, and what Composer relies on:
+   ```ts
+   /**
+    * The failure for a host whose engine cannot transform a child's output, which Composer needs
+    * to redact the deploy engine's output; `undefined` when it can. A 0.9.0 host would ignore the
+    * transform and print the output unredacted.
+    */
+   export function outputTransformMissing(ctx: ConvergeContext): Result<never, CliStructuredError> | undefined {
+     if (ctx.spawnOptions?.includes('transformOutput') === true) return undefined;
+     return notOk(
+       toEngineError(
+         new ComposerError(
+           'DEPS.CLI_ENGINE_INCOMPATIBLE',
+           "This prisma CLI's @prisma/cli-engine is older than 0.10.0; Composer needs 0.10.0 or later.",
+           {
+             why: "Composer removes secrets from the deploy engine's output through ctx.spawn's transformOutput option, which @prisma/cli-engine 0.10.0 added. An older engine ignores the option and would print that output unredacted, so Composer starts nothing.",
+             fix: 'Use a prisma CLI whose @prisma/cli-engine is 0.10.0 or later, the version @prisma/composer-cli declares as its peer.',
+           },
+         ),
+       ),
+     );
+   }
+   ```
 
-- **Order.** Text from one stream reaches its transform in the order the child wrote it. There is no order between the two streams; the redactor needs none.
-- **The held-back text.** The engine flushes each transform when its stream ends, and both streams end before the engine counts the child as ended. `ctx.spawn` resolves after that, so no held-back text is lost or printed after the command's next output.
-- **Report events.** While the child runs, the engine buffers `ctx.report` events and prints them before `ctx.spawn` resolves. Under `prisma dev`, a dev server's output line can be reported during a rebuild converge. The transforms are flushed before the buffered events are printed, so the child's last text comes before them. With the line cut (§ 9.3), the only text the redactor holds back at that point is an unfinished last line. Test 40 checks the order; if #383's final API flushes later, the implementer stops and reports.
-- **Abort.** On SIGTERM or an abort of `ctx.signal`, the engine ends the child with SIGTERM, then SIGKILL after a grace period. The streams end when the child exits, or after the adapter's drain grace when a grandchild holds them open, and the transforms flush then. Composer adds no signal handling.
-- **Failure.** The redactor does not throw. If a transform did, the engine would end the child and `ctx.spawn` would reject; `runStackPipeline` reports that as a defect, redacted (§ 8.4).
+   `converge.ts`'s import of `CliStructuredError as ComposerError` from `@internal/foundation/errors` becomes a value import.
+
+3. `convergeSpawn` and its doc comment become:
+
+   ```ts
+   /**
+    * The adapter the operations call, backed by the engine's `ctx.spawn`, so the engine owns
+    * signal policy and where the output goes. The engine passes each of the child's output
+    * streams through Composer's redactor before it prints it. The secret values reach the
+    * redactor in this process, never the child's environment or command line. Call it only
+    * after `outputTransformMissing` found nothing.
+    */
+   export function convergeSpawn(ctx: ConvergeContext): RunAlchemy {
+     return async (invocation) => {
+       const commandLine = alchemyCommandLine(invocation);
+       const values = [...invocation.redactedValues, ...secretNamedValues(process.env)];
+       const result = await ctx.spawn({
+         command: commandLine.command,
+         args: [...STDOUT_TO_STDERR, ...commandLine.args],
+         cwd: commandLine.cwd,
+         env: commandLine.env,
+         transformOutput: () => redactingTransform(values),
+       });
+       return { ...result, commandLine };
+     };
+   }
+   ```
+
+   `converge.ts` imports `secretNamedValues` from `../deployment-summary.ts` and `redactingTransform` from `../redaction.ts`. Each call of `transformOutput` returns a new transform, so each stream has its own held-back text.
+
+4. `commands/deploy.ts` and `commands/dev.ts`: the first two statements of each handler become
+
+   ```ts
+         const refused = outputTransformMissing(ctx);
+         if (refused !== undefined) return refused;
+         const alchemy = convergeSpawn(ctx);
+   ```
+
+   with `outputTransformMissing` added to their `../converge.ts` import. The check runs before the operation, so a refused run creates nothing: no container, no preflight write, no stack file. `destroy` has no CLI command (ADR-0050); the programmatic operations pipe in-process (§ 9.4) and need no engine.
+
+`STDOUT_TO_STDERR` stays, because in human format the engine writes the child's stdout to the CLI's stdout, which in a piped run carries only Composer's data lines, and the preload keeps Alchemy's output off it. #383's README calls it redundant, but under the final API's own routing (stdout to stdout in human format) it is not; it stays until Composer's data lines move elsewhere. Its doc comment becomes `Node's \`--import\` of a module that sends the child's stdout to stderr when stdout is not a terminal. Under the engine's output transform the child's stdout is always a pipe, so all of Alchemy's output reaches the engine as stderr, and the CLI's own stdout keeps only its data lines in human format.`
+
+What Composer relies on:
+
+- **The held-back text.** The engine flushes each transform before `ctx.spawn` settles, on every path, so no held-back text is lost, and none is printed after the command's next output.
+- **Report events.** While the child runs, the engine buffers `ctx.report` events and prints them before `ctx.spawn` resolves. Under `prisma dev`, a dev server's output line can be reported during a rebuild converge. The engine reads the child's streams to their end, flushing the transforms, before it prints the buffered events, so the child's last text comes first. With the line cut (§ 9.3), the only text the redactor holds back by then is an unfinished last line. Test 40 checks the order; if it fails, the implementer stops and reports.
+- **Abort.** On SIGTERM or an abort of `ctx.signal`, the engine ends the child with SIGTERM, then SIGKILL after a grace period, and still flushes. Composer adds no signal handling.
+- **Failure.** The redactor does not throw. If a transform did, `ctx.spawn` would reject; `runStackPipeline` reports that as a defect, redacted (§ 8.4).
+- **The engine's credential.** The engine redacts the `PRISMA_SERVICE_TOKEN` it injects, including one from `prisma login`, which Composer never sees.
 
 `reproduceCommand` keeps printing the Alchemy command line, which `outcome.commandLine` carries. Alchemy's stdout and stderr are pipes, so it shows plain progress lines without colour (§ 18 shows Alchemy deploying with piped output).
 
@@ -1365,7 +1417,7 @@ Breaks:
 11. An `envParam()` in a service's input or params whose app configuration value is not text fails at Load, in the first process. Before, it failed later, in the serializer or preflight.
 12. A config adapter now runs after the secrets adapters, so a broken secrets adapter is reported before a broken config adapter.
 13. The app's `@prisma/composer` must be at least the version that ships `internal/configuration-file`; with an older one the second process fails when it imports the stack file.
-14. `@prisma/composer-cli` declares `@prisma/cli-engine` 0.10.0 as its exact peer, so the `prisma` host that mounts it must carry 0.10.0.
+14. `@prisma/composer-cli` declares `@prisma/cli-engine` 0.10.0 as its exact peer. `prisma deploy` and `prisma dev` under a host with an older engine fail with `DEPS.CLI_ENGINE_INCOMPATIBLE` before they start anything.
 
 Unchanged:
 
@@ -1397,9 +1449,10 @@ The only existing tests this PR changes are those § 15.1 lists. If any other ex
 | `readCheckedConfiguration` | addresses not a list of text | `PRISMA_COMPOSER_NODE_ADDRESSES is not a JSON list of node addresses.` |
 | `appSecretsFromEnvironment` | no `PRISMA_COMPOSER_APP_SECRETS` | `PRISMA_COMPOSER_APP_SECRETS is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which hands the app secrets the local services need there.` |
 | `appSecretsFromEnvironment` | not an object of text | `PRISMA_COMPOSER_APP_SECRETS is not a JSON object of text.` |
+| `outputTransformMissing` | `DEPS.CLI_ENGINE_INCOMPATIBLE` | summary ``This prisma CLI's @prisma/cli-engine is older than 0.10.0; Composer needs 0.10.0 or later.``; why ``Composer removes secrets from the deploy engine's output through ctx.spawn's transformOutput option, which @prisma/cli-engine 0.10.0 added. An older engine ignores the option and would print that output unredacted, so Composer starts nothing.``; fix ``Use a prisma CLI whose @prisma/cli-engine is 0.10.0 or later, the version @prisma/composer-cli declares as its peer.`` |
 | `dotenv()` | a file `dotenv-flow` lists cannot be read | `dotenv() could not read <absolute path>: <message>` (unchanged) |
 
-The `LoadError`s carry `COMPOSE.GRAPH_INVALID`. The `LowerError` and the second process's plain `Error`s reach the user as the cause of `DEPLOY.ENGINE_FAILED` or `DEV.CONVERGE_FAILED`. This PR adds no error code.
+The `LoadError`s carry `COMPOSE.GRAPH_INVALID`. The `LowerError` and the second process's plain `Error`s reach the user as the cause of `DEPLOY.ENGINE_FAILED` or `DEV.CONVERGE_FAILED`. The one new code is `DEPS.CLI_ENGINE_INCOMPATIBLE`.
 
 ## 13. The release note
 
@@ -1421,7 +1474,7 @@ The repo has no changesets; the pull request description carries the release not
   4. `The deploy's second process no longer runs the config adapters. It reads the values the first process checked from a configuration file in .prisma-composer/, readable only by you and deleted when the deploy ends, and refuses to deploy a graph whose node addresses differ from the first process's. A module body that reads process.env, a file or the clock and builds a different graph now fails the deploy.`
   5. `Composer redacts every secret it knows wherever it prints: every value under a name an envSecret() names, every value your own secrets list returns, at any length. The deploy engine's output now passes through Composer's redactor before the CLI prints it, so Alchemy shows plain progress lines without colour.`
   6. `A root field the body passes on must hold data JSON can hold exactly; a name may not be read both by envParam() and by envSecret(); and a non-text envParam() value in a service's input now fails before anything is created.`
-  7. `@prisma/composer and @prisma/composer-cli must be the same version: the generated stack file imports @prisma/composer/internal/configuration-file. @prisma/composer-cli needs @prisma/cli-engine 0.10.0, so use a prisma CLI that carries it.`
+  7. `@prisma/composer and @prisma/composer-cli must be the same version: the generated stack file imports @prisma/composer/internal/configuration-file. @prisma/composer-cli needs @prisma/cli-engine 0.10.0 or later; under an older prisma CLI, prisma deploy and prisma dev stop with DEPS.CLI_ENGINE_INCOMPATIBLE before they start anything.`
 
 ## 14. Documentation
 
@@ -1754,7 +1807,7 @@ The deploy reads the app configuration once, in its first process, and hands its
 
 ### 14.5 ADR-0044, rewritten
 
-`docs/design/90-decisions/ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md`. The text below keeps every statement of the current record, folds its three amendment notes into the registry, and replaces "A structured error is never transformed" with the one transformation this PR adds, redaction.
+`docs/design/90-decisions/ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md`. The text below keeps every statement of the current record, folds its three amendment notes into the registry, adds `DEPS.CLI_ENGINE_INCOMPATIBLE`, and replaces "A structured error is never transformed" with the one transformation this PR adds, redaction.
 
 ~~~markdown
 # ADR-0044: Errors are structural envelopes with dotted namespace codes
@@ -1811,7 +1864,7 @@ Namespaces are closed and concern-shaped; each has one owning module (which may 
 | `DEPLOY` | target selection, environment, containers, preflight, engine, teardown, generated files | operations/execute-deploy-destroy.ts (validate-environment.ts, run-alchemy.ts, alchemy-bin.ts) |
 | `DEV` | local dev pipeline and session, and the commands on the app it recorded | operations/execute-dev.ts (core/control/local-target.ts, operations/execute-dev-current.ts, `@internal/dev-emulators`) |
 | `LOG` | log attach and tail | operations/execute-log.ts |
-| `DEPS` | the consumer's installed dependency tree | operations/shared.ts, operations/execute-deploy-destroy.ts |
+| `DEPS` | the consumer's installed dependency tree | operations/shared.ts, operations/execute-deploy-destroy.ts, family/converge.ts |
 
 Closed subcode registry:
 
@@ -1821,7 +1874,7 @@ Closed subcode registry:
 - `DEPLOY` — FLAG_INVALID, TARGET_CONFLICT, TARGET_MISSING, TARGET_NOT_FOUND, ENVIRONMENT_INVALID, ENVIRONMENT_UNVALIDATABLE, ENVIRONMENT_REQUIRED, CONTAINER_FAILED, PREFLIGHT_FAILED, ENGINE_FAILED, TEARDOWN_FAILED, CONTAINER_REMOVE_FAILED, BUILD_REQUIRED, ALCHEMY_BIN_MISSING, NODE_MISSING, STACK_WRITE_FAILED *(STAGE_INVALID, STAGE_UNVALIDATABLE and SCOPE_MISSING retired by [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md))*. ENVIRONMENT_REQUIRED: a `destroy` call names no environment. STACK_WRITE_FAILED covers the configuration file as well as the stack file. `prisma dev` starts the deploy engine the same way `deploy` does, so it raises ALCHEMY_BIN_MISSING and NODE_MISSING under `DEPLOY` too.
 - `DEV` — PLATFORM_UNSUPPORTED, TARGET_UNSUPPORTED, CONTAINER_FAILED, TEARDOWN_FAILED, PREFLIGHT_FAILED, EMULATOR_FAILED, SERVICE_START_FAILED, CONVERGE_FAILED, ATTACH_FAILED, STACK_WRITE_FAILED, EMULATORS_DIR_INVALID, EMULATOR_UNREACHABLE, SERVICE_READY_TIMEOUT_INVALID, NOT_STARTED_HERE, ADDRESS_UNKNOWN, NOT_RUNNING. EMULATOR_UNREACHABLE is raised by the emulator client when it cannot connect, so `log` raises it under `DEV` too; for a connection failure it takes the place of SERVICE_START_FAILED, ATTACH_FAILED and `LOG.ATTACH_FAILED`. `devUrl` also raises it when the emulator a node runs on is not running. NOT_STARTED_HERE (no `prisma dev` has recorded an app in the directory) is raised by `devUrl` and `devStop`; ADDRESS_UNKNOWN (the recorded app has no node at that address; the known addresses are listed) and NOT_RUNNING (the node exists but is not running; its state is named, and the reason and fix depend on it) by `devUrl` alone ([ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md)). Both operations raise EMULATOR_FAILED when the local target fails without a code. `emulator list` fails only with EMULATORS_DIR_INVALID; an emulator it cannot list is reported in that emulator's entry with EMULATOR_UNREACHABLE or EMULATOR_FAILED.
 - `LOG` — PLATFORM_UNSUPPORTED, ATTACH_FAILED, ADDRESS_UNKNOWN
-- `DEPS` — EXECUTOR_UNLOADABLE, EXTENSION_INCOMPATIBLE *(EFFECT_VERSION_CONFLICT retired by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*. EXTENSION_INCOMPATIBLE: an installed extension is older than the Composer running the deploy or destroy, so the container it resolved, rebuilt through its own `deserialize`, does not name the environment that was asked for.
+- `DEPS` — EXECUTOR_UNLOADABLE, EXTENSION_INCOMPATIBLE, CLI_ENGINE_INCOMPATIBLE *(EFFECT_VERSION_CONFLICT retired by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*. EXTENSION_INCOMPATIBLE: an installed extension is older than the Composer running the deploy or destroy, so the container it resolved, rebuilt through its own `deserialize`, does not name the environment that was asked for. CLI_ENGINE_INCOMPATIBLE: the `prisma` CLI running `prisma deploy` or `prisma dev` has a `@prisma/cli-engine` older than 0.10.0, which cannot pass the deploy engine's output through Composer's redactor; it is raised before anything starts.
 
 Adding a subcode is an edit to this list; adding a namespace is an edit to this record.
 
@@ -1935,7 +1988,7 @@ Each whole line, from `- [ADR-00NN](` to the end of the line, becomes:
    - Pipeline step 4 becomes one line: `4. **Read the app secrets and the app configuration.** For \`deploy\` the CLI first calls the \`secrets\` adapters, then for every command the \`config\` adapters, in list order, each awaited, and merges what each list returns by top-level key, a later adapter winning. Both lists default to \`[environmentVariables()]\`. The app configuration is Load's input: the root's input and what \`envParam()\` reads. The app secrets are held in memory for preflight. Every secret value read is recorded for redaction. An adapter that throws or returns something other than an object fails with \`CONFIG.ADAPTER_FAILED\` or \`CONFIG.ADAPTER_INVALID\`. No other process runs an adapter.`
    - Step 5's `config pool as the root's input` → `app configuration as the root's input`.
    - `The generated stack file reads the config pool again, from the same adapters; it never reads the secrets pool.` → `Beside it the CLI writes the configuration file, \`.prisma-composer/configuration-<pid>-<uuid>.json\`, mode 0600, holding what Load read from the app configuration, and deletes it when the run ends. The second process reads it, runs no adapter, and refuses a graph whose node addresses differ from the list the CLI passes in \`PRISMA_COMPOSER_NODE_ADDRESSES\`. It never receives the app secrets. The CLI engine passes its output through Composer's redactor, which replaces every secret value the CLI knows, before it prints it.`
-   - The error table row `| Root's input refused by its schema | the schema's messages, and that a root's input is the config pool for the environment |` → `| Root's input refused by its schema | the schema's messages, and that a root's input is the app configuration for the environment |`.
+   - The error table row `| Root's input refused by its schema | the schema's messages, and that a root's input is the config pool for the environment |` → `| Root's input refused by its schema | the schema's messages, and that a root's input is the app configuration for the environment |`. A new row after the adapter row: `| The prisma CLI's engine is older than 0.10.0 (\`DEPS.CLI_ENGINE_INCOMPATIBLE\`) | that Composer needs @prisma/cli-engine 0.10.0 or later to redact the deploy engine's output, and nothing was started |`.
 2. `docs/design/10-domains/local-dev.md`:
    - The second note at the top, `> Amended by the module-input project (2026-10-30): …`, is removed; its content is in the body below.
    - The table rows: `| \`envParam\` sources (ADR-0032) | the config pool, same names; …` → `| \`envParam\` sources (ADR-0032) | the app configuration, same names; …` (the rest of the row unchanged); `| secrets (ADR-0029, ADR-0058) | the secrets pool: by default the shell, …` → `| secrets (ADR-0029, ADR-0058) | the app secrets: by default the shell, …`.
@@ -2011,6 +2064,7 @@ Changes beyond renames:
 - `cli/src/__tests__/stack-file-import.test.ts`: `configPool` (the expected object) becomes `const checked = { configuration: { rootInput: [], values: { read: 'checked' } }, nodeAddresses: ['stub-address'] };`; the deploy test expects `{ app, extensions, state, environment: 'staging', checkedConfiguration: checked.configuration, checkedNodeAddresses: checked.nodeAddresses }`, retitled `the deploy stack passes the composer export of prisma.config.ts, the environment, and what the CLI checked, to lower(), and reads no secrets`; the dev test adds `local: { configuration: { read: 'checked' }, secrets: { read: 'secrets' } }`, retitled likewise.
 - `cli/src/__tests__/run-alchemy.test.ts`: every `alchemyInvocation({ … })` and every hand-built `AlchemyInvocation` gains `redactedValues: []`. `env carries only the ADDITIONS …` drops any expectation of `PRISMA_COMPOSER_PARENT_VALUES`. Every `spawnCommandLine(line)` call becomes `spawnCommandLine(line, [])`.
 - `cli/src/family/__tests__/converge-spawn.test.ts`: both `alchemyInvocation` calls gain `redactedValues: []`. The fake `ConvergeContext` ignores `transformOutput`, so the two tests still check `STDOUT_TO_STDERR` and the reproduce command; their expectations do not change.
+- `cli/src/family/__tests__/*.test.ts` that run `deploy` or `dev` through `createTestCli`: the 0.10.0 harness sets `ctx.spawnOptions`, so they pass the new check unchanged.
 - `cli/src/testing/operations-double.ts`: the synthetic `AlchemyInvocation` in `runConverge` gains `redactedValues: []`.
 - `cli/src/operations/__tests__/operations.test.ts`: `deploy hands every extension's preflight both pools` becomes `deploy hands every extension's preflight the app configuration and the app secrets`, recording `{ configuration: input.configuration, secrets: input.secrets }`; `a secrets pool value appears in no event, result or report` becomes `an app secrets value appears in no event, result or report`, reading `input.secrets['S4_SENTINEL']`; `dev hands both pools to preflight and to a dev server` becomes `dev hands the app configuration and the app secrets to preflight and to a dev server`, with `serve: async ({ configuration, secrets }) => { seen.serve = { configuration, secrets }; … }` and the expected `{ configuration: { A: 'a' }, secrets: { S: 's' } }` for both; `an engine failure cause never carries a value the pools read from a dotenv file` becomes `an engine failure cause never carries a secret value read from a dotenv file`, its assertions unchanged. The describe `the operations read the pools from the config adapters` becomes `the operations read the app configuration and the app secrets from the adapters`.
 
@@ -2084,7 +2138,7 @@ New file `cli/src/__tests__/configuration-file.test.ts`:
 
 `cli/src/family/__tests__/converge-spawn.test.ts`, new, using the engine's test harness (`createTestCli` from `@prisma/cli-engine/testing`). The command under test is defined in the file: `defineCommand({ help: { summary: 'Runs a converge' }, maySpawn: true, handler: async (_args, ctx) => { await convergeSpawn(ctx)(invocation); return ok(exitWithChildStatus()); } })`, where `invocation` is `alchemyInvocation({ command: 'deploy', stackFileRelativePath: '.prisma-composer/alchemy.run.ts', cwd, stage: 'test', containerEnv: {}, redactedValues: ['hunter2-secret'] })` and `cwd` is `appWithAlchemy([])`. The harness's scripted child writes its output with `child.write(stream, chunk)`, which the engine passes through the transform as it would a real child's.
 
-39. `the engine prints the child's output with every known secret redacted, a secret split across two chunks included, in human and json mode` — the scripted child writes `'key=hunter2-'` and then `'secret\n'` to stdout, and `'boom hunter2-secret\n'` to stderr, and exits 0. Run with `--format human` and with `--json`: `result.spawns[0]?.output` is the piped mode, neither `result.stdout` nor `result.stderr` contains `hunter2`, and together they contain `key=[redacted]\n` and `boom [redacted]\n`. The test does not assert which stream the engine printed to; that is the engine's business.
+39. `the engine prints the child's output with every known secret redacted, a secret split across two chunks included, in human and json mode` — the scripted child writes `'key=hunter2-'` and then `'secret\n'` to stdout, and `'boom hunter2-secret\n'` to stderr, and exits 0. Run with `--format human` and with `--json`: `result.spawns[0]?.output` is `'engine'`, neither `result.stdout` nor `result.stderr` contains `hunter2`, and together they contain `key=[redacted]\n` and `boom [redacted]\n`. The test does not assert which stream the engine printed to; that is the engine's business.
 40. `the held-back text is printed before ctx.spawn resolves and before the report events the engine buffered` — the handler calls `setTimeout(() => ctx.report({ kind: 'endpoint', name: 'probe', url: 'https://probe.example' }), 5)` before it starts the converge; the scripted child waits 20 ms and writes `'tail-without-newline'` to stderr, with no line break, so the redactor holds it until the stream ends; then it exits 0. In human mode, `result.stderr` contains `tail-without-newline`, and its index is lower than the index of `https://probe.example`.
 
 `cli/src/__tests__/run-alchemy.test.ts`, new:
@@ -2095,19 +2149,23 @@ New file `cli/src/__tests__/configuration-file.test.ts`:
 
 42. `convergeSpawn gives the engine a transform per stream, and passes the secret values neither on the child's command line nor in its environment` — a `ConvergeContext` whose `spawn` records its options and resolves `{ exitCode: 0, signal: null }`; with `redactedValues: ['hunter2']`, the recorded `args` and the values of the recorded `env` do not contain `'hunter2'`; `transformOutput('stdout')` and `transformOutput('stderr')` return two different `TransformStream`s, and text `'a hunter2 b'` written through either reads out as `'a [redacted] b'`.
 
+`cli/src/family/__tests__/converge-spawn.test.ts`, new, on the engine's test harness:
+
+43. `a host whose engine cannot transform a child's output refuses before starting anything` — a command defined in the file whose handler calls `outputTransformMissing({ spawn: ctx.spawn, lastChild: ctx.lastChild })`, without `spawnOptions`, as a 0.9.0 host gives, returns the refusal when there is one, and otherwise runs `convergeSpawn(ctx)(invocation)`. Run with `--format human`: the exit code is 2, `result.stderr` holds `DEPS.CLI_ENGINE_INCOMPATIBLE` and the summary of § 12, and `result.spawns` is empty. The same command with `spawnOptions: ctx.spawnOptions` passed through runs the scripted child once.
+
 `cli/src/__tests__/pipeline.test.ts`, new:
 
-43. `runPipeline reads the app secrets before the app configuration` — adapters that push `'secrets'` and `'config'` to an order array; with `readSecrets: true` the array is `['secrets', 'config']`.
-44. `runPipeline adds the values under every envSecret() name to the known secrets` — the `pipeline-app-configuration` fixture module binds `secretSource({}, { label: 'secret', secretsKey: 'S11_SECRET' })`; the config adapter returns `{ S11_SECRET: 'from-config' }` and the secrets adapter `{ S11_SECRET: 'from-secrets' }`; the `knownSecrets` passed in has both values.
+44. `runPipeline reads the app secrets before the app configuration` — adapters that push `'secrets'` and `'config'` to an order array; with `readSecrets: true` the array is `['secrets', 'config']`.
+45. `runPipeline adds the values under every envSecret() name to the known secrets` — the `pipeline-app-configuration` fixture module binds `secretSource({}, { label: 'secret', secretsKey: 'S11_SECRET' })`; the config adapter returns `{ S11_SECRET: 'from-config' }` and the secrets adapter `{ S11_SECRET: 'from-secrets' }`; the `knownSecrets` passed in has both values.
 
 `cli/src/operations/__tests__/operations.test.ts`, a new `describe('the second process reads what the first process checked', …)`, using a fixture app whose root declares `input: type({ GREETING: 'string' })`, binds `{ greeting: input.GREETING, origin: configured('APP_ORIGIN'), key: secret('S13_SECRET') }` into its service (the helpers of § 15.2, built from core), and whose `config` adapter returns `{ GREETING: 'hello', APP_ORIGIN: 'https://origin.example', UNUSED: 'x' }`:
 
-45. `deploy writes the configuration file before the second process starts and deletes it after, mode 0600, holding only what Load read` — in the fake `alchemy`, `const file = input.env[CONFIGURATION_FILE_ENV]`; while it runs, the file exists, its mode is `0o600`, and its JSON equals `{ rootInput: [{ path: ['GREETING'], value: 'hello' }], values: { APP_ORIGIN: 'https://origin.example' } }`; `input.env[NODE_ADDRESSES_ENV]` equals `JSON.stringify(nodeAddresses(graph))` for the fixture's graph; after `deploy` returns, the file does not exist. The same holds when the fake returns `{ exitCode: 1, signal: null }`.
-46. `destroy writes and deletes the configuration file the same way, and reads no secrets`.
-47. `dev hands the second process the app secrets the graph names through its environment, never in a file` — `secrets: [() => ({ S13_SECRET: 'dev-secret-value', OTHER: 'not-named' })]`; in the fake `alchemy`, `input.env[APP_SECRETS_ENV]` equals `'{"S13_SECRET":"dev-secret-value"}'`, and no file under the app directory contains `dev-secret-value`; `.prisma-composer/dev/dev/configuration.json` exists during the converge and not after it.
-48. **The end-to-end test.** `no known secret reaches the configuration file, the stack file, the deploy report, the errors or the second process's output`. The app's `secrets` adapter returns `{ S13_SECRET: 'e2e-SENTINEL-5f2a' }` and `config` returns the values above. The fake `alchemy` (a) copies the configuration file's text and the stack file's text into variables; (b) runs `spawnCommandLine({ command: process.execPath, args: ['-e', script], cwd, env: input.env }, input.redactedValues, outputs)`, where `script` writes `e2e-SENTI` and, after 50 ms, `NEL-5f2a and more\n` to stdout and `boom e2e-SENTINEL-5f2a\n` to stderr, and `outputs` collects both streams; (c) writes to the result file a deployment summary whose one entity has `id: 'svc'` and `details: { note: 'e2e-SENTINEL-5f2a' }`, and beside it the failure cause `error: rejected e2e-SENTINEL-5f2a`; and (d) returns the status the test sets. The test deploys twice, each with `reportPath` set to a file in the app directory: once with status 0 and once with status 1. Afterwards none of these contains `SENTINEL`: the copied configuration file and stack file texts of both runs, the collected stdout and stderr, both run report files, `JSON.stringify(result.value.summary)` of the first run, and `JSON.stringify(result.failure.toEnvelope())` and `String(result.failure.meta?.['engineCause'])` of the second. The collected stdout of each run is `[redacted] and more\n`.
-49. `an adapter's failure message is redacted with every value a written secrets list returned` — `secrets: [() => ({ TOKEN_X: 'adapter-SENTINEL-1' })]`, `config: [() => { throw new Error('bad adapter-SENTINEL-1'); }]`; the failure is `CONFIG.ADAPTER_FAILED` and `JSON.stringify(result.failure.toEnvelope())` does not contain `SENTINEL`.
-50. `a dev event's message is redacted` — a dev server output line holding the secret reaches `onEvent` as `[redacted]`.
+46. `deploy writes the configuration file before the second process starts and deletes it after, mode 0600, holding only what Load read` — in the fake `alchemy`, `const file = input.env[CONFIGURATION_FILE_ENV]`; while it runs, the file exists, its mode is `0o600`, and its JSON equals `{ rootInput: [{ path: ['GREETING'], value: 'hello' }], values: { APP_ORIGIN: 'https://origin.example' } }`; `input.env[NODE_ADDRESSES_ENV]` equals `JSON.stringify(nodeAddresses(graph))` for the fixture's graph; after `deploy` returns, the file does not exist. The same holds when the fake returns `{ exitCode: 1, signal: null }`.
+47. `destroy writes and deletes the configuration file the same way, and reads no secrets`.
+48. `dev hands the second process the app secrets the graph names through its environment, never in a file` — `secrets: [() => ({ S13_SECRET: 'dev-secret-value', OTHER: 'not-named' })]`; in the fake `alchemy`, `input.env[APP_SECRETS_ENV]` equals `'{"S13_SECRET":"dev-secret-value"}'`, and no file under the app directory contains `dev-secret-value`; `.prisma-composer/dev/dev/configuration.json` exists during the converge and not after it.
+49. **The end-to-end test.** `no known secret reaches the configuration file, the stack file, the deploy report, the errors or the second process's output`. The app's `secrets` adapter returns `{ S13_SECRET: 'e2e-SENTINEL-5f2a' }` and `config` returns the values above. The fake `alchemy` (a) copies the configuration file's text and the stack file's text into variables; (b) runs `spawnCommandLine({ command: process.execPath, args: ['-e', script], cwd, env: input.env }, input.redactedValues, outputs)`, where `script` writes `e2e-SENTI` and, after 50 ms, `NEL-5f2a and more\n` to stdout and `boom e2e-SENTINEL-5f2a\n` to stderr, and `outputs` collects both streams; (c) writes to the result file a deployment summary whose one entity has `id: 'svc'` and `details: { note: 'e2e-SENTINEL-5f2a' }`, and beside it the failure cause `error: rejected e2e-SENTINEL-5f2a`; and (d) returns the status the test sets. The test deploys twice, each with `reportPath` set to a file in the app directory: once with status 0 and once with status 1. Afterwards none of these contains `SENTINEL`: the copied configuration file and stack file texts of both runs, the collected stdout and stderr, both run report files, `JSON.stringify(result.value.summary)` of the first run, and `JSON.stringify(result.failure.toEnvelope())` and `String(result.failure.meta?.['engineCause'])` of the second. The collected stdout of each run is `[redacted] and more\n`.
+50. `an adapter's failure message is redacted with every value a written secrets list returned` — `secrets: [() => ({ TOKEN_X: 'adapter-SENTINEL-1' })]`, `config: [() => { throw new Error('bad adapter-SENTINEL-1'); }]`; the failure is `CONFIG.ADAPTER_FAILED` and `JSON.stringify(result.failure.toEnvelope())` does not contain `SENTINEL`.
+51. `a dev event's message is redacted` — a dev server output line holding the secret reaches `onEvent` as `[redacted]`.
 
 ## 16. Scope and commits
 
@@ -2121,15 +2179,15 @@ Each commit is made with `git commit -s --trailer "Signed-off-by: Will Madden <m
 2. `feat(cli)!: dotenv() reads its files through dotenv-flow` — § 3, its tests (15.1's `config-adapters.test.ts` changes, tests 17 to 20), the lockfile.
 3. `refactor!: the config pool and the secrets pool are the app configuration and the app secrets` — § 4 and § 10 items 1, 3 to 11, with every rename-only test change of § 15.1.
 4. `feat(core): Load records what it read from the app configuration, and the second process Loads with it` — § 5, § 6, § 10 item 2, tests 1 to 16.
-5. `feat(cli)!: the second process reads a configuration file and runs no adapter` — § 7, § 8.1 to § 8.6, the `generate-stack`, `generate-dev-stack`, `stack-file-import`, `app-configuration` and `pipeline` changes of § 15.1, tests 31 to 38 and 43 to 47.
-6. `feat(cli): Composer redacts every secret it knows, in errors, events and the second process's output` — § 8.7, § 9, § 10 item 12, the `deployment-summary`, `run-alchemy`, `converge-spawn`, `operations-double` and `operations` changes of § 15.1, tests 21 to 30, 39 to 42 and 48 to 50, the lockfile.
+5. `feat(cli)!: the second process reads a configuration file and runs no adapter` — § 7, § 8.1 to § 8.6, the `generate-stack`, `generate-dev-stack`, `stack-file-import`, `app-configuration` and `pipeline` changes of § 15.1, tests 31 to 38 and 44 to 48.
+6. `feat(cli): Composer redacts every secret it knows, in errors, events and the second process's output` — § 8.7, § 9, § 10 item 12, the `deployment-summary`, `run-alchemy`, `converge-spawn`, `operations-double` and `operations` changes of § 15.1, tests 21 to 30, 39 to 43 and 49 to 51, the lockfile.
 7. `docs(design): one current record for secrets, env-sourced params, errors, the composer section and dev secrets; the app configuration and the app secrets` — § 14.1 to § 14.9.
 8. `docs: guides and the agent skill read configuration once and redact known secrets` — § 14.10 to § 14.12.
 9. `docs(drive): module-input S11 to S13 manual QA` — `qa.md` in this slice's folder (§ 17).
 
 ## 17. Done when
 
-- Tests 1 to 50 pass, and every test changed in § 15.1 passes. At the root: `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm lint:casts`, `pnpm lint:deps`, `pnpm test`, `pnpm turbo run test:types`, `pnpm check:floor-imports`, `pnpm check:publish-deps`, `pnpm check:skill-packaging`, `pnpm check:family-static-graph` and `pnpm check:cli-engine-pin` are green. `pnpm lint:casts` reports `delta=0`. `pnpm lint` reports the same warning and info counts as main.
+- Tests 1 to 51 pass, and every test changed in § 15.1 passes. At the root: `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm lint:casts`, `pnpm lint:deps`, `pnpm test`, `pnpm turbo run test:types`, `pnpm check:floor-imports`, `pnpm check:publish-deps`, `pnpm check:skill-packaging`, `pnpm check:family-static-graph` and `pnpm check:cli-engine-pin` are green. `pnpm lint:casts` reports `delta=0`. `pnpm lint` reports the same warning and info counts as main.
 - § 4.3's grep finds nothing.
 - Run `pnpm test` from this worktree, not from a scratch copy. Some target and local-target tests start emulator daemons. Stop no emulator you did not start; if tests fail because of an emulator this run did not start, record it and report. Never run `pnpm test:integration`, `pnpm test:e2e` or `pnpm test:all`. `test/integration/test/local-dev.integration.ts` changes only in comments and runs in CI.
 - `@prisma/cli-engine` 0.10.0 is published and installed from the registry, with no local link left in any manifest or the lockfile. Until then the pull request stays a draft.
@@ -2151,7 +2209,7 @@ One scratch worktree at the git-ignored `wip/s11-scratch`, removed afterwards. N
 - **The stream redactor, first version** (`redactor.ts`, `redactor-probe.ts`, run with Bun): a secret split across two chunks was redacted; overlapping secrets `abc` and `abcdef` gave the longest match; a one-character secret was redacted; for chunk sizes 1, 2, 3, 5, 8, 9, 10 and 64 over a 6000-character text, the output equalled the text with every secret replaced.
 - **Alchemy without a terminal** (`alchemy-no-tty.run.ts`): `node node_modules/alchemy/bin/cli.js deploy alchemy.run.ts --yes --stage probe` with stdout and stderr redirected to files and stdin from `/dev/null` exited 0, ran the stack effect (`process.stdout.isTTY` undefined), and printed plain timestamped log lines. Alchemy decides interactivity from `stdin.isTTY && stdout.isTTY` and agent variables, so a piped run is non-interactive, and `--yes` covers the confirmation.
 - **The engine's `ctx.spawn`, 0.9.0** (`dist/report-*.d.ts` and `dist/engine-*.js`): `SpawnOptions` takes `command`, `args`, `cwd` and `env` only; the request's `output` is `"inherit"` or `"diagnostic"`, chosen by the engine from the output format; the engine logs `command` and `args` in debug mode, never `env`; it forwards SIGTERM to its child and, on a programmatic abort, ends it with SIGTERM, then SIGKILL.
-- **The engine change, prisma/prisma-cli#383** (branch `claude/cli-engine-pipe-output`, read with `git diff origin/main...HEAD`, and its built `dist/`). As drafted, it adds `onOutput(chunk, stream)` and an `output: "pipe"` spawn request; the request's adapter returns both streams, and `ended` waits for them to close. The engine buffers `ctx.report` events while a child runs and prints them in a `finally` after the child's streams are read, before `ctx.spawn` resolves. The test harness's scripted child gains `write(stream, chunk)`, and `SpawnRecord` records the request's `output`. The orchestrator reports that review will replace `onOutput` with a per-stream transform the engine writes out itself; § 9.5 is written against that shape and names it in one place.
+- **The engine change, prisma/prisma-cli#383, final API** (head `415c668a`, read in its `README.md` and with `git diff origin/main...HEAD`): `SpawnOptions.transformOutput?: (stream: ChildStreamName) => TransformStream<string, string>`, called once per stream before the child starts; the spawn request's `output` is `"engine"` and the adapter returns both streams; the result is written where the output format sends the child's output, with backpressure; each transform's `flush` runs before `ctx.spawn` settles on every path; the engine replaces the `PRISMA_SERVICE_TOKEN` it injects with `[redacted]` before the transform; `ctx.spawnOptions` is `SPAWN_OPTION_NAMES` (`command`, `args`, `cwd`, `env`, `transformOutput`), and `ctx.spawn` refuses any other option name. The harness's scripted child has `write(stream, chunk)`, and `SpawnRecord.output` records the request's `output`. The README calls Composer's stdout preload redundant; § 9.5 says why it stays.
 
 Checks for this amendment, in a scratch worktree at the git-ignored `wip/s11-amend-scratch`, removed afterwards:
 
@@ -2159,7 +2217,7 @@ Checks for this amendment, in a scratch worktree at the git-ignored `wip/s11-ame
 - **Types**: `redactor.ts` type-checks with the repo's TypeScript 6.0.3 under `strict`, `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, once with the DOM library and once with only `@types/node`, so `TransformStream` and `match.index` need no cast.
 - **Pins**: `@prisma/cli-engine` is `0.9.0` in `packages/0-framework/3-tooling/cli` (`dependencies`), `packages/1-prisma-cloud/1-extensions/target` (`devDependencies`), `packages/9-public/composer-cli` (`peerDependencies` and `devDependencies`) and the root `pnpm.overrides`.
 - **Quotes against S10**: every code and document quote in § 5, § 10 and § 14 was checked against this branch at `78166d80` (§ 19).
-- **Not run**: the implementation as a whole, `pnpm test`, a build of the new entries, any deploy, and the redactor against the engine, whose final API is not merged.
+- **Not run**: the implementation as a whole, `pnpm test`, a build of the new entries, any deploy, and the redactor against the engine, which is not published yet.
 
 ## 19. What S10 changed
 
@@ -2194,20 +2252,22 @@ S10 is on this branch. It typed a service's binding from its schema, renamed `Se
 6. **Not said: a name read by both `envParam()` and `envSecret()`.** Without a refusal, the configuration file would hold a secret (§ 20, decision 11). Will accepted the refusal; § 14.13 adds it to the design.
 7. **Consequence not stated: the reproduce command no longer works after a run.** It needs the configuration file, which is deleted when the run ends. It already needed the container and preflight variables the CLI passes, so a user could not run it bare before either; the second process's error now says why (§ 12).
 8. **Size.** This is one pull request of nine commits touching core, the CLI, both public packages, the target, the local target, five decision records and three guides. The plan keeps them together, and this spec does too.
-9. **Not covered: the credential the engine gives the child.** The engine adds `PRISMA_SERVICE_TOKEN` to the child's environment. When it comes from the shell, Composer's redactor knows it through `secretNamedValues(process.env)`. When it comes from `prisma login`, Composer never sees its value, and the stream redactor matches exact values only, so a child that printed it would print it in clear. Alchemy does not print it today. Recommendation: ask in prisma/prisma-cli#383 that the engine redact the credential it injects, or record it in `deferred.md`.
-10. **Not covered: an older engine.** A `prisma` host that carries `@prisma/cli-engine` 0.9.0 and mounts this `@prisma/composer-cli` breaks its exact peer. Under pnpm that is a warning, and 0.9.0 ignores the unknown spawn option, so the output reaches the terminal unredacted, as it does on main today. Composer cannot detect it before the output flows. Recommendation: the release note names the engine version (§ 13 item 7), and #383's final API should refuse an unknown spawn option from then on, so a future option cannot be dropped the same way.
+9. **Closed: the credential the engine gives the child.** The first amendment found that a `PRISMA_SERVICE_TOKEN` from `prisma login` never reaches Composer, so its redactor could not match it. #383's final API redacts the credential the engine injects before the command's transform runs (§ 9.5).
+10. **Closed: an older engine.** A 0.9.0 host ignores `transformOutput` and would print the output unredacted. #383's final API adds `ctx.spawnOptions` and refuses unknown option names from 0.10.0 on, and `prisma deploy` and `prisma dev` now refuse with `DEPS.CLI_ENGINE_INCOMPATIBLE` before starting anything when `transformOutput` is not listed (§ 9.5, test 43).
 
 ## Changes since the first version
 
 Made on 2026-11-02, after Will's decisions on the first version.
 
 1. **The relay process is gone.** Under the CLI, the engine's per-stream output transform from prisma/prisma-cli#383 redacts the second process's output (§ 9.5). Removed: `output-relay.ts`, `internal/output-relay` and its entries in both packages, `architecture.config.json` and `tsconfig.depcruise.json`, `resolveOutputRelay`, `DEPLOY.OUTPUT_RELAY_MISSING`, `PRISMA_COMPOSER_REDACTED_VALUES`, the relay tests and fixture, and the relay's mentions in the release note, the error table, ADR-0044, `deploy-cli.md` and the findings. Why: Will chose the engine change over a third process.
-2. **The engine's API is named in one place.** `ConvergeContext.spawn`'s `transformOutput` member is written against the transform shape the orchestrator reported for #383's final API, not the drafted `onOutput`. Composer maps no stream and handles no output format; the engine does. Why: the orchestrator reported that #383 will change after review.
+2. **The spec pins #383's final API** (head `415c668a`): `transformOutput?: (stream: ChildStreamName) => TransformStream<string, string>`, called once per stream before the child starts; the engine writes the result where the output format sends it, flushes each transform before `ctx.spawn` settles on every path, and redacts the `PRISMA_SERVICE_TOKEN` it injects. Composer maps no stream and handles no output format. Why: #383 replaced the drafted `onOutput` in review.
 3. **The redactor is a `StreamRedactor` plus `redactingTransform`** (§ 9.3), in place of `RedactingWriter`. It returns text instead of writing it, so the engine's transform and the in-process pipe share it. It never holds back a complete line when no secret holds a line break. Why: a transform needs the text back, and a long platform wait must not hold back the end of a progress line.
 4. **Report ordering and abort are specified** (§ 9.5), with test 40 for the order of held-back text and buffered report events.
-5. **`@prisma/cli-engine` goes to 0.10.0** in four places, including the root `pnpm.overrides`, which the first request did not list (§ 8.7). The pull request stays a draft until 0.10.0 is published.
+5. **`@prisma/cli-engine` goes to 0.10.0** in four places, including the root `pnpm.overrides`, which the first request did not list (§ 8.7). Release order: #383 merges and publishes 0.10.0, then this PR merges; until then it stays a draft.
+11. **Composer refuses an older engine.** `prisma deploy` and `prisma dev` check `ctx.spawnOptions?.includes('transformOutput')` first and otherwise fail with the new `DEPS.CLI_ENGINE_INCOMPATIBLE`, before anything starts (§ 9.5, § 12, ADR-0044's registry, test 43; old tests 43 to 50 are now 44 to 51). The errors decision puts it under `DEPS`, the namespace for the consumer's installed dependency tree. Why: a 0.9.0 host ignores the transform and would print secrets.
+12. **`STDOUT_TO_STDERR` stays**, against #383's README, because the final API still writes the child's stdout to the CLI's stdout in human format, which carries Composer's data lines in a piped run.
 6. **Tests**: 39 to 45 are replaced by four tests, 39 to 42, two of them on the engine's test harness; old tests 46 to 53 are now 43 to 50. Commits gain a first design commit and are renumbered.
 7. **Name-based redaction is described as existing S4 behaviour kept for now** in § 2, § 9.1, § 20 decision 5, ADR-0029's rewrite and ADR-0062's edit, not as part of the new design.
 8. **The design is corrected** (§ 14.13): `dotenv()` drops `.env.defaults` itself, `secretSource()` takes `secretsKey`, Load refuses a name read by both `envParam()` and `envSecret()`, and the output is redacted through the engine's transform. ADR-0062 gets the same three statements (§ 14.6 items 12 to 14).
 9. **Quotes match S10.** `ServiceInputBinding` is `InputBindingUse` in § 5.3; ADR-0029's rewrite says a wrong binding fails to compile; § 19 is rewritten; § 14.9 and § 14.10 no longer count lines that S10 moved.
-10. **Two new findings** (§ 21, 9 and 10): the credential the engine injects is not in Composer's redaction set when it comes from `prisma login`, and a host on engine 0.9.0 drops the transform silently.
+10. **Two findings raised and closed** (§ 21, 9 and 10): the credential the engine injects, which #383 now redacts itself, and a host on engine 0.9.0, which Composer now refuses.
