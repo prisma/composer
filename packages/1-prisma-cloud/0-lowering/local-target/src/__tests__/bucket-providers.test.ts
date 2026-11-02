@@ -9,6 +9,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Bucket, BucketAccessKey } from '@alchemy.run/prisma';
 import type { ContainerInstance, LocalTargetProvidersInput } from '@internal/core/config';
 import {
   bucketsClient,
@@ -16,7 +17,6 @@ import {
   ensureDaemon,
   stopDaemon,
 } from '@internal/dev-emulators';
-import { Bucket, BucketAccessKey } from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import { LocalBucketAccessKeyProvider, LocalBucketProvider } from '../bucket.ts';
 

@@ -13,8 +13,8 @@
  * compute descriptor declares one member per environment row).
  */
 
+import type { EnvironmentVariable } from '@alchemy.run/prisma';
 import * as Output from 'alchemy/Output';
-import type { EnvironmentVariable } from 'alchemy/Prisma';
 
 export const appAfterEnvironment = (
   app: Output.Output<string>,

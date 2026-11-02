@@ -1,10 +1,10 @@
 /** A hostname public URL under the real Alchemy apply engine and the real `Prisma.CustomDomain` provider, against a fake Management API. */
 import { describe, expect, test } from 'bun:test';
+import * as Prisma from '@alchemy.run/prisma';
+import type { CustomDomain } from '@alchemy.run/prisma/Types';
 import { Load, module } from '@internal/core';
 import type { LowerContext } from '@internal/core/deploy';
 import { rawHttpContract } from '@internal/http';
-import * as Prisma from 'alchemy/Prisma';
-import type { CustomDomain } from 'alchemy/Prisma/Types';
 import * as Provider from 'alchemy/Provider';
 import { inMemoryState } from 'alchemy/State/InMemoryState';
 import * as Core from 'alchemy/Test/Core';

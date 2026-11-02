@@ -1,7 +1,7 @@
 /** A `Prisma.CustomDomain` under the local providers and the real Alchemy apply engine. */
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
+import * as Prisma from '@alchemy.run/prisma';
 import type { ContainerInstance, LocalTargetProvidersInput } from '@internal/core/config';
-import * as Prisma from 'alchemy/Prisma';
 import * as State from 'alchemy/State';
 import { inMemoryState } from 'alchemy/State/InMemoryState';
 import * as Core from 'alchemy/Test/Core';

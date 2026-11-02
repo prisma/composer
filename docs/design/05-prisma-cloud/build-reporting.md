@@ -140,7 +140,7 @@ How it behaves:
 - The state layer reads `PRISMA_BUILD_ID`. When it is absent it uses the store
   unwrapped and reports nothing.
 
-The mapping, keyed by upstream `alchemy/Prisma` type ids:
+The mapping, keyed by upstream `@alchemy.run/prisma` type ids:
 
 | Alchemy resource | Platform type |
 | --- | --- |

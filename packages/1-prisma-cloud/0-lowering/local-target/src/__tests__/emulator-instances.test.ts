@@ -7,6 +7,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { App, Deployment } from '@alchemy.run/prisma';
 import type { ContainerInstance } from '@internal/core/config';
 import {
   computeClient,
@@ -16,7 +17,6 @@ import {
 } from '@internal/dev-emulators';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { packageComputeArtifact } from '@internal/lowering/compute';
-import { App, Deployment } from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import { ensureAppInstances } from '../app-instances.ts';
 import { LocalAppProvider, LocalDeploymentProvider } from '../compute.ts';

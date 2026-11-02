@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, mock, test } from 'bun:test';
 import * as path from 'node:path';
+import * as RealAlchemyPrisma from '@alchemy.run/prisma';
 import type { Contract } from '@internal/core';
 import type { NodeDescriptor } from '@internal/core/config';
 import { type ContainerInstance, containerEnvVarName } from '@internal/core/config';
@@ -18,7 +19,6 @@ import * as RealLocalTarget from '@internal/local-target';
 import * as RealPrismaAlchemy from '@internal/lowering';
 import { AdoptPolicy } from 'alchemy/AdoptPolicy';
 import * as RealOutput from 'alchemy/Output';
-import * as RealAlchemyPrisma from 'alchemy/Prisma';
 import { type FormerId, RenamePolicy } from 'alchemy/Rename';
 import { type } from 'arktype';
 import * as Effect from 'effect/Effect';
@@ -103,7 +103,7 @@ mock.module('alchemy/Output', () => ({
 
 // The postgres family (Database/Connection) and the compute family
 // (App/Deployment/EnvironmentVariable) are upstream alchemy's — the descriptors
-// import them from 'alchemy/Prisma', so the stubs live there. The returned
+// import them from '@alchemy.run/prisma', so the stubs live there. The returned
 // attributes use upstream's field names (`databaseId`, `appId`,
 // `appEndpointDomain`, `environmentVariableId`).
 /** Records the adoption policy the resource declaration runs under, as Alchemy captures it at registration. */
@@ -124,7 +124,7 @@ const recordingRenamePolicy = <A>(resource: string, result: Effect.Effect<A>) =>
 const recordingPolicies = <A>(resource: string, result: Effect.Effect<A>) =>
   recordingRenamePolicy(resource, recordingAdoptPolicy(resource, result));
 
-mock.module('alchemy/Prisma', () => ({
+mock.module('@alchemy.run/prisma', () => ({
   ...RealAlchemyPrisma,
   App: (id: string, props: unknown) => {
     recorded.svc.push([id, props]);
