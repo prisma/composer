@@ -24,4 +24,8 @@ Clean-up: `prisma dev stop` reported nothing running, `.env.dev`, `.env.dev.loca
 
 ## Bun and the 0.10.0 engine
 
-Bun 1.3.13 has no `ReadableStream.from`, which the 0.10.0 engine's spawn path calls. Under Bun every `ctx.spawn` with `transformOutput` fails with `CLI.INTERNAL_ERROR`. In this repo that fails 19 CLI unit tests that run `deploy`, `dev` or a converge through the engine's test harness. With a preload that defines `ReadableStream.from`, all 445 CLI tests pass. The hosted steps run `bun ../../node_modules/.bin/prisma deploy`, so they need the engine fixed first.
+At `44526435` the engine's spawn path called `ReadableStream.from`, which Bun 1.3.13 does not have, so under Bun every converge through the engine failed with `CLI.INTERNAL_ERROR`, and 19 CLI unit tests failed. #383 fixed it in `d71da9ba`. With the engine rebuilt from that commit, all 445 CLI tests pass under Bun with no preload.
+
+## Before step 5 and the hosted steps can run
+
+They need a `prisma` host release that ships #383's spawn adapter. The spec's release-order note says so.
