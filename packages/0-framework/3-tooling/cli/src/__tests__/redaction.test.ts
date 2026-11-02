@@ -3,7 +3,7 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import type { DeploymentSummary } from '../deployment-summary.ts';
 import type { DevEvent } from '../operations/dev.ts';
 import {
-  credentialNamedValuesIn,
+  credentialNamedValues,
   KnownSecrets,
   redactDevEvent,
   redactError,
@@ -11,14 +11,15 @@ import {
   redactSummary,
   redactThrown,
   redactValues,
+  SecretRedaction,
   StreamRedactor,
   valuesUnderSecretsKeys,
 } from '../redaction.ts';
 
-const knowing = (...values: string[]): KnownSecrets => {
-  const known = new KnownSecrets({});
-  known.add(values);
-  return known;
+const knowing = (...values: string[]): SecretRedaction => {
+  const redaction = new SecretRedaction({});
+  redaction.addKnownSecrets(values);
+  return redaction;
 };
 
 async function throughTransform(chunks: readonly string[], values: readonly string[]) {
@@ -37,29 +38,38 @@ async function throughTransform(chunks: readonly string[], values: readonly stri
   }
 }
 
-describe('KnownSecrets', () => {
-  test('KnownSecrets redacts a known value at any length, longest first', () => {
+describe('SecretRedaction', () => {
+  test('SecretRedaction redacts a known secret at any length, longest first', () => {
     expect(knowing('a', 'abc').redact('xabcx a')).toBe('x[redacted]x [redacted]');
   });
 
-  test('KnownSecrets skips empty values', () => {
-    expect(knowing('').values()).toEqual([]);
+  test('SecretRedaction skips empty values', () => {
+    expect(knowing('').allValues()).toEqual([]);
   });
 
-  test('KnownSecrets hides overlapping secrets whole', () => {
+  test('SecretRedaction hides overlapping secrets whole', () => {
     expect(knowing('abc', 'bcdef').redact('xxabcdefyy')).toBe('xx[redacted]yy');
     expect(redactValues('xxabcdefyy', ['abc', 'bcdef'])).toBe('xx[redacted]yy');
   });
 
-  test('KnownSecrets starts with the credential-looking values of the environment it is given, so every output hides the same set', () => {
-    const known = new KnownSecrets({
+  test('SecretRedaction starts with the credential-looking values of the environment it is given, so every output hides the same set', () => {
+    const redaction = new SecretRedaction({
       SHELL_API_TOKEN: 'from-the-shell-123',
       HOME: '/home/someone',
     });
 
-    expect(known.values()).toEqual(['from-the-shell-123']);
-    expect(known.redact('t=from-the-shell-123')).toBe('t=[redacted]');
-    expect(known.certainValues().size).toBe(0);
+    expect(redaction.allValues()).toEqual(['from-the-shell-123']);
+    expect(redaction.redact('t=from-the-shell-123')).toBe('t=[redacted]');
+    expect(redaction.knownSecrets.values().size).toBe(0);
+  });
+
+  test('SecretRedaction hides a value added after it first redacted', () => {
+    const redaction = knowing('first-secret');
+    expect(redaction.redact('first-secret later-secret')).toBe('[redacted] later-secret');
+
+    redaction.addKnownSecrets(['later-secret']);
+
+    expect(redaction.redact('first-secret later-secret')).toBe('[redacted] [redacted]');
   });
 });
 
@@ -78,6 +88,43 @@ describe('redactThrown', () => {
       expect(error.message).not.toContain('s3cr3t-value');
       expect(error.stack ?? '').not.toContain('s3cr3t-value');
     }
+  });
+
+  test('redactThrown redacts a DOMException, whose message has no setter, in place', () => {
+    for (const name of ['AbortError', 'TimeoutError']) {
+      const error = new DOMException('failed with s3cr3t-value', name);
+
+      const thrown = redactThrown(error, knowing('s3cr3t-value'));
+
+      expect(thrown).toBe(error);
+      expect(thrown.message).toBe('failed with [redacted]');
+      expect(thrown.stack ?? '').not.toContain('s3cr3t-value');
+    }
+  });
+
+  test('redactThrown replaces a frozen error with a new one that carries the redacted message, stack and cause chain', () => {
+    const cause = Object.freeze(new Error('cause s3cr3t-value'));
+    const error = Object.freeze(new TypeError('outer s3cr3t-value', { cause }));
+
+    const thrown = redactThrown(error, knowing('s3cr3t-value'));
+
+    expect(thrown).not.toBe(error);
+    expect(thrown.name).toBe('TypeError');
+    expect(thrown.message).toBe('outer [redacted]');
+    expect(thrown.stack ?? '').not.toContain('s3cr3t-value');
+    expect(thrown.stack ?? '').toContain('outer [redacted]');
+    const thrownCause = thrown.cause as Error;
+    expect(thrownCause.message).toBe('cause [redacted]');
+    expect(thrownCause.stack ?? '').not.toContain('s3cr3t-value');
+  });
+
+  test('redactThrown keeps an error whose cause is a frozen error, and points it at the redacted copy', () => {
+    const error = new Error('outer', { cause: Object.freeze(new Error('cause s3cr3t-value')) });
+
+    const thrown = redactThrown(error, knowing('s3cr3t-value'));
+
+    expect(thrown).toBe(error);
+    expect((thrown.cause as Error).message).toBe('cause [redacted]');
   });
 
   test('redactThrown replaces a cause that is text or plain data with a redacted copy', () => {
@@ -103,19 +150,27 @@ describe('the values a command learns are secrets', () => {
     expect(values.sort()).toEqual(['w', 'w2']);
   });
 
-  test('credentialNamedValuesIn takes credential-looking app configuration values of eight characters or more', () => {
+  test('credentialNamedValues takes text of eight characters or more under credential-looking names', () => {
     expect(
-      credentialNamedValuesIn({ STRIPE_KEY: 'sk_live_123456', API_TOKEN: 'short', N: 4 }),
+      credentialNamedValues({ STRIPE_KEY: 'sk_live_123456', API_TOKEN: 'short', N: 4 }),
     ).toEqual(['sk_live_123456']);
   });
 
-  test('a value added by name is redacted but is not a certain secret', () => {
-    const known = new KnownSecrets({});
-    known.addByName(['looks-like-a-credential']);
-    known.add(['under-a-secrets-key']);
+  test('a credential-looking value is redacted but is not a known secret', () => {
+    const redaction = new SecretRedaction({});
+    redaction.addCredentialLooking(['looks-like-a-credential']);
+    redaction.addKnownSecrets(['under-a-secrets-key']);
 
-    expect(known.redact('looks-like-a-credential')).toBe('[redacted]');
-    expect([...known.certainValues()]).toEqual(['under-a-secrets-key']);
+    expect(redaction.redact('looks-like-a-credential')).toBe('[redacted]');
+    expect([...redaction.knownSecrets.values()]).toEqual(['under-a-secrets-key']);
+  });
+
+  test('KnownSecrets finds a known secret anywhere in a text', () => {
+    const knownSecrets = new KnownSecrets(['secret-pw-77', '']);
+
+    expect(knownSecrets.appearIn('postgres://shop:secret-pw-77@db/shop')).toBe(true);
+    expect(knownSecrets.appearIn('postgres://shop@db/shop')).toBe(false);
+    expect(new KnownSecrets().appearIn('')).toBe(false);
   });
 });
 

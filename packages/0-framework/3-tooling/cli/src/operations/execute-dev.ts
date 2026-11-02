@@ -33,7 +33,7 @@ import {
   watchTargetsFrom,
 } from '../dev/watch.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
-import { KnownSecrets, redactDevEvent, redactError, redactThrown } from '../redaction.ts';
+import { redactDevEvent, redactError, redactThrown, SecretRedaction } from '../redaction.ts';
 import {
   type AlchemyInvocation,
   type AlchemyOutcome,
@@ -154,13 +154,12 @@ export async function executeDev(
   deps: OperationDeps,
   cwd: string,
 ): Promise<Result<DevSession, CliStructuredError>> {
-  const known = new KnownSecrets(process.env);
+  const redaction = new SecretRedaction(process.env);
   try {
-    const result = await executeDevInner(input, deps, cwd, known);
-    return result.ok ? result : notOk(redactError(result.failure, known));
+    const result = await executeDevInner(input, deps, cwd, redaction);
+    return result.ok ? result : notOk(redactError(result.failure, redaction));
   } catch (error) {
-    if (error instanceof Error) redactThrown(error, known);
-    throw error;
+    throw error instanceof Error ? redactThrown(error, redaction) : error;
   }
 }
 
@@ -168,7 +167,7 @@ async function executeDevInner(
   input: DevInput,
   deps: OperationDeps,
   cwd: string,
-  known: KnownSecrets,
+  redaction: SecretRedaction,
 ): Promise<Result<DevSession, CliStructuredError>> {
   if (process.platform === 'win32') {
     return notOk(
@@ -198,7 +197,7 @@ async function executeDevInner(
   // would be an unhandled rejection killing the process.
   const emit = (event: DevEvent): void => {
     try {
-      onEvent?.(redactDevEvent(event, known));
+      onEvent?.(redactDevEvent(event, redaction));
     } catch {
       // Swallowed: rendering is the host's; its failures are not the session's.
     }
@@ -212,7 +211,7 @@ async function executeDevInner(
       runAssembler: deps.runAssembler,
       devServers: true,
       readSecrets: true,
-      knownSecrets: known,
+      redaction,
     };
     pipeline = await runPipeline(
       input.entry,
@@ -327,7 +326,7 @@ async function executeDevInner(
       appConfigurationRead: p.graph.appConfigurationRead,
       nodeAddresses: nodeAddresses(p.graph),
       secretsKeys: secretsKeys(p.graph),
-      secretValues: known.certainValues(),
+      knownSecrets: redaction.knownSecrets,
       appSecrets: p.secrets,
     });
     const invocation = alchemyInvocation({
@@ -338,7 +337,7 @@ async function executeDevInner(
       containerEnv: containerEnv(containers),
       preflightEnv: preflightTransportEnv,
       env: handover.env,
-      redactedValues: known.values(),
+      redactedValues: redaction.allValues(),
     });
     return { invocation, handover };
   };
@@ -551,7 +550,7 @@ async function executeDevInner(
       runAssembler: deps.runAssembler,
       devServers: true,
       readSecrets: true,
-      knownSecrets: known,
+      redaction,
     };
     const watchFiles = deps.watch ?? startWatch;
     const onWatchError = (error: unknown): void =>

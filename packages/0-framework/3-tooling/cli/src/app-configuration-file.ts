@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import type { AppConfigurationRead, RootInputField } from '@internal/core';
 import { type AppSecrets, DEV_DIR, type NamedSecrets } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
+import type { KnownSecrets } from './redaction.ts';
 
 /** Names the app configuration file the first process wrote for this run (ADR-0062). */
 export const APP_CONFIGURATION_FILE_ENV = 'PRISMA_COMPOSER_APP_CONFIGURATION_FILE';
@@ -16,6 +17,13 @@ export interface AppConfigurationFile {
 }
 
 const FILE_NAME = /^app-configuration-(\d+)(-[^/]*)?\.json$/;
+
+/**
+ * How old a leftover app configuration file must be before a later run deletes it. A run in a
+ * container or on another machine can share the folder but not the process ids, so its live
+ * process can look dead here; its second process reads the file within seconds of the write.
+ */
+export const LEFTOVER_APP_CONFIGURATION_FILE_AGE_MS = 10 * 60 * 1000;
 
 /** The app configuration file a deploy or destroy run writes: unique per run, so concurrent runs from one checkout never share one. */
 export function deployAppConfigurationFile(cwd: string, runId: string): string {
@@ -42,8 +50,9 @@ function isRunning(pid: number): boolean {
 
 /**
  * Deletes the app configuration files that earlier runs left in `.prisma-composer/` and in
- * each dev environment's folder: a run stopped by a forced exit skips its own cleanup. A file
- * whose process is still running is kept. Never throws.
+ * each dev environment's folder: a run killed before its exit handler ran leaves its file. A
+ * file is deleted only when its process is not running and it is older than
+ * `LEFTOVER_APP_CONFIGURATION_FILE_AGE_MS`. Never throws.
  */
 export function removeLeftoverAppConfigurationFiles(cwd: string): void {
   const devRoot = path.join(cwd, DEV_DIR);
@@ -65,8 +74,11 @@ export function removeLeftoverAppConfigurationFiles(cwd: string): void {
     for (const name of names) {
       const pid = Number(FILE_NAME.exec(name)?.[1]);
       if (Number.isNaN(pid) || pid === process.pid || isRunning(pid)) continue;
+      const file = path.join(dir, name);
       try {
-        fs.rmSync(path.join(dir, name), { force: true });
+        if (Date.now() - fs.statSync(file).mtimeMs < LEFTOVER_APP_CONFIGURATION_FILE_AGE_MS)
+          continue;
+        fs.rmSync(file, { force: true });
       } catch {
         // A file left behind is a smaller problem than a run that cannot start.
       }
@@ -76,6 +88,9 @@ export function removeLeftoverAppConfigurationFiles(cwd: string): void {
 
 function textIn(value: unknown, at: readonly string[]): { at: readonly string[]; text: string }[] {
   if (typeof value === 'string') return [{ at, text: value }];
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return [{ at, text: String(value) }];
+  }
   if (Array.isArray(value)) {
     return value.flatMap((member, index) => textIn(member, [...at, String(index)]));
   }
@@ -85,8 +100,11 @@ function textIn(value: unknown, at: readonly string[]): { at: readonly string[];
   return [];
 }
 
-/** Refuses when the file would hold the text of a secret. The message names where, never the text. */
-function refuseSecretsIn(read: AppConfigurationRead, secrets: ReadonlySet<string>): void {
+/**
+ * Refuses when the file would hold a known secret anywhere in a plain value, a number or a
+ * boolean compared as its text. The message names where, never the value.
+ */
+function refuseSecretsIn(read: AppConfigurationRead, knownSecrets: KnownSecrets): void {
   const places = [
     ...read.rootInput.flatMap((field) =>
       textIn(field.value, field.path).map(({ at, text }) => ({
@@ -99,11 +117,11 @@ function refuseSecretsIn(read: AppConfigurationRead, secrets: ReadonlySet<string
       text,
     })),
   ];
-  const place = places.find(({ text }) => secrets.has(text));
+  const place = places.find(({ text }) => knownSecrets.appearIn(text));
   if (place === undefined) return;
   throw new CliStructuredError(
     'CONFIG.SECRET_AS_PLAIN_VALUE',
-    `${place.where} holds the text of a secret. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
+    `${place.where} holds a secret. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
     {
       fix: 'Read the secret with envSecret() where it is used, or give this plain value text that is not a secret.',
     },
@@ -114,7 +132,7 @@ function refuseSecretsIn(read: AppConfigurationRead, secrets: ReadonlySet<string
 export interface SecondProcessHandover {
   /** What the first process adds to the second process's environment. */
   readonly env: Readonly<Record<string, string>>;
-  /** Writes the app configuration file, readable only by its owner. A file already there is replaced. */
+  /** Writes the app configuration file, readable only by its owner, and deletes it when the process exits. A file already there is replaced. */
   writeFile(): void;
   /** Deletes the app configuration file. Never throws: the run's own result is the one to report. */
   removeFile(): void;
@@ -125,7 +143,7 @@ export interface SecondProcessHandover {
  * `file` holds what Load read and the graph's node addresses. With `appSecrets`, which only
  * `prisma dev` passes, the environment also carries the named secrets: the app secrets under
  * the graph's secrets keys, each with text. Refuses when the file would hold any of
- * `secretValues`. Every input is plain data from the graph, such as `graph.appConfigurationRead`,
+ * `knownSecrets`. Every input is plain data from the graph, such as `graph.appConfigurationRead`,
  * `nodeAddresses(graph)` and `secretsKeys(graph)`, so a caller with its own copy of Composer's
  * core can pass them.
  */
@@ -134,11 +152,11 @@ export function prepareSecondProcess(input: {
   readonly appConfigurationRead: AppConfigurationRead;
   readonly nodeAddresses: readonly string[];
   readonly secretsKeys: readonly string[];
-  readonly secretValues: ReadonlySet<string>;
+  readonly knownSecrets: KnownSecrets;
   readonly appSecrets?: AppSecrets;
 }): SecondProcessHandover {
   const { file, appSecrets } = input;
-  refuseSecretsIn(input.appConfigurationRead, input.secretValues);
+  refuseSecretsIn(input.appConfigurationRead, input.knownSecrets);
   const contents: AppConfigurationFile = {
     appConfigurationRead: input.appConfigurationRead,
     nodeAddresses: input.nodeAddresses,
@@ -152,18 +170,24 @@ export function prepareSecondProcess(input: {
     }
     env[NAMED_SECRETS_ENV] = JSON.stringify(named);
   }
+  const remove = () => {
+    try {
+      fs.rmSync(file, { force: true });
+    } catch {
+      // The run already ended; a file left behind is a smaller problem than a masked result.
+    }
+  };
   return {
     env,
     writeFile() {
       fs.rmSync(file, { force: true });
       fs.writeFileSync(file, JSON.stringify(contents), { mode: 0o600, flag: 'wx' });
+      process.off('exit', remove);
+      process.on('exit', remove);
     },
     removeFile() {
-      try {
-        fs.rmSync(file, { force: true });
-      } catch {
-        // The run already ended; a file left behind is a smaller problem than a masked result.
-      }
+      process.off('exit', remove);
+      remove();
     },
   };
 }

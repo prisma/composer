@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
 import { runPipeline } from '../pipeline.ts';
-import { KnownSecrets } from '../redaction.ts';
+import { SecretRedaction } from '../redaction.ts';
 import prismaConfig from './fixtures/pipeline/prisma.config.ts';
 import appConfigurationConfig from './fixtures/pipeline-app-configuration/prisma.config.ts';
 import adaptersConfig from './fixtures/pipeline-config-adapters/prisma.config.ts';
@@ -139,7 +139,7 @@ describe('runPipeline()', () => {
   test('runPipeline adds the values under every envSecret() name to the known secrets', async () => {
     const composer = appConfigurationConfig.composer;
     if (composer === undefined) throw new Error('the fixture declares a composer section');
-    const knownSecrets = new KnownSecrets({});
+    const redaction = new SecretRedaction({});
     const source = {
       value: {
         ...composer,
@@ -152,10 +152,10 @@ describe('runPipeline()', () => {
     await runPipeline(undefined, undefined, 'staging', appConfigurationDir, source, {
       ...noAssembly,
       readSecrets: true,
-      knownSecrets,
+      redaction,
     });
 
-    expect(knownSecrets.values()).toContain('from-config');
-    expect(knownSecrets.values()).toContain('from-secrets');
+    expect([...redaction.knownSecrets.values()]).toContain('from-config');
+    expect([...redaction.knownSecrets.values()]).toContain('from-secrets');
   });
 });

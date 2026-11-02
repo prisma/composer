@@ -9,10 +9,14 @@ export const REDACTED = '[redacted]';
 const SECRET_ENV_NAME =
   /TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|AUTH|API_?KEY|ACCESS_?KEY|_KEY$|DATABASE_URL|_DSN$|^PRISMA_COMPOSER_PREFLIGHT_/i;
 
-/** The values of `env`'s variables whose names look like credentials, eight characters or more, so a one-letter placeholder does not blank every matching letter. */
-export function secretNamedValues(env: Readonly<Record<string, string | undefined>>): string[] {
-  return Object.entries(env).flatMap(([name, value]) =>
-    SECRET_ENV_NAME.test(name) && value !== undefined && value.length >= 8 ? [value] : [],
+/**
+ * The credential-looking values in `variables`: text of eight characters or more under a name
+ * that looks like a credential's. The length limit keeps a one-letter placeholder from blanking
+ * every matching letter.
+ */
+export function credentialNamedValues(variables: Readonly<Record<string, unknown>>): string[] {
+  return Object.entries(variables).flatMap(([name, value]) =>
+    SECRET_ENV_NAME.test(name) && typeof value === 'string' && value.length >= 8 ? [value] : [],
   );
 }
 
@@ -96,168 +100,213 @@ function redactShapes(text: string): string {
 }
 
 /**
- * Removes credentials from text that is about to leave the machine: the value
- * of every secret-named env var, bearer/basic tokens, JWTs, the password in a
- * URL, and `token=…`-style pairs. Values shorter than 8 characters are left,
- * so a one-letter placeholder does not blank every matching letter.
+ * `text` with the credential-looking values of `env` and the credential shapes replaced by
+ * `[redacted]`. For a process that has no `SecretRedaction`; `SecretRedaction.redact` hides
+ * the known secrets too.
  */
-export function redactSecrets(
+export function redactCredentialLooking(
   text: string,
   env: Readonly<Record<string, string | undefined>>,
 ): string {
-  return redactShapes(redactValues(text, secretNamedValues(env)));
+  return redactShapes(redactValues(text, credentialNamedValues(env)));
 }
 
 /**
- * The secret values one command knows (ADR-0062). It starts with the values of the process
- * environment's credential-looking variables and learns the rest as the command reads them.
- * Everything the command prints, returns or reports passes through `redact`, and the second
- * process's output through a `StreamRedactor` over `values()`, so both hide the same set.
+ * The known secrets of one command: values Composer knows are secrets, because they are under a
+ * secrets key or a written `secrets` list returned them (ADR-0062). The app configuration file
+ * must not hold any of them.
  */
 export class KnownSecrets {
-  private readonly known = new Set<string>();
-  private readonly certain = new Set<string>();
-  private matcher: SecretMatcher | undefined;
+  readonly #values = new Set<string>();
+  #matcher: SecretMatcher | undefined;
 
-  constructor(env: Readonly<Record<string, string | undefined>>) {
-    this.addByName(secretNamedValues(env));
+  constructor(values: Iterable<string> = []) {
+    this.add(values);
   }
 
-  /** Adds each value that is not empty and that Composer knows is a secret: one under a secrets key, or one a written `secrets` list returned. */
+  /** Adds each value that is not empty. */
   add(values: Iterable<string>): void {
     for (const value of values) {
-      if (value.length === 0) continue;
-      this.known.add(value);
-      this.certain.add(value);
-      this.matcher = undefined;
+      if (value.length === 0 || this.#values.has(value)) continue;
+      this.#values.add(value);
+      this.#matcher = undefined;
     }
   }
 
-  /** Adds each value that is not empty and only looks like a secret, by the name it is under. */
-  addByName(values: Iterable<string>): void {
-    for (const value of values) {
-      if (value.length === 0) continue;
-      this.known.add(value);
-      this.matcher = undefined;
-    }
+  values(): ReadonlySet<string> {
+    return this.#values;
   }
 
-  /** Every value added so far, longest first. */
-  values(): readonly string[] {
-    return [...this.known].sort((a, b) => b.length - a.length);
+  /** Whether `text` contains a known secret anywhere. */
+  appearIn(text: string): boolean {
+    this.#matcher ??= new SecretMatcher(this.#values);
+    return this.#matcher.spans(text).length > 0;
+  }
+}
+
+/**
+ * What one command hides from everything it prints, returns or reports (ADR-0062): its known
+ * secrets, and the credential-looking values, which only look like secrets by the name of the
+ * variable they are under. It starts with the credential-looking values of the process
+ * environment. The second process's output passes through a `StreamRedactor` over
+ * `allValues()`, so every output hides the same set.
+ */
+export class SecretRedaction {
+  readonly knownSecrets = new KnownSecrets();
+  private readonly credentialLooking = new Set<string>();
+  private matcher: { readonly size: number; readonly matcher: SecretMatcher } | undefined;
+
+  constructor(env: Readonly<Record<string, string | undefined>>) {
+    this.addCredentialLooking(credentialNamedValues(env));
   }
 
-  /** The values added with `add`: those Composer knows are secrets, not only by their name. */
-  certainValues(): ReadonlySet<string> {
-    return this.certain;
+  addKnownSecrets(values: Iterable<string>): void {
+    this.knownSecrets.add(values);
   }
 
-  /** `text` with every known value replaced by `[redacted]` at any length, then bearer tokens, JWTs, URL passwords and `token=…` pairs. */
+  addCredentialLooking(values: Iterable<string>): void {
+    for (const value of values) if (value.length > 0) this.credentialLooking.add(value);
+  }
+
+  /** The known secrets and the credential-looking values, longest first. */
+  allValues(): readonly string[] {
+    return [...new Set([...this.knownSecrets.values(), ...this.credentialLooking])].sort(
+      (a, b) => b.length - a.length,
+    );
+  }
+
+  /** `text` with every known secret and credential-looking value replaced by `[redacted]` at any length, then bearer tokens, JWTs, URL passwords and `token=…` pairs. */
   redact(text: string): string {
-    this.matcher ??= new SecretMatcher(this.known);
-    return redactShapes(this.matcher.redact(text));
+    const size = this.knownSecrets.values().size + this.credentialLooking.size;
+    if (this.matcher?.size !== size) {
+      this.matcher = { size, matcher: new SecretMatcher(this.allValues()) };
+    }
+    return redactShapes(this.matcher.matcher.redact(text));
   }
 }
 
-function textOf(configuration: AppConfiguration): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(configuration).flatMap(([name, value]) =>
-      typeof value === 'string' ? [[name, value]] : [],
-    ),
-  );
-}
-
-/** The value under each name in `secretsKeys`, in the app configuration and in the app secrets, at any length. */
+/** The text under each name in `secretsKeys`, in the app configuration and in the app secrets, at any length. */
 export function valuesUnderSecretsKeys(
   configuration: AppConfiguration,
   secrets: AppSecrets,
   secretsKeys: readonly string[],
 ): string[] {
-  const text = textOf(configuration);
   return secretsKeys.flatMap((key) =>
-    [text[key], secrets[key]].filter((value): value is string => value !== undefined),
+    [configuration[key], secrets[key]].filter((value) => typeof value === 'string'),
   );
 }
 
-/** Each app configuration value of eight characters or more under a name that looks like a credential. */
-export function credentialNamedValuesIn(configuration: AppConfiguration): string[] {
-  return secretNamedValues(textOf(configuration));
-}
-
-function redactData(value: unknown, known: KnownSecrets): unknown {
-  if (typeof value === 'string') return known.redact(value);
-  if (Array.isArray(value)) return value.map((member) => redactData(member, known));
+function redactData(value: unknown, redaction: SecretRedaction): unknown {
+  if (typeof value === 'string') return redaction.redact(value);
+  if (Array.isArray(value)) return value.map((member) => redactData(member, redaction));
   if (
     typeof value === 'object' &&
     value !== null &&
     Object.getPrototypeOf(value) === Object.prototype
   ) {
     return Object.fromEntries(
-      Object.entries(value).map(([key, member]) => [key, redactData(member, known)]),
+      Object.entries(value).map(([key, member]) => [key, redactData(member, redaction)]),
     );
   }
   return value;
 }
 
 /**
- * `error` with every known secret removed from its summary, `why`, `fix` and every string in
+ * `error` with every value `redaction` hides removed from its summary, `why`, `fix` and every string in
  * its `meta`. The code, severity, `where` and docs link are kept. The cause is dropped, because
  * it holds the same text unredacted and a renderer may print it.
  */
-export function redactError(error: CliStructuredError, known: KnownSecrets): CliStructuredError {
-  return new CliStructuredError(error.code, known.redact(error.message), {
+export function redactError(
+  error: CliStructuredError,
+  redaction: SecretRedaction,
+): CliStructuredError {
+  return new CliStructuredError(error.code, redaction.redact(error.message), {
     severity: error.severity,
-    ...(error.why === undefined ? {} : { why: known.redact(error.why) }),
-    ...(error.fix === undefined ? {} : { fix: known.redact(error.fix) }),
+    ...(error.why === undefined ? {} : { why: redaction.redact(error.why) }),
+    ...(error.fix === undefined ? {} : { fix: redaction.redact(error.fix) }),
     ...(error.where === undefined ? {} : { where: error.where }),
     ...(error.meta === undefined
       ? {}
       : {
           meta: Object.fromEntries(
-            Object.entries(error.meta).map(([key, value]) => [key, redactData(value, known)]),
+            Object.entries(error.meta).map(([key, value]) => [key, redactData(value, redaction)]),
           ),
         }),
     ...(error.docsUrl === undefined ? {} : { docsUrl: error.docsUrl }),
   });
 }
 
+function setOwn(error: Error, name: string, value: unknown): void {
+  Object.defineProperty(error, name, { value, writable: true, configurable: true });
+}
+
 /**
- * Redacts a thrown defect in place, since the same error is rethrown: its message and stack,
- * and those of each error in its `cause` chain and in an `AggregateError`'s `errors`. A cause
- * that is text or plain data is replaced by a redacted copy.
+ * The error to rethrow in place of a thrown defect, with every secret removed from its message
+ * and stack, and from those of each error in its `cause` chain and in an `AggregateError`'s
+ * `errors`. A cause that is text or plain data becomes a redacted copy. Each error is redacted
+ * in place where it can be. One whose properties cannot change, such as a frozen error, is
+ * replaced by a new error with the redacted message, stack and cause. Never throws.
  */
-export function redactThrown(error: Error, known: KnownSecrets, seen = new Set<Error>()): void {
-  if (seen.has(error)) return;
-  seen.add(error);
-  error.message = known.redact(error.message);
-  if (typeof error.stack === 'string') error.stack = known.redact(error.stack);
-  if (error.cause instanceof Error) redactThrown(error.cause, known, seen);
-  else if (error.cause !== undefined) error.cause = redactData(error.cause, known);
-  if (error instanceof AggregateError) {
-    for (const member of error.errors)
-      if (member instanceof Error) redactThrown(member, known, seen);
+export function redactThrown(
+  error: Error,
+  redaction: SecretRedaction,
+  seen = new Map<Error, Error>(),
+): Error {
+  const done = seen.get(error);
+  if (done !== undefined) return done;
+  seen.set(error, error);
+  const message = redaction.redact(error.message);
+  const stack = typeof error.stack === 'string' ? redaction.redact(error.stack) : undefined;
+  const cause =
+    error.cause instanceof Error
+      ? redactThrown(error.cause, redaction, seen)
+      : redactData(error.cause, redaction);
+  const members =
+    error instanceof AggregateError
+      ? error.errors.map((member: unknown) =>
+          member instanceof Error
+            ? redactThrown(member, redaction, seen)
+            : redactData(member, redaction),
+        )
+      : undefined;
+  try {
+    setOwn(error, 'message', message);
+    if (stack !== undefined) setOwn(error, 'stack', stack);
+    if (error.cause !== undefined) setOwn(error, 'cause', cause);
+    if (members !== undefined) setOwn(error, 'errors', members);
+    return error;
+  } catch {
+    const options = cause === undefined ? undefined : { cause };
+    const copy =
+      members === undefined
+        ? new Error(message, options)
+        : new AggregateError(members, message, options);
+    copy.name = error.name;
+    setOwn(copy, 'stack', stack ?? `${error.name}: ${message}`);
+    seen.set(error, copy);
+    return copy;
   }
 }
 
-/** `event` with every known secret removed from the text it carries: a message, or a dev server's output line. */
-export function redactDevEvent(event: DevEvent, known: KnownSecrets): DevEvent {
+/** `event` with every value `redaction` hides removed from the text it carries: a message, or a dev server's output line. */
+export function redactDevEvent(event: DevEvent, redaction: SecretRedaction): DevEvent {
   switch (event.kind) {
     case 'target-warning':
     case 'rebuild-failed':
     case 'watch-error':
     case 'stop-error':
-      return { ...event, message: known.redact(event.message) };
+      return { ...event, message: redaction.redact(event.message) };
     case 'dev-server-output':
-      return { ...event, line: known.redact(event.line) };
+      return { ...event, line: redaction.redact(event.line) };
     default:
       return event;
   }
 }
 
-/** `summary` with every known secret removed from each entity's id, url and details. */
+/** `summary` with every value `redaction` hides removed from each entity's id, url and details. */
 export function redactSummary(
   summary: DeploymentSummary | undefined,
-  known: KnownSecrets,
+  redaction: SecretRedaction,
 ): DeploymentSummary | undefined {
   if (summary === undefined) return undefined;
   return {
@@ -266,13 +315,16 @@ export function redactSummary(
       address: node.address,
       entities: node.entities.map((entity) => ({
         ...entity,
-        id: known.redact(entity.id),
-        ...(entity.url === undefined ? {} : { url: known.redact(entity.url) }),
+        id: redaction.redact(entity.id),
+        ...(entity.url === undefined ? {} : { url: redaction.redact(entity.url) }),
         ...(entity.details === undefined
           ? {}
           : {
               details: Object.fromEntries(
-                Object.entries(entity.details).map(([key, value]) => [key, known.redact(value)]),
+                Object.entries(entity.details).map(([key, value]) => [
+                  key,
+                  redaction.redact(value),
+                ]),
               ),
             }),
       })),
