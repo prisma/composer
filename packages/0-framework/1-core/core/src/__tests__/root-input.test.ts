@@ -345,7 +345,7 @@ describe('what Load reads from the app configuration', () => {
       });
 
     expect(loadError(run).message).toBe(
-      'input.B of root module "shop" is not in the configuration file. The first process\'s root body did not pass it on, so the deploy\'s two processes built different graphs. A module body must build the same graph every time; one that reads process.env, a file or the clock can build a different one.',
+      'input.B of root module "shop" is not in the configuration file. The first process\'s root body did not pass it on, so the deploy\'s two processes built different graphs. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
     );
   });
 

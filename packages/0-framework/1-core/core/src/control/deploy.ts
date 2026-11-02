@@ -304,7 +304,7 @@ function assertSameNodeAddresses(built: readonly string[], checked: readonly str
   const list = (addresses: readonly string[]) =>
     addresses.length === 0 ? 'none' : addresses.map((address) => `"${address}"`).join(', ');
   throw new LowerError(
-    `The deploy's second process built a different graph from the one Composer checked in its first process. Only in the second process: ${list(onlyBuilt)}. Only in the first process: ${list(onlyChecked)}. A module body must build the same graph every time; one that reads process.env, a file or the clock can build a different one.`,
+    `The deploy's second process built a different graph from the one Composer checked in its first process. Only in the second process: ${list(onlyBuilt)}. Only in the first process: ${list(onlyChecked)}. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.`,
   );
 }
 
