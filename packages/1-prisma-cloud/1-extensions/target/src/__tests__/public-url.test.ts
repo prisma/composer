@@ -21,7 +21,7 @@ describe('publicUrl()', () => {
     const graph = Load(
       module('shop', ({ provision }) => {
         const svc = provision(web);
-        node = publicUrl({ name: 'site', url: 'shop.com', target: svc.http });
+        node = publicUrl({ id: 'site', url: 'shop.com', target: svc.http });
         provision(node);
       }),
     );
@@ -44,7 +44,7 @@ describe('publicUrl()', () => {
     module('shop', ({ provision }) => {
       const svc = provision(web);
       expect(() =>
-        publicUrl({ name: 'site', target: svc.http } as unknown as Parameters<typeof publicUrl>[0]),
+        publicUrl({ id: 'site', target: svc.http } as unknown as Parameters<typeof publicUrl>[0]),
       ).toThrow(
         'publicUrl("site"): url is required. Pass a hostname, publicUrl.hostname(…), or publicUrl.prismaBuild().',
       );
@@ -69,12 +69,12 @@ describe('publicUrl()', () => {
     (url, problem) => {
       module('shop', ({ provision }) => {
         const svc = provision(web);
-        expect(() => publicUrl({ name: 'site', url, target: svc.http })).toThrow(
+        expect(() => publicUrl({ id: 'site', url, target: svc.http })).toThrow(
           `publicUrl("site"): ${JSON.stringify(url)} ${problem}`,
         );
         expect(() =>
           publicUrl({
-            name: 'site',
+            id: 'site',
             url: { strategy: 'hostname', hostname: url },
             target: svc.http,
           }),
@@ -90,7 +90,7 @@ describe('publicUrl()', () => {
     module('shop', ({ environment, provision }) => {
       const svc = provision(web);
       const url = resolve([environment.name], () => 'https://not checked here');
-      expect(() => publicUrl({ name: 'site', url, target: svc.http })).not.toThrow();
+      expect(() => publicUrl({ id: 'site', url, target: svc.http })).not.toThrow();
     });
   });
 });
@@ -185,7 +185,7 @@ describe('the deploy preflight', () => {
       module('shop', ({ environment, provision }) => {
         const svc = provision(web);
         const url = resolve([environment.name], () => 42) as unknown as string;
-        provision(publicUrl({ name: 'site', url, target: svc.http }));
+        provision(publicUrl({ id: 'site', url, target: svc.http }));
       }),
       { environment: { name: 'production' } },
     );
@@ -203,8 +203,8 @@ describe('the deploy preflight', () => {
       module('shop', ({ provision }) => {
         const a = provision(web);
         const b = provision(other);
-        provision(publicUrl({ name: 'site', url: 'shop.com', target: a.http }));
-        provision(publicUrl({ name: 'www', url: publicUrl.hostname('Shop.COM.'), target: b.http }));
+        provision(publicUrl({ id: 'site', url: 'shop.com', target: a.http }));
+        provision(publicUrl({ id: 'www', url: publicUrl.hostname('Shop.COM.'), target: b.http }));
       }),
       { environment: { name: 'production' } },
     );

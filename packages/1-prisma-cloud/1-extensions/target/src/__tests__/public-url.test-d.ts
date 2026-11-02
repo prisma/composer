@@ -27,20 +27,20 @@ test('an exposed HTTP interface is a target; an RPC, a Postgres or a bare ref is
       }),
     );
     expectTypeOf(
-      publicUrl({ name: 'site', url: 'shop.com', target: web.http }),
+      publicUrl({ id: 'site', url: 'shop.com', target: web.http }),
     ).toEqualTypeOf<PublicUrlNode>();
     publicUrl({
-      name: 'site',
+      id: 'site',
       url: resolve([environment.name], ([name]) =>
         name === 'production' ? 'shop.com' : publicUrl.prismaBuild(),
       ),
       target: web.http,
     });
     // @ts-expect-error an RPC interface is not HTTP
-    publicUrl({ name: 'site', url: 'shop.com', target: web.admin });
+    publicUrl({ id: 'site', url: 'shop.com', target: web.admin });
     // @ts-expect-error a Postgres interface is not HTTP
-    publicUrl({ name: 'site', url: 'shop.com', target: web.db });
+    publicUrl({ id: 'site', url: 'shop.com', target: web.db });
     // @ts-expect-error a whole provisioned ref is not an exposed interface
-    publicUrl({ name: 'site', url: 'shop.com', target: web });
+    publicUrl({ id: 'site', url: 'shop.com', target: web });
   });
 });

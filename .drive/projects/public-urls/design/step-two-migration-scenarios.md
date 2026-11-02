@@ -16,14 +16,14 @@ Background: old Composer versions wrote deploy state that knows only an App with
 ## 2. Existing app, upgrade and declare the assigned hostname
 
 - **Start:** as scenario 1.
-- **Action:** the user adds `publicUrl({ name: 'site', url: publicUrl.prismaBuild(), target: web.http })`.
+- **Action:** the user adds `publicUrl({ id: 'site', url: publicUrl.prismaBuild(), target: web.http })`.
 - **Must hold:** `web` keeps the same hostname with no interruption; the row that serves it is now owned by Composer; `worker`'s endpoint row is also owned and marked private.
 - **How:** the backfilled row has no `logicalId`. The resource finds it by service and hostname, writes `shop.site` on it, and records it. `worker`'s row is adopted the same way by whatever node the second step declares for a service's own `prisma.build` URL.
 
 ## 3. Existing app, a domain added in the Console, now declared in code
 
 - **Start:** last year the user attached `shop.com` to `web` in the Console.
-- **Action:** they write `publicUrl({ name: 'site', url: 'shop.com', target: web.http })`.
+- **Action:** they write `publicUrl({ id: 'site', url: 'shop.com', target: web.http })`.
 - **Must hold:** `shop.com` never stops serving, and after the deploy Composer owns the row.
 - **Resolved by the adoption rule:** the backfilled Console row is a live row on the same service with the same hostname and no `logicalId`, so the resource writes `shop.site` on it and records it. The hostname never stops serving and no certificate is reissued, because the row and its Foundry custom domain never change.
 

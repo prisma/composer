@@ -14,7 +14,7 @@ export default module('shop', ({ environment, provision }) => {
   const web = provision(webService);
   const url = resolve([environment.name], ([name]) =>
     name === 'production' ? 'shop.com' : publicUrl.prismaBuild());
-  provision(publicUrl({ name: 'site', url, target: web.http }));
+  provision(publicUrl({ id: 'site', url, target: web.http }));
 });
 ```
 
@@ -35,7 +35,7 @@ $ prisma dev
 
 ## 2. What this slice delivers
 
-1. `publicUrl({ name, url, target })`, `publicUrl.hostname(h)` and `publicUrl.prismaBuild()`, exported from `@prisma/composer-prisma-cloud`.
+1. `publicUrl({ id, url, target })`, `publicUrl.hostname(h)` and `publicUrl.prismaBuild()`, exported from `@prisma/composer-prisma-cloud`.
 2. A Prisma Cloud descriptor for the public URL node. A named hostname lowers to one `Prisma.CustomDomain`. `publicUrl.prismaBuild()` lowers to nothing.
 3. One `DeployedEntity` per public URL, under the node's address.
 4. A deploy that names a hostname whose DNS or ownership record is missing fails with the upstream resource's error (§ 8). A hostname change that the platform refuses leaves the old hostname serving (§ 8).
@@ -74,7 +74,7 @@ The ADR calls these "the two strategies"; `strategy` is the discriminant for tha
 
 ```ts
 export function publicUrl(opts: {
-  name: string;
+  id: string;
   url: PublicUrlOption;
   target: DepBinding<typeof rawHttpContract>;   // the exposed HTTP interface, e.g. web.http
 }): PublicUrlNode;
@@ -102,7 +102,7 @@ It provides nothing (ADR-0063: a public URL exposes nothing). `rawHttp()` comes 
 
 ### 3.3 Checks at construction
 
-`publicUrl()` throws a plain `Error` naming the public URL's `name` when:
+`publicUrl()` throws a plain `Error` naming the public URL's `id` when:
 
 - `url` is `undefined` or absent. Message: `publicUrl("site"): url is required. Pass a hostname, publicUrl.hostname(…), or publicUrl.prismaBuild().` ADR-0060: leaving `url` out is an error.
 - `url` is a string or a `HostnameStrategy` that is not a valid hostname (§ 3.4). A value is not checked here; it is checked in Load (§ 4).
@@ -214,7 +214,7 @@ Settled with Will, 2026-10-29 (design note 12). P1 builds nothing of its own for
 
 - `docs/guides/building-an-app.md`: a "Making a service public" section with the at-a-glance code, the two strategies, a bare string, `resolve()` per environment, and what a named hostname needs before the deploy (the TXT and CNAME records) until hostnames can be declared before DNS.
 - `skills/prisma-composer-core-concepts/SKILL.md`: a public URL in the node table and one paragraph.
-- `examples/env-param` gains `provision(publicUrl({ name: 'site', url: publicUrl.prismaBuild(), target: echo.http }))`; its service exposes `http: rawHttpContract` if it does not already. Its smoke test asserts the deploy summary has a `public-url` entity under `env-param-example.site` whose URL is the echo service's URL.
+- `examples/env-param` gains `provision(publicUrl({ id: 'site', url: publicUrl.prismaBuild(), target: echo.http }))`; its service exposes `http: rawHttpContract` if it does not already. Its smoke test asserts the deploy summary has a `public-url` entity under `env-param-example.site` whose URL is the echo service's URL.
 - The scenarios file names P1 against scenarios 1, 2 (production half), 5, 6, 7, 12 and 13.
 
 ## 10. The Alchemy release
@@ -223,7 +223,7 @@ alchemy-run/alchemy#2696 (custom domains on any Branch) merged on 2026-10-27; th
 
 ## 11. Acceptance criteria
 
-1. `publicUrl({ name, url, target })` builds a `resource` node of type `public-url` with one `target` slot wired to `target` and `props.url`. A non-HTTP interface as `target` is a type error.
+1. `publicUrl({ id, url, target })` builds a `resource` node of type `public-url` with one `target` slot wired to `target` and `props.url`. A non-HTTP interface as `target` is a type error.
 2. Omitting `url`, or passing an invalid hostname as a string or to `publicUrl.hostname()`, throws at construction, naming the public URL and the problem.
 3. A `resolve()` value for `url` that resolves to a string, a `HostnameStrategy` or a `PrismaBuildStrategy` lowers per § 5; one that resolves to anything else fails the deploy and dev before any of the app's resources are created or changed, naming the node's address.
 4. A `prisma-build` public URL declares no Alchemy resource and reports one `public-url` entity whose URL is the target service's URL.

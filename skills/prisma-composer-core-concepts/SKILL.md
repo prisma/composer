@@ -251,7 +251,7 @@ module's `api` port is a raw HTTP port: wire it with `rawHttp()`.
 
 **Public URLs.** A service is reachable from the internet only through a
 public URL the app declares:
-`provision(publicUrl({ name: 'site', url, target: web.http }))`, where
+`provision(publicUrl({ id: 'site', url, target: web.http }))`, where
 `web` exposes `http: rawHttpContract` (an RPC interface as `target` fails
 `tsc`; a module's forwarded HTTP interface lands on the service inside it).
 `url` is required and is one of two strategies: `publicUrl.prismaBuild()`

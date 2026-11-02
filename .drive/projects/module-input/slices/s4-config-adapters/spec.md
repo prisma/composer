@@ -37,7 +37,7 @@ export default module(
     });
     const url = resolve([input.SITE_HOSTNAME, environment.name], ([hostname, name]) =>
       hostname !== undefined ? publicUrl.hostname(hostname) : publicUrl.prismaBuild());
-    provision(publicUrl({ name: 'site', url, target: web.http }));
+    provision(publicUrl({ id: 'site', url, target: web.http }));
   },
 );
 ```

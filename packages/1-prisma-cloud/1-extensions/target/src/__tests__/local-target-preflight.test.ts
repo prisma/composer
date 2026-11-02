@@ -118,11 +118,11 @@ const publicUrlGraph = (environment: string) =>
   Load(
     module('shop', ({ provision }) => {
       const web = provision(webService);
-      provision(publicUrl({ name: 'site', url: 'shop.com', target: web.http }));
+      provision(publicUrl({ id: 'site', url: 'shop.com', target: web.http }));
       provision(
-        publicUrl({ name: 'api', url: publicUrl.hostname('api.shop.com'), target: web.http }),
+        publicUrl({ id: 'api', url: publicUrl.hostname('api.shop.com'), target: web.http }),
       );
-      provision(publicUrl({ name: 'preview', url: publicUrl.prismaBuild(), target: web.http }));
+      provision(publicUrl({ id: 'preview', url: publicUrl.prismaBuild(), target: web.http }));
     }),
     { environment: { name: environment } },
   );
@@ -132,7 +132,7 @@ const badPublicUrlGraph = () =>
     module('shop', ({ environment, provision }) => {
       const web = provision(webService);
       const url = resolve([environment.name], () => 42) as unknown as string;
-      provision(publicUrl({ name: 'site', url, target: web.http }));
+      provision(publicUrl({ id: 'site', url, target: web.http }));
     }),
     { environment: { name: 'dev' } },
   );
@@ -141,8 +141,8 @@ const sharedHostnameGraph = () =>
   Load(
     module('shop', ({ provision }) => {
       const web = provision(webService);
-      provision(publicUrl({ name: 'site', url: 'shop.com', target: web.http }));
-      provision(publicUrl({ name: 'www', url: publicUrl.hostname('Shop.COM.'), target: web.http }));
+      provision(publicUrl({ id: 'site', url: 'shop.com', target: web.http }));
+      provision(publicUrl({ id: 'www', url: publicUrl.hostname('Shop.COM.'), target: web.http }));
     }),
     { environment: { name: 'dev' } },
   );

@@ -939,7 +939,7 @@ export default module(
     });
     const url = resolve([input.SITE_HOSTNAME, environment.name], ([hostname, name]) =>
       hostname !== undefined ? publicUrl.hostname(hostname) : publicUrl.prismaBuild());
-    provision(publicUrl({ name: 'site', url, target: web.http }));
+    provision(publicUrl({ id: 'site', url, target: web.http }));
   },
 );
 ```
@@ -1012,13 +1012,13 @@ import webService from './web/src/service.ts';
 
 export default module('shop', ({ provision }) => {
   const web = provision(webService);
-  provision(publicUrl({ name: 'site', url: 'shop.com', target: web.http }));
+  provision(publicUrl({ id: 'site', url: 'shop.com', target: web.http }));
 });
 ```
 
 `publicUrl()` takes three parameters:
 
-- `name` gives the public URL its address, `shop.site`, like any other node.
+- `id` gives the public URL its address, `shop.site`, as a provision ID does. Changing it destroys the public URL and creates a new one.
 - `target` is the HTTP interface the service exposes, here `web.http`. It
   must be a [raw HTTP interface](#raw-http-connections-and-reverse-proxies):
   wiring an RPC interface fails the type check. A module's exposed HTTP
@@ -1067,7 +1067,7 @@ export default module('shop', ({ environment, provision }) => {
   const web = provision(webService);
   const url = resolve([environment.name], ([name]) =>
     name === 'production' ? 'shop.com' : publicUrl.prismaBuild());
-  provision(publicUrl({ name: 'site', url, target: web.http }));
+  provision(publicUrl({ id: 'site', url, target: web.http }));
 });
 ```
 
