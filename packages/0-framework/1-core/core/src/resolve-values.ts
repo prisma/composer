@@ -727,6 +727,17 @@ export function resolveValues(input: {
           `${read.label} reads "${key}" from the app configuration, and ${origin?.label} names "${key}" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every plain value it reads, in a file, and never writes a secret to a file. Give the plain value and the secret different names.`,
         );
       }
+      const field = [...rootFields.values()].find((candidate) => candidate.path[0] === key);
+      if (key !== undefined && field !== undefined) {
+        const label = inputFieldLabel({
+          kind: 'input',
+          module: rootModuleAddress(),
+          path: field.path,
+        });
+        throw new LoadError(
+          `${label} of root module "${rootModuleAddress()}" reads "${key}" from the app configuration, and ${origin?.label} names "${key}" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every root input field the root's body passes on, in a file, and never writes a secret to a file. Read the secret with ${origin?.label} only, or give the plain value a different name.`,
+        );
+      }
     }
     for (const field of rootFields.values()) {
       const kind = 'value' in field ? jsonInexactKind(field.value) : undefined;

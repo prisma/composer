@@ -19,6 +19,7 @@ import { devEnvironmentDir, resolveLocalTargets } from '@internal/core/local-tar
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import {
+  refuseSecretsInConfigurationFile,
   removeConfigurationFile,
   secondProcessEnvironment,
   writeConfigurationFile,
@@ -357,6 +358,7 @@ async function executeDevInner(
         name: p.name,
         assembled: p.assembled,
       });
+      refuseSecretsInConfigurationFile(p.graph.checkedConfiguration, known.certainValues());
       writeConfigurationFile(configurationFilePath, p.graph.checkedConfiguration);
     } catch (error) {
       // Stack-file write I/O is structured at the catch that knows (rule 6).

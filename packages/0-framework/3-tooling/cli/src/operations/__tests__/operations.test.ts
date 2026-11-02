@@ -4018,6 +4018,60 @@ describe('the second process reads what the first process checked', () => {
     expect(fs.existsSync(file)).toBe(false);
   });
 
+  const refusedPlainValues = [
+    {
+      what: 'a root input field holding the text a written secrets list returned',
+      configuration: { ...values(), GREETING: 'plain-SECRET-91' },
+      secrets: { ANOTHER_NAME: 'plain-SECRET-91' },
+      where: 'Root input field input.GREETING',
+    },
+    {
+      what: 'a configuration key holding the text under a secrets key',
+      configuration: { ...values(), APP_ORIGIN: 'plain-SECRET-91' },
+      secrets: { S13_SECRET: 'plain-SECRET-91' },
+      where: 'Configuration key "APP_ORIGIN"',
+    },
+  ];
+  for (const { what, configuration, secrets, where } of refusedPlainValues) {
+    test(`deploy refuses ${what}, before writing any file or starting the second process`, async () => {
+      const app = makeSecondProcessAppDir();
+      let started = false;
+
+      const result = await silently(() =>
+        deployWithDeps(
+          {
+            config: composerConfig({
+              ...fakeConfig(),
+              config: [() => configuration],
+              secrets: [() => secrets],
+            }),
+            entry: app.entryPath,
+            environment: 'staging',
+            cwd: app.dir,
+          },
+          {
+            runAssembler: fakeAssembler,
+            alchemy: async () => {
+              started = true;
+              return { exitCode: 0, signal: null };
+            },
+          },
+        ),
+      );
+
+      if (result.ok) throw new Error('the deploy should fail');
+      expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
+      expect(result.failure.message).toBe(
+        `${where} holds the text of a secret. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
+      );
+      expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
+      expect(started).toBe(false);
+      expect(
+        filesUnder(app.dir).filter((file) => path.basename(file).startsWith('configuration')),
+      ).toEqual([]);
+    });
+  }
+
   test.skipIf(process.platform === 'win32')(
     'dev hands the second process the app secrets the graph names through its environment, never in a file',
     async () => {

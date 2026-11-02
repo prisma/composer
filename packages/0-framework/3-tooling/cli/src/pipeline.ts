@@ -29,7 +29,7 @@ import {
   entryMissing,
 } from './composer-config.ts';
 import { type LoadedEntry, loadEntry } from './load-entry.ts';
-import { KnownSecrets, secretValuesIn } from './redaction.ts';
+import { credentialNamedValuesIn, KnownSecrets, valuesUnderSecretsKeys } from './redaction.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
 
 /** The app is loaded and checked, and assemble is about to start; then one assemble event per service. */
@@ -192,7 +192,7 @@ export async function runPipeline(
   const secrets: AppSecrets =
     deps.readSecrets === true ? await readAppSecrets(config, adapterInput, known) : NO_SECRETS;
   const configuration = await readAppConfiguration(config, adapterInput);
-  known.add(secretValuesIn(configuration, secrets, []));
+  known.addByName(credentialNamedValuesIn(configuration));
 
   // 4. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
   const graph = Load(entryModule.root, {
@@ -207,7 +207,7 @@ export async function runPipeline(
         "export default module('name', ({ provision }) => { provision(service); }).",
     });
   }
-  known.add(secretValuesIn(configuration, secrets, secretsKeys(graph)));
+  known.add(valuesUnderSecretsKeys(configuration, secrets, secretsKeys(graph)));
 
   // 5. Registry coverage: every node/build in the graph has a matching descriptor in the config.
   validateRegistryCoverage(graph, config);

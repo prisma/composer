@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import type { CheckedConfiguration, CheckedRootField } from '@internal/core';
 import type { AppSecrets } from '@internal/core/config';
+import { CliStructuredError } from '@internal/foundation/errors';
 
 /** Names the configuration file the first process wrote for this run (ADR-0062). */
 export const CONFIGURATION_FILE_ENV = 'PRISMA_COMPOSER_CONFIGURATION_FILE';
@@ -8,6 +9,50 @@ export const CONFIGURATION_FILE_ENV = 'PRISMA_COMPOSER_CONFIGURATION_FILE';
 export const NODE_ADDRESSES_ENV = 'PRISMA_COMPOSER_NODE_ADDRESSES';
 /** `prisma dev` only: the value of each app secret an `envSecret()` in the graph names, as a JSON object. */
 export const APP_SECRETS_ENV = 'PRISMA_COMPOSER_APP_SECRETS';
+
+function textIn(
+  value: unknown,
+  path: readonly string[],
+): { path: readonly string[]; text: string }[] {
+  if (typeof value === 'string') return [{ path, text: value }];
+  if (Array.isArray(value))
+    return value.flatMap((member, index) => textIn(member, [...path, String(index)]));
+  if (typeof value === 'object' && value !== null) {
+    return Object.entries(value).flatMap(([key, member]) => textIn(member, [...path, key]));
+  }
+  return [];
+}
+
+/**
+ * Refuses when the configuration file would hold the text of a secret: a value under a secrets
+ * key, or one a written `secrets` list returned. The message names where, never the value.
+ */
+export function refuseSecretsInConfigurationFile(
+  checked: CheckedConfiguration,
+  secrets: ReadonlySet<string>,
+): void {
+  const places = [
+    ...checked.rootInput.flatMap((field) =>
+      textIn(field.value, field.path).map(({ path, text }) => ({
+        where: `Root input field input.${path.join('.')}`,
+        text,
+      })),
+    ),
+    ...Object.entries(checked.values).map(([key, text]) => ({
+      where: `Configuration key "${key}"`,
+      text,
+    })),
+  ];
+  const place = places.find(({ text }) => secrets.has(text));
+  if (place === undefined) return;
+  throw new CliStructuredError(
+    'CONFIG.SECRET_AS_PLAIN_VALUE',
+    `${place.where} holds the text of a secret. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
+    {
+      fix: 'Read the secret with envSecret() where it is used, or give this plain value text that is not a secret.',
+    },
+  );
+}
 
 /** Writes `checked` to `file` as JSON, readable only by its owner. A file already there is replaced. */
 export function writeConfigurationFile(file: string, checked: CheckedConfiguration): void {
