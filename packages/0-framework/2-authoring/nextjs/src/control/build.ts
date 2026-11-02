@@ -29,6 +29,7 @@ import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildBootWrapper } from '@internal/boot-wrapper';
 import {
   assertBundleSymlinksStayInside,
   copyTreeVerbatim,
@@ -39,7 +40,6 @@ import {
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
 import type { AssembleInput, Bundle, DevServer, ServeInput } from '@internal/core/deploy';
-import { build } from 'esbuild';
 import type { NextjsBuildAdapter } from '../nextjs.ts';
 
 export type { AssembleInput, Bundle } from '@internal/core/deploy';
@@ -317,18 +317,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   // Our wrapper, bundled to main.mjs at the working-dir root (unambiguously
   // ESM). run()'s `import("./bundle/<server>")` resolves from here.
   const serviceModule = fileURLToPath(buildDescriptor.module);
-  await build({
-    entryPoints: { main: serviceModule },
-    outdir: workDir,
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    external: ['bun', 'bun:*'],
-    outExtension: { '.js': '.mjs' },
-  });
-  if (!fs.existsSync(path.join(workDir, 'main.mjs'))) {
-    throw new Error(`esbuild produced no main.mjs in ${workDir}`);
-  }
+  await buildBootWrapper(serviceModule, workDir);
 
   return {
     dir: workDir,

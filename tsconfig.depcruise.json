@@ -22,6 +22,9 @@
         "./packages/0-framework/0-foundation/foundation/src/exports/arktype.ts"
       ],
       "@internal/tsdown-config": ["./packages/0-framework/0-foundation/tsdown-config/base.ts"],
+      "@internal/boot-wrapper": [
+        "./packages/0-framework/2-authoring/boot-wrapper/src/exports/index.ts"
+      ],
       "@internal/bundle-paths": [
         "./packages/0-framework/2-authoring/bundle-paths/src/exports/index.ts"
       ],

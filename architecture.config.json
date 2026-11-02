@@ -7,6 +7,12 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/0-framework/2-authoring/boot-wrapper/src/**",
+      "domain": "framework",
+      "layer": "authoring",
+      "plane": "control"
+    },
+    {
       "glob": "packages/0-framework/2-authoring/bundle-paths/src/**",
       "domain": "framework",
       "layer": "authoring",

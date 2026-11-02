@@ -1,0 +1,36 @@
+{
+  "name": "@internal/boot-wrapper",
+  "version": "0.36.0",
+  "private": true,
+  "type": "module",
+  "description": "Builds a service's boot wrapper, main.mjs: the service module with every import inlined except runtime built-ins and Prisma ORM (ADR-0008, ADR-0064).",
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsdown",
+    "clean": "rm -rf dist",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.1"
+  },
+  "devDependencies": {
+    "@internal/tsdown-config": "workspace:0.36.0",
+    "@types/bun": "^1.3.13",
+    "@types/node": "^26.0.1",
+    "tsdown": "^0.22.7",
+    "typescript": "^6.0.3"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prisma/composer.git",
+    "directory": "packages/0-framework/2-authoring/boot-wrapper"
+  },
+  "engines": {
+    "node": "^22.18.0 || ^24.11.0 || >=26.0.0"
+  }
+}

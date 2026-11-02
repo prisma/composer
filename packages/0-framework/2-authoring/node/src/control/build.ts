@@ -22,7 +22,8 @@
  * working-dir root — a dictated name (object entry `{ main }`), not a
  * discovered one. run() and the app entry must be independent module instances
  * that hand off through process.env, so the wrapper is its own self-contained
- * build; `@prisma/*` is inlined, `bun` is a Compute built-in.
+ * build; `@prisma/*` is inlined except Prisma ORM, which only the app carries
+ * (ADR-0064), and `bun` is a Compute built-in.
  *
  * Artifact layout: `<cwd>/.prisma-composer/artifacts/<address>/` (deploy-owned,
  * ADR-0005) holds `main.mjs` at the root and the app's built runnable under
@@ -31,6 +32,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildBootWrapper } from '@internal/boot-wrapper';
 import {
   assertBundleSymlinksStayInside,
   copyTreeVerbatim,
@@ -41,7 +43,6 @@ import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
 import type { AssembleInput, Bundle, DevServer, ServeInput } from '@internal/core/deploy';
 import { nodeFileTrace } from '@vercel/nft';
-import { build } from 'esbuild';
 import type { NodeBuildAdapter } from '../node.ts';
 
 export type { AssembleInput, Bundle } from '@internal/core/deploy';
@@ -420,18 +421,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   await fs.promises.rm(workDir, { recursive: true, force: true });
   await fs.promises.mkdir(workDir, { recursive: true });
 
-  await build({
-    entryPoints: { main: serviceModule },
-    outdir: workDir,
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    external: ['bun', 'bun:*'],
-    outExtension: { '.js': '.mjs' },
-  });
-  if (!fs.existsSync(path.join(workDir, 'main.mjs'))) {
-    throw new Error(`esbuild produced no main.mjs in ${workDir}`);
-  }
+  await buildBootWrapper(serviceModule, workDir);
 
   const bundleDir = path.join(workDir, 'bundle');
   await runnable.copyInto(bundleDir);
