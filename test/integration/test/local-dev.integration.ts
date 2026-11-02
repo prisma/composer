@@ -53,7 +53,7 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
-import { Load } from '@prisma/composer';
+import { Load, nodeAddresses, secretsKeys } from '@prisma/composer';
 import type {
   ContainerInstance,
   ExtensionDescriptor,
@@ -61,7 +61,12 @@ import type {
 } from '@prisma/composer/config';
 import { containerEnv, devEnvironmentDir, preflightEnv } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
-import { renderDevStackFile } from '@prisma/composer-cli/testing';
+import {
+  removeConfigurationFile,
+  renderDevStackFile,
+  secondProcessEnvironment,
+  writeConfigurationFile,
+} from '@prisma/composer-cli/testing';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import { emulatorRegistryRoot } from '@prisma/composer-prisma-cloud/local-target';
 import bgService from './fixtures/local-dev/bg-service.ts';
@@ -444,23 +449,29 @@ async function main(): Promise<void> {
     const dev = await localTargetThunk();
     devContainer = await dev.container.ensure({ appName: APP_NAME, environment: 'dev' });
 
-    // 3. Load the graph (mirrors the CLI pipeline's own Load step).
-    const graph = Load(appModule, { id: APP_NAME });
+    // 3. Load the graph with what the default adapters return (mirrors the CLI pipeline's own Load step).
+    process.env['LOCALDEV_FIXTURE_API_KEY'] = 'test-api-key';
+    process.env['LOCALDEV_FIXTURE_GREETING'] = 'hello';
+    const read: {
+      readonly configuration: Readonly<Record<string, string>>;
+      readonly secrets: Readonly<Record<string, string>>;
+    } = {
+      configuration: { LOCALDEV_FIXTURE_GREETING: 'hello' },
+      secrets: { LOCALDEV_FIXTURE_API_KEY: 'test-api-key' },
+    };
+    const graph = Load(appModule, {
+      id: APP_NAME,
+      environment: { name: 'dev' },
+      configuration: read.configuration,
+    });
 
     // 4. Assemble both services (real build adapter, hand-written "built" entries).
     const bundles = await assembleFixture();
 
     // 5. Preflight — the fixture's secret/env-param proof lives in the
     // dedicated S5 script (local-dev-criteria-4-5.integration.ts), which
-    // deliberately runs WITHOUT these set; this script sets both so its own
+    // deliberately runs WITHOUT these set; this script sets both in step 3 so its own
     // (unrelated) proofs keep passing regardless of shell state.
-    process.env['LOCALDEV_FIXTURE_API_KEY'] = 'test-api-key';
-    process.env['LOCALDEV_FIXTURE_GREETING'] = 'hello';
-    // What the default adapters return: the generated stack file reads the same variables.
-    const read = {
-      configuration: { LOCALDEV_FIXTURE_GREETING: 'hello' },
-      secrets: { LOCALDEV_FIXTURE_API_KEY: 'test-api-key' },
-    };
     const preflightPayload =
       dev.preflight === undefined
         ? undefined
@@ -489,7 +500,32 @@ async function main(): Promise<void> {
         preflightPayload === undefined ? new Map() : new Map([[descriptor.id, preflightPayload]]),
       ),
     };
-    const first = runAlchemyDeploy(containerEnvVars);
+    // The second process gets what the first checked as `prisma dev` hands it over: the
+    // configuration file, written before each converge and deleted after it, and the
+    // node addresses and the app secrets the graph names in its environment.
+    const configurationFile = path.join(devDir, 'configuration.json');
+    const secrets: Record<string, string> = {};
+    for (const key of secretsKeys(graph)) {
+      const value = read.secrets[key];
+      if (value !== undefined && value !== '') secrets[key] = value;
+    }
+    const childEnv = {
+      ...containerEnvVars,
+      ...secondProcessEnvironment({
+        configurationFile,
+        nodeAddresses: nodeAddresses(graph),
+        secrets,
+      }),
+    };
+    const converge = () => {
+      writeConfigurationFile(configurationFile, graph.checkedConfiguration);
+      try {
+        return runAlchemyDeploy(childEnv);
+      } finally {
+        removeConfigurationFile(configurationFile);
+      }
+    };
+    const first = converge();
     if (first.status !== 0) {
       throw new Error(
         `alchemy deploy (first converge) failed (timedOut=${String(first.timedOut)}); see ${first.logFile}:\n${first.stdout}\n${first.stderr}`,
@@ -586,7 +622,7 @@ async function main(): Promise<void> {
     );
 
     // 12. Second converge, unchanged build: full no-op — same pids.
-    const second = runAlchemyDeploy(containerEnvVars);
+    const second = converge();
     if (second.status !== 0) {
       throw new Error(
         `alchemy deploy (no-op converge) failed (timedOut=${String(second.timedOut)}); see ${second.logFile}:\n${second.stdout}\n${second.stderr}`,
@@ -618,7 +654,7 @@ async function main(): Promise<void> {
     try {
       const rebundled = await assembleFixture();
       fs.writeFileSync(stackFile, renderStack(rebundled));
-      const third = runAlchemyDeploy(containerEnvVars);
+      const third = converge();
       if (third.status !== 0) {
         throw new Error(
           `alchemy deploy (changed-artifact converge) failed (timedOut=${String(third.timedOut)}); see ${third.logFile}:\n${third.stdout}\n${third.stderr}`,
