@@ -36,6 +36,8 @@ test('an exposed HTTP interface is a target; an RPC, a Postgres or a bare ref is
       ),
       target: web.http,
     });
+    // @ts-expect-error the identity is id, not name
+    publicUrl({ name: 'site', url: 'shop.com', target: web.http });
     // @ts-expect-error an RPC interface is not HTTP
     publicUrl({ id: 'site', url: 'shop.com', target: web.admin });
     // @ts-expect-error a Postgres interface is not HTTP

@@ -144,8 +144,8 @@ export function checkPublicUrls(graph: Graph): void {
 }
 
 /**
- * Makes a service reachable from the internet. `id` is the node's provision ID;
- * changing it replaces the public URL. `target` is the service's
+ * Makes a service reachable from the internet. `id` is the node's default
+ * provision ID; changing it replaces the public URL. `target` is the service's
  * exposed HTTP interface; `url` is a hostname, `publicUrl.hostname(…)`,
  * `publicUrl.prismaBuild()`, or a value that resolves to one of them.
  */
@@ -154,6 +154,10 @@ export function publicUrl(opts: {
   url: PublicUrlOption;
   target: DepBindings<PublicUrlDeps>['target'];
 }): PublicUrlNode {
+  if (typeof opts.id !== 'string' || opts.id === '') {
+    const renamed = 'name' in opts ? ' It takes its identity as id, not name.' : '';
+    throw new Error(`publicUrl(): id is required.${renamed}`);
+  }
   const label = `publicUrl(${JSON.stringify(opts.id)})`;
   if (opts.url === undefined) {
     throw new Error(

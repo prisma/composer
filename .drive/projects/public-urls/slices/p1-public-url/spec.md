@@ -89,7 +89,7 @@ publicUrl.prismaBuild = (): PrismaBuildStrategy => …;
 
 ```ts
 resource({
-  name: opts.name,
+  name: opts.id,
   extension: PRISMA_CLOUD_EXTENSION_ID,     // '@prisma/composer-prisma-cloud'
   type: 'public-url',
   inputs: { target: rawHttp() },

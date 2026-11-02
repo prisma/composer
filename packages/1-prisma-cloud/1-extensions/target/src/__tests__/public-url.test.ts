@@ -40,15 +40,33 @@ describe('publicUrl()', () => {
     });
   });
 
+  test('omitting id throws, and says so when name was passed', () => {
+    Load(
+      module('shop', ({ provision }) => {
+        const svc = provision(web);
+        const call = (opts: object) => () =>
+          publicUrl({ url: 'shop.com', target: svc.http, ...opts } as Parameters<
+            typeof publicUrl
+          >[0]);
+        expect(call({})).toThrow(/^publicUrl\(\): id is required\.$/);
+        expect(call({ name: 'site' })).toThrow(
+          'publicUrl(): id is required. It takes its identity as id, not name.',
+        );
+      }),
+    );
+  });
+
   test('omitting url throws, naming the public URL', () => {
-    module('shop', ({ provision }) => {
-      const svc = provision(web);
-      expect(() =>
-        publicUrl({ id: 'site', target: svc.http } as unknown as Parameters<typeof publicUrl>[0]),
-      ).toThrow(
-        'publicUrl("site"): url is required. Pass a hostname, publicUrl.hostname(…), or publicUrl.prismaBuild().',
-      );
-    });
+    Load(
+      module('shop', ({ provision }) => {
+        const svc = provision(web);
+        expect(() =>
+          publicUrl({ id: 'site', target: svc.http } as unknown as Parameters<typeof publicUrl>[0]),
+        ).toThrow(
+          'publicUrl("site"): url is required. Pass a hostname, publicUrl.hostname(…), or publicUrl.prismaBuild().',
+        );
+      }),
+    );
   });
 
   test.each([
@@ -67,19 +85,21 @@ describe('publicUrl()', () => {
   ])(
     'an invalid hostname %p throws at construction, naming the public URL and the problem',
     (url, problem) => {
-      module('shop', ({ provision }) => {
-        const svc = provision(web);
-        expect(() => publicUrl({ id: 'site', url, target: svc.http })).toThrow(
-          `publicUrl("site"): ${JSON.stringify(url)} ${problem}`,
-        );
-        expect(() =>
-          publicUrl({
-            id: 'site',
-            url: { strategy: 'hostname', hostname: url },
-            target: svc.http,
-          }),
-        ).toThrow(`publicUrl("site"): ${JSON.stringify(url)} ${problem}`);
-      });
+      Load(
+        module('shop', ({ provision }) => {
+          const svc = provision(web);
+          expect(() => publicUrl({ id: 'site', url, target: svc.http })).toThrow(
+            `publicUrl("site"): ${JSON.stringify(url)} ${problem}`,
+          );
+          expect(() =>
+            publicUrl({
+              id: 'site',
+              url: { strategy: 'hostname', hostname: url },
+              target: svc.http,
+            }),
+          ).toThrow(`publicUrl("site"): ${JSON.stringify(url)} ${problem}`);
+        }),
+      );
       expect(() => publicUrl.hostname(url)).toThrow(
         `publicUrl.hostname(): ${JSON.stringify(url)} ${problem}`,
       );
@@ -87,11 +107,13 @@ describe('publicUrl()', () => {
   );
 
   test('a value is not checked at construction', () => {
-    module('shop', ({ environment, provision }) => {
-      const svc = provision(web);
-      const url = resolve([environment.name], () => 'https://not checked here');
-      expect(() => publicUrl({ id: 'site', url, target: svc.http })).not.toThrow();
-    });
+    Load(
+      module('shop', ({ environment, provision }) => {
+        const svc = provision(web);
+        const url = resolve([environment.name], () => 'https://not checked here');
+        expect(() => publicUrl({ id: 'site', url, target: svc.http })).not.toThrow();
+      }),
+    );
   });
 });
 

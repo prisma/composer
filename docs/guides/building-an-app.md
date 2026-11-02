@@ -1018,7 +1018,7 @@ export default module('shop', ({ provision }) => {
 
 `publicUrl()` takes three parameters:
 
-- `id` gives the public URL its address, `shop.site`, as a provision ID does. Changing it destroys the public URL and creates a new one.
+- `id` is the public URL's default provision ID, so it gives the public URL its address, `shop.site`. An `id` passed to `provision()` overrides it. Changing it destroys the public URL and creates a new one.
 - `target` is the HTTP interface the service exposes, here `web.http`. It
   must be a [raw HTTP interface](#raw-http-connections-and-reverse-proxies):
   wiring an RPC interface fails the type check. A module's exposed HTTP
