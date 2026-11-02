@@ -13,7 +13,7 @@ import { emailOutboxContract, emailSendContract } from './contract.ts';
 import { emailService } from './email-service.ts';
 
 const emailModuleInput = type({
-  deliveryMode: field(type('string')),
+  deliveryMode: field(type("'resend'|'smtp'|'none'")),
   from: field(type('string')),
   deliveryCredential: secretString(),
 });
