@@ -122,6 +122,8 @@ install never gets there.
 
 ## Pinning an unreleased alchemy build
 
+The repo is on a registry release: `alchemy` and `@alchemy.run/prisma` at 2.0.0-beta.85, `@distilled.cloud/prisma` at 1.0.0-rc.18. It was on a preview of commit `972f294` until beta.85 shipped that commit. Use a preview only when you need a fix that no release contains yet.
+
 alchemy publishes a preview of every commit on `main`. Pin it by commit, never by branch, in the `catalog:` block of `pnpm-workspace.yaml`:
 
 ```yaml

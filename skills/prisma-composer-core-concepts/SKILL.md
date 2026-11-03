@@ -505,7 +505,7 @@ as the Composer that runs the deploy. An older extension would read every
 environment as production, so deploy and destroy refuse it with
 `DEPS.EXTENSION_INCOMPATIBLE`.
 
-**The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (a preview build of 2.0.0-beta.84, commit `972f294`, at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
+**The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.85 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
 `prisma deploy` and `prisma dev` run alchemy inside the `prisma` process through alchemy's
 programmatic API: no generated file and no child process. Their progress prints
