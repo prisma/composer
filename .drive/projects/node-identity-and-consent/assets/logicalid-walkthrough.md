@@ -1,6 +1,7 @@
 # Walkthrough: `logicalId` and `name` on every node
 
-A working note for the design discussion. Not a spec.
+A working note from the design discussion. Not a spec. Where it differs from
+[../design-notes.md](../design-notes.md), the design notes win.
 
 ## 1. The system we use throughout
 
@@ -8,14 +9,18 @@ A small shop. One root module, a Postgres database, a web service, an API
 service, and a reusable auth module that owns its own database and service.
 
 ```
-store                         root module → Project
-├── catalog                   postgres    → Database
-├── web                       compute     → service
-├── api                       compute     → service
-└── auth                      module      (no row)
-    ├── database              postgres    → Database   address auth.database
-    └── service               compute     → service    address auth.service
+node           kind          platform row   address (= the row's logicalId)
+store          root module   Project        store
+├── catalog    postgres      Database       store.catalog
+├── web        compute       service        store.web
+├── api        compute       service        store.api
+└── auth       module        (no row)       store.auth
+    ├── database   postgres  Database       store.auth.database
+    └── service    compute   service        store.auth.service
 ```
+
+Addresses are full paths from the app name, as the decision record "a node's
+address is its full path from the app name" requires.
 
 ## 2. Today
 
@@ -34,9 +39,9 @@ nodes use. The three footguns, all caused by editing that one string:
 
 | Edit | What the author meant | What happens |
 | --- | --- | --- |
-| `catalog` → `catalogue` | fix spelling | next deploy deletes the `catalog` Database and creates an empty `catalogue` |
+| `catalog` → `catalogue` | fix spelling | next deploy deletes the `store.catalog` Database and creates an empty `store.catalogue` |
 | `store` → `storefront` | nicer name | next deploy creates a second Project; `store` is left behind with its data |
-| `store` → `billing` (another repo's project in the workspace) | copy-paste, or a "rename" | next deploy reconciles into the `billing` Project and overwrites its production stage |
+| `store` → `billing` (another repo's project in the workspace) | copy-paste, or a "rename" | next deploy reconciles into the `billing` Project and overwrites its production environment |
 
 The third row is Søren's case. The first two are the same defect.
 
@@ -47,18 +52,38 @@ Only `logicalId` reaches the platform row's `logicalId` and the topology.
 `name` reaches the row's display name and nothing else. Omitting `name`
 means Composer does not manage the label.
 
+The fields go on the node's definition, not on the `provision()` call. The
+`id` override on `provision()` stays for provisioning the same node twice, or
+for a packaged module whose consumer needs a different address.
+
 ```ts
+// web.ts
+export default service({ logicalId: 'web', name: 'Web', … });
+// api.ts
+export default service({ logicalId: 'api', … });
+// auth module, from a package
+export default module({ logicalId: 'auth', … }, …);
+
+// module.ts
 export default module({ logicalId: 'store', name: 'Store' }, ({ provision }) => {
   const catalog = provision(postgres({ logicalId: 'catalog', name: 'Catalog', contract, config }));
-  const auth = provision(authModule, { logicalId: 'auth', secrets: { signingKey: envSecret('AUTH_SIGNING_SECRET') } });
-  provision(web, { logicalId: 'web', name: 'Web', deps: { db: catalog, auth: auth.rpc } });
-  provision(api, { logicalId: 'api', deps: { db: catalog } });
+  const auth = provision(authModule, { secrets: { signingKey: envSecret('AUTH_SIGNING_SECRET') } });
+  provision(web, { deps: { db: catalog, auth: auth.rpc } });
+  provision(api, { deps: { db: catalog } });
 });
 ```
 
-The address is still the path of `logicalId`s: `auth.database`. Nothing
-else changes in the model. Local dev, state keys, Alchemy naming, and the
-topology payload all keyed off the address already.
+The address is still built the same way: the root's value, then each
+ancestor's, joined by dots (`store.auth.database`). Local dev, deploy state,
+Alchemy resource IDs and the topology all key off the address already.
+
+**Unsettled: what the field on a child holds.** The decision record "a node's
+address is its full path from the app name" makes the full address the
+platform `logicalId`. So for a child, the field written on the definition
+(`'catalog'`) is one segment of the `logicalId`, not the `logicalId` itself
+(`store.catalog`). Only on the root are the two the same. Whether the child's
+field should still be called `logicalId`, or something that names the
+segment, is open; see the spec's open questions.
 
 Same three edits, re-run:
 
@@ -127,15 +152,16 @@ URL, which is the Søren case by a different road.
 
 They want this repo to take over the `billing` Project. They set
 `logicalId: 'billing'`. The deploy finds that Project and reconciles into it.
-The experience should make the takeover visible before it is irreversible:
+Composer asks nothing for the switch itself: the author typed the other
+project's identity on purpose, and Composer cannot tell a deliberate takeover
+from a mistake without reading the platform's build history. Stopping the
+mistake is the scoped CI token's job (D6).
 
-```
-Project "billing" (proj_…) exists and holds a production deploy from
-another source. Continue? (--yes)
-```
-
-Whether Composer asks, or just logs, is a separate decision. The point is
-that the author typed the other project's identity on purpose.
+The consent model still applies to what the reconcile would do inside
+`billing`. Any database or bucket there that this repo's graph does not
+declare would be deleted, so the deploy asks one question per subject, such as
+`--delete billing.ledger`, and fails in CI until a human answers from a
+laptop.
 
 ### 5c. "Tidying" a generated value
 
@@ -157,17 +183,21 @@ names) and users accept it.
 
 ### 5e. A child rename
 
-`logicalId: 'catalog'` → `'catalogue'` on the database. Composer plans to
-delete `catalog` and create `catalogue`. Today that is silent. With the
-field explicit, the plan output should name the consequence:
+`logicalId: 'catalog'` → `'catalogue'` on the database, so its address goes
+from `store.catalog` to `store.catalogue`. Today the next deploy deletes the
+old database and creates an empty one, silently. With the field explicit, the
+deploy asks first, the way the ORM's migration commands do (D8):
 
 ```
-~ catalog (Database): logicalId changed → delete "catalog", create "catalogue".
-  Data in "catalog" will be lost. Use `name` to change the label instead.
+store.catalog (Database) is no longer declared, and store.catalogue is new.
+Its data would be lost. To change only the label, edit `name` instead.
+→ Pass --rename store.catalog:store.catalogue to keep the database
+→ Pass --delete store.catalog to delete it
 ```
 
-That message is only possible because the two fields exist: Composer can
-tell a label edit from an identity edit.
+Non-interactively, as in CI, the deploy fails with `CLI.CONSENT_REQUIRED` and
+names both flags. The advice to edit `name` is only possible because the two
+fields exist: Composer can tell a label edit from an identity edit.
 
 ## 6. Where the value comes from in each flow
 
@@ -190,14 +220,12 @@ local deploy and a CI deploy of the same file can target different Projects.
 That contradicts "the graph is Composer's image." Not recommended as the
 primary path; the token scope is the platform's job (ADR-010).
 
-## 7. Open points this note surfaces
+## 7. How the points this note raised were settled
 
-1. Which shape for the root value: 4a is recommended. 4b and 4c are
-   rejected above.
-2. Whether a root `logicalId` change that lands on an existing Project with
-   deploys from another source should warn, confirm, or just proceed (5b).
-3. The plan output for identity changes on children (5e) is a separate,
-   valuable slice.
-4. `--name` on the CLI today overrides the root's single string. With two
-   fields it should become a `logicalId` override, or be removed. The
-   generated workflow does not use it.
+1. The root value is a hand-written slug that Console validates and reserves
+   at connect (4a). It is never generated by the platform.
+2. A root `logicalId` that lands on an existing Project proceeds; consent
+   covers the data the reconcile would delete there (5b).
+3. Identity changes on children are consent questions, answered by
+   `--rename` or `--delete` (5e).
+4. `--name` is removed.

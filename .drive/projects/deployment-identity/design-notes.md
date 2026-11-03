@@ -8,7 +8,7 @@
 
 ## The model
 
-The Project's `logicalId` is the app name (ADR-0051). Container resolution matches on it and on nothing else. If no Project matches, the deploy stops unless `--create` was passed. The platform creates the Project when a repo is connected, so a connected repo's CI run always finds its Project and never needs `--create`.
+The Project's `logicalId` is the app name: the decision record "a node's address is its full path from the app name" makes the root's address the app name, and every address is its node's `logicalId`. Container resolution matches on it and on nothing else. If no Project matches, the deploy stops unless `--create` was passed. The platform creates the Project when a repo is connected, so a connected repo's CI run always finds its Project and never needs `--create`.
 
 ```
 prisma deploy module.ts            # finds Project by logicalId, or refuses

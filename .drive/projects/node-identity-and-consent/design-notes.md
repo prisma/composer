@@ -40,7 +40,7 @@ if that proves necessary.
 The display-name fallback in container resolution is removed.
 
 *Why:* the fallback is what let a name match adopt an unrelated Project.
-ADR-0051 already calls it a compatibility path.
+The decision record "a node's address is its full path from the app name" already calls it a compatibility path.
 
 *Assumes:* D10 backfills old Projects first.
 
@@ -118,8 +118,9 @@ a large piece of platform work.
 ### D10. Backfill `logicalId` on old Projects once
 
 A platform script sets `logicalId` from the link's reserved module name on
-every linked Project that has none. A Project with neither is set by hand in
-Console.
+every linked Project that has none. A Project with neither a `logicalId` nor a
+link has no automatic fix. Whether Console lets a user set one by hand is an
+open question.
 
 ### Smaller consequences
 
@@ -154,7 +155,7 @@ Console.
   obsolete representation of the system after the transition, when only the
   command performing it ever needed it. The hint goes to the command instead.
 - **A committed consent file bound to a plan hash.** The hash differs per
-  stage, so a production consent blocks every preview deploy on the branch.
+  environment, so a production consent blocks every preview deploy on the branch.
 
 ## Open items and accepted trade-offs
 
@@ -180,7 +181,7 @@ find-only mode for `--create`.
 
 | Change | Repo |
 | --- | --- |
-| `logicalId` and `name` on every node; single-string form refused; `--create`; ORM consent model; `--name` removed; ADR amending ADR-0006, ADR-0024, ADR-0051 | prisma/composer |
+| `logicalId` and `name` on every node; single-string form refused; `--create`; ORM consent model; `--name` removed; a decision record amending the records on node naming, environment resolution and full-path addresses | prisma/composer |
 | Console creates the Project at connect for the setup-PR path; empty-Project cleanup on release; inspector reads the hoisted constant; generated `module.mjs` uses the two-field form; backfill script | prisma/pdp-control-plane |
 | Nothing required. Close PR 355. | prisma/cloud-deploy-action |
 | Scoped CI tokens; Console approval of consent | platform, later |

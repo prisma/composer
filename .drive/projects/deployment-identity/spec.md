@@ -23,7 +23,7 @@ Four changes, two in Composer and two on the platform:
 
 # Place in the larger world
 
-- Composer: container resolution, which finds or creates the Project and Branch before Alchemy runs (decision record "a stage is a deploy-time environment resolved to Project and Branch", amended by "a node's address is its logical ID on the platform"), and the `prisma deploy` command.
+- Composer: container resolution, which finds or creates the Project and Branch before Alchemy runs (decision record "a stage is a deploy-time environment resolved to Project and Branch"), and the `prisma deploy` command. The decision record "a node's address is its full path from the app name" makes the root's address, the app name, the Project's `logicalId`, and it is the record that still describes the display-name fallback as a compatibility path.
 - Control plane: `connectRepositoryForComposer` in `services/console-compute/lib/composerConnect.server.ts`, `connectWorkspaceToScmRepo`, `createProject` and its `reflectProjectOnLink` step, which becomes unnecessary once the Project exists before the link. The GitHub Actions token exchange and `cloud-deploy-action` are untouched.
 - The control plane's decision record "project slug as the deploy-target identity" made the module name the Project's `logicalId`. This project finishes that work by removing the display-name fallback it kept for older Projects.
 - prisma/composer#355 is closed in favour of this project. The decision record it proposed, "GitHub project selection checks active repository connections", is not adopted.
@@ -47,7 +47,7 @@ Four changes, two in Composer and two on the platform:
 - [ ] Releasing a setup ("Remove setup") or closing the setup PR unmerged deletes the Project the connect created, and only that one.
 - [ ] Every linked Project in production has a `logicalId`; the backfill reports zero remaining.
 - [ ] `prisma deploy --create` creates a Project from a laptop; without the flag the same deploy refuses.
-- [ ] The two Composer decision records named above are amended. The deploying guide and the core-concepts skill say that a deploy finds its Project by `logicalId` and needs `--create` to make one. The guide's `prisma deploy module.ts --name demo-42` example still works, with `--create` on its first run.
+- [ ] The Composer decision records "a stage is a deploy-time environment resolved to Project and Branch" and "a node's address is its full path from the app name" are amended: the fallback is gone, and creating a Project needs `--create`. The deploying guide and the core-concepts skill say that a deploy finds its Project by `logicalId` and needs `--create` to make one. The guide's `prisma deploy module.ts --name demo-42` example still works, with `--create` on its first run.
 - [ ] prisma/composer#355 closed with a comment pointing at this project.
 
 # Open questions
@@ -58,6 +58,6 @@ Four changes, two in Composer and two on the platform:
 
 - Design synthesis and scenarios: `.drive/projects/node-identity-and-consent/design-notes.md` and `assets/`.
 - Slack thread with Søren, 2026-10-14, and prisma/composer#355.
-- Composer decision records, in `docs/design/90-decisions/`: ADR-0006 "every node is named", ADR-0024 "a stage is a deploy-time environment resolved to Project and Branch", ADR-0050 "Composer runs as prisma deploy and prisma dev", ADR-0051 "a node's address is its logical ID on the platform".
+- Composer decision records, in `docs/design/90-decisions/`: ADR-0006 "every node is named", ADR-0024 "a stage is a deploy-time environment resolved to Project and Branch", ADR-0050 "Composer runs as prisma deploy and prisma dev", ADR-0057 "a node's address is its full path from the app name" (it superseded ADR-0051), and ADR-0059 "a place the app runs is called an environment, not a stage or a branch".
 - Control plane, prisma/pdp-control-plane: ADR-010 "a connected repository is the trust boundary for CI deploys" (it mints a workspace-wide token), ADR-011 "project slug as the deploy-target identity", `docs/CiOidcTokenExchange.md`, and `docs/compute/GitHubImport.md` for the repository link lifecycle.
 - Linear: Deployment identity (Terminal team).

@@ -53,9 +53,11 @@ CI tokens scoped to the Project the repo is connected to, then Console approval 
 - [ ] A push-to-deploy run whose plan would delete a database fails closed and names the flags; no row changes.
 - [ ] A fresh Console connect writes the two-field root with a hoisted `logicalId` constant, and connecting a repo that brings its own two-field config reads the identifier correctly.
 - [ ] A CI token minted for a connected repo cannot read or write another Project in the workspace.
-- [ ] A new Composer decision record states the two-field model and the consent model, and amends the records on node naming, stage resolution and node addresses. The guides, examples and the core-concepts skill use the two-field form throughout.
+- [ ] A new Composer decision record states the two-field model and the consent model, and amends the records on node naming, environment resolution and node addresses. The guides, examples and the core-concepts skill use the two-field form throughout.
 
 # Open questions
+
+- What the identity field on a child's definition is called. This design was settled before the decision record "a node's address is its full path from the app name" landed. That record makes the full address (`store.catalog`) the platform `logicalId`. So on a child, the value an author writes (`'catalog'`) is one segment of the `logicalId`, not the `logicalId` itself; only on the root are they equal. Either the field keeps the name `logicalId` and the docs explain that a child's `logicalId` is the full path built from it, or it gets a name for the segment. This needs a decision before phase 2 starts.
 
 - Whether Console approval (phase 4b) is built in this project or spun out once scoped tokens exist. Decide at phase 4 planning.
 - Whether the plan output for an identity change below the root needs its own flag beyond the consent question. Decide in phase 3 slice planning.
@@ -67,6 +69,6 @@ CI tokens scoped to the Project the repo is connected to, then Console approval 
 - Worked example of the two-field model: [assets/logicalid-walkthrough.md](assets/logicalid-walkthrough.md).
 - Predecessor project: `.drive/projects/deployment-identity/`.
 - ORM consent model: prisma/orm `docs/CLI Style Guide.md`, section "Destructive operation confirmation". The two ORM changes that introduced it are "migration plan asks before a lossy type change" (commit 07a7bc06) and "migration plan requires consent for destructive auto-baselines" (commit c5a8b5ad).
-- Composer decision records, in `docs/design/90-decisions/`: ADR-0006 "every node is named", ADR-0024 "a stage is a deploy-time environment resolved to Project and Branch", ADR-0050 "Composer runs as prisma deploy and prisma dev", ADR-0051 "a node's address is its logical ID on the platform".
+- Composer decision records, in `docs/design/90-decisions/`: ADR-0006 "every node is named", ADR-0024 "a stage is a deploy-time environment resolved to Project and Branch", ADR-0050 "Composer runs as prisma deploy and prisma dev", ADR-0057 "a node's address is its full path from the app name" (it superseded ADR-0051), and ADR-0059 "a place the app runs is called an environment, not a stage or a branch".
 - Control plane, prisma/pdp-control-plane: ADR-010 "a connected repository is the trust boundary for CI deploys", ADR-011 "project slug as the deploy-target identity", `projects/branch-topology/spec.md`, `projects/composer-import/spec.md`, and `docs/compute/GitHubImport.md`.
 - Linear: Node identity and consent (Terminal team).

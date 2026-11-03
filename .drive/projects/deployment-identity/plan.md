@@ -26,7 +26,7 @@ A script under the control plane's scripts convention: for every live `ProjectSc
 
 ### Slice 3 — Composer finds by `logicalId` only and creates only with `--create` (TML-3581, Composer)
 
-`resolveProject` drops the display-name match. `ResolveContainerOptions.ensure` becomes a mode with three values: a plain deploy finds the Project or refuses, `deploy --create` finds it or creates it, and destroy finds it or reports that nothing is deployed. The mode is threaded from a new `create` option on the `deploy` operation and `prisma deploy --create` through `LocateContainerInput` and the extension's `ensureContainer`. A miss without `--create` is a structured `DEPLOY.PROJECT_NOT_FOUND` error with the message from the design notes. The decision records on stage resolution and node addresses amended, deploying guide and core-concepts skill updated, PR 355 closed.
+`resolveProject` drops the display-name match. `ResolveContainerOptions.ensure` becomes a mode with three values: a plain deploy finds the Project or refuses, `deploy --create` finds it or creates it, and destroy finds it or reports that nothing is deployed. The mode is threaded from a new `create` option on the `deploy` operation and `prisma deploy --create` through `LocateContainerInput` and the extension's `ensureContainer`. A miss without `--create` is a structured `DEPLOY.PROJECT_NOT_FOUND` error with the message from the design notes. The decision records on environment resolution and on full-path node addresses are amended, deploying guide and core-concepts skill updated, PR 355 closed.
 
 - **Builds on:** slices 1 and 2 in production.
 - **Hands to:** close-out.

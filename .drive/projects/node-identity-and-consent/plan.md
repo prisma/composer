@@ -10,7 +10,7 @@ Handoff plan. The slices below are the phases from the design, in the order they
 
 ### Phase 2 — Separate identity from label (Composer, then control plane)
 
-Every node definition takes `logicalId` (required) and `name` (optional); Load uses `logicalId` for the address; the single-string form fails to load with an error naming the fix; `--name` is removed from `prisma deploy`; guides, examples and the core-concepts skill move to the two-field form; a new decision record states the model and amends the records on node naming, stage resolution and node addresses. Then the control plane: the setup-PR generator writes the two-field root with a hoisted `logicalId` constant and a one-line comment, and the module-file inspector reads that constant. One Composer release.
+Every node definition takes `logicalId` (required) and `name` (optional); Load uses `logicalId` for the address; the single-string form fails to load with an error naming the fix; `--name` is removed from `prisma deploy`; guides, examples and the core-concepts skill move to the two-field form; a new decision record states the model and amends the records on node naming, environment resolution and node addresses. Then the control plane: the setup-PR generator writes the two-field root with a hoisted `logicalId` constant and a one-line comment, and the module-file inspector reads that constant. One Composer release.
 
 - **Builds on:** `deployment-identity` in production.
 - **Hands to:** phase 3 — Composer can tell a label edit from an identity edit.
