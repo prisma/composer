@@ -3,7 +3,7 @@
   "version": "0.36.0",
   "private": true,
   "type": "module",
-  "description": "The path-containment predicate and bundle symlink validation shared by assembly and packaging (ADR-0047's boundary, defined once).",
+  "description": "The path-containment predicate, bundle symlink validation and boot-wrapper build shared by assembly and packaging (ADR-0047's boundary, defined once).",
   "exports": {
     ".": "./dist/index.mjs",
     "./package.json": "./package.json"
@@ -13,6 +13,9 @@
     "build": "tsdown",
     "clean": "rm -rf dist",
     "test": "bun test"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.1"
   },
   "devDependencies": {
     "typescript": "^6.0.3",

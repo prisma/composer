@@ -15,8 +15,7 @@
   },
   "dependencies": {
     "@internal/bundle-paths": "workspace:0.36.0",
-    "@internal/core": "workspace:0.36.0",
-    "esbuild": "^0.28.1"
+    "@internal/core": "workspace:0.36.0"
   },
   "devDependencies": {
     "@internal/tsdown-config": "workspace:0.36.0",
