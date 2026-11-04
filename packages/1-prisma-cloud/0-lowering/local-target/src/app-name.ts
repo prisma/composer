@@ -23,7 +23,9 @@ export function appNameOf(container: ContainerInstance | undefined): string {
 }
 
 /** The app and environment local dev runs, from the extension's resolved container. */
-export function appScopeOf(input: LocalTargetProvidersInput): AppScope {
+export function appScopeOf(
+  input: Pick<LocalTargetProvidersInput, 'container' | 'devDir'>,
+): AppScope {
   if (input.container === undefined) throw containerNotResolvedError();
   return {
     devDir: input.devDir,

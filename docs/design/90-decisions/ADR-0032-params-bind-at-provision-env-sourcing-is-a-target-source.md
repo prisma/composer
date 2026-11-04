@@ -2,6 +2,14 @@
 
 Amended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module no longer declares `paramNeed()` slots; values reach a module through its `input`. `envParam` is unchanged.
 
+Amended 2026-10-29 (module-input project, third slice): `envParam('NAME')` returns a value, `ParamSource & Value<string>`, that is also the source. In a service's input binding and a service's params the target receives the source, so both work as before: an input leaf is read from the deploying shell when the target serializes it, and a param keeps its pointer row, read at boot. In a module's input and as a `resolve()` dependency, its real value is the variable's value at deploy, read from the process environment; an unset or empty variable has none. `paramSource()` takes an optional `label`, `poolKey`, `sentinel` and `redacted`.
+
+Amended 2026-10-30 (module-input project, fourth slice): `envParam('NAME')` reads `NAME` from the config pool everywhere it read the deploy shell: in a service's input when the target serializes it, in a module's input and `resolve()`, and when preflight fills the platform variable an `envParam()` param points at. The value must be text.
+
+Amended 2026-10-30 (module-input project, fifth slice): `paramNeed()`, `ParamNeed`, `ParamNeeds` and `ParamNeedBindings` are removed, with the module `params` slot. A module takes a value as a field of its `input`, which takes a literal as well as a source, so the rule that a module param slot takes only a source is gone with the slot. A service's per-key `params`, `paramSource()` and `envParam()` are unchanged.
+
+Amended 2026-10-30 (module-input project, seventh slice): `paramSource()` no longer takes `sentinel`, which the third-slice note above lists. Its `redacted` option alone sets the pointer's kind: `true` makes the source a secret pointer, and without it the source is a plain pointer ([ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)).
+
 ## Decision
 
 A config param can be bound at `provision()` time — to a literal value or to a

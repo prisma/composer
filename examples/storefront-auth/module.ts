@@ -11,11 +11,10 @@ import storefrontService from '@storefront-auth/storefront';
  * that contract.
  */
 export default module('storefront-auth', ({ provision }) => {
-  // The ROOT binds the auth module's secret need to the platform env var
-  // AUTH_SIGNING_SECRET (ADR-0029); preflight fill-missing provisions it from
-  // the deploy shell (the CI runner env).
+  // The root binds the auth module's signingKey to the platform variable
+  // AUTH_SIGNING_SECRET; preflight fills it from the secrets pool when missing.
   const auth = provision(authModule, {
-    secrets: { signingKey: envSecret('AUTH_SIGNING_SECRET') },
+    input: { signingKey: envSecret('AUTH_SIGNING_SECRET') },
   });
   provision(storefrontService, { deps: { auth: auth.rpc } });
 });

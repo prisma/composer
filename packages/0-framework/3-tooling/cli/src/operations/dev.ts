@@ -23,6 +23,8 @@ export type DevEvent =
   | { readonly kind: 'watch-error'; readonly message: string }
   /** `prisma.config.ts` changed. The session keeps the config it started with and stops rebuilding until it is restarted. */
   | { readonly kind: 'config-changed'; readonly file: string }
+  /** What the `config` or `secrets` adapters return changed since the session started. The session keeps the values it started with and stops rebuilding until it is restarted. */
+  | { readonly kind: 'values-changed' }
   /** The app keeps running, still watching. */
   | {
       readonly kind: 'converge-failed';

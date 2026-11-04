@@ -70,3 +70,6 @@ next-env.d.ts
 # Deploy working dir — assembled artifacts staged per graph address (ADR-0005)
 .prisma-composer/
 wip/
+
+# Drive code-review artifacts are local working files, never committed
+.drive/**/reviews/

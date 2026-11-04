@@ -7,6 +7,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { App, Deployment } from '@alchemy.run/prisma';
 import type { ContainerInstance } from '@internal/core/config';
 import {
   computeClient,
@@ -16,7 +17,6 @@ import {
 } from '@internal/dev-emulators';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { packageComputeArtifact } from '@internal/lowering/compute';
-import { App, Deployment } from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import { ensureAppInstances } from '../app-instances.ts';
 import { LocalAppProvider, LocalDeploymentProvider } from '../compute.ts';
@@ -98,7 +98,13 @@ async function deploy(
 ): Promise<Deployment['Attributes']> {
   const provider = await Effect.runPromise(
     Deployment.Provider.pipe(
-      Effect.provide(LocalDeploymentProvider({ container: forContainer, devDir })),
+      Effect.provide(
+        LocalDeploymentProvider({
+          container: forContainer,
+          devDir,
+          pools: { config: {}, secrets: {} },
+        }),
+      ),
     ),
   );
   return Effect.runPromise(
@@ -113,7 +119,11 @@ async function deploy(
 
 async function deploymentDiff(devDir: string, output: Deployment['Attributes']): Promise<unknown> {
   const provider = await Effect.runPromise(
-    Deployment.Provider.pipe(Effect.provide(LocalDeploymentProvider({ container, devDir }))),
+    Deployment.Provider.pipe(
+      Effect.provide(
+        LocalDeploymentProvider({ container, devDir, pools: { config: {}, secrets: {} } }),
+      ),
+    ),
   );
   const diff = provider.diff;
   if (!diff) throw new Error('the local Deployment provider has no diff');
@@ -122,7 +132,9 @@ async function deploymentDiff(devDir: string, output: Deployment['Attributes']):
 
 async function appProvider(devDir: string) {
   return Effect.runPromise(
-    App.Provider.pipe(Effect.provide(LocalAppProvider({ container, devDir }))),
+    App.Provider.pipe(
+      Effect.provide(LocalAppProvider({ container, devDir, pools: { config: {}, secrets: {} } })),
+    ),
   );
 }
 

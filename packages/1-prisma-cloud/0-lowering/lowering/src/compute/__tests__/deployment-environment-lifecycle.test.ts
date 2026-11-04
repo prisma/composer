@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
+import * as Prisma from '@alchemy.run/prisma';
 import * as Output from 'alchemy/Output';
-import * as Prisma from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import { inMemoryState } from 'alchemy/State/InMemoryState';
 import * as Core from 'alchemy/Test/Core';

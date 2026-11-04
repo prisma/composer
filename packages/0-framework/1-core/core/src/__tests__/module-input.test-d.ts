@@ -8,7 +8,7 @@ import type {
   SecretString,
   Value,
 } from '../exports/index.ts';
-import { module, SecretBox, secret, secretSource } from '../exports/index.ts';
+import { module, SecretBox, secretSource } from '../exports/index.ts';
 
 type ShopOut = {
   EMAIL_FROM: string;
@@ -69,12 +69,7 @@ test('a union schema exposes only the keys every member has', () => {
 
 test('a module that declares no input receives undefined', () => {
   expectTypeOf<
-    ModuleContext<
-      Record<never, never>,
-      Record<never, never>,
-      Record<never, never>,
-      undefined
-    >['input']
+    ModuleContext<Record<never, never>, undefined>['input']
   >().toEqualTypeOf<undefined>();
   module('plain', {}, ({ input }) => {
     expectTypeOf(input).toEqualTypeOf<undefined>();
@@ -125,18 +120,6 @@ test('provision() requires input exactly when the module declares it', () => {
     provision(email, {});
     // @ts-expect-error the module declares no input
     provision(plainModule, { input: {} });
-  });
-});
-
-test('a module that declares secrets and input needs both bound', () => {
-  const both = module('both', { secrets: { key: secret() }, input: emailSchema }, () => {});
-  module('shop', ({ provision }) => {
-    provision(both, {
-      input: { from: 'a', key: secretSource({ name: 'KEY' }) },
-      secrets: { key: secretSource({ name: 'OTHER' }) },
-    });
-    // @ts-expect-error the secrets slot is unbound
-    provision(both, { id: 'two', input: { from: 'a', key: secretSource({ name: 'KEY' }) } });
   });
 });
 

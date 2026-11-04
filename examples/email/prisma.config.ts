@@ -6,8 +6,7 @@
  * deploy; they resolve from this app's own dependencies.
  */
 
-import 'dotenv/config';
-import { defineConfig as composer } from '@prisma/composer/config';
+import { defineConfig as composer, dotenv, environmentVariables } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
 import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control';
 import { definePrismaConfig } from 'prisma/config';
@@ -17,5 +16,7 @@ export default definePrismaConfig({
     entry: './module.ts',
     extensions: [prismaCloud(), nodeBuild()],
     state: prismaState(),
+    config: [dotenv(), environmentVariables()],
+    secrets: [dotenv(), environmentVariables()],
   }),
 });

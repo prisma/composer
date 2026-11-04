@@ -8,6 +8,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Connection, Database } from '@alchemy.run/prisma';
 import type { ContainerInstance, LocalTargetProvidersInput } from '@internal/core/config';
 import {
   EMULATORS_DIR_ENV,
@@ -15,7 +16,6 @@ import {
   postgresClient,
   stopDaemon,
 } from '@internal/dev-emulators';
-import { Connection, Database } from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { deleteAppInstances, readEmulatorInstances } from '../emulator-instances.ts';
@@ -69,7 +69,11 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
       input: { appName: APP, environment: 'dev' },
       serialize: () => 'x',
     };
-    input = { container, devDir: path.join(root, 'project', '.prisma-composer', 'dev', 'dev') };
+    input = {
+      container,
+      devDir: path.join(root, 'project', '.prisma-composer', 'dev', 'dev'),
+      pools: { config: {}, secrets: {} },
+    };
   });
 
   afterEach(async () => {

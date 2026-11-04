@@ -8,11 +8,9 @@ import {
   isNode,
   type ModuleBuilder,
   module,
-  paramNeed,
   ResourceNodeBase,
   type ResourceProps,
   resource,
-  secret,
   secretSource,
   service,
 } from '../node.ts';
@@ -253,8 +251,9 @@ describe("Load's second pass", () => {
       });
 
     expect(loadError(() => Load(returning(secretSource({ name: 'X' })), staging)).message).toBe(
-      'The resolve() function for input key "greeting" of service "shop.echo" returned a secret or ' +
-        'param source. Bind envSecret() or envParam() directly; resolve() returns plain data.',
+      'The resolve() function for input key "greeting" of service "shop.echo" returned a source, ' +
+        'such as envSecret() or envParam() called inside the function. resolve() returns plain ' +
+        'data; bind a source directly.',
     );
     expect(
       loadError(() =>
@@ -539,40 +538,6 @@ describe('where a value is refused', () => {
     expect(loadError(() => Load(root, staging)).message).toBe(
       'The deps for "shop.web.db" are bound to a value. A value can configure a node, never ' +
         'decide its edges: the graph is the same whatever inputs Composer is given (ADR-0062).',
-    );
-  });
-
-  test('a value as a module secrets binding fails', () => {
-    const auth = module('auth', { secrets: { signingKey: secret() } }, ({ secrets, provision }) => {
-      provision(echoService(), { input: { key: secrets.signingKey } });
-      return {};
-    });
-    const root = module('shop', ({ environment, provision }) => {
-      provision(auth, {
-        secrets: { signingKey: resolve([environment.name], ([name]) => name) as never },
-      });
-    });
-
-    expect(loadError(() => Load(root, staging)).message).toBe(
-      'The secrets for "shop.auth" bind "signingKey" to a value. A value is not a secret source; ' +
-        "bind envSecret('NAME') or a forwarded ctx.secrets ref.",
-    );
-  });
-
-  test('a value as a module params binding fails', () => {
-    const auth = module('auth', { params: { region: paramNeed() } }, ({ params, provision }) => {
-      provision(echoService(), { input: {}, params: { label: params.region } });
-      return {};
-    });
-    const root = module('shop', ({ environment, provision }) => {
-      provision(auth, {
-        params: { region: resolve([environment.name], ([name]) => name) as never },
-      });
-    });
-
-    expect(loadError(() => Load(root, staging)).message).toBe(
-      'The params for "shop.auth" bind "region" to a value. A module param slot takes a param ' +
-        "source; bind envParam('NAME') or a forwarded ctx.params ref.",
     );
   });
 });

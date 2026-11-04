@@ -24,8 +24,7 @@ import type { Deps, Expose, HydratedDeps, InputValueOf, RunnableServiceNode } fr
 export type LoadOverrides<
   D extends Deps,
   I extends StandardSchemaV1 | undefined,
-> = HydratedDeps<D> &
-  (I extends StandardSchemaV1 ? { input: StandardSchemaV1.InferOutput<I> } : { input?: never });
+> = HydratedDeps<D> & (I extends StandardSchemaV1 ? { input: InputValueOf<I> } : { input?: never });
 
 /**
  * Returns a service node whose `load()` yields the dependency doubles and

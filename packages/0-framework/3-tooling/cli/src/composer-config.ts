@@ -4,7 +4,12 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { ExtensionDescriptor, PrismaAppConfig, StateDescriptor } from '@internal/core/config';
+import type {
+  ConfigAdapter,
+  ExtensionDescriptor,
+  PrismaAppConfig,
+  StateDescriptor,
+} from '@internal/core/config';
 
 /** Composer's configuration and the `prisma.config.ts` that declares it. */
 export interface ComposerConfigSource {
@@ -115,7 +120,13 @@ const stateInvalid: ConfigFinding = {
   field: 'state',
 };
 
-const SECTION_FIELDS: ReadonlySet<string> = new Set(['entry', 'extensions', 'state']);
+const SECTION_FIELDS: ReadonlySet<string> = new Set([
+  'entry',
+  'extensions',
+  'state',
+  'config',
+  'secrets',
+]);
 
 const entryInvalid: ConfigFinding = {
   code: 'CONFIG.FIELD_INVALID',
@@ -140,8 +151,8 @@ function unknownField(key: string): ConfigFinding {
     summary: `The \`composer\` section has no field \`${key}\`.`,
     fix:
       key === 'composer'
-        ? 'Pass the `composer` property of the prisma.config.ts export, not the whole export. The section takes only `entry`, `extensions` and `state`.'
-        : `Remove \`${key}\`. The section takes only \`entry\`, \`extensions\` and \`state\`.`,
+        ? 'Pass the `composer` property of the prisma.config.ts export, not the whole export. The section takes only `entry`, `extensions`, `state`, `config` and `secrets`.'
+        : `Remove \`${key}\`. The section takes only \`entry\`, \`extensions\`, \`state\`, \`config\` and \`secrets\`.`,
     field: key,
   };
 }
@@ -209,6 +220,36 @@ function checkExtensions(value: unknown): {
   return { findings, extensions };
 }
 
+function isAdapterList(value: unknown): value is readonly ConfigAdapter[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'function');
+}
+
+function checkAdapters(list: 'config' | 'secrets', value: unknown): ConfigFinding[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    return [
+      {
+        code: 'CONFIG.FIELD_INVALID',
+        summary: `\`composer.${list}\` must be an array of adapters.`,
+        fix: `Set \`${list}\` to a list of adapters, e.g. \`${list}: [dotenv(), environmentVariables()]\`, imported from '@prisma/composer/config'.`,
+        field: list,
+      },
+    ];
+  }
+  return value.flatMap((entry, index): ConfigFinding[] =>
+    typeof entry === 'function'
+      ? []
+      : [
+          {
+            code: 'CONFIG.FIELD_INVALID',
+            summary: `\`composer.${list}[${index}]\` must be an adapter: a function that receives the environment and returns its values.`,
+            fix: 'Put an adapter here, e.g. `dotenv()`.',
+            field: `${list}[${index}]`,
+          },
+        ],
+  );
+}
+
 function checkFields(section: Record<string, unknown>): CheckedSection {
   if (Object.hasOwn(section, 'configPath')) {
     return {
@@ -243,11 +284,27 @@ function checkFields(section: Record<string, unknown>): CheckedSection {
   const entryValid = entry === undefined || (typeof entry === 'string' && entry.length > 0);
   if (!entryValid) findings.push(entryInvalid);
 
+  const config = section['config'];
+  const secrets = section['secrets'];
+  findings.push(...checkAdapters('config', config), ...checkAdapters('secrets', secrets));
+
   const [first, ...rest] = findings;
-  if (first === undefined && isStateDescriptor(state) && entryValid) {
+  if (
+    first === undefined &&
+    isStateDescriptor(state) &&
+    entryValid &&
+    (config === undefined || isAdapterList(config)) &&
+    (secrets === undefined || isAdapterList(secrets))
+  ) {
     return {
       ok: true,
-      value: { extensions: checked.extensions, state, ...(entry === undefined ? {} : { entry }) },
+      value: {
+        extensions: checked.extensions,
+        state,
+        ...(entry === undefined ? {} : { entry }),
+        ...(config === undefined ? {} : { config }),
+        ...(secrets === undefined ? {} : { secrets }),
+      },
     };
   }
   return { ok: false, findings: [first ?? stateInvalid, ...rest] };

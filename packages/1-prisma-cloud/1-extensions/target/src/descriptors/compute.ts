@@ -1,5 +1,6 @@
 /** The `compute` node kind's descriptor: the four service hooks — provision, serialize, package, deploy — plus `reserve`, which stands in for the last two when the service runs a dev server (ADR-0056). */
 
+import * as Prisma from '@alchemy.run/prisma';
 import { isParamSource } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
 import {
@@ -8,7 +9,6 @@ import {
   packageComputeArtifact,
 } from '@internal/lowering';
 import * as Output from 'alchemy/Output';
-import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { GeneratedParam } from '../generated-param-resource.ts';
@@ -150,7 +150,7 @@ interface EnvRow {
 /**
  * The report's two lines of honesty (ADR-0042): the serialized input
  * document (secret-free by construction — every secret leaf is a `$secret`
- * pointer) and every binding key that resolved absent in the deploy shell (a
+ * pointer) and every binding key that resolved absent in the config pool (a
  * possible typo'd variable name). Newlines in a detail value render as one
  * line per entry.
  */
@@ -256,7 +256,10 @@ export function computeDescriptor(
           svc,
           address,
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
-          { absentSecrets: o().preflight.absentSecrets },
+          {
+            absentSecrets: o().preflight.absentSecrets,
+            ...(ctx.opts.configPool !== undefined ? { env: ctx.opts.configPool } : {}),
+          },
         );
         if (inputRow !== undefined) {
           // Each `$secret` pointer in the document names an OPERATOR-owned

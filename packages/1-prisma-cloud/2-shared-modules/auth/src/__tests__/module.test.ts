@@ -3,16 +3,22 @@
  * are BOUNDARY deps the root supplies (dedicated vs shared db, and which
  * email module instance, are the root's call), the instance secret rides the
  * service's `input` document bound to `generatedParam()` inside the factory
- * (consumers see no secret), the `baseUrl` boundary param forwards down into
- * that same input, and the three ports wire to consumers independently
+ * (consumers see no secret), the `baseUrl` input passes into that same input,
+ * and the three ports wire to consumers independently
  * (least-privilege by wiring).
  */
 import { describe, expect, test } from 'bun:test';
-import { isParamSource, isSecretSource, Load, module, paramSource } from '@internal/core';
+import { Load, module, type Pointer, type Value } from '@internal/core';
 import { emailSendContract } from '@internal/email';
 import { rawHttp } from '@internal/http';
 import node from '@internal/node';
-import { compute, isGeneratedParamSource } from '@internal/prisma-cloud';
+import {
+  compute,
+  envParam,
+  isGeneratedParamSource,
+  isOriginParamSource,
+  serviceOrigin,
+} from '@internal/prisma-cloud';
 import { dataContract, postgres } from '@internal/prisma-cloud/orm';
 import { rpc } from '@internal/service-rpc';
 import { auth } from '../auth-module.ts';
@@ -20,12 +26,6 @@ import { authAdminContract, authSessionContract, jwtVerifier } from '../contract
 import packContractJson from '../pack/contract.json' with { type: 'json' };
 
 const build = node({ module: import.meta.url, entry: '../dist/x.mjs' });
-
-/** The opaque source payload of an input leaf (an `envParam`/`envSecret` name), or `undefined` for a literal. */
-function sourcePayload(binding: unknown): unknown {
-  if (isParamSource(binding) || isSecretSource(binding)) return binding.payload;
-  return undefined;
-}
 
 /** The object input binding a root provisioned for one service address (ADR-0042). */
 function serviceBindingOf(
@@ -58,14 +58,16 @@ const sessionConsumer = () =>
 const opsConsumer = () =>
   compute({ name: 'opsConsumer', deps: { admin: rpc(authAdminContract) }, build });
 
-function rootWithAuth() {
+function rootWithAuth(
+  baseUrl: Value<string | Pointer<string>> | string = serviceOrigin('root.app'),
+) {
   return module('root', {}, ({ provision }) => {
     const db = provision(database(), { id: 'database' });
     const mail = provision(mailProvider(), { id: 'mail' });
     const authRef = provision(auth(), {
       id: 'auth',
       deps: { db, email: mail.send },
-      params: { baseUrl: paramSource('AUTH_BASE_URL') },
+      input: { baseUrl },
     });
     provision(apiConsumer(), { id: 'app', deps: { authApi: authRef.api, verifier: authRef.api } });
     provision(sessionConsumer(), { id: 'profile', deps: { session: authRef.session } });
@@ -106,10 +108,22 @@ describe('auth()', () => {
     expect(isGeneratedParamSource(binding['secret'])).toBe(true);
   });
 
-  test('forwards the baseUrl boundary param down into the service input', () => {
+  test("the baseUrl input reaches the service's input: serviceOrigin() as its source", () => {
     const graph = Load(rootWithAuth());
     const binding = serviceBindingOf(graph.inputBindings);
-    expect(sourcePayload(binding['baseUrl'])).toBe('AUTH_BASE_URL');
+    expect(isOriginParamSource(binding['baseUrl'])).toBe(true);
+  });
+
+  test('an envParam() baseUrl reaches the service as its value at deploy', () => {
+    const graph = Load(rootWithAuth(envParam('AUTH_BASE_URL')), {
+      configPool: { AUTH_BASE_URL: 'https://app.example' },
+    });
+    expect(serviceBindingOf(graph.inputBindings)['baseUrl']).toBe('https://app.example');
+  });
+
+  test('a literal baseUrl reaches the service unchanged', () => {
+    const graph = Load(rootWithAuth('https://app.example'));
+    expect(serviceBindingOf(graph.inputBindings)['baseUrl']).toBe('https://app.example');
   });
 
   test("signUp rides the service input as a literal: 'open' by default, 'closed' when asked", () => {
@@ -121,7 +135,7 @@ describe('auth()', () => {
       provision(auth({ signUp: 'closed' }), {
         id: 'auth',
         deps: { db, email: mail.send },
-        params: { baseUrl: paramSource('AUTH_BASE_URL') },
+        input: { baseUrl: serviceOrigin('root.app') },
       });
       return {};
     });
@@ -164,7 +178,7 @@ describe('auth()', () => {
         provision(auth({ name: 'identity' }), {
           id: 'identity',
           deps: { db, email: mail.send },
-          params: { baseUrl: paramSource('AUTH_BASE_URL') },
+          input: { baseUrl: serviceOrigin('root.app') },
         });
         return {};
       }),

@@ -7,7 +7,7 @@ of the dependency graph rather than luck.
 
 The postgres family (`Project`, `Database`, `Connection`), the compute
 family (`App`, `Deployment`, `EnvironmentVariable`) and the bucket family
-(`Bucket`, `BucketAccessKey`) are **upstream alchemy's** (`alchemy/Prisma`), not
+(`Bucket`, `BucketAccessKey`) are **upstream alchemy's** (`@alchemy.run/prisma`), not
 ours: Composer registers their providers and binds their props. What
 `@internal/lowering` still owns is the artifact packager, `ServiceKey`, and the
 hosted state store.
@@ -82,11 +82,11 @@ and manual cleanup).
 ## The resource inventory
 
 Each row is a resource type the lowering binds. The `Prisma.*` families are
-upstream `alchemy/Prisma` classes (ADR-0048) — Composer registers them in its
+upstream `@alchemy.run/prisma` classes (ADR-0048) — Composer registers them in its
 provider collection and defines resources only where no Management API exists
 behind them.
 
-| Resource (upstream `alchemy/Prisma`) | PDP entity it manages | Props (in) | Outputs (out) | Notes |
+| Resource (upstream `@alchemy.run/prisma`) | PDP entity it manages | Props (in) | Outputs (out) | Notes |
 | --- | --- | --- | --- | --- |
 | `Prisma.Project` | Project | name | projectId | **one per Prisma Composer application**; resolved by the CLI before Alchemy runs, so no lowering yields one |
 | `Prisma.Database` | Database | project, name?, region, branchId?, logicalId? | databaseId, connection strings | one per Module-provisioned postgres resource; never the project default; a branch-attached database is created with `branchId` and no display name (upstream refuses the combination — see [deploying.md](../../guides/deploying.md)) |
@@ -168,7 +168,7 @@ Every role is a noun naming the piece: `deployment`, `env`, `generated`, `servic
 
 **Platform names.** Every platform name Composer writes is the node's address (`shop.catalog`, `shop.auth.api`): the App `displayName`, the branchless Database `name`, and the Connection, Bucket and BucketAccessKey `name`. They are labels, never identity. Upstream adds `-` and a 12-character token to every Connection name, so a Connection's platform name is the address plus that suffix. `validatePlatformName` checks the address against each kind's limit (Connection 52, so the address fits beside the suffix in the platform's 65; Bucket 100; App 256; an access key has none) and fails naming the address; it never shortens a name. A hosted Database takes no name from Composer, because upstream refuses a name together with branch attachment; upstream derives its physical name from the resource ID and updates it in place.
 
-On the upgrade deploy every one of these names changes from the short address to the full one. Upstream `alchemy/Prisma` replaces, rather than updates:
+On the upgrade deploy every one of these names changes from the short address to the full one. Upstream `@alchemy.run/prisma` replaces, rather than updates:
 
 - a Connection when its `name` or database changes, which mints new credentials;
 - a BucketAccessKey when its `name`, `role` or bucket changes, which mints new credentials;

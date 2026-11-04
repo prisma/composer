@@ -119,5 +119,6 @@ export function loadService(root: ServiceNode, rootId: NodeId): Graph {
     authoredEdges: [],
     inputBindings: [],
     params: [],
+    secretSources: [],
   };
 }

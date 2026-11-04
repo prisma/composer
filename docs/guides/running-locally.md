@@ -118,13 +118,27 @@ the same port; you never set a `COMPOSER_*` variable yourself. On top of that
 it keeps your shell's environment (`NODE_OPTIONS`, proxy settings), which a
 deployed artifact does not; Composer's values win over the shell's.
 
-**Secrets come from the environment `prisma` runs in, not from the dev server's own `.env` loading.** Composer reads each secret before the dev server starts, so a secret that is only in a `.env` that Next.js loads is unset as far as Composer knows: if the service requires it, `prisma dev` stops and names it; if it is optional, the service sees the field as absent. Load `.env` where `prisma` reads it, at the top of `prisma.config.ts`, after installing the `dotenv` package:
+**Secrets come from the adapters in `prisma.config.ts`, not from the dev server's own `.env` loading.** Composer reads each secret before the dev server starts, so a secret that is only in a `.env` that Next.js loads is unset as far as Composer knows: if the service requires it, `prisma dev` stops and names it; if it is optional, the service sees the field as absent. List `dotenv()` in `config` and `secrets`, so Composer reads the `.env` files itself:
 
 ```ts
-import 'dotenv/config';
+// prisma.config.ts
+import { defineConfig as composer, dotenv, environmentVariables } from '@prisma/composer/config';
+import { nodeBuild } from '@prisma/composer/node/control';
+import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control';
+import { definePrismaConfig } from 'prisma/config';
+
+export default definePrismaConfig({
+  composer: composer({
+    entry: './module.ts',
+    extensions: [prismaCloud(), nodeBuild()],
+    state: prismaState(),
+    config: [dotenv(), environmentVariables()],
+    secrets: [dotenv(), environmentVariables()],
+  }),
+});
 ```
 
-(or `export` the variables in your shell). A changed value restarts the dev server on the next `prisma dev`.
+`.env.dev` holds values only the environment `dev` reads. Without a `config` or `secrets` list, Composer reads the shell, so `import 'dotenv/config'` at the top of `prisma.config.ts` also works. A changed value restarts the dev server on the next `prisma dev`.
 
 What else changes for such a service:
 
@@ -386,22 +400,38 @@ can start and stop it freely alongside a running `dev`.
 Everything above the cloud boundary is real: your actual service code, real
 databases you can migrate and query, real object storage. What's swapped are
 the *providers* underneath — local emulators stand in for Prisma Cloud, so no
-token, workspace, or network is involved. Three consequences worth knowing:
+token, workspace, or network is involved. Five consequences worth knowing:
 
-- **Secrets come from your environment variables.** `prisma dev` reads each secret from the environment variables it runs with, never makes one up, and never reuses a value from an earlier run. Either export it in the shell you run `prisma dev` from, or keep it in a `.env` file and load that file from `prisma.config.ts`: install the `dotenv` package (`npm install dotenv`, or your package manager's equivalent), then make `import 'dotenv/config'` the first line of `prisma.config.ts`. `process.loadEnvFile('.env')` also works, but only when the CLI runs under Node, not Bun.
+- **Secrets come from the `secrets` adapters.** `prisma dev` reads each secret from what the `secrets` adapters in `prisma.config.ts` return, never makes one up, and never reuses a value from an earlier run. List `dotenv()` in `config` and `secrets`, with `environmentVariables()` after it to keep the shell:
 
   ```ts
   // prisma.config.ts
-  import 'dotenv/config';
+  import { defineConfig as composer, dotenv, environmentVariables } from '@prisma/composer/config';
+  import { nodeBuild } from '@prisma/composer/node/control';
+  import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control';
+  import { definePrismaConfig } from 'prisma/config';
+
+  export default definePrismaConfig({
+    composer: composer({
+      entry: './module.ts',
+      extensions: [prismaCloud(), nodeBuild()],
+      state: prismaState(),
+      config: [dotenv(), environmentVariables()],
+      secrets: [dotenv(), environmentVariables()],
+    }),
+  });
   ```
+
+  `dotenv()` reads `.env`, `.env.local`, `.env.dev` and `.env.dev.local` beside `prisma.config.ts` for the environment `dev`, a later file winning. `.env.dev` holds values only the environment `dev` reads. With no `secrets` list, `prisma dev` reads the shell it runs in, so `import 'dotenv/config'` as the first line of `prisma.config.ts` also works.
 
   If a secret your service's input schema requires is unset or empty, `prisma dev` stops before it starts anything and names the variable and the service. If the schema marks the secret optional, the service starts and sees that field as absent. Change a value and run `prisma dev` again, without `--fresh`, and the services that read it restart with the new value.
 
-  **A `.env` loaded by `prisma.config.ts` is also read by `prisma deploy`.** Deploy uploads any secret the target environment does not have yet from that environment, so a local-only value in `.env` becomes the hosted value. Keep local-only values out of `.env` before you deploy, or deploy from a shell where it is not loaded.
+  **`.env` and `.env.local` are read by every environment, including `prisma deploy` to `production`.** Deploy uploads any secret the target environment does not have yet, so a local-only secret in those files becomes the hosted value. Put local-only values in `.env.dev` or `.env.dev.local`.
 
   A `.env` that only your framework loads (Next.js, for example) does not count, because Composer reads each secret before the dev server starts (see [Dev servers](#dev-servers)).
 
   Each service gets only the secrets and env-sourced params its own input and params point at. Code that reads `process.env.X` directly, where `X` is bound by another service, gets nothing.
+- Changing a value an adapter reads while `prisma dev` runs pauses rebuilds at the next rebuild, with a message; restart `prisma dev` to use the new values.
 - **The emulators outlive a session.** They're shared, machine-wide daemons,
   so your data survives `Ctrl-C` and even a reboot until you `--fresh`. That's
   what makes restarts warm.

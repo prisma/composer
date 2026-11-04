@@ -45,11 +45,12 @@ function misuse(origin: InputOrigin, what: string): LoadError {
   return new LoadError(
     `${field} of module "${origin.module}" is a value, not its real value, and ${what}. ` +
       'A module body can only pass an input field on: into a provision() binding or as a resolve() dependency. ' +
-      `To compute with it, list it: resolve([${field}], ([v]) => …).`,
+      `To compute with it, it must be a plain field, not a wrapped or secret one; list it: resolve([${field}], ([v]) => …).`,
   );
 }
 
-function primitiveMisuse(hint: string): string {
+/** What a coercion with `hint` did to a value, worded for a misuse error. */
+export function primitiveMisuse(hint: string): string {
   switch (hint) {
     case 'string':
       return 'it was turned into text (a template literal or String())';

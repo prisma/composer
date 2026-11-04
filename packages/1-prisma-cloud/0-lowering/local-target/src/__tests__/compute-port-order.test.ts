@@ -3,9 +3,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { App } from '@alchemy.run/prisma';
 import type { ContainerInstance } from '@internal/core/config';
 import { EMULATORS_DIR_ENV, ensureDaemon, stopDaemon } from '@internal/dev-emulators';
-import { App } from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import { ensureAppInstances } from '../app-instances.ts';
 import { LocalAppProvider } from '../compute.ts';
@@ -59,7 +59,9 @@ const reconcileInput = (id: string, news: Record<string, unknown>) =>
 
 async function reconcileApp(container: ContainerInstance, address: string): Promise<number> {
   const provider = await Effect.runPromise(
-    App.Provider.pipe(Effect.provide(LocalAppProvider({ container, devDir }))),
+    App.Provider.pipe(
+      Effect.provide(LocalAppProvider({ container, devDir, pools: { config: {}, secrets: {} } })),
+    ),
   );
   const attributes: App['Attributes'] = await Effect.runPromise(
     provider.reconcile(

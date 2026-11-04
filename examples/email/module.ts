@@ -1,27 +1,26 @@
 import { module } from '@prisma/composer';
-import { envParam, envSecret } from '@prisma/composer-prisma-cloud';
+import { envSecret } from '@prisma/composer-prisma-cloud';
 import { email } from '@prisma/composer-prisma-cloud/email';
+import { type } from 'arktype';
 import mailerService from './src/mailer/service.ts';
 
 /**
- * The email example: a `mailer` app backed by the `email()` module.
- * `deliveryMode`/`from` are module-boundary params bound to platform env
- * vars (production sets `resend`/`smtp`; preview sets `none` — no
- * topology change per environment); `deliveryCredential` is a boundary secret,
- * always required even in `none` mode (the junk-credential wart). The
- * module's `send`/`outbox` ports wire into the mailer's own dependencies —
- * nothing outside this file (and nothing in the mailer's tests) ever calls
- * the module's ports directly.
- *
- * A closed root: no boundary argument, no return — it only provisions.
+ * The email example: a `mailer` app backed by the `email()` module. The root's
+ * input comes from the config adapters in prisma.config.ts, and its schema
+ * checks the delivery mode before anything is created. The credential is a
+ * secret, bound with envSecret(); it is required even in `none` mode.
  */
-export default module('email-example', ({ provision }) => {
-  const mail = provision(email(), {
-    params: {
-      deliveryMode: envParam('EMAIL_DELIVERY_MODE'),
-      from: envParam('EMAIL_FROM'),
-    },
-    secrets: { deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') },
-  });
-  provision(mailerService, { deps: { email: mail.send, outbox: mail.outbox } });
-});
+export default module(
+  'email-example',
+  { input: type({ EMAIL_DELIVERY_MODE: "'resend' | 'smtp' | 'none'", EMAIL_FROM: 'string' }) },
+  ({ input, provision }) => {
+    const mail = provision(email(), {
+      input: {
+        deliveryMode: input.EMAIL_DELIVERY_MODE,
+        from: input.EMAIL_FROM,
+        deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
+      },
+    });
+    provision(mailerService, { deps: { email: mail.send, outbox: mail.outbox } });
+  },
+);

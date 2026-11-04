@@ -5,6 +5,8 @@
  * surface grows.) Pure barrel — no implementations live here.
  */
 
+export type { Pointer } from '@internal/foundation/pointer';
+export { isPlainPointer, isSecretPointer } from '@internal/foundation/pointer';
 export type { SecretString } from '@internal/foundation/secret';
 export { isSecretString, SecretBox } from '@internal/foundation/secret';
 export type {
@@ -15,7 +17,15 @@ export type {
   Params,
   Values,
 } from '../config.ts';
-export { configOf, inputManifest, number, param, paramManifest, string } from '../config.ts';
+export {
+  configOf,
+  inputManifest,
+  number,
+  param,
+  paramManifest,
+  secretSourceManifest,
+  string,
+} from '../config.ts';
 export type { Contract, ContractStyle } from '../contract.ts';
 export type {
   AuthoredEdge,
@@ -27,6 +37,7 @@ export type {
   NodeId,
   ParamBinding,
   PortEndpoint,
+  SecretSourceUse,
   ServiceInputBinding,
 } from '../graph.ts';
 export { assertAppName, Load, LoadError, RESOURCE_OUT_PORT } from '../graph.ts';
@@ -51,10 +62,8 @@ export type {
   ModuleOutputs,
   NODE,
   ParamBindings,
-  ParamNeed,
-  ParamNeedBindings,
-  ParamNeeds,
   ParamSource,
+  ParamSourceOptions,
   ProvisionedRef,
   ProvisionNeed,
   RefPort,
@@ -62,11 +71,9 @@ export type {
   ResourceProps,
   ResourcePropsMember,
   RunnableServiceNode,
-  SecretBindings,
-  SecretNeed,
   SecretSource,
-  Secrets,
   ServiceNode,
+  SourceOptions,
 } from '../node.ts';
 export {
   dependency,
@@ -76,15 +83,13 @@ export {
   isProvisionNeed,
   isSecretSource,
   module,
-  paramNeed,
   paramSource,
   provisionNeed,
   ResourceNodeBase,
   resource,
-  secret,
   secretSource,
   service,
   slotsOf,
 } from '../node.ts';
-export type { EnvironmentFacts, PlainData, RealValuesOf, Value } from '../value.ts';
+export type { EnvironmentFacts, PlainData, RealValuesOf, RuntimeValue, Value } from '../value.ts';
 export { isValue, resolve } from '../value.ts';
