@@ -371,8 +371,8 @@ Two kinds of Postgres dependency:
    `@prisma/orm-extension-pgvector/runtime`; other runtime options, such as
    `middleware`, go in the same object. Install the pack at exactly the
    `@prisma/orm-postgres` version: the pack pins the ORM's shared packages
-   to its own version, so a mismatch installs two copies that silently
-   reject each other's values. Composer never looks extensions up itself;
+   to its own version, so a mismatch installs two copies and Prisma ORM
+   refuses to start with `RUNTIME.MULTIPLE_ORM_COPIES`. Composer never looks extensions up itself;
    with `binding.client` instead, the first access throws
    "Contract requires extension pack(s) 'pgvector'".
 

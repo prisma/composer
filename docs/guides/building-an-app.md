@@ -299,9 +299,8 @@ needs no extensions.
 The exact version matters. The pack depends on the ORM's shared packages
 (`@prisma/orm-framework`, `@prisma/orm-family-sql`) at its own exact
 version, so a pack version different from the facade's installs a second
-copy of them. The runtime extension then comes from one copy and the client
-from the other, and the client rejects or mishandles it without a clear
-error.
+copy of them. Prisma ORM then refuses to start, with
+`RUNTIME.MULTIPLE_ORM_COPIES` naming each copy and where it is installed.
 
 ## Reusable Modules
 
