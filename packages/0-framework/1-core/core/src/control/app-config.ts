@@ -451,7 +451,7 @@ export type ConfigAdapter = (input: ConfigAdapterInput) => ConfigValues | Promis
 /** The app configuration (ADR-0062): what the `config` adapters return, merged by top-level key, a later adapter winning. It is the root's input, and what `envParam()` reads. */
 export type AppConfiguration = Readonly<Record<string, unknown>>;
 
-/** The app secrets (ADR-0062): what the `secrets` adapters return, merged the same way. Every value is text. Preflight fills a missing `envSecret()` platform variable from it, and `prisma dev` hands its second process the values the graph's `envSecret()`s name. Composer redacts its values wherever it prints. */
+/** The app secrets (ADR-0062): what the `secrets` adapters return, merged the same way. Every value is text. Preflight fills a missing `envSecret()` platform variable from it, and `prisma dev` hands its second process the values the graph's `envSecret()`s name. Composer redacts the values the graph's `envSecret()`s name wherever it prints. */
 export type AppSecrets = Readonly<Record<string, string>>;
 
 /** The app secrets an `envSecret()` in the graph names, each with text. `prisma dev`'s first process hands them to its second process in `PRISMA_COMPOSER_NAMED_SECRETS`. */

@@ -175,7 +175,7 @@ export function captureEngineFailure(): void {
   });
 }
 
-/** Parent half: the cause the child recorded, passed through `redact`, or undefined when it recorded none. The child redacts only what its own environment names as a credential; the parent knows every secret the command read. */
+/** Parent half: the cause the child recorded, passed through `redact`, or undefined when it recorded none. The child redacts only what its own environment names as a credential; the parent also knows the known secrets. */
 export function readEngineFailureCause(
   resultFilePath: string,
   redact: (text: string) => string,

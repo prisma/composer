@@ -17,7 +17,7 @@ import {
 
 const knowing = (...values: string[]): SecretRedaction => {
   const redaction = new SecretRedaction({});
-  redaction.addKnownSecrets(values);
+  redaction.addKnownSecrets(values.map((value) => ({ name: 'S', value })));
   return redaction;
 };
 
@@ -55,7 +55,7 @@ describe('SecretRedaction', () => {
     const redaction = knowing('first-secret');
     expect(redaction.redact('first-secret later-secret')).toBe('[redacted] later-secret');
 
-    redaction.addKnownSecrets(['later-secret']);
+    redaction.addKnownSecrets([{ name: 'LATER', value: 'later-secret' }]);
 
     expect(redaction.redact('first-secret later-secret')).toBe('[redacted] [redacted]');
   });
@@ -186,7 +186,10 @@ describe('the values a command learns are secrets', () => {
       ['WEBHOOK'],
     );
 
-    expect(values.sort()).toEqual(['w', 'w2']);
+    expect(values).toEqual([
+      { name: 'WEBHOOK', value: 'w' },
+      { name: 'WEBHOOK', value: 'w2' },
+    ]);
   });
 
   test('a shell value in the app secrets that no secrets key names is not redacted', () => {
@@ -209,18 +212,32 @@ describe('the values a command learns are secrets', () => {
   test('a credential-looking value is redacted but is not a known secret', () => {
     const redaction = new SecretRedaction({});
     redaction.addCredentialLookingValues(['looks-like-a-credential']);
-    redaction.addKnownSecrets(['under-a-secrets-key']);
+    redaction.addKnownSecrets([{ name: 'S', value: 'under-a-secrets-key' }]);
 
     expect(redaction.redact('looks-like-a-credential')).toBe('[redacted]');
     expect([...redaction.knownSecrets.values()]).toEqual(['under-a-secrets-key']);
   });
 
-  test('KnownSecrets finds a known secret anywhere in a text', () => {
-    const knownSecrets = new KnownSecrets(['secret-pw-77', '']);
+  test('KnownSecrets names a secret of eight characters or more found anywhere in a text', () => {
+    const knownSecrets = new KnownSecrets([
+      { name: 'DB_PASSWORD', value: 'secret-pw-77' },
+      { name: 'EMPTY', value: '' },
+    ]);
 
-    expect(knownSecrets.appearIn('postgres://shop:secret-pw-77@db/shop')).toBe(true);
-    expect(knownSecrets.appearIn('postgres://shop@db/shop')).toBe(false);
-    expect(new KnownSecrets().appearIn('')).toBe(false);
+    expect(knownSecrets.nameIn('postgres://shop:secret-pw-77@db/shop')).toBe('DB_PASSWORD');
+    expect(knownSecrets.nameIn('postgres://shop@db/shop')).toBeUndefined();
+    expect(new KnownSecrets().nameIn('')).toBeUndefined();
+  });
+
+  test('KnownSecrets names a secret of seven characters or fewer only when it is the whole text', () => {
+    const knownSecrets = new KnownSecrets([{ name: 'PLACEHOLDER', value: 'dev-pw7' }]);
+
+    expect(knownSecrets.nameIn('dev-pw7')).toBe('PLACEHOLDER');
+    expect(knownSecrets.nameIn('dev-pw7@example.com')).toBeUndefined();
+  });
+
+  test('a short known secret is still redacted inside a longer text', () => {
+    expect(knowing('dev').redact('dev@example.com')).toBe('[redacted]@example.com');
   });
 });
 

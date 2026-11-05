@@ -1,6 +1,7 @@
 /**
  * Pipeline step 9 (deploy-cli.md § The pipeline; design-notes.md's "Driving
- * Alchemy" call): run the generated stack file, with its output piped through redaction.
+ * Alchemy" call): run the generated stack file and, for programmatic hosts, pipe its
+ * output through redaction.
  *
  * Runs the bin of the `alchemy` the app's `@prisma/composer` depends on
  * (`resolveAlchemyBin`), started with Node (`nodeExecutable`). Never a
@@ -11,7 +12,9 @@
  * started. Under the CLI the engine starts it (`ctx.spawn`), which is what
  * makes Ctrl-C reach the child natively and keeps signal policy in one place.
  * `spawnAlchemy` is the default for programmatic hosts driving
- * `@prisma/composer/control`, which have no engine to borrow.
+ * `@prisma/composer/control`, which have no engine to borrow. Only
+ * `spawnAlchemy` redacts the child's output; under the CLI the child gets the
+ * terminal and its output is not redacted (ADR-0062).
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -101,7 +104,7 @@ export interface AlchemyInvocation {
   readonly cwd: string;
   readonly stage: string;
   readonly env: Readonly<Record<string, string | undefined>>;
-  /** Every secret value the command knows, for the output redactor. Never in `env` or on the command line, which the engine may log. */
+  /** The known secrets and the credential-looking values, for `spawnAlchemy`'s stream redactor; the CLI's runner ignores them. Never in `env` or on the command line, which the engine may log. */
   readonly redactedValues: readonly string[];
 }
 
@@ -155,7 +158,9 @@ export interface AlchemyOutcome {
 }
 
 /** Starts the converge and resolves when it ends. The CLI supplies one backed
- *  by `ctx.spawn`; hosts get `spawnAlchemy`. */
+ *  by `ctx.spawn`, which gives the child the terminal and does not redact its
+ *  output; hosts get `spawnAlchemy`, which pipes the output through the stream
+ *  redactor (ADR-0062). */
 export type RunAlchemy = (invocation: AlchemyInvocation) => Promise<AlchemyOutcome>;
 
 export interface AlchemyInvocationInput {
@@ -168,7 +173,7 @@ export interface AlchemyInvocationInput {
   readonly preflightEnv?: Readonly<Record<string, string>>;
   /** Extra additions beyond the containers — the deployment-result pointer. */
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
-  /** Every secret value the command knows, for the output redactor. Never in `env` or on the command line, which the engine may log. */
+  /** The known secrets and the credential-looking values, for `spawnAlchemy`'s stream redactor; the CLI's runner ignores them. Never in `env` or on the command line, which the engine may log. */
   readonly redactedValues: readonly string[];
 }
 

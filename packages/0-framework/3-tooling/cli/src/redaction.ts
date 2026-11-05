@@ -111,35 +111,54 @@ export function redactCredentialLooking(
   return redactShapes(redactValues(text, credentialLookingValues(env)));
 }
 
+/** A value under a secrets key, with that key. */
+export interface KnownSecret {
+  readonly name: string;
+  readonly value: string;
+}
+
+/**
+ * The shortest known secret the file check looks for inside a longer value. A shorter one, such
+ * as a `dev` placeholder, is refused only when it is the whole value.
+ */
+export const MIN_SECRET_LENGTH_INSIDE_A_VALUE = 8;
+
 /**
  * The known secrets of one command: the values under the secrets keys the graph names, in the app
  * secrets and the app configuration (ADR-0062). The app configuration file must not hold any of them.
  */
 export class KnownSecrets {
-  readonly #values = new Set<string>();
-  #matcher: SecretMatcher | undefined;
+  readonly #names = new Map<string, string>();
 
-  constructor(values: Iterable<string> = []) {
-    this.add(values);
+  constructor(secrets: Iterable<KnownSecret> = []) {
+    this.add(secrets);
   }
 
-  /** Adds each value that is not empty. */
-  add(values: Iterable<string>): void {
-    for (const value of values) {
-      if (value.length === 0 || this.#values.has(value)) continue;
-      this.#values.add(value);
-      this.#matcher = undefined;
+  /** Adds each secret whose value is not empty. A value already known keeps its first name. */
+  add(secrets: Iterable<KnownSecret>): void {
+    for (const { name, value } of secrets) {
+      if (value.length > 0 && !this.#names.has(value)) this.#names.set(value, name);
     }
   }
 
   values(): ReadonlySet<string> {
-    return this.#values;
+    return new Set(this.#names.keys());
   }
 
-  /** Whether `text` contains a known secret anywhere. */
-  appearIn(text: string): boolean {
-    this.#matcher ??= new SecretMatcher(this.#values);
-    return this.#matcher.spans(text).length > 0;
+  /**
+   * The name of a known secret `text` holds, or undefined. A secret of
+   * `MIN_SECRET_LENGTH_INSIDE_A_VALUE` characters or more is found anywhere in `text`; a shorter
+   * one only when it is all of `text`.
+   */
+  nameIn(text: string): string | undefined {
+    for (const [value, name] of this.#names) {
+      if (
+        value.length >= MIN_SECRET_LENGTH_INSIDE_A_VALUE ? text.includes(value) : text === value
+      ) {
+        return name;
+      }
+    }
+    return undefined;
   }
 }
 
@@ -158,8 +177,8 @@ export class SecretRedaction {
     this.addCredentialLookingValues(credentialLookingValues(env));
   }
 
-  addKnownSecrets(values: Iterable<string>): void {
-    this.knownSecrets.add(values);
+  addKnownSecrets(secrets: Iterable<KnownSecret>): void {
+    this.knownSecrets.add(secrets);
   }
 
   addCredentialLookingValues(values: Iterable<string>): void {
@@ -188,9 +207,11 @@ export function valuesUnderSecretsKeys(
   configuration: AppConfiguration,
   secrets: AppSecrets,
   secretsKeys: readonly string[],
-): string[] {
-  return secretsKeys.flatMap((key) =>
-    [configuration[key], secrets[key]].filter((value) => typeof value === 'string'),
+): KnownSecret[] {
+  return secretsKeys.flatMap((name) =>
+    [configuration[name], secrets[name]].flatMap((value) =>
+      typeof value === 'string' ? [{ name, value }] : [],
+    ),
   );
 }
 

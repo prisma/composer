@@ -739,7 +739,7 @@ What to know before embedding it:
   details of the current execution mechanism, handy for printing a hint but
   not something to build on; branch on `message`/`cause` for anything
   durable. Importing the module executes nothing until you call an operation.
-- The deploy engine's own output passes through Composer on its way to your terminal, with every secret Composer knows replaced by `[redacted]`: the value under each name an `envSecret()` names, in your `config` and `secrets` lists, however short. Other values in those lists, such as the shell's, are printed as they are. So the engine shows plain progress lines, without colour.
+- The deploy engine's own output passes through Composer on its way to your terminal, with every secret Composer knows replaced by `[redacted]`: the value under each name an `envSecret()` names, in your `config` and `secrets` lists, however short. Other values in those lists, such as the shell's, are printed as they are, apart from values that look like credentials, such as a long value under a name containing `TOKEN` or `KEY`. So the engine shows plain progress lines, without colour.
 - **`onEvent` reports each step.** Pass `onEvent` to `deploy` to receive a
   `step-started` and a `step-finished` event per step (`prepare`, `assemble`,
   one `assemble-service` per service, `connect`, `preflight`, `apply`,

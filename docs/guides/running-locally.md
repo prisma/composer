@@ -430,7 +430,7 @@ token, workspace, or network is involved. Five consequences worth knowing:
 
   A `.env` that only your framework loads (Next.js, for example) does not count, because Composer reads each secret before the dev server starts (see [Dev servers](#dev-servers)).
 
-  `prisma dev` reads from the `secrets` list only the names an `envSecret()` in the graph reads, and redacts only those values in what it prints. The other values in `.env` and the shell are not secrets to it.
+  `prisma dev` treats as secrets only the values under the names an `envSecret()` in the graph reads, and redacts those values in what it prints. The other values in `.env` and the shell are not secrets to it, and print as they are, apart from values that look like credentials, such as a long value under a name containing `TOKEN` or `KEY`.
 
   Each service gets only the secrets and env-sourced params its own input and params point at. Code that reads `process.env.X` directly, where `X` is bound by another service, gets nothing.
 - Changing a value an adapter reads while `prisma dev` runs pauses rebuilds at the next rebuild, with a message; restart `prisma dev` to use the new values.

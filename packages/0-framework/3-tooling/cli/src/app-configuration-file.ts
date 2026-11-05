@@ -101,8 +101,9 @@ function textIn(value: unknown, at: readonly string[]): { at: readonly string[];
 }
 
 /**
- * Refuses when the file would hold a known secret anywhere in a plain value, a number or a
- * boolean compared as its text. The message names where, never the value.
+ * Refuses when the file would hold a known secret in a plain value, a number or a boolean
+ * compared as its text (`KnownSecrets.nameIn`). The message names where and the secrets key,
+ * never the value.
  */
 function refuseSecretsIn(read: AppConfigurationRead, knownSecrets: KnownSecrets): void {
   const places = [
@@ -117,15 +118,17 @@ function refuseSecretsIn(read: AppConfigurationRead, knownSecrets: KnownSecrets)
       text,
     })),
   ];
-  const place = places.find(({ text }) => knownSecrets.appearIn(text));
-  if (place === undefined) return;
-  throw new CliStructuredError(
-    'CONFIG.SECRET_AS_PLAIN_VALUE',
-    `${place.where} holds a secret. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
-    {
-      fix: 'Read the secret with envSecret() where it is used, or give this plain value text that is not a secret.',
-    },
-  );
+  for (const { where, text } of places) {
+    const name = knownSecrets.nameIn(text);
+    if (name === undefined) continue;
+    throw new CliStructuredError(
+      'CONFIG.SECRET_AS_PLAIN_VALUE',
+      `${where} holds the value of the secret "${name}", which an envSecret() in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
+      {
+        fix: `Read the secret with envSecret('${name}') where it is used, or give this plain value text that does not contain the value of "${name}".`,
+      },
+    );
+  }
 }
 
 /** What the first process hands the second: the app configuration file, and the environment that names it. */

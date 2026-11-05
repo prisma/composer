@@ -164,14 +164,14 @@ describe('the app configuration file', () => {
       prepareSecondProcess({
         file: freshFile(),
         ...factsOf(graph),
-        knownSecrets: new KnownSecrets([secret]),
+        knownSecrets: new KnownSecrets([{ name: 'SHOP_SECRET', value: secret }]),
       }),
     );
     expect(JSON.stringify({ ...error, message: error.message })).not.toContain(secret);
     return error;
   };
   const refusedBecause = (where: string) =>
-    `${where} holds a secret. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`;
+    `${where} holds the value of the secret "SHOP_SECRET", which an envSecret() in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`;
 
   test('prepareSecondProcess refuses a file that would hold a known secret, naming where and never the secret', () => {
     const graph = shopGraph({ ...configuration, EMAIL_FROM: 'secret-text-77' });
@@ -210,6 +210,24 @@ describe('the app configuration file', () => {
     }));
 
     expect(refusal(graph, '987654321').message).toBe(
+      refusedBecause('Root input field input.EMAIL_FROM'),
+    );
+  });
+
+  test('prepareSecondProcess looks for a known secret of eight characters or more inside a longer value, and for a shorter one only as the whole value', () => {
+    const prepare = (emailFrom: string, secret: string) => () =>
+      prepareSecondProcess({
+        file: freshFile(),
+        ...factsOf(shopGraph({ ...configuration, EMAIL_FROM: emailFrom })),
+        knownSecrets: new KnownSecrets([{ name: 'SHOP_SECRET', value: secret }]),
+      });
+
+    expect(errorOf(prepare('x-8chars!-x@example.com', '8chars!-')).message).toBe(
+      refusedBecause('Root input field input.EMAIL_FROM'),
+    );
+    expect(prepare('dev@example.com', 'dev-pw7')).not.toThrow();
+    expect(prepare('dev@example.com', 'dev')).not.toThrow();
+    expect(errorOf(prepare('dev', 'dev')).message).toBe(
       refusedBecause('Root input field input.EMAIL_FROM'),
     );
   });

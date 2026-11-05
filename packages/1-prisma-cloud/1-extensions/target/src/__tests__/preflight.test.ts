@@ -465,7 +465,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(reports).toEqual([{ checked: 1, filled: 0, missing: 0 }]);
   });
 
-  test('a failed fill names the key and its pool, never the value', async () => {
+  test('a failed fill names the key and the list it came from, never the value', async () => {
     state.postStatus = 500;
 
     const run = withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_SENTINEL' } }, () =>
@@ -481,7 +481,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     );
 
     await expect(run).rejects.toThrow(
-      'deploy preflight: failed to set "STRIPE_SECRET_KEY" on the platform from its pool: ' +
+      'deploy preflight: failed to set "STRIPE_SECRET_KEY" on the platform from the app secrets: ' +
         '{"code":"internal","message":"boom"}.',
     );
   });
