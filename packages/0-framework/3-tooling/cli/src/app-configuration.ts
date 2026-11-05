@@ -7,7 +7,6 @@ import type {
 } from '@internal/core/config';
 import { CliStructuredError, describeKind, InternalError } from '@internal/foundation/errors';
 import { environmentVariables } from './config-adapters.ts';
-import type { SecretRedaction } from './redaction.ts';
 
 /** What the adapters are read for. */
 export interface AdapterReadInput {
@@ -45,7 +44,6 @@ async function readAdapters(
   list: AdapterList,
   adapters: readonly ConfigAdapter[],
   input: AdapterReadInput,
-  onValue?: (value: string) => void,
 ): Promise<Readonly<Record<string, unknown>>> {
   const adapterInput = Object.freeze({
     environment: input.environment,
@@ -101,7 +99,6 @@ async function readAdapters(
         );
       }
       merged[key] = value;
-      if (typeof value === 'string') onValue?.(value);
     }
   }
   return Object.freeze(merged);
@@ -117,20 +114,14 @@ export function readAppConfiguration(
 
 /**
  * Calls the section's `secrets` adapters (default `[environmentVariables()]`) and merges what they
- * return: the app secrets. Every value must be text. When the section writes its own list, each
- * value is added to `redaction`'s known secrets as soon as its adapter returns it.
+ * return: the app secrets. Every value must be text. A value is a known secret only once the graph
+ * names it, so this adds none.
  */
 export async function readAppSecrets(
   section: PrismaAppConfig,
   input: AdapterReadInput,
-  redaction: SecretRedaction,
 ): Promise<AppSecrets> {
-  const merged = await readAdapters(
-    'secrets',
-    section.secrets ?? [environmentVariables()],
-    input,
-    section.secrets === undefined ? undefined : (value) => redaction.addKnownSecrets([value]),
-  );
+  const merged = await readAdapters('secrets', section.secrets ?? [environmentVariables()], input);
   if (!isText(merged)) throw new InternalError('readAdapters admitted a secret that is not text');
   return merged;
 }

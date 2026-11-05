@@ -12,8 +12,6 @@ import { notOk, ok } from '@internal/foundation/result';
 import type { ScriptedChildProgram, TestCli } from '@prisma/cli-engine/testing';
 import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
 import { createOperationsDouble, type OperationsDouble } from '../../testing/operations-double.ts';
-import { createDeployCommand } from '../commands/deploy.ts';
-import { createDevCommand } from '../commands/dev.ts';
 import { createComposerFamily } from '../family.ts';
 import { commandAt } from './command-at.ts';
 import { validComposerSection } from './fixtures/composer-section.ts';
@@ -555,51 +553,5 @@ describe('step events', () => {
       kind: 'result',
       envelope: { ok: true, result: { summary: { app: 'shop' }, durationMs: 12_300 } },
     });
-  });
-});
-
-/** `command`, run as a host whose engine is older than 0.10.0 runs it: its context has no `spawnOptionNames`. */
-function onAnOlderEngine<C, A, X extends object, R>(
-  command: C & { readonly handler: (args: A, ctx: X) => R },
-): C {
-  return {
-    ...command,
-    handler: (args: A, ctx: X) =>
-      command.handler(
-        args,
-        new Proxy(ctx, {
-          get: (target, key, receiver) =>
-            key === 'spawnOptionNames' ? undefined : Reflect.get(target, key, receiver),
-        }),
-      ),
-  };
-}
-
-describe('the engine version', () => {
-  test("deploy and dev on a host whose engine cannot transform a child's output refuse before starting anything", async () => {
-    for (const command of ['deploy', 'dev'] as const) {
-      const double = createOperationsDouble({});
-      const family = createComposerFamily({ operations: double.operations });
-      const cli = createTestCli({
-        commandFamilies: [family],
-        commands: {
-          deploy: onAnOlderEngine(createDeployCommand(double.operations)),
-          dev: onAnOlderEngine(createDevCommand(double.operations)),
-        },
-        config: { composer: validComposerSection() },
-        credential: activeCredential(),
-      });
-
-      const result = await cli.run([command], AS_TTY);
-
-      expect(result.exitCode).toBe(2);
-      expect(plain(result.stderr)).toContain('DEPS.CLI_ENGINE_INCOMPATIBLE');
-      expect(plain(result.stderr)).toContain(
-        "This prisma CLI's @prisma/cli-engine is older than 0.10.0; Composer needs 0.10.0 or later.",
-      );
-      expect(result.spawns).toEqual([]);
-      expect(double.calls.deploy).toEqual([]);
-      expect(double.calls.dev).toEqual([]);
-    }
   });
 });

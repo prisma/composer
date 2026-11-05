@@ -186,12 +186,11 @@ export async function runPipeline(
     });
   }
 
-  // 3. Read the app secrets, then the app configuration. Secrets first, so a config adapter's
-  // failure is redacted with every value a written `secrets` list returned.
+  // 3. Read the app secrets, then the app configuration.
   const redaction = deps.redaction ?? new SecretRedaction(process.env);
   const adapterInput = { environment, configFile: configSource.file };
   const secrets: AppSecrets =
-    deps.readSecrets === true ? await readAppSecrets(config, adapterInput, redaction) : NO_SECRETS;
+    deps.readSecrets === true ? await readAppSecrets(config, adapterInput) : NO_SECRETS;
   const configuration = await readAppConfiguration(config, adapterInput);
   redaction.addCredentialLookingValues(credentialLookingValues(configuration));
 
