@@ -2,6 +2,8 @@
 
 Amended by [ADR-0057](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md): resource IDs are the node's full address for its main resource and the address plus `.` and a role for its other pieces (`shop.web`, `shop.web.deploy`), not `${id}-svc` and `${id}-deploy`. Each declares its previous ID with `renamedFrom`.
 
+Amended 2026-10-30: from Alchemy 2.0.0-beta.84 the provider is its own package, `@alchemy.run/prisma`, versioned in lockstep with `alchemy`; before that it was the `alchemy/Prisma` module of the `alchemy` package. Only `@prisma/composer-prisma-cloud` and the Prisma Cloud internals it bundles depend on it; `@prisma/composer` and `@prisma/composer-cli` depend on `alchemy` alone. The move kept every resource type id (`Prisma.*`), so deploy state carries over unchanged. The decision below is unchanged.
+
 
 ## Decision
 
