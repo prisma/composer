@@ -9,9 +9,10 @@ A PR delivers one capability a user would notice, so slices whose limits the nex
 - **S1** is done: [slices/s1-spike/report.md](slices/s1-spike/report.md).
 - **S2** is merged: prisma/composer#401.
 - **S3 to S8** are merged as one PR: prisma/composer#403.
-- **S9** is built and in review as prisma/composer#412. **S10** is built in the same PR.
-- **S11 to S13** are not built. [deferred.md](deferred.md) lists items S10 must cover.
-- **S14 to S17** are designed with Will before they are specified.
+- **S9 and S10** are built and in review as prisma/composer#412.
+- **S11 to S13** are built on `claude/module-input-s11-s13`, through three review rounds. One fix is open: the known secrets become the values the graph names (S13 below). The PR waits for `@prisma/cli-engine` 0.10.0 (prisma/prisma-cli#383) and a `prisma` host release, then for #412 to merge.
+- **S18**, platform variables, was designed with Will on 2026-11-05 ([design.md](design.md) sections 5 and 7). It is specified next and built after S11 to S13 merge. It absorbs S15, S16 and S17.
+- **S14** is designed with Will before it is specified.
 
 ## S1. Spike: an input field as an opaque typed value
 
@@ -63,23 +64,31 @@ The first process writes a configuration file beside the generated stack file, m
 
 ## S13. Composer redacts every secret it knows
 
-Everywhere Composer prints, it redacts every value under a name an `envSecret()` in the graph names, in the app configuration or the app secrets, and every value a project's own secrets adapters return when it writes a `secrets` list, at any length. That covers errors, adapter failures, the second process's failure cause, and the second process's output, which Composer now reads through a pipe, holding back enough characters to catch a secret split across two chunks. An end-to-end test searches the configuration file, the stack file, the deploy report, the errors and the second process's output for a known secret value. Manual QA of the examples against real targets, including a root `input` from `.env.<environment>` in `prisma deploy` and `prisma dev`.
+Everywhere Composer prints, it redacts every known secret, at any length. The known secrets are the values of the app secrets under the names the graph reads: today the names `envSecret()` passes, and from S18 the root's `secret()` field names too. A value in the app secrets that nothing names is not read and not a secret, so the recommended `secrets: [dotenv(), environmentVariables()]` redacts nothing it should not. (The first build counted every value a written `secrets` list returned; with the recommended setup that refused every root input field and blanked every `1` in the output, review finding F16. Will ruled on 2026-11-05 that the pools are what Composer may carry, read only at the root's boundary.) That covers errors, adapter failures, the second process's failure cause, and the second process's output, which Composer now reads through a pipe, holding back enough characters to catch a secret split across two chunks. An end-to-end test searches the configuration file, the stack file, the deploy report, the errors and the second process's output for a known secret value. Manual QA of the examples against real targets, including a root `input` from `.env.<environment>` in `prisma deploy` and `prisma dev`.
 
 ## S14. `prisma dev` watches its inputs
 
 Adapters may report that their values changed, and `dotenv()` watches its files. `prisma dev` applies the new values instead of pausing. Designed and specified after S13.
 
-## S15. A developer's local secret does not reach another environment
+## S15, S16 and S17 are absorbed by S18
 
-Design a solution for this case: deploying production from a machine whose `.env.local` holds a test key fills a missing production variable with that key. Designed with Will after S13.
+S15 (a developer's local secret reaching another environment) is settled because the deploy no longer fills platform variables. S16 (secrets get a home of their own) is settled because only the values the root names are known secrets. S17 (`secret(schema)`) ships inside S18, because platform secrets and carried secrets both need it.
 
-## S16. Secrets get a home of their own
+## S18. Platform variables are nodes, and the root's input may hold a secret
 
-Give secrets a home distinct from plain values, so a `.env` file no longer mixes the two, and redaction stops covering the plain values that share a file with secrets. Designed with Will after S13.
+Design: [design.md](design.md) sections 5, 7, 8 and 9, settled 2026-11-05. One PR, after S11 to S13 merge.
 
-## S17. A secret field wraps its schema, as `field()` does
+- `@prisma/composer-prisma-cloud` exports `platformVariable({ name, parse? })` and `platformSecret({ name, parse? })`, resources whose `value` is a runtime value. The Prisma Cloud target creates a subscription of each service to each variable its input points at, and sets no value. The deploy report lists the variables with no entry on the platform. The local target fills a platform variable from the local pools under its `name`, and validates the value against `parse`.
+- `parse` takes a Standard JSON Schema; its `jsonSchema.input()` travels in the subscription and in a `$platform` marker in the input document; Load refuses a transforming or unencodable schema, and two nodes for one `name` with different schemas. Boot decodes the text as JSON unless the schema's type is `string`.
+- `secretString()` becomes `secret(inner)`, in both entry points.
+- A root `secret()` field is filled from the app secrets and reaches the second process in `PRISMA_COMPOSER_NAMED_SECRETS`; the deploy sets it on the service as a secret variable. A name in both pools for a root field fails the deploy. `destroy` binds it to a stand-in box.
+- Preflight stops filling platform variables on deploy and dev. Composer's isolation of a service's environment stays only in the local target.
+- `envSecret()` and `envParam()` are deprecated as shortcuts.
+- The slice decides whether the deploy writes the resolved binding instead of the schema's output into the input document, so a transforming `field()` schema works for a literal.
+- Decision records rewritten in full: ADR-0029, ADR-0032, ADR-0042, ADR-0058 and ADR-0062. New glossary entries: platform variable, platform secret, subscription, carried secret, known secrets.
+- Breaking: `secretString()` removed; preflight no longer fills a variable, so a project that relied on `deploy` seeding `envSecret()` values sets them on the platform instead.
 
-`secretString()` becomes `secret(schema)`, following the `field()` pattern: `secret(type('string'))` for ArkType and `secret(z.string())` for Zod. The wrapped schema checks the secret's content at boot, when the real value exists; at deploy the field accepts a secret pointer or a secret box. The name is settled when the slice is designed. `secretString()` is removed, which is a breaking change for every schema with a secret field. Designed after S16.
+Depends on the platform shipping subscriptions and per-variable JSON Schema validation. Until it does, the Prisma Cloud target can create the variable with no value and keep isolating, and the slice says which parts wait.
 
 ## Close-out
 
