@@ -231,6 +231,7 @@ async function fillMissing(
   branchId: string | undefined,
   key: string,
   value: string,
+  list: ValueList,
 ): Promise<string | undefined> {
   const res = await client.POST('/v1/environment-variables', {
     body: {
@@ -242,7 +243,7 @@ async function fillMissing(
     },
   });
   if (res.error !== undefined && res.response.status !== 409) {
-    throw fillFailedError(key, res.error);
+    throw fillFailedError(key, list, res.error);
   }
   // The created row's timestamp, so this deploy fingerprints on the same value
   // the next one will read back. A 409 (a concurrent deploy won the race)
@@ -270,9 +271,11 @@ const listFailedError = (key: string, error: unknown): Error =>
     `deploy preflight: Prisma Management API error listing "${key}": ${JSON.stringify(error)}.`,
   );
 
-const fillFailedError = (key: string, error: unknown): Error =>
+type ValueList = 'the app secrets' | 'the app configuration';
+
+const fillFailedError = (key: string, list: ValueList, error: unknown): Error =>
   new Error(
-    `deploy preflight: failed to set "${key}" on the platform from its pool: ${JSON.stringify(error)}.`,
+    `deploy preflight: failed to set "${key}" on the platform from ${list}: ${JSON.stringify(error)}.`,
   );
 
 /** `value` as one POSIX shell word: single-quoted, each embedded `'` written as `'\''`. */
@@ -381,20 +384,22 @@ export async function runPreflight(
   // secrets first.
   const collected = collectPreflightNames(input.graph);
   const names = new Map<string, MissingBinding>();
-  const valueFor = new Map<string, () => string | undefined>();
+  const valueFor = new Map<string, { list: ValueList; read: () => string | undefined }>();
   for (const meta of collected.secrets) {
     if (names.has(meta.name)) continue;
     names.set(meta.name, meta);
-    valueFor.set(meta.name, () => input.secrets[meta.name]);
+    valueFor.set(meta.name, { list: 'the app secrets', read: () => input.secrets[meta.name] });
   }
   for (const meta of collected.envParams) {
     if (names.has(meta.name)) continue;
     names.set(meta.name, meta);
-    valueFor.set(meta.name, () =>
-      configurationText(input.configuration, meta.name, (kind) =>
-        envParamNotTextError(meta.name, meta.address, kind),
-      ),
-    );
+    valueFor.set(meta.name, {
+      list: 'the app configuration',
+      read: () =>
+        configurationText(input.configuration, meta.name, (kind) =>
+          envParamNotTextError(meta.name, meta.address, kind),
+        ),
+    });
   }
   const clashes = findEnvKeyClashes(input.graph);
   if (names.size === 0 && clashes.length === 0) {
@@ -414,9 +419,17 @@ export async function runPreflight(
       if (platform.updatedAt !== undefined) updatedAt.set(meta.name, platform.updatedAt);
       continue;
     }
-    const value = valueFor.get(meta.name)?.();
-    if (value !== undefined && value.length > 0) {
-      const filledAt = await fillMissing(client, projectId, branchId, meta.name, value);
+    const source = valueFor.get(meta.name);
+    const value = source?.read();
+    if (source !== undefined && value !== undefined && value.length > 0) {
+      const filledAt = await fillMissing(
+        client,
+        projectId,
+        branchId,
+        meta.name,
+        value,
+        source.list,
+      );
       if (filledAt !== undefined) {
         updatedAt.set(meta.name, filledAt);
         filled += 1;

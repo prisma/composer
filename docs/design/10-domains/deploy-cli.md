@@ -303,7 +303,7 @@ them:
 | Built output missing | the expected path, and "run your build" |
 | Root's input refused by its schema | the schema's messages, and that a root's input is the app configuration for the environment |
 | A config adapter throws or returns something other than an object (`CONFIG.ADAPTER_FAILED`, `CONFIG.ADAPTER_INVALID`) | which list and position, and the fix |
-| The app configuration file would hold a known secret (`CONFIG.SECRET_AS_PLAIN_VALUE`) | which root input field or configuration key holds a known secret, whole or inside a longer value, never the value, and the fix: read the secret with `envSecret()`, or give the plain value text that is not a secret |
+| The app configuration file would hold a known secret (`CONFIG.SECRET_AS_PLAIN_VALUE`) | which root input field or configuration key holds a known secret, and the secrets key whose value matched, never the value; a secret of eight characters or more counts anywhere in a value, a shorter one only as the whole value. The fix: read the secret with `envSecret()`, or give the plain value text that does not contain it |
 
 ## Out of scope (designed around)
 

@@ -45,7 +45,7 @@ export interface PipelineDeps {
   readonly devServers?: boolean | undefined;
   /** Read the app secrets too: `deploy` and `dev` do; `destroy` does not, and its `secrets` is empty. */
   readonly readSecrets?: boolean | undefined;
-  /** Collects every secret value the run reads, for redaction. A new one when not given. */
+  /** Collects the known secrets and the credential-looking values, for redaction. A new one when not given. */
   readonly redaction?: SecretRedaction | undefined;
 }
 

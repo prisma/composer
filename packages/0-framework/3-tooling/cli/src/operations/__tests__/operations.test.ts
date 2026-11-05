@@ -4144,7 +4144,7 @@ describe('the second process reads what the first process read', () => {
       if (result.ok) throw new Error('the deploy should fail');
       expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
       expect(result.failure.message).toBe(
-        `${where} holds a secret. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
+        `${where} holds the value of the secret "S13_SECRET", which an envSecret() in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
       );
       expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
       expect(started).toBe(false);
@@ -4153,6 +4153,30 @@ describe('the second process reads what the first process read', () => {
       ).toEqual([]);
     });
   }
+
+  test('a known limit: an adapter failure before Load is not redacted by a value only an envSecret() names', async () => {
+    const app = makeSecondProcessAppDir();
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig({
+            ...fakeConfig(),
+            config: [throwingAdapter('bad zz-named-later-91')],
+            secrets: [() => ({ S13_SECRET: 'zz-named-later-91' })],
+          }),
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      ),
+    );
+
+    if (result.ok) throw new Error('the deploy should fail');
+    expect(result.failure.code).toBe('CONFIG.ADAPTER_FAILED');
+    expect(JSON.stringify(result.failure.toEnvelope())).toContain('zz-named-later-91');
+  });
 
   test.skipIf(process.platform === 'win32')(
     'dev hands the second process the named secrets through its environment, never in a file',

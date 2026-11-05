@@ -1,31 +1,74 @@
 # S11 to S13 manual QA
 
-Run on 2026-11-02 against a local build of `@prisma/cli-engine` 0.10.0 from prisma/prisma-cli#383 at `44526435`, placed at `node_modules/@prisma/cli-engine` by a symlink that is not committed. The `prisma` host is the published 8.0.0-rc.26.
+The operator runs this plan on the branch `claude/module-input-s11-s13`, on `@prisma/cli-engine` 0.9.0, and fills in each result. It follows spec § 17. A run on 2026-11-02 against the dropped engine change (prisma/prisma-cli#383, 0.10.0) tested a design this branch no longer has, so it is not recorded here.
 
-## Not run here
+## Setup
 
-Steps 1, 2, 3, 4 and 6 deploy to Prisma Cloud. They are a separate step after review and were not run.
+1. From the worktree root: `pnpm build`, then `pnpm turbo run build --filter @prisma/example-email...`.
+2. Generate the secret once: `export S13_QA_SECRET="s13qa-$(openssl rand -hex 8)"`. Record only its first five characters.
+3. Every hosted step runs from `examples/email` as `( set -a; . ~/.config/prisma-compose/deploy.env; set +a; PRISMA_REGION=us-east-1 bun ../../node_modules/.bin/prisma deploy --name s13qa-email --environment s13-qa )`, called "the deploy" below. Never print a credential.
 
-## Step 5, `prisma dev`, run locally
+Result:
 
-Setup: `pnpm build`, `pnpm turbo run build --filter @prisma/example-email...`, then `examples/email/.env.dev` with `EMAIL_DELIVERY_MODE=none` and `EMAIL_FROM=dev-qa@example.com`, and `.env.dev.local` with `EMAIL_DELIVERY_CREDENTIAL` set to a generated `s13qa-…` value. Run as `node ../../node_modules/.bin/prisma dev --detach`, because under Bun the 0.10.0 engine fails (see below).
+## Step 1. Files, deployed to Prisma Cloud
 
-Result: `prisma dev` did not start. The emulators came up, then the CLI exited with status 137. In `--format json` the result is `CLI.CHILD_PROCESS_FAILED`, "The delegated process was terminated by SIGKILL", about six seconds after the start.
+Do: write `.env.s13-qa` with `EMAIL_DELIVERY_MODE=none` and `EMAIL_FROM=s13qa@example.com`; `.env.s13-qa.local` with `EMAIL_DELIVERY_CREDENTIAL=$S13_QA_SECRET`; `.env.defaults` with `EMAIL_FROM=defaults-must-not-win@example.com`. In a second shell, from `examples/email`, run `while true; do cp .prisma-composer/app-configuration-*.json ../../wip/s13-qa-configuration.json 2>/dev/null; sleep 0.2; done`. Run the deploy, then stop the loop.
 
-Cause: the 0.10.0 engine asks the host's spawn adapter for `output: "engine"`. The published `prisma` 8.0.0-rc.26 bin injects the 0.9.0 adapter, which does not pipe the child's output, so the engine kills the child at once (`refuseUnpipedChild` in the engine's `execution/spawn.ts`). #383 changes that adapter in `packages/cli/src/spawn.ts`, so the step needs a `prisma` host release that ships it.
+Expected:
 
-What still held:
+- The deploy succeeds with `config: [dotenv(), environmentVariables()]` and `secrets: [dotenv(), environmentVariables()]`, and without `CONFIG.SECRET_AS_PLAIN_VALUE`.
+- Composer's output shows `s13qa@example.com` and `none` where it prints them, not `[redacted]`.
+- `wip/s13-qa-configuration.json` holds `appConfigurationRead.rootInput` with `EMAIL_DELIVERY_MODE` `none` and `EMAIL_FROM` `s13qa@example.com` (not the `.env.defaults` value), `configurationKeyText` `{}`, and `nodeAddresses`.
+- The file had mode `-rw-------` while it existed.
+- `ls .prisma-composer/app-configuration-*.json` finds nothing after the deploy.
+- `grep -r "$S13_QA_SECRET" .prisma-composer ../../wip/s13-qa-configuration.json` finds nothing.
+- The Management API lists `EMAIL_DELIVERY_CREDENTIAL` on the `s13-qa` Branch (metadata only).
 
-- `.prisma-composer/dev/dev/configuration.json` did not exist after the run.
-- `grep -r` for the secret value over `.prisma-composer` and `.alchemy` found nothing.
-- Nothing printed the secret: the child was killed before it wrote any output.
+Result:
 
-Clean-up: `prisma dev stop` reported nothing running, `.env.dev`, `.env.dev.local` and `examples/email/.prisma-composer` were deleted, and `git status` shows only this PR's changes. No emulator was stopped, because the daemons are shared with other worktrees.
+## Step 2. A short secret inside a plain value
 
-## Bun and the 0.10.0 engine
+Do: set `.env.s13-qa.local` to `EMAIL_DELIVERY_CREDENTIAL=s13qa` (five characters, which `EMAIL_FROM=s13qa@example.com` contains), and run the deploy.
 
-At `44526435` the engine's spawn path called `ReadableStream.from`, which Bun 1.3.13 does not have, so under Bun every converge through the engine failed with `CLI.INTERNAL_ERROR`, and 19 CLI unit tests failed. #383 fixed it in `d71da9ba`. With the engine rebuilt from that commit, all 445 CLI tests pass under Bun with no preload.
+Expected: the deploy does not fail with `CONFIG.SECRET_AS_PLAIN_VALUE`, because a known secret shorter than eight characters is refused only when it is a whole value. Composer's output still redacts the secret at any length, so it prints `s13qa` as `[redacted]`, for example in `[redacted]-email`. The platform variable set in step 1 is not changed. Restore `.env.s13-qa.local` to `EMAIL_DELIVERY_CREDENTIAL=$S13_QA_SECRET`.
 
-## Before step 5 and the hosted steps can run
+Result:
 
-They need a `prisma` host release that ships #383's spawn adapter. The spec's release-order note says so.
+## Step 3. An adapter's error is redacted by the credential-looking rule
+
+Do: for this step only, put `config: [() => { throw new Error(\`cannot use ${process.env.EMAIL_DELIVERY_CREDENTIAL}\`); }, dotenv(), environmentVariables()]` in `prisma.config.ts`, `export EMAIL_DELIVERY_CREDENTIAL="$S13_QA_SECRET"`, and run the deploy.
+
+Expected: `CONFIG.ADAPTER_FAILED`, with the `Why:` line `It threw: cannot use [redacted]`. No graph exists yet, so no value is a known secret; the variable's name looks like a credential, and that rule hides it. Restore `prisma.config.ts` and unset the variable.
+
+Result:
+
+## Step 4. A different graph is refused
+
+Do: for this step only, add to the root body in `examples/email/module.ts`: `if (process.env.PRISMA_COMPOSER_APP_CONFIGURATION_FILE !== undefined) provision(email(), { id: 'extra', input: { deliveryMode: input.EMAIL_DELIVERY_MODE, from: input.EMAIL_FROM, deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') } });`, and run the deploy.
+
+Expected: `DEPLOY.ENGINE_FAILED`, whose cause names `"s13qa-email.extra"` (and the nodes under it) as only in the second process. Nothing new is created on the Branch. Restore `module.ts`.
+
+Result:
+
+## Step 5. `prisma dev`
+
+Do: write `.env.dev` with `EMAIL_DELIVERY_MODE=none` and `EMAIL_FROM=dev-qa@example.com`, and `.env.dev.local` with `EMAIL_DELIVERY_CREDENTIAL=$S13_QA_SECRET`. From `examples/email`, run `bun ../../node_modules/.bin/prisma dev --detach`.
+
+Expected:
+
+- `prisma dev` starts, and Alchemy's output reaches the terminal unchanged.
+- No `.prisma-composer/dev/dev/app-configuration-*.json` exists after it returns.
+- `grep -r "$S13_QA_SECRET" .prisma-composer .alchemy` finds nothing. The compute emulator's own copy lives outside the project, as ADR-0058 records.
+- `curl -s -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"email":"qa@example.com","name":"QA"}' "$(bun ../../node_modules/.bin/prisma dev url email-example.mailer)/signup"` prints a 2xx status.
+
+Then run `prisma dev stop`.
+
+Result:
+
+## Step 6. Clean up
+
+Do: run `( set -a; . ~/.config/prisma-compose/deploy.env; set +a; PRISMA_REGION=us-east-1 bun ../../scripts/composer-destroy.ts --environment s13-qa --name s13qa-email )`, and the same with `--environment production` if step 1 created it. For this check only, put step 3's throwing adapter in `secrets`. Then delete `.env.s13-qa`, `.env.s13-qa.local`, `.env.defaults`, `.env.dev`, `.env.dev.local` and `wip/s13-qa-*`, and restore `prisma.config.ts`.
+
+Expected: destroy succeeds, because it runs no secrets adapter. `git status` shows only this branch's changes.
+
+Result:
