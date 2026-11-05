@@ -1231,6 +1231,7 @@ S10 is on this branch. It typed a service's binding from its schema, renamed `Se
 10. **Closed: an older engine.** With #383 dropped, Composer runs on `@prisma/cli-engine` 0.9.0 and checks no engine version.
 11. **Known limit: `destroy` checks the file against fewer secrets.** `destroy` runs only the config adapters (Will's ruling, so an unreachable secrets manager cannot block a teardown). So on `destroy`, which reads no secrets, a secret only the `secrets` list returns is not known, and the file check cannot refuse it. Its check compares against the values under the graph's secrets keys in the app configuration only. Load's refusal of a root field named like an `envSecret()` still applies, and a deploy of the same configuration refuses first. ADR-0062 and `deferred.md` record it (F11, F22).
 12. **Known limit: the stream redactor's cost grows with the square of the longest secret's length.** It applies to programmatic hosts only (§ 9.4). It matters only for secrets of many kilobytes, such as a CA bundle in a credential-named variable. ADR-0062 and `deferred.md` record it.
+- The command's step labels (`assemble <address>`) and its `Deployed <app> …` line are built from node addresses and the app name, which the author wrote, and do not pass through the redactor. A secret that is a substring of an address is printed there. Found in the 2026-11-05 manual QA, step 2.
 
 ## History
 
