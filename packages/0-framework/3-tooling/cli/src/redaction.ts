@@ -112,9 +112,8 @@ export function redactCredentialLooking(
 }
 
 /**
- * The known secrets of one command: values Composer knows are secrets, because they are under a
- * secrets key or a written `secrets` list returned them (ADR-0062). The app configuration file
- * must not hold any of them.
+ * The known secrets of one command: the values under the secrets keys the graph names, in the app
+ * secrets and the app configuration (ADR-0062). The app configuration file must not hold any of them.
  */
 export class KnownSecrets {
   readonly #values = new Set<string>();
@@ -148,8 +147,7 @@ export class KnownSecrets {
  * What one command hides from everything it prints, returns or reports (ADR-0062): its known
  * secrets, and the credential-looking values, which only look like secrets by the name of the
  * variable they are under. It starts with the credential-looking values of the process
- * environment. The second process's output passes through a `StreamRedactor` over
- * `allValues()`, so every output hides the same set.
+ * environment.
  */
 export class SecretRedaction {
   readonly knownSecrets = new KnownSecrets();
@@ -406,19 +404,4 @@ export class StreamRedactor {
     this.held = '';
     return this.matcher.redact(text);
   }
-}
-
-/** A transform that redacts one output stream with a `StreamRedactor`, and writes what it held back when the stream ends. */
-export function redactingTransform(values: readonly string[]): TransformStream<string, string> {
-  const redactor = new StreamRedactor(values);
-  return new TransformStream<string, string>({
-    transform(chunk, controller) {
-      const out = redactor.push(chunk);
-      if (out.length > 0) controller.enqueue(out);
-    },
-    flush(controller) {
-      const out = redactor.end();
-      if (out.length > 0) controller.enqueue(out);
-    },
-  });
 }

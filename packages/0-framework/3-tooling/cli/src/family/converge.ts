@@ -14,12 +14,11 @@
  * before the in-process leg creates anything on any platform.
  */
 
-import { CliStructuredError as ComposerError } from '@internal/foundation/errors';
+import type { CliStructuredError as ComposerError } from '@internal/foundation/errors';
 import type { Result as ComposerResult } from '@internal/foundation/result';
 import type {
   ChildResult,
   ChildStatusSettlement,
-  ChildStreamName,
   ManagementApiClient,
   PresentedResult,
 } from '@prisma/cli-engine';
@@ -27,7 +26,6 @@ import { exitWithChildStatus } from '@prisma/cli-engine';
 import type { CliStructuredError, NextAction, Result } from '@prisma/cli-engine/protocol';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
 import { executionDiagnostics, type OperationDeps } from '../operations/shared.ts';
-import { redactingTransform } from '../redaction.ts';
 import { alchemyCommandLine, type RunAlchemy } from '../run-alchemy.ts';
 import { toEngineError } from './translate-error.ts';
 
@@ -45,10 +43,7 @@ export interface ConvergeContext {
     readonly args?: readonly string[];
     readonly cwd?: string;
     readonly env?: Readonly<Record<string, string | undefined>>;
-    readonly transformOutput?: (stream: ChildStreamName) => TransformStream<string, string>;
   }) => Promise<ChildResult>;
-  /** The option names the host's `ctx.spawn` accepts. Absent on an engine older than 0.10.0. */
-  readonly spawnOptionNames?: readonly string[];
   /** How the run's most recent completed child ended, or undefined when none
    *  ran — the operation failed before reaching the converge, or the spawn
    *  never launched. The engine keeps this record; composer does not. */
@@ -56,29 +51,10 @@ export interface ConvergeContext {
 }
 
 /**
- * The failure for a host whose engine cannot transform a child's output, which Composer needs
- * to redact the deploy engine's output; `undefined` when it can. A 0.9.0 host would ignore the
- * transform and print the output unredacted.
+ * Node's `--import` of a module that sends the child's stdout to stderr when
+ * stdout is not a terminal. In human format the engine hands a piped run's
+ * stdout to the child, and that pipe carries only the parent's data lines.
  */
-export function outputTransformMissing(
-  ctx: ConvergeContext,
-): Result<never, CliStructuredError> | undefined {
-  if (ctx.spawnOptionNames?.includes('transformOutput') === true) return undefined;
-  return notOk(
-    toEngineError(
-      new ComposerError(
-        'DEPS.CLI_ENGINE_INCOMPATIBLE',
-        "This prisma CLI's @prisma/cli-engine is older than 0.10.0; Composer needs 0.10.0 or later.",
-        {
-          why: "Composer removes secrets from the deploy engine's output through ctx.spawn's transformOutput option, which @prisma/cli-engine 0.10.0 added. An older engine ignores the option and would print that output unredacted, so Composer starts nothing.",
-          fix: 'Use a prisma CLI whose @prisma/cli-engine is 0.10.0 or later, the version @prisma/composer-cli declares as its peer.',
-        },
-      ),
-    ),
-  );
-}
-
-/** Node's `--import` of a module that sends the child's stdout to stderr when stdout is not a terminal. Under the engine's output transform the child's stdout is always a pipe, so all of Alchemy's output reaches the engine as stderr, and the CLI's own stdout keeps only its data lines in human format. */
 const STDOUT_TO_STDERR = [
   '--import',
   `data:text/javascript,${encodeURIComponent(
@@ -86,13 +62,8 @@ const STDOUT_TO_STDERR = [
   )}`,
 ] as const;
 
-/**
- * The adapter the operations call, backed by the engine's `ctx.spawn`, so the engine owns
- * signal policy and where the output goes. The engine passes each of the child's output
- * streams through Composer's redactor before it prints it. The secret values reach the
- * redactor in this process, never the child's environment or command line. Call it only
- * after `outputTransformMissing` found nothing.
- */
+/** The adapter the operations call, backed by the engine's `ctx.spawn` so the
+ *  terminal reaches alchemy natively and the engine owns signal policy. */
 export function convergeSpawn(ctx: ConvergeContext): RunAlchemy {
   return async (invocation) => {
     const commandLine = alchemyCommandLine(invocation);
@@ -101,7 +72,6 @@ export function convergeSpawn(ctx: ConvergeContext): RunAlchemy {
       args: [...STDOUT_TO_STDERR, ...commandLine.args],
       cwd: commandLine.cwd,
       env: commandLine.env,
-      transformOutput: () => redactingTransform(invocation.redactedValues),
     });
     return { ...result, commandLine };
   };

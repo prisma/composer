@@ -34,7 +34,7 @@ import {
   NAMED_SECRETS_ENV,
 } from '../../app-configuration-file.ts';
 import type { ComposerConfigSource } from '../../composer-config.ts';
-import { dotenv } from '../../config-adapters.ts';
+import { dotenv, environmentVariables } from '../../config-adapters.ts';
 import {
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
@@ -171,16 +171,18 @@ const coreIndex = path.resolve(
   'index.ts',
 );
 
-function makeAppDir(name = 'fixture-app'): { dir: string; entryPath: string } {
+/** An app whose one service is `app`. With `secretsKey`, the service's input reads that app secrets key, so the graph names it. */
+function makeAppDir(name = 'fixture-app', secretsKey?: string): { dir: string; entryPath: string } {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-')));
   tmpDirs.push(dir);
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'fixture-app' }));
   fs.writeFileSync(path.join(dir, 'prisma.config.ts'), 'export default { composer: {} };\n');
   const entryPath = path.join(dir, 'service.ts');
+  const reading = secretsKey !== undefined;
   fs.writeFileSync(
     entryPath,
     [
-      `import { module, service } from ${JSON.stringify(coreIndex)};`,
+      `import { module, secretSource, service } from ${JSON.stringify(coreIndex)};`,
       '',
       `export default module(${JSON.stringify(name)}, {}, ({ provision }) => {`,
       '  provision(',
@@ -190,9 +192,16 @@ function makeAppDir(name = 'fixture-app'): { dir: string; entryPath: string } {
       "      type: 'fixture/compute',",
       '      inputs: {},',
       '      params: {},',
+      ...(reading
+        ? [
+            "      input: { '~standard': { version: 1, vendor: 'fixture', validate: (value) => ({ value }) } },",
+          ]
+        : []),
       "      build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
       '    }),',
-      "    { id: 'app' },",
+      reading
+        ? `    { id: 'app', input: { key: secretSource({ key: ${JSON.stringify(secretsKey)} }, { label: 'secret', secretsKey: ${JSON.stringify(secretsKey)} }) } },`
+        : "    { id: 'app' },",
       '  );',
       '  return {};',
       '});',
@@ -849,8 +858,8 @@ describe('deploy()', () => {
     expect(fs.existsSync(failureFile ?? '')).toBe(false);
   });
 
-  test('an engine failure cause never carries a secret value read from a dotenv file', async () => {
-    const app = makeAppDir();
+  test('an engine failure cause never carries a known secret read from a dotenv file, and keeps a dotenv value no envSecret() names', async () => {
+    const app = makeAppDir('fixture-app', 'WEBHOOK_SIG');
     const onlyInDotenvFile = 'dotenv-only-SENTINEL-4f1c';
     const inBothPools = 'shared-name-SENTINEL-77ab';
     const secretNamedConfigValue = 'secret-named-SENTINEL-90cd';
@@ -892,9 +901,10 @@ describe('deploy()', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
     expect(result.failure.meta?.['engineCause']).toBe(
-      'error: rejected [redacted], [redacted] and [redacted]',
+      `error: rejected ${onlyInDotenvFile}, [redacted] and [redacted]`,
     );
-    expect(JSON.stringify(result.failure)).not.toContain('SENTINEL');
+    expect(JSON.stringify(result.failure)).not.toContain(inBothPools);
+    expect(JSON.stringify(result.failure)).not.toContain(secretNamedConfigValue);
   });
 
   test('an engine failure with no recorded cause keeps the bare status sentence and no engineCause', async () => {
@@ -4092,9 +4102,9 @@ describe('the second process reads what the first process read', () => {
 
   const refusedPlainValues = [
     {
-      what: 'a root input field holding the text a written secrets list returned',
+      what: 'a root input field holding the text under a secrets key',
       configuration: { ...values(), GREETING: 'plain-SECRET-91' },
-      secrets: { ANOTHER_NAME: 'plain-SECRET-91' },
+      secrets: { S13_SECRET: 'plain-SECRET-91' },
       where: 'Root input field input.GREETING',
     },
     {
@@ -4371,8 +4381,104 @@ describe('no known secret is printed', () => {
     expect(seen.stdout).toBe('printed [redacted]\n');
   }, 15_000);
 
+  test('with dotenv() and environmentVariables() in both lists, only the value an envSecret() names is redacted', async () => {
+    const app = makeAppDir('hello-email');
+    fs.writeFileSync(
+      app.entryPath,
+      [
+        `import { module, secretSource, service } from ${JSON.stringify(coreIndex)};`,
+        `import { type } from ${JSON.stringify(arktypeEntry)};`,
+        '',
+        'const app = service({',
+        "  name: 'app',",
+        "  extension: 'fixture-extension',",
+        "  type: 'fixture/compute',",
+        '  inputs: {},',
+        '  params: {},',
+        "  input: { '~standard': { version: 1, vendor: 'fixture', validate: (value) => ({ value }) } },",
+        "  build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
+        '});',
+        '',
+        "export default module('hello-email', { input: type({ EMAIL_DELIVERY_MODE: 'string', EMAIL_FROM: 'string' }) }, ({ input, provision }) => {",
+        '  provision(app, {',
+        "    id: 'app',",
+        '    input: {',
+        '      mode: input.EMAIL_DELIVERY_MODE,',
+        '      from: input.EMAIL_FROM,',
+        "      credential: secretSource({ key: 'EMAIL_DELIVERY_CREDENTIAL' }, { label: \"envSecret('EMAIL_DELIVERY_CREDENTIAL')\", secretsKey: 'EMAIL_DELIVERY_CREDENTIAL' }),",
+        '    },',
+        '  });',
+        '});',
+        '',
+      ].join('\n'),
+    );
+    fs.writeFileSync(
+      path.join(app.dir, '.env'),
+      'EMAIL_DELIVERY_MODE=none\nEMAIL_FROM=dev@example.com\nEMAIL_DELIVERY_CREDENTIAL=sk_test_abc123\n',
+    );
+    const printed = 'mode none from dev@example.com key sk_test_abc123';
+    const seen = { configurationFile: '', stdout: '' };
+    const outputs = {
+      stdout: { write: (text: string) => (seen.stdout += text) },
+      stderr: { write: () => {} },
+    };
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: {
+            value: {
+              ...fakeConfig(),
+              config: [dotenv(), environmentVariables()],
+              secrets: [dotenv(), environmentVariables()],
+            },
+            file: path.join(app.dir, 'prisma.config.ts'),
+          },
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async (input) => {
+            const configurationFile = input.env[APP_CONFIGURATION_FILE_ENV];
+            const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
+            if (configurationFile === undefined || resultFile === undefined) {
+              throw new Error('the second process was not told where its files are');
+            }
+            seen.configurationFile = fs.readFileSync(configurationFile, 'utf8');
+            await spawnCommandLine(
+              {
+                command: process.execPath,
+                args: ['-e', `process.stdout.write(${JSON.stringify(`${printed}\n`)})`],
+                cwd: app.dir,
+                env: input.env,
+              },
+              input.redactedValues,
+              outputs,
+            );
+            fs.writeFileSync(engineFailureFilePath(resultFile), printed);
+            return { exitCode: 1, signal: null };
+          },
+        },
+      ),
+    );
+
+    if (result.ok) throw new Error('the deploy should fail');
+    expect(result.failure.code).toBe('DEPLOY.ENGINE_FAILED');
+    expect(JSON.parse(seen.configurationFile).appConfigurationRead.rootInput).toEqual([
+      { path: ['EMAIL_DELIVERY_MODE'], value: 'none' },
+      { path: ['EMAIL_FROM'], value: 'dev@example.com' },
+    ]);
+    expect(seen.configurationFile).not.toContain('sk_test_abc123');
+    expect(seen.stdout).toBe('mode none from dev@example.com key [redacted]\n');
+    expect(result.failure.meta?.['engineCause']).toBe(
+      'mode none from dev@example.com key [redacted]',
+    );
+  }, 15_000);
+
   test('a thrown string holding a known secret is redacted before it is rethrown or sent to a reporter', async () => {
-    const app = makeAppDir();
+    const app = makeAppDir('fixture-app', 'TOKEN_X');
     const finished: string[] = [];
     const reporter: NonNullable<ExtensionDescriptor['reporter']> = {
       begin: async () => ({
@@ -4422,34 +4528,10 @@ describe('no known secret is printed', () => {
     expect(finished.join('')).not.toContain('SENTINEL');
   });
 
-  test("an adapter's failure message is redacted with every value a written secrets list returned", async () => {
-    const app = makeAppDir();
-
-    const result = await silently(() =>
-      deployWithDeps(
-        {
-          config: composerConfig({
-            ...fakeConfig(),
-            secrets: [() => ({ TOKEN_X: 'adapter-SENTINEL-1' })],
-            config: [throwingAdapter('bad adapter-SENTINEL-1')],
-          }),
-          entry: app.entryPath,
-          environment: 'staging',
-          cwd: app.dir,
-        },
-        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
-      ),
-    );
-
-    if (result.ok) throw new Error('the deploy should fail');
-    expect(result.failure.code).toBe('CONFIG.ADAPTER_FAILED');
-    expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SENTINEL');
-  });
-
   test.skipIf(process.platform === 'win32')(
     "a dev event's message is redacted",
     async () => {
-      const app = makeAppDir('hello-dev');
+      const app = makeAppDir('hello-dev', 'DEV_TOKEN');
       const attachment: LocalTargetAttachment = {
         startServices: () => Promise.resolve(),
         stopApp: () => Promise.resolve(),

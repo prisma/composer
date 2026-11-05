@@ -7,7 +7,6 @@ import {
   KnownSecrets,
   redactDevEvent,
   redactError,
-  redactingTransform,
   redactSummary,
   redactThrown,
   redactValues,
@@ -22,20 +21,9 @@ const knowing = (...values: string[]): SecretRedaction => {
   return redaction;
 };
 
-async function throughTransform(chunks: readonly string[], values: readonly string[]) {
-  const source = new ReadableStream<string>({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(chunk);
-      controller.close();
-    },
-  });
-  let text = '';
-  const reader = source.pipeThrough(redactingTransform(values)).getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) return text;
-    text += value;
-  }
+function throughRedactor(chunks: readonly string[], values: readonly string[]): string {
+  const redactor = new StreamRedactor(values);
+  return chunks.map((chunk) => redactor.push(chunk)).join('') + redactor.end();
 }
 
 describe('SecretRedaction', () => {
@@ -201,6 +189,17 @@ describe('the values a command learns are secrets', () => {
     expect(values.sort()).toEqual(['w', 'w2']);
   });
 
+  test('a shell value in the app secrets that no secrets key names is not redacted', () => {
+    const redaction = new SecretRedaction({});
+    redaction.addKnownSecrets(
+      valuesUnderSecretsKeys({}, { SHLVL: '1', EMAIL_DELIVERY_CREDENTIAL: 'sk_test_abc123' }, [
+        'EMAIL_DELIVERY_CREDENTIAL',
+      ]),
+    );
+
+    expect(redaction.redact('SHLVL=1 key=sk_test_abc123')).toBe('SHLVL=1 key=[redacted]');
+  });
+
   test('credentialLookingValues takes text of eight characters or more under credential-looking names', () => {
     expect(
       credentialLookingValues({ STRIPE_KEY: 'sk_live_123456', API_TOKEN: 'short', N: 4 }),
@@ -308,13 +307,13 @@ describe('redacting what a command returns', () => {
 });
 
 describe('redacting a stream', () => {
-  test('redactingTransform redacts a secret split across two chunks', async () => {
-    expect(await throughTransform(['token is s3cr3t-', 'value, done\n'], ['s3cr3t-value'])).toBe(
+  test('StreamRedactor redacts a secret split across two chunks', () => {
+    expect(throughRedactor(['token is s3cr3t-', 'value, done\n'], ['s3cr3t-value'])).toBe(
       'token is [redacted], done\n',
     );
   });
 
-  test('redactingTransform redacts every occurrence at every chunk size', async () => {
+  test('StreamRedactor redacts every occurrence at every chunk size', () => {
     const parts: string[] = [];
     for (let index = 0; index < 2000; index++) {
       if (index % 7 === 0) parts.push('SECRETXYZ');
@@ -329,7 +328,7 @@ describe('redacting a stream', () => {
       for (let start = 0; start < text.length; start += size) {
         chunks.push(text.slice(start, start + size));
       }
-      expect(await throughTransform(chunks, ['SECRETXYZ', 'SECRET'])).toBe(expected);
+      expect(throughRedactor(chunks, ['SECRETXYZ', 'SECRET'])).toBe(expected);
     }
   });
 
@@ -359,20 +358,20 @@ describe('redacting a stream', () => {
     expect(redactor.end()).toBe('');
   });
 
-  test('StreamRedactor hides overlapping secrets whole, at every chunk size', async () => {
+  test('StreamRedactor hides overlapping secrets whole, at every chunk size', () => {
     const text = 'xxabcdefyy and abc and bcdef';
     for (let size = 1; size <= text.length; size++) {
       const chunks: string[] = [];
       for (let start = 0; start < text.length; start += size) {
         chunks.push(text.slice(start, start + size));
       }
-      expect(await throughTransform(chunks, ['abc', 'bcdef'])).toBe(
+      expect(throughRedactor(chunks, ['abc', 'bcdef'])).toBe(
         'xx[redacted]yy and [redacted] and [redacted]',
       );
     }
   });
 
-  test('StreamRedactor gives the same text as whole-text redaction for random chunks and overlapping secrets', async () => {
+  test('StreamRedactor gives the same text as whole-text redaction for random chunks and overlapping secrets', () => {
     let seed = 7;
     const next = (limit: number) => {
       seed = (seed * 1103515245 + 12345) % 2147483648;
@@ -388,7 +387,7 @@ describe('redacting a stream', () => {
         chunks.push(text.slice(start, start + size));
         start += size;
       }
-      expect(await throughTransform(chunks, secrets)).toBe(redactValues(text, secrets));
+      expect(throughRedactor(chunks, secrets)).toBe(redactValues(text, secrets));
     }
   });
 

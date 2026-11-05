@@ -255,7 +255,7 @@ The name in the app configuration that a param source reads: `envParam('NAME')` 
 
 ### The app secrets
 
-The merged values the `secrets` adapters return, text only. The name a secret source reads is its **secrets key** (`secretSource()`'s `secretsKey`; `envSecret('NAME')` passes `NAME`). Deploy preflight fills a missing `envSecret()` platform variable from it. `prisma dev` hands its second process only the **named secrets**, the values under the secrets keys the graph's `envSecret()`s name, in one environment variable, `PRISMA_COMPOSER_NAMED_SECRETS` (in code: `NamedSecrets`). Composer never passes it to Load or a schema, never writes its values to a file, and redacts them wherever it prints. With no `secrets` list it is the process environment. In code: `AppSecrets`.
+The merged values the `secrets` adapters return, text only. The name a secret source reads is its **secrets key** (`secretSource()`'s `secretsKey`; `envSecret('NAME')` passes `NAME`). Deploy preflight fills a missing `envSecret()` platform variable from it. `prisma dev` hands its second process only the **named secrets**, the values under the secrets keys the graph's `envSecret()`s name, in one environment variable, `PRISMA_COMPOSER_NAMED_SECRETS` (in code: `NamedSecrets`). It is a pool of values Composer may carry, read only under the secrets keys the graph names; nothing else in it is read. Composer never passes it to Load or a schema, never writes its values to a file, and redacts the values under the secrets keys wherever it prints. With no `secrets` list it is the process environment. In code: `AppSecrets`.
 
 ### Secrets key
 
@@ -267,7 +267,7 @@ The app secrets under the secrets keys the graph reads, each with text. Only `pr
 
 ### Known secrets
 
-The values one command knows are secrets: each value under a secrets key, and each value a written `secrets` list returns. The CLI refuses to write the app configuration file when a value in it contains a known secret. The CLI redacts the known secrets wherever it prints, together with **credential-looking values**: text of eight characters or more under a variable name that looks like a credential's, which might not be secrets ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). In code: `KnownSecrets`, and `SecretRedaction`, which holds both kinds.
+The values one command knows are secrets: the value under each secrets key the graph names, in the app secrets and in the app configuration. Nothing else is a known secret: a plain value in the same `.env` file, or the shell's `SHLVL=1` under `secrets: [dotenv(), environmentVariables()]`, is not. The CLI refuses to write the app configuration file when a value in it contains a known secret. The CLI redacts the known secrets wherever it prints, together with **credential-looking values**: text of eight characters or more under a variable name that looks like a credential's, which might not be secrets ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). In code: `KnownSecrets`, and `SecretRedaction`, which holds both kinds.
 
 ### The app configuration file
 
@@ -279,7 +279,7 @@ A function in the `config` list of the `composer` section. It receives the envir
 
 ### Secrets adapter
 
-A function in the `secrets` list of the `composer` section, with the same shape as a config adapter. Both lists use the `ConfigAdapter` type. What the secrets adapters return merges into the app secrets; every value must be text. When a project writes its own `secrets` list, Composer redacts every value it returns.
+A function in the `secrets` list of the `composer` section, with the same shape as a config adapter. Both lists use the `ConfigAdapter` type. What the secrets adapters return merges into the app secrets; every value must be text. Composer reads only the values under the secrets keys the graph names, and redacts those.
 
 ### Topology
 
