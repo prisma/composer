@@ -11,7 +11,7 @@ A PR delivers one capability a user would notice, so slices whose limits the nex
 - **S3 to S8** are merged as one PR: prisma/composer#403.
 - **S9 and S10** are merged: prisma/composer#412.
 - **S11 to S13** are merged: prisma/composer#419.
-- **S18**, secrets in the root's input, is specified next. On 2026-11-06 Will split platform variables out into their own project, [platform-variables](../platform-variables/plan.md); S18 keeps only what concerns the root's input. Its `secret(inner)` is needed by that project's slice S2.
+- **S18**, secrets in the root's input, is specified next. On 2026-11-06 Will split platform variables out into their own project, [platform-variables](../platform-variables/plan.md); S18 keeps only what concerns the root's input. No platform-variables slice depends on it.
 - **S14** is designed with Will before it is specified.
 
 ## S1. Spike: an input field as an opaque typed value

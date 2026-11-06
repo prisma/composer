@@ -63,7 +63,7 @@ There is no window in which `envSecret()` and `variable.secret()` follow differe
 
 - An app whose root is `appRoot()` and uses `variable()`, `variable.secret()` and `schema` deploys to Prisma Cloud with one optional variable unset, and the deploy report lists that variable with the command that sets it. With a required variable unset, preflight refuses the deploy naming the variable and the field, before anything is created. Setting it with `prisma project env add` and deploying again starts the service with the value decoded and validated.
 - A fresh preview branch of that app deploys with its values from a preview-wide row, and a value set on one service alone is seen by preflight for that service.
-- A nested module that calls `provision(variable(…))` fails to compile, and an app whose entry is still `module()` fails Load with the message that says to use `appRoot()`.
+- A nested module that calls `provision(variable(…))` fails to compile, and an app whose entry is still `module()` deploys with a warning that says to use `appRoot()`, and its body cannot provision a platform variable.
 - The same app runs under `prisma dev` with its values in `.env.dev`, and a value that fails its `schema` stops `prisma dev` with boot's message.
 - `envSecret()` deploys without preflight writing anything to the platform.
 - A planted secret decoded under a number schema produces an error that holds no part of the secret.

@@ -4,7 +4,7 @@ Spec: [spec.md](spec.md). Design: [design.md](design.md).
 
 ## Status
 
-Planned 2026-11-06, replanned the same day after three reviews and the root-construct decision. No slice started.
+Planned 2026-11-06, replanned the same day after three reviews and the root-construct decision. S1 is specified.
 
 ## Order
 
@@ -18,11 +18,12 @@ Three slices, one after the other. S1 ships the root constructor alone: it is a 
 
 Builds on: main. Hands to: S2 a root whose body context is typed differently from a nested module's, so S2 can add the one `provision()` overload only the root has.
 
-- `appRoot(name, { input? }, body)` in `@prisma/composer`: what `module()` takes minus `deps` and `expose`. Its result is a root node that `provision()` refuses by type. The deploy and `prisma dev` load only a root node, and fail Load with a message naming `appRoot()` for an entry that is a `module()`. Compile-time in this slice: no `deps` or `expose` on the root, and no nesting of a root (design section 4).
+- `appRoot(name, { input? }, body)` in `@prisma/composer`: what `module()` takes minus `deps` and `expose`. Its result is a root node that `provision()` refuses by type. An entry built with `module()` keeps working, with a deprecation warning naming `appRoot()`. Compile-time in this slice: no `deps` or `expose` on the root, and no nesting of a root (design section 4).
 - Every example's root and every guide's root change `module(` to `appRoot(`; the agent skill too.
 - Glossary: the Module entry's "there is no separate root construct" is rewritten (design section 14). ADR-0016 and ADR-0061 say the root is written with `appRoot()` where they show a root.
 - The release note: the `module(` to `appRoot(` change, before and after.
-- QA: a `module()` entry fails Load with the `appRoot()` message; `provision(appRoot(…))` fails to compile.
+- QA: an example deployed with its `appRoot()` entry; the same example with a `module()` entry deploying and printing the warning once; `provision(appRoot(…))` fails to compile.
+- Spec: [slices/s1-app-root/spec.md](slices/s1-app-root/spec.md).
 
 
 ## S2. A platform variable is a node, and the deploy fills nothing
@@ -79,7 +80,7 @@ Each answer is recorded in ADR-0064 before the code that depends on it is writte
 - A required variable unset: preflight refuses, naming it. An optional one unset: the deploy succeeds and the report lists it. Set, then changed: only the readers redeploy.
 - `envSecret()` deployed before and after, showing nothing written to the platform.
 - A fresh preview branch deploying with a preview-wide value, and a value set on one service alone, seen by preflight and received by that service only.
-- A nested module calling `provision(variable(…))` fails to compile; a `module()` entry fails Load with the `appRoot()` message.
+- A nested module calling `provision(variable(…))` fails to compile, and so does a `module()` root's body.
 - A secret planted in a value and a search of the deploy output, the report, the stack file and the boot error for any part of it.
 
 ## S3. `schema`
