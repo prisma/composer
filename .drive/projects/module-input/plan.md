@@ -9,9 +9,9 @@ A PR delivers one capability a user would notice, so slices whose limits the nex
 - **S1** is done: [slices/s1-spike/report.md](slices/s1-spike/report.md).
 - **S2** is merged: prisma/composer#401.
 - **S3 to S8** are merged as one PR: prisma/composer#403.
-- **S9 and S10** are built and in review as prisma/composer#412.
-- **S11 to S13** are built on the git branch `claude/module-input-s11-s13`, not yet opened as a PR, through four review rounds. The two changes of 2026-11-05 are done and in review: the known secrets are the values the graph names (S13 below), and the engine-based redaction of Alchemy's output is gone, because Will dropped prisma/prisma-cli#383. The PR then waits only for #412 to merge.
-- **S18**, platform variables, was designed with Will on 2026-11-05 ([design.md](design.md) sections 5 and 7). It is specified next and built after S11 to S13 merge. It absorbs S15, S16 and S17.
+- **S9 and S10** are merged: prisma/composer#412.
+- **S11 to S13** are merged: prisma/composer#419.
+- **S18**, secrets in the root's input, is specified next. On 2026-11-06 Will split platform variables out into their own project, [platform-variables](../platform-variables/plan.md); S18 keeps only what concerns the root's input. Its `secret(inner)` is needed by that project's slice P2.
 - **S14** is designed with Will before it is specified.
 
 ## S1. Spike: an input field as an opaque typed value
@@ -70,25 +70,20 @@ Everywhere Composer prints, it redacts every known secret, at any length. The kn
 
 Adapters may report that their values changed, and `dotenv()` watches its files. `prisma dev` applies the new values instead of pausing. Designed and specified after S13.
 
-## S15, S16 and S17 are absorbed by S18
+## S15, S16 and S17 are settled
 
-S15 (a developer's local secret reaching another environment) is settled because the deploy no longer fills platform variables. S16 (secrets get a home of their own) is settled because only the values the root names are known secrets. S17 (`secret(schema)`) ships inside S18, because platform secrets and carried secrets both need it.
+S15 (a developer's local secret reaching another environment) is settled by the platform-variables project, whose deploy fills nothing on the platform. S16 (secrets get a home of their own) is settled because only the values the graph names are known secrets. S17 (`secret(schema)`) ships in S18.
 
-## S18. Platform variables are nodes, and the root's input may hold a secret
+## S18. The root's input may hold a secret
 
-Design: [design.md](design.md) sections 5, 7, 8 and 9, settled 2026-11-05. One PR, after S11 to S13 merge.
+Design: [design.md](design.md) sections 3, 7, 8 and 9. One PR. Platform variables, which S18 held until 2026-11-06, are now the [platform-variables](../platform-variables/plan.md) project.
 
-- `@prisma/composer-prisma-cloud` exports `platformVariable({ name, parse? })` and `platformSecret({ name, parse? })`, resources whose `value` is a runtime value. The Prisma Cloud target creates a subscription of each service to each variable its input points at, and sets no value. The deploy report lists the variables with no entry on the platform. The local target fills a platform variable from the app configuration or the app secrets under its `name`, and validates the value against `parse`.
-- `parse` takes a Standard JSON Schema; its `jsonSchema.input()` travels in a `$platform` marker in the input document; Load refuses a transforming or unencodable schema, and two nodes for one `name` with different schemas. Boot decodes the text as JSON unless the schema's type is `string`, validates it against the JSON Schema with a validator Composer ships, then hands it to the service's schema. The platform validates nothing.
-- `secretString()` becomes `secret(inner)`, in both entry points.
-- A root `secret()` field is filled from the app secrets and reaches the second process in `PRISMA_COMPOSER_NAMED_SECRETS`; the deploy sets it on the service as a secret variable. A name in both the app configuration and the app secrets for a root field fails the deploy. `destroy` binds it to a stand-in box.
-- Preflight stops filling platform variables on deploy and dev. The Prisma Cloud target stops stripping a service's environment at boot: a service sees the project's variables plus what Composer sets on it directly. The local target keeps giving each service only what its input points at.
-- `envSecret()` and `envParam()` are deprecated as shortcuts.
-- The slice decides whether the deploy writes the resolved binding instead of the schema's output into the input document, so a transforming `field()` schema works for a literal.
-- Decision records rewritten in full: ADR-0029, ADR-0032, ADR-0042, ADR-0058 and ADR-0062. New glossary entries: platform variable, platform secret, subscription, carried secret, known secrets.
-- Breaking: `secretString()` removed; preflight no longer fills a variable, so a project that relied on `deploy` seeding `envSecret()` values sets them on the platform instead.
-
-Nothing in it waits for the platform. When the platform ships subscriptions, the target records each service's subscriptions and the "not set" report comes from the platform instead of the project's variable names.
+- `secretString()` becomes `secret(inner)`, in both entry points. `inner` says what the secret's content must be, and is checked at boot when the service unboxes it.
+- A root `secret()` field is a carried secret: filled from the app secrets under its name, handed to the second process in `PRISMA_COMPOSER_NAMED_SECRETS`, and set on the service as a secret variable by the deploy. A name present in both the app configuration and the app secrets for a root field fails the deploy. `destroy` binds it to a stand-in box.
+- The known secrets gain the root's `secret()` field values.
+- The slice decides whether the deploy writes the resolved binding, instead of the schema's output, into the input document, so a transforming `field()` schema works for a literal binding. The recommendation is yes: boot then runs the service's schema once, on the same data the deploy checked.
+- Decision records rewritten in full: ADR-0029 (a carried secret is a secret Composer reads), ADR-0042 (`secret(inner)` and the resolved binding) and ADR-0062 (the root's input may hold a secret). Glossary entries: carried secret, `secret()`.
+- Breaking: `secretString()` removed.
 
 ## Close-out
 
