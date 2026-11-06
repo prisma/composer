@@ -96,15 +96,17 @@ export const deployHttpClientLayer = (
   Layer.effect(
     HttpClient.HttpClient,
     Effect.gen(function* () {
-      const management = yield* HttpClient.HttpClient.pipe(
-        Effect.provide(FetchHttpClient.layer),
-        Effect.provideService(FetchHttpClient.Fetch, fetchThrough(client)),
-      );
+      // The fetch client reads `Fetch` when it sends, not when it is built, and
+      // `FetchHttpClient.layer` may be an instance the deploy already built.
+      const throughClient = fetchThrough(client);
+      const management = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer));
       const other = yield* NodeHttpClient.makeNodeHttp;
       const routed = HttpClient.makeWith<never, never, HttpClientError.HttpClientError, never>(
         Effect.flatMap((request) =>
           URL.parse(request.url)?.origin === origin
-            ? management.execute(request)
+            ? management
+                .execute(request)
+                .pipe(Effect.provideService(FetchHttpClient.Fetch, throughClient))
             : other.execute(request),
         ),
         Effect.succeed,
