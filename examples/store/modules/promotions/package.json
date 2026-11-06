@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@store/catalog": "workspace:0.37.0",
-    "arktype": "^2.2.3"
+    "arktype": "^2.2.9"
   },
   "peerDependencies": {
     "@prisma/composer": "workspace:0.37.0",

@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@prisma/orm-postgres": "8.0.0-rc.20",
-    "arktype": "^2.2.3",
+    "arktype": "^2.2.9",
     "pg": "8.22.0"
   },
   "peerDependencies": {

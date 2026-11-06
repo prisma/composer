@@ -35,7 +35,7 @@
     "@internal/foundation": "workspace:0.37.0",
     "@internal/prisma-cloud": "workspace:0.37.0",
     "@internal/service-rpc": "workspace:0.37.0",
-    "arktype": "^2.2.3",
+    "arktype": "^2.2.9",
     "nodemailer": "^9.0.3"
   },
   "devDependencies": {
@@ -45,6 +45,6 @@
     "@types/nodemailer": "^8.0.1",
     "typescript": "^6.0.3",
     "vitest": "^5.0.4",
-    "tsdown": "^0.22.7"
+    "tsdown": "^0.23.2"
   }
 }

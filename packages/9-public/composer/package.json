@@ -40,12 +40,12 @@
     "alchemy": "2.0.0-beta.84",
     "cross-spawn": "^7.0.6",
     "dotenv-flow": "4.1.0",
-    "effect": "4.0.5",
+    "effect": "4.0.7",
     "esbuild": "^0.28.1",
     "@prisma/management-api-sdk": "^1.80.0"
   },
   "peerDependencies": {
-    "arktype": "^2.2.3",
+    "arktype": "^2.2.9",
     "zod": "^4.4.3"
   },
   "peerDependenciesMeta": {
@@ -68,9 +68,9 @@
     "@internal/service-rpc": "workspace:0.37.0",
     "@internal/tsdown-config": "workspace:0.37.0",
     "@types/node": "^26.0.1",
-    "tsdown": "^0.22.7",
+    "tsdown": "^0.23.2",
     "typescript": "^6.0.3",
-    "arktype": "^2.2.3",
+    "arktype": "^2.2.9",
     "zod": "^4.4.3"
   },
   "license": "Apache-2.0",
