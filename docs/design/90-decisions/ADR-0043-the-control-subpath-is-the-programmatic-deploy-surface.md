@@ -1,5 +1,7 @@
 # ADR-0043: `@prisma/composer/control` is the programmatic deploy surface
 
+Amended by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): `deploy` runs Alchemy in the calling process, so the report hook returns the `DeploymentSummary` as a value; `deploy` sets no `PRISMA_COMPOSER_DEPLOYMENT_RESULT_FILE`. `deploy` also takes an optional `signal` that interrupts the plan or apply.
+
 Amended by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md): each operation takes a required `config: { value, file }`, and the effect-conflict diagnosis is retired. Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the `prisma-composer` binary is retired; the `prisma` CLI renders two of the four operations, as `prisma deploy` and `prisma dev`, and `destroy` and `log` are called from scripts. The surface below is otherwise unchanged.
 
 Amended by [ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md): two more operations, `devUrl` and `devStop`, act on the app `prisma dev` last ran from a directory. Amended 2026-10-28: they act on the app and environment named in their input instead, with `environment` defaulting to `dev` ([ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md)). `dev` and `log` take `environment` too, also defaulting to `dev`.
@@ -25,7 +27,7 @@ if (result.ok) {
   switch (result.failure.code) {
     case 'DEPLOY.STAGE_INVALID': // e.g. a stage name git would reject
     case 'ASSEMBLE.BUILD_FAILED': // the app's built output is missing
-    case 'DEPLOY.ENGINE_FAILED': // alchemy ran and exited nonzero
+    case 'DEPLOY.ENGINE_FAILED': // Alchemy's plan or apply failed
       report(result.failure.message);
   }
 }

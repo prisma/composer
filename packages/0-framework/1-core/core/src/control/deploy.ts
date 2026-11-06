@@ -18,7 +18,9 @@ import {
   type ServiceNode,
   slotsOf,
 } from '../node.ts';
+import { type PreflightPayload, readPreflightPayload } from '../preflight-transport.ts';
 import type {
+  CallerCredentials,
   ContainerInstance,
   ExtensionDescriptor,
   NodeDescriptor,
@@ -144,6 +146,8 @@ export interface LowerContext {
    * container descriptor.
    */
   readonly container: ContainerInstance | undefined;
+  /** What the owning extension's preflight handed back this run; `undefined` when it returned nothing or ran no preflight. Core never reads it. */
+  readonly preflight: PreflightPayload;
   /** Already-lowered deps (topo order). */
   readonly lowered: ReadonlyMap<NodeId, Outputs>;
   /** Every provisioned param value minted this lowering, keyed by edge id (ADR-0031). */
@@ -236,6 +240,12 @@ export interface LowerOptions {
   readonly report?: (result: DeploymentResult) => void;
   /** Addresses lowered without an artifact: `package` and `deploy` are skipped and `reserve` runs instead (ADR-0056). Only the dev stack file sets it. */
   readonly unassembled?: readonly string[];
+  /** Each extension's resolved container, by extension id. A generated stack file reads them with `transportedLowerInputs`. */
+  readonly containers: ReadonlyMap<string, ContainerInstance>;
+  /** Each extension's preflight payload, by extension id. A generated stack file reads them with `transportedLowerInputs`. */
+  readonly preflight: ReadonlyMap<string, string>;
+  /** What the caller already authenticated, handed to every extension's `providers()` and to the state descriptor's `create()`. Absent means each extension falls back to its own credential protocol. */
+  readonly credentials?: CallerCredentials | undefined;
 }
 
 /** A build descriptor's normalized output: the produced bundle dir plus the app's runnable entry within it. */
@@ -626,7 +636,9 @@ export function resolveStateLayer(
   config: PrismaAppConfig,
   containers: ReadonlyMap<string, ContainerInstance>,
 ): AlchemyStateLayer {
-  return opts.state ?? config.state.create(containers.get(config.state.extension));
+  return (
+    opts.state ?? config.state.create(containers.get(config.state.extension), opts.credentials)
+  );
 }
 
 /**
@@ -634,9 +646,12 @@ export function resolveStateLayer(
  * extension without `providers` is skipped; no used-extensions-only
  * filtering (ADR-0017's pinned providers rule).
  */
-export function mergedProviders(config: PrismaAppConfig): Layer.Layer<never> {
+export function mergedProviders(
+  config: PrismaAppConfig,
+  credentials?: CallerCredentials,
+): Layer.Layer<never> {
   const layers = config.extensions.flatMap((extension) =>
-    extension.providers !== undefined ? [extension.providers()] : [],
+    extension.providers !== undefined ? [extension.providers({ credentials })] : [],
   );
   const [first, ...rest] = layers;
   return first === undefined ? Layer.empty : Layer.mergeAll(first, ...rest);
@@ -680,10 +695,8 @@ export function lowering(
       assertSameNodeAddresses(nodeAddresses(graph), opts.firstProcessNodeAddresses);
     }
     const extensions = yield* extensionsById(config);
-    // Each extension's own resolved container, deserialized once from the
-    // framework transport (the CLI parent wrote it; this is the alchemy
-    // child) — read-only for the rest of this lowering.
-    const containers = deserializeContainers(config.extensions, process.env);
+    const containers = opts.containers;
+    const preflightOf = (extensionId: string): PreflightPayload => opts.preflight.get(extensionId);
     const lowered = new Map<NodeId, Outputs>();
     // Each node's reported entities, in topo order — the loop is the only
     // party that holds both the node's identity and what it became. Collected
@@ -711,6 +724,7 @@ export function lowering(
         opts,
         application: undefined,
         container: containers.get(descriptor.id),
+        preflight: preflightOf(descriptor.id),
         lowered,
         provisioned,
       };
@@ -793,6 +807,7 @@ export function lowering(
       opts,
       application: applications.get(node.extension),
       container: containers.get(node.extension),
+      preflight: preflightOf(node.extension),
       lowered,
       provisioned,
       services,
@@ -892,20 +907,36 @@ export function lowering(
 }
 
 /**
+ * The containers and preflight payloads the CLI wrote into a generated stack
+ * file's environment, for `lower()`. Only the generated stack files that
+ * `destroy` and `prisma dev` run in an Alchemy child call it.
+ */
+export function transportedLowerInputs(
+  config: PrismaAppConfig,
+): Pick<LowerOptions, 'containers' | 'preflight'> {
+  const env = process.env;
+  const preflight = new Map<string, string>();
+  for (const { id } of config.extensions) {
+    const payload = readPreflightPayload(id, env);
+    if (payload !== undefined) preflight.set(id, payload);
+  }
+  return { containers: deserializeContainers(config.extensions, env), preflight };
+}
+
+/**
  * The whole-stack wrapper: Load → route each node through the config's
- * extension registries → an Alchemy Stack (the default export the alchemy
- * CLI consumes).
+ * extension registries → an Alchemy Stack, which `deploy` hands to
+ * `Alchemist.plan` and a generated stack file exports for the alchemy CLI.
  */
 export function lower(root: ModuleNode, config: PrismaAppConfig, opts: LowerOptions) {
   // A LowerError at deploy is fatal; orDie moves it off the error channel to
   // match what Alchemy.Stack accepts.
   const stackEffect = Effect.orDie(lowering(root, config, opts)) as Effect.Effect<undefined, never>;
-  const containers = deserializeContainers(config.extensions, process.env);
-  const providers = opts.providers ?? mergedProviders(config);
+  const providers = opts.providers ?? mergedProviders(config, opts.credentials);
 
   return Alchemy.Stack(
     opts.name,
-    { providers, state: resolveStateLayer(opts, config, containers) },
+    { providers, state: resolveStateLayer(opts, config, opts.containers) },
     stackEffect,
   );
 }

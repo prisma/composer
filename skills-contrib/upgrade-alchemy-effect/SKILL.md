@@ -122,9 +122,9 @@ install never gets there.
 
 ## Pinning an unreleased alchemy build
 
-The repo is on a registry release: `alchemy` and `@alchemy.run/prisma` at 2.0.0-beta.85, `@distilled.cloud/prisma` at 1.0.0-rc.18. It was on a preview of commit `972f294` until beta.85 shipped that commit. Use a preview only when you need a fix that no release contains yet.
+The repo is on a preview of alchemy-run/alchemy#3101 at `ab55f95` (`https://pkg.alchemy.run/<package>/pr:3101:ab55f95`): `@alchemy.run/prisma` at that URL, `alchemy` at the tarball URL `@alchemy.run/prisma` names as its `alchemy` peer, `@distilled.cloud/prisma` at the tarball URL `@alchemy.run/prisma` depends on, and `effect` with its companions at 4.1.2, the floor of that Distilled build's `effect` peer. The preview lets `PrismaEnvironment` and Distilled's `Credentials` omit the token (alchemy-run/alchemy#3101, alchemy-run/distilled#1076), which `prisma deploy` needs to send every request through the engine's client. Move back to a registry release once one contains both changes. Before this, the repo was on 2.0.0-beta.85 and `@distilled.cloud/prisma` 1.0.0-rc.18. Use a preview only when you need a fix that no release contains yet.
 
-alchemy publishes a preview of every commit on `main`. Pin it by commit, never by branch, in the `catalog:` block of `pnpm-workspace.yaml`:
+alchemy publishes a preview of every commit on `main`, and of each pull request's head as `pr:<number>:<short sha>`. Pin it by commit, never by branch, in the `catalog:` block of `pnpm-workspace.yaml`:
 
 ```yaml
 alchemy: https://pkg.alchemy.run/alchemy/<commit sha>
@@ -136,7 +136,7 @@ alchemy: https://pkg.alchemy.run/alchemy/<commit sha>
 - **The commit URL is immutable.** It redirects to a content-addressed tarball (`/alchemy/-/<sha256>.tgz`). The lockfile records the commit URL and the tarball's integrity.
 - **Pin `alchemy` and every `@alchemy.run/*` package at the same commit.** They are built together.
 - **A preview's own dependencies are content-addressed URLs too.** `@alchemy.run/prisma` depends on `@distilled.cloud/prisma` by a `/-/<sha256>.tgz` URL. Pin our `@distilled.cloud/prisma` to that exact URL (read it from the tarball's `package.json`), or pnpm and npm install a second copy and `Credentials` stops matching. The commit URL for the same package does not dedupe with it.
-- **The `alchemy` peer of `@alchemy.run/prisma` names a different tarball hash than the commit URL resolves to.** The two differ only in an embedded URL in `package.json`; the code is identical. Both pnpm and npm accept our copy and install one `alchemy`; `check:npm-effect-resolution` asserts that.
+- **The `alchemy` peer of `@alchemy.run/prisma` is a tarball URL.** For a commit preview it may name a different tarball hash than the commit URL resolves to; the two differ only in an embedded URL in `package.json`, and npm accepts our copy. For a pull request preview (`pr:<n>:<sha>`) the peer names the same tarball the PR URL redirects to, but npm compares the specs and `npm ls` reports our `alchemy` invalid, so `check:npm-effect-resolution` fails. Pin `alchemy` to the peer's exact tarball URL then.
 - **Not every package has a preview.** `@alchemy.run/test` returns 404 at every commit, so nothing may depend on it (see the breakage classes).
 - **Read the source at the commit**, not the docs: `git clone https://github.com/alchemy-run/alchemy && git checkout <sha>`, or extract the tarball into a gitignored `wip/` folder.
 - **Move back to a registry version** once a release contains the commit: `npm view alchemy dist-tags`, then compare the release date with the commit date.

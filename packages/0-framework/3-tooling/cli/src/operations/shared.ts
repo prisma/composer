@@ -6,12 +6,13 @@
  */
 import type { RunAssembler } from '@internal/assemble';
 import type {
-  ContainerCredentials,
+  CallerCredentials,
   ContainerDescriptor,
   ContainerInstance,
 } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
+import type { AppConverge } from '../app-converge.ts';
 import type { startWatch } from '../dev/watch.ts';
 import type { RunAlchemy } from '../run-alchemy.ts';
 
@@ -39,11 +40,13 @@ export interface ServiceEndpoint {
 export interface OperationDeps {
   readonly runAssembler?: RunAssembler | undefined;
   /**
-   * Starts the converge child. The CLI passes one backed by the engine's
-   * `ctx.spawn`, so the terminal reaches the child natively and the engine
-   * owns signal policy; hosts get the default `spawnAlchemy`.
+   * Starts the converge child for `destroy` and `dev`. The CLI passes one
+   * backed by the engine's `ctx.spawn`, so the terminal reaches the child
+   * natively and the engine owns signal policy; hosts get the default `spawnAlchemy`.
    */
   readonly alchemy?: RunAlchemy | undefined;
+  /** Lowers and converges `deploy`'s stack; defaults to the app's own install (`loadAppConverge`). Tests substitute it. */
+  readonly converge?: AppConverge | undefined;
   /** Starts a file watch for `dev`; defaults to chokidar-backed `startWatch`. Tests substitute it to drive changes directly. */
   readonly watch?: typeof startWatch | undefined;
   /**
@@ -60,7 +63,7 @@ export interface OperationDeps {
    * call", and both commands are credential-free by contract: there is no
    * authenticated call on those paths for this to reach.
    */
-  readonly credentials?: ContainerCredentials | undefined;
+  readonly credentials?: CallerCredentials | undefined;
 }
 
 /**

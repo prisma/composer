@@ -271,7 +271,7 @@ The values one command knows are secrets: the value under each secrets key the g
 
 ### The app configuration file
 
-The JSON file a command's first process writes for its second process. It holds what Load read from the app configuration (the root input fields the root's body passes on, and the text of each configuration key the graph reads) and the first process's node addresses. It never holds a secret: Load and the CLI refuse to write one into it. Deploy and destroy write it to `.prisma-composer/app-configuration-<pid>-<uuid>.json` and delete it when the run ends. `prisma dev` writes it to `<dev environment dir>/app-configuration-<pid>.json` before each converge and deletes it as soon as that converge ends. Only its owner can read it. The CLI also deletes it when its process exits. A file left by a process killed outright is deleted at the start of a later deploy, destroy or `prisma dev`, once it is ten minutes old. It is not `prisma.config.ts`, which is "the config file". In code: `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, `AppConfigurationRead`, `readAppConfigurationFile`.
+The JSON file a command's first process writes for its second process. It holds what Load read from the app configuration (the root input fields the root's body passes on, and the text of each configuration key the graph reads) and the first process's node addresses. It never holds a secret: Load and the CLI refuse to write one into it. Destroy writes it to `.prisma-composer/app-configuration-<pid>-<uuid>.json` and deletes it when the run ends. Deploy writes none: it runs Alchemy in its first process and hands `lower()` what Load read as a value (ADR-0064). `prisma dev` writes it to `<dev environment dir>/app-configuration-<pid>.json` before each converge and deletes it as soon as that converge ends. Only its owner can read it. The CLI also deletes it when its process exits. A file left by a process killed outright is deleted at the start of a later deploy, destroy or `prisma dev`, once it is ten minutes old. It is not `prisma.config.ts`, which is "the config file". In code: `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, `AppConfigurationRead`, `readAppConfigurationFile`.
 
 ### Config adapter
 
@@ -410,6 +410,10 @@ The compilation from one plane to the next: authoring topology → provisioning
 resource graph → hosting primitives. Analogous to Prisma ORM lowering a contract
 to a plan.
 
+### Converge
+
+Making an environment match the lowered stack: Alchemy plans what to create, update, replace and delete, then applies it. `prisma deploy` converges in its own process through Alchemy's programmatic API; `prisma dev` and `destroy` converge in an Alchemy child process. The *app converge* is the app install's `lower` and in-process converge, which `deploy` loads from `@prisma/composer/internal/converge` ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)). Codes: `DEV.CONVERGE_FAILED`, `DEPLOY.CONVERGE_RUNNING`, `DEPS.CONVERGE_UNRESOLVABLE`, `DEPS.CONVERGE_CONTRACT_MISMATCH`.
+
 ### Control plane / Execution plane
 
 Two the framework modes. **Control plane**: import the topology, validate, build the
@@ -455,6 +459,10 @@ environment's **Branch** (the Project's default Branch for `production`;
 otherwise found by `gitName` or created). The
 deploy CLI resolves and ensures both; Alchemy provisions only the resources
 inside them and never creates or destroys a container itself.
+
+### Caller credentials
+
+What the caller of a deploy or destroy has already authenticated: a workspace and a platform API client (`CallerCredentials`). For `prisma deploy` they are the active credential's workspace and the engine's `ctx.api`. The framework hands them unchanged to every extension hook that talks to the platform: the container lifecycle, `preflight`, reporters, `providers` and the state store. When the caller has none, each extension uses its own credential protocol, for Prisma Cloud `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)).
 
 ## Authoring surface — the next layer
 

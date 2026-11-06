@@ -62,6 +62,10 @@
       "@internal/cli/app-configuration-file": [
         "./packages/0-framework/3-tooling/cli/src/exports/app-configuration-file.ts"
       ],
+      "@internal/cli/converge": ["./packages/0-framework/3-tooling/cli/src/exports/converge.ts"],
+      "@internal/cli/converge-contract": [
+        "./packages/0-framework/3-tooling/cli/src/exports/converge-contract.ts"
+      ],
       "@internal/cli/control": ["./packages/0-framework/3-tooling/cli/src/exports/control.ts"],
       "@internal/cli/family": ["./packages/0-framework/3-tooling/cli/src/exports/family.ts"],
       "@internal/cli/testing": ["./packages/0-framework/3-tooling/cli/src/exports/testing.ts"],
@@ -150,6 +154,12 @@
       "@prisma/composer/config": ["./packages/9-public/composer/src/exports/config.ts"],
       "@prisma/composer/internal/app-configuration-file": [
         "./packages/9-public/composer/src/exports/internal-app-configuration-file.ts"
+      ],
+      "@prisma/composer/internal/converge": [
+        "./packages/9-public/composer/src/exports/internal-converge.ts"
+      ],
+      "@prisma/composer/internal/converge-contract": [
+        "./packages/9-public/composer/src/exports/internal-converge-contract.ts"
       ],
       "@prisma/composer/deploy": ["./packages/9-public/composer/src/exports/deploy.ts"],
       "@prisma/composer/local-target": ["./packages/9-public/composer/src/exports/local-target.ts"],

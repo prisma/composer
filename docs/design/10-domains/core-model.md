@@ -694,7 +694,7 @@ interface LowerOptions {
   readonly name: string                                  // stack name (+ Load's root id override)
   readonly environment?: string                          // the environment being deployed, as --environment gave it;
                                                          // Load's environment.name. The generated stack files always pass it.
-  readonly appConfigurationRead?: AppConfigurationRead     // passed to Load and the serializer; the generated stack files read it from the app configuration file
+  readonly appConfigurationRead?: AppConfigurationRead     // passed to Load and the serializer; deploy passes its own Load's, the generated stack files read it from the app configuration file
   readonly firstProcessNodeAddresses?: readonly string[]   // from the same file; lowering refuses a graph whose addresses differ
   // `prisma deploy` runs each service's build-adapter assembler and writes
   // the resulting bundle dirs here, into the generated stack file it hands to

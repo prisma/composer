@@ -8,7 +8,6 @@ import {
   type StateService,
 } from 'alchemy/State';
 import * as Effect from 'effect/Effect';
-import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import * as HttpClientRequest from 'effect/http/HttpClientRequest';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
@@ -17,7 +16,7 @@ import { BUILD_ID_ENV } from '../builds/resources.ts';
 import { withResourceReporting } from '../builds/state-store.ts';
 import * as client from '../client.ts';
 import { resolveDefaultBranchId } from '../container.ts';
-import * as credentials from '../credentials.ts';
+import { deployHttpClientLayer } from '../deploy-http-client.ts';
 import { failOnEmptyScopeWithLiveResources, scopeOccupied } from './empty-scope.ts';
 import { hostedStateBootstrapError } from './errors.ts';
 import {
@@ -37,7 +36,7 @@ import { migrateLegacyResourceState } from './legacy-resources.ts';
  * (stack, Alchemy stage) deploy lease, fork its heartbeat, run the migration guard,
  * and build the stock store. Finalizers (reverse order): interrupt the
  * heartbeat, release the lease. The Management API plumbing
- * (`ManagementClient`, `PrismaCredentials`) and the store's `HttpClient` are
+ * (`ManagementClient`, supplied or built from `PRISMA_SERVICE_TOKEN`) and the store's `HttpClient` are
  * provided internally, so the returned layer's only requirements are the
  * ones alchemy itself already provides to every state store
  * (`StackServices`).
@@ -50,17 +49,19 @@ import { migrateLegacyResourceState } from './legacy-resources.ts';
  * and alchemy's own convention (e.g. a missing state store is `Effect.die`
  * in `Stack.make`).
  */
-export const prismaStateLayer = (ids: {
-  readonly projectId: string;
-  readonly branchId?: string;
-  /** The project's default Branch id, when the deploy targets `production` — skips re-resolving it. */
-  readonly defaultBranchId?: string;
-}): Layer.Layer<State, never, StackServices> =>
-  // The origin comes from the same resolver upstream's providers use
-  // (credentials.managementApiBaseUrl), so PRISMA_API_URL moves the state
-  // client and the resource providers together, never one without the other.
+export const prismaStateLayer = (
+  ids: {
+    readonly projectId: string;
+    readonly branchId?: string;
+    /** The project's default Branch id, when the deploy targets `production` — skips re-resolving it. */
+    readonly defaultBranchId?: string;
+  },
+  supplied?: client.ManagementApiClient,
+): Layer.Layer<State, never, StackServices> =>
   Layer.unwrap(
-    credentials.managementApiBaseUrl().pipe(Effect.map((origin) => stateLayerAgainst(origin, ids))),
+    client
+      .managementApiOrigin(supplied)
+      .pipe(Effect.map((origin) => stateLayerAgainst(origin, ids, supplied))),
   ).pipe(Layer.orDie);
 
 /**
@@ -98,9 +99,10 @@ export const stateLayerAgainst = (
     readonly branchId?: string;
     readonly defaultBranchId?: string;
   },
+  supplied?: client.ManagementApiClient,
 ): Layer.Layer<State, never, StackServices> => {
   const { projectId, branchId, defaultBranchId } = ids;
-  const dependencies = client.layer({ apiOrigin }).pipe(Layer.provideMerge(credentials.fromEnv()));
+  const dependencies = client.suppliedOrFromEnv(supplied, apiOrigin);
 
   return Layer.effect(
     State,
@@ -111,7 +113,6 @@ export const stateLayerAgainst = (
         hostedStateBootstrapError(container, step, cause);
 
       const mgmt = yield* client.ManagementClient;
-      const { token } = yield* credentials.PrismaCredentials;
 
       // A non-production environment carries its branchId; production carries defaultBranchId —
       // re-resolved via the Management API only when neither is present.
@@ -144,13 +145,14 @@ export const stateLayerAgainst = (
         );
       }
 
+      // `mgmt` authenticates the store's requests, and the deploy's HttpClient
+      // drops the empty bearer header the store sets from `authToken`.
       const service = yield* makeHttpStateStore({
         url: `${apiOrigin}/v1/projects/${projectId}/branches/${stateBranchId}/alchemy-state`,
-        authToken: Redacted.value(token),
-        transformClient: (req) =>
-          HttpClientRequest.setHeader(req, LEASE_HEADER, Redacted.value(lease.leaseId)),
+        authToken: '',
+        transformClient: HttpClientRequest.setHeader(LEASE_HEADER, Redacted.value(lease.leaseId)),
         id: 'prisma-postgres',
-      }).pipe(Effect.provide(FetchHttpClient.layer));
+      }).pipe(Effect.provide(deployHttpClientLayer(mgmt, apiOrigin)));
 
       const migrated = migrateRowsOnRead(service);
 

@@ -1,7 +1,6 @@
 /**
- * What this extension's preflight hands the alchemy process, which re-imports
- * the config from scratch, on the framework's preflight transport. One
- * variable carries either kind:
+ * What this extension's preflight hands the lowering, which reads it as
+ * `LowerContext.preflight`. One payload carries either kind:
  *
  * - deploy: a JSON object mapping each pointed platform variable to its
  *   `updatedAt`, as read from the Management API;
@@ -11,8 +10,6 @@
  * A deploy payload always starts with `{`, so the prefix tells them apart.
  * Names, times and keyed hashes only, never a value.
  */
-import { readPreflightPayload } from '@internal/core/config';
-import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
 
 /** A value that changes when the pointed variable's value changes: the platform `updatedAt` on deploy, an HMAC of the value under `prisma dev`. Undefined when unknown. */
 export type PointerVersion = (name: string) => string | undefined;
@@ -121,31 +118,21 @@ const devPayloadError = (reason: string): Error =>
       `alchemy process — ${reason}. This is a framework bug; re-running \`prisma dev\` will not fix it.`,
   );
 
-/**
- * The lowering's view of what the preflight sent. `own` holds what the deploy
- * preflight read in this same process (the CLI process); the alchemy process
- * has none and reads the transported payload, decoded once on first use.
- */
-export function transportedPreflight(
-  own: ReadonlyMap<string, string>,
-  env: Readonly<Record<string, string | undefined>>,
-): TransportedPreflight {
+/** The lowering's view of what this run's preflight sent (`LowerContext.preflight`), decoded once on first use. */
+export function transportedPreflight(payload: string | undefined): TransportedPreflight {
   let decoded: DecodedPreflightPayload | undefined;
-  const decode = () =>
-    (decoded ??= decodePreflightPayload(readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, env)));
+  const decode = () => (decoded ??= decodePreflightPayload(payload));
   const noSecrets: ReadonlySet<string> = new Set();
   return {
     pointerVersion: (name) => {
-      const mine = own.get(name);
-      if (mine !== undefined) return mine;
-      const payload = decode();
-      if (payload.kind === 'deploy') return payload.updatedAt.get(name);
-      if (payload.kind === 'dev') return payload.pointerVersions.get(name);
+      const sent = decode();
+      if (sent.kind === 'deploy') return sent.updatedAt.get(name);
+      if (sent.kind === 'dev') return sent.pointerVersions.get(name);
       return undefined;
     },
     get absentSecrets() {
-      const payload = decode();
-      return payload.kind === 'dev' ? payload.absentSecrets : noSecrets;
+      const sent = decode();
+      return sent.kind === 'dev' ? sent.absentSecrets : noSecrets;
     },
   };
 }

@@ -1,5 +1,7 @@
 # ADR-0038: Containers are an extension descriptor
 
+> Amended by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): `deploy` runs Alchemy in the CLI's own process and hands each resolved container to `lower()` as a value (`LowerOptions.containers`). The environment-variable transport below remains for `destroy` and `prisma dev`, which still start an Alchemy child.
+
 > Amended (TML-3157): `ContainerInstance` gained an optional, framework-visible
 > `alchemyStage` — the deterministic Alchemy stage the container implies (the
 > Prisma Cloud extension supplies the resolved Branch id). The CLI reads it

@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { isSecretPointer, Load, module, resolve, type ServiceNode } from '@internal/core';
-import { preflightEnv } from '@internal/core/config';
+import { preflightEnv, readPreflightPayload } from '@internal/core/config';
 import { isSecretString } from '@internal/foundation/secret';
 import { rawHttpContract } from '@internal/http';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
@@ -196,7 +196,9 @@ function billingDocument(
 ): unknown {
   const node = graph.nodes.find((entry) => entry.id === 'app.billing')?.node as ServiceNode;
   const binding = graph.inputBindings.find((b) => b.serviceAddress === 'app.billing')?.binding;
-  const { absentSecrets } = transportedPreflight(new Map(), childEnv);
+  const { absentSecrets } = transportedPreflight(
+    readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv),
+  );
   const row = serializeInput(node, 'app.billing', binding, { env: {}, absentSecrets });
   return JSON.parse(row?.value ?? 'null');
 }
@@ -309,8 +311,7 @@ describe('prisma dev preflight', () => {
     const memberFor = async (value: string) => {
       secrets['STRIPE_SECRET_KEY'] = value;
       const { pointerVersion } = transportedPreflight(
-        new Map(),
-        transported(await preflight(graph)),
+        readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, transported(await preflight(graph))),
       );
       return pointerVersion('STRIPE_SECRET_KEY');
     };
@@ -327,7 +328,9 @@ describe('prisma dev preflight', () => {
     const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
 
     expect(
-      transportedPreflight(new Map(), childEnv).pointerVersion('STRIPE_WEBHOOK_SECRET'),
+      transportedPreflight(
+        readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv),
+      ).pointerVersion('STRIPE_WEBHOOK_SECRET'),
     ).toBeUndefined();
   });
 
