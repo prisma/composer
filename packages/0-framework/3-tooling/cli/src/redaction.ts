@@ -94,7 +94,7 @@ function redactShapes(text: string): string {
     .replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]*/g, REDACTED)
     .replace(/(\b[a-z][\w+.-]*:\/\/[^\s:/@]*:)[^\s/@]+@/gi, `$1${REDACTED}@`)
     .replace(
-      /\b((?:[\w-]*[_-])?(?:token|secret|password|passwd|api[_-]?key|access[_-]?key|private[_-]?key)["']?\s*[:=]\s*["']?)(?!<value>)[^\s"',;&]+/gi,
+      /\b((?:[\w-]*[_-])?(?:token|secret|password|passwd|api[_-]?key|access[_-]?key|private[_-]?key)["']?\s*[:=]\s*["']?)(?!<value>(?:[\s"',;&]|$))[^\s"',;&]+/gi,
       `$1${REDACTED}`,
     );
 }

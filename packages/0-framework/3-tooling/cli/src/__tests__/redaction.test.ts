@@ -61,6 +61,12 @@ describe('SecretRedaction', () => {
     );
   });
 
+  test('SecretRedaction redacts a real value that only starts with the placeholder', () => {
+    for (const text of ['SECRET=<value>abc123', 'SECRET=<value>-real', 'password=<value>s3cret']) {
+      expect(new SecretRedaction({}).redact(text)).not.toContain('<value>');
+    }
+  });
+
   test('SecretRedaction hides a value added after it first redacted', () => {
     const redaction = knowing('first-secret');
     expect(redaction.redact('first-secret later-secret')).toBe('[redacted] later-secret');
