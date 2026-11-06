@@ -38,7 +38,7 @@
     "@clack/prompts": "^1.7.0",
     "@prisma/composer": "workspace:0.37.0",
     "@prisma/composer-cli": "workspace:0.37.0",
-    "dependency-cruiser": "^17.4.3",
+    "dependency-cruiser": "^18.5.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.7",
     "pathe": "^2.0.3",
