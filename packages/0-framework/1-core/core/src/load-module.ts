@@ -7,13 +7,13 @@ import {
   type Edge,
   type Graph,
   type GraphNode,
+  type InputBindingUse,
   LoadError,
   type LoadOptions,
   type NodeId,
   type ParamBinding,
   type PortEndpoint,
   RESOURCE_OUT_PORT,
-  type ServiceInputBinding,
 } from './graph-types.ts';
 import { boundaryPortsOf, slotNodesAndEdges } from './load-service.ts';
 import { buildModuleInput } from './module-input.ts';
@@ -269,7 +269,7 @@ function flatten(
   nodes: GraphNode[],
   edges: Edge[],
   pending: PendingWiring[],
-  inputBindings: ServiceInputBinding[],
+  inputBindings: InputBindingUse[],
   paramBindings: ParamBinding[],
   moduleInputs: ProvisionedModuleInput[],
   byId: Map<string, ServiceNode | ResourceNode | ModuleNode>,
@@ -496,13 +496,7 @@ function flatten(
         );
       }
       if (provisionInput !== undefined) {
-        inputBindings.push({
-          serviceAddress: fullAddress,
-          binding: blindCast<
-            ServiceInputBinding['binding'],
-            'the provision overloads type the binding as InputBinding; the collector receives it untyped'
-          >(provisionInput),
-        });
+        inputBindings.push({ serviceAddress: fullAddress, binding: provisionInput });
       }
       // A service param binding is optional per slot (default is the
       // fallback), so this only rejects a name that isn't a real param —
@@ -557,7 +551,7 @@ function flatten(
         moduleAddress: fullAddress,
         schema: childInputSchema,
         binding: provisionInput,
-        fromConfigPool: false,
+        isRoot: false,
       });
     }
     edges.push(...wiringEdges(localWiring, fullAddress));
@@ -676,27 +670,41 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
         `"${root.name}" from another module that provisions and wires it instead.`,
     );
   }
+  if (opts?.configuration !== undefined && opts.appConfigurationRead !== undefined) {
+    throw new LoadError(
+      'Load takes configuration, in the first process, or appConfigurationRead, in the second, not both.',
+    );
+  }
   const moduleInputs: ProvisionedModuleInput[] = [];
   if (root.inputSchema !== undefined) {
-    if (opts?.configPool === undefined) {
+    if (opts?.appConfigurationRead !== undefined) {
+      moduleInputs.push({
+        moduleAddress: rootId,
+        schema: root.inputSchema,
+        binding: undefined,
+        isRoot: true,
+        checked: opts.appConfigurationRead.rootInput,
+      });
+    } else if (opts?.configuration !== undefined) {
+      moduleInputs.push({
+        moduleAddress: rootId,
+        schema: root.inputSchema,
+        binding: opts.configuration,
+        isRoot: true,
+      });
+    } else {
       throw new LoadError(
         `Module "${root.name}" declares input and is being deployed as the root, but Load was given ` +
-          'no values from the `config` adapters to fill it from. Pass { configPool } to Load; prisma deploy and prisma dev ' +
+          'no app configuration to fill it from. Pass { configuration } to Load; prisma deploy and prisma dev ' +
           'pass the values the `config` adapters return.',
       );
     }
-    moduleInputs.push({
-      moduleAddress: rootId,
-      schema: root.inputSchema,
-      binding: opts.configPool,
-      fromConfigPool: true,
-    });
   }
 
   const nodes: GraphNode[] = [];
   const edges: Edge[] = [];
   const pending: PendingWiring[] = [];
-  const inputBindings: ServiceInputBinding[] = [];
+  const inputBindings: InputBindingUse[] = [];
   const paramBindings: ParamBinding[] = [];
   const byId = new Map<string, ServiceNode | ResourceNode | ModuleNode>();
   const ports: BoundaryPort[] = [];
@@ -730,7 +738,8 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   }
   const resolved = resolveValues({
     environment: opts?.environment,
-    configPool: opts?.configPool,
+    configuration: opts?.configuration,
+    appConfigurationRead: opts?.appConfigurationRead,
     inputBindings,
     params: paramBindings,
     moduleInputs,
@@ -754,6 +763,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
     inputBindings: resolved.inputBindings,
     params: resolved.params,
     secretSources: resolved.secretSources,
+    appConfigurationRead: resolved.appConfigurationRead,
   };
 }
 

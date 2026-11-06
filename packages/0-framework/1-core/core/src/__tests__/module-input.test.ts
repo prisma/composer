@@ -5,7 +5,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { string } from '../config.ts';
 import { type Graph, Load, LoadError } from '../graph.ts';
-import { dependency, type ModuleNode, module, secretSource, service } from '../node.ts';
+import { dependency, type ModuleNode, module, resource, secretSource, service } from '../node.ts';
 import { isValue, resolve, type Value } from '../value.ts';
 import { anyInputSchema, conn, providerContract } from './helpers.ts';
 
@@ -88,13 +88,13 @@ describe("the body's input", () => {
       ({ input }) => {
         const first = input.smtp.host;
         const second = input.smtp.host;
-        seen.push(isValue(input.from), isValue(input), first === second);
+        seen.push(isValue(input.from), first === second);
       },
     );
 
     Load(shopWith(email, { from: 'a', smtp: { host: 'h' } }), staging);
 
-    expect(seen).toEqual([true, true, true]);
+    expect(seen).toEqual([true, true]);
   });
 
   test('a module that declares no input receives undefined', () => {
@@ -227,12 +227,12 @@ describe('forwarding and the second pass', () => {
     expect(bindingOf(graph)).toEqual({ from: 'shop@example.com' });
   });
 
-  test("the whole input forwarded into a service reaches it as the module's validated input", () => {
+  test("a field passed into a service reaches it as the module's validated output", () => {
     const email = module(
       'email',
       { input: type({ from: 'string', count: 'string.integer.parse' }) },
       ({ input, provision }) => {
-        provision(echoService(), { input });
+        provision(echoService(), { input: { from: input.from, count: input.count } });
       },
     );
 
@@ -277,6 +277,22 @@ describe('forwarding and the second pass', () => {
     );
 
     expect(bindingOf(graph)['key']).toBe(source);
+  });
+
+  test("an object field passed on as a service's whole binding reaches it as the module's validated output", () => {
+    const email = module(
+      'email',
+      { input: type({ smtp: { user: 'string', password: secretString() } }) },
+      ({ input, provision }) => {
+        provision(echoService(), { input: input.smtp });
+      },
+    );
+    const password = secretSource({ name: 'SMTP_PASSWORD' });
+
+    const graph = Load(shopWith(email, { smtp: { user: 'mailer', password } }));
+
+    expect(bindingOf(graph)).toEqual({ user: 'mailer', password });
+    expect(bindingOf(graph)['password']).toBe(password);
   });
 
   test("a real value is the schema's output", () => {
@@ -423,24 +439,6 @@ describe('forwarding and the second pass', () => {
     expect(loadError(() => Load(shopWith(email, {}))).message).toBe(
       'The input binding of module "shop.email" does not match the module\'s input schema: nope',
     );
-  });
-
-  test('the whole input forwarded into a child module reaches its service', () => {
-    const email = module('email', { input: type({ from: 'string' }) }, ({ input, provision }) => {
-      provision(echoService(), { input: { from: input.from } });
-    });
-    const relay = module('relay', { input: type({ from: 'string' }) }, ({ input, provision }) => {
-      provision(email, { input });
-    });
-
-    const graph = Load(
-      module('shop', ({ provision }) => {
-        provision(relay, { input: { from: 'shop@example.com' } });
-      }),
-    );
-
-    expect(graph.inputBindings[0]?.serviceAddress).toBe('shop.relay.email.echo');
-    expect(bindingOf(graph)).toEqual({ from: 'shop@example.com' });
   });
 
   test('a service param bound to an input field with no real value is left unbound', () => {
@@ -640,6 +638,121 @@ describe('errors', () => {
     expect(loadError(() => Load(shopWith(email, { from: 'a' }))).message).toBe(
       'The deps for "shop.email.svc.target" are bound to a value. A value can configure a node, ' +
         'never decide its edges: the graph is the same whatever inputs Composer is given (ADR-0062).',
+    );
+  });
+});
+
+describe("a module's whole input is never passed on", () => {
+  const refusal = (site: string, moduleAddress: string) =>
+    `${site} depends on the whole input of module "${moduleAddress}". A module body's input is ` +
+    'a dictionary of values, not a value, so it cannot be passed on whole. Pass its fields on ' +
+    'by name, such as input.from.';
+  const schema = type({ from: 'string' });
+
+  test('the whole input bound to a service fails at Load', () => {
+    const email = module('email', { input: schema }, ({ input, provision }) => {
+      provision(echoService(), { input: input as never });
+    });
+
+    expect(loadError(() => Load(shopWith(email, { from: 'a' }))).message).toBe(
+      refusal('the input binding of service "shop.email.echo"', 'shop.email'),
+    );
+  });
+
+  test('the whole input bound to a child module fails at Load', () => {
+    const email = module('email', { input: schema }, ({ input, provision }) => {
+      provision(echoService(), { input: { from: input.from } });
+    });
+    const relay = module('relay', { input: schema }, ({ input, provision }) => {
+      provision(email, { input: input as never });
+    });
+    const root = module('shop', ({ provision }) => {
+      provision(relay, { input: { from: 'shop@example.com' } });
+    });
+
+    expect(loadError(() => Load(root)).message).toBe(
+      refusal('the input binding of module "shop.relay.email"', 'shop.relay'),
+    );
+  });
+
+  test('the whole input nested inside a binding fails at Load, naming the key', () => {
+    const email = module('email', { input: schema }, ({ input, provision }) => {
+      provision(echoService(), { input: { settings: [input] } as never });
+    });
+
+    expect(loadError(() => Load(shopWith(email, { from: 'a' }))).message).toBe(
+      refusal('input key "settings.0" of service "shop.email.echo"', 'shop.email'),
+    );
+  });
+
+  test('the whole input bound to a service param fails at Load', () => {
+    const email = module('email', { input: schema }, ({ input, provision }) => {
+      provision(echoService(), { input: {}, params: { label: input as never } });
+    });
+
+    expect(loadError(() => Load(shopWith(email, { from: 'a' }))).message).toBe(
+      refusal('param "label" of service "shop.email.echo"', 'shop.email'),
+    );
+  });
+
+  test("the whole input in a resource's props fails at Load", () => {
+    const email = module('email', { input: schema }, ({ input, provision }) => {
+      provision(
+        resource({
+          name: 'site',
+          extension: 'test/pack',
+          provides: providerContract('fake/url', { url: '' }),
+          props: { all: input as never },
+        }),
+      );
+    });
+
+    expect(loadError(() => Load(shopWith(email, { from: 'a' }))).message).toBe(
+      refusal('prop "all" of resource "shop.email.site"', 'shop.email'),
+    );
+  });
+
+  test('the whole input listed in resolve() fails at Load, and the function never runs', () => {
+    const ran: boolean[] = [];
+    const email = module('email', { input: schema }, ({ input, provision }) => {
+      const label = resolve([input as never], () => {
+        ran.push(true);
+        return 'x';
+      });
+      provision(echoService(), { input: { label } });
+    });
+
+    expect(loadError(() => Load(shopWith(email, { from: 'a' }))).message).toBe(
+      refusal('input key "label" of service "shop.email.echo"', 'shop.email'),
+    );
+    expect(ran).toEqual([]);
+  });
+
+  test('spreading the whole input fails, saying to pass its fields on by name', () => {
+    const email = module('email', { input: schema }, ({ input, provision }) => {
+      provision(echoService(), { input: { ...input } as never });
+    });
+
+    expect(loadError(() => Load(shopWith(email, { from: 'a' }))).message).toBe(
+      'input of module "shop.email" is a dictionary of values, not data, and its keys were ' +
+        'listed (Object.keys, object spread, for…in or Object.entries). A module body can only ' +
+        'pass the fields of its input on, by name: into a provision() binding or, for a plain ' +
+        'field, as a resolve() dependency.',
+    );
+  });
+
+  test('a field of an input whose schema outputs no object fails naming the path', () => {
+    const text: StandardSchemaV1<unknown, string> = {
+      '~standard': { version: 1, vendor: 'test', validate: () => ({ value: 'a' }) },
+    };
+    const email = module('email', { input: text }, ({ input, provision }) => {
+      provision(echoService(), { input: { from: (input as never as { from: never }).from } });
+    });
+
+    expect(loadError(() => Load(shopWith(email, {}))).message).toBe(
+      'input.from of module "shop.email" does not exist: input is a string, not a plain object, ' +
+        "so it has no fields. The module's input schema must output a plain object for its body " +
+        'to read fields.',
     );
   });
 });

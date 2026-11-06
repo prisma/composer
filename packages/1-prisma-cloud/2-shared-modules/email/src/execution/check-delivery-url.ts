@@ -1,3 +1,5 @@
+import type { EmailDeliveryMode } from '../delivery-mode.ts';
+
 /**
  * Boot-time check: `deliveryMode` and `deliveryUrl` must agree on scheme —
  * `smtp:`/`smtps:` for mode `smtp`, `http:`/`https:` for mode `resend`.
@@ -7,7 +9,7 @@
  * wrong protocol. Pure so it's unit-testable without booting the service.
  */
 export function checkDeliveryUrl(
-  deliveryMode: 'resend' | 'smtp' | 'none',
+  deliveryMode: EmailDeliveryMode,
   deliveryUrl: string,
 ): string | null {
   if (deliveryMode === 'smtp' && !/^smtps?:\/\//.test(deliveryUrl)) {

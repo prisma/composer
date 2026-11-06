@@ -29,8 +29,8 @@ import { SecretBox } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { addressKeySegments, configKey, ORIGIN_KEY_NAME } from './config-key.ts';
+import { configurationText } from './configuration-text.ts';
 import { isEnvParamSource, isGeneratedParamSource, isOriginParamSource } from './param.ts';
-import { poolText } from './pool-text.ts';
 import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
 import { secretName } from './secret.ts';
 
@@ -264,7 +264,7 @@ export function stashRows(node: ServiceNode, address: string, env: Env): Record<
 // ——— Input channel (ADR-0042): ONE self-describing JSON document per service.
 //
 // Deploy resolves the provision-time input binding (literals as-is, envParam
-// leaves read from the config pool, envSecret leaves as `$secret` pointers),
+// leaves read from the app configuration, envSecret leaves as `$secret` pointers),
 // validates the resolved object with the service's own Standard Schema
 // (each value known only at boot as its pointer — never a value), and writes the
 // defaults-applied result to COMPOSER_<addr>_INPUT. Boot reads that one row,
@@ -371,7 +371,7 @@ const NO_ABSENT_SECRETS: ReadonlySet<string> = new Set();
 
 /** How `resolveInputBinding`, `serializeInput` and `inputValidationFailure` read the environment and which secrets they leave out. */
 export interface SerializeInputOptions {
-  /** Where `envParam` leaves are read: the config pool. The process environment when not given. */
+  /** Where `envParam` leaves are read: the app configuration, or in the second process the configuration key text from the app configuration file. The process environment when not given. */
   readonly env?: Readonly<Record<string, unknown>>;
   /** `envSecret` names to leave out of the document; only `prisma dev` passes any. */
   readonly absentSecrets?: ReadonlySet<string>;
@@ -416,7 +416,7 @@ export function assertDistinctPointerNames(
  * Deploy: recursive descent over the provision-time binding (plain data).
  * `envSecret`, `generatedParam` and `serviceOrigin` leaves stay in place as
  * their pointers (the value never enters the deploy); `envParam` leaves read
- * the config pool — unset or empty means the enclosing object key is
+ * the app configuration — unset or empty means the enclosing object key is
  * OMITTED, and the schema arbitrates whether that absence is legal
  * (ADR-0042). An `envSecret` leaf named in `absentSecrets` is omitted the
  * same way; only `prisma dev` passes any. Everything non-plain (a class
@@ -471,7 +471,7 @@ export function resolveInputBinding(
         );
       }
       const name = value.payload.name;
-      const raw = poolText(
+      const raw = configurationText(
         env,
         name,
         (kind) =>

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { string } from '../config.ts';
-import { Load, LoadError } from '../graph.ts';
+import { Load, LoadError, nodeAddresses, secretsKeys } from '../graph.ts';
 import {
   isParamSource,
   isSecretSource,
@@ -42,7 +42,7 @@ const loadError = (run: () => unknown): LoadError => {
 
 const pointer = (name: string) => secretSource({ name }, { label: `envSecret('${name}')` });
 const variable = (name: string) =>
-  paramSource({ name }, { label: `envParam('${name}')`, poolKey: name });
+  paramSource({ name }, { label: `envParam('${name}')`, configurationKey: name });
 
 describe('building a source', () => {
   test('secretSource() and paramSource() return values that are also sources', () => {
@@ -71,9 +71,9 @@ describe('building a source', () => {
     expect(copy.payload).toEqual({ name: 'X' });
   });
 
-  test('paramSource() refuses a pool key beside redacted, and an empty label or pool key', () => {
-    expect(() => paramSource({}, { poolKey: 'X', redacted: true })).toThrow(
-      'paramSource() takes poolKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.',
+  test('paramSource() refuses a configuration key beside redacted, and an empty label or configuration key', () => {
+    expect(() => paramSource({}, { configurationKey: 'X', redacted: true })).toThrow(
+      'paramSource() takes configurationKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.',
     );
     expect(() => paramSource({}, { label: '' })).toThrow(
       'paramSource() label must be a non-empty string.',
@@ -81,8 +81,8 @@ describe('building a source', () => {
     expect(() => secretSource({}, { label: '' })).toThrow(
       'secretSource() label must be a non-empty string.',
     );
-    expect(() => paramSource({}, { poolKey: '' })).toThrow(
-      'paramSource() poolKey must be a non-empty string.',
+    expect(() => paramSource({}, { configurationKey: '' })).toThrow(
+      'paramSource() configurationKey must be a non-empty string.',
     );
   });
 });
@@ -122,5 +122,37 @@ describe('reading a source', () => {
         'literal or String()). A module body can only pass it on: into a provision() binding or ' +
         "as a resolve() dependency. To compute with it, list it: resolve([envParam('G')], ([v]) => …).",
     );
+  });
+});
+
+describe('secret names and node addresses', () => {
+  const secret = (key: string) =>
+    secretSource({ key }, { label: `secret('${key}')`, secretsKey: key });
+
+  test('secretSource() takes a secretsKey, which must be non-empty text', () => {
+    expect(() => secretSource({}, { secretsKey: '' })).toThrow(
+      'secretSource() secretsKey must be a non-empty string.',
+    );
+  });
+
+  test('secretsKeys lists the secrets key of every secret source the graph names, once each', () => {
+    const root = module('shop', ({ provision }) => {
+      provision(echoService(), { id: 'one', input: { key: secret('A') } });
+      provision(echoService(), { id: 'two', input: { key: secret('A') } });
+      provision(echoService(), { id: 'three', input: { key: secret('B') } });
+      provision(echoService(), { id: 'four', input: { key: secretSource({}) } });
+    });
+
+    expect(secretsKeys(Load(root))).toEqual(['A', 'B']);
+  });
+
+  test("nodeAddresses lists every node's address, sorted", () => {
+    const root = module('shop', ({ provision }) => {
+      provision(echoService(), { id: 'zeta', input: {} });
+      provision(echoService(), { id: 'alpha', input: {} });
+    });
+    const graph = Load(root);
+
+    expect(nodeAddresses(graph)).toEqual(graph.nodes.map(({ id }) => id).sort());
   });
 });

@@ -1,26 +1,53 @@
 import { CliStructuredError } from '@internal/foundation/errors';
 import type { ContractStyle } from './contract.ts';
-import type {
-  DependencyEnd,
-  InputBinding,
-  ModuleNode,
-  ResourceNode,
-  SecretSource,
-  ServiceNode,
-} from './node.ts';
+import type { DependencyEnd, ModuleNode, ResourceNode, SecretSource, ServiceNode } from './node.ts';
 import type { EnvironmentRealValues } from './value.ts';
 
 /** Path-derived: root-scope children are bare ids ("auth", "db"); a nested module's own children dot-join under its address ("auth.db"). */
 export type NodeId = string;
 
-export interface LoadOptions {
+/** One field of the root's input that its body names, with the real value the root's schema produced there. */
+export interface RootInputField {
+  /** The key path inside the root's input, such as `['smtp', 'host']`. */
+  readonly path: readonly string[];
+  /** The real value; absent when it is `undefined`. */
+  readonly value?: unknown;
+}
+
+/**
+ * What a Load read from the app configuration (ADR-0062). The deploy's and `prisma dev`'s
+ * first process writes it to the app configuration file, and their second process Loads with
+ * it in place of the app configuration.
+ */
+export interface AppConfigurationRead {
+  /** Each field of the root's input that its body names, as the root's schema produced it. Empty when the root declares no input. */
+  readonly rootInput: readonly RootInputField[];
+  /** The text the app configuration holds for each configuration key a source reads, such as `envParam('NAME')`'s `NAME`. A key the app configuration does not hold, or holds as `''`, is absent. */
+  readonly configurationKeyText: Readonly<Record<string, string>>;
+}
+
+interface CommonLoadOptions {
   /** The root's address: the app name. Defaults to the root's `name`. */
   readonly id?: NodeId;
   /** The facts of the environment being loaded. `name` is what `--environment` gave. Required by any value over `environment.name`. */
   readonly environment?: EnvironmentRealValues;
-  /** The config pool: the values a source with a pool key, such as `envParam('NAME')`, reads by name at deploy, and the root's input. Required by any such source whose real value Load needs, and by a root that declares input. The deploy and dev commands pass what the `config` adapters return. */
-  readonly configPool?: Readonly<Record<string, unknown>>;
 }
+
+/** Load's options in the first process, or wherever the app configuration is at hand. */
+export interface FirstProcessLoadOptions extends CommonLoadOptions {
+  /** The app configuration (ADR-0062): what the `config` adapters return. It is the root's input, which the root's schema checks, and what a source with a configuration key, such as `envParam('NAME')`, reads. */
+  readonly configuration?: Readonly<Record<string, unknown>>;
+  readonly appConfigurationRead?: never;
+}
+
+/** Load's options in the deploy's and dev's second process. */
+export interface SecondProcessLoadOptions extends CommonLoadOptions {
+  readonly configuration?: never;
+  /** What the first process's Load read, from the app configuration file. Load takes each root field from it without running the root's schema. */
+  readonly appConfigurationRead: AppConfigurationRead;
+}
+
+export type LoadOptions = FirstProcessLoadOptions | SecondProcessLoadOptions;
 
 export interface GraphNode {
   readonly id: NodeId;
@@ -85,16 +112,14 @@ export interface Edge {
 }
 
 /**
- * A service's provision-time input binding (ADR-0042): the plain object a
- * `provision(service, { input })` call supplied, recorded at that service's
- * address. Core never walks it beyond usage tracking; the deploy target's
- * recursive descent classifies its leaves (literals, `envParam`, `envSecret`).
+ * The binding a `provision()` call supplied as a service's input (ADR-0042),
+ * recorded at the service's address. The deploy target resolves its leaves.
  */
-export interface ServiceInputBinding {
+export interface InputBindingUse {
   /** The graph address of the service that declares the input schema. */
   readonly serviceAddress: NodeId;
   /** The binding object supplied at provision. */
-  readonly binding: InputBinding;
+  readonly binding: unknown;
 }
 
 /**
@@ -134,11 +159,13 @@ export interface Graph {
   /** The authored (pre-dereference) edges between boundary ports, in declaration order. */
   readonly authoredEdges: readonly AuthoredEdge[];
   /** Every service input binding a `provision()` call supplied (ADR-0042). */
-  readonly inputBindings: readonly ServiceInputBinding[];
+  readonly inputBindings: readonly InputBindingUse[];
   /** Every service param bound at provision — literal or source; unbound params are absent here and fall back to their `default` (see `buildConfig`). */
   readonly params: readonly ParamBinding[];
   /** Every secret source a binding names, once each, in the order Load met them (ADR-0029). */
   readonly secretSources: readonly SecretSourceUse[];
+  /** What this Load read from the app configuration (ADR-0062). Empty when Load was given none. */
+  readonly appConfigurationRead: AppConfigurationRead;
 }
 
 /**

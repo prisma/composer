@@ -12,9 +12,9 @@
  */
 import * as fs from 'node:fs';
 import { format, stripVTControlCharacters } from 'node:util';
-import type { ConfigPools } from '@internal/core/config';
 import type { DeployedEntity, DeploymentResult } from '@internal/core/deploy';
 import { blindCast } from '@internal/foundation/casts';
+import { redactCredentialLooking } from './redaction.ts';
 
 /** Env var the deploy operation sets on the alchemy child: when present,
  * the report hook also writes the JSON DeploymentSummary there. */
@@ -170,7 +170,7 @@ export function captureEngineFailure(): void {
       const text = format(...args);
       const shown = withComposerAdvice(text);
       // Redacted per record, so the tail cut can never leave half a secret behind.
-      tail = `${tail}${redactSecrets(shown, process.env)}\n`.slice(-OUTPUT_TAIL_LIMIT);
+      tail = `${tail}${redactCredentialLooking(shown, process.env)}\n`.slice(-OUTPUT_TAIL_LIMIT);
       if (shown === text) original.apply(console, args);
       else original.call(console, shown);
     };
@@ -187,14 +187,10 @@ export function captureEngineFailure(): void {
   });
 }
 
-/**
- * Parent half: the cause the child recorded, with every value in `secrets`
- * removed, or undefined when it recorded none. The child redacts only what its
- * own environment names as a secret; the parent knows the pools.
- */
+/** Parent half: the cause the child recorded, passed through `redact`, or undefined when it recorded none. The child redacts only what its own environment names as a credential; the parent also knows the known secrets. */
 export function readEngineFailureCause(
   resultFilePath: string,
-  secrets: readonly string[] = [],
+  redact: (text: string) => string,
 ): string | undefined {
   let cause: string;
   try {
@@ -202,26 +198,7 @@ export function readEngineFailureCause(
   } catch {
     return undefined;
   }
-  return cause.length > 0 ? redactValues(cause, secrets) : undefined;
-}
-
-/**
- * The pool values a failure cause must not carry: every config pool value
- * under a secret-named key, and, when the author lists the `secrets` adapters,
- * every secrets pool value and every config pool value under a key the secrets
- * pool also holds. The default `secrets` list is the whole process
- * environment, which the secret-name rule already covers.
- */
-export function poolSecrets(pools: ConfigPools, secretsListed: boolean): string[] {
-  const values: string[] = [];
-  for (const [name, value] of Object.entries(pools.config)) {
-    if (typeof value !== 'string') continue;
-    if (SECRET_ENV_NAME.test(name) || (secretsListed && Object.hasOwn(pools.secrets, name))) {
-      values.push(value);
-    }
-  }
-  if (secretsListed) values.push(...Object.values(pools.secrets));
-  return values;
+  return cause.length > 0 ? redact(cause) : undefined;
 }
 
 /** Effect's pretty log prefix, e.g. `[10:29:16.556] INFO (#53): `. */
@@ -257,45 +234,8 @@ export function engineFailureCause(
   const start = lines.findIndex((line) => line.failure);
   const kept = start === -1 ? lines.slice(-5) : lines.slice(start).filter((line) => !line.info);
   if (kept.length === 0) return undefined;
-  const cause = redactSecrets(kept.map((line) => line.text).join('\n'), env);
+  const cause = redactCredentialLooking(kept.map((line) => line.text).join('\n'), env);
   return cause.length <= ENGINE_FAILURE_CAUSE_LIMIT
     ? cause
     : `${cause.slice(0, ENGINE_FAILURE_CAUSE_LIMIT - 1)}…`;
-}
-
-/** Replaces each value of 8 characters or more, longest first, so a one-letter placeholder does not blank every matching letter. */
-function redactValues(text: string, values: readonly string[]): string {
-  let redacted = text;
-  for (const value of [...values].sort((a, b) => b.length - a.length)) {
-    if (value.length >= 8) redacted = redacted.replaceAll(value, REDACTED);
-  }
-  return redacted;
-}
-
-/** Env var names whose values are credentials: the service token, preflight payloads, and the usual secret spellings. */
-const SECRET_ENV_NAME =
-  /TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|AUTH|API_?KEY|ACCESS_?KEY|_KEY$|DATABASE_URL|_DSN$|^PRISMA_COMPOSER_PREFLIGHT_/i;
-const REDACTED = '[redacted]';
-
-/**
- * Removes credentials from text that is about to leave the machine: the value
- * of every secret-named env var, bearer/basic tokens, JWTs, the password in a
- * URL, and `token=…`-style pairs. Values shorter than 8 characters are left,
- * so a one-letter placeholder does not blank every matching letter.
- */
-export function redactSecrets(
-  text: string,
-  env: Readonly<Record<string, string | undefined>>,
-): string {
-  const values = Object.entries(env)
-    .filter(([name]) => SECRET_ENV_NAME.test(name))
-    .map(([, value]) => value ?? '');
-  return redactValues(text, values)
-    .replace(/\b(Bearer|Basic)\s+[\w.~+/=-]+/gi, `$1 ${REDACTED}`)
-    .replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]*/g, REDACTED)
-    .replace(/(\b[a-z][\w+.-]*:\/\/[^\s:/@]*:)[^\s/@]+@/gi, `$1${REDACTED}@`)
-    .replace(
-      /\b((?:[\w-]*[_-])?(?:token|secret|password|passwd|api[_-]?key|access[_-]?key|private[_-]?key)["']?\s*[:=]\s*["']?)[^\s"',;&]+/gi,
-      `$1${REDACTED}`,
-    );
 }

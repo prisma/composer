@@ -11,13 +11,20 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import type { Graph, ServiceNode } from '@internal/core';
-import type { ConfigPools, ContainerInstance, PrismaAppConfig } from '@internal/core/config';
+import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
 import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
 import type { DevServer } from '@internal/core/deploy';
+import { nodeAddresses, secretsKeys } from '@internal/core/deploy';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import { devEnvironmentDir, resolveLocalTargets } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
+import {
+  devAppConfigurationFile,
+  prepareSecondProcess,
+  removeLeftoverAppConfigurationFiles,
+  type SecondProcessHandover,
+} from '../app-configuration-file.ts';
 import { devStackRelativePath, writeDevStackFile } from '../dev/generate-dev-stack.ts';
 import {
   authoringModuleTargets,
@@ -25,8 +32,10 @@ import {
   type WatchHandle,
   watchTargetsFrom,
 } from '../dev/watch.ts';
-import { type PipelineDeps, runPipeline } from '../pipeline.ts';
+import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
+import { redactDevEvent, redactError, redactThrown, SecretRedaction } from '../redaction.ts';
 import {
+  type AlchemyInvocation,
   type AlchemyOutcome,
   alchemyInvocation,
   reproduceCommand,
@@ -133,9 +142,10 @@ function contentHash(file: string): string | undefined {
   }
 }
 
-function samePools(started: ConfigPools, now: ConfigPools): boolean {
+function sameValues(started: PipelineResult, now: PipelineResult): boolean {
   return (
-    isDeepStrictEqual(started.config, now.config) && isDeepStrictEqual(started.secrets, now.secrets)
+    isDeepStrictEqual(started.configuration, now.configuration) &&
+    isDeepStrictEqual(started.secrets, now.secrets)
   );
 }
 
@@ -143,6 +153,21 @@ export async function executeDev(
   input: DevInput,
   deps: OperationDeps,
   cwd: string,
+): Promise<Result<DevSession, CliStructuredError>> {
+  const redaction = new SecretRedaction(process.env);
+  try {
+    const result = await executeDevInner(input, deps, cwd, redaction);
+    return result.ok ? result : notOk(redactError(result.failure, redaction));
+  } catch (error) {
+    throw redactThrown(error, redaction);
+  }
+}
+
+async function executeDevInner(
+  input: DevInput,
+  deps: OperationDeps,
+  cwd: string,
+  redaction: SecretRedaction,
 ): Promise<Result<DevSession, CliStructuredError>> {
   if (process.platform === 'win32') {
     return notOk(
@@ -156,6 +181,7 @@ export async function executeDev(
   const { onEvent } = input;
   const environment = input.environment ?? DEV_ENVIRONMENT;
   const devDir = path.join(cwd, devEnvironmentDir(environment));
+  removeLeftoverAppConfigurationFiles(cwd);
 
   let pipeline: Awaited<ReturnType<typeof runPipeline>>;
   let resolved: ReadonlyMap<string, LocalTargetDescriptor>;
@@ -171,7 +197,7 @@ export async function executeDev(
   // would be an unhandled rejection killing the process.
   const emit = (event: DevEvent): void => {
     try {
-      onEvent?.(event);
+      onEvent?.(redactDevEvent(event, redaction));
     } catch {
       // Swallowed: rendering is the host's; its failures are not the session's.
     }
@@ -185,6 +211,7 @@ export async function executeDev(
       runAssembler: deps.runAssembler,
       devServers: true,
       readSecrets: true,
+      redaction,
     };
     pipeline = await runPipeline(
       input.entry,
@@ -239,7 +266,8 @@ export async function executeDev(
           graph,
           container: containers.get(id),
           environment,
-          pools: pipeline.pools,
+          configuration: pipeline.configuration,
+          secrets: pipeline.secrets,
           warn: (message) => emit({ kind: 'target-warning', message }),
         });
         if (payload !== undefined) preflightPayloads.set(id, payload);
@@ -290,27 +318,46 @@ export async function executeDev(
     throw error;
   }
 
-  const invocation = alchemyInvocation({
-    command: 'deploy',
-    stackFileRelativePath: devStackRelativePath(environment),
-    cwd,
-    stage: environment,
-    containerEnv: containerEnv(containers),
-    preflightEnv: preflightTransportEnv,
-  });
+  const invocationFor = (
+    p: PipelineResult,
+  ): { invocation: AlchemyInvocation; handover: SecondProcessHandover } => {
+    const handover = prepareSecondProcess({
+      file: devAppConfigurationFile(devDir),
+      appConfigurationRead: p.graph.appConfigurationRead,
+      nodeAddresses: nodeAddresses(p.graph),
+      secretsKeys: secretsKeys(p.graph),
+      knownSecrets: redaction.knownSecrets,
+      appSecrets: p.secrets,
+    });
+    const invocation = alchemyInvocation({
+      command: 'deploy',
+      stackFileRelativePath: devStackRelativePath(environment),
+      cwd,
+      stage: environment,
+      containerEnv: containerEnv(containers),
+      preflightEnv: preflightTransportEnv,
+      env: handover.env,
+      redactedValues: redaction.allValues(),
+    });
+    return { invocation, handover };
+  };
 
-  const converge = async (): Promise<{ outcome: AlchemyOutcome; stackPath: string }> => {
+  const converge = async (
+    p: PipelineResult,
+  ): Promise<{ outcome: AlchemyOutcome; stackPath: string; invocation: AlchemyInvocation }> => {
+    const { invocation, handover } = invocationFor(p);
     let stackPath: string;
     try {
       claimDevEnvironmentName(devDir, environment);
       stackPath = writeDevStackFile({
-        entryPath: pipeline.entryModule.path,
+        entryPath: p.entryModule.path,
         cwd,
         environment,
-        configFile: pipeline.configSource.file,
-        name: pipeline.name,
-        assembled: pipeline.assembled,
+        configFile: p.configSource.file,
+        name: p.name,
+        assembled: p.assembled,
       });
+      handover.writeFile();
     } catch (error) {
       // Stack-file write I/O is structured at the catch that knows (rule 6).
       throw toStructured('DEV.STACK_WRITE_FAILED', error);
@@ -331,8 +378,10 @@ export async function executeDev(
           },
         },
       });
+    } finally {
+      handover.removeFile();
     }
-    return { outcome, stackPath };
+    return { outcome, stackPath, invocation };
   };
 
   // A failed first converge can leave some services started; the session never began, so stop them.
@@ -369,7 +418,13 @@ export async function executeDev(
       let restarted: boolean;
       try {
         ({ restarted } = await withEmulatorRetry(() =>
-          serve({ address, node, server, pools: pipeline.pools }),
+          serve({
+            address,
+            node,
+            server,
+            configuration: pipeline.configuration,
+            secrets: pipeline.secrets,
+          }),
         ));
       } catch (error) {
         throw toStructured('DEV.SERVICE_START_FAILED', error);
@@ -381,9 +436,9 @@ export async function executeDev(
   // Write the dev stack file and converge. Inside the try: a stray
   // `.prisma-composer` FILE, a full disk, or a spawn that throws must come
   // back as a failure result, not a rejection out of dev().
-  let first: { outcome: AlchemyOutcome; stackPath: string };
+  let first: { outcome: AlchemyOutcome; stackPath: string; invocation: AlchemyInvocation };
   try {
-    first = await converge();
+    first = await converge(pipeline);
   } catch (error) {
     await stopStartedServices();
     if (CliStructuredError.is(error)) return notOk(error);
@@ -407,7 +462,7 @@ export async function executeDev(
               exitCode: firstStatus ?? undefined,
               ...(first.outcome.signal !== null ? { signal: first.outcome.signal } : {}),
               stackFilePath: first.stackPath,
-              reproduceCommand: reproduceCommand(invocation, first.outcome),
+              reproduceCommand: reproduceCommand(first.invocation, first.outcome),
               cwd,
             },
           },
@@ -495,6 +550,7 @@ export async function executeDev(
       runAssembler: deps.runAssembler,
       devServers: true,
       readSecrets: true,
+      redaction,
     };
     const watchFiles = deps.watch ?? startWatch;
     const onWatchError = (error: unknown): void =>
@@ -531,20 +587,12 @@ export async function executeDev(
           input.config,
           watchDeps,
         );
-        if (!samePools(pipeline.pools, rePipeline.pools)) {
+        if (!sameValues(pipeline, rePipeline)) {
           if (!valuesChanged) emit({ kind: 'values-changed' });
           valuesChanged = true;
           return;
         }
-        const stackPath = writeDevStackFile({
-          entryPath: rePipeline.entryModule.path,
-          cwd,
-          environment,
-          configFile: rePipeline.configSource.file,
-          name: rePipeline.name,
-          assembled: rePipeline.assembled,
-        });
-        const outcome = await (deps.alchemy ?? spawnAlchemy)(invocation);
+        const { outcome, stackPath, invocation } = await converge(rePipeline);
         if (outcome.signal !== null || outcome.exitCode !== 0) {
           emit({
             kind: 'converge-failed',

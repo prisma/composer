@@ -15,9 +15,9 @@ function serviceBindingOf(graph: ReturnType<typeof Load>): Record<string, unknow
 }
 
 describe('email example root graph', () => {
-  test("the root's input from the config pool reaches the email service", () => {
+  test("the root's input from the app configuration reaches the email service", () => {
     const graph = Load(root, {
-      configPool: { EMAIL_DELIVERY_MODE: 'none', EMAIL_FROM: 'a@example.com', PATH: '/bin' },
+      configuration: { EMAIL_DELIVERY_MODE: 'none', EMAIL_FROM: 'a@example.com', PATH: '/bin' },
     });
     const binding = serviceBindingOf(graph);
     expect(binding['deliveryMode']).toBe('none');
@@ -30,7 +30,7 @@ describe('email example root graph', () => {
   test("a delivery mode the root's schema does not name fails before anything is created", () => {
     let message = '';
     try {
-      Load(root, { configPool: { EMAIL_DELIVERY_MODE: 'smpt', EMAIL_FROM: 'a@example.com' } });
+      Load(root, { configuration: { EMAIL_DELIVERY_MODE: 'smpt', EMAIL_FROM: 'a@example.com' } });
     } catch (error) {
       message = (error as Error).message;
     }

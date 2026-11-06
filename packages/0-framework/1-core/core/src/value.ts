@@ -1,5 +1,7 @@
 import { blindCast } from '@internal/foundation/casts';
 import type { Pointer } from '@internal/foundation/pointer';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { ModuleInput, ModuleInputIsNotAValue } from './module-input.ts';
 import type { ParamSource, SecretSource } from './node.ts';
 
 // Brands, Symbol.for so a check survives duplicated module instances (as NODE in node.ts).
@@ -32,17 +34,28 @@ export type ValueOrigin<T> =
       readonly kind: 'input';
       /** The address of the module whose input this field is. */
       readonly module: string;
-      /** The key path inside that module's input; `[]` is the whole input. */
+      /** The key path inside that module's input; `[]` is the whole input, which Load refuses wherever it is passed on. */
       readonly path: readonly string[];
     }
   | {
       readonly kind: 'source';
+      readonly sourceKind: 'param';
+      /** How an error names the source, e.g. `envParam('REGION')`. */
+      readonly label: string;
+      /** The app configuration key whose text at deploy is the real value, as for `envParam()`. `undefined` for a value known only at boot, whose real value is `source`, a pointer. */
+      readonly configurationKey: string | undefined;
+      /** The source itself. Not enumerable, so a copy's origin compares equal and the origin holds no cycle. */
+      readonly source: ParamSource;
+    }
+  | {
+      readonly kind: 'source';
+      readonly sourceKind: 'secret';
       /** How an error names the source, e.g. `envSecret('STRIPE_KEY')`. */
       readonly label: string;
-      /** The config pool key whose value at deploy is the real value, as for `envParam()`. `undefined` for a value known only at boot, whose real value is `source`, a pointer. */
-      readonly poolKey: string | undefined;
+      /** The app secrets key that holds the secret's value, as for `envSecret()`. `undefined` for a secret source built without one. */
+      readonly secretsKey: string | undefined;
       /** The source itself. Not enumerable, so a copy's origin compares equal and the origin holds no cycle. */
-      readonly source: ParamSource | SecretSource;
+      readonly source: SecretSource;
     };
 
 /** The origin of a module input field. Internal to core. */
@@ -68,7 +81,7 @@ export interface Value<T> {
 export type RuntimeValue<T> = Value<Pointer<T>>;
 
 /** The tuple of real-value types a dependency tuple stands for: what `resolve()`'s `fn` receives. */
-export type RealValuesOf<D extends readonly Value<unknown>[]> = {
+export type RealValuesOf<D extends readonly unknown[]> = {
   readonly [K in keyof D]: D[K] extends Value<infer T> ? T : never;
 };
 
@@ -93,13 +106,18 @@ type IsDeployTime<T> = 0 extends 1 & T ? true : true extends HoldsPointer<T> ? f
 type NotDeployTime =
   'a resolve() dependency must be a deploy-time value, never a value known only at boot or a field wrapped with field(); to compute with an input field, declare it plain';
 
+/** A dependency `resolve()` accepts only to refuse it with a message: a module body's whole `input`. */
+type RefusedDependency = ModuleInput<StandardSchemaV1>;
+
 /** `D` with each dependency that is not a deploy-time value replaced by the message saying so. */
-type DeployTimeDependencies<D extends readonly Value<unknown>[]> = {
+type DeployTimeDependencies<D extends readonly (Value<unknown> | RefusedDependency)[]> = {
   readonly [K in keyof D]: D[K] extends Value<infer T>
     ? IsDeployTime<T> extends true
       ? D[K]
       : NotDeployTime
-    : D[K];
+    : D[K] extends RefusedDependency
+      ? ModuleInputIsNotAValue
+      : D[K];
 };
 
 /** Plain data: what a `resolve()` function may return. */
@@ -120,7 +138,7 @@ export type PlainData =
  * disabled (ADR-0062). `fn` must be a pure function of its dependencies: a
  * deploy runs it in two processes.
  */
-export function resolve<const D extends readonly Value<unknown>[], T>(
+export function resolve<const D extends readonly (Value<unknown> | RefusedDependency)[], T>(
   dependencies: DeployTimeDependencies<D>,
   fn: (values: RealValuesOf<D>) => T,
 ): Value<T> {

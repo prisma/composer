@@ -18,8 +18,10 @@ import {
 } from '@internal/assemble';
 import type { Graph } from '@internal/core';
 import { assertAppName, Load } from '@internal/core';
-import type { ConfigPools, PrismaAppConfig } from '@internal/core/config';
+import type { AppConfiguration, AppSecrets, PrismaAppConfig } from '@internal/core/config';
+import { secretsKeys } from '@internal/core/deploy';
 import { CliStructuredError } from '@internal/foundation/errors';
+import { readAppConfiguration, readAppSecrets } from './app-configuration.ts';
 import {
   type ComposerConfigSource,
   type ConfigFinding,
@@ -27,8 +29,8 @@ import {
   configFileMissing,
   entryMissing,
 } from './composer-config.ts';
-import { readConfigPool, readSecretsPool } from './config-pools.ts';
 import { type LoadedEntry, loadEntry } from './load-entry.ts';
+import { credentialLookingValues, SecretRedaction, valuesUnderSecretsKeys } from './redaction.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
 
 /** The app is loaded and checked, and assemble is about to start; then one assemble event per service. */
@@ -41,8 +43,10 @@ export interface PipelineDeps {
   readonly onEvent?: ((event: PipelineEvent) => void) | undefined;
   /** `prisma dev`: a service whose build adapter declares a dev server is recorded instead of assembled (ADR-0056). */
   readonly devServers?: boolean | undefined;
-  /** Read the secrets pool too: `deploy` and `dev` do; `destroy` does not, and its `pools.secrets` is empty. */
+  /** Read the app secrets too: `deploy` and `dev` do; `destroy` does not, and its `secrets` is empty. */
   readonly readSecrets?: boolean | undefined;
+  /** Collects the known secrets and the credential-looking values, for redaction. A new one when not given. */
+  readonly redaction?: SecretRedaction | undefined;
 }
 
 export interface PipelineResult {
@@ -52,8 +56,10 @@ export interface PipelineResult {
   readonly graph: Graph;
   readonly name: string;
   readonly assembled: AssembledServices;
-  /** The pools read for this run. In memory only: never written to a file, an event, a result or a report. */
-  readonly pools: ConfigPools;
+  /** The app configuration read for this run. In memory only; the app configuration file holds only what Load read from it. */
+  readonly configuration: AppConfiguration;
+  /** The app secrets read for this run. In memory only: never written to a file, an event, a result or a report. */
+  readonly secrets: AppSecrets;
 }
 
 const NO_SECRETS = Object.freeze({});
@@ -180,18 +186,19 @@ export async function runPipeline(
     });
   }
 
-  // 3. Read the pools. The config pool is Load's input; the secrets pool is preflight's.
-  const poolInput = { environment, configFile: configSource.file };
-  const pools: ConfigPools = {
-    config: await readConfigPool(config, poolInput),
-    secrets: deps.readSecrets === true ? await readSecretsPool(config, poolInput) : NO_SECRETS,
-  };
+  // 3. Read the app secrets, then the app configuration.
+  const redaction = deps.redaction ?? new SecretRedaction(process.env);
+  const adapterInput = { environment, configFile: configSource.file };
+  const secrets: AppSecrets =
+    deps.readSecrets === true ? await readAppSecrets(config, adapterInput) : NO_SECRETS;
+  const configuration = await readAppConfiguration(config, adapterInput);
+  redaction.addCredentialLookingValues(credentialLookingValues(configuration));
 
   // 4. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
   const graph = Load(entryModule.root, {
     id: name,
     environment: { name: environment },
-    configPool: pools.config,
+    configuration,
   });
   if (graph.root.node.kind !== 'module') {
     throw new CliStructuredError('COMPOSE.ROOT_NOT_MODULE', 'The deploy root must be a module.', {
@@ -200,6 +207,7 @@ export async function runPipeline(
         "export default module('name', ({ provision }) => { provision(service); }).",
     });
   }
+  redaction.addKnownSecrets(valuesUnderSecretsKeys(configuration, secrets, secretsKeys(graph)));
 
   // 5. Registry coverage: every node/build in the graph has a matching descriptor in the config.
   validateRegistryCoverage(graph, config);
@@ -218,5 +226,5 @@ export async function runPipeline(
     throw error;
   }
 
-  return { configSource, entryModule, graph, name, assembled, pools };
+  return { configSource, entryModule, graph, name, assembled, configuration, secrets };
 }

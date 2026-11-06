@@ -81,6 +81,7 @@ describe('convergeSpawn() with a piped stdout', () => {
         cwd,
         stage: 'test',
         containerEnv: {},
+        redactedValues: [],
       }),
     );
 
@@ -102,6 +103,7 @@ describe('convergeSpawn() with a piped stdout', () => {
         cwd,
         stage: 'test',
         containerEnv: {},
+        redactedValues: [],
       }),
     );
 
@@ -113,4 +115,31 @@ describe('convergeSpawn() with a piped stdout', () => {
       'test',
     ]);
   }, 15_000);
+});
+
+test("convergeSpawn passes the secret values neither on the child's command line nor in its environment", async () => {
+  const cwd = appWithAlchemy([]);
+  let recorded: Parameters<ConvergeContext['spawn']>[0] | undefined;
+  const ctx: ConvergeContext = {
+    lastChild: () => undefined,
+    spawn: async (options) => {
+      recorded = options;
+      return { exitCode: 0, signal: null };
+    },
+  };
+
+  await convergeSpawn(ctx)(
+    alchemyInvocation({
+      command: 'deploy',
+      stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
+      cwd,
+      stage: 'test',
+      containerEnv: {},
+      redactedValues: ['hunter2'],
+    }),
+  );
+
+  if (recorded === undefined) throw new Error('convergeSpawn started no child');
+  expect(JSON.stringify(recorded.args)).not.toContain('hunter2');
+  expect(Object.values(recorded.env ?? {}).join('\n')).not.toContain('hunter2');
 });

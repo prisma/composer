@@ -12,10 +12,11 @@ import type {
   Config,
   Deps,
   Expose,
-  InputBinding,
+  InputBindingOf,
   Params,
   RunnableServiceNode,
 } from '@internal/core';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { configRows, serializeInput } from './serializer.ts';
 
 /** What `bootstrapService` hands back: a live, driveable instance of the booted entry. */
@@ -32,8 +33,10 @@ export interface BootstrappedService {
  * with pointers in place, one document row of markers), so `input()` in
  * the booted entry reads it identically to a deployed process.
  */
-export interface BootstrapConfig extends Config {
-  readonly input?: InputBinding;
+export interface BootstrapConfig<
+  I extends StandardSchemaV1 | undefined = StandardSchemaV1 | undefined,
+> extends Config {
+  readonly input?: InputBindingOf<I>;
 }
 
 /**
@@ -52,9 +55,14 @@ export interface BootstrapConfig extends Config {
  * teardown rides bun-test's per-file process isolation (H3's resolved
  * decision).
  */
-export async function bootstrapService<D extends Deps, P extends Params, E extends Expose>(
-  service: RunnableServiceNode<D, P, E>,
-  config: BootstrapConfig,
+export async function bootstrapService<
+  D extends Deps,
+  P extends Params,
+  E extends Expose,
+  I extends StandardSchemaV1 | undefined,
+>(
+  service: RunnableServiceNode<D, P, E, I>,
+  config: BootstrapConfig<I>,
   boot?: () => Promise<void>,
 ): Promise<BootstrappedService> {
   const port = config.service['port'];

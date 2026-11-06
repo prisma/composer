@@ -1,6 +1,6 @@
 # P1 — manual QA, 2026-10-29
 
-`examples/env-param` from this branch, built with this branch's packages, deployed with the QA credentials and `PRISMA_REGION=us-east-1`. The example provisions `publicUrl({ name: 'site', url: publicUrl.prismaBuild(), target: echo.http })`.
+`examples/env-param` from this branch, built with this branch's packages, deployed with the QA credentials and `PRISMA_REGION=us-east-1`. The example provisions `publicUrl({ id: 'site', url: publicUrl.prismaBuild(), target: echo.http })`.
 
 | Step | Result |
 | --- | --- |

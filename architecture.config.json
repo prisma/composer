@@ -205,7 +205,7 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/pool-text.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/configuration-text.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "shared"
@@ -416,6 +416,12 @@
     },
     {
       "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/contract.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/delivery-mode.ts",
       "domain": "prisma-cloud",
       "layer": "modules",
       "plane": "shared"
@@ -757,7 +763,7 @@
       "plane": "control"
     },
     {
-      "glob": "packages/9-public/composer/src/exports/internal-pools.ts",
+      "glob": "packages/9-public/composer/src/exports/internal-app-configuration-file.ts",
       "domain": "public",
       "layer": "public",
       "plane": "control"

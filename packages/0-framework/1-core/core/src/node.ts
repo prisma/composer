@@ -9,7 +9,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { ConfigParam, Connection, Params } from './config.ts';
 import type { Contract } from './contract.ts';
 import { LoadError } from './graph-types.ts';
-import { type ModuleInput, primitiveMisuse } from './module-input.ts';
+import { type ModuleInput, type NotModuleInput, primitiveMisuse } from './module-input.ts';
 import {
   type EnvironmentFacts,
   isPlainObject,
@@ -50,10 +50,16 @@ export interface SourceOptions {
   readonly label?: string;
 }
 
+/** What a deploy target says about a secret source it builds. */
+export interface SecretSourceOptions extends SourceOptions {
+  /** The app secrets key that holds this secret's value, as `envSecret('NAME')`'s `NAME`. Composer redacts the value under it wherever it prints, and `prisma dev` hands it to its second process. */
+  readonly secretsKey?: string;
+}
+
 /** What a deploy target says about a param source it builds. */
 export interface ParamSourceOptions extends SourceOptions {
-  /** The config pool key whose value at deploy is the source's real value, as for `envParam()`. Without one the source is known only at boot, and its real value is the source itself, a pointer. */
-  readonly poolKey?: string;
+  /** The app configuration key whose text at deploy is the source's real value, as for `envParam()`. Without one the source is known only at boot, and its real value is the source itself, a pointer. */
+  readonly configurationKey?: string;
   /** For a source known only at boot: `true` makes the source a secret pointer, whose variable holds a secret; otherwise it is a plain pointer. */
   readonly redacted?: boolean;
 }
@@ -61,9 +67,13 @@ export interface ParamSourceOptions extends SourceOptions {
 /** Builds a secret source from a target-defined payload: the SPI a deploy target's own constructor (e.g. `envSecret`) calls. The source is a value whose real value at deploy is itself, a pointer. Core forwards it and never inspects the payload. */
 export function secretSource<P, T = unknown>(
   payload: P,
-  options?: SourceOptions,
+  options?: SecretSourceOptions,
 ): SecretSource<P> & Value<T> {
   const label = sourceLabel('secretSource', options?.label, 'a secret source');
+  const secretsKey = options?.secretsKey;
+  if (secretsKey !== undefined && (typeof secretsKey !== 'string' || secretsKey.length === 0)) {
+    throw new Error('secretSource() secretsKey must be a non-empty string.');
+  }
   return blindCast<
     SecretSource<P> & Value<T>,
     'the frozen object carries the value brand, a source origin whose source is itself, the source brand and the payload, which is the SecretSource and Value shape'
@@ -71,11 +81,7 @@ export function secretSource<P, T = unknown>(
     buildSource(
       SECRET_SOURCE,
       payload,
-      {
-        kind: 'source',
-        label,
-        poolKey: undefined,
-      },
+      { kind: 'source', sourceKind: 'secret', label, secretsKey },
       'secret',
     ),
   );
@@ -133,7 +139,7 @@ const PARAM_SOURCE: unique symbol = blindCast<never, 'unique-symbol brand for a 
   Symbol.for('prisma:param-source'),
 );
 
-/** A param's source: a target-defined payload core forwards but never inspects. It is a value too: known at deploy when it names a config pool key (`envParam`), otherwise known only at boot, with the source itself as its real value: a secret pointer when it is redacted, a plain pointer otherwise. A target builds one with `paramSource()`. */
+/** A param's source: a target-defined payload core forwards but never inspects. It is a value too: known at deploy when it names an app configuration key (`envParam`), otherwise known only at boot, with the source itself as its real value: a secret pointer when it is redacted, a plain pointer otherwise. A target builds one with `paramSource()`. */
 export interface ParamSource<T = unknown> extends Value<unknown> {
   readonly [PARAM_SOURCE]: true;
   /** Target-defined. Core never reads this; the target that authored the source reads it back. */
@@ -146,14 +152,17 @@ export function paramSource<P, T = unknown>(
   options?: ParamSourceOptions,
 ): ParamSource<P> & Value<T> {
   const label = sourceLabel('paramSource', options?.label, 'a param source');
-  const poolKey = options?.poolKey;
-  if (poolKey !== undefined && (typeof poolKey !== 'string' || poolKey.length === 0)) {
-    throw new Error('paramSource() poolKey must be a non-empty string.');
+  const configurationKey = options?.configurationKey;
+  if (
+    configurationKey !== undefined &&
+    (typeof configurationKey !== 'string' || configurationKey.length === 0)
+  ) {
+    throw new Error('paramSource() configurationKey must be a non-empty string.');
   }
   const redacted = options?.redacted === true;
-  if (poolKey !== undefined && redacted) {
+  if (configurationKey !== undefined && redacted) {
     throw new Error(
-      'paramSource() takes poolKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.',
+      'paramSource() takes configurationKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.',
     );
   }
   return blindCast<
@@ -163,8 +172,8 @@ export function paramSource<P, T = unknown>(
     buildSource(
       PARAM_SOURCE,
       payload,
-      { kind: 'source', label, poolKey },
-      poolKey !== undefined ? undefined : redacted ? 'secret' : 'plain',
+      { kind: 'source', sourceKind: 'param', label, configurationKey },
+      configurationKey !== undefined ? undefined : redacted ? 'secret' : 'plain',
     ),
   );
 }
@@ -177,10 +186,16 @@ function sourceLabel(factory: string, label: unknown, fallback: string): string 
   return label;
 }
 
+type SourceOriginWithoutSource = SourceOrigin extends infer O
+  ? O extends SourceOrigin
+    ? Omit<O, 'source'>
+    : never
+  : never;
+
 function buildSource(
   brand: typeof SECRET_SOURCE | typeof PARAM_SOURCE,
   payload: unknown,
-  origin: Omit<SourceOrigin, 'source'>,
+  origin: SourceOriginWithoutSource,
   kind: PointerKind | undefined,
 ): object {
   const source = {
@@ -196,7 +211,7 @@ function buildSource(
   return Object.freeze(source);
 }
 
-function coercions(origin: Omit<SourceOrigin, 'source'>): PropertyDescriptorMap {
+function coercions(origin: SourceOriginWithoutSource): PropertyDescriptorMap {
   const thrower = (what: string) => () => {
     throw sourceMisuse(origin, what);
   };
@@ -213,10 +228,10 @@ function coercions(origin: Omit<SourceOrigin, 'source'>): PropertyDescriptorMap 
 
 const sourceMisuses = new WeakSet<LoadError>();
 
-function sourceMisuse(origin: Omit<SourceOrigin, 'source'>, what: string): LoadError {
+function sourceMisuse(origin: SourceOriginWithoutSource, what: string): LoadError {
   const { label } = origin;
   const error = new LoadError(
-    origin.poolKey === undefined
+    origin.sourceKind === 'secret' || origin.configurationKey === undefined
       ? `${label} is known only at boot: the deploy holds a pointer to it, never its value, and ${what}. ` +
           'A module body can only pass it on, into a provision() binding; to compute with the value, do it in the service that reads it.'
       : `${label} is a value, not its real value, and ${what}. ` +
@@ -260,60 +275,32 @@ export type ParamBindings<P extends Params> = {
         : never);
 };
 
-/** What a value in a service's input binding may stand for: plain data, a `SecretString` at any depth (a forwarded secret field), a pointer (a forwarded wrapped field), and `undefined` (an optional field the binding left out). */
-export type InputBindingData =
-  | string
-  | number
-  | boolean
-  | null
-  | undefined
-  | SecretString
-  | Pointer<unknown>
-  | readonly InputBindingData[]
-  | { readonly [key: string]: InputBindingData };
-
 /**
- * What `provision(service, { input })` accepts (ADR-0042): a plain object
- * mirroring the service's input schema, whose leaves are literals,
- * `envParam(...)` sources, or `envSecret(...)` sources. Deliberately a
- * best-effort structural type: the framework never introspects a Standard
- * Schema, so the binding's exact shape cannot be derived from it — deploy-time
- * validation of the resolved binding is the real check.
+ * What `provision(node, { input })` accepts, for a module or a service, where
+ * the node's input schema expects `T` (its Standard Schema input type): the
+ * data, a value standing for it, or, for a `SecretString` field, a secret
+ * source. A `SecretString` or a `Pointer` is never written as a literal. An
+ * optional key also takes a value that may stand for `undefined`.
  */
-export type InputBinding =
-  | string
-  | number
-  | boolean
-  | null
-  | ParamSource
-  | SecretSource
-  | Value<InputBindingData>
-  | readonly InputBinding[]
-  | { readonly [key: string]: InputBinding };
-
-/**
- * What `provision(module, { input })` accepts where the module's input schema
- * expects `T` (its Standard Schema input type): the data, a value standing for
- * it, or, for a `SecretString` field, a secret source. An optional key also
- * takes a value that may stand for `undefined`.
- */
-export type ModuleInputBinding<T> =
+export type InputBinding<T> =
   | Value<T>
-  | (T extends SecretString
-      ? SecretSource
-      : T extends readonly (infer E)[]
-        ? T | readonly ModuleInputBinding<E>[]
-        : T extends { readonly [key: string]: unknown }
-          ? {
-              readonly [K in keyof T]:
-                | ModuleInputBinding<T[K]>
-                | (Record<never, never> extends Pick<T, K> ? Value<T[K] | undefined> : never);
-            }
-          : T);
+  | (T extends Pointer<unknown>
+      ? never
+      : T extends SecretString
+        ? SecretSource
+        : T extends readonly (infer E)[]
+          ? readonly InputBinding<E>[]
+          : T extends { readonly [key: string]: unknown }
+            ? {
+                readonly [K in keyof T]:
+                  | InputBinding<T[K]>
+                  | (Record<never, never> extends Pick<T, K> ? Value<T[K] | undefined> : never);
+              } & NotModuleInput
+            : T);
 
-/** A module input schema's Standard Schema input type. */
-type ModuleInputOf<I extends StandardSchemaV1 | undefined> = StandardSchemaV1.InferInput<
-  NonNullable<I>
+/** What `provision()` accepts as the `input` of a node whose input schema is `I`. */
+export type InputBindingOf<I extends StandardSchemaV1 | undefined> = InputBinding<
+  StandardSchemaV1.InferInput<NonNullable<I>>
 >;
 
 /**
@@ -381,7 +368,7 @@ export interface ResourceNode<
 }
 
 /** A resource's configuration: plain data and values, nested in objects and arrays. */
-export type ResourceProps = { readonly [key: string]: ResourcePropsMember };
+export type ResourceProps = { readonly [key: string]: ResourcePropsMember } & NotModuleInput;
 export type ResourcePropsMember =
   | string
   | number
@@ -389,7 +376,7 @@ export type ResourcePropsMember =
   | null
   | Value<PlainData>
   | readonly ResourcePropsMember[]
-  | { readonly [key: string]: ResourcePropsMember };
+  | ({ readonly [key: string]: ResourcePropsMember } & NotModuleInput);
 
 /**
  * A Service: inputs + its own declared params + how it is built. Inspectable,
@@ -481,7 +468,7 @@ export interface ModuleContext<
 > {
   /** The module's declared dependencies as wiring values — pass them into provision(). */
   readonly deps: { [K in keyof D]: InputRef<D[K]> };
-  /** The module's input: one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. A root's input is the config pool, validated by its schema; a root passes on its fields one by one, never its whole input. Pass a field into a provision() binding or list it as a resolve() dependency. */
+  /** The module's input: a dictionary with one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. It is not itself a value: pass its fields on by name, into a provision() binding or, for a plain field, as a resolve() dependency. A root's input is the app configuration, validated by its schema. */
   readonly input: I extends StandardSchemaV1 ? ModuleInput<I> : undefined;
   /** The deploy-time facts of the environment, each a value (ADR-0062). List `environment.name` as a `resolve()` dependency. Never environment variables: user code never reads those. */
   readonly environment: EnvironmentFacts;
@@ -544,10 +531,10 @@ type ServiceProvisionArgs<D extends Deps, I extends StandardSchemaV1 | undefined
 ] extends [never]
   ? I extends undefined
     ? [opts?: { id?: string; params?: PB }]
-    : [opts: { id?: string; input: InputBinding; params?: PB }]
+    : [opts: { id?: string; input: InputBindingOf<I>; params?: PB }]
   : I extends undefined
     ? [opts: { id?: string; deps: DepBindings<D>; params?: PB }]
-    : [opts: { id?: string; deps: DepBindings<D>; input: InputBinding; params?: PB }];
+    : [opts: { id?: string; deps: DepBindings<D>; input: InputBindingOf<I>; params?: PB }];
 
 /**
  * A child-MODULE provision's trailing options: `deps` and `input` each
@@ -556,16 +543,33 @@ type ServiceProvisionArgs<D extends Deps, I extends StandardSchemaV1 | undefined
 type ModuleProvisionOptions<D extends Deps, I extends StandardSchemaV1 | undefined> = {
   id?: string;
 } & ([keyof D] extends [never] ? unknown : { deps: DepBindings<D> }) &
-  ([I] extends [StandardSchemaV1] ? { input: ModuleInputBinding<ModuleInputOf<I>> } : unknown);
+  (I extends StandardSchemaV1 ? { input: InputBindingOf<I> } : unknown);
 
 /** The options are optional exactly when nothing is required. */
-type ModuleProvisionArgs<D extends Deps, I extends StandardSchemaV1 | undefined> = [
-  keyof D,
-] extends [never]
-  ? [I] extends [StandardSchemaV1]
-    ? [opts: ModuleProvisionOptions<D, I>]
-    : [opts?: ModuleProvisionOptions<D, I>]
-  : [opts: ModuleProvisionOptions<D, I>];
+type ModuleProvisionArgs<
+  D extends Deps,
+  I extends StandardSchemaV1 | undefined,
+> = I extends StandardSchemaV1
+  ? [opts: ModuleProvisionOptions<D, I>]
+  : [keyof D] extends [never]
+    ? [opts?: ModuleProvisionOptions<D, I>]
+    : [opts: ModuleProvisionOptions<D, I>];
+
+/** The options `provision()` takes after a service or module node `N`. */
+type ProvisionArgs<N> =
+  N extends ServiceNode<infer D, infer P, Expose, infer I>
+    ? ServiceProvisionArgs<D, I, ParamBindings<P>>
+    : N extends ModuleNode<infer D, Expose, infer I>
+      ? ModuleProvisionArgs<D, I>
+      : never;
+
+/** The contracts a service or module node `N` exposes. */
+type ExposeOf<N> =
+  N extends ServiceNode<Deps, Params, infer E, StandardSchemaV1 | undefined>
+    ? E
+    : N extends ModuleNode<Deps, infer E, StandardSchemaV1 | undefined>
+      ? E
+      : never;
 
 export interface ModuleBuilder {
   /** Provisions an owned resource; its id defaults to the node's `name`. */
@@ -583,11 +587,17 @@ export interface ModuleBuilder {
     service: ServiceNode<D, P, E, I>,
     ...args: ServiceProvisionArgs<D, I, ParamBindings<P>>
   ): ProvisionedRef<E>;
+  /** Registers an owned child module; its id defaults to the node's `name`; `deps` and `input` are required iff it declares them. */
+  provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
+    child: ModuleNode<D, E, I>,
+    ...args: ModuleProvisionArgs<D, I>
+  ): ProvisionedRef<E>;
   /**
-   * The service call with `deps`/`input` spelled out. `ServiceProvisionArgs`
-   * above cannot resolve while `D`/`I` are still unbound type parameters — a
+   * The service call with `deps` written out. `ServiceProvisionArgs` above
+   * cannot resolve while `D` or `I` is still an unbound type parameter — a
    * generic wrapper like `cron()` provisioning a caller-supplied service — so
-   * that call site resolves to this concrete overload instead.
+   * that call site resolves to this overload, or to the next one for a
+   * service without an input schema.
    */
   provision<
     D extends Deps,
@@ -599,24 +609,32 @@ export interface ModuleBuilder {
     opts: {
       id?: string;
       deps: DepBindings<D>;
-      input?: InputBinding;
+      input: InputBindingOf<I>;
       params?: ParamBindings<P>;
     },
   ): ProvisionedRef<E>;
-  /** Registers an owned child module; its id defaults to the node's `name`; `deps` and `input` are required iff it declares them. */
+  provision<D extends Deps, P extends Params, E extends Expose>(
+    service: ServiceNode<D, P, E, undefined>,
+    opts: { id?: string; deps: DepBindings<D>; input?: never; params?: ParamBindings<P> },
+  ): ProvisionedRef<E>;
+  /** The child-module call with `deps` written out — the same generic-wrapper escape as the two service overloads above. */
   provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
     child: ModuleNode<D, E, I>,
-    ...args: ModuleProvisionArgs<D, I>
+    opts: { id?: string; deps: DepBindings<D>; input: InputBindingOf<I> },
   ): ProvisionedRef<E>;
-  /** The child-module call with `deps` spelled out — the same generic-wrapper escape as the service overload above. */
-  provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
-    child: ModuleNode<D, E, I>,
-    opts: {
-      id?: string;
-      deps: DepBindings<D>;
-      input?: ModuleInputBinding<ModuleInputOf<I>>;
-    },
+  provision<D extends Deps, E extends Expose>(
+    child: ModuleNode<D, E, undefined>,
+    opts: { id?: string; deps: DepBindings<D>; input?: never },
   ): ProvisionedRef<E>;
+  /**
+   * Any service or child module. Declared last, so a call no overload accepts
+   * reports this overload's error, which names the binding key that does not
+   * fit, or says a module's whole input is not a value.
+   */
+  provision<N extends ServiceNode | ModuleNode>(
+    node: N,
+    ...args: ProvisionArgs<N>
+  ): ProvisionedRef<ExposeOf<N>>;
 }
 
 /** Dependency map: name → the slot the service declares. Only declarations are admitted, never a concrete ResourceNode. */

@@ -28,19 +28,26 @@ export {
 } from '../config.ts';
 export type { Contract, ContractStyle } from '../contract.ts';
 export type {
+  AppConfigurationRead,
   AuthoredEdge,
   BoundaryPort,
   Edge,
   Graph,
   GraphNode,
+  InputBindingUse,
   LoadOptions,
   NodeId,
   ParamBinding,
   PortEndpoint,
+  RootInputField,
   SecretSourceUse,
-  ServiceInputBinding,
 } from '../graph.ts';
-export { assertAppName, Load, LoadError, RESOURCE_OUT_PORT } from '../graph.ts';
+export {
+  assertAppName,
+  Load,
+  LoadError,
+  RESOURCE_OUT_PORT,
+} from '../graph.ts';
 export { hydrate, hydrateSync } from '../hydrate.ts';
 export type { ModuleInput, ModuleInputField } from '../module-input.ts';
 export type {
@@ -52,12 +59,11 @@ export type {
   Hydrated,
   HydratedDeps,
   InputBinding,
-  InputBindingData,
+  InputBindingOf,
   InputRef,
   InputValueOf,
   ModuleBuilder,
   ModuleContext,
-  ModuleInputBinding,
   ModuleNode,
   ModuleOutputs,
   NODE,
@@ -72,6 +78,7 @@ export type {
   ResourcePropsMember,
   RunnableServiceNode,
   SecretSource,
+  SecretSourceOptions,
   ServiceNode,
   SourceOptions,
 } from '../node.ts';

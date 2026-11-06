@@ -255,7 +255,7 @@ export interface LocalTargetAttachment {
 The Prisma Cloud target's `serve`:
 
 1. Finds the service's instance through the directory's record (`ensureServiceInstance(scope, address)`, which creates none here because the converge already did), taking its `id` and `port`.
-2. Materializes the deployment environment with the existing `materializeEnv(devDir, address, port)`: the service's own rows from `env.json` (`scopedEnvRows`), `COMPOSER_<ADDRESS>_PORT`, the current values of the variables its rows point at (every value in `secrets.json` until [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md)), and `PATH` and `HOME` from the shell.
+2. Materializes the deployment environment with the existing `materializeEnv(devDir, address, port)`: the service's own rows from `env.json` (`scopedEnvRows`), `COMPOSER_<ADDRESS>_PORT`, the current values of the variables its rows point at (every value in `secrets.json` until [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-app-secrets-and-never-invents-them.md)), and `PATH` and `HOME` from the shell.
 3. Applies the stash to it (next section), producing the address-free rows, `PORT` and `HOST`.
 4. Builds the command's environment as `{ ...process.env, ...materialized, ...stashed }`, in that order, dropping entries whose value is `undefined`.
 5. Calls `server.argv({ port, host: '0.0.0.0' })`.
@@ -399,7 +399,7 @@ Both new codes are registered under ADR-0044's `DEV` namespace. A dev server tha
 - [ADR-0052](ADR-0052-composer-maps-its-nodes-to-emulator-instances-per-directory.md) — instances hold their ports; the emulators know nothing about Composer.
 - [ADR-0005](ADR-0005-users-build-the-framework-assembles.md) and [ADR-0047](ADR-0047-compute-assembly-preserves-safe-runtime-topology.md) — users build, Composer assembles, by documented steps; extended here to the documented dev step. `HOST=0.0.0.0` follows ADR-0047.
 - [ADR-0004](ADR-0004-paths-resolve-relative-to-the-authoring-file.md) — a build adapter's paths are relative to its authoring module; a Node dev command runs there.
-- [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md), [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) and [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md) — the input document, secret pointers and env-sourced params the dev server's environment carries unchanged.
+- [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md), [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) and [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md) — the input document, secret pointers and env-sourced params the dev server's environment carries unchanged.
 - [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md) — the `prisma dev` command.
 - [ADR-0044](ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md) — where the error codes are registered.
 - [local-dev.md](../10-domains/local-dev.md) — the mechanics of `prisma dev`.

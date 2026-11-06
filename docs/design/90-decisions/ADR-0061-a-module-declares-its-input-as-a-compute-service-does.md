@@ -1,25 +1,14 @@
 # ADR-0061: A module declares its input the way a compute service does
 
-Amended 2026-10-29 (module-input project, second slice): each input field the body receives is a **value**, `Value<T>` typed from the schema's output, the same kind of value as `environment.name` and a `resolve()` result ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). Three statements below are corrected. First, the body cannot be stopped from reading or branching on a value in every case: turning one into text or a number, serializing it, listing its keys or iterating it fails with an error naming the field, and `===` or `switch` against a literal fails to compile, but a truthiness check such as `if (input.enabled)` is not caught: it sees an object, so it always takes the branch. The structure rule holds, because such a branch always goes the same way and so cannot vary the graph. Second, a module's binding is validated during Load's second pass, synchronously, not after it, because a child's real value is read from its parent's validated output; an async schema fails the Load. A real value is the schema's output, so a field typed `number` by a parsing schema receives `4`, not `'4'`. Third, a body reaches only the keys every member of a union schema has, and an array field has no element access: to narrow, forward the whole `input` or narrow inside a `resolve()` function. An input field the body never uses is not an error, because Load cannot list a schema's keys.
-
-Amended 2026-10-29 (module-input project, third slice): one statement below is corrected. `paramSource()` and `secretSource()` change: each now returns one object that is both the target's source and a value, so a module's input takes every source a service's input does. Each also takes an optional second argument of options: `secretSource()` takes `label`, the name errors use, and `paramSource()` takes `label`, `poolKey`, `sentinel` and `redacted`, which tell core what it needs about the source's value without reading the payload.
-
-Amended 2026-10-30 (module-input project, fourth slice): a root may declare `input`. Its binding is the config pool, which Load validates with the root's schema first, during its second pass, before anything is created. A root's input takes no secret: the config pool holds plain values, so a `secretString()` field refuses them.
-
-Amended 2026-10-30 (module-input project, fifth slice): the slots are removed from the code, as the Consequences below say. `module()` refuses a `params` or `secrets` key, and `provision()` of a module refuses a `params` or `secrets` map, with errors that name `input`. `ModuleNode` and `ModuleContext` lose their slot type parameters: `ModuleNode<D, E, I>` and `ModuleContext<D, I>`. `auth()` and `email()` declare `input`.
-
-Amended 2026-10-30 (module-input project, seventh slice): Load checks a module's binding with each value known only at boot in place as its pointer, so one statement below is corrected: the deploy does not resolve a secret to an opaque box. The schema sees the secret pointer, which `secretString()` accepts. A plain pointer, from `serviceOrigin()` or a plain `generatedParam()`, passes only a field wrapped with `field()`; a plain field refuses it. `paramSource()` loses its `sentinel` option, and its `redacted` option says whether the source is a secret pointer or a plain one; a `paramSource()` with neither a pool key nor `redacted` is a plain pointer, which a module's input now takes. Wherever the schema's output holds a pointer, Load passes on the original source, so a copy the schema made reaches the child as the source the binding named. A schema that replaces a field bound to a value known only at boot, or moves its pointer to another field, still fails the Load.
-
-Amended 2026-10-30 (module-input project, eighth slice): only a plain field of the input can be a `resolve()` dependency. A field wrapped with `field()` or typed `secretString()` may hold a pointer, so listing it fails to compile, and Load refuses any listed field whose real value holds a pointer, naming it and saying what to do instead: declare a wrapped field plain, or pass a secret field on into a binding and read it in the service ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
-
-## Decision
-
-A module declares all of its incoming configuration as **one Standard Schema**, `input`, exactly as `compute()` does. Secret fields are typed `secretString()`. The module's body receives `input` as a set of opaque references, one per key, which it can only pass on: into a child's input, into a node parameter that takes a value, or as a `resolve()` dependency. Modules have no per-key `params` or `secrets` slots.
-
 ```ts
+import { module } from '@prisma/composer';
+import { field, secretString } from '@prisma/composer/arktype';
+import { envSecret, serviceOrigin } from '@prisma/composer-prisma-cloud';
+import { type } from 'arktype';
+
 // a reusable module declares what it needs, as a service does
-export default module('auth',
-  { input: type({ baseUrl: 'string', signingKey: secretString() }), expose: { rpc: authContract } },
+const auth = module('auth',
+  { input: type({ baseUrl: field(type('string')), signingKey: secretString() }), expose: { rpc: authContract } },
   ({ input, provision }) => {
     const db = provision(rawPostgres({ name: 'database' }));
     const service = provision(authService, {
@@ -31,42 +20,62 @@ export default module('auth',
   });
 
 // the module that provisions it binds that input, as it would a service's
-provision(authModule, {
-  input: { baseUrl: envParam('AUTH_BASE_URL'), signingKey: envSecret('AUTH_SIGNING_SECRET') },
+export default module('shop', ({ provision }) => {
+  provision(auth, {
+    input: { baseUrl: serviceOrigin('shop.web'), signingKey: envSecret('AUTH_SIGNING_SECRET') },
+  });
 });
 ```
 
-The root module may declare `input` too. Nothing provisions the root, so the deploy binds the root's input from the config adapters ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). The root may not declare `deps`, because a dependency needs a producer in the graph.
+The body passes `input.baseUrl` and `input.signingKey` on by name. Writing `input` in their place fails to compile, because `input` is a dictionary of values, not a value.
+
+## Decision
+
+A module declares all of its input as **one Standard Schema**, `input`, exactly as `compute()` does. Whoever provisions the module binds that input with `provision(module, { input: { … } })`. Modules have no per-key `params` or `secrets` slots.
+
+- **The schema** comes from any Standard Schema library. A secret field is typed `secretString()`. A leaf field that may receive a value known only at boot is wrapped in `field()`: a **wrapped field**. A field written without it is a **plain field**, which accepts deploy-time data only. `@prisma/composer/arktype` and `@prisma/composer/zod` export both helpers.
+- **The binding** is typed from the schema's input type. Each key takes a literal, a value of the field's type, or a source such as `envSecret()`, which is a value too ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). A module with an input schema must be bound, and a module without one must not be.
+- **The body** receives `input`, a **dictionary** with one value per field, typed from the schema's output: `input.from`, or `input.smtp.user` for a nested field. It can pass a field on, by name, into a child module's or a service's `input`, a service param or a resource's props, and it can list a plain field as a `resolve()` dependency. It cannot read a field's data.
+- **The dictionary itself is not a value.** Passing the whole `input` where a value is accepted fails to compile, for every module. A cast gets past the compiler, so Load refuses it too, with an error that says the whole input of the module was passed on, and to pass its fields on by name.
+- **The root** may declare `input` too. Nothing provisions the root, so the deploy binds its input to the app configuration ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)): the merged values of the `config` adapters, which by default are every variable of the process environment, secrets included. So the root's input can hold a secret's text. Composer keeps it out of the file it hands the second process in two ways. Load refuses a root input field that the root's body passes on when an `envSecret()` in the graph reads the same name. The CLI refuses to write that file when any value in it contains a known secret: a value under a name an `envSecret()` in the graph reads. Each refusal names the field, never the value. The root may not declare `deps`, because a dependency needs a producer in the graph.
 
 ## Reasoning
 
-**A module has the same boundary as a service.** That is the module-boundary decision ([ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md)): `deps` in, `expose` out, so a consumer cannot tell a provisioned module from a provisioned service. The service input decision ([ADR-0042](ADR-0042-service-input-is-one-standard-schema.md)) gave a service one schema for all of its configuration. A module that took configuration in a different shape, under different names, with a different secret mechanism, would break the boundary the first decision drew. This decision puts modules on the service's shape.
+**A module has the same boundary as a service.** That is the module-boundary decision ([ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md)): `deps` in, `expose` out, so a consumer cannot tell a provisioned module from a provisioned service. The service input decision ([ADR-0042](ADR-0042-service-input-is-one-standard-schema.md)) gave a service one schema for all of its input. A module that took its input in a different shape, under different names, with a different secret mechanism, would break the boundary the first decision drew. This decision puts modules on the service's shape.
 
-**Everything the service input decision gave services, modules get.** Legality can be relational ("no `stripeSecretKey` unless `stripeEnabled`"), because a schema library expresses that and per-key slots cannot. The caller brings the schema library, and Composer keeps no type vocabulary of its own ([ADR-0018](ADR-0018-config-params-carry-a-caller-owned-schema.md)). Secretness is enforced by validation: binding a plain value where the schema expects a `SecretString` fails the deploy, and so does binding a secret source where it expects a string.
+**Everything the service input decision gave services, modules get.** Legality can be relational ("no `stripeSecretKey` unless `stripeEnabled`"), because a schema library expresses that and per-key slots cannot. The caller brings the schema library, and Composer keeps no type vocabulary of its own ([ADR-0018](ADR-0018-config-params-carry-a-caller-owned-schema.md)). Secretness is enforced by validation: binding a plain value where the schema expects a secret fails the deploy, and so does binding a secret source to a plain field.
 
-**The module's references are opaque, so the graph cannot branch on configuration.** `input.baseUrl` in the body is a reference, not the string. The body can pass it where a value is accepted and nothing else: it cannot read it or branch on it, so a module cannot provision different children in different environments. The topology is the same in every environment, which the structure rule requires ([ADR-0024](ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)).
+**A module receives the input it needs and no more.** The body names each field it passes on, and only those fields reach the graph. Nothing stands for the whole input. A field such as `input.smtp` may be passed on whole because it is a unit the schema declares; the whole input is not a field but everything the schema outputs. This matters most for the root: its input by default holds every variable of the process environment, secrets included, and passing it on whole would put all of them into an input document that the platform stores and the deploy report prints. A module that is not the root follows the same constraint, so that a child receives only what its parent chose to give it, and so that a module's body does not change when it becomes the root or stops being it.
 
-**Validation happens at deploy, as for a service.** The deploy resolves the module's binding (literals as-is, sources resolved, secrets as opaque boxes) and passes it to the module's schema. The value then flows into a child's input and is validated again by the child's schema. A module that only forwards a value can use a permissive schema for it; a module that constrains it says so once.
+**The body holds values, not data, so the graph cannot branch on its input.** `input.baseUrl` is a value, an opaque stand-in for data known later ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). Turning a field into text or a number, serializing it, listing its keys, spreading or iterating it, testing it with `in`, or assigning to it fails at Load with an error naming the field. `===` or `switch` against a literal fails to compile. A truthiness check or `typeof` cannot be caught, because JavaScript calls no hook for them, but a value is always an object, so such a branch always goes the same way and cannot vary the graph. So a module provisions the same children in every environment, as the structure requirement asks ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
 
-**How the body gets one reference per key.** The framework cannot read the keys out of a Standard Schema; Standard Schema exposes only `validate`, which is why the service input decision rejected introspection. So the references come from the keys the author writes in the body: `input` is a typed object whose property accesses each return a reference recording its key path, typed from the schema's inferred output. The mechanism has to type each reference from the schema's output including nested keys, let Load record which input key flows into which child input, and produce a clear error when the body reads a reference or branches on it instead of passing it where a value is accepted. The shape of the decision does not depend on how that object is built.
+**The schema checks the binding at Load.** During Load's second pass, from the root down, Load resolves each module's binding, replacing each deploy-time value with its real value, and checks the result with the module's schema. The check runs synchronously, because a child's real value is read from its parent's checked output; an async schema fails the Load. A field's real value is read from the schema's output, so a field typed `number` by a parsing schema receives `4`, not `'4'`, and defaults apply. The child's schema then checks the value again. A value known only at boot reaches the schema as its pointer: `secretString()` accepts a secret pointer, a wrapped field a plain pointer, and a plain field neither. A schema may check such a field but never replace it or move its pointer to another field; Load refuses a schema that does. A schema may return a copy of a pointer, as ArkType does when a transform runs, so Load recognises a pointer by its brand and the variable it names, and passes on the source the binding named. A secret box written in a binding is refused, because a secret's value never appears in the code.
+
+**How the body gets one value per field.** The framework cannot read the keys out of a Standard Schema; Standard Schema exposes only `validate`, which is why the service input decision rejected introspection. So the values come from the keys the author writes in the body. `input` is an object whose property reads each return a value recording its key path, typed from the schema's output, and the same path always returns the same value. Load records which field flows into which binding or `resolve()`. An input field the body never uses is not an error, because Load cannot list a schema's keys.
+
+**A union schema becomes a flat one.** For a union schema the body's types offer only the keys every member has, and the body can neither narrow with an `if` nor pass the whole input on. So a module cannot declare a union input and still pass every field to its service. It declares a flat schema instead, for example with an optional field, and passes each field on by name. An array field has no element access; a `resolve()` that lists a plain array field computes with its elements.
 
 ## Consequences
 
-- **`module()` takes `input`**, and `provision(module, …)` takes one `input` binding. There are no `paramNeed()` or module-level `secret()` slots. `paramSource()` and `secretSource()`, which targets use to build their sources, are unchanged.
-- **Load accepts `input` on a root** and binds it from the config adapters. Load still refuses `deps` on a root.
-- **A forwarded value is validated twice**, by the module's schema and by the child's. Both run at deploy, before anything is created.
+- **`module()` takes `input`**, and `provision(module, …)` takes one `input` binding, typed from the schema. `ModuleNode<D, E, I>` and `ModuleContext<D, I>` carry the schema's type. `module()` refuses a `params` or `secrets` key, and `provision()` of a module refuses a `params` or `secrets` map, each with an error naming `input`. `paramNeed()` and the module form of `secret()` are gone.
+- **The body's `input` has the type `ModuleInput<S>`, which is not a `Value`.** Every binding type refuses it. Where the compiler sees no type, such as a binding slot typed `unknown`, only Load refuses it.
+- **`paramSource()` and `secretSource()`**, which targets use to build their sources, each return one object that is both the source and a value. `secretSource()` takes `label` and `secretsKey`, the app secrets key that holds the secret. `paramSource()` takes `label`, `configurationKey` and `redacted`: `configurationKey` is the app configuration key whose text is the source's real value at deploy, and `redacted` says whether a source known only at boot is a secret pointer or a plain one.
+- **Load accepts `input` on a root** and binds it to the app configuration, which the root's schema checks before any other module's binding. Load still refuses `deps` on a root.
+- **A value passed on is checked twice**, by the module's schema and by the child's. Both run at deploy, before anything is created.
 
 ## Alternatives considered
 
-- **Per-key slots on modules under new names.** Rejected: modules and services would still take configuration in two shapes.
+- **Per-key slots on modules under new names.** Rejected: modules and services would still take their input in two shapes.
 - **Separate `config` and `secrets` declarations on modules, through builder callbacks with a Composer type vocabulary** (`(c) => ({ foo: c.string() })`). Rejected: it splits what the service input decision deliberately merged, and gives Composer a type vocabulary to maintain beside the schema libraries.
-- **Input on the root only.** Rejected: the root would take configuration in a shape no other module uses.
+- **Input on the root only.** Rejected: the root would take its input in a shape no other module uses.
 - **Hand the body the actual values.** Rejected: the body could branch on them, and the graph would differ per environment.
+- **Passing the whole `input` on**, which an earlier version of this decision allowed for a module that is not the root, as the way to narrow a union schema. Rejected: a module should receive the input it needs and no more, and a child should receive only what its parent names. One constraint for every module is also simpler than one for the root and another for the rest.
+- **Refusing the whole `input` at Load only.** Rejected: code that type-checks should deploy, so the compiler refuses it wherever the binding has a type, and Load refuses it where the compiler cannot see.
 
 ## Related
 
-- [ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md): a module has the same boundary as a service. Amended by this ADR.
-- [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md): service input is one standard schema. Extended to modules by this ADR.
-- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) and [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md): the forwardable secret and param slots this replaces on modules; their sources (`envSecret`, `envParam`) are unchanged.
-- [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): how the root's input is bound.
+- [ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md): a module has the same boundary as a service. Its current text includes this decision: a module's input is one Standard Schema, bound at `provision()`.
+- [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md): service input is one standard schema. Its current text includes this decision: a module's binding has the same type as a service's.
+- [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) and [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md): the forwardable secret and param slots this replaces on modules; their sources (`envSecret`, `envParam`) remain.
+- [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): values, `resolve()`, and how the root's input is bound.
 - [module-composition.md](../10-domains/module-composition.md) and [config-params.md](../10-domains/config-params.md).

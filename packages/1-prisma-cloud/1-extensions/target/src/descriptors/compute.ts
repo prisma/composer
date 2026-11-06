@@ -150,7 +150,7 @@ interface EnvRow {
 /**
  * The report's two lines of honesty (ADR-0042): the serialized input
  * document (secret-free by construction — every secret leaf is a `$secret`
- * pointer) and every binding key that resolved absent in the config pool (a
+ * pointer) and every binding key that resolved absent in the app configuration (a
  * possible typo'd variable name). Newlines in a detail value render as one
  * line per entry.
  */
@@ -258,7 +258,9 @@ export function computeDescriptor(
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
           {
             absentSecrets: o().preflight.absentSecrets,
-            ...(ctx.opts.configPool !== undefined ? { env: ctx.opts.configPool } : {}),
+            ...(ctx.opts.appConfigurationRead !== undefined
+              ? { env: ctx.opts.appConfigurationRead.configurationKeyText }
+              : {}),
           },
         );
         if (inputRow !== undefined) {

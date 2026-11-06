@@ -406,7 +406,7 @@ pattern: on push, run `prisma deploy --environment "pr-$PR_NUMBER"`; on
 close, run a script like the one under [Removing an app or an environment](#removing-an-app-or-an-environment)
 that passes that name, `environment: 'pr-42'` for PR 42.
 
-One extra: if your app binds `envSecret` (see [Building an app § Service input](building-an-app.md#service-input)), each environment keeps its own copy of those platform variables, and the platform copy is the store; the secrets pool only seeds it. A fresh environment (a new `pr-42`) has none of them yet, so CI must export the values (e.g. `AUTH_SIGNING_SECRET`) alongside the two credentials; preflight copies missing ones up on that first deploy. A name absent from both the platform and the secrets pool fails the deploy early, naming the missing variable. An `envParam` input is different: the deploy reads it from the config pool on every deploy, so CI exports it, or commits it in `.env.<environment>` and lists `dotenv()`, every time.
+One extra: if your app binds `envSecret` (see [Building an app § Service input](building-an-app.md#service-input)), each environment keeps its own copy of those platform variables, and the platform copy is the store; the app secrets only seed it. A fresh environment (a new `pr-42`) has none of them yet, so CI must export the values (e.g. `AUTH_SIGNING_SECRET`) alongside the two credentials; preflight copies missing ones up on that first deploy. A name absent from both the platform and the app secrets fails the deploy early, naming the missing variable. An `envParam` input is different: the deploy reads it from the app configuration on every deploy, so CI exports it, or commits it in `.env.<environment>` and lists `dotenv()`, every time.
 
 A root's input and an `envParam()` can come from a committed `.env.<environment>` file per environment ([Values from outside the code](building-an-app.md#values-from-outside-the-code)). Keep secrets out of committed files: put them in CI's secret store and keep `environmentVariables()` in `secrets`.
 
@@ -734,12 +734,13 @@ What to know before embedding it:
   the same fix-naming `message` the CLI prints; branch on `code`. When the
   deploy engine ran and failed (`DEPLOY.ENGINE_FAILED`), the message ends with
   the engine's own error lines — the failed resource and the error it
-  printed, with credentials redacted and capped at 1000 characters — which a
+  printed, with every secret Composer knows redacted, and capped at 1000 characters — which a
   deploy reporting to Prisma Cloud also records on the build. Its optional
   `diagnostics` object carries the exit code and an exact reproduce command —
   details of the current execution mechanism, handy for printing a hint but
   not something to build on; branch on `message`/`cause` for anything
   durable. Importing the module executes nothing until you call an operation.
+- The deploy engine's own output passes through Composer on its way to your terminal, with every secret Composer knows replaced by `[redacted]`: the value under each name an `envSecret()` names, in your `config` and `secrets` lists, however short. Other values in those lists, such as the shell's, are printed as they are, apart from values that look like credentials, such as a long value under a name containing `TOKEN` or `KEY`. So the engine shows plain progress lines, without colour.
 - **`onEvent` reports each step.** Pass `onEvent` to `deploy` to receive a
   `step-started` and a `step-finished` event per step (`prepare`, `assemble`,
   one `assemble-service` per service, `connect`, `preflight`, `apply`,
