@@ -105,7 +105,9 @@ A RoutingUrl is the control plane's record that a custom hostname should reach a
 
 ### The domain ownership claim and its verification
 
-A DomainOwnership record is a workspace's claim that it controls a domain: either an exact hostname such as `shop.com`, or a wildcard one label deep such as `*.preview.shop.com`. It can be created before its TXT record exists, and is pending until the platform finds a TXT record at `_prisma-verification.shop.com` carrying a value derived from the workspace's id; then it is verified. This is the same TXT record the platform asks for today; a workspace that has published it once needs nothing new. A custom domain attached before the TXT check shipped on 24 October 2026 has no TXT record, so the backfill gives it a third state, `unverified_allowed`. It has no end date. A missing record never revokes it; only a conflict does, when another workspace publishes its own value at the record name. It does not count as verified.
+A DomainOwnership record is a workspace's claim that it controls a domain: either an exact hostname such as `shop.com`, or a wildcard one label deep such as `*.preview.shop.com`. It can be created before its TXT record exists. It is `unverified` until the platform finds a TXT record at `_prisma-verification.shop.com` carrying a value derived from the workspace's id; then it is `verified`. This is the same TXT record the platform asks for today; a workspace that has published it once needs nothing new.
+
+A domain ownership has a third status, `expiring`, with an `expiresAt` date. When a lookup no longer finds a verified domain ownership's record, it becomes `expiring` with `expiresAt` 30 days later, and the workspace is emailed. Its active hostnames keep serving, but no new hostname starts serving under it. If the record is found again, it becomes `verified`. At the first lookup at or after `expiresAt` that still finds no value, it becomes `unverified`, and the hostnames nothing else keeps serving stop. When a lookup finds another workspace's value and not this workspace's, the domain ownership becomes `unverified` at once. A daily job rechecks expiring domain ownerships. A custom domain attached before the TXT check shipped on 24 October 2026 has no TXT record, so the backfill gives it an `expiring` domain ownership with `expiresAt` 30 days after the backfill, unless a verified one already covers it. From then on it follows the same rule.
 
 Ownership and routing are separate questions. Ownership asks whether this workspace may use this domain. Routing asks which service a hostname reaches. A RoutingUrl can exist without a verified claim; it just cannot serve traffic until one exists.
 
@@ -113,14 +115,14 @@ Ownership and routing are separate questions. Ownership asks whether this worksp
 
 A RoutingUrl serves traffic only when all six of these are true:
 
-1. The workspace has a verified claim covering the hostname.
+1. A domain ownership in the workspace that covers the hostname is `verified`, or, for a RoutingUrl that is already active, `expiring`.
 2. The service exists.
 3. The service has a live version.
 4. The hostname's DNS points at the regional switchboard.
 5. A Foundry custom domain exists for the hostname, this RoutingUrl holds its id, and it is bound to the live deployment's compute version.
 6. Foundry reports the custom domain's certificate as active.
 
-A RoutingUrl has a status. It is pending until all six conditions are met, and reports the first unmet one as the next thing to do, with the exact DNS record to publish. Once they are met it is active. A change of the service's live deployment, or a service with no live deployment gaining one, does not change the status: the control plane only re-points the Foundry custom domain. Nothing is sent to Foundry for a new or changed hostname until its domain ownership is verified; an `unverified_allowed` one is not enough. The RoutingUrls the backfill creates for existing custom domains start out active.
+A RoutingUrl has a status. It is pending until all six conditions are met, and reports the first unmet one as the next thing to do, with the exact DNS record to publish. Once they are met it is active. A change of the service's live deployment, or a service with no live deployment gaining one, does not change the status: the control plane only re-points the Foundry custom domain. Nothing is sent to Foundry for a new or changed hostname until its domain ownership is `verified`; an `expiring` one is not enough. The RoutingUrls the backfill creates for existing custom domains start out active.
 
 ### One custom domain per hostname
 
@@ -145,15 +147,17 @@ sequenceDiagram
   User->>Console: claim shop.com
   Console->>CP: GET the verification record for shop.com
   CP-->>Console: publish TXT _prisma-verification.shop.com = prisma-verification=hash
-  User->>DNS: adds the TXT record
-  Note over Console: once a minute
   Console->>CP: POST /v1/workspaces/ws_42/domain-ownerships { domain: shop.com }
   CP->>DNS: look up TXT _prisma-verification.shop.com
-  CP-->>Console: 422 with the record, until the record is found
-  CP-->>Console: 201 the domain ownership, verified
+  CP-->>Console: 201 the domain ownership, unverified, with the record
+  User->>DNS: adds the TXT record
+  User->>Console: presses check
+  Console->>CP: POST /v1/domain-ownerships/do_7/verify
+  CP->>DNS: look up TXT _prisma-verification.shop.com
+  CP-->>Console: 200 the domain ownership, verified
 ```
 
-Nothing reaches Metal. Verification is entirely a control-plane matter. If another workspace later claims a domain that this claim covers, the control plane re-verifies this claim first and deletes it if its record is gone, so a workspace that no longer controls a domain loses its standing at the moment it matters.
+Nothing reaches Metal. Verification is entirely a control-plane matter. One lookup of a record name sets the status of every domain ownership at that name, in every workspace. So when another workspace publishes its value and creates a domain ownership for `shop.com`, this workspace's domain ownership becomes `unverified` at once and its hostnames stop serving. A workspace that no longer controls a domain loses its standing at the moment it matters. The row is kept, not deleted.
 
 ### Creating a RoutingUrl from a deploy, and getting it to serve
 
@@ -212,7 +216,7 @@ When a deploy declares a RoutingUrl and no row on the Branch carries the node's 
 
 ## Scenarios
 
-**Deploying an app for the first time, with a custom hostname.** The deploy creates the service and the RoutingUrl and succeeds. The output says what `shop.com` is waiting for and prints every record still to publish: the ownership TXT record if the workspace holds no verified claim for `shop.com`, and the CNAME, each with name, type and value. The user publishes them and presses check in the Console; the platform finds the TXT record and creates the workspace's claim, verified, creates the custom domain, follows up the certificate on its own, and the hostname serves. A user who claimed `shop.com` in the Console beforehand sees only the CNAME. Either order works.
+**Deploying an app for the first time, with a custom hostname.** The deploy creates the service and the RoutingUrl and succeeds. The output says what `shop.com` is waiting for and prints every record still to publish: the ownership TXT record if the workspace holds no verified claim for `shop.com`, and the CNAME, each with name, type and value. The user publishes them and presses check in the Console; the platform finds the TXT record and marks the workspace's domain ownership `verified`, creates the custom domain, follows up the certificate on its own, and the hostname serves. A user who claimed `shop.com` in the Console beforehand sees only the CNAME. Either order works.
 
 **Deploying a code change, with no downtime.** The deploy creates a new deployment and promotes it. Promote re-points the endpoint and reassigns the custom domain to the new compute version. If the reassign fails, the failure is written on the RoutingUrl and a queued retry repairs it without anyone acting. The hostname, the certificate and the DNS are untouched throughout.
 

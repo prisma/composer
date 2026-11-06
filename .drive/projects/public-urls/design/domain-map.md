@@ -76,7 +76,7 @@ New:
 | Entity | What it is |
 | --- | --- |
 | **RoutingUrl** | A custom hostname mapped to a service, whichever of the service's deployments is live. It exists as soon as it's declared and calls no Foundry API on creation. It receives traffic once all of its conditions hold (ownership verified, service present, live deployment, DNS pointing at the switchboard, custom domain bound, certificate active); until then the deploy still succeeds and the record shows the first unmet condition. The RoutingUrl repository keeps its Foundry custom domain bound to the live deployment. It survives its service being deleted. Composer finds it by its `logicalId`. A hostname serves one RoutingUrl on the whole platform. Nothing is created unless something asked for it. |
-| **Domain ownership** | A workspace's proof that it owns a domain, which exists only once its verification record has been found: an exact hostname, or a wildcard such as `*.preview.shop.com` whose `*` stands for exactly one label. Verification is today's check, unchanged: the user publishes a TXT record at `_prisma-verification.<domain>` carrying a value specific to their workspace (prisma/pdp-control-plane#5785), so the claim belongs to the workspace and is shared by every project in it. The platform creates it when it finds the record, from the Domains page or from a waiting hostname; Composer has no part in it. A RoutingUrl starts receiving traffic once its hostname is covered by a domain ownership. |
+| **Domain ownership** | A workspace's statement that it owns a domain: an exact hostname, or a wildcard such as `*.preview.shop.com` whose `*` stands for exactly one label. Verification is today's check, unchanged: the user publishes a TXT record at `_prisma-verification.<domain>` carrying a value specific to their workspace (prisma/pdp-control-plane#5785), so the domain ownership belongs to the workspace and is shared by every project in it. It can exist before the record: it is `unverified` until a lookup finds the record, then `verified`. When a later lookup no longer finds the record, it becomes `expiring` for 30 days and the workspace is emailed; its active hostnames keep serving, and it becomes `verified` again if the record comes back, or `unverified` once `expiresAt` passes. A lookup that finds another workspace's value makes it `unverified` at once. A RoutingUrl starts receiving traffic only under a `verified` domain ownership, and an active one keeps serving under an `expiring` one. |
 
 ## Composer: how authors describe the app
 
@@ -101,7 +101,7 @@ New:
 | A run of `prisma dev` | nothing; it runs on your machine | nothing |
 | Compute service | a Compute Service with its `*.prisma.build` hostname, with a new Deployment whenever its code or configuration changed | one compute version per Deployment, and the service's Endpoint |
 | `publicUrl` with a prisma.build URL | nothing; the service's existing `*.prisma.build` hostname is reported | the service's Endpoint |
-| `publicUrl` with a named hostname | a RoutingUrl that needs a verified domain ownership claim | a Custom domain |
+| `publicUrl` with a named hostname | a RoutingUrl that needs a verified domain ownership | a Custom domain |
 | Root module input and config adapters | nothing; Composer works out their values before deploying | nothing |
 
 Each time a deployment goes live, PDP reassigns the Foundry custom domain behind every RoutingUrl to that deployment's compute version, and a queued retry repairs any that promote missed.
