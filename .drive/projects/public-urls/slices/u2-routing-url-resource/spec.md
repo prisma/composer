@@ -2,7 +2,7 @@
 
 Repositories: alchemy-run/distilled (the generated client) and alchemy-run/alchemy (the resource). Parent: [project spec](../../spec.md), [plan § U2](../../plan.md), [design note 7](../../design-notes.md), [design note 12](../../design-notes.md). Platform contract: `docs/compute/RoutingUrls.md` and ADR-015 in prisma/pdp-control-plane, as deployed with platform slice 3.
 
-Starts when platform slice 3 is deployed. Written 2026-11-06, before slice 3's pull request exists: check every route and field below against the deployed OpenAPI spec (`GET https://api.prisma.io/v1/doc`) before dispatch, and update this spec where they differ.
+Starts when platform slice 3 is deployed. Slice 3 is prisma/pdp-control-plane#5924, merged 2026-11-06 as 37658428. The routes and fields below were checked against that commit (`services/management-api/routes/v1/urls.ts`, `routes/v1/services.ts`, `routes/v1/projects/branches/urls.ts`, `models/v1/routing-urls.ts`). Confirm they appear in `GET https://api.prisma.io/v1/doc` before dispatch.
 
 ## At a glance
 
@@ -22,11 +22,15 @@ After: `Prisma.RoutingUrl` creates the platform row at once, with no DNS. The de
 
 ## Chosen design
 
-**Over the platform's RoutingUrl routes.** Create with `POST /v1/services/{id}/urls`. Read with `GET /v1/urls/{id}`. Change the hostname or service with `PATCH /v1/urls/{id}`. Delete with `DELETE /v1/urls/{id}`. Find with `GET /v1/projects/{id}/branches/{id}/urls?logicalId=`.
+**Over the platform's RoutingUrl routes.** Create with `POST /v1/services/{id}/urls` (`hostname`, `logicalId`, `createDomainOwnership`). Read with `GET /v1/urls/{id}`. Change the hostname, service or `logicalId` with `PATCH /v1/urls/{id}`; a request that changes nothing changes nothing on the platform too. Delete with `DELETE /v1/urls/{id}`. Find with `GET /v1/projects/{id}/branches/{id}/urls?logicalId=`. Reads return stored state and call neither DNS nor Foundry; `POST /v1/urls/{id}/check` refreshes it, and the resource does not call it.
+
+**Attributes come from the response:** `routingUrlId`, `serviceId`, `hostname`, `logicalId`, `status`, `conditions`, `firstUnmetCondition`, `records` (each with its condition, type, name, value and ttl), `ownershipExpiry`, `heldBy`, `customDomainSyncError` and `setupUrl`. Composer's P2 prints `firstUnmetCondition`, `records` and `setupUrl`.
+
+**Errors are typed.** A 409 on create or update is either the service's hostname quota (`quota-exceeded`) or another live row on the Branch with the same `logicalId`; each gets its own error. A 422 is an invalid hostname or a service on another Branch.
 
 **The domain ownership is the platform's job.** Create and update leave `createDomainOwnership` at its default, `true`. The platform then creates an `unverified` exact-hostname domain ownership when no verified one covers the hostname. The resource never records, reads into its state, or deletes a domain ownership. Deleting a RoutingUrl leaves the domain ownership in place, because it belongs to the workspace and may cover other hostnames.
 
-**Identity is the `logicalId`.** With no stored row id, `read` looks the row up by Branch and `logicalId`. A row on the same service with the same hostname and no `logicalId` is adopted: the resource writes its `logicalId` with `PATCH` and takes it over. This is how P3 takes over the rows the platform's backfill made for existing custom domains. Any other row with the same hostname is a conflict, and the resource fails with an error that names it.
+**Identity is the `logicalId`.** With no stored row id, `read` looks the row up by Branch and `logicalId`. A row on the same service with the same hostname and no `logicalId` is adopted: the resource writes its `logicalId` with `PATCH` and takes it over. This is how P3 takes over the rows the platform's backfill made for existing custom domains. Any other row on the Branch with the same hostname is a conflict, and the resource fails with an error that names it. A row in another workspace that holds the hostname is not a conflict for the resource: the platform saves the row and reports the holder in `heldBy`.
 
 **Changing the hostname of a serving row is checked here** (design note 12). The platform accepts any hostname change: it removes the old custom domain at once and holds the new hostname `pending`. So before it sends a hostname change for a row whose status is `active`, the resource checks that the new hostname can serve: a covering domain ownership in the workspace has status `verified`, and the CNAME to the regional switchboard resolves at every authoritative nameserver. If not, it fails before changing anything, with an error that names both hostnames and the records to publish. A pending row, a service change, and a removal are not checked.
 

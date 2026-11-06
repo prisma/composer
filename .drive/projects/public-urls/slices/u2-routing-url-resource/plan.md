@@ -1,6 +1,6 @@
 # U2 — dispatch plan
 
-Prerequisites: platform slice 3 deployed; alchemy-run/alchemy#2701 updated for domain ownership statuses and merged; live Prisma credentials for Alchemy's integration tests confirmed.
+Prerequisites: platform slice 3 (prisma/pdp-control-plane#5924, merged 2026-11-06) deployed to production; alchemy-run/alchemy#2701 updated for domain ownership statuses and merged; live Prisma credentials for Alchemy's integration tests confirmed.
 
 ## D1. Regenerate the Distilled Prisma client
 
