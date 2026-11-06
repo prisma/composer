@@ -162,6 +162,39 @@ export function findPrivateDependencyViolations(pkgJson, privateNames) {
   return violations;
 }
 
+const NON_REGISTRY_SPEC_RE =
+  /^(?:[a-z][a-z0-9+.-]*:\/\/|git(?:\+[a-z]+)?:|github:|gitlab:|bitbucket:|file:|link:)/i;
+
+/**
+ * Returns true if `spec` installs from somewhere other than the npm registry:
+ * a tarball URL, a git source, or a local path. A published package with
+ * such a dependency makes every consumer install depend on that host.
+ *
+ * Exported for unit tests.
+ */
+export function isNonRegistrySpec(spec) {
+  return typeof spec === 'string' && NON_REGISTRY_SPEC_RE.test(spec);
+}
+
+/**
+ * Walks the dependency fields installed by package consumers and returns
+ * every specifier {@link isNonRegistrySpec} flags.
+ *
+ * @param {Record<string, unknown>} pkgJson
+ * @returns {Array<{ field: string; name: string; spec: string }>}
+ */
+export function findNonRegistryDependencies(pkgJson) {
+  const violations = [];
+  for (const field of SHIPPED_DEP_FIELDS) {
+    const deps = pkgJson[field];
+    if (!deps || typeof deps !== 'object') continue;
+    for (const [name, spec] of Object.entries(deps)) {
+      if (isNonRegistrySpec(spec)) violations.push({ field, name, spec });
+    }
+  }
+  return violations;
+}
+
 function readPackedManifest(tgzPath) {
   const out = execFileSync('tar', ['-xzOf', tgzPath, 'package/package.json'], {
     encoding: 'utf-8',
@@ -306,6 +339,7 @@ export function runCheck({ argv = process.argv.slice(2), io = {} } = {}) {
      *   leaks: ReturnType<typeof findLeaks>;
      *   pnPinViolations: ReturnType<typeof findPnPinViolations>;
      *   privateDependencyViolations: ReturnType<typeof findPrivateDependencyViolations>;
+     *   nonRegistryDependencies: ReturnType<typeof findNonRegistryDependencies>;
      * }>}
      */
     const offenders = [];
@@ -321,10 +355,12 @@ export function runCheck({ argv = process.argv.slice(2), io = {} } = {}) {
       const leaks = findLeaks(packed);
       const pnPinViolations = findPnPinViolations(packed, internalNames);
       const privateDependencyViolations = findPrivateDependencyViolations(packed, privateNames);
+      const nonRegistryDependencies = findNonRegistryDependencies(packed);
       if (
         leaks.length > 0 ||
         pnPinViolations.length > 0 ||
-        privateDependencyViolations.length > 0
+        privateDependencyViolations.length > 0 ||
+        nonRegistryDependencies.length > 0
       ) {
         offenders.push({
           pkg: sourcePkg.name,
@@ -332,6 +368,7 @@ export function runCheck({ argv = process.argv.slice(2), io = {} } = {}) {
           leaks,
           pnPinViolations,
           privateDependencyViolations,
+          nonRegistryDependencies,
         });
       }
     }
@@ -340,7 +377,7 @@ export function runCheck({ argv = process.argv.slice(2), io = {} } = {}) {
       stdoutWrite(`${JSON.stringify({ ok: offenders.length === 0, offenders }, null, 2)}\n`);
     } else if (offenders.length === 0) {
       stderrWrite(
-        `\nOK — no workspace:/catalog: leaks, internal-workspace-package pin violations, or private workspace dependencies in ${dirs.length} publishable packages.\n`,
+        `\nOK — no workspace:/catalog: leaks, internal-workspace-package pin violations, private workspace dependencies, or URL/git/file: dependencies in ${dirs.length} publishable packages.\n`,
       );
     } else {
       stderrWrite(
@@ -357,6 +394,9 @@ export function runCheck({ argv = process.argv.slice(2), io = {} } = {}) {
         for (const v of o.privateDependencyViolations) {
           stderrWrite(`    [private]  ${v.field}.${v.name} = ${v.spec}\n`);
         }
+        for (const v of o.nonRegistryDependencies) {
+          stderrWrite(`    [source]   ${v.field}.${v.name} = ${v.spec}\n`);
+        }
       }
       stderrWrite(
         '\n  [leak] specs are pnpm-internal (workspace:/catalog:) and break consumer installs.\n' +
@@ -369,7 +409,11 @@ export function runCheck({ argv = process.argv.slice(2), io = {} } = {}) {
           '         this release validated against.\n' +
           '  [private] private workspace packages are not published and cannot be installed\n' +
           '            by registry consumers. Move build-only dependencies to devDependencies\n' +
-          '            or expose the required runtime code through a public package.\n',
+          '            or expose the required runtime code through a public package.\n' +
+          '  [source] a URL, git or file: dependency makes every consumer install depend on\n' +
+          '           that host. A pkg.alchemy.run URL is an Alchemy preview build: swap it for\n' +
+          '           a registry release that contains the commit before publishing (see the\n' +
+          '           upgrade-alchemy-effect skill, "Pinning an unreleased alchemy build").\n',
       );
     }
 

@@ -469,8 +469,8 @@ resolves a single `effect`.
 The fix is to use the same `effect` as Composer. Match your own `effect`
 dependency to `@prisma/composer`'s exact pin (see its `dependencies.effect`),
 or, when a dependency you cannot change pins another version, force
-Composer's. `<pin>` below stands for that exact version (`4.0.3` in
-Composer 0.29.1). With npm, in your app's `package.json`:
+Composer's. `<pin>` below stands for that exact version (`4.1.0` at the time of
+writing). With npm, in your app's `package.json`:
 
 ```json
 "overrides": {
@@ -526,6 +526,7 @@ What deployed apps actually run into, and what to do about it:
   ingress) buffers a response until it completes, so an open SSE tail
   delivers nothing and times out at 60s. Don't build on streamed HTTP
   responses.
+- **A new named hostname adds a DNS wait to the deploy.** Before it attaches the hostname, the deploy asks the hostname's authoritative nameservers for its CNAME record, every 3 seconds for up to a minute, and waits 10 more seconds once they all answer. The machine that runs the deploy needs DNS access; if the lookups fail, the deploy goes ahead and the platform reports any missing record.
 - **Next.js: pages that call `service.load()` need
   `export const dynamic = 'force-dynamic'`.** The runtime environment doesn't
   exist at build time, and Next won't re-read it for prerendered routes.

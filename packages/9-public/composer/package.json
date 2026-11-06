@@ -37,10 +37,10 @@
   },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "2.0.0-beta.84",
+    "alchemy": "catalog:",
     "cross-spawn": "^7.0.6",
     "dotenv-flow": "4.1.0",
-    "effect": "4.0.5",
+    "effect": "catalog:",
     "esbuild": "^0.28.1",
     "@prisma/management-api-sdk": "^1.80.0"
   },

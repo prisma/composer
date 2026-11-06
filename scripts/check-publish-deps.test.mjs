@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it, mock } from 'node:test';
-import { findLeaks, isLeak, runCheck } from './check-publish-deps.mjs';
+import {
+  findLeaks,
+  findNonRegistryDependencies,
+  isLeak,
+  isNonRegistrySpec,
+  runCheck,
+} from './check-publish-deps.mjs';
 
 describe('isLeak', () => {
   it('flags workspace:* specifiers', () => {
@@ -102,6 +108,45 @@ describe('findLeaks', () => {
     assert.deepEqual(
       leaks.map((l) => l.name),
       ['first', 'second'],
+    );
+  });
+});
+
+describe('isNonRegistrySpec', () => {
+  it('flags tarball URLs, git sources and local paths', () => {
+    for (const spec of [
+      'https://pkg.alchemy.run/alchemy/972f294ae0c7982a8ebcb551fadd07d29c9c0fca',
+      'http://example.com/foo.tgz',
+      'git+https://github.com/foo/bar.git',
+      'git+ssh://git@github.com/foo/bar.git',
+      'git://github.com/foo/bar.git',
+      'github:foo/bar',
+      'file:../local',
+      'link:../local',
+    ]) {
+      assert.equal(isNonRegistrySpec(spec), true, spec);
+    }
+  });
+
+  it('does not flag registry versions, ranges or npm aliases', () => {
+    for (const spec of ['1.2.3', '^1.2.3', '>=4.0.0-rc.110 || >=4.0.0', 'npm:foo@^1.0.0', '*']) {
+      assert.equal(isNonRegistrySpec(spec), false, spec);
+    }
+  });
+});
+
+describe('findNonRegistryDependencies', () => {
+  it('reports shipped fields and ignores devDependencies', () => {
+    assert.deepEqual(
+      findNonRegistryDependencies({
+        dependencies: { alchemy: 'https://pkg.alchemy.run/alchemy/abc', effect: '4.1.0' },
+        peerDependencies: { local: 'file:../local' },
+        devDependencies: { tool: 'git+https://github.com/foo/tool.git' },
+      }),
+      [
+        { field: 'dependencies', name: 'alchemy', spec: 'https://pkg.alchemy.run/alchemy/abc' },
+        { field: 'peerDependencies', name: 'local', spec: 'file:../local' },
+      ],
     );
   });
 });
