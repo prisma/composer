@@ -1,4 +1,4 @@
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import node from '@prisma/composer/node';
 import { compute } from '@prisma/composer-prisma-cloud';
 
@@ -8,9 +8,9 @@ import { compute } from '@prisma/composer-prisma-cloud';
  * section of this package's own `prisma.config.ts` (found by the engine from
  * the run's cwd) imports both packages' REAL `/control` entries, so `prisma deploy`
  * resolves them from this app's own dependency tree — see
- * `../../cli.extension-config.test.ts`. The deploy root must be a module.
+ * `../../cli.extension-config.test.ts`.
  */
-export default module('extension-config-fixture', {}, ({ provision }) => {
+export default appRoot('extension-config-fixture', ({ provision }) => {
   provision(
     compute({
       name: 'extension-config-fixture',
@@ -19,5 +19,4 @@ export default module('extension-config-fixture', {}, ({ provision }) => {
     }),
     { id: 'app' },
   );
-  return {};
 });

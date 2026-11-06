@@ -109,6 +109,7 @@ describe('a module has no slots', () => {
       'deps',
       'expose',
       'inputSchema',
+      'isRoot',
       'kind',
       'name',
     ]);

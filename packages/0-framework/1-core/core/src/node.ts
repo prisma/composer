@@ -456,6 +456,25 @@ export interface ModuleNode<
   readonly expose: E;
   // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
   body(ctx: ModuleContext<D, I>): ModuleOutputs<E> | void;
+  /** `false`: a `module()` node can be provisioned. The app root, built with `appRoot()`, is the deploy's entry and cannot be. It answers `false` even when a `module()` node is the deploy's entry. */
+  isRoot(): false;
+}
+
+/** The app's root, built with `appRoot()`: a module node that nothing provisions, with no `deps` and no `expose`. */
+export interface AppRootNode<
+  I extends StandardSchemaV1 | undefined = StandardSchemaV1 | undefined,
+> {
+  readonly [NODE]: true;
+  readonly kind: 'module';
+  /** The app's name. */
+  readonly name: string;
+  readonly deps: Record<never, never>;
+  /** The app configuration's schema, or `undefined` when the root takes none. */
+  readonly inputSchema: I;
+  readonly expose: Record<never, never>;
+  body(ctx: AppRootContext<I>): void;
+  /** `true`: the app root is the deploy's entry and cannot be provisioned. */
+  isRoot(): true;
 }
 
 /**
@@ -473,6 +492,18 @@ export interface ModuleContext<
   /** The deploy-time facts of the environment, each a value (ADR-0062). List `environment.name` as a `resolve()` dependency. Never environment variables: user code never reads those. */
   readonly environment: EnvironmentFacts;
   /** Registers an owned child (service or module) under a stable id. */
+  readonly provision: ModuleBuilder['provision'];
+}
+
+/** What an app root's body receives: its input, the environment's facts, and `provision`. */
+export interface AppRootContext<
+  I extends StandardSchemaV1 | undefined = StandardSchemaV1 | undefined,
+> {
+  /** The app configuration, one value per field, typed from the root's input schema; `undefined` when it declares none. */
+  readonly input: I extends StandardSchemaV1 ? ModuleInput<I> : undefined;
+  /** The deploy-time facts of the environment, each a value (ADR-0062). */
+  readonly environment: EnvironmentFacts;
+  /** Registers an owned child (resource, service or module) under a stable id. */
   readonly provision: ModuleBuilder['provision'];
 }
 
@@ -726,7 +757,10 @@ function freezeParams<P extends Params>(params: P): P {
   for (const [name, param] of Object.entries(params)) {
     frozen[name] = Object.freeze({ ...param });
   }
-  return Object.freeze(frozen) as P;
+  return blindCast<
+    P,
+    'a frozen copy holding a frozen copy of each declared param under its own name, the shape P declares'
+  >(Object.freeze(frozen));
 }
 
 /** A frozen shallow copy that keeps the caller's declared type. */
@@ -988,7 +1022,10 @@ export function dependency<P extends Params, C, Req = unknown>(def: {
     kind: 'dependency' as const,
     name: def.name !== undefined && def.name.length > 0 ? def.name : def.type,
     type: def.type,
-    connection: connection as Connection<Params, C>,
+    connection: blindCast<
+      Connection<Params, C>,
+      'hydrate reads only the params this connection declares, so widening P to Params loses nothing at runtime'
+    >(connection),
     required: def.required,
   });
 }
@@ -1030,17 +1067,81 @@ export function module(
   maybeBody?: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose> | void,
 ): ModuleNode {
   requireName(name, 'module');
-  const closedRoot = typeof boundaryOrBody === 'function';
-  const boundary = closedRoot ? {} : boundaryOrBody;
+  if (typeof boundaryOrBody === 'function') {
+    return buildModuleNode(false, name, {}, (ctx) => {
+      boundaryOrBody({ ...ctx, input: undefined });
+      return {};
+    });
+  }
+  return buildModuleNode(false, name, boundaryOrBody, requireBody('module', name, maybeBody));
+}
+
+/** Builds the app's root, the module the entry default-exports. It takes no `deps` and no `expose`, and nothing can provision it. */
+export function appRoot(
+  name: string,
+  body: (ctx: AppRootContext<undefined>) => void,
+): AppRootNode<undefined>;
+export function appRoot<I extends StandardSchemaV1 | undefined = undefined>(
+  name: string,
+  options: { input?: I; deps?: never; expose?: never },
+  body: (ctx: AppRootContext<I>) => void,
+): AppRootNode<I>;
+export function appRoot(
+  name: string,
+  optionsOrBody: { input?: StandardSchemaV1 } | ((ctx: AppRootContext<undefined>) => void),
+  maybeBody?: (ctx: AppRootContext) => void,
+): AppRootNode {
+  requireName(name, 'appRoot');
+  if (typeof optionsOrBody === 'function') {
+    return buildModuleNode(true, name, {}, ({ environment, provision }) => {
+      optionsOrBody({ input: undefined, environment, provision });
+      return {};
+    });
+  }
+  const body = requireBody('appRoot', name, maybeBody);
+  if (Object.hasOwn(optionsOrBody, 'deps')) {
+    throw new Error(
+      `appRoot("${name}") declares \`deps\`, which an app root cannot have: nothing provisions the root, ` +
+        "so nothing can wire a dependency into it. Provision the resource inside the root's body instead.",
+    );
+  }
+  if (Object.hasOwn(optionsOrBody, 'expose')) {
+    throw new Error(
+      `appRoot("${name}") declares \`expose\`, which an app root cannot have: nothing provisions the root, ` +
+        'so nothing can consume what it exposes.',
+    );
+  }
+  return buildModuleNode(true, name, optionsOrBody, ({ input, environment, provision }) => {
+    body({ input, environment, provision });
+    return {};
+  });
+}
+
+function requireBody<B>(factory: 'module' | 'appRoot', name: string, body: B | undefined): B {
+  if (typeof body !== 'function') {
+    throw new Error(`${factory}("${name}") requires a body function.`);
+  }
+  return body;
+}
+
+/** Constructs a branded, frozen module node for `module()` and `appRoot()`. Construction is inert: the body is wiring, and runs only when the module is Loaded. */
+function buildModuleNode<R extends boolean>(
+  root: R,
+  name: string,
+  boundary: { deps?: Deps; input?: StandardSchemaV1; expose?: Expose },
+  // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
+  body: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose> | void,
+) {
+  const factory = root ? 'appRoot' : 'module';
   if (Object.hasOwn(boundary, 'params')) {
     throw new Error(
-      `module("${name}") declares \`params\`, which a module no longer takes. Declare each value ` +
+      `${factory}("${name}") declares \`params\`, which a module no longer takes. Declare each value ` +
         "as a field of the module's `input` schema, and bind it with provision(module, { input: { … } }) (ADR-0061).",
     );
   }
   if (Object.hasOwn(boundary, 'secrets')) {
     throw new Error(
-      `module("${name}") declares \`secrets\`, which a module no longer takes. Declare each secret ` +
+      `${factory}("${name}") declares \`secrets\`, which a module no longer takes. Declare each secret ` +
         "as a secretString() field of the module's `input` schema, and bind it with provision(module, { input: { … } }) (ADR-0061).",
     );
   }
@@ -1048,28 +1149,19 @@ export function module(
   requireNotReservedPortNames(Object.keys(boundary.expose ?? {}), 'module');
   if (boundary.input !== undefined && typeof boundary.input['~standard']?.validate !== 'function') {
     throw new Error(
-      'module() `input` must be a Standard Schema (an object with a "~standard".validate ' +
+      `${factory}() \`input\` must be a Standard Schema (an object with a "~standard".validate ` +
         'function) — see https://standardschema.dev (ADR-0061).',
     );
   }
-  const deps = frozenShallowCopy(boundary.deps ?? {});
-  const expose = frozenShallowCopy(boundary.expose ?? {});
-  // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
-  const body: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose> | void = closedRoot
-    ? (ctx) => {
-        boundaryOrBody({ ...ctx, input: undefined });
-        return {};
-      }
-    : // biome-ignore lint/style/noNonNullAssertion: the non-function overload always passes a third argument.
-      maybeBody!;
   return Object.freeze({
     [NODE]: true as const,
     kind: 'module' as const,
     name,
-    deps,
+    deps: frozenShallowCopy(boundary.deps ?? {}),
     inputSchema: boundary.input,
-    expose,
+    expose: frozenShallowCopy(boundary.expose ?? {}),
     body,
+    isRoot: (): R => root,
   });
 }
 
@@ -1080,11 +1172,13 @@ export function module(
  */
 export function isNode(
   value: unknown,
-): value is ServiceNode | ResourceNode | DependencyEnd | ModuleNode {
+): value is ServiceNode | ResourceNode | DependencyEnd | ModuleNode | AppRootNode {
   return (
     typeof value === 'object' &&
     value !== null &&
-    (value as Record<PropertyKey, unknown>)[NODE] === true
+    blindCast<Record<PropertyKey, unknown>, 'reading the node brand off an unknown object'>(value)[
+      NODE
+    ] === true
   );
 }
 

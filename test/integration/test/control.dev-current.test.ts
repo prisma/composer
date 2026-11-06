@@ -11,7 +11,7 @@ import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Load, module } from '@prisma/composer';
+import { appRoot, Load } from '@prisma/composer';
 import type { ContainerInstance, LocalTargetDescriptor } from '@prisma/composer/config';
 import { DEV_DIR, devEnvironmentDir } from '@prisma/composer/config';
 import { devStop, devUrl } from '@prisma/composer/control';
@@ -86,7 +86,7 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
 
     // An app with no nodes starts the Compute emulator, so the placeholders can
     // take the ports below FIRST_SERVICE_PORT before the fixture's services are created.
-    const placeholderApp = module('portskip', () => {});
+    const placeholderApp = appRoot('portskip', () => {});
     await target.emulators?.({
       graph: Load(placeholderApp, { id: 'portskip' }),
       container: await target.container.ensure({ appName: 'portskip', environment: 'dev' }),

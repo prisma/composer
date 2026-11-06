@@ -1,4 +1,4 @@
-import { module, resolve, service } from '@internal/core';
+import { appRoot, resolve, service } from '@internal/core';
 
 const anyInput = {
   '~standard': {
@@ -18,7 +18,7 @@ const echo = service({
   build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'server.js' },
 });
 
-export default module('pipeline-fixture', ({ environment, provision }) => {
+export default appRoot('pipeline-fixture', ({ environment, provision }) => {
   const label = resolve([environment.name], ([name]) => `deployed to ${name}`);
   provision(echo, { input: { environment: label } });
 });

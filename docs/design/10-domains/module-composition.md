@@ -106,7 +106,7 @@ service does, and whoever provisions it binds that input
 ([ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)):
 
 ```ts
-import { module, resolve } from '@prisma/composer';
+import { appRoot, module, resolve } from '@prisma/composer';
 import { secretString } from '@prisma/composer/arktype';
 import { envSecret } from '@prisma/composer-prisma-cloud';
 import { type } from 'arktype';
@@ -124,7 +124,7 @@ const email = module(
   },
 );
 
-export default module('shop', ({ provision }) => {
+export default appRoot('shop', ({ provision }) => {
   provision(email, {
     input: { from: 'shop@example.com', deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') },
   });

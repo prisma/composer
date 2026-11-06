@@ -51,6 +51,8 @@ export {
 export { hydrate, hydrateSync } from '../hydrate.ts';
 export type { ModuleInput, ModuleInputField } from '../module-input.ts';
 export type {
+  AppRootContext,
+  AppRootNode,
   BuildAdapter,
   DepBindings,
   DependencyEnd,
@@ -83,6 +85,7 @@ export type {
   SourceOptions,
 } from '../node.ts';
 export {
+  appRoot,
   dependency,
   freezeNode,
   isNode,
