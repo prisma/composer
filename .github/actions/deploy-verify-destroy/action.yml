@@ -29,6 +29,14 @@ inputs:
     description: Space-separated project-name prefixes for ci-cleanup.ts
     required: false
     default: storefront-auth orm-demo hello
+  platform-variables:
+    description: >
+      Space-separated names of platform variables the app needs and whose
+      values the job's environment holds. When set, the first deploy must stop
+      at preflight naming each one; the action then sets them on the platform
+      and deploys again.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -45,6 +53,45 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: pnpm turbo run build --filter '${{ inputs.build-filter }}'
+
+    - name: First deploy stops at preflight
+      id: first-deploy
+      if: inputs.platform-variables != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        STACK_NAME: ${{ inputs.stack-name }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        PLATFORM_VARIABLES: ${{ inputs.platform-variables }}
+      run: |
+        set +e
+        output="$(bun "$GITHUB_WORKSPACE/node_modules/.bin/prisma" deploy --name "$STACK_NAME" --environment "$ENVIRONMENT" 2>&1)"
+        status=$?
+        set -e
+        printf '%s\n' "$output"
+        if [ "$status" -eq 0 ]; then
+          echo "::error::The first deploy succeeded, but it should have stopped because the new project has no row for: $PLATFORM_VARIABLES"
+          exit 1
+        fi
+        if ! grep -qE 'Deploy failed\. [0-9]+ platform variables? a service needs (has|have) no value' <<<"$output"; then
+          echo "::error::The first deploy failed, but not at preflight"
+          exit 1
+        fi
+        for name in $PLATFORM_VARIABLES; do
+          if ! grep -qwF -- "$name" <<<"$output"; then
+            echo "::error::The first deploy failed without naming the platform variable $name"
+            exit 1
+          fi
+        done
+
+    - name: Set platform variables
+      if: inputs.platform-variables != ''
+      shell: bash
+      env:
+        STACK_NAME: ${{ inputs.stack-name }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        PLATFORM_VARIABLES: ${{ inputs.platform-variables }}
+      run: bun "$GITHUB_WORKSPACE/scripts/e2e-set-platform-variables.ts" $PLATFORM_VARIABLES
 
     - name: Deploy
       id: deploy
@@ -81,9 +128,10 @@ runs:
       run: bun "$GITHUB_WORKSPACE/scripts/e2e-verify-deploy-list.ts"
 
     - name: Destroy
-      # Check the Deploy step's outcome, not `.alchemy/` presence — deploy
-      # state is hosted, not local to the runner.
-      if: always() && steps.deploy.outcome != 'skipped'
+      # Check the deploy steps' outcomes, not `.alchemy/` presence — deploy
+      # state is hosted, not local to the runner. The first deploy may have
+      # created the project even when every later step was skipped.
+      if: always() && (steps.deploy.outcome != 'skipped' || steps.first-deploy.outcome != 'skipped')
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:

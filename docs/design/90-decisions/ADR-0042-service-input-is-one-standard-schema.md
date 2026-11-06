@@ -39,7 +39,7 @@ A compute service declares all of its input, plain values and secrets together, 
 - **The binding** mirrors the schema's shape. Each leaf is a literal, a value such as a `resolve()` result or a module's input field ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)), or a source: `envParam()`, `envSecret()`, `generatedParam()` or `serviceOrigin()`, each of which is a value too.
 - **The binding is typed from the schema's input type**, with the same mapping a module's binding uses ([ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)). So a wrong literal, an `envSecret()` in a text field, or a `serviceOrigin()` in a plain field fails to compile.
 - **The deploy checks the binding with the schema** before anything is created, with each value known only at boot in place as its pointer, and writes the schema's output into one input document.
-- **At boot** `service.input()` reads that document, puts each secret in a redacting box, checks the result with the schema again, and returns it.
+- **At boot** `service.input()` reads that document, leaves out each field whose platform variable has no value, puts each secret in a redacting box, checks the result with the schema again, and returns it.
 
 ## The binding's type
 
@@ -59,21 +59,28 @@ A schema may return a copy of a pointer: ArkType copies its input when a transfo
 
 ## The input document
 
-The deploy writes the schema's output, with defaults applied, into one environment row per service, `COMPOSER_<address>_INPUT`. Each pointer is written as a marker. A secret pointer from `envSecret()` becomes `{"$secret": "<VARIABLE>"}`, naming the operator's platform variable, which preflight checks exists. A `generatedParam()` and a `serviceOrigin()` become `{"$generated": "<VARIABLE>", "redacted": <true|false>}`, naming a variable in Composer's reserved `COMPOSER_` namespace that the deploy fills: with a value it generates once and keeps in deploy state, or with the other service's public origin. A marker records `redacted` because boot cannot ask the schema which fields are secret.
+The deploy writes the schema's output, with defaults applied, into one environment row per service, `COMPOSER_<address>_INPUT`. Each pointer is written as a marker. A secret pointer from `envSecret()` becomes `{"$platform": {"name": "<VARIABLE>", "secret": true}}`, naming a platform variable the operator sets on the platform ([ADR-0064](ADR-0064-a-platform-variable-is-set-on-the-platform-never-by-the-deploy.md)). A `generatedParam()` and a `serviceOrigin()` become `{"$generated": "<VARIABLE>", "redacted": <true|false>}`, naming a variable in Composer's reserved `COMPOSER_` namespace that the deploy writes: with a value it generates once and keeps in deploy state, or with the other service's public origin. A `$platform` marker records `secret`, and a `$generated` marker records `redacted`, because boot cannot ask the schema which fields are secret. The two differ in name and place on purpose. `secret` is a fact about the operator's variable, so it sits beside the variable's name in the marker's body. `redacted` is the option the author gave `generatedParam()` for a value Composer generates, so it keeps that option's name. The marker format and the code that reads it live in `@internal/input-document`, which the serializer, boot and the local target share.
 
 ```json
 {
   "stripeEnabled": true,
   "returnUrl": { "$generated": "COMPOSER_SHOP_CHAT_RETURNURL_GENERATED", "redacted": false },
-  "stripeSecretKey": { "$secret": "STRIPE_SECRET_KEY" }
+  "stripeSecretKey": { "$platform": { "name": "STRIPE_SECRET_KEY", "secret": true } }
 }
 ```
 
-No secret's value and no generated value appears in the document, so the deploy report prints it verbatim, with every key that resolved absent. A user key spelled like a marker, such as `$secret` or `$generated`, gains one more leading `$` when written and loses it when read, so only Composer can place a marker. Every variable a service's markers name must be distinct once normalised, or the deploy fails naming both input paths. The document is JSON, so the schema's output must be plain objects, arrays, text, numbers, booleans, null and secret boxes. A schema that outputs a `Date`, a `BigInt` or another class instance is outside this contract; keep the field as text and convert it in the service.
+No secret's value and no generated value appears in the document. The deploy report prints it with each marker shown as `$platform NAME` or `$generated NAME`, with every key that resolved absent. A user key spelled like a marker, `$platform`, `$generated` or `$secret`, gains one more leading `$` when written and loses it when read, so only Composer can place a marker. The `$generated` variables of one service must be distinct once upper-cased, or the deploy fails naming both input paths, because Composer writes each one. Two `$platform` markers for one name are two reads of one variable and are allowed. The document is JSON, so the schema's output must be plain objects, arrays, text, numbers, booleans, null and secret boxes. A schema that outputs a `Date`, a `BigInt` or another class instance is outside this contract; keep the field as text and convert it in the service.
 
-At boot `service.input()` reads the one row, replaces each `$secret` marker with a box over the named variable and each `$generated` marker with a box or text as its `redacted` says, checks the result with the schema, and returns the schema's output. Its type is the schema's output type with every pointer removed, at any depth, because at boot each pointer has been replaced by the variable's text: a wrapped field reads as its inner type, and a `secretString()` field as `SecretString`. `mockService()`'s input double has the same type.
+At boot `service.input()` reads the one row and replaces each marker in four steps:
 
-An `envParam()` field whose variable is unset or empty is a key left out, and whether that is allowed is the schema's call: an optional field, a union member, or an error with the schema's message. So an optional secret, or a field that exists only when another field is set, is an ordinary schema, with no flag of Composer's.
+1. A `$platform` marker whose variable has no value, unset or empty, leaves its key out of its object. A marker in an array position cannot be left out, so boot fails naming the variable and the path.
+2. A `$platform` marker whose variable has text takes the text.
+3. A marker with `secret: true` puts the text in a secret box. A `$generated` marker becomes a box or text as its `redacted` says.
+4. The schema checks the result. When it fails and step 1 left out at least one variable, the error ends with the names of those variables, so the operator knows what to set.
+
+`service.input()` returns the schema's output. Its type is the schema's output type with every pointer removed, at any depth, because at boot each pointer has been replaced by the variable's text: a wrapped field reads as its inner type, and a `secretString()` field as `SecretString`. `mockService()`'s input double has the same type.
+
+An `envParam()` field whose variable is unset or empty in the app configuration is a key left out at deploy, and an `envSecret()` field whose platform variable is unset or empty is a key left out at boot. Whether that is allowed is the schema's call: an optional field, a union member, or an error with the schema's message. So an optional secret, or a field that exists only when another field is set, is an ordinary schema, with no flag of Composer's. Empty means unset because the platform cannot store an empty value.
 
 ## Reasoning
 
@@ -95,7 +102,7 @@ An `envParam()` field whose variable is unset or empty is a key left out, and wh
 - The type `InputBinding<T>` is shared by modules and services. A binding whose shape or kind the schema's input type refuses fails to compile: a wrong literal type, a missing or undeclared key, a source in the wrong kind of field, or a missing `input`. A refinement the type cannot express, such as a URL format, is checked by the deploy, as is a binding the compiler cannot see: a schema without type information, or a cast.
 - Errors about a binding's data are the schema library's own messages, at compile time as a type error and at deploy as the library's issue text.
 - A schema that copies its input cannot hold a secret field in ArkType; the deploy refuses it and names the field.
-- The deploy report prints each service's input document and every key that resolved absent.
+- The deploy report prints each service's input document, each marker as `$platform NAME` or `$generated NAME`, and every key that resolved absent.
 - Composer's own per-service values, such as another service's URL wired as a dependency, still travel on per-key rows ([ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md)). Moving them into a document like this one is a separate decision.
 
 ## Alternatives considered
@@ -112,6 +119,7 @@ An `envParam()` field whose variable is unset or empty is a key left out, and wh
 - [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares its input the same way, and its binding has the same type.
 - [ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md): a module has the same boundary as a service.
 - [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): values, runtime values and pointers, and the app configuration `envParam()` reads.
+- [ADR-0064](ADR-0064-a-platform-variable-is-set-on-the-platform-never-by-the-deploy.md): platform variables, the `$platform` marker's rules, and the deploy preflight.
 - [ADR-0021](ADR-0021-params-are-read-through-config-not-load.md), superseded: `config()` is replaced by `service.input()`; dependencies still read through `load()`.
 - [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md), partly superseded: `envSecret()` survives as a binding leaf; the `secrets()` read and per-slot pointer rows are replaced.
 - [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md), partly superseded: binding at `provision()` and `envParam()` survive; the `config()` read and per-key pointer rows are replaced.

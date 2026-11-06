@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { containerEnvVarName } from '../container-transport.ts';
-import { preflightEnv, preflightEnvVarName, readPreflightPayload } from '../preflight-transport.ts';
+import {
+  PREFLIGHT_FINDINGS_ENV_VAR,
+  preflightEnv,
+  preflightEnvVarName,
+  preflightFindingsEnv,
+  readPreflightFindings,
+  readPreflightPayload,
+  type UnsetPlatformVariable,
+} from '../preflight-transport.ts';
 
 describe('preflightEnvVarName()', () => {
   test('the documented mangling — the exact @prisma/composer-prisma-cloud expectation', () => {
@@ -47,6 +55,12 @@ describe('preflightEnv()', () => {
       ),
     ).toThrow(/"acme\.widgets" and "acme\/widgets" both map to the preflight transport variable/);
   });
+
+  test("an extension whose variable would be the findings' variable fails loudly", () => {
+    expect(() => preflightEnv(new Map([['findings', 'a']]))).toThrow(
+      /"findings" maps to the preflight transport variable "PRISMA_COMPOSER_PREFLIGHT_FINDINGS"/,
+    );
+  });
 });
 
 describe('readPreflightPayload()', () => {
@@ -68,5 +82,34 @@ describe('readPreflightPayload()', () => {
     expect(
       readPreflightPayload('acme.widgets', { PRISMA_COMPOSER_PREFLIGHT_ACME_WIDGETS: '' }),
     ).toBeUndefined();
+  });
+});
+
+describe('the deploy preflight findings', () => {
+  const unset: UnsetPlatformVariable = {
+    name: 'MAIL_KEY',
+    readers: [{ kind: 'unread', node: 'app.mail', nodeKind: 'module' }],
+    commands: ["prisma project env add 'MAIL_KEY=<value>' --project 'proj' --role production"],
+  };
+
+  test('reach the second process as the first process wrote them', () => {
+    expect(readPreflightFindings(preflightFindingsEnv({ unset: [unset] }))).toEqual({
+      unset: [unset],
+    });
+  });
+
+  test('are always written, and empty when nothing was found, so a stale value in the shell is replaced', () => {
+    expect(preflightFindingsEnv({ unset: [] })).toEqual({ [PREFLIGHT_FINDINGS_ENV_VAR]: '' });
+    expect(readPreflightFindings(preflightFindingsEnv({ unset: [] }))).toEqual({ unset: [] });
+    expect(readPreflightFindings({})).toEqual({ unset: [] });
+  });
+
+  test('that do not decode fail rather than print a partial report', () => {
+    expect(() => readPreflightFindings({ [PREFLIGHT_FINDINGS_ENV_VAR]: 'not json' })).toThrow(
+      /did not survive the transport/,
+    );
+    expect(() =>
+      readPreflightFindings({ [PREFLIGHT_FINDINGS_ENV_VAR]: '{"unset":[{"name":"A_KEY"}]}' }),
+    ).toThrow(/did not survive the transport/);
   });
 });

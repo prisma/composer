@@ -17,8 +17,13 @@ import {
   type RunAssembler,
 } from '@internal/assemble';
 import type { Graph } from '@internal/core';
-import { assertAppName, Load } from '@internal/core';
-import type { AppConfiguration, AppSecrets, PrismaAppConfig } from '@internal/core/config';
+import { assertAppName, GraphCheckError, Load } from '@internal/core';
+import type {
+  AppConfiguration,
+  AppSecrets,
+  ExtensionDescriptor,
+  PrismaAppConfig,
+} from '@internal/core/config';
 import { secretsKeys } from '@internal/core/deploy';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { readAppConfiguration, readAppSecrets } from './app-configuration.ts';
@@ -202,6 +207,8 @@ export async function runPipeline(
   });
   redaction.addKnownSecrets(valuesUnderSecretsKeys(configuration, secrets, secretsKeys(graph)));
 
+  checkGraph(graph, config.extensions);
+
   // 5. Registry coverage: every node/build in the graph has a matching descriptor in the config.
   validateRegistryCoverage(graph, config);
 
@@ -220,4 +227,17 @@ export async function runPipeline(
   }
 
   return { configSource, entryModule, graph, name, assembled, configuration, secrets };
+}
+
+function checkGraph(graph: Graph, extensions: readonly ExtensionDescriptor[]): void {
+  for (const extension of extensions) {
+    try {
+      extension.checkGraph?.(graph);
+    } catch (error) {
+      if (error instanceof GraphCheckError) {
+        throw new GraphCheckError(error.message, { extension: extension.id });
+      }
+      throw error;
+    }
+  }
 }

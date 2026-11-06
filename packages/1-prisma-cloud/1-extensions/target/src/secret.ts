@@ -1,6 +1,7 @@
 import { type Pointer, type RuntimeValue, type SecretSource, secretSource } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import type { SecretString } from '@internal/foundation/secret';
+import { assertVariableName } from './variable-name.ts';
 
 /**
  * Brands the payload `envSecret` builds. Core's `secretSource()` is a public
@@ -19,42 +20,17 @@ export interface EnvSecretPayload {
   readonly name: string;
 }
 
-const RESERVED_SECRET_PREFIX = 'COMPOSER_';
-/** The names Prisma Cloud owns: it seeds and manages them, so Composer never binds one. */
-const PLATFORM_OWNED_SECRET_NAMES: ReadonlySet<string> = new Set([
-  'DATABASE_URL',
-  'DATABASE_URL_POOLED',
-]);
-
 /**
  * A value pointing at a named Prisma Cloud platform secret variable (ADR-0029),
  * dereferenced at boot. Only the name is carried; the value is provisioned
- * out-of-band. The name may not use the framework's reserved `COMPOSER_` prefix
- * or the platform-owned `DATABASE_URL(_POOLED)` keys. It returns a value known
+ * out-of-band. `assertVariableName` says which names it accepts. It returns a value known
  * only at boot, which a resolve() function cannot list, and which throws when
  * turned into text.
  */
 export function envSecret(
   name: string,
 ): SecretSource<EnvSecretPayload> & RuntimeValue<SecretString> {
-  if (typeof name !== 'string' || name.length === 0) {
-    throw new Error(
-      "envSecret() requires a non-empty platform env-var name, e.g. envSecret('STRIPE_SECRET_KEY').",
-    );
-  }
-  if (name.startsWith(RESERVED_SECRET_PREFIX)) {
-    throw new Error(
-      `envSecret name "${name}" may not start with "${RESERVED_SECRET_PREFIX}" — that prefix is ` +
-        "reserved for the framework's own generated config keys.",
-    );
-  }
-  if (PLATFORM_OWNED_SECRET_NAMES.has(name)) {
-    throw new Error(
-      `envSecret name "${name}" is reserved — ${[...PLATFORM_OWNED_SECRET_NAMES].join(' and ')} ` +
-        'are seeded and managed by Prisma Cloud itself, so the framework refuses to bind them. ' +
-        'Declare the database your service uses and read its url from that connection.',
-    );
-  }
+  assertVariableName(name, 'envSecret');
   return secretSource<EnvSecretPayload, Pointer<SecretString>>(
     { [PRISMA_CLOUD_SECRET_SOURCE]: true, name },
     { label: `envSecret('${name}')`, secretsKey: name },

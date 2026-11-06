@@ -32,6 +32,7 @@ import type {
   ServiceProviderParam,
 } from '../descriptors/shared.ts';
 import { GeneratedParamProvider } from '../generated-param-resource.ts';
+import { checkGraph } from '../graph-check.ts';
 import { fromLegacyId, legacyServiceKeyId, legacyStreamsKeyId } from '../legacy-resource-ids.ts';
 import { SELF_ORIGIN } from '../origin-key.ts';
 import { OrmMigrationProvider } from '../orm-migration-resource.ts';
@@ -334,13 +335,16 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
   // module variable, so two `prismaCloud()` extensions cannot share it. In
   // the alchemy process (no preflight) the lookup falls back to what the CLI
   // transported (preflight-payload.ts).
-  const preflightTimestamps = new Map<string, string>();
-  const o = lazyOptions(opts, transportedPreflight(preflightTimestamps, process.env));
+  let preflightTimestamps: ReadonlyMap<string, string> | undefined;
+  const transported = transportedPreflight(() => preflightTimestamps, process.env);
+  const o = lazyOptions(opts, transported);
 
   return {
     id: PRISMA_CLOUD_EXTENSION_ID,
 
     container: containerDescriptor({ region: () => o().region }),
+
+    checkGraph,
 
     providers: () =>
       asProvidersLayer(
@@ -354,17 +358,16 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         ),
       ),
 
-    // Deploy-time prerequisite check (ADR-0029): verify every pointer secret in
-    // the provision manifest exists for the resolved environment, filling absent-but-
-    // in-shell names via a direct API POST — before any stack file or Alchemy.
-    // Timestamps are kept for this process AND serialized onto the preflight
-    // transport for the alchemy process. The parameter annotation is what
-    // recovers this extension's own client type from the framework's erased
-    // one; without it `input.credentials` arrives as `unknown`.
+    // Deploy-time prerequisite check (ADR-0029): reads whether each platform
+    // variable the graph names has a row, and writes none. Timestamps are kept
+    // for this process and serialized onto the preflight transport for the
+    // second process. The parameter annotation recovers this extension's own
+    // client type from the framework's erased one; without it
+    // `input.credentials` arrives as `unknown`.
     preflight: (input: PrismaCloudPreflightInput) =>
-      runPreflight(input).then((timestamps) => {
-        for (const [name, updatedAt] of timestamps) preflightTimestamps.set(name, updatedAt);
-        return serializeDeployPreflightPayload(timestamps);
+      runPreflight(input).then((result) => {
+        preflightTimestamps = result.updatedAt;
+        return serializeDeployPreflightPayload(result);
       }),
 
     // Records the deploy as a Build so it appears in the Console, and passes

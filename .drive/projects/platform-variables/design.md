@@ -195,6 +195,8 @@ A platform variable's name must match `^[A-Z][A-Z0-9_]*$`: it starts with an upp
 
 Upper case only, because the platform accepts no other key (section 3), and because the two places a name is used do not agree about case: Composer compares pointer names without case, and a process environment on Linux compares them with case. With upper-case names a row and a name can never differ by case, so boot always finds the row preflight saw.
 
+No leading underscore, though the platform accepts one. Shells and tools use names that start with an underscore for their own variables: bash puts `_` in the environment of every command it runs, and the Java virtual machine reads `_JAVA_OPTIONS`. The rule is Composer's, and the error says so.
+
 ### Reserved names
 
 The constructor refuses these names, saying why:
@@ -384,7 +386,7 @@ The graph is still a composition of modules that are all the same, except the ro
 - **ADR-0042, service input:** the `$secret` marker; "Every variable a service's markers name must be distinct once normalised"; the three boot outcomes. Now the `$platform` marker, distinct names for `$generated` only, the four boot steps, the empty-text rule, and the array-position rule.
 - **ADR-0058, dev secrets:** "Each service gets only the variables its own rows point at" is stated as a local-target rule, not a Prisma Cloud one; and the recorded difference between dev's and deploy's input documents for an unset optional secret closes, because both now leave the key out.
 - **ADR-0062, values and config adapters:** "Deploy preflight and dev preflight fill a missing `envSecret()` platform variable". Now preflight fills nothing. Slice 3 rewrites the Values section.
-- **ADR-0064, new, "A platform variable is a node":** created with the platform facts of section 3, the graph check hook, the preflight findings, and sections 8 to 12 as they apply to every operator variable. Slice 3 adds the node.
+- **ADR-0064, new, "A platform variable is set on the platform, never by the deploy":** created with the platform facts of section 3, the graph check hook, the preflight findings, and sections 8 to 12 as they apply to every operator variable. Slice 3 adds the node.
 
 ### Slice 3: a platform variable is a node
 

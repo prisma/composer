@@ -7,7 +7,7 @@ import type {
 } from '../container-transport.ts';
 import type { Graph } from '../graph.ts';
 import type { ServiceNode } from '../node.ts';
-import type { PreflightPayload } from '../preflight-transport.ts';
+import type { PreflightFindings, PreflightPayload } from '../preflight-transport.ts';
 import type {
   AlchemyStateLayer,
   ApplicationDescriptor,
@@ -32,10 +32,19 @@ export {
   containerEnvVarName,
   deserializeContainers,
 } from '../container-transport.ts';
-export type { PreflightPayload } from '../preflight-transport.ts';
+export type {
+  PlatformVariableReader,
+  PreflightFindings,
+  PreflightPayload,
+  UnsetPlatformVariable,
+} from '../preflight-transport.ts';
 export {
+  PREFLIGHT_FINDINGS_ENV_VAR,
+  platformVariableReaderText,
   preflightEnv,
   preflightEnvVarName,
+  preflightFindingsEnv,
+  readPreflightFindings,
   readPreflightPayload,
 } from '../preflight-transport.ts';
 /** Re-exported because `RunOutcome` hands them to a reporter — reading this surface must not also require the deploy one. */
@@ -57,19 +66,22 @@ export interface ExtensionDescriptor {
   readonly application?: ApplicationDescriptor;
   /** The extension's Alchemy providers — merged across all configured extensions (config order). */
   readonly providers?: () => Layer.Layer<never>;
+  /** Refuses a loaded graph this extension cannot deploy by throwing `GraphCheckError`. The CLI calls it right after Load in every command that runs Load. Any other throw is a bug. */
+  readonly checkGraph?: (graph: Graph) => void;
   /**
    * Deploy-time prerequisite check — the CLI runs it once, after the app's
    * Project/Branch are resolved and BEFORE any stack file is written or Alchemy
    * runs. A target uses it to verify platform prerequisites (e.g. that every
-   * secret env var in the provision manifest exists for the resolved environment) and
-   * throws to abort the deploy. Async: it talks to the platform (ADR-0029).
+   * platform variable a service needs has a value) and throws to abort the
+   * deploy. Async: it talks to the platform (ADR-0064).
    *
    * What it returns is carried to the alchemy process for this same extension
    * to read back there (preflight-transport.ts) — preflight runs in the CLI
    * parent, and the alchemy child re-imports the config from scratch, so
    * anything the lowering needs from it must ride that transport. The payload
    * is the extension's own opaque string; the framework never reads it, and a
-   * secret value must never go in it.
+   * secret value must never go in it. What it hands `input.report` reaches the
+   * deploy report through the framework's own transport, not this payload.
    *
    * METHOD SYNTAX REQUIRED, for the same reason ContainerDescriptor's members
    * need it: the framework hands over the erased `PreflightInput<unknown>`,
@@ -134,16 +146,22 @@ export interface PreflightInput<C = unknown> {
   readonly container: ContainerInstance | undefined;
   /** The environment name. */
   readonly environment: string;
-  /** The app configuration the command read for this environment. Preflight fills a missing `envParam()` param's platform variable from it. */
+  /** The app configuration the command read for this environment. */
   readonly configuration: AppConfiguration;
-  /** The app secrets the command read for this environment. Preflight fills a missing `envSecret()` platform variable from it. */
+  /** The app secrets the command read for this environment. The deploy preflight reads no value from them and writes no platform variable; the dev preflight gives each local service its secrets from them. */
   readonly secrets: AppSecrets;
   /** What the caller has already authenticated, for the platform calls preflight makes. Absent means the extension falls back to its own credential protocol. */
   readonly credentials?: ContainerCredentials<C> | undefined;
-  /** Hands the deploy's progress output what the check covered, as counts (e.g. `{ checked: 53, filled: 0, missing: 0 }`). Counts only: never a name or a value. */
-  readonly report?: ((counts: Readonly<Record<string, number>>) => void) | undefined;
+  /** Hands the deploy how many platform variables the check read and which have no value. It carries nothing else. Names and readers only: never a value. */
+  readonly report?: ((check: PlatformVariableCheck) => void) | undefined;
   /** Shows the user a warning that does not stop the run. Only `prisma dev` passes it and shows the warnings; deploy passes none. */
   readonly warn?: ((message: string) => void) | undefined;
+}
+
+/** What a deploy preflight's check of platform variables found: how many it read, and the ones with no value that nothing requires. Only platform variables; a preflight reports nothing else. */
+export interface PlatformVariableCheck extends PreflightFindings {
+  /** How many platform variables it read. */
+  readonly checked: number;
 }
 
 /** The resolved destroy context handed to an extension's `teardown` hook. */
@@ -332,7 +350,7 @@ export interface LocalTargetProvidersInput {
   readonly devDir: string;
   /** The text of each configuration key the graph reads, from the app configuration file. A local deployment takes the text its param rows point at from it. */
   readonly configurationKeyText: Readonly<Record<string, string>>;
-  /** The app secrets the graph's `envSecret()`s name, which the first process handed the second. A local deployment takes the text its `$secret` pointers name from it. */
+  /** The app secrets the graph's `envSecret()`s name, which the first process handed the second. A local deployment takes the text its `$platform` markers name from it. */
   readonly namedSecrets: NamedSecrets;
 }
 
@@ -451,10 +469,10 @@ export type ConfigAdapter = (input: ConfigAdapterInput) => ConfigValues | Promis
 /** The app configuration (ADR-0062): what the `config` adapters return, merged by top-level key, a later adapter winning. It is the root's input, and what `envParam()` reads. */
 export type AppConfiguration = Readonly<Record<string, unknown>>;
 
-/** The app secrets (ADR-0062): what the `secrets` adapters return, merged the same way. Every value is text. Preflight fills a missing `envSecret()` platform variable from it, and `prisma dev` hands its second process the values the graph's `envSecret()`s name. Composer redacts the values the graph's `envSecret()`s name wherever it prints. */
+/** The app secrets (ADR-0062): what the `secrets` adapters return, merged the same way. Every value is text. Nothing fills a platform variable from them. `prisma dev` hands its second process the values under the secrets keys of the graph's secret sources, and Composer redacts those values wherever it prints. */
 export type AppSecrets = Readonly<Record<string, string>>;
 
-/** The app secrets an `envSecret()` in the graph names, each with text. `prisma dev`'s first process hands them to its second process in `PRISMA_COMPOSER_NAMED_SECRETS`. */
+/** The app secrets under the secrets keys of the graph's secret sources, each with text. `prisma dev`'s first process hands them to its second process in `PRISMA_COMPOSER_NAMED_SECRETS`. */
 export type NamedSecrets = Readonly<Record<string, string>>;
 
 /**

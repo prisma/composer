@@ -3,7 +3,8 @@
  * preflight uses (`preflight-names.ts`), with dev's value-sourcing policy.
  * Every value comes from what the command read: secrets from the app secrets, env-sourced params from the app configuration. An unset or empty secret is left out of the
  * service's input; it is an error only when the service's schema rejects
- * its absence. An unset or empty env-sourced param is always an error.
+ * its absence or an array position reads it. An unset or empty per-key env-sourced param takes its default
+ * or is left out when optional; it is an error only when it is required.
  *
  * Control-plane only, runs in the CLI parent (no CliError import — see
  * container.ts). Reads no Management API — dev is credential-free.
@@ -11,8 +12,12 @@
 
 import type { Graph, ServiceNode } from '@internal/core';
 import { inputManifest } from '@internal/core';
-import type { PreflightInput, PreflightPayload } from '@internal/core/config';
-import { DEV_DIR, devEnvironmentDir } from '@internal/core/config';
+import type {
+  PlatformVariableReader,
+  PreflightInput,
+  PreflightPayload,
+} from '@internal/core/config';
+import { DEV_DIR, devEnvironmentDir, platformVariableReaderText } from '@internal/core/config';
 import {
   movePreEnvironmentDevState,
   readOrCreateFingerprintKey,
@@ -20,23 +25,13 @@ import {
 } from '@internal/local-target';
 import { configurationText } from '../configuration-text.ts';
 import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
-import {
-  collectPreflightNames,
-  envParamNotTextError,
-  inputSecretNames,
-  type PreflightName,
-} from '../preflight-names.ts';
+import { envParamBindings, envParamNotTextError, inputSecretNames } from '../preflight-names.ts';
 import { checkPublicUrls, publicUrlStrategies } from '../public-url.ts';
-import { inputValidationFailure } from '../serializer.ts';
-
-interface MissingSecrets {
-  /** One name the schema requires, or several of which it requires some. */
-  readonly names: readonly string[];
-  readonly serviceAddress: string;
-  readonly message: string;
-}
-
-type Env = Readonly<Record<string, unknown>>;
+import {
+  checkRequirements,
+  type MissingVariables,
+  paramIsRequired,
+} from '../required-variables.ts';
 
 const isSet = (value: string | undefined): value is string =>
   value !== undefined && value.length > 0;
@@ -51,19 +46,25 @@ function howToSet(environment: string): string {
   );
 }
 
-function missingEnvParamsSection(missing: readonly PreflightName[]): string {
-  const lines = missing.map((m) => `  - ${m.name}  (required by service "${m.address}")`);
-  return `${missing.length} env-sourced param(s) are not set:\n${lines.join('\n')}`;
-}
-
-function missingSecretsSection(missing: readonly MissingSecrets[]): string {
-  const lines = missing.map((m) =>
-    m.names.length === 1
-      ? `  - ${m.names[0]}  (required by service "${m.serviceAddress}": ${m.message})`
-      : `  - some of ${m.names.join(', ')}  (service "${m.serviceAddress}" needs some of them: ` +
-        `${m.message})`,
-  );
-  return `required secrets are not set:\n${lines.join('\n')}`;
+function missingSection(
+  params: ReadonlyMap<string, PlatformVariableReader[]>,
+  secrets: readonly MissingVariables[],
+): string {
+  const lines = [
+    ...[...params].map(
+      ([name, readers]) => `  - ${name}  (${readers.map(platformVariableReaderText).join('; ')})`,
+    ),
+    ...secrets.map((m) =>
+      m.names.length === 1
+        ? `  - ${m.names[0]}  (required by service "${m.serviceAddress}": ${m.message})`
+        : `  - some of ${m.names.join(', ')}  (service "${m.serviceAddress}" needs some of them: ` +
+          `${m.message})`,
+    ),
+  ];
+  const count = new Set([...params.keys(), ...secrets.flatMap((m) => m.names)]).size;
+  return count === 1
+    ? `1 platform variable a service needs has no value:\n${lines.join('\n')}`
+    : `${count} platform variables a service needs have no value:\n${lines.join('\n')}`;
 }
 
 function serviceNodeAt(graph: Graph, address: string): ServiceNode {
@@ -72,30 +73,6 @@ function serviceNodeAt(graph: Graph, address: string): ServiceNode {
     throw new Error(`local dev preflight: no service node at address "${address}".`);
   }
   return found;
-}
-
-/** The secrets this service's schema cannot do without, among the ones that are unset. */
-function requiredSecrets(
-  node: ServiceNode,
-  serviceAddress: string,
-  binding: unknown,
-  unset: readonly string[],
-  env: Env,
-): MissingSecrets[] {
-  const withoutAll = inputValidationFailure(node, serviceAddress, binding, {
-    env,
-    absentSecrets: new Set(unset),
-  });
-  if (withoutAll === undefined) return [];
-  const required: MissingSecrets[] = [];
-  for (const name of unset) {
-    const message = inputValidationFailure(node, serviceAddress, binding, {
-      env,
-      absentSecrets: new Set([name]),
-    });
-    if (message !== undefined) required.push({ names: [name], serviceAddress, message });
-  }
-  return required.length > 0 ? required : [{ names: unset, serviceAddress, message: withoutAll }];
 }
 
 /** HMAC-SHA256 under a local random key, so the fingerprints in Alchemy state cannot be checked against guessed values without the key file. */
@@ -125,7 +102,7 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
   const absentSecrets = new Set<string>();
   const secretNames = new Set<string>();
   const pointed = new Map<string, string>();
-  const missingSecrets: MissingSecrets[] = [];
+  const missingSecrets: MissingVariables[] = [];
   const invalidInputs: string[] = [];
   for (const { serviceAddress, binding } of inputManifest(input.graph)) {
     const names = inputSecretNames(binding, serviceAddress);
@@ -138,32 +115,36 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
     }
     if (unset.length === 0) continue;
     const node = serviceNodeAt(input.graph, serviceAddress);
-    const invalid = inputValidationFailure(node, serviceAddress, binding, {
-      env,
-      absentSecrets: new Set(),
-    });
-    if (invalid !== undefined) {
-      invalidInputs.push(`invalid input for service "${serviceAddress}": ${invalid}`);
+    const decided = checkRequirements(node, serviceAddress, binding, unset, env);
+    if (decided.kind === 'invalid') {
+      invalidInputs.push(`invalid input for service "${serviceAddress}": ${decided.message}`);
       continue;
     }
-    missingSecrets.push(...requiredSecrets(node, serviceAddress, binding, unset, env));
+    missingSecrets.push(...decided.missing);
   }
 
-  const missingParams: PreflightName[] = [];
-  for (const param of collectPreflightNames(input.graph).envParams) {
+  const missingParams = new Map<string, PlatformVariableReader[]>();
+  for (const param of envParamBindings(input.graph)) {
     const value = secretNames.has(param.name)
       ? secretValue(param.name)
       : configurationText(env, param.name, (kind) =>
-          envParamNotTextError(param.name, param.address, kind),
+          envParamNotTextError(param.name, param.serviceAddress, kind),
         );
-    if (isSet(value)) pointed.set(param.name, value);
-    else missingParams.push(param);
+    if (isSet(value)) {
+      pointed.set(param.name, value);
+      continue;
+    }
+    if (!paramIsRequired(serviceNodeAt(input.graph, param.serviceAddress), param.param)) continue;
+    const reader = { kind: 'param', service: param.serviceAddress, param: param.param } as const;
+    const readers = missingParams.get(param.name);
+    if (readers === undefined) missingParams.set(param.name, [reader]);
+    else readers.push(reader);
   }
 
-  const missing = [
-    ...(missingParams.length > 0 ? [missingEnvParamsSection(missingParams)] : []),
-    ...(missingSecrets.length > 0 ? [missingSecretsSection(missingSecrets)] : []),
-  ];
+  const missing =
+    missingParams.size > 0 || missingSecrets.length > 0
+      ? [missingSection(missingParams, missingSecrets)]
+      : [];
   const sections = [
     ...invalidInputs,
     ...missing,

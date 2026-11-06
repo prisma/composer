@@ -90,6 +90,9 @@
       "@internal/s3-protocol": [
         "./packages/1-prisma-cloud/0-lowering/s3-protocol/src/exports/index.ts"
       ],
+      "@internal/input-document": [
+        "./packages/1-prisma-cloud/0-lowering/input-document/src/exports/index.ts"
+      ],
       "@internal/dev-emulators/compute-main": [
         "./packages/1-prisma-cloud/0-lowering/dev-emulators/src/exports/compute-main.ts"
       ],

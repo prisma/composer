@@ -789,7 +789,8 @@ describe('the input document — run() re-stash → input() (ADR-0042)', () => {
     await withEnv(
       {
         // deploy-shaped document row (address-keyed) + the user-provisioned platform var:
-        COMPOSER_INGEST_INPUT: '{"stripeEnabled":true,"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+        COMPOSER_INGEST_INPUT:
+          '{"stripeEnabled":true,"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
         STRIPE_SECRET_KEY: 'sk_live_trap',
         COMPOSER_INGEST_PORT: '',
         // address-free keys the stash (over)writes — tracked so withEnv restores them:

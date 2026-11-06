@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
-import { runPipeline } from '../pipeline.ts';
+import { type Graph, GraphCheckError } from '@internal/core';
+import { resolveAppIdentity, runPipeline } from '../pipeline.ts';
 import { SecretRedaction } from '../redaction.ts';
 import prismaConfig from './fixtures/pipeline/prisma.config.ts';
 import appConfigurationConfig from './fixtures/pipeline-app-configuration/prisma.config.ts';
@@ -157,5 +158,112 @@ describe('runPipeline()', () => {
 
     expect([...redaction.knownSecrets.values()]).toContain('from-config');
     expect([...redaction.knownSecrets.values()]).toContain('from-secrets');
+  });
+});
+
+describe('an extension graph check', () => {
+  const composer = prismaConfig.composer;
+  if (composer === undefined) throw new Error('the fixture declares a composer section');
+  const file = path.join(fixtureDir, 'prisma.config.ts');
+  const [fixtureExtension, ...otherExtensions] = composer.extensions;
+  if (fixtureExtension === undefined) throw new Error('the fixture declares an extension');
+
+  const withCheck = (checkGraph: (graph: Graph) => void, others = otherExtensions) => ({
+    value: { ...composer, extensions: [{ ...fixtureExtension, checkGraph }, ...others] },
+    file,
+  });
+
+  test('runPipeline hands every graph check the loaded graph', async () => {
+    const checked: Graph[] = [];
+
+    const { graph } = await runPipeline(
+      undefined,
+      undefined,
+      'staging',
+      fixtureDir,
+      withCheck((loaded) => checked.push(loaded)),
+      noAssembly,
+    );
+
+    expect(checked).toEqual([graph]);
+  });
+
+  test('a graph check that refuses the graph fails the pipeline as COMPOSE.GRAPH_INVALID with its message and extension id, before registry coverage and assemble', async () => {
+    let assembled = false;
+    const uncovered = withCheck(() => {
+      throw new GraphCheckError('the graph is wrong');
+    }, []);
+
+    const run = runPipeline(undefined, undefined, 'staging', fixtureDir, uncovered, {
+      runAssembler: async () => {
+        assembled = true;
+        return { dir: '', entry: '' };
+      },
+    });
+
+    await expect(run).rejects.toMatchObject({
+      code: 'COMPOSE.GRAPH_INVALID',
+      message: 'the graph is wrong',
+      meta: { extension: fixtureExtension.id },
+    });
+    expect(assembled).toBe(false);
+  });
+
+  test('any other throw from a graph check is a bug, and reaches the caller unchanged', async () => {
+    const bug = new TypeError('cannot read properties of undefined');
+    const broken = withCheck(() => {
+      throw bug;
+    });
+
+    const run = runPipeline(undefined, undefined, 'staging', fixtureDir, broken, noAssembly);
+
+    expect(await run.catch((error: unknown) => error)).toBe(bug);
+  });
+
+  test('a graph check runs after the known secrets are added', async () => {
+    const appComposer = appConfigurationConfig.composer;
+    if (appComposer === undefined) throw new Error('the fixture declares a composer section');
+    const [appExtension, ...appOthers] = appComposer.extensions;
+    if (appExtension === undefined) throw new Error('the fixture declares an extension');
+    const redaction = new SecretRedaction({});
+    let knownAtCheck: string[] = [];
+
+    await runPipeline(
+      undefined,
+      undefined,
+      'staging',
+      appConfigurationDir,
+      {
+        value: {
+          ...appComposer,
+          extensions: [
+            {
+              ...appExtension,
+              checkGraph: () => {
+                knownAtCheck = [...redaction.knownSecrets.values()];
+              },
+            },
+            ...appOthers,
+          ],
+          config: [() => ({ CONFIG_POOL_PROBE: 'probe' })],
+          secrets: [() => ({ S11_SECRET: 'from-secrets' })],
+        },
+        file: path.join(appConfigurationDir, 'prisma.config.ts'),
+      },
+      { ...noAssembly, readSecrets: true, redaction },
+    );
+
+    expect(knownAtCheck).toContain('from-secrets');
+  });
+
+  test('resolveAppIdentity runs no graph check', async () => {
+    let called = false;
+    const source = withCheck(() => {
+      called = true;
+    });
+
+    await resolveAppIdentity(undefined, undefined, fixtureDir, source);
+
+    expect(called).toBe(false);
   });
 });

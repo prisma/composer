@@ -27,18 +27,19 @@ jobs:
   deploy:
     name: Deploy, verify, destroy
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Two deploys: the first stops at preflight, the second runs in full.
+    timeout-minutes: 7
     # Secrets aren't available on forked-PR runs; skip rather than fail loudly.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     env:
       PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
       PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
-      # The root binds the auth module's signingKey input to AUTH_SIGNING_SECRET (ADR-0029).
-      # This non-sensitive test marker in the runner env is what deploy preflight
-      # fill-missing provisions onto the ephemeral per-run stack — the single-step
-      # CI path (runner env -> direct API POST -> platform). It must match the
-      # auth service's EXPECTED_SIGNING_SECRET (modules/auth/src/server.ts); the
-      # value never enters deploy state, only its pointer name does.
+      # A test marker, not a secret. It must match the auth service's
+      # EXPECTED_SIGNING_SECRET (examples/storefront-auth/modules/auth/src/server.ts). The deploy never
+      # reads it (ADR-0064): the first deploy stops at preflight because the
+      # fresh project has no AUTH_SIGNING_SECRET row, the action's
+      # e2e-set-platform-variables.ts sets this value on the platform, and the
+      # second deploy succeeds.
       AUTH_SIGNING_SECRET: sk_test_ci_storefront_auth
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -50,6 +51,7 @@ jobs:
           build-filter: '@prisma/example-storefront-auth...'
           stack-name: storefront-auth-ci-${{ github.run_id }}
           verify-command: bash scripts/e2e-verify.sh
+          platform-variables: AUTH_SIGNING_SECRET
 
   deploy-orm-demo:
     name: Deploy, verify, destroy (orm-demo)

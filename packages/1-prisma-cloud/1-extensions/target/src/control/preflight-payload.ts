@@ -3,8 +3,8 @@
  * the config from scratch, on the framework's preflight transport. One
  * variable carries either kind:
  *
- * - deploy: a JSON object mapping each pointed platform variable to its
- *   `updatedAt`, as read from the Management API;
+ * - deploy: a JSON object holding `updatedAt`, which maps each pointed
+ *   platform variable to the `updatedAt` of the row the platform resolves;
  * - `prisma dev`: `dev:` followed by JSON naming the unset secrets and an
  *   HMAC-SHA256 of the current value of each variable a service points at.
  *
@@ -24,6 +24,11 @@ export interface TransportedPreflight {
   readonly absentSecrets: ReadonlySet<string>;
 }
 
+/** What the deploy preflight hands the second process: the `updatedAt` of the row the platform resolves for each platform variable that has one. */
+export interface DeployPreflightPayload {
+  readonly updatedAt: ReadonlyMap<string, string>;
+}
+
 export interface DevPreflightPayload {
   readonly absentSecrets: readonly string[];
   readonly pointerVersions: Readonly<Record<string, string>>;
@@ -31,7 +36,7 @@ export interface DevPreflightPayload {
 
 export type DecodedPreflightPayload =
   | { readonly kind: 'none' }
-  | { readonly kind: 'deploy'; readonly updatedAt: ReadonlyMap<string, string> }
+  | ({ readonly kind: 'deploy' } & DeployPreflightPayload)
   | {
       readonly kind: 'dev';
       readonly absentSecrets: ReadonlySet<string>;
@@ -42,12 +47,12 @@ const DEV_PAYLOAD_PREFIX = 'dev:';
 
 const byName = ([a]: [string, unknown], [b]: [string, unknown]) => (a < b ? -1 : 1);
 
-/** The deploy preflight's payload, or undefined when it read no pointed variable. */
+/** The deploy preflight's payload, or undefined when no platform variable it read has a row. */
 export function serializeDeployPreflightPayload(
-  updatedAt: ReadonlyMap<string, string>,
+  payload: DeployPreflightPayload,
 ): string | undefined {
-  if (updatedAt.size === 0) return undefined;
-  return JSON.stringify(Object.fromEntries([...updatedAt].sort(byName)));
+  if (payload.updatedAt.size === 0) return undefined;
+  return JSON.stringify({ updatedAt: Object.fromEntries([...payload.updatedAt].sort(byName)) });
 }
 
 export function serializeDevPreflightPayload(payload: DevPreflightPayload): string {
@@ -100,17 +105,15 @@ export function decodePreflightPayload(payload: string | undefined): DecodedPref
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw deployPayloadError('it is not a JSON object');
   }
-  const updatedAt = new Map<string, string>();
-  for (const [name, value] of Object.entries(parsed)) {
-    if (typeof value !== 'string') throw deployPayloadError(`"${name}" is not a string timestamp`);
-    updatedAt.set(name, value);
+  if (!('updatedAt' in parsed) || !isStringRecord(parsed.updatedAt)) {
+    throw deployPayloadError('its "updatedAt" is not an object of string timestamps');
   }
-  return { kind: 'deploy', updatedAt };
+  return { kind: 'deploy', updatedAt: new Map(Object.entries(parsed.updatedAt)) };
 }
 
 const deployPayloadError = (reason: string): Error =>
   new Error(
-    "prisma-cloud: the deploy preflight's rotation timestamps did not survive the transport " +
+    "prisma-cloud: the deploy preflight's payload did not survive the transport " +
       `into the alchemy process — ${reason}. This is a framework bug; re-running the deploy ` +
       'will not fix it.',
   );
@@ -122,12 +125,13 @@ const devPayloadError = (reason: string): Error =>
   );
 
 /**
- * The lowering's view of what the preflight sent. `own` holds what the deploy
- * preflight read in this same process (the CLI process); the alchemy process
- * has none and reads the transported payload, decoded once on first use.
+ * The lowering's view of what the preflight sent. `own` returns the timestamps of the latest
+ * deploy preflight in this same process (the CLI process); when it returns a snapshot, that
+ * snapshot is the whole answer. The alchemy process has none and reads the transported payload,
+ * decoded once on first use.
  */
 export function transportedPreflight(
-  own: ReadonlyMap<string, string>,
+  own: () => ReadonlyMap<string, string> | undefined,
   env: Readonly<Record<string, string | undefined>>,
 ): TransportedPreflight {
   let decoded: DecodedPreflightPayload | undefined;
@@ -136,8 +140,8 @@ export function transportedPreflight(
   const noSecrets: ReadonlySet<string> = new Set();
   return {
     pointerVersion: (name) => {
-      const mine = own.get(name);
-      if (mine !== undefined) return mine;
+      const snapshot = own();
+      if (snapshot !== undefined) return snapshot.get(name);
       const payload = decode();
       if (payload.kind === 'deploy') return payload.updatedAt.get(name);
       if (payload.kind === 'dev') return payload.pointerVersions.get(name);

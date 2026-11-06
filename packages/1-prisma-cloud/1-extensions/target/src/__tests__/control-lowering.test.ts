@@ -1198,7 +1198,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     });
   });
 
-  test('the input document serializes to ONE row — secret leaves are $secret pointers, never values (ADR-0042)', async () => {
+  test('the input document serializes to ONE row — secret leaves are $platform markers, never values (ADR-0042)', async () => {
     await withEnv(
       // The real secret value is present in the deploy shell, proving it still
       // cannot reach the serialized row.
@@ -1256,7 +1256,8 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         expect(writes).toContainEqual({
           project: 'shop-project#cloud-id',
           key: 'COMPOSER_SHOP_INGEST_INPUT',
-          value: '{"stripeEnabled":true,"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+          value:
+            '{"stripeEnabled":true,"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
           class: 'production',
         });
         // No serialized EnvironmentVariable output carries the secret's value.
@@ -1266,7 +1267,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         // variable it points at is named in `pointers`, so its rotation
         // timestamp can join the triggers — the VALUE is nowhere near it.
         expect(unwrapTriggers(result.triggers)['COMPOSER_SHOP_INGEST_INPUT']).toBe(
-          '{"stripeEnabled":true,"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+          '{"stripeEnabled":true,"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
         );
         expect(result.pointers).toEqual(['STRIPE_SECRET_KEY']);
         expect(JSON.stringify(unwrapTriggers(result.triggers))).not.toContain('sk_live');
@@ -1274,12 +1275,13 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         // put the document (secret-free by construction) on the report entity.
         expect(result.input).toEqual({
           key: 'COMPOSER_SHOP_INGEST_INPUT',
-          value: '{"stripeEnabled":true,"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+          value:
+            '{"stripeEnabled":true,"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
           absent: [],
           generated: [],
           // The pointed platform variable, so the deploy hook can fold its
           // rotation timestamp into the deployment triggers.
-          secrets: ['STRIPE_SECRET_KEY'],
+          markers: [{ name: 'STRIPE_SECRET_KEY', path: 'stripeKey', secret: true, inArray: false }],
         });
       },
     );
@@ -1543,7 +1545,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         value: '{}',
         absent: ['greeting → NOT_SET_GREETING_VAR'],
         generated: [],
-        secrets: [],
+        markers: [],
       });
     });
   });
@@ -1965,7 +1967,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       port: 3000,
       input: {
         key: 'COMPOSER_AUTH_INPUT',
-        value: '{"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+        value: '{"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
         absent: ['greeting → ENV_GREETING', 'region → ENV_REGION'],
       },
     };
@@ -1980,7 +1982,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         id: 'auth-svc#cloud-id',
         url: 'https://shop.auth.deployment.example',
         details: {
-          input: '{"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+          input: '{"stripeKey":$platform STRIPE_SECRET_KEY}',
           absent: 'greeting → ENV_GREETING\nregion → ENV_REGION',
         },
       },
@@ -2004,7 +2006,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       port: 3000,
       input: {
         key: 'COMPOSER_AUTH_INPUT',
-        value: '{"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+        value: '{"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
         absent: [],
       },
     };
@@ -2019,7 +2021,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         id: 'auth-svc#cloud-id',
         url: 'https://shop.auth.deployment.example',
         details: {
-          input: '{"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+          input: '{"stripeKey":$platform STRIPE_SECRET_KEY}',
         },
       },
     ]);
@@ -2731,7 +2733,10 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
       const o: ResolvedCloudOptions = {
         workspaceId: 'ws_1',
         providerParams,
-        preflight: { pointerVersion: () => undefined, absentSecrets: new Set() },
+        preflight: {
+          pointerVersion: () => undefined,
+          absentSecrets: new Set(),
+        },
       };
       const node = compute({ name: 'multi', deps: {}, build, expose: { any: anyContract } });
       const ctx = {
@@ -2845,7 +2850,7 @@ describe('a secret the prisma dev preflight found unset', () => {
     expect(writes).toContainEqual({
       project: 'shop-project#cloud-id',
       key: 'COMPOSER_SHOP_BILLING_INPUT',
-      value: '{"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+      value: '{"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
       class: 'production',
     });
   });
