@@ -3,7 +3,11 @@
  * @internal/lowering is imported; loaded only by `prisma.config.ts`.
  */
 
-import type { ExtensionDescriptor, StateDescriptor } from '@internal/core/config';
+import type {
+  ContainerCredentials,
+  ExtensionDescriptor,
+  StateDescriptor,
+} from '@internal/core/config';
 import type { ProvisionerDescriptor } from '@internal/core/deploy';
 import { blindCast } from '@internal/foundation/casts';
 import * as Prisma from '@internal/lowering';
@@ -169,13 +173,16 @@ const selfOriginValue: ServiceProviderParam['valueForService'] = (provisioned, a
 /** The user-facing state descriptor: `state: prismaState()` in the `composer` section of `prisma.config.ts` (ADR-0017). */
 export const prismaState = (): StateDescriptor => ({
   extension: PRISMA_CLOUD_EXTENSION_ID,
-  create: (container) => {
+  create: (container, credentials?: ContainerCredentials<Prisma.ManagementApiClient>) => {
     const { projectId, branchId, defaultBranchId } = prismaCloudContainerOf(container);
-    return prismaStateLayer({
-      projectId,
-      ...(branchId !== undefined ? { branchId } : {}),
-      ...(defaultBranchId !== undefined ? { defaultBranchId } : {}),
-    });
+    return prismaStateLayer(
+      {
+        projectId,
+        ...(branchId !== undefined ? { branchId } : {}),
+        ...(defaultBranchId !== undefined ? { defaultBranchId } : {}),
+      },
+      credentials?.client,
+    );
   },
 });
 
@@ -329,10 +336,10 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
 
     container: containerDescriptor({ region: () => o().region }),
 
-    providers: () =>
+    providers: (credentials?: ContainerCredentials<Prisma.ManagementApiClient>) =>
       asProvidersLayer(
         Layer.mergeAll(
-          Prisma.providers(),
+          Prisma.providers({ client: credentials?.client }),
           PgWarmProvider(),
           OrmMigrationProvider(),
           S3CredentialsProvider(),

@@ -4,7 +4,12 @@ import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import { deploySourceHeaders, managementApiBaseUrl, PrismaCredentials } from './credentials.ts';
+import {
+  deploySourceHeaders,
+  fromEnv,
+  managementApiBaseUrl,
+  PrismaCredentials,
+} from './credentials.ts';
 
 export type ManagementApiClient = ReturnType<typeof createManagementApiClient>;
 
@@ -38,3 +43,11 @@ export const layer = (options?: {
       });
     }),
   );
+
+/** The caller's already-authenticated client, or one built from `PRISMA_SERVICE_TOKEN` when the caller supplies none. */
+export const suppliedOrFromEnv = (
+  supplied: ManagementApiClient | undefined,
+): Layer.Layer<ManagementClient, Config.ConfigError | Error> =>
+  supplied === undefined
+    ? layer().pipe(Layer.provide(fromEnv()))
+    : Layer.succeed(ManagementClient, supplied);
