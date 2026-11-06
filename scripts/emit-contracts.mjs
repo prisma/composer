@@ -18,20 +18,30 @@ const run = (cmd, args, cwd = root) =>
   execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
 const tracked = new Set(run('git', ['ls-files']).split('\n'));
 
-const contracts = run('git', ['ls-files', '*prisma.config.ts'])
+const ormConfigs = run('git', ['ls-files', '*prisma.config.ts'])
   .split('\n')
   .filter((file) => file !== '')
-  .map((config) => {
-    const source = readFileSync(join(root, config), 'utf8');
-    const output = /output:\s*'([^']+)'/.exec(source)?.[1] ?? '.';
-    const outputDir = relative(root, join(root, dirname(config), output));
-    return { config, source, outputDir };
-  })
-  .filter(
-    ({ source, outputDir }) =>
-      source.includes('@prisma/orm-postgres/config') &&
-      tracked.has(join(outputDir, 'contract.json')),
-  );
+  .map((config) => ({ config, source: readFileSync(join(root, config), 'utf8') }))
+  .filter(({ source }) => source.includes('@prisma/orm-postgres/config'))
+  .map(({ config, source }) => {
+    const output = /output:\s*'([^']+)'/.exec(source)?.[1];
+    if (output === undefined && /\boutput\s*:/.test(source)) {
+      throw new Error(
+        `${config}: write \`output\` as a single-quoted path, so this script can find the contract.`,
+      );
+    }
+    return { config, outputDir: relative(root, join(root, dirname(config), output ?? '.')) };
+  });
+
+const contracts = ormConfigs.filter(({ outputDir }) =>
+  tracked.has(join(outputDir, 'contract.json')),
+);
+for (const { config, outputDir } of ormConfigs.filter((c) => !contracts.includes(c))) {
+  process.stdout.write(`skip ${config}: no committed contract.json in ${outputDir || '.'}\n`);
+}
+
+// The examples' configs import the built extension packages.
+run('pnpm', ['turbo', 'run', 'build', '--filter', '@prisma/composer-prisma-cloud...']);
 
 const prisma = join(root, 'node_modules', '.bin', 'prisma');
 const emitted = [];
