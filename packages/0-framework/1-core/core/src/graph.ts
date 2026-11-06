@@ -1,9 +1,10 @@
 import { type Graph, LoadError, type LoadOptions } from './graph-types.ts';
 import { loadModule } from './load-module.ts';
 import { loadService } from './load-service.ts';
-import { isNode, type ModuleNode, type ServiceNode } from './node.ts';
+import { isNode, type ModuleNode, type ServiceNode, sourceOriginOf } from './node.ts';
 
 export type {
+  AppConfigurationRead,
   AuthoredEdge,
   BoundaryPort,
   Edge,
@@ -14,6 +15,7 @@ export type {
   NodeId,
   ParamBinding,
   PortEndpoint,
+  RootInputField,
   SecretSourceUse,
 } from './graph-types.ts';
 export { LoadError, RESOURCE_OUT_PORT } from './graph-types.ts';
@@ -57,4 +59,20 @@ export function Load(root: ServiceNode | ModuleNode, opts?: LoadOptions): Graph 
   }
   if (root.kind === 'service') return loadService(root, opts?.id ?? 'root');
   throw new LoadError('Load expects a service or module root (received another node kind).');
+}
+
+/** The app secrets key of every secret source the graph names, once each, in the order Load met them. A source built without a `secretsKey` is left out. */
+export function secretsKeys(graph: Graph): readonly string[] {
+  const keys = new Set<string>();
+  for (const { source } of graph.secretSources) {
+    const origin = sourceOriginOf(source);
+    const key = origin?.sourceKind === 'secret' ? origin.secretsKey : undefined;
+    if (key !== undefined) keys.add(key);
+  }
+  return [...keys];
+}
+
+/** The address of every node in the graph, sorted. Two Loads of the same graph give the same list. */
+export function nodeAddresses(graph: Graph): readonly string[] {
+  return graph.nodes.map(({ id }) => id).sort();
 }

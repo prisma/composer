@@ -13,9 +13,9 @@ function bindingOf(graph: ReturnType<typeof Load>, address: string): Record<stri
 }
 
 describe('auth example root graph', () => {
-  test("the root binds the email module's input from the config pool and auth's baseUrl to the api's origin", () => {
+  test("the root binds the email module's input from the app configuration and auth's baseUrl to the api's origin", () => {
     const graph = Load(root, {
-      configPool: { EMAIL_DELIVERY_MODE: 'none', EMAIL_FROM: 'dev@example.com' },
+      configuration: { EMAIL_DELIVERY_MODE: 'none', EMAIL_FROM: 'dev@example.com' },
     });
 
     const mail = bindingOf(graph, 'auth-example.mail.service');

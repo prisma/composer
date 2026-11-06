@@ -8,11 +8,10 @@ import {
   DEPLOYMENT_RESULT_FILE_ENV,
   engineFailureCause,
   engineFailureFilePath,
-  poolSecrets,
   readEngineFailureCause,
-  redactSecrets,
   withComposerAdvice,
 } from '../deployment-summary.ts';
+import { redactCredentialLooking, redactValues } from '../redaction.ts';
 
 const ESC = String.fromCharCode(27);
 const red = (text: string) => `${ESC}[31m${text}${ESC}[0m`;
@@ -93,24 +92,7 @@ describe('engineFailureCause', () => {
   });
 });
 
-describe('poolSecrets', () => {
-  const pools = {
-    config: { STRIPE_KEY: 'sk_config', WEBHOOK_SIG: 'sig_shared', HOME: '/Users/someone', N: 4 },
-    secrets: { WEBHOOK_SIG: 'sig_shared', SIGNING_SALT: 'salt_value' },
-  };
-
-  test('with a secrets list the author wrote, every secrets pool value and the config values under its keys', () => {
-    expect(poolSecrets(pools, true).sort()).toEqual(
-      ['salt_value', 'sig_shared', 'sig_shared', 'sk_config'].sort(),
-    );
-  });
-
-  test('with the default secrets list, the whole environment, only secret-named config values', () => {
-    expect(poolSecrets(pools, false)).toEqual(['sk_config']);
-  });
-});
-
-describe('redactSecrets', () => {
+describe('redactCredentialLooking', () => {
   test('removes the values of secret-named env vars, including the service token and preflight payloads', () => {
     const env = {
       PRISMA_SERVICE_TOKEN: 'svc-token-0123456789',
@@ -121,13 +103,13 @@ describe('redactSecrets', () => {
     const text =
       'token svc-token-0123456789 payload {"STRIPE":"2024-01-01"} key stripe-secret-value at https://api.prisma.io';
 
-    expect(redactSecrets(text, env)).toBe(
+    expect(redactCredentialLooking(text, env)).toBe(
       'token [redacted] payload [redacted] key [redacted] at https://api.prisma.io',
     );
   });
 
   test('leaves short values alone, so a placeholder does not blank every match', () => {
-    expect(redactSecrets('status: pending', { API_TOKEN: 'pe' })).toBe('status: pending');
+    expect(redactCredentialLooking('status: pending', { API_TOKEN: 'pe' })).toBe('status: pending');
   });
 
   test('removes bearer tokens, JWTs, URL passwords and token=value pairs whatever their source', () => {
@@ -139,7 +121,7 @@ describe('redactSecrets', () => {
       '{"client_secret": "shh-its-secret"}',
     ].join('\n');
 
-    expect(redactSecrets(text, {})).toBe(
+    expect(redactCredentialLooking(text, {})).toBe(
       [
         'Authorization: Bearer [redacted]',
         'token [redacted]',
@@ -191,7 +173,7 @@ describe('the failure cause through a real child process', () => {
     expect(child.stderr).toBe(
       '[web] creating\nPlan: 1 to create\nerror: 409 Conflict (Authorization: Bearer real-service-token)\n',
     );
-    expect(readEngineFailureCause(resultFile)).toBe(
+    expect(readEngineFailureCause(resultFile, (text) => redactValues(text, []))).toBe(
       'error: 409 Conflict (Authorization: Bearer [redacted])',
     );
   }, 15_000);
@@ -201,7 +183,7 @@ describe('the failure cause through a real child process', () => {
 
     expect(child.status).toBe(0);
     expect(fs.existsSync(engineFailureFilePath(resultFile))).toBe(false);
-    expect(readEngineFailureCause(resultFile)).toBeUndefined();
+    expect(readEngineFailureCause(resultFile, (text) => redactValues(text, []))).toBeUndefined();
   }, 15_000);
 });
 

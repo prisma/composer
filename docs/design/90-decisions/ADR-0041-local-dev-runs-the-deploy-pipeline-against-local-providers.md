@@ -10,7 +10,7 @@ Amended by [ADR-0052](ADR-0052-composer-maps-its-nodes-to-emulator-instances-per
 
 Amended by [ADR-0056](ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): under `prisma dev`, a service runs the dev server its build adapter declares (`next dev`; a `dev` command written on `node()`) in place of its artifact, when it declares one. Such a service is not assembled and lowers without its `Deployment`; the Compute emulator runs the dev server as a command deployment on the service's instance, with the environment its deployment would get, re-stashed address-free as `run()` does. The dev session still owns no processes. A service whose adapter declares no dev server still boots exactly as deployed.
 
-Amended by [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md): `prisma dev` takes secrets and env-sourced params only from the environment variables of the run, the shell or a `.env` that `prisma.config.ts` loads, and never makes one up. A required secret that is unset or empty is an error; an optional one reaches the service as absent; an unset env-sourced param is still always an error. Each run takes values from its environment variables and never reuses one from an earlier run. The secrets bullet under Consequences is replaced by that ADR. To match it, the `preflight` signature in the `LocalTargetDescriptor` block below now returns a payload, and "minted placeholders" was removed from the dev-state list.
+Amended by [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-app-secrets-and-never-invents-them.md): `prisma dev` takes secrets and env-sourced params only from the environment variables of the run, the shell or a `.env` that `prisma.config.ts` loads, and never makes one up. A required secret that is unset or empty is an error; an optional one reaches the service as absent; an unset env-sourced param is still always an error. Each run takes values from its environment variables and never reuses one from an earlier run. The secrets bullet under Consequences is replaced by that ADR. To match it, the `preflight` signature in the `LocalTargetDescriptor` block below now returns a payload, and "minted placeholders" was removed from the dev-state list.
 
 ## Decision
 
@@ -301,7 +301,7 @@ this repo owns.
   extension-descriptor pattern `localTarget` extends.
 - [ADR-0020](ADR-0020-scheduled-work-is-a-driver-not-a-resource.md) — why cron
   fires for real in dev.
-- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) /
+- [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) /
   [ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md) /
   [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)
   — the secret/need/source model dev's value-sourcing policy plugs into.

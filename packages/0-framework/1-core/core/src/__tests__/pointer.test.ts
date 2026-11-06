@@ -77,13 +77,13 @@ describe('the kind of pointer a source is', () => {
     expect(kinds(pointer('K'))).toEqual([true, false]);
   });
 
-  test('paramSource() without a pool key is a plain pointer, or a secret pointer when redacted', () => {
+  test('paramSource() without a configuration key is a plain pointer, or a secret pointer when redacted', () => {
     expect(kinds(paramSource({}))).toEqual([false, true]);
     expect(kinds(paramSource({}, { redacted: true }))).toEqual([true, false]);
   });
 
-  test('paramSource() with a pool key is no pointer', () => {
-    expect(kinds(paramSource({}, { poolKey: 'X' }))).toEqual([false, false]);
+  test('paramSource() with a configuration key is no pointer', () => {
+    expect(kinds(paramSource({}, { configurationKey: 'X' }))).toEqual([false, false]);
   });
 
   test('the kind is data on the source, under the registered symbol prisma:pointer', () => {

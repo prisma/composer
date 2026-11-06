@@ -122,6 +122,7 @@ async function runConverge(
     cwd: workingDirectory,
     stage: 'test',
     env: {},
+    redactedValues: [],
   };
   const outcome = await deps.alchemy(invocation);
   const reproduce = reproduceCommand(invocation, outcome);

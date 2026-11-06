@@ -190,7 +190,8 @@ describe('the deploy preflight', () => {
     runPreflight(
       {
         graph,
-        pools: { config: {}, secrets: {} },
+        configuration: {},
+        secrets: {},
         container: new PrismaCloudContainer(
           { appName: 'shop', environment: 'production' },
           'proj_1',

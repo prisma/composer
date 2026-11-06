@@ -9,9 +9,10 @@ A PR delivers one capability a user would notice, so slices whose limits the nex
 - **S1** is done: [slices/s1-spike/report.md](slices/s1-spike/report.md).
 - **S2** is merged: prisma/composer#401.
 - **S3 to S8** are merged as one PR: prisma/composer#403.
-- **S9** is built and in review as prisma/composer#412. **S10** is built in the same PR.
-- **S11 to S13** are not built. [deferred.md](deferred.md) lists items S10 must cover.
-- **S14 to S17** are designed with Will before they are specified.
+- **S9 and S10** are built and in review as prisma/composer#412.
+- **S11 to S13** are built on the git branch `claude/module-input-s11-s13`, not yet opened as a PR, through four review rounds. The two changes of 2026-11-05 are done and in review: the known secrets are the values the graph names (S13 below), and the engine-based redaction of Alchemy's output is gone, because Will dropped prisma/prisma-cli#383. The PR then waits only for #412 to merge.
+- **S18**, platform variables, was designed with Will on 2026-11-05 ([design.md](design.md) sections 5 and 7). It is specified next and built after S11 to S13 merge. It absorbs S15, S16 and S17.
+- **S14** is designed with Will before it is specified.
 
 ## S1. Spike: an input field as an opaque typed value
 
@@ -27,7 +28,7 @@ Both return values, and so do `generatedParam()` and `serviceOrigin()`. Deploy p
 
 ## S4. Config adapters and the root's input
 
-The `config` and `secrets` lists on the `composer` section, each defaulting to `[environmentVariables()]`; `dotenv()`; the root declares `input`, bound to the app configuration and checked before anything is created; `envParam()` reads the app configuration; deploy and dev preflight fill `envSecret()` from the app secrets. Built on `claude/module-input-s4`. It names the app configuration and the app secrets "pools" in code, lists `dotenv()`'s four files itself, and has the second process run the adapters again; S11 and S12 change these.
+The `config` and `secrets` lists on the `composer` section, each defaulting to `[environmentVariables()]`; `dotenv()`; the root declares `input`, bound to the app configuration and checked before anything is created; `envParam()` reads the app configuration; deploy and dev preflight fill `envSecret()` from the app secrets. Built on `claude/module-input-s4`. It gives the app configuration and the app secrets older names in code, such as `configPool`, lists `dotenv()`'s four files itself, and has the second process run the adapters again; S11 and S12 change these.
 
 ## S5. Migrate and remove the old slots
 
@@ -59,27 +60,35 @@ The body's `input` carries a brand that every binding type refuses, so passing t
 
 ## S12. The second process reads a configuration file
 
-The first process writes a configuration file beside the generated stack file, mode 0600, holding the root's real values at the paths its body names and the values of the names `envParam()` reads. It deletes the file when the deploy ends, whether it succeeds or fails. The deploy's and `destroy`'s second processes read the file and run no adapter, and do not run the root's schema again. The first process passes the list of node addresses it checked, and the second process refuses to deploy a different graph. `prisma dev`'s second process reads the same kind of file, and receives the app secrets its local services need through its environment, never through a file. The "pool" names in code take the names "the app configuration" and "the app secrets", and the glossary's pool and adapter entries are replaced by "the app configuration", "the app secrets", "config adapter" and "secrets adapter".
+The first process writes a configuration file beside the generated stack file, mode 0600, holding the root's real values at the paths its body names and the values of the names `envParam()` reads. It deletes the file when the deploy ends, whether it succeeds or fails. The deploy's and `destroy`'s second processes read the file and run no adapter, and do not run the root's schema again. The first process passes the list of node addresses it checked, and the second process refuses to deploy a different graph. `prisma dev`'s second process reads the same kind of file, and receives the app secrets its local services need through its environment, never through a file. The old names in code take the names "the app configuration" and "the app secrets", and the glossary's old entries for the two lists and the adapter are replaced by "the app configuration", "the app secrets", "config adapter" and "secrets adapter".
 
 ## S13. Composer redacts every secret it knows
 
-Everywhere Composer prints, it redacts every value under a name an `envSecret()` in the graph names, in the app configuration or the app secrets, and every value a project's own secrets adapters return when it writes a `secrets` list, at any length. That covers errors, adapter failures, the second process's failure cause, and the second process's output, which Composer now reads through a pipe, holding back enough characters to catch a secret split across two chunks. An end-to-end test searches the configuration file, the stack file, the deploy report, the errors and the second process's output for a known secret value. Manual QA of the examples against real targets, including a root `input` from `.env.<environment>` in `prisma deploy` and `prisma dev`.
+Everywhere Composer prints, it redacts every known secret, at any length. The known secrets are the values under the names the graph's `envSecret()`s pass, in the app secrets or the app configuration, and from S18 under the root's `secret()` field names too. A value in the lists that nothing names is not a known secret, so the recommended `secrets: [dotenv(), environmentVariables()]` redacts nothing it should not. `prisma dev` compares the whole app secrets between rebuilds to notice a change, which reads them without making them known secrets. (The first build counted every value a written `secrets` list returned; with the recommended setup that refused every root input field and blanked every `1` in the output, review finding F16. Will ruled on 2026-11-05 that the lists hold what Composer may carry, read only at the root's boundary.) That covers errors, adapter failures and the second process's failure cause. The second process's own output is not redacted: that needed an engine change (prisma/prisma-cli#383), dropped because the Alchemy integration moves to the programmatic API soon. That work must redact Alchemy's output itself. An end-to-end test searches the configuration file, the stack file, the deploy report, the errors and the second process's output for a known secret value. Manual QA of the examples against real targets, including a root `input` from `.env.<environment>` in `prisma deploy` and `prisma dev`.
 
 ## S14. `prisma dev` watches its inputs
 
 Adapters may report that their values changed, and `dotenv()` watches its files. `prisma dev` applies the new values instead of pausing. Designed and specified after S13.
 
-## S15. A developer's local secret does not reach another environment
+## S15, S16 and S17 are absorbed by S18
 
-Design a solution for this case: deploying production from a machine whose `.env.local` holds a test key fills a missing production variable with that key. Designed with Will after S13.
+S15 (a developer's local secret reaching another environment) is settled because the deploy no longer fills platform variables. S16 (secrets get a home of their own) is settled because only the values the root names are known secrets. S17 (`secret(schema)`) ships inside S18, because platform secrets and carried secrets both need it.
 
-## S16. Secrets get a home of their own
+## S18. Platform variables are nodes, and the root's input may hold a secret
 
-Give secrets a home distinct from plain values, so a `.env` file no longer mixes the two, and redaction stops covering the plain values that share a file with secrets. Designed with Will after S13.
+Design: [design.md](design.md) sections 5, 7, 8 and 9, settled 2026-11-05. One PR, after S11 to S13 merge.
 
-## S17. A secret field wraps its schema, as `field()` does
+- `@prisma/composer-prisma-cloud` exports `platformVariable({ name, parse? })` and `platformSecret({ name, parse? })`, resources whose `value` is a runtime value. The Prisma Cloud target creates a subscription of each service to each variable its input points at, and sets no value. The deploy report lists the variables with no entry on the platform. The local target fills a platform variable from the app configuration or the app secrets under its `name`, and validates the value against `parse`.
+- `parse` takes a Standard JSON Schema; its `jsonSchema.input()` travels in a `$platform` marker in the input document; Load refuses a transforming or unencodable schema, and two nodes for one `name` with different schemas. Boot decodes the text as JSON unless the schema's type is `string`, validates it against the JSON Schema with a validator Composer ships, then hands it to the service's schema. The platform validates nothing.
+- `secretString()` becomes `secret(inner)`, in both entry points.
+- A root `secret()` field is filled from the app secrets and reaches the second process in `PRISMA_COMPOSER_NAMED_SECRETS`; the deploy sets it on the service as a secret variable. A name in both the app configuration and the app secrets for a root field fails the deploy. `destroy` binds it to a stand-in box.
+- Preflight stops filling platform variables on deploy and dev. The Prisma Cloud target stops stripping a service's environment at boot: a service sees the project's variables plus what Composer sets on it directly. The local target keeps giving each service only what its input points at.
+- `envSecret()` and `envParam()` are deprecated as shortcuts.
+- The slice decides whether the deploy writes the resolved binding instead of the schema's output into the input document, so a transforming `field()` schema works for a literal.
+- Decision records rewritten in full: ADR-0029, ADR-0032, ADR-0042, ADR-0058 and ADR-0062. New glossary entries: platform variable, platform secret, subscription, carried secret, known secrets.
+- Breaking: `secretString()` removed; preflight no longer fills a variable, so a project that relied on `deploy` seeding `envSecret()` values sets them on the platform instead.
 
-`secretString()` becomes `secret(schema)`, following the `field()` pattern: `secret(type('string'))` for ArkType and `secret(z.string())` for Zod. The wrapped schema checks the secret's content at boot, when the real value exists; at deploy the field accepts a secret pointer or a secret box. The name is settled when the slice is designed. `secretString()` is removed, which is a breaking change for every schema with a secret field. Designed after S16.
+Nothing in it waits for the platform. When the platform ships subscriptions, the target records each service's subscriptions and the "not set" report comes from the platform instead of the project's variable names.
 
 ## Close-out
 

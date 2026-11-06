@@ -153,22 +153,24 @@ const devPreflightWarnings = async (graph: ReturnType<typeof Load>, environment:
     graph,
     container: fakeContainer(environment),
     environment,
-    pools: { config, secrets },
+    configuration,
+    secrets,
     warn: (message) => warnings.push(message),
   });
   return warnings;
 };
 
-/** What the dev command's adapters returned: the secrets pool and the config pool. */
+/** What the dev command's adapters returned: the app secrets and the app configuration. */
 let secrets: Record<string, string> = {};
-let config: Record<string, unknown> = {};
+let configuration: Record<string, unknown> = {};
 
 const preflight = (graph: ReturnType<typeof Load>, environment = 'dev') =>
   runDevPreflight({
     graph,
     container: fakeContainer(environment),
     environment,
-    pools: { config, secrets },
+    configuration,
+    secrets,
   });
 
 /** The folder `prisma dev --environment <name>` keeps its local copy in. */
@@ -219,14 +221,14 @@ describe('prisma dev preflight', () => {
     previousCwd = process.cwd();
     process.chdir(cwd);
     secrets = {};
-    config = {};
+    configuration = {};
   });
 
   afterEach(() => {
     process.chdir(previousCwd);
     fs.rmSync(cwd, { recursive: true, force: true });
     secrets = {};
-    config = {};
+    configuration = {};
   });
 
   test('a required secret that is unset stops dev, naming the variable, the service and both fixes', async () => {
@@ -355,7 +357,7 @@ describe('prisma dev preflight', () => {
   });
 
   test('an env-sourced param that is set is fingerprinted for the alchemy process', async () => {
-    config['APP_PORT'] = '3000';
+    configuration['APP_PORT'] = '3000';
 
     const childEnv = transported(await preflight(paramGraph()));
 
@@ -363,7 +365,7 @@ describe('prisma dev preflight', () => {
   });
 
   test('the fingerprint key is created once, readable only by its owner, and reused', async () => {
-    config['APP_PORT'] = '3000';
+    configuration['APP_PORT'] = '3000';
     const keyPath = path.join(environmentDir(cwd), 'fingerprint.key');
 
     const first = devPayload(transported(await preflight(paramGraph())));
@@ -377,7 +379,7 @@ describe('prisma dev preflight', () => {
   });
 
   test('a lost fingerprint key only changes the fingerprints', async () => {
-    config['APP_PORT'] = '3000';
+    configuration['APP_PORT'] = '3000';
     const keyPath = path.join(environmentDir(cwd), 'fingerprint.key');
 
     const first = devPayload(transported(await preflight(paramGraph())));
@@ -404,7 +406,7 @@ describe('prisma dev preflight', () => {
   });
 
   test('a damaged fingerprint key stops dev with the file and how to fix it', async () => {
-    config['APP_PORT'] = '3000';
+    configuration['APP_PORT'] = '3000';
     const devDir = environmentDir(cwd);
     fs.mkdirSync(devDir, { recursive: true });
     fs.writeFileSync(path.join(devDir, 'fingerprint.key'), 'short');
@@ -442,7 +444,7 @@ describe('prisma dev preflight', () => {
   });
 
   test('each environment has its own fingerprint key, in its own folder', async () => {
-    config['APP_PORT'] = '3000';
+    configuration['APP_PORT'] = '3000';
 
     const versions = [];
     for (const environment of ['dev', 'test', 'feature/x']) {
@@ -467,7 +469,7 @@ describe('prisma dev preflight', () => {
     }
   });
 
-  test("a secret in the secrets pool satisfies prisma dev, and its fingerprint is the pool value's", async () => {
+  test("a secret in the app secrets satisfies prisma dev, and its fingerprint is the app secrets value's", async () => {
     secrets['STRIPE_SECRET_KEY'] = 'sk_pool';
     process.env['STRIPE_SECRET_KEY'] = 'sk_shell';
     try {
@@ -484,14 +486,14 @@ describe('prisma dev preflight', () => {
     }
   });
 
-  test('an env-sourced param is read from the config pool', async () => {
+  test('an env-sourced param is read from the app configuration', async () => {
     process.env['APP_PORT'] = '3000';
     try {
       expect(await preflightError(paramGraph())).toContain(
         'APP_PORT  (required by service "app.web")',
       );
 
-      config['APP_PORT'] = '3000';
+      configuration['APP_PORT'] = '3000';
       const payload = devPayload(transported(await preflight(paramGraph())));
 
       expect([...payload.pointerVersions.keys()]).toEqual(['APP_PORT']);

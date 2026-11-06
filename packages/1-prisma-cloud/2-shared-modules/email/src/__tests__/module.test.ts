@@ -30,7 +30,7 @@ const senderConsumer = () =>
 const outboxConsumer = () =>
   compute({ name: 'outboxConsumer', deps: { outbox: rpc(emailOutboxContract) }, build });
 
-const configPool = { EMAIL_FROM: 'shop@example.com' };
+const configuration = { EMAIL_FROM: 'shop@example.com' };
 
 const emailInput = () => ({
   deliveryMode: 'none' as const,
@@ -47,7 +47,7 @@ function rootWithEmail() {
 
 describe('email()', () => {
   test('Loads the db resource and the email service, wired to each other', () => {
-    const graph = Load(rootWithEmail(), { configPool });
+    const graph = Load(rootWithEmail(), { configuration });
     const byId = new Map(graph.nodes.map((n) => [n.id, n.node]));
     const typeOf = (id: string): string | undefined => {
       const n = byId.get(id);
@@ -65,7 +65,7 @@ describe('email()', () => {
   });
 
   test('the db resource is not exposed to a consumer — only send/outbox are', () => {
-    const graph = Load(rootWithEmail(), { configPool });
+    const graph = Load(rootWithEmail(), { configuration });
     // No edge targets anything outside "root.email.*" from "root.email.db" directly —
     // the only consumer of the db is the service itself.
     const dbEdges = graph.edges.filter((e) => e.from === 'root.email.db');
@@ -75,7 +75,7 @@ describe('email()', () => {
   });
 
   test("the module's input reaches the service's input: a literal and an envParam() as their values, envSecret() as its source", () => {
-    const graph = Load(rootWithEmail(), { configPool });
+    const graph = Load(rootWithEmail(), { configuration });
     const binding = serviceBindingOf(graph.inputBindings);
     expect(binding['deliveryMode']).toBe('none');
     expect(binding['from']).toBe('shop@example.com');
@@ -90,14 +90,14 @@ describe('email()', () => {
       provision(email(), { id: 'email', input: { ...emailInput(), deliveryMode: 'smtp' } });
       return {};
     });
-    const graph = Load(root, { configPool });
+    const graph = Load(root, { configuration });
     expect(serviceBindingOf(graph.inputBindings)['deliveryMode']).toBe('smtp');
   });
 
   test("the module's schema refuses a missing from before the service's does", () => {
     let message: string | undefined;
     try {
-      Load(rootWithEmail(), { configPool: {} });
+      Load(rootWithEmail(), { configuration: {} });
     } catch (error) {
       message = (error as Error).message;
     }
@@ -114,7 +114,7 @@ describe('email()', () => {
       });
       return {};
     });
-    const graph = Load(root, { configPool });
+    const graph = Load(root, { configuration });
     expect(serviceBindingOf(graph.inputBindings)['deliveryUrl']).toBe('http://localhost:8025');
   });
 
@@ -128,7 +128,7 @@ describe('email()', () => {
       return {};
     });
 
-    const graph = Load(root, { configPool });
+    const graph = Load(root, { configuration });
     expect(graph.edges).toContainEqual({
       from: 'root.email.service',
       to: 'root.sender',
@@ -148,7 +148,7 @@ describe('email()', () => {
       return {};
     });
 
-    const graph = Load(root, { configPool });
+    const graph = Load(root, { configuration });
     expect(graph.edges).toContainEqual({
       from: 'root.email.service',
       to: 'root.sender',
@@ -175,7 +175,7 @@ describe('email()', () => {
       return {};
     });
 
-    const graph = Load(root, { configPool });
+    const graph = Load(root, { configuration });
     const byId = new Map(graph.nodes.map((n) => [n.id, n.node]));
     // Address generation is driven by the provision id.
     expect([...byId.keys()]).toContain('root.mailInstance.service');

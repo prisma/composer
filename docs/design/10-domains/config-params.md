@@ -14,7 +14,7 @@ read back at boot. Rests on
 deploy target owns serialization),
 [ADR-0021](../90-decisions/ADR-0021-params-are-read-through-config-not-load.md)
 (params are read through `config()`),
-[ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md) (a secret
+[ADR-0029](../90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) (a secret
 is carried by name only, never by value), and
 [ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)
 (a param binds at provision — a literal or an env source).
@@ -96,7 +96,7 @@ An **env-sourced** param mirrors the secrets rail (§ Secrets): the stored row i
 a pointer to the platform variable's NAME (discriminated from a JSON-encoded
 literal by the `@composer-param-pointer:` value prefix, which no JSON output
 can start with), deploy preflight verifies the name exists per environment (filling
-it from the config pool when absent, failing early otherwise), and boot does
+it from the app configuration when absent, failing early otherwise), and boot does
 the double-lookup — pointer, then platform variable. The differences from a
 secret are deliberate: the value reads back through `config()`, **unredacted**;
 the platform variable's **raw string** is handed to the param's own schema (no
@@ -111,7 +111,7 @@ from: a **literal** (in the binding); an **`envParam`**
 ([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md),
 operator-supplied per environment, read at boot, **never in deploy state**); an
 **`envSecret`**
-([ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md), the
+([ADR-0029](../90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md), the
 platform secret store, redacted, **never in deploy state** — the only secret);
 and a **generated param**
 ([ADR-0042](../90-decisions/ADR-0042-service-input-is-one-standard-schema.md) §
@@ -141,7 +141,7 @@ return one object that is both the target's source and a
 
 | Where | `envParam()` | `envSecret()` | `generatedParam()` | `serviceOrigin()` |
 | --- | --- | --- | --- | --- |
-| A service's `input` binding | its string, read at serialize from the config pool; unset or empty leaves the key out | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
+| A service's `input` binding | its string, read at serialize from the app configuration; unset or empty leaves the key out | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
 | A service's `params` | kept; pointer row, as today | kept (fails at deploy, as today) | kept (fails at deploy, as today) | kept (fails at deploy, as today) |
 | A module's `input` binding | its string; unset or empty leaves the key out | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
 | A `resolve()` dependency | its string; unset or empty fails | refused | refused | refused |
@@ -158,7 +158,7 @@ unchanged.
 Where core needs a source's real value, in a module's input, a `resolve()`
 dependency or a resource's props, the source decides what that is.
 `envParam('NAME')` is deploy-time: its real value is the value of the variable
-`NAME` at deploy, read from the config pool Load is given, which the `config` adapters fill, by default from the process environment; an unset or empty variable
+`NAME` at deploy, read from the app configuration Load is given, which the `config` adapters fill, by default from the process environment; an unset or empty variable
 gives no real value. `envSecret('NAME')` is runtime: the deploy never holds the
 secret, so its real value at deploy is a pointer, the source itself, which the
 service dereferences at boot. `generatedParam()` and `serviceOrigin()` are
@@ -297,7 +297,7 @@ The round trip carries only the name, never the value:
    names.
 2. **Preflight.** Before Alchemy runs, the deploy verifies every bound name
    exists on the platform for the target environment's class/branch, filling a name
-   from the secrets pool when the platform lacks it (a direct write-only POST,
+   from the app secrets when the platform lacks it (a direct write-only POST,
    never an Alchemy resource, never overwriting an existing value). A name
    missing from both fails the deploy, listing exactly what's absent.
 3. **Pointer row.** The target writes a pointer per secret field — the generated key
@@ -317,7 +317,7 @@ user-provisioned platform variable.
 at creation and never re-resolves it, so changing a secret's value is the
 platform's own semantics: `PATCH` the value, then create a new version.
 
-See [ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md) for the full design and its
+See [ADR-0029](../90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) for the full design and its
 alternatives.
 
 ## Introspection
@@ -349,7 +349,7 @@ Three lines the model holds everywhere:
   [ADR-0019](../90-decisions/ADR-0019-the-target-owns-config-serialization.md),
   [ADR-0021](../90-decisions/ADR-0021-params-are-read-through-config-not-load.md) —
   the decisions this documents.
-- [ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md) — the
+- [ADR-0029](../90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) — the
   secrets model this document's § Secrets summarizes.
 - [ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)
   — provision-time binding and env-sourcing, summarized in § Binding a param at
