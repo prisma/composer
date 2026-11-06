@@ -24,7 +24,7 @@ export interface TransportedPreflight {
   readonly absentSecrets: ReadonlySet<string>;
 }
 
-/** What the deploy preflight hands the alchemy process: the `updatedAt` of the row the platform resolves for each platform variable that has one. */
+/** What the deploy preflight hands the second process: the `updatedAt` of the row the platform resolves for each platform variable that has one. */
 export interface DeployPreflightPayload {
   readonly updatedAt: ReadonlyMap<string, string>;
 }

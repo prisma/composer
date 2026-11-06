@@ -64,7 +64,7 @@ const fakePlatform = (updatedAt: string | undefined): ManagementApiClient =>
 /** The pointed platform variables serialize collected for this service — the input document points at the rotating secret. */
 const pointers = ['STRIPE_SECRET_KEY'];
 
-/** The CLI process: run the real preflight against a platform that last wrote the secret at `updatedAt`, and hand its payload to the framework transport. */
+/** The first process: run the real preflight against a platform that last wrote the secret at `updatedAt`, and hand its payload to the framework transport. */
 async function cliProcess(updatedAt: string | undefined): Promise<Record<string, string>> {
   const result = await runPreflight(
     {

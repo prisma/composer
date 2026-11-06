@@ -27,6 +27,11 @@ export function preflightEnv(payloads: ReadonlyMap<string, string>): Record<stri
   for (const [extensionId, payload] of payloads) {
     if (payload.length === 0) continue;
     const varName = preflightEnvVarName(extensionId);
+    if (varName === PREFLIGHT_FINDINGS_ENV_VAR) {
+      throw new Error(
+        `Extension id "${extensionId}" maps to the preflight transport variable "${varName}", which carries the deploy preflight's findings — rename the extension.`,
+      );
+    }
     const owner = ownerByVarName.get(varName);
     if (owner !== undefined) {
       throw new Error(
@@ -121,17 +126,17 @@ function isPreflightFindings(value: unknown): value is PreflightFindings {
   );
 }
 
-/** The variable that carries every extension's deploy preflight findings from the CLI process to the alchemy process. */
-export const PREFLIGHT_FINDINGS_ENV_VAR = 'PRISMA_COMPOSER_DEPLOY_FINDINGS';
+/** The variable that carries every extension's deploy preflight findings from the first process to the second. No extension's preflight variable may take this name. */
+export const PREFLIGHT_FINDINGS_ENV_VAR = 'PRISMA_COMPOSER_PREFLIGHT_FINDINGS';
 
-/** The env entry the CLI sets on the alchemy process. It is always set, and empty when nothing was found, so a stale value in the shell never reads as this run's. */
+/** The env entry the CLI sets on the second process. It is always set, and empty when nothing was found, so a stale value in the shell never reads as this run's. */
 export function preflightFindingsEnv(findings: PreflightFindings): Record<string, string> {
   return {
     [PREFLIGHT_FINDINGS_ENV_VAR]: findings.unset.length === 0 ? '' : JSON.stringify(findings),
   };
 }
 
-/** The alchemy-process side: the findings the CLI carried, or none. Throws on a value that does not decode: that is a framework bug. */
+/** The second process's side: the findings the CLI carried, or none. Throws on a value that does not decode: that is a framework bug. */
 export function readPreflightFindings(
   env: Readonly<Record<string, string | undefined>>,
 ): PreflightFindings {
@@ -145,7 +150,7 @@ export function readPreflightFindings(
   }
   if (!isPreflightFindings(parsed)) {
     throw new Error(
-      `The deploy preflight's findings did not survive the transport into the alchemy process (${PREFLIGHT_FINDINGS_ENV_VAR}). This is a framework bug; re-running the deploy will not fix it.`,
+      `The deploy preflight's findings did not survive the transport into the second process (${PREFLIGHT_FINDINGS_ENV_VAR}). This is a framework bug; re-running the deploy will not fix it.`,
     );
   }
   return parsed;

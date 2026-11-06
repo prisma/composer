@@ -188,7 +188,7 @@ describe('an extension graph check', () => {
     expect(checked).toEqual([graph]);
   });
 
-  test('a graph check that refuses the graph fails the pipeline as COMPOSE.GRAPH_INVALID with its message, before registry coverage and assemble', async () => {
+  test('a graph check that refuses the graph fails the pipeline as COMPOSE.GRAPH_INVALID with its message and extension id, before registry coverage and assemble', async () => {
     let assembled = false;
     const uncovered = withCheck(() => {
       throw new GraphCheckError('the graph is wrong');
@@ -204,6 +204,7 @@ describe('an extension graph check', () => {
     await expect(run).rejects.toMatchObject({
       code: 'COMPOSE.GRAPH_INVALID',
       message: 'the graph is wrong',
+      meta: { extension: fixtureExtension.id },
     });
     expect(assembled).toBe(false);
   });

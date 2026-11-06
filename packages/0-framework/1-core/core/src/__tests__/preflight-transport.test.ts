@@ -55,6 +55,12 @@ describe('preflightEnv()', () => {
       ),
     ).toThrow(/"acme\.widgets" and "acme\/widgets" both map to the preflight transport variable/);
   });
+
+  test("an extension whose variable would be the findings' variable fails loudly", () => {
+    expect(() => preflightEnv(new Map([['findings', 'a']]))).toThrow(
+      /"findings" maps to the preflight transport variable "PRISMA_COMPOSER_PREFLIGHT_FINDINGS"/,
+    );
+  });
 });
 
 describe('readPreflightPayload()', () => {
@@ -86,7 +92,7 @@ describe('the deploy preflight findings', () => {
     commands: ["prisma project env add 'MAIL_KEY=<value>' --project 'proj' --role production"],
   };
 
-  test('reach the alchemy process as the CLI process wrote them', () => {
+  test('reach the second process as the first process wrote them', () => {
     expect(readPreflightFindings(preflightFindingsEnv({ unset: [unset] }))).toEqual({
       unset: [unset],
     });

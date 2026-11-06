@@ -248,7 +248,7 @@ schema whose leaves are wrapped. For another Standard Schema library,
 
 ### Platform variable
 
-A variable the operator sets on the platform and a service reads at boot. Today it is named with `envSecret()`, or with `envParam()` in a service's per-key params. Composer never writes its value, and reads it only inside the running service ([ADR-0064](../90-decisions/ADR-0064-a-platform-variable-is-set-on-the-platform-never-by-the-deploy.md)). In code: `PlatformVariableReader`, `UnsetPlatformVariable`, `PlatformVariableCheck`.
+A variable the operator sets on the platform and a service reads at boot. Today it is named with `envSecret()`, or with `envParam()` in a service's per-key params. A deploy neither writes nor reads its value: the platform hands it to the running service. Under `prisma dev`, the local target plays the platform's part: it reads the value from the app secrets or the app configuration and hands it to the local service. A variable has a class row (production or preview) and, on a preview environment, may have a branch row for one branch; the branch row wins ([ADR-0064](../90-decisions/ADR-0064-a-platform-variable-is-set-on-the-platform-never-by-the-deploy.md)). In code: `PlatformVariableReader`, `UnsetPlatformVariable`, `PlatformVariableCheck`.
 
 ### The app configuration
 

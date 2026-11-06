@@ -321,12 +321,22 @@ export interface ResolvedInputBinding {
 
 const NO_ABSENT_SECRETS: ReadonlySet<string> = new Set();
 
-const variableNameOf = (leaf: unknown): string =>
-  isSecretSource(leaf)
-    ? secretName(leaf, 'an array position')
-    : isEnvParamSource(leaf)
-      ? leaf.payload.name
-      : '(unknown)';
+function absentArrayPositionError(member: unknown, position: string, address: string): Error {
+  const key = `input binding key "${position}" of service "${address}"`;
+  if (isSecretSource(member)) {
+    return new Error(
+      `${key} reads the platform variable "${secretName(member, 'an array position')}", which has no value. An array position cannot be left out: set the variable, or bind a literal.`,
+    );
+  }
+  if (isEnvParamSource(member)) {
+    return new Error(
+      `${key} reads "${member.payload.name}" from the app configuration, which has no value for it. An array position cannot be left out: set it where a \`config\` adapter reads it, or bind a literal.`,
+    );
+  }
+  return new Error(
+    `${key} resolved to no value, but only envSecret() and envParam() can. This is a framework bug.`,
+  );
+}
 
 /** How `resolveInputBinding`, `serializeInput` and `inputValidationFailure` read the environment and which secrets they leave out. */
 export interface SerializeInputOptions {
@@ -447,9 +457,7 @@ export function resolveInputBinding(
       return value.map((member, index) => {
         const resolvedMember = walk(member, path === '' ? String(index) : `${path}.${index}`);
         if (resolvedMember === ABSENT) {
-          throw new Error(
-            `input binding key "${path}[${index}]" of service "${address}" reads the platform variable "${variableNameOf(member)}", which has no value. An array position cannot be left out: set the variable, or bind a literal.`,
-          );
+          throw absentArrayPositionError(member, `${path}[${index}]`, address);
         }
         return resolvedMember;
       });

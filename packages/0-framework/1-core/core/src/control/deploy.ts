@@ -503,9 +503,9 @@ export function deploymentResult(
   app: string,
   graph: Graph,
   entries: readonly { address: string; entities: readonly DeployedEntity[] }[],
-  env: Readonly<Record<string, string | undefined>>,
+  findings: PreflightFindings,
 ): DeploymentResult {
-  return { app, nodes: joinDeployment(graph, entries), findings: readPreflightFindings(env) };
+  return { app, nodes: joinDeployment(graph, entries), findings };
 }
 
 function missingBundleError(id: NodeId): LowerError {
@@ -699,6 +699,7 @@ export function lowering(
     // framework transport (the CLI parent wrote it; this is the alchemy
     // child) — read-only for the rest of this lowering.
     const containers = deserializeContainers(config.extensions, process.env);
+    const findings = readPreflightFindings(process.env);
     const lowered = new Map<NodeId, Outputs>();
     // Each node's reported entities, in topo order — the loop is the only
     // party that holds both the node's identity and what it became. Collected
@@ -891,7 +892,7 @@ export function lowering(
           // strings here. The graph rides in on the closure, never in the
           // input: the plan hashes the resolved input, and a node carries
           // functions and Standard Schemas.
-          report(deploymentResult(opts.name, graph, input.entries, process.env));
+          report(deploymentResult(opts.name, graph, input.entries, findings));
         }),
       );
       // `Date.now()` forces the report to run on an otherwise unchanged

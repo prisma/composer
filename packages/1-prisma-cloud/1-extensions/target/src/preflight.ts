@@ -39,7 +39,7 @@ import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
 import { envParamBindings, inputSecretNames } from './preflight-names.ts';
 import { checkPublicUrls } from './public-url.ts';
-import { type MissingVariables, paramIsRequired, requiredVariables } from './required-variables.ts';
+import { checkRequirements, type MissingVariables, paramIsRequired } from './required-variables.ts';
 import { secretName } from './secret.ts';
 
 type EnvClass = 'production' | 'preview';
@@ -243,19 +243,29 @@ function requiredError(
   commandsFor: (name: string) => readonly string[],
 ): Error {
   const names = [...new Set(required.flatMap((entry) => entry.names))];
-  const listed = new Set<string>();
-  const entries = required.filter((entry) => {
+  const reasons = new Map<string, string[]>();
+  const groups: MissingVariables[] = [];
+  for (const entry of required) {
     const [only] = entry.names;
-    if (entry.names.length !== 1 || only === undefined) return true;
-    if (listed.has(only)) return false;
-    listed.add(only);
-    return true;
-  });
-  const lines = entries.map((entry) =>
-    entry.names.length === 1
-      ? `  - ${entry.names[0]}${readersText(readers.get(entry.names[0] ?? '') ?? [])}`
-      : `  - some of ${entry.names.join(', ')}  (service "${entry.serviceAddress}" needs some of them)`,
-  );
+    if (entry.names.length !== 1 || only === undefined) {
+      groups.push(entry);
+      continue;
+    }
+    const why = reasons.get(only) ?? [];
+    if (entry.decidedBy === 'rule') {
+      why.push(`      required by service "${entry.serviceAddress}": ${entry.message}`);
+    }
+    reasons.set(only, why);
+  }
+  const lines = [
+    ...[...reasons].map(([name, why]) =>
+      [`  - ${name}${readersText(readers.get(name) ?? [])}`, ...why].join('\n'),
+    ),
+    ...groups.map(
+      (entry) =>
+        `  - some of ${entry.names.join(', ')}  (service "${entry.serviceAddress}" needs some of them: ${entry.message})`,
+    ),
+  ];
   const countLine =
     names.length === 1
       ? '1 platform variable a service needs has no value:'
@@ -409,7 +419,7 @@ export async function runPreflight(
     const unsetHere = serviceNames.filter((name) => unset.has(name));
     if (unsetHere.length === 0) continue;
     const node = serviceNodeAt(input.graph, serviceAddress);
-    const decided = requiredVariables(
+    const decided = checkRequirements(
       node,
       serviceAddress,
       binding,
@@ -442,6 +452,7 @@ export async function runPreflight(
         names: [param.name],
         serviceAddress: param.serviceAddress,
         message: `per-key param "${param.param}" has no default and is not optional`,
+        decidedBy: 'rule',
       });
     }
   }

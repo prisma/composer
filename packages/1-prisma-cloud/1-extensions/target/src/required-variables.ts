@@ -12,9 +12,11 @@ export interface MissingVariables {
   readonly names: readonly string[];
   readonly serviceAddress: string;
   readonly message: string;
+  /** `schema` when the service's schema failed without them; `rule` when a rule outside the schema requires them. */
+  readonly decidedBy: 'schema' | 'rule';
 }
 
-/** The verdict on a service's unset variables. `markers` are the input document's `$platform` markers. */
+/** The verdict on a service's unset variables. `markers` are the input document's `$platform` markers, returned so the caller need not serialize the input again. */
 export type RequirementCheck =
   | { readonly kind: 'invalid'; readonly message: string }
   | {
@@ -33,7 +35,7 @@ const ARRAY_POSITION_MESSAGE =
  * each one alone left out, and the ones whose absence alone fails are
  * required. When none fails alone, the service needs some of them.
  */
-export function requiredVariables(
+export function checkRequirements(
   node: ServiceNode,
   serviceAddress: string,
   binding: unknown,
@@ -54,6 +56,7 @@ export function requiredVariables(
     names: [name],
     serviceAddress,
     message: ARRAY_POSITION_MESSAGE,
+    decidedBy: 'rule',
   }));
   const rest = unset.filter((name) => !inArray.has(name));
   const checked = (found: readonly MissingVariables[]): RequirementCheck => ({
@@ -73,9 +76,15 @@ export function requiredVariables(
       env,
       absentSecrets: new Set([name]),
     });
-    if (message !== undefined) alone.push({ names: [name], serviceAddress, message });
+    if (message !== undefined) {
+      alone.push({ names: [name], serviceAddress, message, decidedBy: 'schema' });
+    }
   }
-  return checked(alone.length > 0 ? alone : [{ names: rest, serviceAddress, message: withoutAll }]);
+  return checked(
+    alone.length > 0
+      ? alone
+      : [{ names: rest, serviceAddress, message: withoutAll, decidedBy: 'schema' }],
+  );
 }
 
 /** A per-key param is required when it has no default and is not optional. */

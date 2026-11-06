@@ -432,9 +432,7 @@ example `bun destroy-staging.ts`, or `node destroy-staging.ts` on a supported No
 
 The three teardown shapes differ in what happens to state. Destroying any environment other than production removes its resources, then deletes its Branch — and the Branch takes the environment's deploy state with it. Destroying **production** removes the resources and empties production's deploy state as it goes, but the production Branch survives, so an emptied state scope remains until the Project itself is removed. Deleting the **Project** (below, or from the Console) removes every Branch and all state in one stroke. Destroy never creates: tearing down an environment that was never deployed fails with "nothing deployed" rather than provisioning one first.
 
-Destroying production also removes the app's Project once nothing is left in
-it, so hand-run stacks don't pile up as empty Projects in your workspace. If
-the Project still holds another environment's resources, it's left in place.
+Destroying production also removes the app's Project, so hand-run stacks don't pile up as empty Projects in your workspace. If the Project still holds another environment's resources, it's left in place. Removing the Project deletes every platform variable set on it, so set them again after the next deploy creates the Project.
 
 ## CI
 

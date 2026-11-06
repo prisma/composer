@@ -14,6 +14,7 @@ Each needs a Management API change. None blocks this project (design section 3).
 
 ## Later Composer work
 
+- **Destroying production deletes the operator's platform variables.** Destroying an app's production environment deletes its Prisma Cloud project, and with it every variable the operator set; the platform never returns a value, so an operator who kept no copy must make a new secret. Options: keep the project when it holds rows that are not Composer's, or warn before deleting. Waits because destroy's behaviour is not this slice's and needs its own decision.
 - **An author-declared per-reader variable,** one that maps to the service scope the platform is expected to add, so that two readers of one name are guaranteed different values. Not built: where a value lives is the operator's choice on the platform, and nobody has a case that needs the author to force it. Wait for a real case.
 - **A warning when the app names a variable another module expects under a different name.** Not needed: the deploy report lists every name with its readers, so a module wired to the wrong name shows up there.
 - **An edge kind for "a service reads a platform variable".** Core's edges are dependencies (ADR-0063 names two relationships: depends on, exposes). The reads relation is recorded as a list beside each service's binding, not as an edge, because adding an edge kind changes core's graph types and the platform's edge families at once. Reason to wait: nothing reads the relation as an edge yet; the deploy report and errors read the list.

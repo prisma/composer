@@ -1179,7 +1179,7 @@ describe('deploy() step events', () => {
     expect(result.value.durationMs).toBeGreaterThanOrEqual(0);
   });
 
-  test("the deploy preflight's findings reach the alchemy process on the framework's own variable", async () => {
+  test("the deploy preflight's findings reach the second process on the framework's own variable", async () => {
     const app = makeAppDir('hello-findings');
     let childEnv: Readonly<Record<string, string | undefined>> = {};
 

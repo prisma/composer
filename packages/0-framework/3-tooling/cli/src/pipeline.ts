@@ -17,7 +17,7 @@ import {
   type RunAssembler,
 } from '@internal/assemble';
 import type { Graph } from '@internal/core';
-import { assertAppName, Load } from '@internal/core';
+import { assertAppName, GraphCheckError, Load } from '@internal/core';
 import type {
   AppConfiguration,
   AppSecrets,
@@ -230,5 +230,14 @@ export async function runPipeline(
 }
 
 function checkGraph(graph: Graph, extensions: readonly ExtensionDescriptor[]): void {
-  for (const extension of extensions) extension.checkGraph?.(graph);
+  for (const extension of extensions) {
+    try {
+      extension.checkGraph?.(graph);
+    } catch (error) {
+      if (error instanceof GraphCheckError) {
+        throw new GraphCheckError(error.message, { extension: extension.id });
+      }
+      throw error;
+    }
+  }
 }

@@ -52,6 +52,7 @@ describe('SecretRedaction', () => {
   });
 
   test('SecretRedaction keeps the <value> placeholder in a command that sets a variable whose name contains SECRET', () => {
+    // Built by setCommands in packages/1-prisma-cloud/1-extensions/target/src/preflight.ts.
     const command =
       "prisma project env add 'AUTH_SIGNING_SECRET=<value>' --project 'proj_1' --role production";
 

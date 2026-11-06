@@ -107,10 +107,25 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
     expect(absent).toEqual(['unset → NOT_SET_ANYWHERE_XYZ', 'empty → EMPTY_VALUE']);
   });
 
-  test('an array position whose variable has no value fails, naming the variable', () => {
+  test('an array position whose app configuration value is unset fails, sending the user to the app configuration', () => {
     expect(() =>
-      resolveInputBinding({ list: ['a', envParam('NOT_SET_ANYWHERE_XYZ')] }, '', { env: {} }),
-    ).toThrow(/reads the platform variable "NOT_SET_ANYWHERE_XYZ", which has no value/);
+      resolveInputBinding({ list: ['a', envParam('NOT_SET_ANYWHERE_XYZ')] }, 'shop.web', {
+        env: {},
+      }),
+    ).toThrow(
+      'input binding key "list[1]" of service "shop.web" reads "NOT_SET_ANYWHERE_XYZ" from the app configuration, which has no value for it. An array position cannot be left out: set it where a `config` adapter reads it, or bind a literal.',
+    );
+  });
+
+  test('an array position whose platform variable has no value fails, naming the variable', () => {
+    expect(() =>
+      resolveInputBinding({ list: [envSecret('UNSET_SECRET')] }, 'shop.web', {
+        env: {},
+        absentSecrets: new Set(['UNSET_SECRET']),
+      }),
+    ).toThrow(
+      'input binding key "list[0]" of service "shop.web" reads the platform variable "UNSET_SECRET", which has no value. An array position cannot be left out: set the variable, or bind a literal.',
+    );
   });
 
   test('a raw SecretBox (a secret VALUE) in the binding is rejected loudly', () => {

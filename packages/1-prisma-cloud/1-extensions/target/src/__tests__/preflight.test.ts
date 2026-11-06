@@ -611,7 +611,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
 
     expect(message).toStartWith(
       'Deploy failed. 2 platform variables a service needs have no value:\n' +
-        '  - some of KEY_A, KEY_B  (service "app.billing" needs some of them)\n\n' +
+        '  - some of KEY_A, KEY_B  (service "app.billing" needs some of them: one of a, b is required)\n\n' +
         'Set them on the platform, then deploy again:\n',
     );
   });
@@ -654,7 +654,10 @@ describe('runPreflight — reads existence and writes nothing', () => {
       preflightWith({ graph, ...production }, { client: fakeClient(state) }),
     );
 
-    expect(message).toContain('  - KEY_A  (read by service "app.ingest", field "keys.0")');
+    expect(message).toContain(
+      '  - KEY_A  (read by service "app.ingest", field "keys.0")\n' +
+        '      required by service "app.ingest": an array position reads it, and an array position cannot be left out\n',
+    );
   });
 
   test('an input that fails with every variable present is an invalid input, never blamed on a variable', async () => {
@@ -724,7 +727,10 @@ describe('runPreflight — reads existence and writes nothing', () => {
       preflightWith({ graph: requiredParamGraph(), ...production }, { client: fakeClient(state) }),
     );
 
-    expect(message).toContain('  - API_TOKEN  (read by service "app.web", per-key param "token")');
+    expect(message).toContain(
+      '  - API_TOKEN  (read by service "app.web", per-key param "token")\n' +
+        '      required by service "app.web": per-key param "token" has no default and is not optional\n',
+    );
   });
 
   test('a per-key envParam() with a row passes', async () => {

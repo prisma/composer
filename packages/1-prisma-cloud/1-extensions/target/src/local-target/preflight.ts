@@ -28,9 +28,9 @@ import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
 import { envParamBindings, envParamNotTextError, inputSecretNames } from '../preflight-names.ts';
 import { checkPublicUrls, publicUrlStrategies } from '../public-url.ts';
 import {
+  checkRequirements,
   type MissingVariables,
   paramIsRequired,
-  requiredVariables,
 } from '../required-variables.ts';
 
 const isSet = (value: string | undefined): value is string =>
@@ -115,7 +115,7 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
     }
     if (unset.length === 0) continue;
     const node = serviceNodeAt(input.graph, serviceAddress);
-    const decided = requiredVariables(node, serviceAddress, binding, unset, env);
+    const decided = checkRequirements(node, serviceAddress, binding, unset, env);
     if (decided.kind === 'invalid') {
       invalidInputs.push(`invalid input for service "${serviceAddress}": ${decided.message}`);
       continue;
