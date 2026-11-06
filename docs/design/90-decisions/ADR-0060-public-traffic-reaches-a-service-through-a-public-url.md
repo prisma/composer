@@ -4,6 +4,8 @@ Amended by [ADR-0063](ADR-0063-a-node-depends-on-an-interface-or-exposes-one.md)
 
 Amended 2026-10-29: the public URL node is a **resource** by kind, because a provider manages its lifecycle (a RoutingUrl), and a **driver** by role, because it depends on what it sends traffic to and nothing calls it. The scheduled-work decision ([ADR-0020](ADR-0020-scheduled-work-is-a-driver-not-a-resource.md)) contrasted a driver with a resource a consumer loads; it does not rule out a driver whose lifecycle is managed. Core builds "a node with its edge already set" by letting a resource declare dependency slots and wire them at construction, `resource({ inputs, deps })`, where `deps` names the producer wired into each slot as it does at `provision()`, and carry plain-data `props` (where `url` lives) that Load's second pass resolves. This amends the resource decision ([ADR-0013](ADR-0013-resources-are-provisioned-by-modules-deps-are-declarations.md)), which modelled a resource as a producer only, with no dependency slots of its own. The mechanism is specified in the public-URLs project's slice C1.
 
+Amended 2026-11-02: the identity parameter is `id`, not `name`. Readers think of a URL by its hostname, so a separate `name` on it reads as a label, but the hostname cannot be the URL's identity (see below). The parameter's only job is the node's stable identity: it is the node's default provision ID, so it sets the address and the `logicalId`, and changing it destroys and recreates the URL. `name` reads like a label that is safe to change; `id` says what it is. Two alternatives were rejected. Taking the identity from the URL fails because two public URLs can share a target or swap hostnames, and changing a hostname would recreate the node. Taking the identity from the target, with an optional `id`, is more complicated, and adding an `id` later to a URL that serves traffic would destroy and recreate it. Other node types keep `name` for now; renaming them is recorded as a follow-up in [`.drive/deferred.md`](../../../.drive/deferred.md).
+
 ## Decision
 
 A service is reachable from outside the application only through a **public URL**: a node in the module graph that sends traffic for one hostname to one service. The author provisions it where the hostname is decided, usually the root module.
@@ -22,17 +24,17 @@ import { publicUrl } from '@prisma/composer-prisma-cloud';
 
 export default module('shop', ({ provision }) => {
   const web = provision(webService);
-  provision(publicUrl({ name: 'site', url: 'shop.com', target: web.http }));
+  provision(publicUrl({ id: 'site', url: 'shop.com', target: web.http }));
 });
 ```
 
 The public URL node `shop.site` is wired to the connection `shop.web.http`, which the compute service `shop.web` exposes.
 
-`publicUrl({ name, url, target })` takes three plain parameters:
+`publicUrl({ id, url, target })` takes three plain parameters:
 
 - `target` is the HTTP connection a service exposes. Anything in the graph that is wired to that connection can send the service requests; a public URL is the internet, wired to it.
 - `url` is one of two strategies. `publicUrl.hostname('shop.com')` names the hostname to serve, and a bare string is shorthand for it. `publicUrl.prismaBuild()` says the service is reached at its `prisma.build` URL, the hostname the platform gives every service, and names none of its own. Leaving `url` out is an error.
-- `name` gives the node its address, `shop.site`, like any other node.
+- `id` is the node's default provision ID, so it gives the node its address, `shop.site`. An `id` passed to `provision()` overrides it, as it overrides a node's `name`. Changing the provision ID destroys the public URL and creates a new one. Errors raised while the node is built name the `id`; later errors name the address.
 
 The hostname usually differs per environment, so `url` is usually a `resolve()` value ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)):
 
@@ -42,7 +44,7 @@ const url = resolve([environment.name], ([name]) =>
   : name === 'staging' ? 'staging.shop.com'
   : publicUrl.prismaBuild());
 
-provision(publicUrl({ name: 'site', url, target: web.http }));
+provision(publicUrl({ id: 'site', url, target: web.http }));
 ```
 
 A service with no public URL is reached only by other services in the app.
@@ -57,7 +59,7 @@ A service with no public URL is reached only by other services in the app.
 
 ```ts
 const identity = provision(auth(), { /* … */ });
-provision(publicUrl({ name: 'authUrl', url, target: identity.api }));
+provision(publicUrl({ id: 'authUrl', url, target: identity.api }));
 ```
 
 `identity.admin` is a service RPC connection, not HTTP, so wiring a public URL to it fails the type check.

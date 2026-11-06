@@ -3683,7 +3683,7 @@ describe("prismaCloud().nodes['public-url'] — the public URL descriptor", () =
         typeof url === 'object' && 'resolvesTo' in url
           ? (resolve([environment.name], () => url.resolvesTo) as Url)
           : url;
-      provision(publicUrl({ name: 'site', url: value, target: svc.http }));
+      provision(publicUrl({ id: 'site', url: value, target: svc.http }));
       return {};
     });
 
@@ -3798,7 +3798,7 @@ describe("prismaCloud().nodes['public-url'] — the public URL descriptor", () =
     );
     const root = module('shop', ({ provision }) => {
       const front = provision(storefront);
-      provision(publicUrl({ name: 'site', url: 'shop.com', target: front.http }));
+      provision(publicUrl({ id: 'site', url: 'shop.com', target: front.http }));
       return {};
     });
     const before = recorded.customDomain.length;
