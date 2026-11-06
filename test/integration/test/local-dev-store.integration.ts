@@ -26,26 +26,24 @@
  *      after a cold start restarted catalog's RPC consumers too, even though
  *      nothing about them had changed.
  *
- *      Attempt 1 drives the CLI's own real chokidar-based watch loop: the
+ *      Both attempts drive the CLI's own real chokidar-based watch loop: the
  *      catalog build adapter declares `Bundle.watch: [runnable.source]` —
  *      the built artifact path itself (build.ts) — so touching
  *      `modules/catalog/dist/server.mjs` is exactly the file session 1's own
  *      running `prisma dev` process is already watching. The script
  *      only touches the file and polls the compute emulator for the new pid
  *      — it never calls assemble or alchemy itself; the running process's
- *      own debounce, re-assemble, and re-converge are what's under test.
- *      Attempt 2 is the direct-converge variant kept as a fallback assertion:
- *      the artifact is touched, the watch loop's own rebuild for that touch
- *      is awaited (the two would otherwise rewrite and read the same
- *      artifact directories at once), then the SAME dev stack file is
- *      re-converged directly with the real `alchemy` binary (matching
- *      local-dev.integration.ts's own pattern) — this re-hashes catalog's now-different bundle bytes and
- *      PUTs a fresh deployment for every service, letting the emulator's own
- *      (untouched) hash/env diffing decide which one(s) actually restart.
+ *      own debounce, re-assemble, and in-process re-converge are what's
+ *      under test. The converge PUTs a fresh deployment for every service,
+ *      letting the emulator's own hash/env diffing decide which one(s)
+ *      actually restart.
  *      Session 1's services are NEVER stopped in between (SIGINT is
  *      app-scoped and unconditionally restarts every service on the next
  *      redeploy — S3's own pinned "a stopped service always starts on
  *      redeploy" behavior — which would defeat this proof entirely).
+ *   A sub-module's `module.ts` is an app definition file: an edit to it
+ *      while dev runs is reported as needing a restart, and a later artifact
+ *      touch converges nothing (the app is imported once per process).
  *   3. Postgres persistence: a row is written directly against the real
  *      local Postgres URL (read from the postgres-main daemon's own
  *      database listing — the daemon owns instance state, REVISED —
@@ -73,11 +71,6 @@ import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
-import { Load } from '@prisma/composer';
-import { containerEnv, environmentVariables } from '@prisma/composer/config';
-import { nodeAddresses, secretsKeys } from '@prisma/composer/deploy';
-import { nodeBuild } from '@prisma/composer/node/control';
-import { KnownSecrets, prepareSecondProcess } from '@prisma/composer-cli/testing';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import { emulatorRegistryRoot } from '@prisma/composer-prisma-cloud/local-target';
 import { prismaBinDir } from './spawn-prisma.ts';
@@ -418,45 +411,73 @@ async function withSql<T>(url: string, fn: (sql: Bun.SQL) => Promise<T>): Promis
 const PROVING_PRODUCT_ID = 'proving-row';
 const APP_NAME = 'store';
 const catalogDist = path.join(storeDir, 'modules', 'catalog', 'dist', 'server.mjs');
-const DEV_STACK_FILE = path.join(storeDir, '.prisma-composer', 'dev', 'dev', 'alchemy.run.ts');
-const APP_CONFIGURATION_FILE = path.join(
-  storeDir,
-  '.prisma-composer',
-  'dev',
-  'dev',
-  'app-configuration-proving-script.json',
-);
+const DEV_DIR = path.join(storeDir, '.prisma-composer', 'dev', 'dev');
+const DEV_STACK_FILE = path.join(DEV_DIR, 'alchemy.run.ts');
 
-/** Walks up from `startDir` looking for `node_modules/.bin/alchemy` — same as local-dev.integration.ts's own helper. */
-function alchemyBin(startDir: string): string {
-  let dir = startDir;
-  for (;;) {
-    const candidate = path.join(dir, 'node_modules', '.bin', 'alchemy');
-    if (fs.existsSync(candidate)) return candidate;
-    const parent = path.dirname(dir);
-    if (parent === dir)
-      throw new Error(`could not find node_modules/.bin/alchemy above ${startDir}`);
-    dir = parent;
-  }
+const REAL_WATCH_TIMEOUT_MS = 30_000;
+const catalogModule = path.join(storeDir, 'modules', 'catalog', 'src', 'module.ts');
+
+/** The `--json` frames written after the first `from` characters of the session's log. */
+function framesAfter(session: DevSession, from: number): Record<string, unknown>[] {
+  return readLog(session.logPath)
+    .slice(from)
+    .split('\n')
+    .flatMap((line) => {
+      if (!line.startsWith('{')) return [];
+      try {
+        return [JSON.parse(line) as Record<string, unknown>];
+      } catch {
+        return [];
+      }
+    });
 }
 
 /**
- * Touches ONLY catalog's built artifact (append a harmless comment — its
- * content hash moves, nothing else's does), re-runs the node build
- * adapter's OWN `assemble()` for catalog specifically (it copies the built
- * runnable into `.prisma-composer/artifacts/catalog.service/bundle/` —
- * touching the source alone does not move anything alchemy actually reads;
- * the copy must be refreshed), then re-converges the SAME dev stack file
- * session 1's own `prisma dev` already wrote, directly with the
- * real `alchemy` binary — no CLI re-invocation, no SIGINT, session 1's
- * services stay running throughout. The stack file's `bundles` map needs no
- * edit: `assemble()`'s output directory is a deterministic function of the
- * address, so it already points at the freshly-copied bytes. Re-hashing
- * catalog's now-different bundle and PUTting a fresh deployment for every
- * service lets the emulator's own (untouched) hash/env diffing decide which
- * one(s) restart. Returns every service's pid AFTER the converge.
+ * Edits catalog's `module.ts`, which the store's entry imports through the
+ * `@store/catalog` workspace package, and waits for dev's restart notice
+ * naming it. Then touches catalog's built artifact and checks that no
+ * rebuild converges and catalog keeps its pid. Restores the file after.
  */
-const REAL_WATCH_TIMEOUT_MS = 30_000;
+async function editSubModuleAndAwaitRestartNotice(
+  session: DevSession,
+  pidsBefore: Record<string, number | undefined>,
+): Promise<void> {
+  const from = readLog(session.logPath).length;
+  const original = fs.readFileSync(catalogModule, 'utf8');
+  try {
+    fs.writeFileSync(catalogModule, `${original}\n// proving-script definition edit\n`);
+    await waitForAsync(async () => {
+      const notice = framesAfter(session, from).find(
+        (frame) =>
+          frame['kind'] === 'message' &&
+          typeof frame['text'] === 'string' &&
+          frame['text'].includes(catalogModule) &&
+          frame['text'].includes('restart dev'),
+      );
+      return notice === undefined ? undefined : true;
+    }, REAL_WATCH_TIMEOUT_MS);
+
+    fs.appendFileSync(
+      catalogDist,
+      `\n// proving-script touch after a definition edit ${Date.now()}\n`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+    const rebuilt = framesAfter(session, from).some(
+      (frame) =>
+        frame['kind'] === 'endpoint' ||
+        (typeof frame['id'] === 'string' && frame['id'].startsWith('dev.rebuild.')),
+    );
+    assert(!rebuilt, 'no rebuild converges after an app definition file changed');
+    const pids = await pidsByAddress(APP_NAME);
+    assertEqual(
+      pids['store.catalog.service'],
+      pidsBefore['store.catalog.service'],
+      'catalog.service keeps its pid after an app definition file changed',
+    );
+  } finally {
+    fs.writeFileSync(catalogModule, original);
+  }
+}
 
 /**
  * Touches ONLY catalog's built artifact — the same file the running
@@ -499,98 +520,6 @@ async function touchCatalogAndAwaitRealWatchLoop(
   }, 15_000);
 }
 
-/**
- * What `prisma dev`'s first process hands its second process for the store app, built the
- * same way: the default adapters read for the environment `dev`, a Load with that app
- * configuration, and the handover function `prisma dev` itself uses.
- */
-async function secondProcessHandover() {
-  const adapterInput = { environment: 'dev', configDirectory: storeDir };
-  const configuration = await environmentVariables()(adapterInput);
-  const appSecrets = await environmentVariables()(adapterInput);
-  const { default: root } = await import(path.join(storeDir, 'module.ts'));
-  const graph = Load(root, { id: APP_NAME, environment: { name: 'dev' }, configuration });
-  return prepareSecondProcess({
-    file: APP_CONFIGURATION_FILE,
-    appConfigurationRead: graph.appConfigurationRead,
-    nodeAddresses: nodeAddresses(graph),
-    secretsKeys: secretsKeys(graph),
-    knownSecrets: new KnownSecrets(),
-    appSecrets: Object.fromEntries(
-      Object.entries(appSecrets).flatMap(([key, value]) =>
-        typeof value === 'string' ? [[key, value]] : [],
-      ),
-    ),
-  });
-}
-
-async function rebuildCatalogAndReconverge(
-  session: DevSession,
-): Promise<Record<string, number | undefined>> {
-  // The touch also fires session 1's own watch loop, which re-assembles every
-  // service's artifact directory. Converging directly while it does races
-  // that rewrite (seen as "no main.js/main.mjs found in bundle dir
-  // .../artifacts/storefront", and as an unrelated service restarting), so
-  // the direct converge starts only after the loop's own front-door reprint.
-  const beforeLineCount = readLog(session.logPath).split('\n').length;
-  fs.appendFileSync(catalogDist, `\n// proving-script touch ${Date.now()}\n`);
-  await waitForAsync(async () => {
-    const newLines = readLog(session.logPath).split('\n').slice(beforeLineCount);
-    return parseFrontDoor(newLines.join('\n'));
-  }, REAL_WATCH_TIMEOUT_MS);
-
-  const catalogServiceModule = path.join(storeDir, 'modules', 'catalog', 'src', 'service.ts');
-  const buildDescriptor = nodeBuild().nodes['node'];
-  assert(
-    buildDescriptor !== undefined && buildDescriptor.kind === 'build',
-    'nodeBuild() must declare a "node" build descriptor',
-  );
-  await buildDescriptor.assemble({
-    build: {
-      extension: '@prisma/composer/node',
-      type: 'node',
-      module: `file://${catalogServiceModule}`,
-      entry: '../dist/server.mjs',
-    },
-    address: 'store.catalog.service',
-    cwd: storeDir,
-  });
-
-  const descriptor = prismaCloud();
-  if (descriptor.localTarget === undefined) throw new Error('no localTarget descriptor');
-  const dev = await descriptor.localTarget();
-  const container = await dev.container.ensure({ appName: APP_NAME, environment: 'dev' });
-  const envVars = containerEnv(new Map([[descriptor.id, container]]));
-  const handover = await secondProcessHandover();
-
-  handover.writeFile();
-  let result: ReturnType<typeof spawnSync>;
-  try {
-    result = spawnSync(
-      alchemyBin(storeDir),
-      ['deploy', path.relative(storeDir, DEV_STACK_FILE), '--yes', '--stage', 'dev'],
-      {
-        cwd: storeDir,
-        stdio: 'inherit',
-        env: { ...process.env, ...envVars, ...handover.env },
-      },
-    );
-  } finally {
-    handover.removeFile();
-  }
-  assert(
-    result.status === 0,
-    `re-converge (alchemy deploy) failed with status ${String(result.status)}`,
-  );
-
-  // The pid the emulator reports settles a moment after the converge
-  // completes (the restarted child still needs to actually start).
-  return waitForAsync(async () => {
-    const pids = await pidsByAddress(APP_NAME);
-    return pids['store.catalog.service'] !== undefined ? pids : undefined;
-  }, 15_000);
-}
-
 async function main(): Promise<void> {
   console.log('local dev (S5 proving): examples/store via the real prisma dev');
 
@@ -613,6 +542,14 @@ async function main(): Promise<void> {
       15_000,
     );
     assertEqual(health.status, 200, 'the storefront HTTP round-trip');
+    assert(
+      !fs.existsSync(DEV_STACK_FILE),
+      'prisma dev converges in process and writes no alchemy.run.ts',
+    );
+    assert(
+      !fs.readdirSync(DEV_DIR).some((name) => name.startsWith('app-configuration-')),
+      'prisma dev converges in process and writes no app configuration file',
+    );
     console.log('[proving] PASS criterion 1: credential-free bring-up + HTTP round-trip');
 
     const firstPortsByAddress = Object.fromEntries(
@@ -641,23 +578,11 @@ async function main(): Promise<void> {
     assert(activeSession !== undefined, 'session 1 must be running before criterion 2');
 
     let pidsBefore = pidsBaseline;
-    const RECONVERGE_STRATEGIES = [
-      {
-        label: 'real watch loop',
-        run: (before: Record<string, number | undefined>) =>
-          touchCatalogAndAwaitRealWatchLoop(activeSession, before),
-      },
-      {
-        label: 'direct converge (fallback)',
-        run: () => rebuildCatalogAndReconverge(activeSession),
-      },
-    ] as const;
-    for (const [index, strategy] of RECONVERGE_STRATEGIES.entries()) {
-      const attempt = index + 1;
-      const pidsAfter = await strategy.run(pidsBefore);
+    for (const attempt of [1, 2]) {
+      const pidsAfter = await touchCatalogAndAwaitRealWatchLoop(activeSession, pidsBefore);
       assert(
         pidsAfter['store.catalog.service'] !== pidsBefore['store.catalog.service'],
-        `criterion 2 (attempt ${attempt}, ${strategy.label}): catalog.service must restart (new pid)`,
+        `criterion 2 (attempt ${attempt}, real watch loop): catalog.service must restart (new pid)`,
       );
       for (const address of [
         'store.storefront',
@@ -668,14 +593,22 @@ async function main(): Promise<void> {
         assertEqual(
           pidsAfter[address],
           pidsBefore[address],
-          `criterion 2 (attempt ${attempt}, ${strategy.label}): ${address}'s pid must NOT change — only catalog.service was rebuilt`,
+          `criterion 2 (attempt ${attempt}, real watch loop): ${address}'s pid must NOT change — only catalog.service was rebuilt`,
         );
       }
       console.log(
-        `[proving] PASS criterion 2 (attempt ${attempt}, ${strategy.label}): exactly catalog.service restarted, all four others unchanged`,
+        `[proving] PASS criterion 2 (attempt ${attempt}, real watch loop): exactly catalog.service restarted, all four others unchanged`,
       );
       pidsBefore = pidsAfter;
     }
+
+    // ——— A sub-module's module.ts is an app definition file ———
+    // The app is imported once, in the prisma process, so dev cannot apply an
+    // edit to it: it must say so and stop converging, not rebuild the old graph.
+    await editSubModuleAndAwaitRestartNotice(activeSession, pidsBefore);
+    console.log(
+      "[proving] PASS: an edit to a sub-module's module.ts is reported as needing a restart, and nothing converges",
+    );
 
     // ——— Criterion 3 (write half): a row through the real local Postgres URL ———
     const dbUrl = await readCatalogDbUrl();

@@ -13,6 +13,7 @@ import type {
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
 import type { AppConverge } from '../app-converge.ts';
+import type { ConvergeFailureReason } from '../converge-in-process.ts';
 import type { startWatch } from '../dev/watch.ts';
 import type { RunAlchemy } from '../run-alchemy.ts';
 
@@ -33,19 +34,15 @@ export interface ServiceEndpoint {
 
 /**
  * The operations' in-package injection seam — lets the CLI's own tests drive
- * them without a real wrapper build or alchemy process.
+ * them without a real wrapper build, Alchemy converge or alchemy process.
  * Threaded through the *WithDeps variants, never part of the published
  * surface: the fields mirror internal types.
  */
 export interface OperationDeps {
   readonly runAssembler?: RunAssembler | undefined;
-  /**
-   * Starts the converge child for `destroy` and `dev`. The CLI passes one
-   * backed by the engine's `ctx.spawn`, so the terminal reaches the child
-   * natively and the engine owns signal policy; hosts get the default `spawnAlchemy`.
-   */
+  /** Starts the converge child for `destroy`; defaults to `spawnAlchemy`. Tests substitute it. */
   readonly alchemy?: RunAlchemy | undefined;
-  /** Lowers and converges `deploy`'s stack; defaults to the app's own install (`loadAppConverge`). Tests substitute it. */
+  /** Lowers and converges the stack for `deploy` and `dev`; defaults to the app's own install (`loadAppConverge`). Tests substitute it. */
   readonly converge?: AppConverge | undefined;
   /** Starts a file watch for `dev`; defaults to chokidar-backed `startWatch`. Tests substitute it to drive changes directly. */
   readonly watch?: typeof startWatch | undefined;
@@ -182,4 +179,15 @@ export function requireContainerForEnvironment(
       fix: `Install the same Composer version of ${extensionId} as the Composer that runs ${runs}.`,
     },
   );
+}
+
+/** A failed converge's reasons as text, one per line, without a tag the message already starts with. */
+export function convergeReasonsText(reasons: readonly ConvergeFailureReason[]): string {
+  return reasons
+    .map(({ tag, message }) =>
+      tag === 'Error' || tag === 'Unknown' || message.startsWith(tag)
+        ? message
+        : `${tag}: ${message}`,
+    )
+    .join('\n');
 }

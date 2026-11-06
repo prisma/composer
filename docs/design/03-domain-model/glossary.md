@@ -255,7 +255,7 @@ The name in the app configuration that a param source reads: `envParam('NAME')` 
 
 ### The app secrets
 
-The merged values the `secrets` adapters return, text only. The name a secret source reads is its **secrets key** (`secretSource()`'s `secretsKey`; `envSecret('NAME')` passes `NAME`). Deploy preflight fills a missing `envSecret()` platform variable from it. `prisma dev` hands its second process only the **named secrets**, the values under the secrets keys the graph's `envSecret()`s name, in one environment variable, `PRISMA_COMPOSER_NAMED_SECRETS` (in code: `NamedSecrets`). The app secrets hold values Composer may carry; only the values under the secrets keys the graph names become known secrets. `prisma dev` compares the whole app secrets between rebuilds to notice a change, which reads them without making them known secrets. Composer never passes the app secrets to Load or a schema, never writes their values to a file, and redacts the values under the secrets keys wherever it prints. With no `secrets` list it is the process environment. In code: `AppSecrets`.
+The merged values the `secrets` adapters return, text only. The name a secret source reads is its **secrets key** (`secretSource()`'s `secretsKey`; `envSecret('NAME')` passes `NAME`). Deploy preflight fills a missing `envSecret()` platform variable from it. `prisma dev` hands the local providers only the **named secrets**, the values under the secrets keys the graph's `envSecret()`s name, as a value in memory (in code: `NamedSecrets`). The app secrets hold values Composer may carry; only the values under the secrets keys the graph names become known secrets. `prisma dev` compares the whole app secrets between rebuilds to notice a change, which reads them without making them known secrets. Composer never passes the app secrets to Load or a schema, never writes their values to a file, and redacts the values under the secrets keys wherever it prints. With no `secrets` list it is the process environment. In code: `AppSecrets`.
 
 ### Secrets key
 
@@ -263,7 +263,7 @@ The name in the app secrets that a secret source reads: `envSecret('NAME')` read
 
 ### Named secrets
 
-The app secrets under the secrets keys the graph reads, each with text. Only `prisma dev` hands them to its second process, in one environment variable. See [the app secrets](#the-app-secrets). In code: `NamedSecrets`, `PRISMA_COMPOSER_NAMED_SECRETS`.
+The app secrets under the secrets keys the graph reads, each with text. Only `prisma dev` hands them on, to the local providers, as a value in memory. See [the app secrets](#the-app-secrets). In code: `NamedSecrets`.
 
 ### Known secrets
 
@@ -271,7 +271,7 @@ The values one command knows are secrets: the value under each secrets key the g
 
 ### The app configuration file
 
-The JSON file a command's first process writes for its second process. It holds what Load read from the app configuration (the root input fields the root's body passes on, and the text of each configuration key the graph reads) and the first process's node addresses. It never holds a secret: Load and the CLI refuse to write one into it. Destroy writes it to `.prisma-composer/app-configuration-<pid>-<uuid>.json` and deletes it when the run ends. Deploy writes none: it runs Alchemy in its first process and hands `lower()` what Load read as a value (ADR-0064). `prisma dev` writes it to `<dev environment dir>/app-configuration-<pid>.json` before each converge and deletes it as soon as that converge ends. Only its owner can read it. The CLI also deletes it when its process exits. A file left by a process killed outright is deleted at the start of a later deploy, destroy or `prisma dev`, once it is ten minutes old. It is not `prisma.config.ts`, which is "the config file". In code: `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, `AppConfigurationRead`, `readAppConfigurationFile`.
+The JSON file a command's first process writes for its second process. It holds what Load read from the app configuration (the root input fields the root's body passes on, and the text of each configuration key the graph reads) and the first process's node addresses. It never holds a secret: Load and the CLI refuse to write one into it. Destroy writes it to `.prisma-composer/app-configuration-<pid>-<uuid>.json` and deletes it when the run ends. Deploy and `prisma dev` write none: they run Alchemy in their first process and hand `lower()` what Load read as a value (ADR-0064). Only its owner can read it. The CLI also deletes it when its process exits. A file left by a process killed outright is deleted at the start of a later deploy, destroy or `prisma dev`, once it is ten minutes old. It is not `prisma.config.ts`, which is "the config file". In code: `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, `AppConfigurationRead`, `readAppConfigurationFile`.
 
 ### Config adapter
 
@@ -412,7 +412,11 @@ to a plan.
 
 ### Converge
 
-Making an environment match the lowered stack: Alchemy plans what to create, update, replace and delete, then applies it. `prisma deploy` converges in its own process through Alchemy's programmatic API; `prisma dev` and `destroy` converge in an Alchemy child process. The *app converge* is the app install's `lower` and in-process converge, which `deploy` loads from `@prisma/composer/internal/converge` ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)). Codes: `DEV.CONVERGE_FAILED`, `DEPLOY.CONVERGE_RUNNING`, `DEPS.CONVERGE_UNRESOLVABLE`, `DEPS.CONVERGE_CONTRACT_MISMATCH`.
+Making an environment match the lowered stack: Alchemy plans what to create, update, replace and delete, then applies it. `prisma deploy` and `prisma dev` converge in their own process through Alchemy's programmatic API; `destroy` converges in an Alchemy child process. The *app converge* is the app install's `lower` and in-process converge, with the local target's providers and state store for dev, which `deploy` and `dev` load from `@prisma/composer/internal/converge` ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)). Codes: `DEV.CONVERGE_FAILED`, `DEV.INTERRUPTED`, `DEV.CONVERGE_RUNNING`, `DEV.WORKER_THREAD`, `DEPLOY.CONVERGE_RUNNING`, `DEPS.CONVERGE_UNRESOLVABLE`, `DEPS.CONVERGE_CONTRACT_MISMATCH`.
+
+### App definition files
+
+The files that define an app for `prisma dev`: every module outside `node_modules` that importing the entry module loaded, static and dynamic imports alike, plus each service's authoring module. Dev imports them once per process, so an edit to one cannot reach a rebuild; dev reports it (`definition-changed`) and pauses rebuilds until it is restarted ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)).
 
 ### Control plane / Execution plane
 

@@ -4,14 +4,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { type Graph, Load, module, paramSource, secretSource, service } from '@internal/core';
-import { nodeAddresses, secretsKeys } from '@internal/core/deploy';
+import { nodeAddresses } from '@internal/core/deploy';
 import {
   APP_CONFIGURATION_FILE_ENV,
   deployAppConfigurationFile,
-  devAppConfigurationFile,
   LEFTOVER_APP_CONFIGURATION_FILE_AGE_MS,
-  NAMED_SECRETS_ENV,
-  namedSecretsFromEnvironment,
   prepareSecondProcess,
   readAppConfigurationFile,
   removeLeftoverAppConfigurationFiles,
@@ -76,7 +73,6 @@ function shopGraph(
 const factsOf = (graph: Graph) => ({
   appConfigurationRead: graph.appConfigurationRead,
   nodeAddresses: nodeAddresses(graph),
-  secretsKeys: secretsKeys(graph),
 });
 
 const configuration = { EMAIL_FROM: 'shop@example.com', APP_ORIGIN: 'https://origin.example' };
@@ -139,23 +135,12 @@ describe('the app configuration file', () => {
     expect(fs.existsSync(file)).toBe(false);
   });
 
-  test("the second process's environment names the file, and carries the named secrets only when the app secrets are given", () => {
+  test("the second process's environment names the file", () => {
     const file = freshFile();
     const facts = factsOf(shopGraph(configuration));
 
     expect(prepareSecondProcess({ file, ...facts, knownSecrets: new KnownSecrets() }).env).toEqual({
       [APP_CONFIGURATION_FILE_ENV]: file,
-    });
-    expect(
-      prepareSecondProcess({
-        file,
-        ...facts,
-        knownSecrets: new KnownSecrets(),
-        appSecrets: { STRIPE_KEY: 'sk_test_1', OTHER: 'not named', EMPTY: '' },
-      }).env,
-    ).toEqual({
-      [APP_CONFIGURATION_FILE_ENV]: file,
-      [NAMED_SECRETS_ENV]: '{"STRIPE_KEY":"sk_test_1"}',
     });
   });
 
@@ -265,7 +250,7 @@ describe('the app configuration file', () => {
 
   test('readAppConfigurationFile names the variable when it is not set', () => {
     expect(errorOf(() => readAppConfigurationFile({})).message).toBe(
-      'PRISMA_COMPOSER_APP_CONFIGURATION_FILE is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which names the app configuration file it wrote there.',
+      'PRISMA_COMPOSER_APP_CONFIGURATION_FILE is not set. This stack file runs as the second process of a Composer destroy, which names the app configuration file it wrote there.',
     );
   });
 
@@ -306,22 +291,6 @@ describe('the app configuration file', () => {
   });
 });
 
-describe('the named secrets', () => {
-  test('namedSecretsFromEnvironment reads the object, and refuses one that is not text', () => {
-    const secrets = namedSecretsFromEnvironment({ [NAMED_SECRETS_ENV]: '{"KEY":"text"}' });
-
-    expect({ ...secrets }).toEqual({ KEY: 'text' });
-    expect(Object.isFrozen(secrets)).toBe(true);
-    expect(Object.getPrototypeOf(secrets)).toBeNull();
-    expect(
-      errorOf(() => namedSecretsFromEnvironment({ [NAMED_SECRETS_ENV]: '{"KEY":1}' })).message,
-    ).toBe('PRISMA_COMPOSER_NAMED_SECRETS is not a JSON object of text.');
-    expect(errorOf(() => namedSecretsFromEnvironment({})).message).toBe(
-      'PRISMA_COMPOSER_NAMED_SECRETS is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which hands the secrets the local services need there.',
-    );
-  });
-});
-
 describe('files earlier runs left', () => {
   test('removeLeftoverAppConfigurationFiles deletes the old files of processes that are no longer running, in .prisma-composer and in each dev environment folder, and keeps the rest', () => {
     const cwd = freshDir();
@@ -334,7 +303,7 @@ describe('files earlier runs left', () => {
     ];
     const kept = [
       deployAppConfigurationFile(cwd, 'this-run'),
-      devAppConfigurationFile(devDir),
+      path.join(devDir, `app-configuration-${String(process.pid)}.json`),
       path.join(cwd, '.prisma-composer', `app-configuration-${String(process.ppid)}-running.json`),
       path.join(cwd, '.prisma-composer', 'deployment-result-1-x.json'),
     ];

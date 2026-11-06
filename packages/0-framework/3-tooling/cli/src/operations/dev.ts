@@ -11,8 +11,25 @@ import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../composer-config.ts';
 import { executorLoadFailure, type OperationDeps, type ServiceEndpoint } from './shared.ts';
+import type { StepEvent } from './steps.ts';
+
+/** A step of a converge. Each converge is one `converge` step, `dev.converge` for the first and `dev.rebuild.<n>` for the n-th rebuild, and each resource Alchemy touches is an `apply-resource` step inside it. */
+export type DevStep =
+  | { readonly name: 'converge'; readonly id: string }
+  | {
+      readonly name: 'apply-resource';
+      /** The id of the converge step it belongs to. */
+      readonly converge: string;
+      /** The resource's id in the stack. */
+      readonly fqn: string;
+      readonly resourceType: string;
+      /** Alchemy's status word for what is happening to it, such as `creating` or `created`. */
+      readonly status: string;
+    };
 
 export type DevEvent =
+  /** A converge's steps and Alchemy's log lines. Every step a converge opens is finished when it ends, as `failed` when it failed or was interrupted. */
+  | StepEvent<DevStep>
   /** Initial front door + after each successful re-converge. */
   | { readonly kind: 'ready'; readonly endpoints: readonly ServiceEndpoint[] }
   | { readonly kind: 'unwatchable'; readonly address: string }
@@ -25,12 +42,14 @@ export type DevEvent =
   | { readonly kind: 'config-changed'; readonly file: string }
   /** What the `config` or `secrets` adapters return changed since the session started. The session keeps the values it started with and stops rebuilding until it is restarted. */
   | { readonly kind: 'values-changed' }
-  /** The app keeps running, still watching. */
+  /** An app definition file changed: one of the app files the entry module loaded when the session started. The session keeps the app it loaded and stops rebuilding until it is restarted. */
+  | { readonly kind: 'definition-changed'; readonly files: readonly string[] }
+  /** A rebuild's converge failed, or was refused because another converge holds this process. The app keeps running, still watching. */
   | {
       readonly kind: 'converge-failed';
-      readonly stackFilePath: string;
-      readonly reproduceCommand: string;
-      readonly cwd: string;
+      readonly code: 'DEV.CONVERGE_FAILED' | 'DEV.CONVERGE_RUNNING' | 'DEV.WORKER_THREAD';
+      readonly message: string;
+      readonly reasons: readonly { readonly tag: string; readonly message: string }[];
     }
   /** Once per service that runs its build adapter's dev server, before the first converge (ADR-0056). `cwd` is absolute. */
   | {
@@ -68,15 +87,16 @@ export interface DevInput {
   readonly detach?: boolean | undefined;
   readonly cwd?: string | undefined;
   readonly onEvent?: ((event: DevEvent) => void) | undefined;
+  /** Interrupts a running converge. The first converge then fails with `DEV.INTERRUPTED`; a rebuild's ends quietly. It does not stop the session: `stop()` does. One process runs one converge at a time, so a `deploy` in the same process while a converge runs is refused, and so is a dev converge while a deploy runs. */
+  readonly signal?: AbortSignal | undefined;
 }
 
-/** A running dev session. The operation NEVER touches process signal handlers —
- * the host owns signals (and must evict alchemy's import-time SIGINT/SIGTERM
- * listeners before installing its own; see run-dev.ts). */
+/** A running dev session. The operation NEVER touches process signal handlers: the host owns signals. */
 export interface DevSession {
   /** The initial front door, already merged across attachments. */
   readonly endpoints: readonly ServiceEndpoint[];
   /** Stop the watch loop and the app's services (emulators and data stay up).
+   * A converge still running is interrupted and awaited first, so its state lease is released.
    * Idempotent; emits 'stopping'/'stopped'; resolves `closed`. A no-op for a detached session. */
   stop(): Promise<void>;
   /** Settles when the session has fully stopped (via stop()); already settled for a detached session. */

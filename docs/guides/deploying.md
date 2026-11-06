@@ -746,9 +746,9 @@ What to know before embedding it:
 - **`deploy` runs the engine in your process.** It returns `summary` as a value and reports the engine's progress through `onEvent`; it prints nothing. While it plans and applies it sets each deploy reporter's variables in `process.env` and changes to `cwd` when your process is elsewhere, then restores both, so a process runs one deploy at a time (`DEPLOY.CONVERGE_RUNNING`), and from a worker thread `cwd` must be the process's working directory (`DEPLOY.WORKER_THREAD`). Deploy uses the lowering and the converge from the app's own install of `@prisma/composer`, found beside its `prisma.config.ts`, which must speak the same converge contract as the Composer running the deploy (`DEPS.CONVERGE_CONTRACT_MISMATCH` otherwise); the package versions may differ. Pass `signal` to interrupt it. `destroy` still runs the engine as a child process.
 - **`dev` resolves to `{ ok: true, value: session }` or a failure** —
   never an exit code. The session is `{ endpoints, stop(), closed }`, with
-  progress (`ready`, `converge-failed`, `config-changed`, `watch-error`, …) delivered through
+  progress (`ready`, `step-started`, `step-finished`, `converge-failed`, `config-changed`, `definition-changed`, `watch-error`, …) delivered through
   `onEvent`. The operation never installs signal handlers; wiring Ctrl-C to
-  `session.stop()` is yours.
+  `session.stop()` is yours, and passing `signal` interrupts a running converge. Like `deploy`, `dev` runs the engine in your process, one converge at a time.
 - **`log` resolves to `{ ok: true, value: { appName, services, lines } }` or
   a failure.** `lines` is an `AsyncIterable` ended by an `AbortSignal` you
   own (stopping early — `break`, `lines.return()` — also ends it cleanly).

@@ -1,5 +1,6 @@
 /**
- * Which copy of Composer's lowering and in-process converge runs `deploy`:
+ * Which copy of Composer's lowering and in-process converge runs `deploy`
+ * and `prisma dev`:
  * the one the app installs, found from the directory of the app's
  * `prisma.config.ts`, the file its extensions are imported from. The stack,
  * Alchemy and the providers then share one copy of `alchemy` and `effect`
@@ -13,6 +14,7 @@ import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { lower } from '@internal/core/deploy';
+import type { devState, localTargetProviders } from '@internal/core/local-target';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
 import manifest from '../package.json' with { type: 'json' };
@@ -21,14 +23,17 @@ import type { Converge } from './converge-in-process.ts';
 
 const ENTRY = '@prisma/composer/internal/converge';
 const CONTRACT_ENTRY = '@prisma/composer/internal/converge-contract';
+const ENTRY_FUNCTIONS = ['lower', 'convergeInProcess', 'localTargetProviders', 'devState'] as const;
 
 /** The Composer version this host runs; every Composer package carries the same one. */
 export const HOST_COMPOSER_VERSION: string = manifest.version;
 
-/** The app install's `lower` and `convergeInProcess`. */
+/** The app install's `lower`, `convergeInProcess`, and the local target's providers and state store for `prisma dev`. */
 export interface AppConverge {
   readonly lower: typeof lower;
   readonly converge: Converge;
+  readonly localTargetProviders: typeof localTargetProviders;
+  readonly devState: typeof devState;
 }
 
 function unresolvable(appDir: string, detail: string, cause?: unknown): CliStructuredError {
@@ -36,7 +41,7 @@ function unresolvable(appDir: string, detail: string, cause?: unknown): CliStruc
     'DEPS.CONVERGE_UNRESOLVABLE',
     `Could not load the converge from the app's @prisma/composer in "${appDir}": ${detail}`,
     {
-      why: "`prisma deploy` runs the lowering and Alchemy from the app's own install of @prisma/composer, so the app, its extensions and Alchemy share one copy of alchemy.",
+      why: "`prisma deploy` and `prisma dev` run the lowering and Alchemy from the app's own install of @prisma/composer, so the app, its extensions and Alchemy share one copy of alchemy.",
       fix: 'Install @prisma/composer in the app, at the same version as the Composer the `prisma` CLI runs.',
       ...(cause === undefined ? {} : { cause }),
     },
@@ -84,7 +89,7 @@ function contractMismatch(
     'DEPS.CONVERGE_CONTRACT_MISMATCH',
     `The app's @prisma/composer ${appVersion} speaks converge contract ${app.contract}, and the \`prisma\` CLI's Composer ${host.version} speaks contract ${host.contract}.`,
     {
-      why: "Deploy calls the app's @prisma/composer from the CLI's Composer, and the two read each other's data only when they speak the same converge contract.",
+      why: "Deploy and dev call the app's @prisma/composer from the CLI's Composer, and the two read each other's data only when they speak the same converge contract.",
       fix: update,
     },
   );
@@ -120,12 +125,18 @@ export async function loadAppConverge(
   if (appContract !== host.contract) {
     throw contractMismatch(host, { contract: appContract, version: installedVersion(require) });
   }
-  const { lower: appLower, convergeInProcess } = await importFile(appDir, file);
-  if (typeof appLower !== 'function' || typeof convergeInProcess !== 'function') {
-    throw unresolvable(appDir, `${file} exports no lower and convergeInProcess.`);
+  const entry = await importFile(appDir, file);
+  const missing = ENTRY_FUNCTIONS.filter((name) => typeof entry[name] !== 'function');
+  if (missing.length > 0) {
+    throw unresolvable(appDir, `${file} exports no ${missing.join(', ')}.`);
   }
   return blindCast<
     AppConverge,
-    "the typeof checks above prove both are functions, and the contract check proves the entry speaks this host's converge contract"
-  >({ lower: appLower, converge: convergeInProcess });
+    "the typeof checks above prove each is a function, and the contract check proves the entry speaks this host's converge contract"
+  >({
+    lower: entry['lower'],
+    converge: entry['convergeInProcess'],
+    localTargetProviders: entry['localTargetProviders'],
+    devState: entry['devState'],
+  });
 }
