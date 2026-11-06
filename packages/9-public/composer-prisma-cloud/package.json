@@ -10,6 +10,7 @@
     "./local-target/compute-main": "./dist/compute-main.mjs",
     "./local-target/buckets-main": "./dist/buckets-main.mjs",
     "./local-target/postgres-main": "./dist/postgres-main.mjs",
+    "./local-target/stop-app-main": "./dist/stop-app-main.mjs",
     "./orm": "./dist/orm.mjs",
     "./testing": "./dist/testing.mjs",
     "./auth": "./dist/auth/index.mjs",
