@@ -2,15 +2,16 @@
 
 **Design:** [design.md](design.md), which is authoritative. **Spec:** [spec.md](spec.md).
 
-Each slice is one PR. A slice's PR opens after the slice before it has merged, so each builds on merged work. Each PR amends the decision records whose behaviour it changes, as design section 12 lists them, and adds its breaking changes to the release note.
+A PR delivers one capability a user would notice, so slices whose limits the next slice closes ship together. S9 and S10 ship as one PR, prisma/composer#412: every binding is checked against its schema, and only named fields pass on. S11, S12 and S13 ship as one PR: configuration from `.env` files is read once, in a fixed order, and no known secret is printed. A PR opens after the one before it has merged, so each builds on merged work. Each PR amends the decision records whose behaviour it changes, as design section 12 lists them, and adds its breaking changes to the release note.
 
 ## Where it stands
 
 - **S1** is done: [slices/s1-spike/report.md](slices/s1-spike/report.md).
-- **S2** is built and in review as prisma/composer#401.
-- **S3, S4 and S5** are built, on the stacked branches `claude/module-input-s3`, `claude/module-input-s4` and `claude/module-input-s5`. They were built against an earlier version of the design. They merge as built, in order, and S6 to S13 change what they built to match `design.md`.
-- **S6 to S13** are not built.
-- **S14 to S16** are designed with Will after S13. The earlier plan called S14 and S15 "S6" and "S7".
+- **S2** is merged: prisma/composer#401.
+- **S3 to S8** are merged as one PR: prisma/composer#403.
+- **S9** is built and in review as prisma/composer#412. **S10** is built in the same PR.
+- **S11 to S13** are not built. [deferred.md](deferred.md) lists items S10 must cover.
+- **S14 to S17** are designed with Will before they are specified.
 
 ## S1. Spike: an input field as an opaque typed value
 
@@ -26,7 +27,7 @@ Both return values, and so do `generatedParam()` and `serviceOrigin()`. Deploy p
 
 ## S4. Config adapters and the root's input
 
-The `config` and `secrets` lists on the `composer` section, each defaulting to `[environmentVariables()]`; `dotenv()`; the root declares `input`, bound to the configuration and checked before anything is created; `envParam()` reads the configuration; deploy and dev preflight fill `envSecret()` from the secrets. Built on `claude/module-input-s4`. It names the configuration and the secrets "pools" in code, lists `dotenv()`'s four files itself, and has the second process run the adapters again; S11 and S12 change these.
+The `config` and `secrets` lists on the `composer` section, each defaulting to `[environmentVariables()]`; `dotenv()`; the root declares `input`, bound to the app configuration and checked before anything is created; `envParam()` reads the app configuration; deploy and dev preflight fill `envSecret()` from the app secrets. Built on `claude/module-input-s4`. It names the app configuration and the app secrets "pools" in code, lists `dotenv()`'s four files itself, and has the second process run the adapters again; S11 and S12 change these.
 
 ## S5. Migrate and remove the old slots
 
@@ -58,11 +59,11 @@ The body's `input` carries a brand that every binding type refuses, so passing t
 
 ## S12. The second process reads a configuration file
 
-The first process writes a configuration file beside the generated stack file, mode 0600, holding the root's real values at the paths its body names and the values of the names `envParam()` reads. It deletes the file when the deploy ends, whether it succeeds or fails. The deploy's and `destroy`'s second processes read the file and run no adapter, and do not run the root's schema again. The first process passes the list of node addresses it checked, and the second process refuses to deploy a different graph. `prisma dev`'s second process reads the same kind of file, and receives the secrets its local services need through its environment, never through a file. The "pool" names in code take the names "the configuration" and "the secrets", and the glossary's pool and adapter entries are replaced by "the configuration", "the secrets", "config adapter" and "secrets adapter".
+The first process writes a configuration file beside the generated stack file, mode 0600, holding the root's real values at the paths its body names and the values of the names `envParam()` reads. It deletes the file when the deploy ends, whether it succeeds or fails. The deploy's and `destroy`'s second processes read the file and run no adapter, and do not run the root's schema again. The first process passes the list of node addresses it checked, and the second process refuses to deploy a different graph. `prisma dev`'s second process reads the same kind of file, and receives the app secrets its local services need through its environment, never through a file. The "pool" names in code take the names "the app configuration" and "the app secrets", and the glossary's pool and adapter entries are replaced by "the app configuration", "the app secrets", "config adapter" and "secrets adapter".
 
 ## S13. Composer redacts every secret it knows
 
-Everywhere Composer prints, it redacts every value under a name an `envSecret()` in the graph names, in the configuration or the secrets, and every value a project's own secrets adapters return when it writes a `secrets` list, at any length. That covers errors, adapter failures, the second process's failure cause, and the second process's output, which Composer now reads through a pipe, holding back enough characters to catch a secret split across two chunks. An end-to-end test searches the configuration file, the stack file, the deploy report, the errors and the second process's output for a known secret value. Manual QA of the examples against real targets, including a root `input` from `.env.<environment>` in `prisma deploy` and `prisma dev`.
+Everywhere Composer prints, it redacts every value under a name an `envSecret()` in the graph names, in the app configuration or the app secrets, and every value a project's own secrets adapters return when it writes a `secrets` list, at any length. That covers errors, adapter failures, the second process's failure cause, and the second process's output, which Composer now reads through a pipe, holding back enough characters to catch a secret split across two chunks. An end-to-end test searches the configuration file, the stack file, the deploy report, the errors and the second process's output for a known secret value. Manual QA of the examples against real targets, including a root `input` from `.env.<environment>` in `prisma deploy` and `prisma dev`.
 
 ## S14. `prisma dev` watches its inputs
 

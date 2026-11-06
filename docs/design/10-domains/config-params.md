@@ -141,17 +141,13 @@ return one object that is both the target's source and a
 
 | Where | `envParam()` | `envSecret()` | `generatedParam()` | `serviceOrigin()` |
 | --- | --- | --- | --- | --- |
-| A service's `input` binding | kept; read at serialize from the config pool | kept | kept | kept |
+| A service's `input` binding | its string, read at serialize from the config pool; unset or empty leaves the key out | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
 | A service's `params` | kept; pointer row, as today | kept (fails at deploy, as today) | kept (fails at deploy, as today) | kept (fails at deploy, as today) |
 | A module's `input` binding | its string; unset or empty leaves the key out | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
 | A `resolve()` dependency | its string; unset or empty fails | refused | refused | refused |
 | A resource's `props` | its string; unset or empty leaves the key out | refused by the type | refused by the type | refused at Load |
 
-In a service's and a module's input, the schema checks each of the three
-runtime sources as its pointer. A plain field refuses a pointer, so a field
-bound to `generatedParam()` or `serviceOrigin()` is wrapped with `field()`,
-or is a `secretString()` field for a redacted `generatedParam()`
-([glossary](../03-domain-model/glossary.md#field)).
+In a service's and a module's input, the schema checks each of the three runtime sources as its pointer. A plain field refuses a pointer, so a field bound to `generatedParam()` or `serviceOrigin()` is wrapped with `field()`, or is a `secretString()` field for a redacted `generatedParam()` ([glossary](../03-domain-model/glossary.md#field)). Both bindings are typed from the schema, so a source bound to a field that refuses it fails to compile, and so does an `envParam()` bound to a field narrower than text. The deploy check catches what the compiler cannot see: a refinement the type does not carry, such as a URL format, a schema without type information, or a cast.
 
 A service's input binding and a service's params receive the source itself,
 the same object they received before

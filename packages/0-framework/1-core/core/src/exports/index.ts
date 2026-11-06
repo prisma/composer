@@ -33,12 +33,12 @@ export type {
   Edge,
   Graph,
   GraphNode,
+  InputBindingUse,
   LoadOptions,
   NodeId,
   ParamBinding,
   PortEndpoint,
   SecretSourceUse,
-  ServiceInputBinding,
 } from '../graph.ts';
 export { assertAppName, Load, LoadError, RESOURCE_OUT_PORT } from '../graph.ts';
 export { hydrate, hydrateSync } from '../hydrate.ts';
@@ -52,12 +52,11 @@ export type {
   Hydrated,
   HydratedDeps,
   InputBinding,
-  InputBindingData,
+  InputBindingOf,
   InputRef,
   InputValueOf,
   ModuleBuilder,
   ModuleContext,
-  ModuleInputBinding,
   ModuleNode,
   ModuleOutputs,
   NODE,

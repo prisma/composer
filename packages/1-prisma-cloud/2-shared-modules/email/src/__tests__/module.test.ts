@@ -30,10 +30,10 @@ const senderConsumer = () =>
 const outboxConsumer = () =>
   compute({ name: 'outboxConsumer', deps: { outbox: rpc(emailOutboxContract) }, build });
 
-const configPool = { EMAIL_DELIVERY_MODE: 'none', EMAIL_FROM: 'shop@example.com' };
+const configPool = { EMAIL_FROM: 'shop@example.com' };
 
 const emailInput = () => ({
-  deliveryMode: envParam('EMAIL_DELIVERY_MODE'),
+  deliveryMode: 'none' as const,
   from: envParam('EMAIL_FROM'),
   deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
 });
@@ -74,7 +74,7 @@ describe('email()', () => {
     ]);
   });
 
-  test("the module's input reaches the service's input: envParam() fields as their values, envSecret() as its source", () => {
+  test("the module's input reaches the service's input: a literal and an envParam() as their values, envSecret() as its source", () => {
     const graph = Load(rootWithEmail(), { configPool });
     const binding = serviceBindingOf(graph.inputBindings);
     expect(binding['deliveryMode']).toBe('none');
@@ -97,7 +97,7 @@ describe('email()', () => {
   test("the module's schema refuses a missing from before the service's does", () => {
     let message: string | undefined;
     try {
-      Load(rootWithEmail(), { configPool: { EMAIL_DELIVERY_MODE: 'none' } });
+      Load(rootWithEmail(), { configPool: {} });
     } catch (error) {
       message = (error as Error).message;
     }

@@ -1,5 +1,7 @@
 import { blindCast } from '@internal/foundation/casts';
 import type { Pointer } from '@internal/foundation/pointer';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { ModuleInput, ModuleInputIsNotAValue } from './module-input.ts';
 import type { ParamSource, SecretSource } from './node.ts';
 
 // Brands, Symbol.for so a check survives duplicated module instances (as NODE in node.ts).
@@ -32,7 +34,7 @@ export type ValueOrigin<T> =
       readonly kind: 'input';
       /** The address of the module whose input this field is. */
       readonly module: string;
-      /** The key path inside that module's input; `[]` is the whole input. */
+      /** The key path inside that module's input; `[]` is the whole input, which Load refuses wherever it is passed on. */
       readonly path: readonly string[];
     }
   | {
@@ -68,7 +70,7 @@ export interface Value<T> {
 export type RuntimeValue<T> = Value<Pointer<T>>;
 
 /** The tuple of real-value types a dependency tuple stands for: what `resolve()`'s `fn` receives. */
-export type RealValuesOf<D extends readonly Value<unknown>[]> = {
+export type RealValuesOf<D extends readonly unknown[]> = {
   readonly [K in keyof D]: D[K] extends Value<infer T> ? T : never;
 };
 
@@ -93,13 +95,18 @@ type IsDeployTime<T> = 0 extends 1 & T ? true : true extends HoldsPointer<T> ? f
 type NotDeployTime =
   'a resolve() dependency must be a deploy-time value, never a value known only at boot or a field wrapped with field(); to compute with an input field, declare it plain';
 
+/** A dependency `resolve()` accepts only to refuse it with a message: a module body's whole `input`. */
+type RefusedDependency = ModuleInput<StandardSchemaV1>;
+
 /** `D` with each dependency that is not a deploy-time value replaced by the message saying so. */
-type DeployTimeDependencies<D extends readonly Value<unknown>[]> = {
+type DeployTimeDependencies<D extends readonly (Value<unknown> | RefusedDependency)[]> = {
   readonly [K in keyof D]: D[K] extends Value<infer T>
     ? IsDeployTime<T> extends true
       ? D[K]
       : NotDeployTime
-    : D[K];
+    : D[K] extends RefusedDependency
+      ? ModuleInputIsNotAValue
+      : D[K];
 };
 
 /** Plain data: what a `resolve()` function may return. */
@@ -120,7 +127,7 @@ export type PlainData =
  * disabled (ADR-0062). `fn` must be a pure function of its dependencies: a
  * deploy runs it in two processes.
  */
-export function resolve<const D extends readonly Value<unknown>[], T>(
+export function resolve<const D extends readonly (Value<unknown> | RefusedDependency)[], T>(
   dependencies: DeployTimeDependencies<D>,
   fn: (values: RealValuesOf<D>) => T,
 ): Value<T> {

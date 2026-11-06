@@ -35,10 +35,7 @@ distinct type, with composition behaviours a Service doesn't have.
 - **Nesting.** A wrapped node's dependencies and exposed interfaces connect either to the
   parent Module's own or to a sibling (Service, Resource, or Module) inside the same Module; a
   wrapped node reaches outside the Module only through the parent's boundary.
-- **Input.** A Module declares its [Input](#input) as one `input` Standard
-  Schema, as a Service does, and whoever provisions it binds it. Its body
-  receives one [value](#value) per input field and can only pass it on: into a `provision()`
-  binding or, for a [plain field](#field), as a `resolve()` dependency.
+- **Input.** A Module declares its [Input](#input) as one `input` Standard Schema, as a Service does, and whoever provisions it binds it. Its body receives `input`, a dictionary with one [value](#value) per input field, and can only pass a field on, by name: into a `provision()` binding or, for a [plain field](#field), as a `resolve()` dependency. The dictionary itself is not a value: passing it on whole fails to compile, and Load refuses it.
 - **Composite, not atomic.** Where a Service is a leaf (opaque), a Module is
   transparent: the framework sees its dependencies and exposed interfaces *and* the internal topology it owns. The
   Module decides how the Services, Resources, and Modules it wraps connect; its
@@ -137,12 +134,7 @@ code never reads the environment (no-globals). Each key of a binding takes:
     the environment being deployed, which exists only once the deploy has
     created that service.
 
-A field typed `secretString()` takes only a secret: a secret box, or the
-secret pointer of `envSecret()` or a redacted `generatedParam()`. A
-[wrapped field](#field) also takes a plain pointer, from `serviceOrigin()`
-or a plain `generatedParam()`. A plain field takes neither: at deploy a
-schema checks each value known only at boot as its pointer, so a plain
-field bound to one fails the deploy.
+A binding is typed from the schema's input type, for a Service as for a Module. In a binding, a field typed `secretString()` takes only a secret: the secret pointer of `envSecret()` or a redacted `generatedParam()`, or a module's own secret field passed on. A secret box written in a binding fails to compile, because a secret's value never sits in the code, and no pointer is ever written as a literal. A [wrapped field](#field) also takes a plain runtime value, from `serviceOrigin()` or a plain `generatedParam()`. A plain field takes neither, and a binding that gives it one fails to compile. Where the compiler sees no type, such as a schema without type information or a cast, the deploy checks each value known only at boot as its pointer, so a plain field bound to one fails the deploy.
 
 The older form of input is a service's per-key `params`, each bound to a
 literal or a source
@@ -188,14 +180,7 @@ whatever inputs Composer is given
 ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
 The data a value stands for is its **real value**.
 
-- **Provided or computed.** A provided value is handed to the module body:
-  `environment.name` is one, a deploy-time fact of the environment, and each
-  field of a module's `input` is another, whose real value is read from the
-  module's input after its schema has validated it. A root's input is the
-  config pool. A computed
-  value is what `resolve(dependencies, fn)` returns; Load runs `fn` with its
-  dependencies' real values after every module body has run, with `provision`
-  disabled. `resolve()` declares a computed value; Load resolves every value.
+- **Provided or computed.** A provided value is handed to the module body: `environment.name` is one, a deploy-time fact of the environment, and each field of a module's `input` is another, whose real value is read from the module's input after its schema has validated it. The `input` itself is a dictionary of these values, not a value, so no binding accepts it. A root's input is the config pool. A computed value is what `resolve(dependencies, fn)` returns; Load runs `fn` with its dependencies' real values after every module body has run, with `provision` disabled. `resolve()` declares a computed value; Load resolves every value.
 - **Deploy-time or runtime.** A deploy-time value has its real value by the
   end of Load: `environment.name`, a `resolve()` result, `envParam()`, whose
   real value is the variable's value at deploy, and a module input field
@@ -262,16 +247,7 @@ schema whose leaves are wrapped. For another Standard Schema library,
 
 ### Config pool
 
-The merged values the `config` adapters return for the environment being
-deployed, a later adapter winning by top-level key. It is the root module's
-input, validated by the root's schema, and what an `envParam('NAME')` reads
-`NAME` from, wherever it sits. With no `config` list in the `composer` section
-it is the process environment. In code it is `LoadOptions.configPool`, and the
-name a source reads is its **pool key** (`paramSource()`'s `poolKey` option).
-Composer reads it in the CLI and again in the deploy engine's process. It holds
-whatever the adapters return, which by default is the whole process
-environment, secrets included, so only the root's fields that its body passes
-on one by one reach the graph; Load refuses the root's whole input.
+The merged values the `config` adapters return for the environment being deployed, a later adapter winning by top-level key. It is the root module's input, validated by the root's schema, and what an `envParam('NAME')` reads `NAME` from, wherever it sits. With no `config` list in the `composer` section it is the process environment. In code it is `LoadOptions.configPool`, and the name a source reads is its **pool key** (`paramSource()`'s `poolKey` option). Composer reads it in the CLI and again in the deploy engine's process. It holds whatever the adapters return, which by default is the whole process environment, secrets included, so only the root's fields that its body passes on one by one reach the graph. No module can pass its whole input on: it fails to compile, and Load refuses it.
 
 ### Secrets pool
 
