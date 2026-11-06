@@ -129,11 +129,9 @@ user can rerun it by hand (ADR-0007).
    digits, `-` and `_`; Load refuses any other. An app that uses
    `serviceOrigin()` can't be deployed under `--name`: the addresses in its
    code start with its own name, which then names no node.
-4. **Read the app secrets and the app configuration.** For `deploy` the CLI first calls the `secrets` adapters, then for every command the `config` adapters, in list order, each awaited, and merges what each list returns by top-level key, a later adapter winning. Both lists default to `[environmentVariables()]`. The app configuration is Load's input: the root's input and what `envParam()` reads. The app secrets are held in memory for preflight. Once Load has run, the values under the names an `envSecret()` in the graph reads, in either list, become the known secrets the CLI redacts; nothing else in the app secrets is read. An adapter that throws or returns something other than an object fails with `CONFIG.ADAPTER_FAILED` or `CONFIG.ADAPTER_INVALID`. No other process runs an adapter.
+4. **Read the app secrets and the app configuration.** For `deploy` the CLI first calls the `secrets` adapters, then for every command the `config` adapters, in list order, each awaited, and merges what each list returns by top-level key, a later adapter winning. Both lists default to `[environmentVariables()]`. The app configuration is Load's input: the root's input and what `envParam()` reads. The app secrets are held in memory. A deploy never writes a value from them to the platform: once Load has run, the values under the secrets keys of the graph's secret sources, in either list, become the known secrets the CLI redacts, and nothing else in the app secrets is read. An adapter that throws or returns something other than an object fails with `CONFIG.ADAPTER_FAILED` or `CONFIG.ADAPTER_INVALID`. No other process runs an adapter.
 5. **Load.** Core's `Load` walks the graph. The root's schema checks the app configuration as the root's input before anything is created. A service with an unwired dependency slot (one an enclosing Module normally wires to a provisioned producer) fails here, with an error naming the input and pointing at the composing Module.
-6. **Validate coverage.** Every node's and build descriptor's
-   `(extension, type)` must have a registry entry in the config; a gap errors
-   naming the extension to add to the config.
+6. **Check the graph, then validate coverage.** Every extension's optional `checkGraph(graph)` runs first, in `deploy`, `destroy` and `prisma dev` (at start and at every rebuild); a throw fails the command with `COMPOSE.GRAPH_INVALID` and the thrown message. The Prisma Cloud extension refuses a name that both an `envParam()` and a field of the root's input use ([ADR-0064](../90-decisions/ADR-0064-a-platform-variable-is-set-on-the-platform-never-by-the-deploy.md)). Then every node's and build descriptor's `(extension, type)` must have a registry entry in the config; a gap errors naming the extension to add to the config.
 7. **Assemble each service.** Look up the service's build descriptor in the
    registries — `extensions[build.extension].nodes[build.type].assemble` — and
    run it. The assembler resolves its `entry` (and any other path field)
@@ -174,7 +172,8 @@ user can rerun it by hand (ADR-0007).
    emulator instance is touched.
    On `deploy`, an older extension's `ensure` may already have created the
    app's Project by then; the check stops everything after that.
-9. **Lower and drive.** Write the pipeline's results as a runnable stack
+9. **Preflight (`deploy` only).** Each extension's `preflight` checks its platform prerequisites before any stack file is written. The Prisma Cloud preflight looks up every platform variable the graph reads, one list call per name and at most eight at a time, and writes none. A variable a service's schema requires, or a required per-key param's, that has no value fails with `DEPLOY.PREFLIGHT_FAILED`, naming its readers and the `prisma project env add` commands that set it. The rest with no value are the findings: `report` hands them to the CLI, which prints them after the step under `Platform variables with no value:` and as a `preflight-findings` event, and the preflight transport carries them to the second process, which repeats them at the end of the deploy report. The platform reports a service that exits at boot as running and promotes it, so this step is the only check Composer makes for a missing value ([ADR-0064](../90-decisions/ADR-0064-a-platform-variable-is-set-on-the-platform-never-by-the-deploy.md)).
+10. **Lower and drive.** Write the pipeline's results as a runnable stack
    module at `.prisma-composer/alchemy.run.ts` and drive the `alchemy` CLI against
    it (ADR-0007), started as § Runtime describes, carrying every resolved container across to the child as one
    environment variable per extension — content the CLI writes but never
@@ -293,6 +292,9 @@ them:
 | Node `(extension, type)` not covered | the extension to add to the `composer` section |
 | Missing extension env | the exact variable(s) the extension factory needed |
 | Built output missing | the expected path, and "run your build" |
+| An extension's graph check refuses the graph (`COMPOSE.GRAPH_INVALID`) | the extension's message: for Prisma Cloud, a name used by both `envParam()` and a root input field, naming both uses |
+| A platform variable a service needs has no value (`DEPLOY.PREFLIGHT_FAILED`) | each variable, the service and field or param that reads it, and the `prisma project env add` commands: `--role production` for production, otherwise `--role preview` then `--role preview --branch` |
+| A platform variable the app reads is managed by Prisma Cloud (`DEPLOY.PREFLIGHT_FAILED`) | the variable, and to rename it in the app |
 | Root's input refused by its schema | the schema's messages, and that a root's input is the app configuration for the environment |
 | A config adapter throws or returns something other than an object (`CONFIG.ADAPTER_FAILED`, `CONFIG.ADAPTER_INVALID`) | which list and position, and the fix |
 | The app configuration file would hold a known secret (`CONFIG.SECRET_AS_PLAIN_VALUE`) | which root input field or configuration key holds a known secret, and the secrets key whose value matched, never the value; a secret of eight characters or more counts anywhere in a value, a shorter one only as the whole value. The fix: read the secret with `envSecret()`, or give the plain value text that does not contain it |
@@ -357,4 +359,4 @@ them:
   — the term is environment.
 - [ADR-0038](../90-decisions/ADR-0038-containers-are-an-extension-descriptor.md)
   — the container descriptor and the opaque parent→child transport
-  (pipeline steps 8-9, § Environments and containers).
+  (pipeline steps 8 and 10, § Environments and containers).
