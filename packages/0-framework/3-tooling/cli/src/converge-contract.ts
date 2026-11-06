@@ -6,4 +6,4 @@
  * other side cannot read. Imports nothing, so a host can read it before
  * loading the converge.
  */
-export const CONVERGE_CONTRACT = 1;
+export const CONVERGE_CONTRACT = 2;

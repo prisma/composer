@@ -428,7 +428,7 @@ describe('deploy with the real in-process converge', () => {
       {
         runAssembler: async () => ({ dir, entry: 'server.js' }),
         converge: { lower, converge: convergeInProcess },
-        credentials: { workspaceId: 'ws_1', client: {}, serviceToken: 'tok' },
+        credentials: { workspaceId: 'ws_1', client: {} },
       },
     );
 

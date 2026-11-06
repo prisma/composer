@@ -63,18 +63,7 @@ export interface OperationDeps {
    * call", and both commands are credential-free by contract: there is no
    * authenticated call on those paths for this to reach.
    */
-  readonly credentials?: OperationCredentials | undefined;
-}
-
-/** The caller's credential: what the in-process leg authenticates with, and the service token Alchemy applies `deploy` with. */
-export interface OperationCredentials extends ContainerCredentials {
-  /**
-   * The service token the credential is. Absent when it is not one, such as a
-   * `prisma login` session: `deploy` then refuses with
-   * DEPLOY.SERVICE_TOKEN_REQUIRED, because Alchemy reads its credential only
-   * from the environment.
-   */
-  readonly serviceToken?: string | undefined;
+  readonly credentials?: ContainerCredentials | undefined;
 }
 
 /**

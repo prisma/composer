@@ -7,7 +7,7 @@
  * deploy targets the environment production when no `--environment` is given.
  */
 import type { EngineEvent } from '@prisma/cli-engine';
-import { defineCommand, flag, SERVICE_TOKEN_ENV_VAR } from '@prisma/cli-engine';
+import { defineCommand, flag } from '@prisma/cli-engine';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
 import {
   DEFAULT_DEPLOY_ENVIRONMENT,
@@ -149,13 +149,10 @@ export const createDeployCommand = (operations: ComposerOperations) =>
     },
     needs: { config: composerSection, credentials: true },
     handler: async (args, ctx) => {
-      // The engine resolved which credential this run acts as. Only a service
-      // token from the environment can reach Alchemy, and its token and
-      // workspace travel together; a stored session carries no token, so the
-      // operation refuses it with DEPLOY.SERVICE_TOKEN_REQUIRED.
+      // Every Management API request the deploy makes goes through ctx.api,
+      // which authenticates and refreshes; the workspace is the same
+      // credential's.
       const credential = await ctx.activeCredential();
-      const serviceToken =
-        credential?.origin.source === 'environment' ? ctx.env[SERVICE_TOKEN_ENV_VAR] : undefined;
       const result = await withConsoleOnStderr(() =>
         operations.deploy(
           {
@@ -173,7 +170,6 @@ export const createDeployCommand = (operations: ComposerOperations) =>
             credentials: {
               workspaceId: credential?.workspaceId,
               client: ctx.api,
-              serviceToken,
             },
           },
         ),

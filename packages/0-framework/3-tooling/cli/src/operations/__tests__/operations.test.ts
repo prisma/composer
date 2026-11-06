@@ -20,7 +20,7 @@ import type {
   PrismaAppConfig,
   RunOutcome,
 } from '@internal/core/config';
-import { lower } from '@internal/core/deploy';
+import { type LowerOptions, lower } from '@internal/core/deploy';
 import type {
   LocalTargetAttachment,
   LocalTargetCurrentApp,
@@ -208,7 +208,7 @@ function appConverge(converge: Converge): AppConverge {
   return { lower, converge };
 }
 
-// Deploy needs a service token; a caller passing no credentials leaves it to the environment.
+// A caller passing no credentials leaves the token to the environment.
 const previousServiceToken = process.env['PRISMA_SERVICE_TOKEN'];
 beforeAll(() => {
   process.env['PRISMA_SERVICE_TOKEN'] = 'test-service-token';
@@ -252,11 +252,7 @@ describe('deploy()', () => {
             spawned = true;
             return { exitCode: 0, signal: null };
           },
-          credentials: {
-            workspaceId: 'ws_handler',
-            client: {},
-            serviceToken: 'token-from-the-handler',
-          },
+          credentials: { workspaceId: 'ws_handler', client: {} },
         },
       ),
     );
@@ -266,7 +262,7 @@ describe('deploy()', () => {
     expect(requests[0]).toMatchObject({
       stage: 'ci-7',
       cwd: app.dir,
-      env: { PRISMA_SERVICE_TOKEN: 'token-from-the-handler', PRISMA_WORKSPACE_ID: 'ws_handler' },
+      env: {},
     });
     expect(requests[0]?.stack.stackName).toBe('hello-ops');
     expect(spawned).toBe(false);
@@ -817,52 +813,32 @@ describe('deploy() credentials, app converge and redaction', () => {
       ),
     );
 
-  test('a credential that is not a service token is refused before any container is ensured', async () => {
+  test("the caller's credentials reach the lowering as a value, and no credential enters the converge's environment", async () => {
     const app = makeAppDir();
     const containerCalls: ContainerCall[] = [];
     const requests: ConvergeRequest[] = [];
+    const lowered: LowerOptions[] = [];
+    const credentials = { workspaceId: 'ws_1', client: {} };
 
     const result = await deployWith(
       app,
       {
-        converge: appConverge(recordingConverge(requests)),
-        credentials: { workspaceId: 'ws_1', client: {} },
+        converge: {
+          lower: (root, config, opts) => {
+            lowered.push(opts);
+            return lower(root, config, opts);
+          },
+          converge: recordingConverge(requests),
+        },
+        credentials,
       },
       fakeConfig({}, { calls: containerCalls }),
     );
 
-    if (result.ok) throw new Error('expected a failure');
-    expect(result.failure.code).toBe('DEPLOY.SERVICE_TOKEN_REQUIRED');
-    expect(containerCalls).toEqual([]);
-    expect(requests).toEqual([]);
-  });
-
-  test('without credentials or PRISMA_SERVICE_TOKEN in the environment, deploy is refused', async () => {
-    const app = makeAppDir();
-    const saved = process.env['PRISMA_SERVICE_TOKEN'];
-    delete process.env['PRISMA_SERVICE_TOKEN'];
-    try {
-      const result = await deployWith(app, { converge: appConverge(applied) });
-      if (result.ok) throw new Error('expected a failure');
-      expect(result.failure.code).toBe('DEPLOY.SERVICE_TOKEN_REQUIRED');
-    } finally {
-      process.env['PRISMA_SERVICE_TOKEN'] = saved;
-    }
-  });
-
-  test('a credential that names no workspace removes PRISMA_WORKSPACE_ID for the apply', async () => {
-    const app = makeAppDir();
-    const requests: ConvergeRequest[] = [];
-
-    await deployWith(app, {
-      converge: appConverge(recordingConverge(requests)),
-      credentials: { workspaceId: undefined, client: {}, serviceToken: 'tok-1234567890' },
-    });
-
-    expect(requests[0]?.env).toEqual({
-      PRISMA_SERVICE_TOKEN: 'tok-1234567890',
-      PRISMA_WORKSPACE_ID: undefined,
-    });
+    if (!result.ok) throw result.failure;
+    expect(containerCalls.map((call) => call.op)).toEqual(['ensure']);
+    expect(lowered[0]?.credentials).toBe(credentials);
+    expect(requests[0]?.env).toEqual({});
   });
 
   test('an app with no installed @prisma/composer fails with DEPS.CONVERGE_UNRESOLVABLE before any container is ensured', async () => {
@@ -939,49 +915,58 @@ describe('deploy() credentials, app converge and redaction', () => {
     const app = makeAppDir();
     const token = 'tok-SENTINEL-abcdef123456';
     const events: DeployEvent[] = [];
-    const credentials = { workspaceId: 'ws_1', client: {}, serviceToken: token };
-
-    const failed = await deployWith(
-      app,
-      {
-        credentials,
-        converge: appConverge(async (request) => {
-          request.onEvent?.({ kind: 'log', severity: 'warn', text: `retrying with ${token}` });
-          request.onEvent?.({
-            kind: 'resource',
-            fqn: 'app',
-            resourceType: 'Prisma.Deployment',
-            status: 'fail',
-            phase: 'failed',
-            message: `401 for Bearer ${token}`,
-          });
-          return { kind: 'failed', reasons: [{ tag: 'PrismaApiError', message: `bad ${token}` }] };
-        }),
-      },
-      fakeConfig(),
-      (event) => events.push(event),
-    );
-    const stateBroken = fakeConfig();
-    const stackError = await deployWith(
-      app,
-      {
-        credentials,
-        converge: {
-          lower: () => {
-            throw new Error(`state store refused ${token}`);
-          },
-          converge: applied,
+    const credentials = { workspaceId: 'ws_1', client: {} };
+    // A service token reaches deploy only through the environment the user set.
+    const saved = process.env['PRISMA_SERVICE_TOKEN'];
+    process.env['PRISMA_SERVICE_TOKEN'] = token;
+    try {
+      const failed = await deployWith(
+        app,
+        {
+          credentials,
+          converge: appConverge(async (request) => {
+            request.onEvent?.({ kind: 'log', severity: 'warn', text: `retrying with ${token}` });
+            request.onEvent?.({
+              kind: 'resource',
+              fqn: 'app',
+              resourceType: 'Prisma.Deployment',
+              status: 'fail',
+              phase: 'failed',
+              message: `401 for Bearer ${token}`,
+            });
+            return {
+              kind: 'failed',
+              reasons: [{ tag: 'PrismaApiError', message: `bad ${token}` }],
+            };
+          }),
         },
-      },
-      stateBroken,
-    );
+        fakeConfig(),
+        (event) => events.push(event),
+      );
+      const stateBroken = fakeConfig();
+      const stackError = await deployWith(
+        app,
+        {
+          credentials,
+          converge: {
+            lower: () => {
+              throw new Error(`state store refused ${token}`);
+            },
+            converge: applied,
+          },
+        },
+        stateBroken,
+      );
 
-    expect(JSON.stringify(events)).not.toContain('SENTINEL');
-    expect(events.filter((event) => event.kind === 'message')).toHaveLength(2);
-    if (failed.ok || stackError.ok) throw new Error('expected failures');
-    expect(JSON.stringify(failed.failure)).not.toContain('SENTINEL');
-    expect(stackError.failure.code).toBe('DEPLOY.ENGINE_FAILED');
-    expect(stackError.failure.message).toBe('state store refused [redacted]');
+      expect(JSON.stringify(events)).not.toContain('SENTINEL');
+      expect(events.filter((event) => event.kind === 'message')).toHaveLength(2);
+      if (failed.ok || stackError.ok) throw new Error('expected failures');
+      expect(JSON.stringify(failed.failure)).not.toContain('SENTINEL');
+      expect(stackError.failure.code).toBe('DEPLOY.ENGINE_FAILED');
+      expect(stackError.failure.message).toBe('state store refused [redacted]');
+    } finally {
+      process.env['PRISMA_SERVICE_TOKEN'] = saved;
+    }
   });
 
   test('a refused converge is DEPLOY.CONVERGE_RUNNING or DEPLOY.WORKER_THREAD', async () => {
@@ -3051,7 +3036,7 @@ describe('deploy-run reporting', () => {
         {
           runAssembler: fakeAssembler,
           converge: appConverge(applied),
-          credentials: { workspaceId: 'ws-1', client: {}, serviceToken: 'tok' },
+          credentials: { workspaceId: 'ws-1', client: {} },
         },
       ),
     );

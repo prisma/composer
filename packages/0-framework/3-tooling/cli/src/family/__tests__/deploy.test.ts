@@ -7,10 +7,19 @@ import { describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import type {
+  ContainerCredentials,
+  ContainerDescriptor,
+  LocateContainerInput,
+  PrismaAppConfig,
+} from '@internal/core/config';
+import { lower } from '@internal/core/deploy';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok } from '@internal/foundation/result';
 import type { TestCli } from '@prisma/cli-engine/testing';
 import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
+import * as Layer from 'effect/Layer';
+import { deployWithDeps } from '../../operations/deploy.ts';
 import { createOperationsDouble, type OperationsDouble } from '../../testing/operations-double.ts';
 import { createComposerFamily } from '../family.ts';
 import { commandAt } from './command-at.ts';
@@ -210,42 +219,36 @@ describe('credentials', () => {
     expect(double.calls.deploy).toEqual([]);
   });
 
-  test('a `prisma login` session reaches the operation with no service token, so the operation refuses it', async () => {
+  test('a `prisma login` session reaches the operation as the engine client and its workspace, with no token', async () => {
     const { cli, double } = composerCli({ signedIn: 'session' });
     await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
     const credentials = double.calls.deps.deploy[0]?.credentials;
     expect(credentials?.workspaceId).toBe('ws_1');
-    expect(credentials?.serviceToken).toBeUndefined();
+    expect(credentials?.client).toBeDefined();
+    expect(Object.keys(credentials ?? {}).sort()).toEqual(['client', 'workspaceId']);
   });
 
-  /**
-   * Alchemy runs in this process and reads its credential from
-   * `process.env`, so the handler hands the operation the environment token
-   * and that token's workspace, for the operation to set there for the apply.
-   */
-  test('an environment token reaches the operation with its own workspace, and no child is spawned', async () => {
+  test('an environment token reaches the operation the same way, and no child is spawned', async () => {
     const { cli, double } = composerCli();
     const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(0);
     expect(result.spawns).toEqual([]);
     const credentials = double.calls.deps.deploy[0]?.credentials;
-    expect(credentials?.serviceToken).toEqual(expect.any(String));
     expect(credentials?.workspaceId).toBe('ws_1');
+    expect(Object.keys(credentials ?? {}).sort()).toEqual(['client', 'workspaceId']);
     expect(double.calls.deploy[0]?.signal).toBeInstanceOf(AbortSignal);
   });
 
-  test('with both a session and an environment token, the token and the workspace come from one credential', async () => {
+  test("with both a session and an environment token, the workspace is the active credential's", async () => {
     const { cli, double } = composerCli({ signedIn: 'both' });
     await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
-    const credentials = double.calls.deps.deploy[0]?.credentials;
-    expect(
-      credentials?.serviceToken === undefined
-        ? credentials?.workspaceId
-        : `${credentials.workspaceId} with a token`,
-    ).toBeOneOf(['ws_session', 'ws_env with a token']);
+    expect(double.calls.deps.deploy[0]?.credentials?.workspaceId).toBeOneOf([
+      'ws_session',
+      'ws_env',
+    ]);
   });
 
   test("a provider's console.log during the operation goes to stderr, and console is restored after", async () => {
@@ -279,6 +282,135 @@ describe('credentials', () => {
       consoleError.mockRestore();
     }
     expect(console.log).toBe(log);
+  });
+});
+
+describe('a stored session', () => {
+  const coreIndex = path.resolve(
+    import.meta.dir,
+    '../../../../../1-core/core/src/exports/index.ts',
+  );
+  const unused = () => {
+    throw new Error('the converge is faked, so no descriptor body runs');
+  };
+
+  function appDir(): { readonly dir: string; readonly entry: string } {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'composer-session-')));
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'session-app' }));
+    fs.writeFileSync(path.join(dir, 'prisma.config.ts'), 'export default {};\n');
+    const entry = path.join(dir, 'service.ts');
+    fs.writeFileSync(
+      entry,
+      [
+        `import { module, service } from ${JSON.stringify(coreIndex)};`,
+        "export default module('session-app', {}, ({ provision }) => {",
+        "  provision(service({ name: 'app', extension: 'fixture-extension', type: 'fixture/compute', inputs: {}, params: {},",
+        "    build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' } }), { id: 'app' });",
+        '  return {};',
+        '});',
+      ].join('\n'),
+    );
+    return { dir, entry };
+  }
+
+  test('deploys with no PRISMA_SERVICE_TOKEN: the engine client reaches the providers and state, and no credential enters process.env', async () => {
+    const app = appDir();
+    const seen: { credentials: ContainerCredentials[]; envDuringApply: unknown[] } = {
+      credentials: [],
+      envDuringApply: [],
+    };
+    const container: ContainerDescriptor = {
+      ensure: async (input, credentials) => {
+        if (credentials !== undefined) seen.credentials.push(credentials);
+        return { input, serialize: () => JSON.stringify(input) };
+      },
+      locate: async () => undefined,
+      remove: async () => {},
+      deserialize: (serialized) => {
+        const input: LocateContainerInput = JSON.parse(serialized);
+        return { input, serialize: () => serialized };
+      },
+    };
+    const section: PrismaAppConfig = {
+      extensions: [
+        {
+          id: 'fixture-extension',
+          nodes: {
+            'fixture/compute': {
+              kind: 'service',
+              provision: unused,
+              serialize: unused,
+              package: unused,
+              deploy: unused,
+            },
+          },
+          container,
+          providers: (credentials) => {
+            if (credentials !== undefined) seen.credentials.push(credentials);
+            return Layer.empty;
+          },
+        },
+        { id: 'fixture-build', nodes: { node: { kind: 'build', assemble: unused } } },
+      ],
+      state: {
+        extension: 'fixture-extension',
+        create: (_container, credentials) => {
+          if (credentials !== undefined) seen.credentials.push(credentials);
+          return Layer.empty as never;
+        },
+      },
+    };
+    const double = createOperationsDouble({});
+    const family = createComposerFamily({
+      operations: {
+        ...double.operations,
+        deploy: (input, deps) =>
+          deployWithDeps(input, {
+            ...deps,
+            runAssembler: async () => ({ dir: app.dir, entry: 'server.js' }),
+            converge: {
+              lower,
+              converge: async () => {
+                seen.envDuringApply.push(
+                  Object.keys(process.env).filter((name) =>
+                    ['PRISMA_SERVICE_TOKEN', 'PRISMA_WORKSPACE_ID'].includes(name),
+                  ),
+                );
+                return { kind: 'applied' };
+              },
+            },
+          }),
+      },
+    });
+    const cli = createTestCli({
+      commandFamilies: [family],
+      commands: { deploy: commandAt(family, 'deploy') },
+      config: { composer: section },
+      credential: activeCredential(),
+    });
+    const saved = {
+      token: process.env['PRISMA_SERVICE_TOKEN'],
+      ws: process.env['PRISMA_WORKSPACE_ID'],
+    };
+    delete process.env['PRISMA_SERVICE_TOKEN'];
+    delete process.env['PRISMA_WORKSPACE_ID'];
+    try {
+      const result = await cli.run(['deploy', '--entry', app.entry], { ...AS_TTY, cwd: app.dir });
+
+      expect(plain(result.stderr)).not.toContain('✘');
+      expect(result.exitCode).toBe(0);
+      expect(seen.envDuringApply).toEqual([[]]);
+      // The container, the providers and the state store each got the same engine client and workspace.
+      expect(seen.credentials).toHaveLength(3);
+      const [first] = seen.credentials;
+      expect(first?.workspaceId).toBe('ws_1');
+      expect(first?.client).toBeDefined();
+      for (const credentials of seen.credentials) expect(credentials.client).toBe(first?.client);
+    } finally {
+      if (saved.token !== undefined) process.env['PRISMA_SERVICE_TOKEN'] = saved.token;
+      if (saved.ws !== undefined) process.env['PRISMA_WORKSPACE_ID'] = saved.ws;
+      fs.rmSync(app.dir, { recursive: true, force: true });
+    }
   });
 });
 
