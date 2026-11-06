@@ -470,6 +470,10 @@ otherwise found by `gitName` or created). The
 deploy CLI resolves and ensures both; Alchemy provisions only the resources
 inside them and never creates or destroys a container itself.
 
+### Caller credentials
+
+What the caller of a deploy or destroy has already authenticated: a workspace and a platform API client (`CallerCredentials`). For `prisma deploy` they are the active credential's workspace and the engine's `ctx.api`. The framework hands them unchanged to every extension hook that talks to the platform: the container lifecycle, `preflight`, reporters, `providers` and the state store. When the caller has none, each extension uses its own credential protocol, for Prisma Cloud `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)).
+
 ## Authoring surface — the next layer
 
 How a developer actually writes the [Core nouns](#core-nouns). The concrete

@@ -1,10 +1,7 @@
 /** The `composer` section of `prisma.config.ts` (ADR-0017): statically imports each extension's node-descriptor registry plus the state store; core defines only the types. */
 import type * as Layer from 'effect/Layer';
-import type {
-  ContainerCredentials,
-  ContainerDescriptor,
-  ContainerInstance,
-} from '../container-transport.ts';
+import type { CallerCredentials } from '../caller-credentials.ts';
+import type { ContainerDescriptor, ContainerInstance } from '../container-transport.ts';
 import type { Graph } from '../graph.ts';
 import type { ServiceNode } from '../node.ts';
 import type { PreflightPayload } from '../preflight-transport.ts';
@@ -21,8 +18,8 @@ import type {
   ServiceLowering,
 } from './deploy.ts';
 
+export type { CallerCredentials } from '../caller-credentials.ts';
 export type {
-  ContainerCredentials,
   ContainerDescriptor,
   ContainerInstance,
   LocateContainerInput,
@@ -57,10 +54,9 @@ export interface ExtensionDescriptor {
   readonly application?: ApplicationDescriptor;
   /**
    * The extension's Alchemy providers — merged across all configured extensions (config order).
-   * `credentials` is what the caller already authenticated (`LowerOptions.credentials`); absent means the extension falls back to its own credential protocol.
-   * METHOD SYNTAX REQUIRED, like `preflight`: an extension types `credentials` against its own client, which assigns here only through method bivariance.
+   * METHOD SYNTAX REQUIRED, like `preflight`: an extension types `input` against its own client, which assigns here only through method bivariance.
    */
-  providers?(credentials?: ContainerCredentials): Layer.Layer<never>;
+  providers?(input: ProvidersInput): Layer.Layer<never>;
   /**
    * Deploy-time prerequisite check — the CLI runs it once, after the app's
    * Project/Branch are resolved and BEFORE any stack file is written or Alchemy
@@ -129,11 +125,17 @@ export interface StateDescriptor {
   /** Build the state layer. `container` is the owning extension's resolved instance; `undefined` when it declared no container descriptor. `credentials` is as `ExtensionDescriptor.providers` receives it. */
   create(
     container: ContainerInstance | undefined,
-    credentials?: ContainerCredentials,
+    credentials?: CallerCredentials,
   ): AlchemyStateLayer;
 }
 
-/** The resolved deploy context handed to an extension's `preflight` hook. `C` erases to `unknown` at the framework boundary — see ContainerCredentials. */
+/** What `ExtensionDescriptor.providers` receives. `C` erases to `unknown` at the framework boundary, exactly as on `PreflightInput`. */
+export interface ProvidersInput<C = unknown> {
+  /** What the caller already authenticated (`LowerOptions.credentials`). Absent means the extension falls back to its own credential protocol. */
+  readonly credentials?: CallerCredentials<C> | undefined;
+}
+
+/** The resolved deploy context handed to an extension's `preflight` hook. `C` erases to `unknown` at the framework boundary — see CallerCredentials. */
 export interface PreflightInput<C = unknown> {
   /** The loaded application graph — the manifest of prerequisites is read from it (`provisionManifest`). */
   readonly graph: Graph;
@@ -144,7 +146,7 @@ export interface PreflightInput<C = unknown> {
   /** The pools the command read for this environment. Preflight fills a missing `envSecret()` platform variable from `pools.secrets` and an `envParam()` param's from `pools.config`. */
   readonly pools: ConfigPools;
   /** What the caller has already authenticated, for the platform calls preflight makes. Absent means the extension falls back to its own credential protocol. */
-  readonly credentials?: ContainerCredentials<C> | undefined;
+  readonly credentials?: CallerCredentials<C> | undefined;
   /** Hands the deploy's progress output what the check covered, as counts (e.g. `{ checked: 53, filled: 0, missing: 0 }`). Counts only: never a name or a value. */
   readonly report?: ((counts: Readonly<Record<string, number>>) => void) | undefined;
   /** Shows the user a warning that does not stop the run. Only `prisma dev` passes it and shows the warnings; deploy passes none. */
@@ -187,7 +189,7 @@ export interface ReportBeginInput<C = unknown> {
    */
   readonly reportId: string | undefined;
   /** What the caller has already authenticated, exactly as `preflight` and the container lifecycle receive it. Present means the reporter must not build a client from the environment. */
-  readonly credentials?: ContainerCredentials<C> | undefined;
+  readonly credentials?: CallerCredentials<C> | undefined;
 }
 
 /** The deploy context handed to `RunReporter.attach`, once containers exist. */

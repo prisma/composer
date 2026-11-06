@@ -102,7 +102,7 @@ Closed subcode registry:
   CONTAINER_FAILED,
   PREFLIGHT_FAILED, ENGINE_FAILED, TEARDOWN_FAILED, CONTAINER_REMOVE_FAILED,
   BUILD_REQUIRED, ALCHEMY_BIN_MISSING, NODE_MISSING, STACK_WRITE_FAILED,
-  INTERRUPTED, CONVERGE_RUNNING, WORKER_THREAD
+  INTERRUPTED, CONVERGE_RUNNING, WORKER_THREAD, MANAGEMENT_API_URL_CONFLICT
   *(STAGE_INVALID, STAGE_UNVALIDATABLE and SCOPE_MISSING retired by
   [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md))*.
   ENVIRONMENT_REQUIRED: a `destroy` call names no environment.
@@ -110,6 +110,7 @@ Closed subcode registry:
   INTERRUPTED: the abort signal stopped `deploy`'s plan or apply. `prisma deploy` exits 130 (143 for SIGTERM): it reports this code as a message event and ends with the engine's abort, `CLI.ABORTED`.
   CONVERGE_RUNNING: another in-process converge holds this process's working directory and the reporter variables it sets in the environment.
   WORKER_THREAD: `deploy` was called from a worker thread with a `cwd` other than the process's working directory, which a worker cannot change.
+  MANAGEMENT_API_URL_CONFLICT: the deploy was given a Management API client, and `PRISMA_API_URL` names another host than the one that client sends to (`PRISMA_MANAGEMENT_API_URL`, or `https://api.prisma.io`). Raised by the Prisma Cloud extension when it resolves the environment's container, for `deploy` and `destroy`.
   `prisma dev` starts the Alchemy child the same way `deploy` does, so it
   raises ALCHEMY_BIN_MISSING and NODE_MISSING under `DEPLOY` too.
 - `DEV` — PLATFORM_UNSUPPORTED, TARGET_UNSUPPORTED, CONTAINER_FAILED, TEARDOWN_FAILED, PREFLIGHT_FAILED, EMULATOR_FAILED, SERVICE_START_FAILED, CONVERGE_FAILED, ATTACH_FAILED, STACK_WRITE_FAILED, EMULATORS_DIR_INVALID, EMULATOR_UNREACHABLE, SERVICE_READY_TIMEOUT_INVALID, NOT_STARTED_HERE, ADDRESS_UNKNOWN, NOT_RUNNING. EMULATOR_UNREACHABLE is raised by the emulator client when it cannot connect, so `log` raises it under `DEV` too; for a connection failure it takes the place of SERVICE_START_FAILED, ATTACH_FAILED and `LOG.ATTACH_FAILED`. `devUrl` also raises it when the emulator a node runs on is not running. NOT_STARTED_HERE (no `prisma dev` has recorded an app in the directory) is raised by `devUrl` and `devStop`; ADDRESS_UNKNOWN (the recorded app has no node at that address; the known addresses are listed) and NOT_RUNNING (the node exists but is not running; its state is named, and the reason and fix depend on it) by `devUrl` alone ([ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md)). Both operations raise EMULATOR_FAILED when the local target fails without a code. `emulator list` fails only with EMULATORS_DIR_INVALID; an emulator it cannot list is reported in that emulator's entry with EMULATOR_UNREACHABLE or EMULATOR_FAILED.

@@ -19,7 +19,7 @@ import {
 } from '../node.ts';
 import { type PreflightPayload, readPreflightPayload } from '../preflight-transport.ts';
 import type {
-  ContainerCredentials,
+  CallerCredentials,
   ContainerInstance,
   ExtensionDescriptor,
   NodeDescriptor,
@@ -242,7 +242,7 @@ export interface LowerOptions {
   /** Each extension's preflight payload, by extension id. A generated stack file reads them with `transportedLowerInputs`. */
   readonly preflight: ReadonlyMap<string, string>;
   /** What the caller already authenticated, handed to every extension's `providers()` and to the state descriptor's `create()`. Absent means each extension falls back to its own credential protocol. */
-  readonly credentials?: ContainerCredentials | undefined;
+  readonly credentials?: CallerCredentials | undefined;
 }
 
 /** A build descriptor's normalized output: the produced bundle dir plus the app's runnable entry within it. */
@@ -634,10 +634,10 @@ export function resolveStateLayer(
  */
 export function mergedProviders(
   config: PrismaAppConfig,
-  credentials?: ContainerCredentials,
+  credentials?: CallerCredentials,
 ): Layer.Layer<never> {
   const layers = config.extensions.flatMap((extension) =>
-    extension.providers !== undefined ? [extension.providers(credentials)] : [],
+    extension.providers !== undefined ? [extension.providers({ credentials })] : [],
   );
   const [first, ...rest] = layers;
   return first === undefined ? Layer.empty : Layer.mergeAll(first, ...rest);
