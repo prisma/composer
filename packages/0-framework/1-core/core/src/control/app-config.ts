@@ -147,7 +147,7 @@ export interface PreflightInput<C = unknown> {
   readonly environment: string;
   /** The app configuration the command read for this environment. */
   readonly configuration: AppConfiguration;
-  /** The app secrets the command read for this environment. */
+  /** The app secrets the command read for this environment. The deploy preflight reads no value from them and writes no platform variable; the dev preflight gives each local service its secrets from them. */
   readonly secrets: AppSecrets;
   /** What the caller has already authenticated, for the platform calls preflight makes. Absent means the extension falls back to its own credential protocol. */
   readonly credentials?: ContainerCredentials<C> | undefined;
@@ -468,10 +468,10 @@ export type ConfigAdapter = (input: ConfigAdapterInput) => ConfigValues | Promis
 /** The app configuration (ADR-0062): what the `config` adapters return, merged by top-level key, a later adapter winning. It is the root's input, and what `envParam()` reads. */
 export type AppConfiguration = Readonly<Record<string, unknown>>;
 
-/** The app secrets (ADR-0062): what the `secrets` adapters return, merged the same way. Every value is text. Preflight fills a missing `envSecret()` platform variable from it, and `prisma dev` hands its second process the values the graph's `envSecret()`s name. Composer redacts the values the graph's `envSecret()`s name wherever it prints. */
+/** The app secrets (ADR-0062): what the `secrets` adapters return, merged the same way. Every value is text. Nothing fills a platform variable from them. `prisma dev` hands its second process the values under the secrets keys of the graph's secret sources, and Composer redacts those values wherever it prints. */
 export type AppSecrets = Readonly<Record<string, string>>;
 
-/** The app secrets an `envSecret()` in the graph names, each with text. `prisma dev`'s first process hands them to its second process in `PRISMA_COMPOSER_NAMED_SECRETS`. */
+/** The app secrets under the secrets keys of the graph's secret sources, each with text. `prisma dev`'s first process hands them to its second process in `PRISMA_COMPOSER_NAMED_SECRETS`. */
 export type NamedSecrets = Readonly<Record<string, string>>;
 
 /**

@@ -541,10 +541,9 @@ async function runStackPipelineInner(
     alchemyStage = containers.get(config.state.extension)?.alchemyStage ?? environment;
     steps.finish({ name: 'connect' });
 
-    // Preflight (deploy only): each extension verifies its platform
-    // prerequisites — e.g. that every secret env var in the provision manifest
-    // exists for the resolved environment (ADR-0029) — BEFORE any stack file is written
-    // or Alchemy runs, so a missing secret fails fast with nothing side-effected.
+    // Preflight (deploy only): each extension checks its platform prerequisites,
+    // such as a platform variable a service needs (ADR-0064), before any stack
+    // file is written or Alchemy runs.
     if (action === 'deploy') {
       steps.start({ name: 'preflight' });
       let checked = 0;

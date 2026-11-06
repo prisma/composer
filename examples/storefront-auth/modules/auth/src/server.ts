@@ -14,7 +14,7 @@ const port = service.port();
 // The E2E's KNOWN test marker for the secret the root binds to AUTH_SIGNING_SECRET
 // (matched by the value the deploy provisions — see .github/workflows/e2e-deploy.yml
 // and scripts/e2e-verify.sh). `secretCheck` below proves the secret round-tripped
-// (root envSecret -> input-document $secret pointer -> boot lookup -> SecretBox) by comparing
+// (root envSecret -> input-document $platform marker -> boot lookup -> SecretBox) by comparing
 // `signingKey.expose()` to this marker and returning ONLY a boolean. `.expose()` is
 // the sole reader; the value is never rendered or logged (SecretBox redacts). This
 // constant is a non-sensitive demonstration marker, not a real credential.

@@ -546,6 +546,14 @@ describe('prisma dev preflight', () => {
     }
   });
 
+  test('a per-key param whose app configuration value is not text stops dev, naming the variable, the service and the kind', async () => {
+    configuration['API_TOKEN'] = 42;
+
+    expect(await preflightError(tokenGraph())).toBe(
+      'The `config` adapters return a number for "API_TOKEN", not text, so prisma dev cannot give service "app.web" the value envParam(\'API_TOKEN\') reads. Make the adapter return a string.',
+    );
+  });
+
   test('the missing-values message says where the adapters read', async () => {
     const message = await preflightError(tokenGraph());
 
