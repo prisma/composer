@@ -122,9 +122,9 @@ install never gets there.
 
 ## Pinning an unreleased alchemy build
 
-The repo is on a registry release: `alchemy` and `@alchemy.run/prisma` at 2.0.0-beta.85, `@distilled.cloud/prisma` at 1.0.0-rc.18. It was on a preview of commit `972f294` until beta.85 shipped that commit. Use a preview only when you need a fix that no release contains yet.
+The repo is on a preview of alchemy-run/alchemy#3101 at `ab55f95` (`https://pkg.alchemy.run/<package>/pr:3101:ab55f95`): `alchemy` and `@alchemy.run/prisma` at that URL, `@distilled.cloud/prisma` at the tarball URL `@alchemy.run/prisma` depends on, and `effect` with its companions at 4.1.2, the floor of that Distilled build's `effect` peer. The preview lets `PrismaEnvironment` and Distilled's `Credentials` omit the token (alchemy-run/alchemy#3101, alchemy-run/distilled#1076), which `prisma deploy` needs to send every request through the engine's client. Move back to a registry release once one contains both changes. Before this, the repo was on 2.0.0-beta.85 and `@distilled.cloud/prisma` 1.0.0-rc.18. Use a preview only when you need a fix that no release contains yet.
 
-alchemy publishes a preview of every commit on `main`. Pin it by commit, never by branch, in the `catalog:` block of `pnpm-workspace.yaml`:
+alchemy publishes a preview of every commit on `main`, and of each pull request's head as `pr:<number>:<short sha>`. Pin it by commit, never by branch, in the `catalog:` block of `pnpm-workspace.yaml`:
 
 ```yaml
 alchemy: https://pkg.alchemy.run/alchemy/<commit sha>
