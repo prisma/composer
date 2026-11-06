@@ -6,6 +6,7 @@
  * know nothing about Composer: the labels written on create are for people
  * reading an emulator listing, and nothing here reads them back.
  */
+import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
 import { DEV_DIR } from '@internal/core/config';
 import {
@@ -471,6 +472,21 @@ export async function deleteAppInstances(scope: AppScope): Promise<void> {
 /** When `prisma dev` ends: stops the app's service processes and database servers, keeping their data and ports. */
 export async function stopAppInstances(scope: AppScope): Promise<readonly StoppedNode[]> {
   return stopNodes(await appNodes(scope));
+}
+
+/** A stop that takes longer is left unfinished, so a stuck emulator cannot hold an exiting process forever. */
+const STOP_BEFORE_EXIT_TIMEOUT_MS = 30_000;
+
+/**
+ * `stopAppInstances`, finished before this returns: runs `stopAppEntry`, the
+ * stop-app-main program, and waits for it. For a process that is exiting, where
+ * an awaited stop would never run.
+ */
+export function stopAppInstancesBeforeExit(scope: AppScope, stopAppEntry: string): void {
+  spawnSync(process.execPath, [stopAppEntry, scope.devDir, scope.app, scope.environment], {
+    stdio: ['ignore', 'ignore', 'inherit'],
+    timeout: STOP_BEFORE_EXIT_TIMEOUT_MS,
+  });
 }
 
 /**
