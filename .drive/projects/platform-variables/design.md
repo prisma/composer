@@ -2,7 +2,7 @@
 
 This is the whole design of the platform variables project. It is the authoritative statement of it. It describes how the system behaves, not how the code is arranged. [plan.md](plan.md) says which slice builds each part.
 
-The design was settled with Will on 2026-11-05, inside the module-input project, and split out into its own project on 2026-11-06. Three reviews of the first draft (a fact check, a system design review and a code review, in `wip/pv-review/`) were applied on 2026-11-06, and Will settled the root construct and the API the same day (`wip/pv-review/decisions-round-2.md`). The module-input design ([../module-input/design.md](../module-input/design.md), sections 4, 5 and 9) holds the original discussion. This file supersedes it for everything about platform variables.
+The design was settled with Will on 2026-11-05, inside the module-input project, and split out into its own project on 2026-11-06. Three reviews of the first draft (a fact check, a system design review and a code review, in `wip/pv-review/`) were applied on 2026-11-06, and Will settled the root construct and the API the same day (`wip/pv-review/decisions-round-2.md`), and the root's type and the plan's shape on a third round (`wip/pv-review/decisions-round-3.md`). The six platform behaviours the design depends on were checked against Prisma Cloud on 2026-11-06 ([platform-checks.md](platform-checks.md)); section 3 states the results as facts. The module-input design ([../module-input/design.md](../module-input/design.md), sections 4, 5 and 9) holds the original discussion. This file supersedes it for everything about platform variables.
 
 ## 1. What it is for
 
@@ -42,7 +42,7 @@ The two shortcuts become spellings of the same thing. `envSecret('NAME')` is a p
 
 ## 2. Requirements
 
-1. **The graph shows every platform variable.** Without deploying, the loaded graph holds every platform variable node, and for each one the services that read its value and the type each expects. This is the inspectability principle applied to variables.
+1. **The graph shows every platform variable.** Without deploying, the loaded graph holds every platform variable node, and for each one the services that read its value and the type its schema declares. This is the inspectability principle applied to variables.
 2. **The deploy needs no value.** A deploy creates no value on the platform and never reads one. It fails for a missing value only when the service could not boot without it, and it finds that out from the schema, never from the value.
 3. **The type travels as data.** A service field typed `number` can take a platform variable, without the service's schema knowing the value arrives as text. A platform value exists only at boot, inside the service's process, where the module's code is absent, so the conversion must be data, not code.
 4. **No value is guessed.** Composer decodes a variable's text only as the author declared, never by trying JSON first.
@@ -50,11 +50,11 @@ The two shortcuts become spellings of the same thing. `envSecret('NAME')` is a p
 6. **Nothing waits for the platform.** Everything here ships against the Management API as it is today (section 3).
 7. **A secret's text never appears in an error.** Not at deploy, not at boot, not under `prisma dev`, and not through a parser's or a validator's message.
 
-## 3. What the platform has today, and what it does not
+## 3. What the platform does today
 
-This section answers whether the project needs a platform change. It does not. Every part ships against today's API. Five facts about the platform are not yet checked; slice S2 checks them first, and the design says what each outcome means.
+This section states what Prisma Cloud does, as checked on 2026-11-06 against the Management API (SDK 1.80.0) and the `prisma` CLI (8.0.0-rc.26); the record, with raw output, is [platform-checks.md](platform-checks.md). The project needs no platform change: every part ships against today's API.
 
-### What exists
+### Rows
 
 An environment variable on Prisma Cloud is a row in a project, created with `POST /v1/environment-variables`:
 
@@ -63,35 +63,34 @@ An environment variable on Prisma Cloud is a row in a project, created with `POS
 | `projectId` | the project it belongs to |
 | `class` | `production` or `preview` |
 | `branchId` | absent for the class's shared value; set for one preview branch's override |
-| `key` | the variable's name |
-| `value` | text, stored encrypted, never returned by a read |
+| `key` | the variable's name, matching `[A-Z_][A-Z0-9_]*` |
+| `value` | text of at least one character, stored encrypted, never returned by a read |
 
-A deployment receives the project's rows for its class, with its branch's overrides on top, and a row set on the service itself wins over both. So a name is resolved for each reader at three scopes, project class, branch and service, and the most local wins. The platform copies the result into the deployment when the deployment is created and never reads it again, so a value set later reaches a service only at its next deployment. A read returns a row's metadata, including `updatedAt`, but never its value. A row also carries `isManagedBySystem`, which marks a row the platform owns.
+A deployment receives the project's rows for its class, with its branch's overrides on top. So a name is resolved for each reader at two scopes today, project class and branch, and the most local wins. There is no service scope: no endpoint sets or lists a row on a service, and the list filter accepts only `projectId`, `class`, `key` and `branchId`. Will expects the platform to add a service scope later; section 4 says what that changes, which is preflight's list calls and nothing else. The platform copies the resolved rows into the deployment when it creates it and never reads them again, so a value set later reaches a service only at its next deployment. A read returns a row's metadata, including `updatedAt`, never its value. A deployment read (`GET /v1/deployments/{id}`) returns `envVars`, the names present on that deployment with values redacted, which shows what a deployment received without reading its logs. A row also carries `isManagedBySystem`, which marks a row the platform owns; a fresh project has no rows in either class, so no name carries it from the start.
+
+Two facts about keys and values decide rules elsewhere in this design:
+
+- **A key is upper case or it does not exist.** The platform refuses any key that does not match `[A-Z_][A-Z0-9_]*`, on write and in the list filter. A lower-case or mixed-case key cannot be a row, so a row's key and a name can never differ by case. Composer's own rule (section 6) is stricter only in refusing a leading underscore.
+- **A value is never empty.** The platform refuses an empty value. So empty text can never arrive from the platform, and a variable is either present with text or absent.
+
+The CLI sets rows at each scope: `prisma project env add KEY=VALUE --project <id> --role production` creates the production row; `--role preview` creates the preview-class row with no branch, shared by every preview branch; `--branch <git-name>` creates one branch's override. `update`, `list` (metadata only) and `delete` are scoped the same way.
 
 Composer already uses all of this. Preflight lists rows by `projectId`, `class` and `key`, walks every page, and takes the newest `updatedAt` among the rows the environment sees. The compute target writes its own rows, all named `COMPOSER_<address>_…`, through Alchemy's `Prisma.EnvironmentVariable`. Each compute deployment is created with `start: true` and `promote: true`, and the deploy waits until the platform reports it running or failed.
 
 Every environment-variable endpoint is marked experimental in the Management API SDK. Requirement 6 rests on them as they are; a change there is a change to preflight, not to the design.
 
+### A process that exits at boot
+
+The platform does not notice. The deployment reports `running`, the deploy's wait returns at once, `prisma deploy` succeeds, and the crashing deployment is promoted; the other services in the same deploy are promoted normally. The platform does not restart the process; each request to the service's URL boots it once and gets a 502. The boot error appears only in the logs: `prisma service logs <service> --project <id>`, or `GET /v1/deployments/{id}/logs?from_start=true`. This is a known platform problem and is outside this project. Its one consequence here: preflight's required-variable check (section 9) is the only protection Composer gives against a missing value, so the guide says in one sentence that a service that fails at boot is still promoted, and names `prisma service logs <service>` as where the error is.
+
 ### What does not exist, and what that costs
 
 - **A record of which variables a service reads.** There is no API for a service to say which variables it reads. Every deployment receives every row of its class, so every service sees every variable in the project, its own and other services' included. That is already true today; nothing in this project makes it worse. Composer records which service reads which variable in its own graph and in each service's input document. If the platform later takes such a record, the target sends it and the platform can stop delivering the rest. No author-facing change is needed then.
-- **A void value.** A row's value is text. The platform cannot tell "deliberately set to nothing" from "never set". So Composer sees two states, not three: no row, and a row with text. An optional field whose variable has no row still works, because boot leaves the key out and the schema accepts that. The cost is in the deploy report: it lists that variable as not set even when its absence is intended.
+- **A void value.** A row's value is non-empty text. The platform cannot tell "deliberately set to nothing" from "never set". So Composer sees two states: no row, and a row with text. An optional field whose variable has no row still works, because boot leaves the key out and the schema accepts that. The cost is in the deploy report: it lists that variable as not set even when its absence is intended.
+- **A service scope.** Composer's model does not depend on one: the node says nothing about scope, the platform resolves each reader at whatever scopes it offers, and preflight is the only part of Composer that knows which scopes exist. When the platform adds a service scope, preflight's existence check gains one list call per reader ([deferred.md](deferred.md)); nothing else changes.
 - **Workspace variables and rules.** Variables live in a project, with a shared value per class and per-branch overrides. There are no workspace-wide variables and no rules beyond that. Composer creates no values, so it does not care where the platform keeps them, as long as the deployment receives them.
 
 The platform also has no idea which variables are secret: every value is encrypted and write-only. Whether a variable is a secret matters only inside Composer and inside the service. That needs nothing from the platform.
-
-### Not yet checked
-
-Each of these is a platform behaviour the design depends on and nobody has confirmed. Slice S2 checks all five before it builds the parts that depend on them, and records each answer in ADR-0064.
-
-1. **Does the platform store an empty value, and deliver it to a deployment as empty text?** If yes, empty text is a value (section 8). If no, empty text means unset everywhere, and `prisma dev` keeps its rule that an empty value is unset.
-2. **Does the platform keep a key's case, and does a deployment receive the key as written?** The design requires upper-case names (section 6) so that the answer cannot matter for new nodes. The answer decides only what the release note tells a project whose `envSecret()` names hold lower-case letters today.
-3. **Can `prisma project env add` set a preview-class row with no branch?** If yes, the deploy report and the release note give that command for every non-production environment. If no, they give the Console step for a preview-wide value and the `--branch` form for one branch.
-4. **What does the platform do when a deployment's process exits at boot?** A deployment can still fail at boot after a deploy that passed preflight: when a value does not fit its `schema` (section 7), or when the platform and preflight disagree about a row. S2 records whether the platform marks the deployment failed, restarts it, or reports it running first and promotes it. The guide tells the operator where the boot error is in each case. If the platform promotes a crashing deployment, the guide says so plainly, and a wait for the service to answer before promotion is recorded in [deferred.md](deferred.md).
-
-5. **How does the Management API expose a row set on a service, and can preflight list it by name?** Preflight's existence check must see a row at every scope a reader resolves from: project class, branch and the reader's own service (section 9). S2 finds the endpoint or filter that lists service-scoped rows, and whether such a row carries `updatedAt` like the others. If the API cannot list them, preflight checks project and branch only, so a required value set only on the service makes preflight refuse the deploy; the guide then says to set a required value at project or branch scope, ADR-0064 records the limit, and the gap is recorded in [deferred.md](deferred.md).
-
-S2 also lists which names the platform marks `isManagedBySystem` in a fresh project, and adds any fixed ones to the reserved names (section 6).
 
 ### What earlier drafts said wrongly
 
@@ -107,7 +106,7 @@ A platform variable node is a named request for a value that something outside t
 - **The readers.** The services whose input holds the value. They are derived from the graph (section 5), never declared.
 - **The schema.** What the text under the name must be, and how each reader decodes it (section 7).
 
-The node says nothing about where the value lives. That is the operator's decision, made in the platform's own terms. On Prisma Cloud a name is resolved for each reader at three scopes, project class, branch and service, and the most local wins. Each reader receives the value the platform resolves for that reader under that name. "A variable set on the service itself" is a reader whose operator chose the service scope; the topology does not express scope. So one node can give two readers two different values, when the operator chose to, and the deploy report shows every name with its readers so the operator can see what each one resolves from.
+The node says nothing about where the value lives. That is the operator's decision, made in the platform's own terms. On Prisma Cloud a name is resolved for each reader at two scopes today, project class and branch, and the most local wins; a service scope is expected later (section 3). Each reader receives the value the platform resolves for that reader under that name, at whatever scopes the platform offers. The topology does not express scope, and preflight (section 9) is the only part of Composer that knows which scopes exist, so a new scope changes preflight's list calls and nothing else. Once a service scope exists, one node can give two readers two different values, when the operator chose to; the deploy report shows every name with its readers so the operator can see what each one resolves from.
 
 **The name is the variable's identity in Composer.** For nodes Composer owns, the address is the identity, and it becomes the `logicalId` on the node's platform row (ADR-0051). A platform variable node has no row of its own, because Composer does not own the thing it names: the operator does, under the name. So here the name plays the role the address plays elsewhere. This is a deliberate exception to the principle that a node's address is its identity, and it is justified by ownership: Composer identifies what it owns by address, and refers to what it does not own by the handle its owner uses. Section 14 records the exception.
 
@@ -128,11 +127,11 @@ Both return a resource node. `variable()` is plain by default and `variable.secr
 
 The platform's name space is project-wide. A module closure can guarantee that a name is unique only inside itself, so a third-party module that named a variable could collide with the app's or with another module's, and the app's author could not fix it. The root's address is the app's name, and the app is the project, so the root is the only closure whose uniqueness scope matches the platform's. Below the root, a module declares its need in its input, and the app's author wires the value down.
 
-The mechanism is a root constructor in `@prisma/composer`: `appRoot(name, { input? }, body)`, taking what `module()` takes minus `deps` and `expose`. Its body's `provision` has one extra overload, which accepts a platform variable node; `module()`'s does not, so `provision(variable(…))` in a nested module fails to compile. `appRoot()` returns a root node that `provision()` refuses by type, so a root cannot be nested. An entry built with `module()` keeps working, with a deprecation warning that says to write `appRoot()`. Refusing it would break every app that has not moved, in this repository and outside it, and it costs nothing to accept: the guarantee comes from the type of `appRoot()`'s body, so a `module()` root simply cannot provision a platform variable. Removing `module()` as an entry is deferred. Every root in this repository moves to `appRoot()` in S1; the release note shows the change.
+The mechanism is a root constructor in `@prisma/composer`: `appRoot(name, { input? }, body)`, taking what `module()` takes minus `deps` and `expose`. Its body's `provision` has one extra overload, which accepts a platform variable node; `module()`'s does not, so `provision(variable(…))` in a nested module fails to compile. `appRoot()` returns an app root node, which is its own type and not a `ModuleNode`: the two differ by one method, `isRoot()`, which answers `false` on a module node and `true` on an app root node with literal return types, so neither is assignable to the other. `provision()` therefore refuses an app root in every overload, and so does a wrapper whose parameter is typed `ModuleNode`: a root cannot be nested, and the refusal does not depend on the call site. Load, lowering and the CLI's entry accept a `ModuleNode` or an app root node, and Load keeps a run-time check for a root that reaches `provision()` through a cast. This follows Will's rule that what type-checks deploys. An entry built with `module()` is accepted as it is, with no warning and nothing to remove later: a `module()` root threatens nothing, because its body has no `provision()` overload for a platform variable, and the rule that matters is that `appRoot()` never appears below the root. The guides and examples teach `appRoot()`, and every root in this repository moves to it in slice 1, so that there is one way to teach; slice 1 is additive, not breaking. In slice 3 the compile error for `provision(variable(…))` in a `module()` body, at the root or below it, names `appRoot()` as the fix. Will settled both points, the silent acceptance and the distinct type, on 2026-11-06 (`wip/pv-review/decisions-round-3.md`).
 
-The root's existing special rules move onto `appRoot()` where the types can carry them: a root has no `deps` and no `expose`, and a root cannot be nested, are compile-time in S1, which ships `appRoot()` alone; S2 adds the overload for platform variables. The rule that a root's fields are plain or secret, never `field()`, stays a Load check, because it needs the schema's output type to carry no pointer, which the libraries do not expose reliably. The carried-secret rule for a root's `secret()` fields is module-input S18's and does not change here.
+The root's existing special rules move onto `appRoot()` where the types can carry them: a root has no `deps` and no `expose`, and a root cannot be nested, are compile-time in slice 1, which ships `appRoot()` alone; slice 3 adds the overload for platform variables. The rule that a root's fields are plain or secret, never `field()`, stays a Load check, because it needs the schema's output type to carry no pointer, which the libraries do not expose reliably. The carried-secret rule for a root's `secret()` fields is module-input S18's and does not change here.
 
-This reverses the glossary's statement that "there is no separate root construct"; section 14 records it, and S1 amends the entry.
+This reverses the glossary's statement that "there is no separate root construct"; section 14 records it, and slice 1 rewrites the entry.
 
 ### What the node is
 
@@ -159,7 +158,7 @@ Section 14 records that this is a third origin of a runtime value beside the tab
 - **A service's input binding:** a wrapped field (`field()`) for a plain platform variable, a secret field for a platform secret. Before module-input S18 ships, the secret field is `secretString()`; after it, `secret(inner)`. The deploy check and the compiler refuse the other combinations, as module-input already does for every pointer.
 - **A module's input binding,** into a wrapped field or a secret field, from which the module passes it on.
 - **Two fields of one service may read one variable.** Each gets its own marker, and both read the same text at boot. The deploy's check that a service's markers name distinct variables keeps applying to `$generated` markers, which each own a variable, and stops applying to `$platform` markers.
-- **Nowhere else.** A `resolve()` dependency, a resource's props, a service's per-key params, the whole input of a service, and a plain field all need data the deploy has. The compiler refuses each where it can see the type. Where it cannot, Load refuses a `resolve()` dependency, and the target's graph check (section 5) refuses the others, naming the variable and the place.
+- **Nowhere else.** A `resolve()` dependency, a resource's props, a service's per-key params, the whole input of a service, and a plain field (a schema member written without `field()` or a secret field) all need data the deploy has. The compiler refuses each where it can see the type. Where it cannot, Load refuses a `resolve()` dependency, and the target's graph check (section 5) refuses the others, naming the variable and the place.
 
 ### What the target does with the node
 
@@ -184,7 +183,7 @@ The target groups the list by variable for the deploy report and for errors: for
 Core's Load knows nothing about the node's payload, so the rules that read the payload run in the Prisma Cloud target, in two places:
 
 - **The constructor** checks everything that depends on one node alone: the name's form and the reserved names (section 6), and the `schema` (section 7). It throws, so Load fails with the constructor's message and no hook is needed.
-- **The target's graph check** checks everything that depends on more than one node, and anything that needs the resolved bindings. It is one hook that an extension registers and that runs right after Load, in every command that loads the graph: `prisma deploy`, `prisma dev` and `destroy`. So a bad graph fails before preflight, before any dev service starts, and without a deploy. This hook is new; slice S2 adds it to core. Today's similar checks run only at serialize or in preflight, which means at deploy.
+- **The target's graph check** checks everything that depends on more than one node, and anything that needs the resolved bindings. It is one hook that an extension registers and that runs right after Load, in every command that runs Load: `prisma deploy`, `prisma dev` and `destroy`. A command that loads the entry only to read the app's name never runs Load, so the check does not run there. So a bad graph fails before preflight, before any dev service starts, and without a deploy. This hook is new; slice 2 adds it to core. Today's similar checks run only at serialize or in preflight, which means at deploy.
 
 The graph check enforces: one declaration per name inside the root, one meaning per name (section 6), a value in a place it may not go (section 4), the array-position rule (section 8), and `envSecret()` below the root (section 12). Root-only for the nodes needs no check, because the compiler enforces it (section 4). Each error names the variable and every address involved.
 
@@ -194,7 +193,7 @@ The graph check enforces: one declaration per name inside the root, one meaning 
 
 A platform variable's name must match `^[A-Z][A-Z0-9_]*$`: it starts with an upper-case ASCII letter and continues with upper-case letters, digits and underscores. The constructor refuses anything else, naming the node and the rule.
 
-Upper case only, because the two places a name is used do not agree about case. Composer compares pointer names without case, because the platform is believed to upper-case keys; a process environment on Linux compares them with case. A name that could differ by case is the one way boot could fail to find a row that preflight saw. With upper-case names the question cannot arise, whatever check 2 in section 3 finds.
+Upper case only, because the platform accepts no other key (section 3), and because the two places a name is used do not agree about case: Composer compares pointer names without case, and a process environment on Linux compares them with case. With upper-case names a row and a name can never differ by case, so boot always finds the row preflight saw.
 
 ### Reserved names
 
@@ -204,7 +203,6 @@ The constructor refuses these names, saying why:
 - **`DATABASE_URL` and `DATABASE_URL_POOLED`.** Prisma Cloud seeds and manages them, as `envSecret()` and `envParam()` already say; a service reads its database through its dependency on the database node.
 - **`PORT`.** Boot sets it to the service's port.
 - **`PATH` and `HOME`.** Under `prisma dev` the local target sets both from the developer's shell, so a value of either on the platform would never be seen locally, which breaks requirement 5.
-- **Any name the platform marks `isManagedBySystem` in every project.** S2 lists them and adds them here if there are any.
 
 `HOST` is allowed. Boot sets `HOST` only when the environment has none, so a `HOST` row on the platform reaches the service unchanged.
 
@@ -254,7 +252,7 @@ Some schemas lose meaning on the way to JSON Schema without failing. Boot can en
 
 - **Zod drops a refinement.** `z.string().refine(…)` gives `{"type":"string"}`, with no error. Boot does not run the refinement.
 - **Zod hides coercion.** `z.coerce.number()` gives `{"type":"number"}` for both input and output. Boot parses the text as JSON and checks it is a number; the coercion never runs. The result is the same for every text that is a JSON number.
-- **`format`.** Zod's `z.email()` emits `format: "email"`. Draft 2020-12 treats `format` as an annotation unless the validator is told otherwise. Slice S3's spike decides whether Composer's validator checks `format`, and the guide states the choice.
+- **`format`.** Zod's `z.email()` emits `format: "email"`. Draft 2020-12 treats `format` as an annotation unless the validator is told otherwise. Slice 4's spike decides whether Composer's validator checks `format`, and the guide states the choice.
 
 The guide says so, and says to put a check that must hold into the service's own schema, which does run at boot.
 
@@ -264,7 +262,7 @@ ADR-0042 says Composer never looks inside a schema, because a library's internal
 
 ### The validator
 
-Boot validates with a JSON Schema validator that Composer ships in the service runtime. It must support draft 2020-12, which both libraries emit, must not generate code with `new Function`, so that it works under any runtime policy, and must not depend on Node or Bun. `@cfworker/json-schema` meets the first two and is small; it is not in the repo yet. Slice S3 confirms the choice with a spike that runs it against the schemas ArkType and Zod emit for the types the guide shows, and records: whether `format` is checked or ignored, whether `$ref` and `$defs` resolve, and every message the validator can produce, so that section 8's rule about messages holds.
+Boot validates with a JSON Schema validator that Composer ships in the service runtime. It must support draft 2020-12, which both libraries emit, must not generate code with `new Function`, so that it works under any runtime policy, and must not depend on Node or Bun. `@cfworker/json-schema` meets the first two and is small; it is not in the repo yet. Slice 4 confirms the choice with a spike that runs it against the schemas ArkType and Zod emit for the types the guide shows, and records: whether `format` is checked or ignored, whether `$ref` and `$defs` resolve, and every message the validator can produce, so that section 8's rule about messages holds.
 
 The platform is not expected to validate anything. Composer does.
 
@@ -287,7 +285,7 @@ Each place in a service's input document that holds a platform variable's value 
 ```
 
 - `name` is the variable. `secret` is present and `true` for a platform secret. `schema` is present when the node has one, as the JSON Schema with its annotations removed.
-- The marker replaces today's `$secret` pointer, `{ "$secret": "NAME" }`, in slice S2, for `envSecret()` too. The input document and the code that reads it at boot ship in the same deployment, from the same installed package, so changing the marker needs no compatibility reader.
+- The marker replaces today's `$secret` pointer, `{ "$secret": "NAME" }`, in slice 2, for `envSecret()`; slice 3's nodes write the same marker. The input document and the code that reads it at boot ship in the same deployment, from the same installed package, so changing the marker needs no compatibility reader.
 - `$generated` pointers, for `generatedParam()` and `serviceOrigin()`, stay as they are. Those variables are Composer's own, not the operator's.
 - A user key spelled like a marker gains one leading `$` when written and loses it when read, as today for `$secret` and `$generated`. The escape covers `$platform` too, so only Composer can place a marker.
 - The deploy report shows a marker as `$platform NAME`, or `$platform NAME (number)` when it has a schema, never the full JSON Schema.
@@ -303,20 +301,15 @@ At boot `service.input()` reads the input document and replaces each marker. The
 
 ### Empty text
 
-Whether empty text is a value depends on check 1 in section 3.
-
-- **If the platform stores an empty value and delivers it as empty text,** empty text is a value, not an absence. A `secret(type('string'))` field receives an empty box, and a schema that needs a non-empty value says so with its own check, such as ArkType's `'string > 0'`. `prisma dev` passes an empty value through unchanged, so that both agree. The examples' credential fields use non-empty schemas, so the pattern people copy fails at boot and not on the first request.
-- **If it does not,** empty text means unset, at boot and under `prisma dev`, as it does for `$secret` today, and the design says so in ADR-0064.
-
-Either way, boot and `prisma dev` apply one rule.
+An empty value cannot exist on the platform (section 3), so at boot a variable is present with text or absent. `prisma dev` keeps its rule that an empty value is unset, so both agree: empty means unset.
 
 ## 9. Deploy
 
 - **The deploy writes no variable.** Preflight no longer creates a missing variable from the app secrets or the app configuration. That was seeding, and with rows per class and per branch, seeding as a side effect of `deploy` is how a developer's local test key reaches production. A variable is set on the platform.
-- **Preflight reads existence, never a value.** For each platform variable the graph reads, preflight asks whether a row exists at any scope one of its readers resolves from, following the platform's own resolution: the environment's project class, the environment's branch, and each reader's own service (check 5 in section 3 says how the service scope is listed). A row at any of these counts as existing for that reader, and preflight keeps the newest `updatedAt` among them. The reads run in parallel, at most eight at a time; a failed list call still fails the deploy, because the triggers need `updatedAt`. Preflight does not list every row of the class, because in the preview class that returns every branch's `COMPOSER_` rows.
-- **A missing variable that a service needs fails the deploy.** A deployment is started and promoted as soon as it is created, so a service that exits at boot either fails the deploy part-way, after other services were promoted, or is promoted while crashing. Preflight prevents the case it can know about: for each service, it resolves the input binding with every variable that has no row left out and runs the service's schema. If the schema passes, those variables are optional. If it fails, preflight checks each one alone and names as required the variables whose absence alone fails; when no single one fails alone, it says the service needs some of them. A marker in an array position is required without a check. This is the method ADR-0058 gives the dev preflight, and it never needs a value. The error lists each required variable, the service and field that read it, and the command that sets it.
+- **Preflight reads existence, never a value.** For each platform variable the graph reads, preflight asks whether a row exists at any scope one of its readers resolves from, following the platform's own resolution: the environment's project class and the environment's branch, the two scopes the platform offers today (section 3). A row at either counts as existing, and preflight keeps the newest `updatedAt` among them. The reads run in parallel, at most eight at a time; a failed list call still fails the deploy, because the triggers need `updatedAt`. Preflight does not list every row of the class, because in the preview class that returns every branch's `COMPOSER_` rows. When the platform adds a service scope, preflight gains one list call per reader, and nothing else in Composer changes.
+- **A missing variable that a service needs fails the deploy.** A deployment is started and promoted as soon as it is created, and the platform reports a process that exits at boot as running (section 3), so a service that exits at boot is promoted while crashing and the deploy succeeds. Preflight prevents the case it can know about: for each service, it resolves the input binding with every variable that has no row left out and runs the service's schema. If the schema passes, those variables are optional. If it fails, preflight checks each one alone and names as required the variables whose absence alone fails; when no single one fails alone, it says the service needs some of them. A marker in an array position is required without a check. This is the method ADR-0058 gives the dev preflight, and it never needs a value. The error lists each required variable, the service and field that read it, and the command that sets it.
 - **A missing variable nothing needs is reported.** The deploy succeeds, and the variable is listed under "Platform variables with no value", with each service that reads it and the command that sets it.
-- **The command.** For production: `prisma project env add 'NAME=<value>' --project '<id>' --role production`. For every other environment the report leads with the preview-wide form, so that the next preview branch is not broken too: the command if check 3 in section 3 finds one, otherwise the Console step, "add it under Preview". The `--branch '<environment>'` form follows, for one branch only.
+- **The command.** For production: `prisma project env add 'NAME=<value>' --project '<id>' --role production`. For every other environment the report leads with the preview-wide form, `prisma project env add 'NAME=<value>' --project '<id>' --role preview`, so that the next preview branch is not broken too; the `--branch '<environment>'` form follows, for one branch only.
 - **How the names reach the operator.** Preflight returns its findings to the CLI, which prints the "no value" list right after the preflight step, before anything is created, and the deploy report repeats it at the end. Today's preflight contract carries counts only; it gains the list of names, and its wording changes. A deploy that fails later still showed the list.
 - **A changed value redeploys its readers.** Each service's deployment triggers include `<name>:updatedAt` for each platform variable it reads, as pointed variables do today, and `?` when the variable has no row. Changing a value on the platform and deploying again creates new deployments for exactly those services. Changing a value without deploying changes nothing running, because the platform copies rows into a deployment only when it creates it.
 
@@ -330,7 +323,7 @@ The local target has no platform, so it plays the platform's part.
 - **It isolates.** A local service receives only the variables its own rows point at: its param pointer rows and the `$platform` markers in its input document. The local target collects `$platform` markers at any depth, as it collects `$secret` markers today.
 - **It validates before any service starts.** The first process decodes and validates each filled value against its marker's JSON Schema, by the rules in sections 7 and 8, with the one shared implementation. A value that fails stops `prisma dev` with the message boot would give.
 - **A missing value follows ADR-0058.** The dev preflight leaves every unset platform variable out and validates the service's input. If the schema accepts it, the variables were optional. If it fails, the error lists the variables whose absence alone fails, where to set them (`.env.dev`, `.env.dev.local` or the shell), and the schema's message.
-- **Empty text** follows section 8's rule, whichever branch check 1 selects.
+- **An empty value is unset,** as section 8 says.
 - **A changed value restarts its readers.** The fingerprint trigger ADR-0058 describes covers platform variables too.
 
 ## 11. Secrets and redaction
@@ -345,36 +338,55 @@ The local target has no platform, so it plays the platform's part.
 
 Both shortcuts stay as deprecated spellings and are removed in a later release.
 
-- **`envSecret('NAME')` is a platform secret written inline.** It stays a source, not a node: Load creates no node from a value it finds in a binding, which would need a mechanism nobody has designed for a form that is going away. It writes the same `$platform` marker as `variable.secret()`, with `secret: true`, and follows every rule here: the name's form and the reserved names, one meaning per name, no seeding, the missing-variable rules, and the empty-text rule. The target lists each `envSecret()` beside the nodes, through the existing list of secret sources, so the deploy report and errors name both. `envSecret()` below the root fails the graph check with an error that says to provision `variable.secret({ name })` in the root and pass its value through the module's input; the compiler cannot refuse it while `envSecret()` is a source, because a source may be written in any binding. The only thing lost against the node is that the graph does not list it as a node.
+- **`envSecret('NAME')` is a platform secret written inline.** It stays a source, not a node: Load creates no node from a value it finds in a binding, which would need a mechanism nobody has designed for a form that is going away. It writes the same `$platform` marker as `variable.secret()`, with `secret: true`, and follows every rule here: the name's form and the reserved names, one meaning per name, no seeding, the missing-variable rules, and the rule that empty means unset. The target lists each `envSecret()` beside the nodes, through the existing list of secret sources, so the deploy report and errors name both. `envSecret()` below the root fails the graph check with an error that says to provision `variable.secret({ name })` in the root and pass its value through the module's input; the compiler cannot refuse it while `envSecret()` is a source, because a source may be written in any binding. The only thing lost against the node is that the graph does not list it as a node.
 - **`envParam('NAME')` in an input binding** is a deploy-time value from the app configuration, not a platform variable. It is deprecated, and a root input field replaces it.
 - **`envParam('NAME')` in a service's per-key params,** the older form of input, also stops being filled by preflight. At boot an unset pointed param takes the param's default or is left out if the param is optional, as a marker does; today it fails boot regardless. The boot error for a required one names the variable and says to set it on the platform; today it says the deploy did not provision it, which stops being true.
 
 ## 13. What changes for existing apps
 
-Slice S2 makes all of these changes at once, so that no two rules for one row ever coexist on `main`.
+Slice 1 makes the first change. Slice 2 makes every change that touches an existing platform row at once, so that no two rules for one row ever coexist on `main`. Slice 3 makes the last two, which concern only the new node's spelling.
 
-- **The root is written with `appRoot()`.** Every app changes `module(` to `appRoot(` on its entry; a `deps` or `expose` on the root fails to compile, and an entry that is still a `module()` deploys with a deprecation warning that says to use `appRoot()`. Nested modules do not change.
-- **The deploy no longer creates a variable.** A project that relied on `deploy` copying `envSecret()` values from `.env` to the platform sets them on the platform instead. The release note gives the commands.
-- **Every new preview branch needs a value.** Today's seeding writes a per-branch override for every non-production environment, so a project that used `envSecret()` on previews holds one override per branch and probably no preview-wide value. After S2, a new branch has no row. The release note's first step is a one-time one: create a preview-wide value for every name the project seeded, with the command or Console step from check 3 in section 3. S2's QA covers a fresh preview branch.
+- **The root is written with `appRoot()`** (slice 1). Every app in this repository changes `module(` to `appRoot(` on its entry; a `deps` or `expose` on the root fails to compile. An entry that is still a `module()` deploys exactly as before. Nested modules do not change. Slice 1 breaks nothing.
+- **The deploy no longer creates a variable** (slice 2, as is every change below unless marked). A project that relied on `deploy` copying `envSecret()` values from `.env` to the platform sets them on the platform instead. The release note gives the commands.
+- **Every new preview branch needs a value.** Today's seeding writes a per-branch override for every non-production environment, so a project that used `envSecret()` on previews holds one override per branch and probably no preview-wide value. After slice 2, a new branch has no row. The release note's first step is a one-time one: create a preview-wide value for every name the project seeded, with `prisma project env add 'NAME=<value>' --project '<id>' --role preview`. Slice 2's QA covers a fresh preview branch.
 - **The deploy fails for a missing variable only when a service needs it.** An optional one is reported. Today every missing name fails the deploy.
-- **An empty secret may be a value.** If check 1 selects that branch, a `secret()` field bound to an empty platform secret receives an empty box instead of failing boot, and the release note leads with it, with the non-empty schema to add.
-- **Names are upper case.** An `envSecret()` or `envParam()` name with a lower-case letter fails Load. The release note says how to rename.
+- **Names are upper case.** An `envSecret()` or `envParam()` name with a lower-case letter fails Load. No deployed project has one, because the platform refuses a key that is not upper case (section 3), so the release note has no step for it.
 - **`PORT`, `PATH` and `HOME` are reserved.** An `envSecret()` or `envParam()` that names one fails Load.
-- **`envSecret('NAME')` below the root fails Load,** with the migration message in section 12.
+- **`envSecret('NAME')` below the root fails Load** (slice 3), with the migration message in section 12.
 - **An unset `envParam()` per-key param with a default or optional** boots instead of failing.
-- **`envSecret()` and `envParam()` are deprecated.**
+- **`envParam()` is deprecated** (slice 2), and **`envSecret()` is deprecated** (slice 3, once `variable.secret()` exists to replace it).
 
 Nothing else changes for an app that uses neither shortcut.
 
 ## 14. What this design reverses, and which slice amends each record
 
-This is the one list of recorded statements the design reverses. Every record is rewritten in full, as one current record, in the PR that changes the behaviour; nothing is left as an amendment note.
+This is the one list of recorded statements the design reverses. Every record is rewritten in place, in full, as the current statement, in the PR that changes the behaviour: no supersession note, no "amended by" line, no history paragraph. Each record reads as if written today.
 
-### Slice S1
+### Slice 1: the root is written with `appRoot()`
 
-- **Glossary, Module ("The App is the outermost Module"):** "There is no separate root construct; 'App' names the outermost Module, it is not a distinct kind of node." Now the root is written with `appRoot()`, a root node that cannot be nested; it is still the outermost module in every other respect. S2 adds that it alone may provision a platform variable.
+The graph is still a composition of modules that are all the same, except the root, which is written with `appRoot()`, cannot be provisioned, and (from slice 3) alone may provision a platform variable. The model is less uniform than these records say, and each must say so plainly.
 
-### Slice S2
+- **Glossary, Module ("The App is the outermost Module"):** "There is no separate root construct; 'App' names the outermost Module, it is not a distinct kind of node." Now the root is written with `appRoot()`, an app root node that cannot be nested; it is still the outermost module in every other respect. A `module()` root is still accepted. Slice 3 adds that it alone may provision a platform variable.
+- **ADR-0014, one authoring primitive:** "There is exactly one authoring primitive: `module()`. … nothing in the source marks it as special. … There is no separate `app()` construct." Now `module()` is the primitive for every module below the root, and `appRoot()` builds the root, because a root-only `provision()` overload needs a root-only type. The ADR index line for ADR-0014 changes with it.
+- **ADR-0003, the entry:** "nothing marks a root in the model beyond its kind." Now the entry's default export is an app root built with `appRoot()`, or a `module()` root, which is still accepted.
+- **Glossary, `module` (the function entry):** "It is the single authoring primitive; the App is the outermost `module()`, picked out only by being the one you deploy." Now it defines every module below the root, and the root is built with `appRoot()`.
+- **Glossary, Superseded terms, App:** "it names the outermost Module." Now also: built with `appRoot()`; see App root.
+- **Glossary, every "implicit root Module" passage** (the two Aggregate Contract passages and the superseded-terms arrow). Now "app root".
+- **Glossary, new entry App root:** the outermost module, the one the entry default-exports and nothing provisions, built with `appRoot()`. Also called the root, the root module or the root node; those terms stay where they are exact and point at this entry.
+
+### Slice 2: the deploy fills nothing
+
+- **Glossary, The app secrets, Secrets key, Named secrets, Known secrets:** each defines its set through `envSecret()` and says "Deploy preflight fills a missing `envSecret()` platform variable". Now the app secrets fill nothing on the platform, and each set is defined through the names the graph's secret sources use. Slice 3 redefines them through platform secrets.
+- **Glossary, The app configuration:** "Deploy preflight also fills a missing platform variable" is gone. Under `prisma dev` the local target fills a plain platform variable from it (slice 3 adds that sentence).
+- **Purpose, goals:** "Recreate the whole topology in a fresh environment … no manually-created prerequisites." Now a new environment needs its platform variables set first, and preflight names every one that a service needs before anything is created.
+- **ADR-0029, secrets:** "Preflight fills a missing variable from the app secrets." Now preflight fills nothing. Slice 3 rewrites the record again for the secret concept.
+- **ADR-0032, env-sourced params:** preflight fills a missing variable from the app configuration, and an unset pointed param "is a boot error". Now it fills nothing, and an unset pointed param takes its default or is left out when optional.
+- **ADR-0042, service input:** the `$secret` marker; "Every variable a service's markers name must be distinct once normalised"; the three boot outcomes. Now the `$platform` marker, distinct names for `$generated` only, the four boot steps, the empty-text rule, and the array-position rule.
+- **ADR-0058, dev secrets:** "Each service gets only the variables its own rows point at" is stated as a local-target rule, not a Prisma Cloud one; and the recorded difference between dev's and deploy's input documents for an unset optional secret closes, because both now leave the key out.
+- **ADR-0062, values and config adapters:** "Deploy preflight and dev preflight fill a missing `envSecret()` platform variable". Now preflight fills nothing. Slice 3 rewrites the Values section.
+- **ADR-0064, new, "A platform variable is a node":** created with the platform facts of section 3, the graph check hook, the preflight findings, and sections 8 to 12 as they apply to every operator variable. Slice 3 adds the node.
+
+### Slice 3: a platform variable is a node
 
 - **Glossary, Core nouns:** "Anything without a lifecycle — an API key, an external URL — is part of a node's Input, not a node." Now a node either has a lifecycle Composer manages, or refers to something the platform owns; Composer lists a referenced value and never creates it.
 - **Glossary, Resource:** "A node whose lifecycle a provider manages." Now also a node that refers to a value the platform owns.
@@ -382,25 +394,22 @@ This is the one list of recorded statements the design reverses. Every record is
 - **Glossary, Topology:** "Every node in the topology has a managed lifecycle." Now every node either has one or refers to something the operator sets, and the second kind is listed by name when an environment is created.
 - **Glossary, Input:** `envSecret()` "is the only thing the framework calls a secret", and "A value is a secret only when it is externally sourced and never in state — `envSecret`". Now a platform secret, spelled as a node or as `envSecret()`, and a carried secret (module-input S18) are secrets.
 - **Glossary, Value and RuntimeValue:** the sources that give a runtime value are listed as `envSecret()`, `generatedParam()` and `serviceOrigin()`, and "every plain pointer is a `Pointer<string>`". Now a platform variable node gives one, and a plain pointer is typed by its schema.
-- **Glossary, The app secrets, Secrets key, Named secrets, Known secrets:** each defines its set through `envSecret()`. Now each is defined through platform secrets, of which `envSecret()` is one spelling, and the app secrets fill nothing on the platform.
-- **Glossary, The app configuration:** "Deploy preflight also fills a missing platform variable" is gone. Under `prisma dev` the local target fills a plain platform variable from it.
+- **Glossary, The app secrets, Secrets key, Named secrets, Known secrets:** Slice 2 defined each set through the names the graph's secret sources use. Now each is defined through platform secrets, of which `envSecret()` is one spelling.
+- **Glossary, The app configuration:** gains that under `prisma dev` the local target fills a plain platform variable from it.
 - **Domain map:** "Every node carries a managed lifecycle" and "Configuration is not a node. Keys, URLs, and secrets parameterise Services and Resources". Now a platform variable is a node that names a value the operator sets, and the rest of configuration is still input.
-- **Purpose, goals:** "Recreate the whole topology in a fresh environment … no manually-created prerequisites." Now a new environment needs its platform variables set first, and preflight names every one that a service needs before anything is created.
-- **ADR-0029, secrets:** "There is exactly one secret concept", `envSecret()` is "the source", and "Preflight fills a missing variable from the app secrets." Now a secret is any value handled as one; a platform secret is the kind Composer never sees, and preflight fills nothing. Module-input S18 adds the carried secret to the same record when it ships.
-- **ADR-0032, env-sourced params:** preflight fills a missing variable from the app configuration, and an unset pointed param "is a boot error". Now it fills nothing, and an unset pointed param takes its default or is left out when optional.
-- **ADR-0042, service input:** the `$secret` marker; "Every variable a service's markers name must be distinct once normalised"; the three boot outcomes. Now the `$platform` marker, distinct names for `$generated` only, the four boot steps, the empty-text rule, and the array-position rule. The statement "Composer never looks inside the schema" gains the exception in section 7, stated in ADR-0064 and cited here.
-- **ADR-0058, dev secrets:** "Empty counts as unset" becomes conditional on check 1; "Each service gets only the variables its own rows point at" is stated as a local-target rule, not a Prisma Cloud one; the named secrets are defined through platform secrets; and the recorded difference between dev's and deploy's input documents for an unset optional secret closes, because both now leave the key out.
-- **ADR-0062, values and config adapters:** "secrets reach platform variables through secrets adapters"; "Deploy preflight and dev preflight fill a missing `envSecret()` platform variable"; the runtime-value table lists only sources. Now the Values section records a third origin of a runtime value, one a resource gives, and preflight fills nothing. The S18 rewrite of this record, for the root's secret field, builds on S2's.
+- **ADR-0029, secrets:** "There is exactly one secret concept" and `envSecret()` is "the source". Now a secret is any value handled as one, and a platform secret is the kind Composer never sees. Module-input S18 adds the carried secret to the same record when it ships.
+- **ADR-0058, dev secrets:** the named secrets are defined through platform secrets.
+- **ADR-0062, values and config adapters:** "secrets reach platform variables through secrets adapters"; the runtime-value table lists only sources. Now the Values section records a third origin of a runtime value, one a resource gives. The S18 rewrite of this record, for the root's secret field, builds on slice 3's.
 - **ADR-0063, two relationships:** a node depends on an interface or exposes one. Now a service also reads a platform variable, a third relationship that is not an edge.
-- **ADR-0064, new, "A platform variable is a node":** records sections 4 to 6, 8 to 12, the five platform checks and their answers, the core changes S2 makes (`appRoot()`, a resource that is a value, the graph check hook, preflight findings), and the alternatives in section 15.
+- **ADR-0064:** gains the node, sections 4 to 6, the core changes slice 3 makes (the `provision()` overload on `appRoot()`, a resource that is a value), and the alternatives in section 15.
 
-### Slice S3
+### Slice 4: a platform variable has a schema
 
 - **ADR-0064:** `schema`, the decoding rule, the refusals and the validator.
-- **ADR-0042:** the `schema` member of the marker and the decode-then-validate step.
+- **ADR-0042:** the `schema` member of the marker and the decode-then-validate step. The statement "Composer never looks inside the schema" gains the exception in section 7, stated in ADR-0064 and cited here.
 - **Glossary:** the `schema` option on the platform variable entry.
 
-No two slices rewrite one record at the same time: S3 starts after S2 has merged.
+No two slices rewrite one record at the same time: each slice starts after the one before it has merged. A record slice 2 rewrites may be rewritten again by slice 3, because they are sequential.
 
 ## 15. Alternatives considered
 
@@ -413,7 +422,7 @@ No two slices rewrite one record at the same time: S3 starts after S2 has merged
 - **Two nodes for one name reconciled when their schemas agree.** This rule existed only because nodes could sit below the root. With root-only, two declarations of one name are two lines in one body, and refusing them is simpler than reconciling them.
 - **The node declares its scope,** such as `variable({ name, scope: 'service' })`. Rejected: where a value lives is the operator's decision in the platform's terms, not the author's; the topology says who reads a name, not where its value is set. An author-declared per-reader variable is recorded in [deferred.md](deferred.md).
 - **`provision()` returning `{ id, value }`.** Rejected in favour of the value itself with `id` on it, matching `generatedParam()` and `serviceOrigin()`, so a binding reads `{ from, smtpPort }`.
-- **The deploy succeeds with every variable unset, and reports.** Rejected: a deployment is promoted as it is created, so a service that exits at boot fails the deploy part-way or is promoted while crashing. Preflight refuses the case the schema can show without a value.
+- **The deploy succeeds with every variable unset, and reports.** Rejected: a deployment is promoted as it is created, and the platform reports a crashing process as running (section 3), so a service that exits at boot is promoted while crashing. Preflight refuses the case the schema can show without a value.
 - **Decode by trying JSON first.** Rejected by Will: Composer must not guess. A variable whose text happens to be valid JSON would change type without anyone declaring it.
 - **Decode a mixed schema as text.** Rejected: `'string | number'` holding `587` would then be a different value from the one `type('number')` gives for the same row, chosen by Composer.
 - **A fixed vocabulary of types,** such as `schema: 'number'`. Rejected by Will in favour of a standard: Standard JSON Schema carries the type in a form any library can produce and any validator can check.
