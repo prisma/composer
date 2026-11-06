@@ -57,6 +57,8 @@ export interface ExtensionDescriptor {
   readonly application?: ApplicationDescriptor;
   /** The extension's Alchemy providers — merged across all configured extensions (config order). */
   readonly providers?: () => Layer.Layer<never>;
+  /** Refuses a loaded graph this extension cannot deploy. The CLI calls it right after Load in every command that runs Load; a throw fails the command with the thrown message. */
+  readonly checkGraph?: (graph: Graph) => void;
   /**
    * Deploy-time prerequisite check — the CLI runs it once, after the app's
    * Project/Branch are resolved and BEFORE any stack file is written or Alchemy

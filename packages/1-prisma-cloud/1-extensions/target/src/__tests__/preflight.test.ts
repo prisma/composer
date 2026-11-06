@@ -1061,18 +1061,6 @@ describe('runPreflight — values come from the app configuration and the app se
 
   const production = { container: fakeContainer('proj', undefined), environment: 'production' };
 
-  /** A name bound both as a secret in the service's input and as an env-sourced param. */
-  const sharedNameGraph = () =>
-    Load(
-      module('app', ({ provision }) => {
-        provision(compute({ name: 'web', deps: {}, input: anySchema, build }), {
-          id: 'web',
-          input: { key: envSecret('SHARED') },
-          params: { port: envParam('SHARED') },
-        });
-      }),
-    );
-
   async function withShell<T>(values: Record<string, string>, fn: () => Promise<T>): Promise<T> {
     for (const [name, value] of Object.entries(values)) process.env[name] = value;
     try {
@@ -1116,18 +1104,6 @@ describe('runPreflight — values come from the app configuration and the app se
 
     expect(state.posts).toEqual([
       { projectId: 'proj', class: 'production', key: 'APP_ORIGIN', value: 'https://pool.example' },
-    ]);
-  });
-
-  test('a name bound as a secret and as an env-sourced param is filled from the app secrets', async () => {
-    await withValues(
-      { secrets: { SHARED: 'from-secrets' }, configuration: { SHARED: 'from-config' } },
-      () =>
-        preflightWith({ graph: sharedNameGraph(), ...production }, { client: fakeClient(state) }),
-    );
-
-    expect(state.posts).toEqual([
-      { projectId: 'proj', class: 'production', key: 'SHARED', value: 'from-secrets' },
     ]);
   });
 

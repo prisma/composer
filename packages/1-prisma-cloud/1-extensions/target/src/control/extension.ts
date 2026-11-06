@@ -32,6 +32,7 @@ import type {
   ServiceProviderParam,
 } from '../descriptors/shared.ts';
 import { GeneratedParamProvider } from '../generated-param-resource.ts';
+import { checkGraph } from '../graph-check.ts';
 import { fromLegacyId, legacyServiceKeyId, legacyStreamsKeyId } from '../legacy-resource-ids.ts';
 import { SELF_ORIGIN } from '../origin-key.ts';
 import { OrmMigrationProvider } from '../orm-migration-resource.ts';
@@ -341,6 +342,8 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     id: PRISMA_CLOUD_EXTENSION_ID,
 
     container: containerDescriptor({ region: () => o().region }),
+
+    checkGraph,
 
     providers: () =>
       asProvidersLayer(

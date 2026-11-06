@@ -9,6 +9,7 @@ import {
 } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import type { SecretString } from '@internal/foundation/secret';
+import { assertVariableName } from './variable-name.ts';
 
 /**
  * Brands the payload `envParam` builds. Core's `paramSource()` is a public
@@ -27,44 +28,19 @@ export interface EnvParamPayload {
   readonly name: string;
 }
 
-const RESERVED_PARAM_PREFIX = 'COMPOSER_';
-/** The names Prisma Cloud owns: it seeds and manages them, so Composer never binds one. */
-const PLATFORM_OWNED_PARAM_NAMES: ReadonlySet<string> = new Set([
-  'DATABASE_URL',
-  'DATABASE_URL_POOLED',
-]);
-
 /**
  * Binds a param slot to a named Prisma Cloud platform env var — the non-secret
  * sibling of `envSecret` (spec: env-sourced config params). The platform
  * injects the value into the running instance per environment; the param's own
- * schema validates it at boot, unredacted. The name may not use the
- * framework's reserved `COMPOSER_` prefix or the platform-owned
- * `DATABASE_URL(_POOLED)` keys — same parity as `envSecret`. It returns a
+ * schema validates it at boot, unredacted. `assertVariableName` says which
+ * names it accepts. It returns a
  * value known at deploy: where a module's input or a resolve() function needs
  * its real value, that is the variable's value in the app configuration: what the
  * `config` adapters in prisma.config.ts return, by default the process
  * environment.
  */
 export function envParam(name: string): ParamSource<EnvParamPayload> & Value<string> {
-  if (typeof name !== 'string' || name.length === 0) {
-    throw new Error(
-      "envParam() requires a non-empty platform env-var name, e.g. envParam('APP_ORIGIN').",
-    );
-  }
-  if (name.startsWith(RESERVED_PARAM_PREFIX)) {
-    throw new Error(
-      `envParam name "${name}" may not start with "${RESERVED_PARAM_PREFIX}" — that prefix is ` +
-        "reserved for the framework's own generated config keys.",
-    );
-  }
-  if (PLATFORM_OWNED_PARAM_NAMES.has(name)) {
-    throw new Error(
-      `envParam name "${name}" is reserved — ${[...PLATFORM_OWNED_PARAM_NAMES].join(' and ')} ` +
-        'are seeded and managed by Prisma Cloud itself, so the framework refuses to bind them. ' +
-        'Declare the database your service uses and read its url from that connection.',
-    );
-  }
+  assertVariableName(name, 'envParam');
   return paramSource<EnvParamPayload, string>(
     { [PRISMA_CLOUD_PARAM_SOURCE]: true, name },
     { label: `envParam('${name}')`, configurationKey: name },

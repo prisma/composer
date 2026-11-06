@@ -17,11 +17,47 @@ describe('envSecret (Prisma Cloud secret source)', () => {
     );
   });
 
-  test('rejects empty, COMPOSER_-prefixed, and reserved DATABASE_URL names', () => {
-    expect(() => envSecret('')).toThrow(/non-empty/);
-    expect(() => envSecret('COMPOSER_X')).toThrow(/COMPOSER_/);
-    expect(() => envSecret('DATABASE_URL')).toThrow(/reserved/);
-    expect(() => envSecret('DATABASE_URL_POOLED')).toThrow(/reserved/);
+  test('rejects an empty name', () => {
+    expect(() => envSecret('')).toThrow(
+      "envSecret() requires a non-empty platform variable name, e.g. envSecret('API_KEY').",
+    );
+  });
+
+  test.each(['api_key', 'Api_Key', '_TOKEN', '1TOKEN', 'API-KEY'])(
+    'rejects %s, which is not an upper-case platform variable name',
+    (name) => {
+      expect(() => envSecret(name)).toThrow(
+        `envSecret name "${name}" is not a platform variable name: it must match ^[A-Z][A-Z0-9_]*$, an upper-case letter followed by upper-case letters, digits and underscores, because the platform accepts no other key and a process environment compares names with case.`,
+      );
+    },
+  );
+
+  test.each([
+    ['COMPOSER_X', "names starting with COMPOSER_ are Composer's own platform variables."],
+    [
+      'DATABASE_URL',
+      'Prisma Cloud sets and manages DATABASE_URL and DATABASE_URL_POOLED itself. Declare the database your service uses and read its url from that connection.',
+    ],
+    [
+      'DATABASE_URL_POOLED',
+      'Prisma Cloud sets and manages DATABASE_URL and DATABASE_URL_POOLED itself. Declare the database your service uses and read its url from that connection.',
+    ],
+    ['PORT', "boot sets PORT to the service's port."],
+    [
+      'PATH',
+      'under prisma dev the local target sets PATH and HOME from your shell, so a value on the platform would never be seen locally.',
+    ],
+    [
+      'HOME',
+      'under prisma dev the local target sets PATH and HOME from your shell, so a value on the platform would never be seen locally.',
+    ],
+  ])('rejects the reserved name %s, saying why', (name, reason) => {
+    expect(() => envSecret(name)).toThrow(`envSecret name "${name}" is reserved: ${reason}`);
+  });
+
+  test('accepts HOST and a name with digits and underscores', () => {
+    expect(() => envSecret('HOST')).not.toThrow();
+    expect(() => envSecret('STRIPE_KEY_2')).not.toThrow();
   });
 
   test('secretName rejects a leaf bound to a source not built by envSecret', () => {
