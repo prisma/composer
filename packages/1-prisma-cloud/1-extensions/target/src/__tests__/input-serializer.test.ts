@@ -1,7 +1,7 @@
 /**
  * The input channel (ADR-0042): the deploy-side binding walk
  * (`resolveInputBinding`), the one-document serialization (`serializeInput`),
- * and the boot-side read (`readInput`) — classification, absence, `$secret`
+ * and the boot-side read (`readInput`) — classification, absence, marker key
  * escaping, validation with pointers in place, and the round trip.
  */
 import { describe, expect, test } from 'bun:test';
@@ -162,11 +162,11 @@ describe('serializeInput — validate with pointers in place, serialize the vali
     expect(row?.key).toBe('COMPOSER_WEB_INPUT');
     expect(JSON.parse(row?.value ?? '')).toEqual({
       stripeEnabled: true,
-      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
+      stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
     });
   });
 
-  test('without absent secrets (every deploy), an unset secret is still written as a pointer', () => {
+  test('without absent secrets (every deploy), an unset secret is still written as a marker', () => {
     const row = serializeInput(
       svc(conditional),
       'web',
@@ -175,7 +175,7 @@ describe('serializeInput — validate with pointers in place, serialize the vali
     );
     expect(JSON.parse(row?.value ?? '')).toEqual({
       stripeEnabled: true,
-      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
+      stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
     });
   });
 
@@ -246,7 +246,7 @@ describe('serializeInput — validate with pointers in place, serialize the vali
       { env: { STRIPE_SECRET_KEY: 'sk_live_should_not_leak' } },
     );
     expect(row?.value).not.toContain('sk_live');
-    expect(row?.value).toContain('"$secret":"STRIPE_SECRET_KEY"');
+    expect(row?.value).toContain('"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}');
   });
 
   test('a schema that mints its own SecretBox (a default) is rejected — no platform var stands behind it', () => {
@@ -281,33 +281,34 @@ describe('serializeInput — validate with pointers in place, serialize the vali
   });
 });
 
-describe('the reserved $secret key — user data round-trips (ADR-0042)', () => {
+describe('user keys spelled like a marker round-trip (ADR-0042)', () => {
   const anySchema: StandardSchemaV1<unknown, unknown> = {
     '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },
   };
 
-  test('a user object containing "$secret" (and "$$secret") is escaped on write and unescaped on read', async () => {
+  test('a user key "$platform", "$$platform" or "$secret" gains one "$" on write and loses it on read', async () => {
     const binding = {
       real: envSecret('REAL_SECRET'),
-      forged: { $secret: 'NOT_A_POINTER' },
-      doubled: { $$secret: 'ALSO_NOT' },
+      forged: { $platform: { name: 'NOT_A_MARKER', secret: true } },
+      doubled: { $$platform: 'ALSO_NOT' },
+      old: { $secret: 'OLD_USER_KEY' },
     };
     const row = serializeInput(svc(anySchema), 'web', binding, { env: {} });
-    // On the wire the user keys carry one extra "$" — only the framework's
-    // own pointer keeps the single-"$" marker.
-    expect(row?.value).toContain('"$$secret":"NOT_A_POINTER"');
-    expect(row?.value).toContain('"$$$secret":"ALSO_NOT"');
-    expect(row?.value).toContain('"real":{"$secret":"REAL_SECRET"}');
+    expect(row?.value).toContain('"$$platform":{"name":"NOT_A_MARKER","secret":true}');
+    expect(row?.value).toContain('"$$$platform":"ALSO_NOT"');
+    expect(row?.value).toContain('"$$secret":"OLD_USER_KEY"');
+    expect(row?.value).toContain('"real":{"$platform":{"name":"REAL_SECRET","secret":true}}');
+    expect(row?.variables).toEqual([{ name: 'REAL_SECRET', secret: true }]);
 
     const node = svc(anySchema);
     const value = await withEnv(
       { [inputKey('')]: row?.value ?? '', REAL_SECRET: 'sk_live_real' },
       () => readInput(node, '') as Record<string, unknown>,
     );
-    // Read back: the pointer became a box; the user keys came back verbatim.
     expect((value['real'] as SecretBox<string>).expose()).toBe('sk_live_real');
-    expect(value['forged']).toEqual({ $secret: 'NOT_A_POINTER' });
-    expect(value['doubled']).toEqual({ $$secret: 'ALSO_NOT' });
+    expect(value['forged']).toEqual({ $platform: { name: 'NOT_A_MARKER', secret: true } });
+    expect(value['doubled']).toEqual({ $$platform: 'ALSO_NOT' });
+    expect(value['old']).toEqual({ $secret: 'OLD_USER_KEY' });
   });
 });
 
@@ -334,14 +335,83 @@ describe('readInput — the boot half', () => {
     expect(String(value.stripeKey)).toBe('[REDACTED]');
   });
 
-  test('an unprovisioned platform var behind a pointer is a loud boot failure naming both keys', async () => {
+  test('a required secret whose variable is unset fails the schema, and the error ends with its name', async () => {
     const node = svc(conditional);
     await withEnv(
-      { [inputKey('')]: '{"stripeEnabled":true,"stripeKey":{"$secret":"MISSING_SECRET_VAR"}}' },
+      {
+        [inputKey('')]:
+          '{"stripeEnabled":true,"stripeKey":{"$platform":{"name":"UNSET_SECRET_VAR","secret":true}}}',
+      },
       () => {
-        expect(() => readInput(node, '')).toThrow(/COMPOSER_INPUT → MISSING_SECRET_VAR/);
+        expect(() => readInput(node, '')).toThrow(
+          /^invalid input document \(env COMPOSER_INPUT\): .*\(platform variables with no value: UNSET_SECRET_VAR\)$/,
+        );
       },
     );
+  });
+
+  test('an optional secret whose variable is unset or empty is left out, and the service boots', async () => {
+    const node = svc(type({ greeting: 'string', 'apiKey?': secretString() }));
+    const document =
+      '{"greeting":"hi","apiKey":{"$platform":{"name":"OPTIONAL_SECRET_VAR","secret":true}}}';
+    const unset = await withEnv({ [inputKey('')]: document }, () => readInput(node, ''));
+    expect(unset).toEqual({ greeting: 'hi' });
+    const empty = await withEnv({ [inputKey('')]: document, OPTIONAL_SECRET_VAR: '' }, () =>
+      readInput(node, ''),
+    );
+    expect(empty).toEqual({ greeting: 'hi' });
+  });
+
+  test('a secret whose variable has text is a secret box of that text', async () => {
+    const node = svc(type({ apiKey: secretString() }));
+    const value = await withEnv(
+      {
+        [inputKey('')]: '{"apiKey":{"$platform":{"name":"PRESENT_SECRET_VAR","secret":true}}}',
+        PRESENT_SECRET_VAR: 'abc',
+      },
+      () => readInput(node, '') as { apiKey: SecretBox<string> },
+    );
+    expect(value.apiKey).toBeInstanceOf(SecretBox);
+    expect(value.apiKey.expose()).toBe('abc');
+  });
+
+  test('a marker in an array position whose variable is unset fails boot naming the variable and the path', async () => {
+    const node = svc(type({ keys: secretString().array() }));
+    await withEnv(
+      {
+        [inputKey('')]: '{"keys":[{"$platform":{"name":"ARRAY_SECRET_VAR","secret":true}}]}',
+      },
+      () => {
+        expect(() => readInput(node, '')).toThrow(
+          'input key "keys.0" (env COMPOSER_INPUT) reads the platform variable "ARRAY_SECRET_VAR", which has no value. An array position cannot be left out: set "ARRAY_SECRET_VAR" with prisma project env add.',
+        );
+      },
+    );
+  });
+
+  test('no part of a secret planted in a value appears in any boot error', async () => {
+    const planted = 'Zq7Xw9Vb3kLm2Rt';
+    const document =
+      '{"count":"x","apiKey":{"$platform":{"name":"PLANTED_SECRET_VAR","secret":true}},"missing":{"$platform":{"name":"PLANTED_UNSET_VAR","secret":true}}}';
+    const messages: string[] = [];
+    const capture = (schema: StandardSchemaV1) =>
+      withEnv({ [inputKey('')]: document, PLANTED_SECRET_VAR: planted }, () => {
+        try {
+          readInput(svc(schema), '');
+        } catch (error) {
+          messages.push((error as Error).message);
+        }
+      });
+    await capture(type({ count: 'number', apiKey: secretString(), missing: secretString() }));
+    await capture(type({ count: 'string', apiKey: 'string', missing: secretString() }));
+    await capture(type({ count: 'string', apiKey: 'number' }));
+    expect(messages).toHaveLength(3);
+    for (const message of messages) {
+      expect(message).toContain('platform variables with no value: PLANTED_UNSET_VAR');
+      for (let start = 0; start + 4 <= planted.length; start += 1) {
+        expect(message).not.toContain(planted.slice(start, start + 4));
+      }
+    }
   });
 
   test('a boot document failing validation is loud, naming the row', async () => {
@@ -502,38 +572,37 @@ describe('the reserved $generated key — user data round-trips (ADR-0041)', () 
   });
 });
 
-describe('the pointer-name collision guard (ADR-0041, F02)', () => {
-  test('two secret leaves binding the same platform name collide (secret/secret)', () => {
-    expect(() =>
-      resolveInputBinding({ a: envSecret('SHARED'), b: envSecret('SHARED') }, 'web', { env: {} }),
-    ).toThrow(/both resolve to the platform variable "SHARED"/);
-  });
-
-  test('two secret leaves whose names differ only in case collide (case-collision)', () => {
-    expect(() =>
-      resolveInputBinding({ a: envSecret('token'), b: envSecret('TOKEN') }, 'web', { env: {} }),
-    ).toThrow(/both resolve to the platform variable "TOKEN"/);
+describe('distinct names for generated variables only (ADR-0041)', () => {
+  test('two secret leaves reading the same platform variable are two reads of one variable', () => {
+    const row = serializeInput(
+      svc(type({ a: secretString(), b: secretString() })),
+      'web',
+      { a: envSecret('SHARED'), b: envSecret('SHARED') },
+      { env: {} },
+    );
+    expect(JSON.parse(row?.value ?? '')).toEqual({
+      a: { $platform: { name: 'SHARED', secret: true } },
+      b: { $platform: { name: 'SHARED', secret: true } },
+    });
+    expect(row?.variables).toEqual([{ name: 'SHARED', secret: true }]);
   });
 
   test('two generated leaves whose paths normalize to the same var collide (generated/generated)', () => {
     expect(() =>
       resolveInputBinding({ token: generatedParam(), Token: generatedParam() }, 'web', { env: {} }),
-    ).toThrow(/both resolve to the platform variable "COMPOSER_WEB_TOKEN_GENERATED"/);
+    ).toThrow(/both resolve to the generated variable "COMPOSER_WEB_TOKEN_GENERATED"/);
   });
 
-  test('secret and generated names are checked in one pool (secret-vs-generated)', () => {
-    // A secret name can never be COMPOSER_-prefixed via envSecret, so this
-    // cross-namespace collision is exercised on the guard directly: it is one
-    // general pool, not a per-marker special case.
+  test('the check names both input paths', () => {
     expect(() =>
       assertDistinctPointerNames(
         [
-          { path: 'fromSecret', varName: 'COMPOSER_WEB_SECRET_GENERATED' },
-          { path: 'fromGenerated', varName: 'COMPOSER_WEB_SECRET_GENERATED' },
+          { path: 'first', varName: 'COMPOSER_WEB_SECRET_GENERATED' },
+          { path: 'second', varName: 'composer_web_secret_generated' },
         ],
         'web',
       ),
-    ).toThrow(/input paths "fromSecret" and "fromGenerated"/);
+    ).toThrow(/input paths "first" and "second"/);
   });
 
   test('a secret leaf and a generated leaf with distinct names do NOT collide', () => {
@@ -547,7 +616,7 @@ describe('the pointer-name collision guard (ADR-0041, F02)', () => {
 });
 
 describe('a secret forwarded through a module input', () => {
-  test("a secret forwarded through a module's input serializes to its $secret pointer", () => {
+  test("a secret forwarded through a module's input serializes to its $platform marker", () => {
     const email = module(
       'email',
       { input: type({ from: 'string', key: secretString() }) },
@@ -569,7 +638,7 @@ describe('a secret forwarded through a module input', () => {
 
     expect(JSON.parse(row?.value ?? '')).toEqual({
       from: 'shop@example.com',
-      key: { $secret: 'EMAIL_KEY' },
+      key: { $platform: { name: 'EMAIL_KEY', secret: true } },
     });
   });
 
@@ -595,7 +664,7 @@ describe('a secret forwarded through a module input', () => {
 
     expect(JSON.parse(row?.value ?? '')).toEqual({
       user: { $generated: 'COMPOSER_SHOP_EMAIL_WEB_USER_GENERATED', redacted: false },
-      password: { $secret: 'SMTP_PASSWORD' },
+      password: { $platform: { name: 'SMTP_PASSWORD', secret: true } },
     });
   });
 });
@@ -656,7 +725,7 @@ describe('a source forwarded through a module input', () => {
 });
 
 describe('an ArkType copy of a source', () => {
-  test('a copy of envSecret() serializes to its $secret pointer', () => {
+  test('a copy of envSecret() serializes to its $platform marker', () => {
     const row = serializeInput(
       svc(type({ key: secretString() })),
       'web',
@@ -664,7 +733,9 @@ describe('an ArkType copy of a source', () => {
       { env: {} },
     );
 
-    expect(JSON.parse(row?.value ?? '')).toEqual({ key: { $secret: 'STRIPE_SECRET_KEY' } });
+    expect(JSON.parse(row?.value ?? '')).toEqual({
+      key: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+    });
   });
 
   test('a copy of serviceOrigin() serializes to its $generated pointer', () => {
@@ -805,7 +876,7 @@ describe('schemas see pointers at deploy', () => {
     expect(isSecretString(second?.['token'])).toBe(true);
     expect(row?.value).not.toContain('composer-stand-in-not-a-secret');
     expect(JSON.parse(row?.value ?? '')).toEqual({
-      key: { $secret: 'KEY' },
+      key: { $platform: { name: 'KEY', secret: true } },
       token: { $generated: 'COMPOSER_WEB_TOKEN_GENERATED', redacted: true },
     });
   });

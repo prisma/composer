@@ -277,7 +277,7 @@ describe('prisma dev preflight', () => {
     const childEnv = transported(await preflight(graph));
 
     expect(billingDocument(graph, childEnv)).toEqual({
-      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
+      stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
     });
   });
 
@@ -289,7 +289,7 @@ describe('prisma dev preflight', () => {
     const childEnv = transported(await preflight(graph));
 
     expect(billingDocument(graph, childEnv)).toEqual({
-      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
+      stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
     });
   });
 

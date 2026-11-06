@@ -898,6 +898,21 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/1-prisma-cloud/0-lowering/input-document:
+    devDependencies:
+      '@internal/tsdown-config':
+        specifier: workspace:0.37.0
+        version: link:../../../0-framework/0-foundation/tsdown-config
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      tsdown:
+        specifier: ^0.22.7
+        version: 0.22.12(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/1-prisma-cloud/0-lowering/local-target:
     dependencies:
       '@alchemy.run/prisma':
@@ -912,6 +927,9 @@ importers:
       '@internal/dev-emulators':
         specifier: workspace:0.37.0
         version: link:../dev-emulators
+      '@internal/input-document':
+        specifier: workspace:0.37.0
+        version: link:../input-document
       '@internal/lowering':
         specifier: workspace:0.37.0
         version: link:../lowering
@@ -1046,6 +1064,9 @@ importers:
       '@internal/http':
         specifier: workspace:0.37.0
         version: link:../../../0-framework/2-authoring/http
+      '@internal/input-document':
+        specifier: workspace:0.37.0
+        version: link:../../0-lowering/input-document
       '@internal/local-target':
         specifier: workspace:0.37.0
         version: link:../../0-lowering/local-target
@@ -1538,6 +1559,9 @@ importers:
       '@internal/http':
         specifier: workspace:0.37.0
         version: link:../../0-framework/2-authoring/http
+      '@internal/input-document':
+        specifier: workspace:0.37.0
+        version: link:../../1-prisma-cloud/0-lowering/input-document
       '@internal/local-target':
         specifier: workspace:0.37.0
         version: link:../../1-prisma-cloud/0-lowering/local-target

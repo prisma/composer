@@ -103,7 +103,7 @@ describe('renderDeployment', () => {
           id: 'cps_1',
           url: 'https://a.example',
           details: {
-            input: '{"greeting":"hello","stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+            input: '{"greeting":"hello","stripeKey":$platform STRIPE_SECRET_KEY}',
             absent: 'greeting → ENV_GREETING\nregion → ENV_REGION',
           },
         },
@@ -115,7 +115,7 @@ describe('renderDeployment', () => {
         'app',
         '└─ web   compute-service cps_1',
         '         https://a.example',
-        '         input {"greeting":"hello","stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+        '         input {"greeting":"hello","stripeKey":$platform STRIPE_SECRET_KEY}',
         '         absent greeting → ENV_GREETING',
         '         absent region → ENV_REGION',
       ].join('\n'),

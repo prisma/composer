@@ -332,7 +332,7 @@ export interface LocalTargetProvidersInput {
   readonly devDir: string;
   /** The text of each configuration key the graph reads, from the app configuration file. A local deployment takes the text its param rows point at from it. */
   readonly configurationKeyText: Readonly<Record<string, string>>;
-  /** The app secrets the graph's `envSecret()`s name, which the first process handed the second. A local deployment takes the text its `$secret` pointers name from it. */
+  /** The app secrets the graph's `envSecret()`s name, which the first process handed the second. A local deployment takes the text its `$platform` markers name from it. */
   readonly namedSecrets: NamedSecrets;
 }
 

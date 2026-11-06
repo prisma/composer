@@ -139,6 +139,12 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/1-prisma-cloud/0-lowering/input-document/src/**",
+      "domain": "prisma-cloud",
+      "layer": "lowering",
+      "plane": "shared"
+    },
+    {
       "glob": "packages/1-prisma-cloud/0-lowering/dev-emulators/src/**",
       "domain": "prisma-cloud",
       "layer": "lowering",

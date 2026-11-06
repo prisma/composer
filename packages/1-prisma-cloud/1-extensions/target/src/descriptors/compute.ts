@@ -3,6 +3,7 @@
 import * as Prisma from '@alchemy.run/prisma';
 import { isParamSource } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
+import { describeDocument } from '@internal/input-document';
 import {
   ARTIFACT_CONTENT_TYPE,
   appAfterEnvironment,
@@ -148,11 +149,10 @@ interface EnvRow {
 }
 
 /**
- * The report's two lines of honesty (ADR-0042): the serialized input
- * document (secret-free by construction — every secret leaf is a `$secret`
- * pointer) and every binding key that resolved absent in the app configuration (a
- * possible typo'd variable name). Newlines in a detail value render as one
- * line per entry.
+ * The report's two input lines (ADR-0042): the input document, with each
+ * marker shown as `$platform NAME` or `$generated NAME`, and every binding key
+ * that resolved absent in the app configuration (a possible mistyped variable
+ * name). Newlines in a detail value render as one line per entry.
  */
 function inputDetails(serialized: ComputeSerialized): {
   readonly details?: Readonly<Record<string, string>>;
@@ -160,7 +160,7 @@ function inputDetails(serialized: ComputeSerialized): {
   if (serialized.input === undefined) return {};
   return {
     details: {
-      input: serialized.input.value,
+      input: describeDocument(JSON.parse(serialized.input.value)),
       ...(serialized.input.absent.length > 0 ? { absent: serialized.input.absent.join('\n') } : {}),
     },
   };
@@ -198,7 +198,7 @@ export function computeDescriptor(
     // Two channels of rows: PARAMS (reserved-param literals JSON-encoded;
     // dependency provisioning refs passed through, keeping their ordering
     // edge) and the INPUT document (one JSON row per service, secret leaves
-    // as `$secret` pointers, never a value — ADR-0042). The class/branch
+    // as `$platform` markers, never a value — ADR-0042). The class/branch
     // scope is identical for both.
     serialize: (ctx, provisioned, config) =>
       Effect.gen(function* () {
@@ -264,7 +264,7 @@ export function computeDescriptor(
           },
         );
         if (inputRow !== undefined) {
-          // Each `$secret` pointer in the document names an OPERATOR-owned
+          // Each `$platform` marker in the document names an operator-owned
           // platform variable Composer never writes, so its rotation shows up
           // only as that variable's `updatedAt`.
           const inputValue = envValue(inputRow.value);
@@ -272,16 +272,15 @@ export function computeDescriptor(
             record: yield* Prisma.EnvironmentVariable(resourceId(address, 'env', inputRow.key), {
               project: projectId,
               key: inputRow.key,
-              // The defaults-applied document — secret leaves are `$secret`
-              // pointers, generated leaves are `$generated` pointers, naming
-              // platform vars, never values (ADR-0042).
+              // The defaults-applied document: markers naming platform
+              // variables, never values (ADR-0042).
               value: inputValue,
               class: cls,
               ...branch,
             }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(app, address)))),
             key: inputRow.key,
             value: inputValue,
-            pointers: inputRow.secrets,
+            pointers: inputRow.variables.map((variable) => variable.name),
           });
           // Each generated leaf: generate its value ONCE (the resource keeps it
           // stable across redeploys via its persisted output) and provision it

@@ -1,4 +1,4 @@
-/** The local Deployment provider reads the serializer's pointer formats with its own copy of them; the two must agree. */
+/** The local Deployment provider and the serializer use one marker format, from `@internal/input-document`; this proves they agree. */
 import { expect, test } from 'bun:test';
 import { service } from '@internal/core';
 import { pointedVariables } from '@internal/local-target';
@@ -25,14 +25,14 @@ const billing = service({
   },
 });
 
-test('the local provider finds exactly the variables the serializer writes pointers to', () => {
+test('the local provider finds exactly the variables the serializer writes markers for', () => {
   const input = serializeInput(
     billing,
     'shop.billing',
     {
       stripeKey: envSecret('STRIPE_SECRET_KEY'),
       nested: [{ webhook: envSecret('STRIPE_WEBHOOK_SECRET') }],
-      userData: { $secret: 'NOT_A_POINTER' },
+      userData: { $platform: { name: 'NOT_A_MARKER', secret: true }, $secret: 'OLD_USER_KEY' },
     },
     { env: {} },
   );
