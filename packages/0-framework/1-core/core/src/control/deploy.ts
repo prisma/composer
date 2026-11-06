@@ -1,5 +1,6 @@
 /** Routes each graph node to its extension descriptor (by node.extension/type) and runs provision → serialize → package → deploy in dependency order. */
 
+import { blindCast } from '@internal/foundation/casts';
 import type { Input, StackServices } from 'alchemy';
 import * as Alchemy from 'alchemy';
 import type { State } from 'alchemy/State/State';
@@ -669,7 +670,7 @@ export function lowering(
   config: PrismaAppConfig,
   opts: LowerOptions,
 ): Effect.Effect<undefined, LowerError, unknown> {
-  return Effect.gen(function* () {
+  const program = Effect.gen(function* () {
     const graph = Load(root, {
       id: opts.name,
       ...(opts.environment !== undefined ? { environment: { name: opts.environment } } : {}),
@@ -889,7 +890,11 @@ export function lowering(
     }
 
     return undefined;
-  }) as Effect.Effect<undefined, LowerError, unknown>;
+  });
+  return blindCast<
+    Effect.Effect<undefined, LowerError, unknown>,
+    "extension descriptors type their errors as unknown; lowering fails only with LowerError or a descriptor's own failure"
+  >(program);
 }
 
 /**
@@ -900,7 +905,10 @@ export function lowering(
 export function lower(root: ModuleNode | AppRootNode, config: PrismaAppConfig, opts: LowerOptions) {
   // A LowerError at deploy is fatal; orDie moves it off the error channel to
   // match what Alchemy.Stack accepts.
-  const stackEffect = Effect.orDie(lowering(root, config, opts)) as Effect.Effect<undefined, never>;
+  const stackEffect = blindCast<
+    Effect.Effect<undefined, never>,
+    'lowering types its requirements as unknown; the Stack supplies the providers the descriptors use'
+  >(Effect.orDie(lowering(root, config, opts)));
   const containers = deserializeContainers(config.extensions, process.env);
   const providers = opts.providers ?? mergedProviders(config);
 

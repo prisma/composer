@@ -39,7 +39,7 @@ function makeAppDir(): { dir: string; entryPath: string } {
     entryPath,
     [
       `import { appRoot, service } from ${JSON.stringify(coreIndex)};`,
-      "export default appRoot('fixture-app', {}, ({ provision }) => {",
+      "export default appRoot('fixture-app', ({ provision }) => {",
       '  provision(',
       '    service({',
       "      name: 'app',",
@@ -51,7 +51,6 @@ function makeAppDir(): { dir: string; entryPath: string } {
       '    }),',
       "    { id: 'app' },",
       '  );',
-      '  return {};',
       '});',
       '',
     ].join('\n'),

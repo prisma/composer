@@ -456,7 +456,7 @@ export interface ModuleNode<
   readonly expose: E;
   // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
   body(ctx: ModuleContext<D, I>): ModuleOutputs<E> | void;
-  /** `false`: a `module()` node can be provisioned. The app root, built with `appRoot()`, is the deploy's entry and cannot be. */
+  /** `false`: a `module()` node can be provisioned. The app root, built with `appRoot()`, is the deploy's entry and cannot be. It answers `false` even when a `module()` node is the deploy's entry. */
   isRoot(): false;
 }
 
@@ -1066,19 +1066,14 @@ export function module(
   // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
   maybeBody?: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose> | void,
 ): ModuleNode {
+  requireName(name, 'module');
   if (typeof boundaryOrBody === 'function') {
-    return buildModuleNode('module', name, {}, false, (ctx) => {
+    return buildModuleNode(false, name, {}, (ctx) => {
       boundaryOrBody({ ...ctx, input: undefined });
       return {};
     });
   }
-  return buildModuleNode(
-    'module',
-    name,
-    boundaryOrBody,
-    false,
-    requireBody('module', name, maybeBody),
-  );
+  return buildModuleNode(false, name, boundaryOrBody, requireBody('module', name, maybeBody));
 }
 
 /** Builds the app's root, the module the entry default-exports. It takes no `deps` and no `expose`, and nothing can provision it. */
@@ -1096,12 +1091,14 @@ export function appRoot(
   optionsOrBody: { input?: StandardSchemaV1 } | ((ctx: AppRootContext<undefined>) => void),
   maybeBody?: (ctx: AppRootContext) => void,
 ): AppRootNode {
+  requireName(name, 'appRoot');
   if (typeof optionsOrBody === 'function') {
-    return buildModuleNode('appRoot', name, {}, true, ({ environment, provision }) => {
+    return buildModuleNode(true, name, {}, ({ environment, provision }) => {
       optionsOrBody({ input: undefined, environment, provision });
       return {};
     });
   }
+  const body = requireBody('appRoot', name, maybeBody);
   if (Object.hasOwn(optionsOrBody, 'deps')) {
     throw new Error(
       `appRoot("${name}") declares \`deps\`, which an app root cannot have: nothing provisions the root, ` +
@@ -1114,17 +1111,10 @@ export function appRoot(
         'so nothing can consume what it exposes.',
     );
   }
-  const body = requireBody('appRoot', name, maybeBody);
-  return buildModuleNode(
-    'appRoot',
-    name,
-    optionsOrBody,
-    true,
-    ({ input, environment, provision }) => {
-      body({ input, environment, provision });
-      return {};
-    },
-  );
+  return buildModuleNode(true, name, optionsOrBody, ({ input, environment, provision }) => {
+    body({ input, environment, provision });
+    return {};
+  });
 }
 
 function requireBody<B>(factory: 'module' | 'appRoot', name: string, body: B | undefined): B {
@@ -1136,14 +1126,13 @@ function requireBody<B>(factory: 'module' | 'appRoot', name: string, body: B | u
 
 /** Constructs a branded, frozen module node for `module()` and `appRoot()`. Construction is inert: the body is wiring, and runs only when the module is Loaded. */
 function buildModuleNode<R extends boolean>(
-  factory: 'module' | 'appRoot',
+  root: R,
   name: string,
   boundary: { deps?: Deps; input?: StandardSchemaV1; expose?: Expose },
-  root: R,
   // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
   body: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose> | void,
 ) {
-  requireName(name, factory);
+  const factory = root ? 'appRoot' : 'module';
   if (Object.hasOwn(boundary, 'params')) {
     throw new Error(
       `${factory}("${name}") declares \`params\`, which a module no longer takes. Declare each value ` +

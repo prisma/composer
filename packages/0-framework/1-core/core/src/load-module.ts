@@ -562,7 +562,7 @@ function flatten(
         moduleAddress: fullAddress,
         schema: childInputSchema,
         binding: provisionInput,
-        isRoot: false,
+        isLoadRoot: false,
       });
     }
     edges.push(...wiringEdges(localWiring, fullAddress));
@@ -693,7 +693,7 @@ export function loadModule(root: ModuleNode | AppRootNode, opts?: LoadOptions): 
         moduleAddress: rootId,
         schema: root.inputSchema,
         binding: undefined,
-        isRoot: true,
+        isLoadRoot: true,
         checked: opts.appConfigurationRead.rootInput,
       });
     } else if (opts?.configuration !== undefined) {
@@ -701,7 +701,7 @@ export function loadModule(root: ModuleNode | AppRootNode, opts?: LoadOptions): 
         moduleAddress: rootId,
         schema: root.inputSchema,
         binding: opts.configuration,
-        isRoot: true,
+        isLoadRoot: true,
       });
     } else {
       throw new LoadError(

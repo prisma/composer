@@ -1,6 +1,6 @@
-import { dependency, service } from '@internal/core';
+import { dependency, module, service } from '@internal/core';
 
-export default service({
+const unwired = service({
   name: 'fixture-service-with-unwired-input',
   extension: 'test/pack',
   type: 'fixture/service',
@@ -17,4 +17,9 @@ export default service({
     module: import.meta.url,
     entry: 'server.js',
   },
+});
+
+export default module('fixture-unwired', ({ provision }) => {
+  // @ts-expect-error The compiler refuses an unwired dependency; this fixture reaches Load's check.
+  provision(unwired, { id: 'svc' });
 });

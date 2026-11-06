@@ -11,11 +11,10 @@ state are scoped to its Branch.
 Concretely, this app:
 
 ```ts
-export default appRoot('storefront-auth', {}, ({ provision }) => {
+export default appRoot('storefront-auth', ({ provision }) => {
   const db = provision('database', rawPostgres({ name: 'database' }));
   const auth = provision('auth', authService, { db });
   provision('storefront', storefrontService, { auth: auth.rpc });
-  return {};
 });
 ```
 

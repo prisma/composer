@@ -13,6 +13,16 @@ const build = {
   entry: 'server.js',
 };
 
+const echo = service({
+  name: 'echo',
+  extension: 'test/pack',
+  type: 'fake/compute',
+  inputs: {},
+  params: {},
+  input: anyInputSchema,
+  build,
+});
+
 const dbContract = providerContract('fake/db', { url: '' });
 
 const api = service({
@@ -82,16 +92,17 @@ describe('appRoot()', () => {
 
   test("the body receives the root's input, the environment and provision, and no deps", () => {
     const keys: string[][] = [];
-    const greetings: unknown[] = [];
     const root = appRoot('shop', { input: type({ GREETING: 'string' }) }, (ctx) => {
       keys.push(Object.keys(ctx).sort());
-      greetings.push(ctx.input.GREETING);
+      ctx.provision(echo, { input: { greeting: ctx.input.GREETING } });
     });
 
-    Load(root, { configuration: { GREETING: 'hello' } });
+    const graph = Load(root, { configuration: { GREETING: 'hello' } });
 
     expect(keys).toEqual([['environment', 'input', 'provision']]);
-    expect(greetings[0]).toBeDefined();
+    expect(graph.inputBindings).toEqual([
+      { serviceAddress: 'shop.echo', binding: { greeting: 'hello' } },
+    ]);
   });
 
   test('a root without options receives undefined as its input', () => {
@@ -103,6 +114,28 @@ describe('appRoot()', () => {
     );
 
     expect(seen).toEqual([undefined]);
+  });
+
+  test('throws when the body is missing', () => {
+    expect(() => appRoot('shop', {}, undefined as never)).toThrow(
+      'appRoot("shop") requires a body function.',
+    );
+    expect(() => module('shop', {}, undefined as never)).toThrow(
+      'module("shop") requires a body function.',
+    );
+  });
+
+  test('checks the name first, then the body, then deps and expose', () => {
+    expect(() => appRoot('', { deps: {} } as never, undefined as never)).toThrow(
+      'appRoot() requires a non-empty name.',
+    );
+    expect(() => module('', {}, undefined as never)).toThrow('module() requires a non-empty name.');
+    expect(() => appRoot('shop', { deps: {} } as never, undefined as never)).toThrow(
+      'appRoot("shop") requires a body function.',
+    );
+    expect(() => appRoot('shop', { expose: {} } as never, undefined as never)).toThrow(
+      'appRoot("shop") requires a body function.',
+    );
   });
 
   test('throws when the options declare deps', () => {
@@ -154,14 +187,5 @@ describe('Load refuses an app root below the root', () => {
     const error = loadError(() => Load(appRoot('shop', ({ provision }) => provision(inner))));
 
     expect(error.message).toStartWith('Module "shop.inner" provisions the app root "storefront".');
-  });
-
-  test('a module node without isRoot() counts as not a root', () => {
-    const { isRoot: _isRoot, ...withoutIsRoot } = catalog;
-    const shop = module('shop', ({ provision }) => {
-      provision(withoutIsRoot as never);
-    });
-
-    expect(Load(shop).nodes.map(({ id }) => id)).toContain('shop.catalog');
   });
 });

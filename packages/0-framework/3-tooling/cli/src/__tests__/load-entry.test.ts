@@ -8,10 +8,10 @@ const fixture = (name: string) => path.join(import.meta.dir, 'fixtures', name);
 
 describe('loadEntry()', () => {
   test('accepts an app root default export', async () => {
-    const entry = await loadEntry(fixture('valid-module.ts'), import.meta.dir);
+    const entry = await loadEntry(fixture('valid-root.ts'), import.meta.dir);
     expect(entry.root.kind).toBe('module');
     expect(entry.root.isRoot()).toBe(true);
-    expect(entry.path).toBe(fixture('valid-module.ts'));
+    expect(entry.path).toBe(fixture('valid-root.ts'));
   });
 
   test('accepts a module() default export', async () => {
@@ -58,8 +58,8 @@ describe('loadEntry()', () => {
   });
 
   test('resolves the entry path against the given cwd', async () => {
-    const entry = await loadEntry('fixtures/valid-module.ts', import.meta.dir);
-    expect(entry.path).toBe(fixture('valid-module.ts'));
+    const entry = await loadEntry('fixtures/valid-root.ts', import.meta.dir);
+    expect(entry.path).toBe(fixture('valid-root.ts'));
   });
 
   test('a non-JSX import failure is COMPOSE.ENTRY_UNLOADABLE carrying the entry path and the cause', async () => {

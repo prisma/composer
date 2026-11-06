@@ -15,8 +15,7 @@ const makeService = (name: string) =>
     },
   });
 
-export default appRoot('fixture-module', {}, ({ provision }) => {
+export default appRoot('fixture-root', ({ provision }) => {
   provision(makeService('one'), { id: 'one' });
   provision(makeService('two'), { id: 'two' });
-  return {};
 });

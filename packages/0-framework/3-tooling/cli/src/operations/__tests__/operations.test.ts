@@ -172,7 +172,11 @@ const coreIndex = path.resolve(
 );
 
 /** An app whose one service is `app`. With `secretsKey`, the service's input reads that app secrets key, so the graph names it. */
-function makeAppDir(name = 'fixture-app', secretsKey?: string): { dir: string; entryPath: string } {
+function makeAppDir(
+  name = 'fixture-app',
+  secretsKey?: string,
+  factory: 'appRoot' | 'module' = 'appRoot',
+): { dir: string; entryPath: string } {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-')));
   tmpDirs.push(dir);
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'fixture-app' }));
@@ -182,9 +186,9 @@ function makeAppDir(name = 'fixture-app', secretsKey?: string): { dir: string; e
   fs.writeFileSync(
     entryPath,
     [
-      `import { appRoot, secretSource, service } from ${JSON.stringify(coreIndex)};`,
+      `import { ${factory}, secretSource, service } from ${JSON.stringify(coreIndex)};`,
       '',
-      `export default appRoot(${JSON.stringify(name)}, {}, ({ provision }) => {`,
+      `export default ${factory}(${JSON.stringify(name)}, ({ provision }) => {`,
       '  provision(',
       '    service({',
       "      name: 'app',",
@@ -203,7 +207,6 @@ function makeAppDir(name = 'fixture-app', secretsKey?: string): { dir: string; e
         ? `    { id: 'app', input: { key: secretSource({ key: ${JSON.stringify(secretsKey)} }, { label: 'secret', secretsKey: ${JSON.stringify(secretsKey)} }) } },`
         : "    { id: 'app' },",
       '  );',
-      '  return {};',
       '});',
       '',
     ].join('\n'),
@@ -255,6 +258,36 @@ describe('deploy()', () => {
     expect(result.value.summary).toEqual(summaryFixture);
     // Read once, then removed — nothing left for a later run to misread.
     expect(fs.existsSync(resultFile ?? '')).toBe(false);
+  });
+
+  test('an entry built with module() deploys as an appRoot() entry does', async () => {
+    const app = makeAppDir('hello-module', undefined, 'module');
+    const stages: string[] = [];
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(fakeConfig()),
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async (input) => {
+            stages.push(input.stage);
+            const file = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
+            if (typeof file === 'string') fs.writeFileSync(file, JSON.stringify(summaryFixture));
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(stages).toEqual(['ci-7']);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.summary).toEqual(summaryFixture);
   });
 
   test("the config's entry resolves against the config file's directory, not cwd", async () => {

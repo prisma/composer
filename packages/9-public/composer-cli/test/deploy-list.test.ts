@@ -21,7 +21,7 @@ function entryNamed(name: string): string {
   fs.writeFileSync(
     file,
     `import { appRoot } from ${JSON.stringify(import.meta.resolve('@prisma/composer'))};\n` +
-      `export default appRoot(${JSON.stringify(name)}, {}, () => ({}));\n`,
+      `export default appRoot(${JSON.stringify(name)}, () => {});\n`,
   );
   return file;
 }

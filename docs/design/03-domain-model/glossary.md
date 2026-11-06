@@ -44,7 +44,9 @@ distinct type, with composition behaviours a Service doesn't have.
 
 ### App root
 
-The outermost module: the one the entry default-exports and nothing provisions, built with `appRoot()`. It takes what `module()` takes minus `deps` and `expose`, because nothing provisions it, so nothing can wire into it or consume from it. Its body receives `input`, `environment` and `provision`. `provision()` refuses an app root, at compile time and at Load, so it is never nested. An entry that default-exports a module built with `module()` is still accepted as the root. Also called the **root**, the **root module** or the **root node**; those terms stay where they are exact and mean this. In code: `appRoot()`, `AppRootNode`, `AppRootContext`, and `isRoot()` on every module node.
+The **root** is a position: the outermost module, the one the entry default-exports and nothing provisions. The **root module** and the **root node** are other names for that position. A node built with `module()` can hold it: an entry that default-exports one is still accepted as the root.
+
+The **app root** is a type: `AppRootNode`, built with `appRoot()`. It is the only node this repository's guidance puts in the root position. It takes what `module()` takes minus `deps` and `expose`, because nothing provisions it, so nothing can wire into it or consume from it. Its body receives `input`, `environment` and `provision`. `provision()` refuses an app root, at compile time and at Load, so it is never nested. In code: `appRoot()`, `AppRootNode`, `AppRootContext`, and `isRoot()` on every module node, which answers `true` only for an app root, even when a `module()` node holds the root position.
 
 ### Service
 

@@ -9,7 +9,7 @@ description: >-
   (`@prisma/composer`): wiring its services and Modules, running it locally,
   testing composed services, or standing up / tearing down an environment.
   Triggers on "prisma composer", "@prisma/composer", "prisma app",
-  `prisma deploy`, `prisma dev`, `compute()`, `module()`, `contract()`,
+  `prisma deploy`, `prisma dev`, `compute()`, `appRoot()`, `module()`, `contract()`,
   `service.load()`, `mockService`, `bootstrapService`.
 ---
 
