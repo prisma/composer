@@ -335,8 +335,8 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
   // module variable, so two `prismaCloud()` extensions cannot share it. In
   // the alchemy process (no preflight) the lookup falls back to what the CLI
   // transported (preflight-payload.ts).
-  const preflightTimestamps = new Map<string, string>();
-  const transported = transportedPreflight(preflightTimestamps, process.env);
+  let preflightTimestamps: ReadonlyMap<string, string> | undefined;
+  const transported = transportedPreflight(() => preflightTimestamps, process.env);
   const o = lazyOptions(opts, transported);
 
   return {
@@ -366,7 +366,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // `input.credentials` arrives as `unknown`.
     preflight: (input: PrismaCloudPreflightInput) =>
       runPreflight(input).then((result) => {
-        for (const [name, updatedAt] of result.updatedAt) preflightTimestamps.set(name, updatedAt);
+        preflightTimestamps = result.updatedAt;
         return serializeDeployPreflightPayload(result);
       }),
 

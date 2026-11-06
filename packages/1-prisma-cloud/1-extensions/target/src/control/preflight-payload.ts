@@ -125,12 +125,13 @@ const devPayloadError = (reason: string): Error =>
   );
 
 /**
- * The lowering's view of what the preflight sent. `own` holds what the deploy
- * preflight read in this same process (the CLI process); the alchemy process
- * has none and reads the transported payload, decoded once on first use.
+ * The lowering's view of what the preflight sent. `own` returns the timestamps of the latest
+ * deploy preflight in this same process (the CLI process); when it returns a snapshot, that
+ * snapshot is the whole answer. The alchemy process has none and reads the transported payload,
+ * decoded once on first use.
  */
 export function transportedPreflight(
-  own: ReadonlyMap<string, string>,
+  own: () => ReadonlyMap<string, string> | undefined,
   env: Readonly<Record<string, string | undefined>>,
 ): TransportedPreflight {
   let decoded: DecodedPreflightPayload | undefined;
@@ -139,8 +140,8 @@ export function transportedPreflight(
   const noSecrets: ReadonlySet<string> = new Set();
   return {
     pointerVersion: (name) => {
-      const mine = own.get(name);
-      if (mine !== undefined) return mine;
+      const snapshot = own();
+      if (snapshot !== undefined) return snapshot.get(name);
       const payload = decode();
       if (payload.kind === 'deploy') return payload.updatedAt.get(name);
       if (payload.kind === 'dev') return payload.pointerVersions.get(name);

@@ -43,7 +43,13 @@ import {
 } from '../deployment-summary.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from '../generate-stack.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
-import { redactError, redactSummary, redactThrown, SecretRedaction } from '../redaction.ts';
+import {
+  redactError,
+  redactSummary,
+  redactThrown,
+  redactUnsetPlatformVariable,
+  SecretRedaction,
+} from '../redaction.ts';
 import {
   type AlchemyOutcome,
   alchemyInvocation,
@@ -556,7 +562,11 @@ async function runStackPipelineInner(
       const unset: UnsetPlatformVariable[] = [];
       const report = (reported: PlatformVariableCheck): void => {
         checked += reported.checked;
-        unset.push(...reported.unset);
+        unset.push(
+          ...reported.unset.map((variable) =>
+            redactUnsetPlatformVariable(variable, opts.redaction),
+          ),
+        );
       };
       for (const extension of config.extensions) {
         if (extension.preflight === undefined) continue;

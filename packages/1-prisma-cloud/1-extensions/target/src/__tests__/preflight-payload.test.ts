@@ -64,9 +64,9 @@ const fakePlatform = (updatedAt: string | undefined): ManagementApiClient =>
 /** The pointed platform variables serialize collected for this service — the input document points at the rotating secret. */
 const pointers = ['STRIPE_SECRET_KEY'];
 
-/** The first process: run the real preflight against a platform that last wrote the secret at `updatedAt`, and hand its payload to the framework transport. */
-async function cliProcess(updatedAt: string | undefined): Promise<Record<string, string>> {
-  const result = await runPreflight(
+/** The real preflight against a platform that last wrote the secret at `updatedAt`. */
+const preflightAgainst = (updatedAt: string | undefined) =>
+  runPreflight(
     {
       graph: graph(),
       configuration: {},
@@ -80,7 +80,10 @@ async function cliProcess(updatedAt: string | undefined): Promise<Record<string,
     },
     { client: fakePlatform(updatedAt) },
   );
-  const payload = serializeDeployPreflightPayload(result);
+
+/** The first process: run the real preflight and hand its payload to the framework transport. */
+async function cliProcess(updatedAt: string | undefined): Promise<Record<string, string>> {
+  const payload = serializeDeployPreflightPayload(await preflightAgainst(updatedAt));
   return preflightEnv(
     payload === undefined ? new Map() : new Map([[PRISMA_CLOUD_EXTENSION_ID, payload]]),
   );
@@ -94,7 +97,7 @@ async function cliProcess(updatedAt: string | undefined): Promise<Record<string,
  * fingerprint moves on.
  */
 function alchemyProcessPointerTriggers(env: Record<string, string>): Record<string, string> {
-  const { pointerVersion } = transportedPreflight(new Map(), env);
+  const { pointerVersion } = transportedPreflight(() => undefined, env);
   return Object.fromEntries(
     pointers.map((name) => [`${name}:updatedAt`, pointerVersion(name) ?? '?']),
   );
@@ -193,6 +196,22 @@ describe('what the payload may contain', () => {
   });
 });
 
+describe("the CLI process's own preflight", () => {
+  test('the latest snapshot is the whole answer, so a deleted variable never falls back to the transported one', async () => {
+    let snapshot: ReadonlyMap<string, string> | undefined;
+    const { pointerVersion } = transportedPreflight(
+      () => snapshot,
+      await cliProcess('2026-05-05T12:00:00.000Z'),
+    );
+
+    snapshot = (await preflightAgainst('2026-07-07T09:15:00.000Z')).updatedAt;
+    expect(pointerVersion('STRIPE_SECRET_KEY')).toBe('2026-07-07T09:15:00.000Z');
+
+    snapshot = (await preflightAgainst(undefined)).updatedAt;
+    expect(pointerVersion('STRIPE_SECRET_KEY')).toBeUndefined();
+  });
+});
+
 describe('one transport variable, two kinds of payload', () => {
   const childEnv = (payload: string | undefined) =>
     preflightEnv(
@@ -201,7 +220,7 @@ describe('one transport variable, two kinds of payload', () => {
 
   test('a deploy payload names no absent secret and reads as timestamps', () => {
     const preflight = transportedPreflight(
-      new Map(),
+      () => undefined,
       childEnv(
         serializeDeployPreflightPayload({
           updatedAt: new Map([['STRIPE_SECRET_KEY', '2026-10-01T00:00:00Z']]),
@@ -215,7 +234,7 @@ describe('one transport variable, two kinds of payload', () => {
 
   test('a dev payload carries the absent secrets and the value versions', () => {
     const preflight = transportedPreflight(
-      new Map(),
+      () => undefined,
       childEnv(
         serializeDevPreflightPayload({
           absentSecrets: ['STRIPE_WEBHOOK_SECRET'],
@@ -229,7 +248,7 @@ describe('one transport variable, two kinds of payload', () => {
   });
 
   test('with no payload nothing is absent and every version is unknown', () => {
-    const preflight = transportedPreflight(new Map(), childEnv(undefined));
+    const preflight = transportedPreflight(() => undefined, childEnv(undefined));
 
     expect([...preflight.absentSecrets]).toEqual([]);
     expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBeUndefined();

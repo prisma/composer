@@ -176,16 +176,16 @@ export const deserialize = (node: ServiceNode, address: string, env: Env = proce
   for (const d of paramEntries(node)) {
     const key = configKey(address, d);
     const value = coerce(env[key], d, key, env);
-    if (d.owner === 'service') {
-      service[d.name] = value;
-    } else {
+    let target = service;
+    if (d.owner !== 'service') {
       let bucket = inputs[d.owner.input];
       if (bucket === undefined) {
         bucket = {};
         inputs[d.owner.input] = bucket;
       }
-      bucket[d.name] = value;
+      target = bucket;
     }
+    if (value !== undefined) target[d.name] = value;
   }
 
   return { service, inputs };

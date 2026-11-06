@@ -139,7 +139,7 @@ describe('deserialize — env-sourced param boot resolution', () => {
       await withEnv(
         { [key]: encodeParamPointer('PLATFORM_APP_ORIGIN'), PLATFORM_APP_ORIGIN: value },
         () => {
-          expect(deserialize(node, address).service['appOrigin']).toBeUndefined();
+          expect(Object.hasOwn(deserialize(node, address).service, 'appOrigin')).toBe(false);
         },
       );
     }

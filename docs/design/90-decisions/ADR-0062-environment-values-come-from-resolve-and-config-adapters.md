@@ -43,7 +43,7 @@ prisma dev                             # the environment dev, on this machine
 
 ## Decision
 
-A module computes a value that depends on the environment, or on its inputs, with **`resolve()`**. Values that live outside the code reach the root module's `input` through **config adapters**, and secrets reach platform variables through **secrets adapters**, both named in the `composer` section of `prisma.config.ts`. Every environment has a name, and none is special.
+A module computes a value that depends on the environment, or on its inputs, with **`resolve()`**. Values that live outside the code reach the root module's `input` through **config adapters**, named in the `composer` section of `prisma.config.ts`. The operator sets platform variables on the platform, and the deploy never copies an adapter's value there. **Secrets adapters**, named in the same section, supply secrets to `prisma dev` and tell Composer which values to redact. Every environment has a name, and none is special.
 
 All of this serves one requirement: **the graph's structure is the same whatever inputs Composer is given.** Values may differ per environment; nodes and edges may not.
 

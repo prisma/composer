@@ -20,7 +20,7 @@ Platform variables with no value:
 
 ## Decision
 
-A **platform variable** is an environment variable on the platform that a service reads at boot and that the operator sets. Today `envSecret('NAME')` and a per-key `envParam('NAME')` param name one. Composer never creates, changes or deletes a platform variable. It records which service reads which variable, checks at deploy that every variable a service needs has a value, lists the ones with none, and reads the value only inside the running service. The rows Composer does write are its own: the `COMPOSER_…` rows of each service, and the create-only `DATABASE_URL` and `DATABASE_URL_POOLED` placeholders of [ADR-0048](ADR-0048-prisma-cloud-resources-come-from-the-upstream-alchemy-provider.md). An app can read none of those names.
+A **platform variable** is an environment variable on the platform that a service reads at boot and that the operator sets. Today `envSecret('NAME')` and a per-key `envParam('NAME')` param name one. A deploy never creates, changes or deletes a platform variable. Destroying the production environment removes the Project, and with it every variable set on it. Composer records which service reads which variable, checks at deploy that every variable a service needs has a value, lists the ones with none, and reads the value only inside the running service. The rows Composer does write are its own: the `COMPOSER_…` rows of each service, and the create-only `DATABASE_URL` and `DATABASE_URL_POOLED` placeholders of [ADR-0048](ADR-0048-prisma-cloud-resources-come-from-the-upstream-alchemy-provider.md). An app can read none of those names.
 
 ### What Prisma Cloud does
 

@@ -3734,7 +3734,7 @@ describe('the operations read the app configuration and the app secrets from the
   });
 
   test('an app secrets value appears in no event, result or report', async () => {
-    const app = makeAppDir();
+    const app = makeAppDir('fixture-app', 'S4_SENTINEL');
     const sentinel = 'never-printed-7f3a';
     const events: DeployEvent[] = [];
     const received: string[] = [];
@@ -3748,7 +3748,15 @@ describe('the operations read the app configuration and the app secrets from the
               preflight: async (input) => {
                 const value = input.secrets['S4_SENTINEL'];
                 if (value !== undefined) received.push(value);
-                input.report?.({ checked: 2, unset: [EMAIL_API_KEY_UNSET] });
+                input.report?.({
+                  checked: 2,
+                  unset: [
+                    {
+                      ...EMAIL_API_KEY_UNSET,
+                      readers: [{ kind: 'field', service: 'app', path: `config.${sentinel}` }],
+                    },
+                  ],
+                });
                 return undefined;
               },
             }),
@@ -3772,6 +3780,7 @@ describe('the operations read the app configuration and the app secrets from the
     if (findings?.kind !== 'preflight-findings') throw new Error('expected the findings event');
     const block = unsetPlatformVariablesText(findings.findings.unset);
     expect(block).toContain('EMAIL_API_KEY');
+    expect(block).toContain('config.[redacted]');
     expect(block).not.toContain(sentinel);
     expect(renderDeployment({ app: 'app', nodes: [], findings: findings.findings })).not.toContain(
       sentinel,

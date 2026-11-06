@@ -166,7 +166,14 @@ export function readDocument(document: unknown, options: ReadDocumentOptions): R
       for (const [written, member] of Object.entries(value)) {
         const key = unescapeKey(written);
         const read = walk(member, joinPath(path, key), false);
-        if (read !== ABSENT) out[key] = read;
+        if (read !== ABSENT) {
+          Object.defineProperty(out, key, {
+            value: read,
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+        }
       }
       return out;
     }

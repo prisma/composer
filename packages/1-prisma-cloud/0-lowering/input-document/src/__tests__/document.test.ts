@@ -102,6 +102,18 @@ describe('readDocument', () => {
       $$generated: 1,
     });
   });
+
+  test('a __proto__ key stays an own property and does not set the prototype', () => {
+    const document = JSON.parse('{"__proto__":{"polluted":true},"nested":{"__proto__":"x"}}');
+    const value = read(document, {}).value;
+    if (typeof value !== 'object' || value === null) throw new Error('expected an object');
+    expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+    expect(Object.keys(value)).toEqual(['__proto__', 'nested']);
+    expect(Object.getOwnPropertyDescriptor(value, '__proto__')?.value).toEqual({ polluted: true });
+    expect(Object.getOwnPropertyDescriptor(Reflect.get(value, 'nested'), '__proto__')?.value).toBe(
+      'x',
+    );
+  });
 });
 
 describe('withUnsetVariables', () => {
