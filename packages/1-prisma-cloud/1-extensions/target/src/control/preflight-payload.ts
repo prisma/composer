@@ -3,15 +3,20 @@
  * the config from scratch, on the framework's preflight transport. One
  * variable carries either kind:
  *
- * - deploy: a JSON object mapping each pointed platform variable to its
- *   `updatedAt`, as read from the Management API;
+ * - deploy: a JSON object holding `updatedAt`, which maps each pointed
+ *   platform variable to the `updatedAt` of the row the platform resolves,
+ *   and `findings`, the variables with no value that nothing requires;
  * - `prisma dev`: `dev:` followed by JSON naming the unset secrets and an
  *   HMAC-SHA256 of the current value of each variable a service points at.
  *
  * A deploy payload always starts with `{`, so the prefix tells them apart.
- * Names, times and keyed hashes only, never a value.
+ * Names, readers, times and keyed hashes only, never a value.
  */
-import { readPreflightPayload } from '@internal/core/config';
+import {
+  isPreflightFindings,
+  type PreflightFindings,
+  readPreflightPayload,
+} from '@internal/core/config';
 import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
 
 /** A value that changes when the pointed variable's value changes: the platform `updatedAt` on deploy, an HMAC of the value under `prisma dev`. Undefined when unknown. */
@@ -22,6 +27,14 @@ export interface TransportedPreflight {
   readonly pointerVersion: PointerVersion;
   /** The `envSecret` names `prisma dev` found unset; their leaves are left out of the input document. Always empty for a deploy. */
   readonly absentSecrets: ReadonlySet<string>;
+  /** The deploy preflight's findings. Empty under `prisma dev` and when nothing was transported. */
+  readonly findings: PreflightFindings;
+}
+
+/** What the deploy preflight hands the alchemy process. */
+export interface DeployPreflightPayload {
+  readonly updatedAt: ReadonlyMap<string, string>;
+  readonly findings: PreflightFindings;
 }
 
 export interface DevPreflightPayload {
@@ -31,7 +44,7 @@ export interface DevPreflightPayload {
 
 export type DecodedPreflightPayload =
   | { readonly kind: 'none' }
-  | { readonly kind: 'deploy'; readonly updatedAt: ReadonlyMap<string, string> }
+  | ({ readonly kind: 'deploy' } & DeployPreflightPayload)
   | {
       readonly kind: 'dev';
       readonly absentSecrets: ReadonlySet<string>;
@@ -42,12 +55,17 @@ const DEV_PAYLOAD_PREFIX = 'dev:';
 
 const byName = ([a]: [string, unknown], [b]: [string, unknown]) => (a < b ? -1 : 1);
 
-/** The deploy preflight's payload, or undefined when it read no pointed variable. */
+const NO_FINDINGS: PreflightFindings = { unset: [] };
+
+/** The deploy preflight's payload, or undefined when it read no pointed variable and found nothing. */
 export function serializeDeployPreflightPayload(
-  updatedAt: ReadonlyMap<string, string>,
+  payload: DeployPreflightPayload,
 ): string | undefined {
-  if (updatedAt.size === 0) return undefined;
-  return JSON.stringify(Object.fromEntries([...updatedAt].sort(byName)));
+  if (payload.updatedAt.size === 0 && payload.findings.unset.length === 0) return undefined;
+  return JSON.stringify({
+    updatedAt: Object.fromEntries([...payload.updatedAt].sort(byName)),
+    findings: payload.findings,
+  });
 }
 
 export function serializeDevPreflightPayload(payload: DevPreflightPayload): string {
@@ -100,17 +118,22 @@ export function decodePreflightPayload(payload: string | undefined): DecodedPref
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw deployPayloadError('it is not a JSON object');
   }
-  const updatedAt = new Map<string, string>();
-  for (const [name, value] of Object.entries(parsed)) {
-    if (typeof value !== 'string') throw deployPayloadError(`"${name}" is not a string timestamp`);
-    updatedAt.set(name, value);
+  if (!('updatedAt' in parsed) || !isStringRecord(parsed.updatedAt)) {
+    throw deployPayloadError('its "updatedAt" is not an object of string timestamps');
   }
-  return { kind: 'deploy', updatedAt };
+  if (!('findings' in parsed) || !isPreflightFindings(parsed.findings)) {
+    throw deployPayloadError('its "findings" do not have the expected shape');
+  }
+  return {
+    kind: 'deploy',
+    updatedAt: new Map(Object.entries(parsed.updatedAt)),
+    findings: parsed.findings,
+  };
 }
 
 const deployPayloadError = (reason: string): Error =>
   new Error(
-    "prisma-cloud: the deploy preflight's rotation timestamps did not survive the transport " +
+    "prisma-cloud: the deploy preflight's payload did not survive the transport " +
       `into the alchemy process — ${reason}. This is a framework bug; re-running the deploy ` +
       'will not fix it.',
   );
@@ -146,6 +169,10 @@ export function transportedPreflight(
     get absentSecrets() {
       const payload = decode();
       return payload.kind === 'dev' ? payload.absentSecrets : noSecrets;
+    },
+    get findings() {
+      const payload = decode();
+      return payload.kind === 'deploy' ? payload.findings : NO_FINDINGS;
     },
   };
 }

@@ -74,6 +74,24 @@ export function inputSecretNames(binding: unknown, serviceAddress: string): read
   return [...new Set(leafNames)];
 }
 
+/** A per-key param bound to `envParam()`: the platform variable it points at, and its service and param name. */
+export interface EnvParamBinding {
+  readonly name: string;
+  readonly serviceAddress: string;
+  readonly param: string;
+}
+
+/** Every per-key param bound to `envParam()`, one entry per param. */
+export function envParamBindings(graph: Graph): readonly EnvParamBinding[] {
+  return paramManifest(graph)
+    .filter((binding) => isEnvParamSource(binding.binding))
+    .map((binding) => ({
+      name: paramName(binding),
+      serviceAddress: binding.serviceAddress,
+      param: binding.slot,
+    }));
+}
+
 /** Walks each service's input binding for `envSecret` leaves, then `graph.secretSources`, and `graph.params` for env-sourced params (ADR-0042). */
 export function collectPreflightNames(graph: Graph): PreflightNames {
   const secretEntries: PreflightName[] = [];
@@ -90,13 +108,11 @@ export function collectPreflightNames(graph: Graph): PreflightNames {
     });
   }
   const envParams = dedupedNames(
-    paramManifest(graph)
-      .filter((binding) => isEnvParamSource(binding.binding))
-      .map((binding) => ({
-        name: paramName(binding),
-        address: binding.serviceAddress,
-        nodeKind: 'service' as const,
-      })),
+    envParamBindings(graph).map((binding) => ({
+      name: binding.name,
+      address: binding.serviceAddress,
+      nodeKind: 'service' as const,
+    })),
   );
   return { secrets: dedupedNames(secretEntries), envParams };
 }

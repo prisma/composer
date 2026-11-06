@@ -27,16 +27,7 @@ import {
   type PreflightName,
 } from '../preflight-names.ts';
 import { checkPublicUrls, publicUrlStrategies } from '../public-url.ts';
-import { inputValidationFailure } from '../serializer.ts';
-
-interface MissingSecrets {
-  /** One name the schema requires, or several of which it requires some. */
-  readonly names: readonly string[];
-  readonly serviceAddress: string;
-  readonly message: string;
-}
-
-type Env = Readonly<Record<string, unknown>>;
+import { type MissingVariables, requiredVariables } from '../required-variables.ts';
 
 const isSet = (value: string | undefined): value is string =>
   value !== undefined && value.length > 0;
@@ -56,7 +47,7 @@ function missingEnvParamsSection(missing: readonly PreflightName[]): string {
   return `${missing.length} env-sourced param(s) are not set:\n${lines.join('\n')}`;
 }
 
-function missingSecretsSection(missing: readonly MissingSecrets[]): string {
+function missingSecretsSection(missing: readonly MissingVariables[]): string {
   const lines = missing.map((m) =>
     m.names.length === 1
       ? `  - ${m.names[0]}  (required by service "${m.serviceAddress}": ${m.message})`
@@ -72,30 +63,6 @@ function serviceNodeAt(graph: Graph, address: string): ServiceNode {
     throw new Error(`local dev preflight: no service node at address "${address}".`);
   }
   return found;
-}
-
-/** The secrets this service's schema cannot do without, among the ones that are unset. */
-function requiredSecrets(
-  node: ServiceNode,
-  serviceAddress: string,
-  binding: unknown,
-  unset: readonly string[],
-  env: Env,
-): MissingSecrets[] {
-  const withoutAll = inputValidationFailure(node, serviceAddress, binding, {
-    env,
-    absentSecrets: new Set(unset),
-  });
-  if (withoutAll === undefined) return [];
-  const required: MissingSecrets[] = [];
-  for (const name of unset) {
-    const message = inputValidationFailure(node, serviceAddress, binding, {
-      env,
-      absentSecrets: new Set([name]),
-    });
-    if (message !== undefined) required.push({ names: [name], serviceAddress, message });
-  }
-  return required.length > 0 ? required : [{ names: unset, serviceAddress, message: withoutAll }];
 }
 
 /** HMAC-SHA256 under a local random key, so the fingerprints in Alchemy state cannot be checked against guessed values without the key file. */
@@ -125,7 +92,7 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
   const absentSecrets = new Set<string>();
   const secretNames = new Set<string>();
   const pointed = new Map<string, string>();
-  const missingSecrets: MissingSecrets[] = [];
+  const missingSecrets: MissingVariables[] = [];
   const invalidInputs: string[] = [];
   for (const { serviceAddress, binding } of inputManifest(input.graph)) {
     const names = inputSecretNames(binding, serviceAddress);
@@ -138,15 +105,12 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
     }
     if (unset.length === 0) continue;
     const node = serviceNodeAt(input.graph, serviceAddress);
-    const invalid = inputValidationFailure(node, serviceAddress, binding, {
-      env,
-      absentSecrets: new Set(),
-    });
-    if (invalid !== undefined) {
-      invalidInputs.push(`invalid input for service "${serviceAddress}": ${invalid}`);
+    const decided = requiredVariables(node, serviceAddress, binding, unset, env);
+    if (decided.kind === 'invalid') {
+      invalidInputs.push(`invalid input for service "${serviceAddress}": ${decided.message}`);
       continue;
     }
-    missingSecrets.push(...requiredSecrets(node, serviceAddress, binding, unset, env));
+    missingSecrets.push(...decided.missing);
   }
 
   const missingParams: PreflightName[] = [];

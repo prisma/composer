@@ -32,8 +32,15 @@ export {
   containerEnvVarName,
   deserializeContainers,
 } from '../container-transport.ts';
-export type { PreflightPayload } from '../preflight-transport.ts';
+export type {
+  PlatformVariableReader,
+  PreflightFindings,
+  PreflightPayload,
+  UnsetPlatformVariable,
+} from '../preflight-transport.ts';
 export {
+  isPreflightFindings,
+  platformVariableReaderText,
   preflightEnv,
   preflightEnvVarName,
   readPreflightPayload,
@@ -136,9 +143,9 @@ export interface PreflightInput<C = unknown> {
   readonly container: ContainerInstance | undefined;
   /** The environment name. */
   readonly environment: string;
-  /** The app configuration the command read for this environment. Preflight fills a missing `envParam()` param's platform variable from it. */
+  /** The app configuration the command read for this environment. */
   readonly configuration: AppConfiguration;
-  /** The app secrets the command read for this environment. Preflight fills a missing `envSecret()` platform variable from it. */
+  /** The app secrets the command read for this environment. */
   readonly secrets: AppSecrets;
   /** What the caller has already authenticated, for the platform calls preflight makes. Absent means the extension falls back to its own credential protocol. */
   readonly credentials?: ContainerCredentials<C> | undefined;

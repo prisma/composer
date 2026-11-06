@@ -357,17 +357,16 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         ),
       ),
 
-    // Deploy-time prerequisite check (ADR-0029): verify every pointer secret in
-    // the provision manifest exists for the resolved environment, filling absent-but-
-    // in-shell names via a direct API POST — before any stack file or Alchemy.
-    // Timestamps are kept for this process AND serialized onto the preflight
-    // transport for the alchemy process. The parameter annotation is what
+    // Deploy-time prerequisite check (ADR-0029): reads whether each platform
+    // variable the graph names has a row, and writes none. Timestamps are kept
+    // for this process; timestamps and findings are serialized onto the
+    // preflight transport for the alchemy process. The parameter annotation
     // recovers this extension's own client type from the framework's erased
     // one; without it `input.credentials` arrives as `unknown`.
     preflight: (input: PrismaCloudPreflightInput) =>
-      runPreflight(input).then((timestamps) => {
-        for (const [name, updatedAt] of timestamps) preflightTimestamps.set(name, updatedAt);
-        return serializeDeployPreflightPayload(timestamps);
+      runPreflight(input).then((result) => {
+        for (const [name, updatedAt] of result.updatedAt) preflightTimestamps.set(name, updatedAt);
+        return serializeDeployPreflightPayload(result);
       }),
 
     // Records the deploy as a Build so it appears in the Console, and passes

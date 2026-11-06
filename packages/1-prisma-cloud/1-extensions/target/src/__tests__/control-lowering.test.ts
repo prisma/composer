@@ -2733,7 +2733,11 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
       const o: ResolvedCloudOptions = {
         workspaceId: 'ws_1',
         providerParams,
-        preflight: { pointerVersion: () => undefined, absentSecrets: new Set() },
+        preflight: {
+          pointerVersion: () => undefined,
+          absentSecrets: new Set(),
+          findings: { unset: [] },
+        },
       };
       const node = compute({ name: 'multi', deps: {}, build, expose: { any: anyContract } });
       const ctx = {
@@ -2792,6 +2796,7 @@ describe('a secret the prisma dev preflight found unset', () => {
       preflight: {
         pointerVersion: () => undefined,
         absentSecrets: new Set(['STRIPE_WEBHOOK_SECRET']),
+        findings: { unset: [] },
       },
     };
     const node = compute({

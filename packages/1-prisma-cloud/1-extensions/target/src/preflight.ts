@@ -1,29 +1,28 @@
 /**
- * Deploy preflight (ADR-0029, extended for env-sourced params): before Alchemy
- * runs, verify every secret binding AND every env-sourced param binding in the
- * app's manifests (each a platform env-var NAME) exists on Prisma Cloud for
- * the target environment. A literal-bound param never touches the platform — only
- * `envParam(...)` sources are checked here.
- * A name absent on the platform but present in what the command read (the app secrets for a secret, the app configuration for an env-sourced param) is provisioned
- * via a direct Management API POST — NEVER an Alchemy resource, so the value
- * never lands in hosted deploy state. A name absent from both fails the deploy,
- * listing exactly what is missing and where to set it.
+ * Deploy preflight (ADR-0029). Before Alchemy runs, it reads, for every
+ * platform variable the graph names, whether a row exists in the scopes the
+ * environment sees, and when the row the platform resolves was last written.
+ * It writes no variable and reads no value: env-var values are write-only.
  *
- * Control-plane only (imported by control.ts → prisma.config.ts); runs
- * in the CLI parent, on the caller's Management API client when it passed one,
- * and otherwise on a client built from env — the same credential path
- * `container.ts`'s `ensure`/`locate` use.
+ * A variable with no row fails the deploy only when a service cannot boot
+ * without it, decided from the service's schema (ADR-0058). The others are
+ * handed back as findings, beside the `updatedAt` of each resolved row, which
+ * the compute deploy hook folds into each deployment's triggers.
  *
- * It also returns WHEN each of those names was last written. This is the only
- * place in a deploy that reads those rows off the platform, so it is where the
- * reading belongs; the compute deploy hook folds the timestamps into its
- * environment fingerprint so that rotating a secret or an env-sourced param
- * out of band ships a new deployment. A timestamp, never a value: env-var
- * values are write-only and the API never returns one.
+ * Control-plane only; runs in the CLI parent, on the caller's Management API
+ * client when it passed one, and otherwise on a client built from env.
  */
-import type { Graph, SecretSourceUse } from '@internal/core';
-import type { PreflightInput } from '@internal/core/config';
+import type { Graph, ServiceNode } from '@internal/core';
+import { inputManifest, secretSourceManifest } from '@internal/core';
+import type {
+  PlatformVariableReader,
+  PreflightFindings,
+  PreflightInput,
+  UnsetPlatformVariable,
+} from '@internal/core/config';
+import { platformVariableReaderText } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
+import { collectPlatformMarkers } from '@internal/input-document';
 import {
   drivePagesAsync,
   fromEnv,
@@ -33,13 +32,16 @@ import {
 } from '@internal/lowering';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import { configurationText } from './configuration-text.ts';
+import { mapWithConcurrency } from './bounded-concurrency.ts';
 import { prismaCloudContainerOf } from './container.ts';
 import { type EnvKeyClash, findEnvKeyClashes } from './env-key-clash.ts';
 import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
-import { collectPreflightNames, envParamNotTextError } from './preflight-names.ts';
+import { envParamBindings, inputSecretNames } from './preflight-names.ts';
 import { checkPublicUrls } from './public-url.ts';
+import { requiredVariables } from './required-variables.ts';
+import { secretName } from './secret.ts';
+import { serializeInput } from './serializer.ts';
 
 type EnvClass = 'production' | 'preview';
 
@@ -52,6 +54,7 @@ interface EnvVarListPage {
   readonly data: readonly {
     readonly branchId: string | null;
     readonly updatedAt: string;
+    readonly isManagedBySystem?: boolean;
   }[];
   readonly pagination: { readonly nextCursor: string | null; readonly hasMore: boolean };
 }
@@ -84,45 +87,32 @@ async function listEnvVars(
   >(res);
 }
 
-/** What the platform holds for one name: whether it is there at all, and when it last changed. */
+/** The row the platform resolves for one name in this environment, and whether any row the environment sees is the platform's own. */
 interface PlatformVariable {
-  readonly exists: boolean;
-  /** The latest `updatedAt` across every row visible to this environment — undefined when the name is absent. */
   readonly updatedAt?: string;
+  readonly managedBySystem: boolean;
 }
 
+/** At most this many list calls run at once. */
+const LIST_CONCURRENCY = 8;
+
 /**
- * What the platform holds for `key` in the target environment's scope. `production`
- * → any production-class template. Any other environment → a preview template (branchId
- * null) OR this branch's own override — the platform's preview materialization
- * (pdp-data-model.md). Metadata read only; env-var values are write-only.
- *
- * The whole list is walked rather than short-circuiting on the first visible
- * row, because the newest `updatedAt` across every visible row is the rotation
- * signal the compute deploy hook fingerprints on: stopping early would make
- * that timestamp depend on where the page boundary happened to fall, and a
- * fingerprint that moves for that reason would redeploy for no reason. A key
- * with more rows than one page (a template plus many per-branch overrides) is
- * rare, so this costs one request in practice.
+ * What the platform holds for `key` in this environment. One list call,
+ * filtered by class and key, walked to its last page. The environment sees
+ * the class row (no branch) and, for a preview environment, its own
+ * branch's row; the branch row wins when there is one, as the platform
+ * resolves it.
  */
 async function readPlatformVariable(
   client: ManagementApiClient,
   projectId: string,
   branchId: string | undefined,
   key: string,
-): Promise<PlatformVariable> {
+): Promise<PlatformVariable | undefined> {
   const cls = classFor(branchId);
-  const visible = (row: { branchId: string | null }): boolean =>
-    branchId === undefined || row.branchId === null || row.branchId === branchId;
-
-  // The list is paginated: a key with more preview rows (template + many
-  // per-branch overrides) than one page must be followed to the end, or a
-  // present name is falsely reported missing. Walked to the end (no
-  // short-circuit) because the LATEST updatedAt across visible rows feeds
-  // the deploy fingerprint; bounded (drivePagesAsync) so broken pagination
-  // fails loudly instead of looping.
-  let exists = false;
-  let latest: string | undefined;
+  let classRow: string | undefined;
+  let branchRow: string | undefined;
+  let managedBySystem = false;
   await drivePagesAsync(
     `environment variables named "${key}"`,
     async (cursor) => {
@@ -137,18 +127,17 @@ async function readPlatformVariable(
     },
     (data) => {
       for (const row of data) {
-        if (!visible(row)) continue;
-        exists = true;
-        // Parsed, not string-compared: lexicographic order breaks the moment
-        // two rows serialize with different precision or UTC designators.
-        if (latest === undefined || Date.parse(row.updatedAt) > Date.parse(latest)) {
-          latest = row.updatedAt;
-        }
+        if (row.branchId === null) classRow = row.updatedAt;
+        else if (branchId !== undefined && row.branchId === branchId) branchRow = row.updatedAt;
+        else continue;
+        managedBySystem ||= row.isManagedBySystem === true;
       }
       return false;
     },
   );
-  return latest === undefined ? { exists } : { exists, updatedAt: latest };
+  const updatedAt = branchRow ?? classRow;
+  if (updatedAt === undefined) return undefined;
+  return { updatedAt, managedBySystem };
 }
 
 /** Whether `key` has a row in the scope Composer writes its own rows to: production, or the environment's branch. */
@@ -217,49 +206,14 @@ async function pendingEnvKeyClashes(
   return pending;
 }
 
-/**
- * Provision `key`=`value` directly via the Management API for the target
- * environment's scope (a production template for `production`; a preview branch
- * override for any other environment — the same scope the pack's config rows are
- * written to, through alchemy's `Prisma.EnvironmentVariable`). A 409 means a
- * concurrent deploy already provisioned
- * it — tolerated. The value is never logged.
- */
-async function fillMissing(
-  client: ManagementApiClient,
-  projectId: string,
-  branchId: string | undefined,
-  key: string,
-  value: string,
-  list: ValueList,
-): Promise<string | undefined> {
-  const res = await client.POST('/v1/environment-variables', {
-    body: {
-      projectId,
-      class: classFor(branchId),
-      key,
-      value,
-      ...(branchId !== undefined ? { branchId } : {}),
-    },
-  });
-  if (res.error !== undefined && res.response.status !== 409) {
-    throw fillFailedError(key, list, res.error);
-  }
-  // The created row's timestamp, so this deploy fingerprints on the same value
-  // the next one will read back. A 409 (a concurrent deploy won the race)
-  // returns no row: the name reads as unknown for this run and the next deploy
-  // picks its timestamp up, which redeploys once — the safe direction.
-  return res.data?.data.updatedAt;
-}
-
-interface MissingBinding {
-  readonly name: string;
-  readonly address: string;
-  readonly nodeKind: SecretSourceUse['nodeKind'];
-}
-
 /** The preflight input typed against this extension's own client — the concrete form of the framework's erased `PreflightInput<unknown>`. */
 export type PrismaCloudPreflightInput = PreflightInput<ManagementApiClient>;
+
+/** What the deploy preflight hands back: the `updatedAt` of each resolved row, and the variables with no value that nothing requires. */
+export interface PreflightResult {
+  readonly updatedAt: ReadonlyMap<string, string>;
+  readonly findings: PreflightFindings;
+}
 
 // ——— Preflight errors (centralized; ADR-0029). Values are never logged. ———
 
@@ -271,49 +225,69 @@ const listFailedError = (key: string, error: unknown): Error =>
     `deploy preflight: Prisma Management API error listing "${key}": ${JSON.stringify(error)}.`,
   );
 
-type ValueList = 'the app secrets' | 'the app configuration';
-
-const fillFailedError = (key: string, list: ValueList, error: unknown): Error =>
-  new Error(
-    `deploy preflight: failed to set "${key}" on the platform from ${list}: ${JSON.stringify(error)}.`,
-  );
-
 /** `value` as one POSIX shell word: single-quoted, each embedded `'` written as `'\''`. */
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
-function missingError(
-  missing: readonly MissingBinding[],
+/** The commands that set `name`: the production row, or the preview-wide row first and this branch's row second. */
+function setCommands(
+  name: string,
   projectId: string,
   branchId: string | undefined,
   environment: string,
+): readonly string[] {
+  const add = `prisma project env add ${shellQuote(`${name}=<value>`)} --project ${shellQuote(projectId)}`;
+  return branchId === undefined
+    ? [`${add} --role production`]
+    : [`${add} --role preview`, `${add} --role preview --branch ${shellQuote(environment)}`];
+}
+
+const readersText = (readers: readonly PlatformVariableReader[]): string =>
+  readers.length === 0 ? '' : `  (${readers.map(platformVariableReaderText).join('; ')})`;
+
+/** Required variables: one name a service needs, or several of which it needs some. */
+interface Required {
+  readonly names: readonly string[];
+  readonly serviceAddress: string;
+}
+
+function requiredError(
+  required: readonly Required[],
+  readers: ReadonlyMap<string, readonly PlatformVariableReader[]>,
+  commandsFor: (name: string) => readonly string[],
 ): Error {
-  const lines = missing.map((m) => `  - ${m.name}  (used by ${m.nodeKind} "${m.address}")`);
-  const countPhrase =
-    missing.length === 1 ? '1 required setting has' : `${missing.length} required settings have`;
-  const scopeFlag =
-    branchId === undefined ? '--role production' : `--branch ${shellQuote(environment)}`;
-  // `project env add` takes a single KEY=VALUE per call. Quoting the pair keeps the
-  // `<value>` placeholder from being read as a shell redirection.
-  const commands = missing.map(
-    (m) =>
-      `prisma project env add ${shellQuote(`${m.name}=<value>`)} --project ${shellQuote(projectId)} ${scopeFlag}`,
+  const names = [...new Set(required.flatMap((entry) => entry.names))];
+  const listed = new Set<string>();
+  const entries = required.filter((entry) => {
+    const [only] = entry.names;
+    if (entry.names.length !== 1 || only === undefined) return true;
+    if (listed.has(only)) return false;
+    listed.add(only);
+    return true;
+  });
+  const lines = entries.map((entry) =>
+    entry.names.length === 1
+      ? `  - ${entry.names[0]}${readersText(readers.get(entry.names[0] ?? '') ?? [])}`
+      : `  - some of ${entry.names.join(', ')}  (service "${entry.serviceAddress}" needs some of them)`,
   );
-  const runStep =
-    commands.length === 1
-      ? `Run: ${commands[0]}`
-      : `Run, once per setting:\n${commands.map((cmd) => `      ${cmd}`).join('\n')}`;
-  const consoleStep =
-    branchId === undefined
-      ? 'add each one under Production. Those values apply when the default branch deploys to production.'
-      : `add each one under Preview. Preview values apply to every branch deploy, including "${environment}".`;
+  const countLine =
+    names.length === 1
+      ? '1 platform variable a service needs has no value:'
+      : `${names.length} platform variables a service needs have no value:`;
+  const commands = names.flatMap(commandsFor).map((command) => `  - ${command}`);
   return new Error(
-    `Deploy failed. ${countPhrase} no value:\n` +
-      `${lines.join('\n')}\n\n` +
-      'Set the value in one of these two places, then deploy again:\n' +
-      `  - ${runStep}\n` +
-      `  - Or in the Prisma Console: open the project, go to Environment variables, and ${consoleStep}`,
+    `Deploy failed. ${countLine}\n${lines.join('\n')}\n\n` +
+      `Set ${names.length === 1 ? 'it' : 'them'} on the platform, then deploy again:\n` +
+      commands.join('\n'),
   );
 }
+
+const managedBySystemError = (names: readonly string[]): Error =>
+  new Error(
+    `Deploy failed. ${names.map((name) => `"${name}"`).join(', ')} ${names.length === 1 ? 'is a platform variable' : 'are platform variables'} that Prisma Cloud manages itself (isManagedBySystem), so the app cannot read ${names.length === 1 ? 'it' : 'them'} as its own. Rename ${names.length === 1 ? 'it' : 'them'} in the app.`,
+  );
+
+const invalidInputError = (serviceAddress: string, message: string): Error =>
+  new Error(`invalid input for service "${serviceAddress}": ${message}`);
 
 function envKeyClashError(
   clashes: readonly EnvKeyClash[],
@@ -354,93 +328,148 @@ async function managementClient(): Promise<ManagementApiClient> {
   );
 }
 
+function serviceNodeAt(graph: Graph, address: string): ServiceNode {
+  const found = graph.nodes.find((entry) => entry.id === address)?.node;
+  if (found?.kind !== 'service') {
+    throw new Error(`deploy preflight: no service node at address "${address}".`);
+  }
+  return found;
+}
+
+/** Appends `reader` to `name`'s readers. */
+function addReader(
+  readers: Map<string, PlatformVariableReader[]>,
+  name: string,
+  reader: PlatformVariableReader,
+): void {
+  const list = readers.get(name);
+  if (list === undefined) readers.set(name, [reader]);
+  else list.push(reader);
+}
+
 /**
- * The Prisma Cloud extension's `preflight`. Every secret source the graph
- * names is checked, including one in a module's input that no service
- * receives. Uses the shared name collector (`collectPreflightNames`,
- * ADR-0042): every secret
- * source in a service's input binding or in `graph.secretSources`, deduped by
- * name with the first entry winning the reported address, plus
- * `paramManifest` filtered to env-sourced reserved params. It checks each
- * platform name against the platform, fills from the
- * app configuration and the app secrets where possible, and fails loudly on anything absent from both.
- * `envParam` leaves of an input binding are NOT checked here — they resolve
- * from the app configuration at serialize, and an unset one is an omitted key the
- * schema arbitrates. Uses the caller's client (`input.credentials`), then an
- * injected one for tests, then a client built from env.
+ * The Prisma Cloud extension's `preflight`. Checks every platform variable
+ * the graph names: the `envSecret()` leaves of every service's input
+ * binding, every secret source in `graph.secretSources` (including one in a
+ * module's input that no service receives), and every per-key param bound to
+ * `envParam()`. Writes nothing. Fails when a variable a service needs has no
+ * row, or when a row the environment sees is the platform's own.
  */
 export async function runPreflight(
   input: PrismaCloudPreflightInput,
   deps?: { readonly client?: ManagementApiClient },
-): Promise<ReadonlyMap<string, string>> {
+): Promise<PreflightResult> {
   checkPublicUrls(input.graph);
   const { projectId, branchId } = prismaCloudContainerOf(input.container);
 
-  // One check per platform NAME (many leaves/services, secret or param, may
-  // bind the same one). Every bound secret leaf is required — absence is
-  // expressed by omitting the key from the binding, never by an unprovisioned
-  // var; a param binding is only checked when it is env-sourced. Deploy treats
-  // the two lists identically (unlike dev preflight), so they're merged here,
-  // secrets first.
-  const collected = collectPreflightNames(input.graph);
-  const names = new Map<string, MissingBinding>();
-  const valueFor = new Map<string, { list: ValueList; read: () => string | undefined }>();
-  for (const meta of collected.secrets) {
-    if (names.has(meta.name)) continue;
-    names.set(meta.name, meta);
-    valueFor.set(meta.name, { list: 'the app secrets', read: () => input.secrets[meta.name] });
-  }
-  for (const meta of collected.envParams) {
-    if (names.has(meta.name)) continue;
-    names.set(meta.name, meta);
-    valueFor.set(meta.name, {
-      list: 'the app configuration',
-      read: () =>
-        configurationText(input.configuration, meta.name, (kind) =>
-          envParamNotTextError(meta.name, meta.address, kind),
-        ),
-    });
-  }
+  const services = inputManifest(input.graph).map(({ serviceAddress, binding }) => ({
+    serviceAddress,
+    binding,
+    names: inputSecretNames(binding, serviceAddress),
+  }));
+  const params = envParamBindings(input.graph);
+  const unread = secretSourceManifest(input.graph).flatMap((use) =>
+    use.nodeKind === 'service'
+      ? []
+      : [
+          {
+            name: secretName(use.source, `a secret source of ${use.nodeKind} "${use.address}"`),
+            reader: { kind: 'unread', node: use.address, nodeKind: use.nodeKind } as const,
+          },
+        ],
+  );
+  const names = [
+    ...new Set([
+      ...services.flatMap((service) => service.names),
+      ...unread.map((use) => use.name),
+      ...params.map((param) => param.name),
+    ]),
+  ];
   const clashes = findEnvKeyClashes(input.graph);
-  if (names.size === 0 && clashes.length === 0) {
-    input.report?.({ checked: 0, filled: 0, missing: 0 });
-    return new Map();
+  if (names.length === 0 && clashes.length === 0) {
+    input.report?.({ checked: 0, unset: 0 });
+    return { updatedAt: new Map(), findings: { unset: [] } };
   }
 
   const client = input.credentials?.client ?? deps?.client ?? (await managementClient());
   const pending = await pendingEnvKeyClashes(client, projectId, branchId, clashes);
   if (pending.length > 0) throw envKeyClashError(pending, projectId, branchId, input.environment);
-  const missing: MissingBinding[] = [];
+
+  const rows = await mapWithConcurrency(names, LIST_CONCURRENCY, (name) =>
+    readPlatformVariable(client, projectId, branchId, name),
+  );
   const updatedAt = new Map<string, string>();
-  let filled = 0;
-  for (const meta of names.values()) {
-    const platform = await readPlatformVariable(client, projectId, branchId, meta.name);
-    if (platform.exists) {
-      if (platform.updatedAt !== undefined) updatedAt.set(meta.name, platform.updatedAt);
-      continue;
+  const unset = new Set<string>();
+  const managedBySystem: string[] = [];
+  names.forEach((name, index) => {
+    const row = rows[index];
+    if (row?.updatedAt === undefined) {
+      unset.add(name);
+      return;
     }
-    const source = valueFor.get(meta.name);
-    const value = source?.read();
-    if (source !== undefined && value !== undefined && value.length > 0) {
-      const filledAt = await fillMissing(
-        client,
-        projectId,
-        branchId,
-        meta.name,
-        value,
-        source.list,
-      );
-      if (filledAt !== undefined) {
-        updatedAt.set(meta.name, filledAt);
-        filled += 1;
-      }
-      continue;
+    updatedAt.set(name, row.updatedAt);
+    if (row.managedBySystem) managedBySystem.push(name);
+  });
+  input.report?.({ checked: names.length, unset: unset.size });
+  if (managedBySystem.length > 0) throw managedBySystemError(managedBySystem);
+  if (unset.size === 0) return { updatedAt, findings: { unset: [] } };
+
+  const readers = new Map<string, PlatformVariableReader[]>();
+  const required: Required[] = [];
+  for (const { serviceAddress, binding, names: serviceNames } of services) {
+    const unsetHere = serviceNames.filter((name) => unset.has(name));
+    if (unsetHere.length === 0) continue;
+    const node = serviceNodeAt(input.graph, serviceAddress);
+    const document = serializeInput(node, serviceAddress, binding, {
+      env: input.configuration,
+    });
+    const markers =
+      document === undefined ? [] : collectPlatformMarkers(JSON.parse(document.value));
+    const inArray = new Set<string>();
+    for (const marker of markers) {
+      if (!unset.has(marker.name)) continue;
+      addReader(readers, marker.name, {
+        kind: 'field',
+        service: serviceAddress,
+        path: marker.path,
+      });
+      if (marker.inArray) inArray.add(marker.name);
     }
-    missing.push(meta);
+    for (const name of inArray) required.push({ names: [name], serviceAddress });
+    const decided = requiredVariables(
+      node,
+      serviceAddress,
+      binding,
+      unsetHere.filter((name) => !inArray.has(name)),
+      input.configuration,
+    );
+    if (decided.kind === 'invalid') throw invalidInputError(serviceAddress, decided.message);
+    required.push(...decided.missing);
   }
-  input.report?.({ checked: names.size, filled, missing: missing.length });
-  if (missing.length > 0) throw missingError(missing, projectId, branchId, input.environment);
-  return updatedAt;
+  for (const use of unread) {
+    if (unset.has(use.name)) addReader(readers, use.name, use.reader);
+  }
+  for (const param of params) {
+    if (!unset.has(param.name)) continue;
+    addReader(readers, param.name, {
+      kind: 'param',
+      service: param.serviceAddress,
+      param: param.param,
+    });
+    const declared = serviceNodeAt(input.graph, param.serviceAddress).params[param.param];
+    if (declared !== undefined && declared.default === undefined && declared.optional !== true) {
+      required.push({ names: [param.name], serviceAddress: param.serviceAddress });
+    }
+  }
+
+  const commandsFor = (name: string) => setCommands(name, projectId, branchId, input.environment);
+  if (required.length > 0) throw requiredError(required, readers, commandsFor);
+  const findings: UnsetPlatformVariable[] = [...unset].sort().map((name) => ({
+    name,
+    readers: readers.get(name) ?? [],
+    commands: commandsFor(name),
+  }));
+  return { updatedAt, findings: { unset: findings } };
 }
 
 /**
