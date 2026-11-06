@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mapWithConcurrency } from '../bounded-concurrency.ts';
+import { mapWithConcurrency } from '../map-with-concurrency.ts';
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 1));
 

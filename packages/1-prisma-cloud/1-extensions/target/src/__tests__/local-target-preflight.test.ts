@@ -354,11 +354,28 @@ describe('prisma dev preflight', () => {
     ).toBeUndefined();
   });
 
+  test('a secret an array position reads that is unset stops dev, naming the variable and the service', async () => {
+    const graph = Load(
+      module('app', ({ provision }) => {
+        provision(compute({ name: 'billing', deps: {}, input: requiresSecrets(), build }), {
+          id: 'billing',
+          input: { keys: [envSecret('STRIPE_SECRET_KEY')] },
+        });
+      }),
+    );
+
+    const message = await preflightError(graph);
+
+    expect(message).toContain(
+      '1 platform variable a service needs has no value:\n  - STRIPE_SECRET_KEY  (required by service "app.billing": an array position reads it, and an array position cannot be left out)',
+    );
+  });
+
   test('an unset per-key param with no default that is not optional stops dev, naming the variable, the service and the param', async () => {
     const message = await preflightError(tokenGraph());
 
     expect(message).toContain(
-      '1 env-sourced param a service needs is not set:\n  - API_TOKEN  (read by service "app.web", per-key param "token")',
+      '1 platform variable a service needs has no value:\n  - API_TOKEN  (read by service "app.web", per-key param "token")',
     );
     expect(message).toContain('the `config` list for an env-sourced param');
   });

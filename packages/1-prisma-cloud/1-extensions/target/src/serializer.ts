@@ -33,6 +33,7 @@ import {
   generatedMarker,
   INPUT_KEY_NAME,
   isParamPointerRow,
+  type PlatformMarkerUse,
   platformMarker,
   readDocument,
   requiredParamUnsetMessage,
@@ -320,6 +321,13 @@ export interface ResolvedInputBinding {
 
 const NO_ABSENT_SECRETS: ReadonlySet<string> = new Set();
 
+const variableNameOf = (leaf: unknown): string =>
+  isSecretSource(leaf)
+    ? secretName(leaf, 'an array position')
+    : isEnvParamSource(leaf)
+      ? leaf.payload.name
+      : '(unknown)';
+
 /** How `resolveInputBinding`, `serializeInput` and `inputValidationFailure` read the environment and which secrets they leave out. */
 export interface SerializeInputOptions {
   /** Where `envParam` leaves are read: the app configuration, or in the second process the configuration key text from the app configuration file. The process environment when not given. */
@@ -440,8 +448,7 @@ export function resolveInputBinding(
         const resolvedMember = walk(member, path === '' ? String(index) : `${path}.${index}`);
         if (resolvedMember === ABSENT) {
           throw new Error(
-            `input binding key "${path}[${index}]" is an env-bound array element whose variable is ` +
-              'unset — an array position cannot be omitted; bind a literal or provision the variable.',
+            `input binding key "${path}[${index}]" of service "${address}" reads the platform variable "${variableNameOf(member)}", which has no value. An array position cannot be left out: set the variable, or bind a literal.`,
           );
         }
         return resolvedMember;
@@ -490,18 +497,8 @@ export interface InputDocumentRow {
   readonly absent: readonly string[];
   /** Generated leaves the descriptor must provision (a `GeneratedParam` resource + env row each). */
   readonly generated: readonly GeneratedLeaf[];
-  /**
-   * The platform variables the document's `$platform` markers name, each once,
-   * sorted by name. Composer never writes them; each one's `updatedAt` joins
-   * the deployment's triggers.
-   */
-  readonly variables: readonly DocumentVariable[];
-}
-
-/** A platform variable an input document reads. */
-export interface DocumentVariable {
-  readonly name: string;
-  readonly secret: boolean;
+  /** Every `$platform` marker the document holds, in document order. Composer never writes the variables they name. */
+  readonly markers: readonly PlatformMarkerUse[];
 }
 
 /** The text a stand-in box holds: known, and not a secret. */
@@ -536,17 +533,9 @@ export function serializeInput(
   }
   const { validated, generated, absent, resolved } = judged;
   refuseLostSecrets(node, address, resolved);
-  const variables = new Map<string, DocumentVariable>();
-  const document = substitutePointers(validated, generated, address, variables);
-  return {
-    key: inputKey(address),
-    value: JSON.stringify(document),
-    absent,
-    generated,
-    // The names the document carries, not the binding: a schema can drop a
-    // bound leaf. Sorted, so reordering leaves cannot move the triggers.
-    variables: [...variables.values()].sort((a, b) => a.name.localeCompare(b.name)),
-  };
+  const markers: PlatformMarkerUse[] = [];
+  const document = substitutePointers(validated, generated, address, markers);
+  return { key: inputKey(address), value: JSON.stringify(document), absent, generated, markers };
 }
 
 /**
@@ -700,14 +689,14 @@ function substitutePointers(
   value: unknown,
   generated: readonly GeneratedLeaf[],
   address: string,
-  variables: Map<string, DocumentVariable>,
+  markers: PlatformMarkerUse[],
 ): unknown {
   const generatedByPath = new Map(generated.map((leaf) => [leaf.path, leaf]));
-  const walk = (v: unknown, path: string): unknown => {
+  const walk = (v: unknown, path: string, inArray = false): unknown => {
     const leaf = generatedByPath.get(path);
     if (isSecretSource(v)) {
       const name = secretName(v, path === '' ? 'the input binding root' : `input key "${path}"`);
-      variables.set(name, { name, secret: true });
+      markers.push({ name, path, secret: true, inArray });
       return platformMarker(name, true);
     }
     if (isParamSource(v)) {
@@ -732,7 +721,9 @@ function substitutePointers(
           "platform variable); bind the field with envSecret('NAME') instead.",
       );
     }
-    if (Array.isArray(v)) return v.map((m, i) => walk(m, path === '' ? String(i) : `${path}.${i}`));
+    if (Array.isArray(v)) {
+      return v.map((m, i) => walk(m, path === '' ? String(i) : `${path}.${i}`, true));
+    }
     if (isPlainObject(v)) {
       const out: Record<string, unknown> = {};
       for (const [key, member] of Object.entries(v)) {

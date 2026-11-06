@@ -20,7 +20,7 @@ import {
   type ServiceNode,
   slotsOf,
 } from '../node.ts';
-import type { PreflightFindings } from '../preflight-transport.ts';
+import { type PreflightFindings, readPreflightFindings } from '../preflight-transport.ts';
 import type {
   ContainerInstance,
   ExtensionDescriptor,
@@ -498,6 +498,16 @@ export function joinDeployment(
   return nodes;
 }
 
+/** The deploy report: every deployed node joined with its graph node, and the findings the CLI carried from the deploy preflight. */
+export function deploymentResult(
+  app: string,
+  graph: Graph,
+  entries: readonly { address: string; entities: readonly DeployedEntity[] }[],
+  env: Readonly<Record<string, string | undefined>>,
+): DeploymentResult {
+  return { app, nodes: joinDeployment(graph, entries), findings: readPreflightFindings(env) };
+}
+
 function missingBundleError(id: NodeId): LowerError {
   return new LowerError(
     `No bundle provided for service "${id}" (opts.bundles["${id}"] is required).`,
@@ -881,15 +891,7 @@ export function lowering(
           // strings here. The graph rides in on the closure, never in the
           // input: the plan hashes the resolved input, and a node carries
           // functions and Standard Schemas.
-          report({
-            app: opts.name,
-            nodes: joinDeployment(graph, input.entries),
-            findings: {
-              unset: config.extensions.flatMap(
-                (extension) => extension.preflightFindings?.().unset ?? [],
-              ),
-            },
-          });
+          report(deploymentResult(opts.name, graph, input.entries, process.env));
         }),
       );
       // `Date.now()` forces the report to run on an otherwise unchanged

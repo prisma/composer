@@ -9,11 +9,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { Load, module } from '@internal/core';
-import {
-  type PreflightFindings,
-  preflightEnv,
-  type UnsetPlatformVariable,
-} from '@internal/core/config';
+import { preflightEnv } from '@internal/core/config';
 import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
@@ -65,18 +61,10 @@ const fakePlatform = (updatedAt: string | undefined): ManagementApiClient =>
     },
   }) as unknown as ManagementApiClient;
 
-const NONE: PreflightFindings = { unset: [] };
-
-const UNSET: UnsetPlatformVariable = {
-  name: 'MAIL_KEY',
-  readers: [{ kind: 'unread', node: 'app.mail', nodeKind: 'module' }],
-  commands: ["prisma project env add 'MAIL_KEY=<value>' --project 'proj' --role production"],
-};
-
 /** The pointed platform variables serialize collected for this service — the input document points at the rotating secret. */
 const pointers = ['STRIPE_SECRET_KEY'];
 
-/** The CLI process: run the real preflight against a platform that last wrote the secret at `updatedAt`, and hand its findings to the framework transport. */
+/** The CLI process: run the real preflight against a platform that last wrote the secret at `updatedAt`, and hand its payload to the framework transport. */
 async function cliProcess(updatedAt: string | undefined): Promise<Record<string, string>> {
   const result = await runPreflight(
     {
@@ -132,24 +120,14 @@ describe('the rotation signal across the CLI → alchemy process boundary', () =
 
     expect(env).toEqual({
       PRISMA_COMPOSER_PREFLIGHT_PRISMA_COMPOSER_PRISMA_CLOUD:
-        '{"updatedAt":{"STRIPE_SECRET_KEY":"2026-05-05T12:00:00.000Z"},"findings":{"unset":[]}}',
+        '{"updatedAt":{"STRIPE_SECRET_KEY":"2026-05-05T12:00:00.000Z"}}',
     });
   });
 
-  test('a variable with no value that nothing requires reaches the alchemy process as a finding', async () => {
+  test('a variable with no value sends no payload, and its trigger member is unknown', async () => {
     const env = await cliProcess(undefined);
 
-    expect(transportedPreflight(new Map(), env).findings).toEqual({
-      unset: [
-        {
-          name: 'STRIPE_SECRET_KEY',
-          readers: [{ kind: 'field', service: 'app.ingest', path: 'stripeKey' }],
-          commands: [
-            "prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role production",
-          ],
-        },
-      ],
-    });
+    expect(env).toEqual({});
     expect(alchemyProcessPointerTriggers(env)).toEqual({ 'STRIPE_SECRET_KEY:updatedAt': '?' });
   });
 
@@ -166,17 +144,12 @@ describe('the rotation signal across the CLI → alchemy process boundary', () =
 });
 
 describe('what the payload may contain', () => {
-  test('names, times and readers only', () => {
+  test('names and times only', () => {
     expect(
       serializeDeployPreflightPayload({
         updatedAt: new Map([['STRIPE_SECRET_KEY', '2026-05-05T12:00:00.000Z']]),
-        findings: { unset: [UNSET] },
       }),
-    ).toBe(
-      '{"updatedAt":{"STRIPE_SECRET_KEY":"2026-05-05T12:00:00.000Z"},"findings":{"unset":[' +
-        '{"name":"MAIL_KEY","readers":[{"kind":"unread","node":"app.mail","nodeKind":"module"}],' +
-        `"commands":["prisma project env add 'MAIL_KEY=<value>' --project 'proj' --role production"]}]}}`,
-    );
+    ).toBe('{"updatedAt":{"STRIPE_SECRET_KEY":"2026-05-05T12:00:00.000Z"}}');
   });
 
   test('the same times in a different order serialize identically — sorted by name', () => {
@@ -186,40 +159,25 @@ describe('what the payload may contain', () => {
     ]);
     const other = new Map([...one].reverse());
 
-    expect(serializeDeployPreflightPayload({ updatedAt: other, findings: NONE })).toBe(
-      serializeDeployPreflightPayload({ updatedAt: one, findings: NONE }),
+    expect(serializeDeployPreflightPayload({ updatedAt: other })).toBe(
+      serializeDeployPreflightPayload({ updatedAt: one }),
     );
   });
 
-  test('a deploy with no pointed variable and no finding carries no payload at all', () => {
-    expect(
-      serializeDeployPreflightPayload({ updatedAt: new Map(), findings: NONE }),
-    ).toBeUndefined();
+  test('a deploy with no variable that has a row carries no payload at all', () => {
+    expect(serializeDeployPreflightPayload({ updatedAt: new Map() })).toBeUndefined();
   });
 
-  test('a deploy with only a finding carries it', () => {
-    const payload = serializeDeployPreflightPayload({
-      updatedAt: new Map(),
-      findings: { unset: [UNSET] },
-    });
-
-    expect(decodePreflightPayload(payload)).toEqual({
-      kind: 'deploy',
-      updatedAt: new Map(),
-      findings: { unset: [UNSET] },
-    });
-  });
-
-  test('a round trip preserves every name and finding', () => {
+  test('a round trip preserves every name and time', () => {
     const updatedAt = new Map([
       ['A_KEY', '2026-01-01T00:00:00.000Z'],
       ['B_KEY', '2026-02-02T00:00:00.000Z'],
     ]);
-    const findings = { unset: [UNSET] };
 
-    expect(
-      decodePreflightPayload(serializeDeployPreflightPayload({ updatedAt, findings })),
-    ).toEqual({ kind: 'deploy', updatedAt, findings });
+    expect(decodePreflightPayload(serializeDeployPreflightPayload({ updatedAt }))).toEqual({
+      kind: 'deploy',
+      updatedAt,
+    });
   });
 
   test('an absent payload decodes as nothing sent', () => {
@@ -229,12 +187,9 @@ describe('what the payload may contain', () => {
   test('a payload that is present but unreadable fails loudly rather than losing the signal', () => {
     expect(() => decodePreflightPayload('not json')).toThrow(/did not survive the transport/);
     expect(() => decodePreflightPayload('"a string"')).toThrow(/not a JSON object/);
-    expect(() =>
-      decodePreflightPayload('{"updatedAt":{"A_KEY":42},"findings":{"unset":[]}}'),
-    ).toThrow(/"updatedAt" is not an object of string timestamps/);
-    expect(() =>
-      decodePreflightPayload('{"updatedAt":{},"findings":{"unset":[{"name":"A_KEY"}]}}'),
-    ).toThrow(/"findings" do not have the expected shape/);
+    expect(() => decodePreflightPayload('{"updatedAt":{"A_KEY":42}}')).toThrow(
+      /"updatedAt" is not an object of string timestamps/,
+    );
   });
 });
 
@@ -250,14 +205,12 @@ describe('one transport variable, two kinds of payload', () => {
       childEnv(
         serializeDeployPreflightPayload({
           updatedAt: new Map([['STRIPE_SECRET_KEY', '2026-10-01T00:00:00Z']]),
-          findings: { unset: [UNSET] },
         }),
       ),
     );
 
     expect([...preflight.absentSecrets]).toEqual([]);
     expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBe('2026-10-01T00:00:00Z');
-    expect(preflight.findings).toEqual({ unset: [UNSET] });
   });
 
   test('a dev payload carries the absent secrets and the value versions', () => {
@@ -273,7 +226,6 @@ describe('one transport variable, two kinds of payload', () => {
 
     expect([...preflight.absentSecrets]).toEqual(['STRIPE_WEBHOOK_SECRET']);
     expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBe('hmac-of-value');
-    expect(preflight.findings).toEqual(NONE);
   });
 
   test('with no payload nothing is absent and every version is unknown', () => {
@@ -281,7 +233,6 @@ describe('one transport variable, two kinds of payload', () => {
 
     expect([...preflight.absentSecrets]).toEqual([]);
     expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBeUndefined();
-    expect(preflight.findings).toEqual(NONE);
   });
 
   test('a dev payload that does not parse fails loudly', () => {

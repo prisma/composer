@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
-import type { Graph } from '@internal/core';
+import { type Graph, GraphCheckError } from '@internal/core';
 import { resolveAppIdentity, runPipeline } from '../pipeline.ts';
 import { SecretRedaction } from '../redaction.ts';
 import prismaConfig from './fixtures/pipeline/prisma.config.ts';
@@ -188,10 +188,10 @@ describe('an extension graph check', () => {
     expect(checked).toEqual([graph]);
   });
 
-  test('a graph check that throws fails the pipeline as COMPOSE.GRAPH_INVALID with its message, before registry coverage and assemble', async () => {
+  test('a graph check that refuses the graph fails the pipeline as COMPOSE.GRAPH_INVALID with its message, before registry coverage and assemble', async () => {
     let assembled = false;
     const uncovered = withCheck(() => {
-      throw new Error('the graph is wrong');
+      throw new GraphCheckError('the graph is wrong');
     }, []);
 
     const run = runPipeline(undefined, undefined, 'staging', fixtureDir, uncovered, {
@@ -206,6 +206,17 @@ describe('an extension graph check', () => {
       message: 'the graph is wrong',
     });
     expect(assembled).toBe(false);
+  });
+
+  test('any other throw from a graph check is a bug, and reaches the caller unchanged', async () => {
+    const bug = new TypeError('cannot read properties of undefined');
+    const broken = withCheck(() => {
+      throw bug;
+    });
+
+    const run = runPipeline(undefined, undefined, 'staging', fixtureDir, broken, noAssembly);
+
+    expect(await run.catch((error: unknown) => error)).toBe(bug);
   });
 
   test('a graph check runs after the known secrets are added', async () => {

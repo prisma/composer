@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { isSecretPointer, Load, module, service, string } from '@internal/core';
-import type { AppConfiguration, AppSecrets, PreflightReport } from '@internal/core/config';
+import type {
+  AppConfiguration,
+  AppSecrets,
+  PlatformVariableCheck,
+  PreflightFindings,
+} from '@internal/core/config';
 import { secretString } from '@internal/foundation/arktype';
 import { isSecretString } from '@internal/foundation/secret';
 import type { ManagementApiClient } from '@internal/lowering';
@@ -247,10 +252,24 @@ const NO_VALUES: ReadValues = { configuration: {}, secrets: {} };
 let read: ReadValues = NO_VALUES;
 
 /** Runs preflight with the app configuration and the app secrets `withValues` set, or empty ones. */
-const preflightWith = (
+const preflightWith = async (
   input: Omit<PrismaCloudPreflightInput, 'configuration' | 'secrets'>,
   deps?: Parameters<typeof runPreflight>[1],
-) => runPreflight({ ...input, ...read }, deps);
+) => {
+  let findings: PreflightFindings = { unset: [] };
+  const payload = await runPreflight(
+    {
+      ...input,
+      ...read,
+      report: (check) => {
+        findings = { unset: check.unset };
+        input.report?.(check);
+      },
+    },
+    deps,
+  );
+  return { ...payload, findings };
+};
 
 /** Sets the app configuration and the app secrets preflight reads for the duration of `fn`. */
 async function withValues<T>(
@@ -399,7 +418,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
     );
   });
 
-  test('a variable with no row that nothing requires passes and is returned as a finding with its reader and commands', async () => {
+  test('a variable with no row that nothing requires passes and is reported with its reader and commands', async () => {
     const result = await preflightWith(
       { graph: secretGraph(), ...preview },
       { client: fakeClient(state) },
@@ -434,7 +453,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
   });
 
   test('reports how many names it checked with its findings, and nothing when it fails', async () => {
-    const reports: PreflightReport[] = [];
+    const reports: PlatformVariableCheck[] = [];
     const run = (graph: ReturnType<typeof secretGraph>) =>
       preflightWith(
         { graph, ...production, report: (report) => reports.push(report) },
@@ -455,7 +474,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
     ]);
   });
 
-  test('a graph with no platform variable is a pass-through — no platform calls at all', async () => {
+  test('a graph with no platform variable makes no platform call and returns nothing', async () => {
     const result = await preflightWith(
       { graph: noSecretGraph(), ...production },
       { client: fakeClient(state) },

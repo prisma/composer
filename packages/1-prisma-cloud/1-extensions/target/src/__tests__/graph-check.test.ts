@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { Load, module } from '@internal/core';
+import { GraphCheckError, Load, module } from '@internal/core';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { prismaCloud } from '../exports/control.ts';
@@ -25,7 +25,8 @@ const thrown = (run: () => void): string => {
   try {
     run();
   } catch (error) {
-    return (error as Error).message;
+    if (!(error instanceof GraphCheckError)) throw error;
+    return error.message;
   }
   throw new Error('expected the check to throw');
 };

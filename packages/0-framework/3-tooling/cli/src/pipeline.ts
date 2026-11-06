@@ -230,15 +230,5 @@ export async function runPipeline(
 }
 
 function checkGraph(graph: Graph, extensions: readonly ExtensionDescriptor[]): void {
-  for (const extension of extensions) {
-    try {
-      extension.checkGraph?.(graph);
-    } catch (error) {
-      throw new CliStructuredError(
-        'COMPOSE.GRAPH_INVALID',
-        error instanceof Error ? error.message : String(error),
-        { cause: error, meta: { extension: extension.id } },
-      );
-    }
-  }
+  for (const extension of extensions) extension.checkGraph?.(graph);
 }

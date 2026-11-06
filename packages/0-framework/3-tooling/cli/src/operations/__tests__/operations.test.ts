@@ -21,6 +21,7 @@ import type {
   RunOutcome,
   UnsetPlatformVariable,
 } from '@internal/core/config';
+import { readPreflightFindings } from '@internal/core/config';
 import { nodeAddresses } from '@internal/core/deploy';
 import type {
   LocalTargetAttachment,
@@ -1176,6 +1177,39 @@ describe('deploy() step events', () => {
     });
     if (!result.ok) throw new Error('unreachable');
     expect(result.value.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test("the deploy preflight's findings reach the alchemy process on the framework's own variable", async () => {
+    const app = makeAppDir('hello-findings');
+    let childEnv: Readonly<Record<string, string | undefined>> = {};
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(
+            fakeConfig({
+              preflight: async (input) => {
+                input.report?.({ checked: 1, unset: [EMAIL_API_KEY_UNSET] });
+                return undefined;
+              },
+            }),
+          ),
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async (invocation) => {
+            childEnv = invocation.env;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(readPreflightFindings(childEnv)).toEqual({ unset: [EMAIL_API_KEY_UNSET] });
   });
 
   test('a thrown defect closes the open steps as failed and still records the result', async () => {

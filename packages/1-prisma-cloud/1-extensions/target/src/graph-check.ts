@@ -1,4 +1,4 @@
-import { type Graph, isParamSource, isSecretSource } from '@internal/core';
+import { type Graph, GraphCheckError, isParamSource, isSecretSource } from '@internal/core';
 import { isEnvParamSource } from './param.ts';
 
 interface EnvParamUse {
@@ -47,7 +47,7 @@ export function checkGraph(graph: Graph): void {
   for (const use of envParamUses(graph)) {
     const field = rootFields.get(use.name);
     if (field === undefined) continue;
-    throw new Error(
+    throw new GraphCheckError(
       `${use.where} and input.${field.path.join('.')} of root module "${graph.root.id}" both use the name "${use.name}". A name has one meaning in an app: read "${use.name}" either with envParam() or as a field of the root's input, not both, or give one of them a different name.`,
     );
   }

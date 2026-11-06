@@ -3,7 +3,7 @@
  * preflight uses (`preflight-names.ts`), with dev's value-sourcing policy.
  * Every value comes from what the command read: secrets from the app secrets, env-sourced params from the app configuration. An unset or empty secret is left out of the
  * service's input; it is an error only when the service's schema rejects
- * its absence. An unset or empty per-key env-sourced param takes its default
+ * its absence or an array position reads it. An unset or empty per-key env-sourced param takes its default
  * or is left out when optional; it is an error only when it is required.
  *
  * Control-plane only, runs in the CLI parent (no CliError import — see
@@ -46,23 +46,25 @@ function howToSet(environment: string): string {
   );
 }
 
-function missingEnvParamsSection(missing: ReadonlyMap<string, PlatformVariableReader[]>): string {
-  const lines = [...missing].map(
-    ([name, readers]) => `  - ${name}  (${readers.map(platformVariableReaderText).join('; ')})`,
-  );
-  return missing.size === 1
-    ? `1 env-sourced param a service needs is not set:\n${lines.join('\n')}`
-    : `${missing.size} env-sourced params a service needs are not set:\n${lines.join('\n')}`;
-}
-
-function missingSecretsSection(missing: readonly MissingVariables[]): string {
-  const lines = missing.map((m) =>
-    m.names.length === 1
-      ? `  - ${m.names[0]}  (required by service "${m.serviceAddress}": ${m.message})`
-      : `  - some of ${m.names.join(', ')}  (service "${m.serviceAddress}" needs some of them: ` +
-        `${m.message})`,
-  );
-  return `required secrets are not set:\n${lines.join('\n')}`;
+function missingSection(
+  params: ReadonlyMap<string, PlatformVariableReader[]>,
+  secrets: readonly MissingVariables[],
+): string {
+  const lines = [
+    ...[...params].map(
+      ([name, readers]) => `  - ${name}  (${readers.map(platformVariableReaderText).join('; ')})`,
+    ),
+    ...secrets.map((m) =>
+      m.names.length === 1
+        ? `  - ${m.names[0]}  (required by service "${m.serviceAddress}": ${m.message})`
+        : `  - some of ${m.names.join(', ')}  (service "${m.serviceAddress}" needs some of them: ` +
+          `${m.message})`,
+    ),
+  ];
+  const count = new Set([...params.keys(), ...secrets.flatMap((m) => m.names)]).size;
+  return count === 1
+    ? `1 platform variable a service needs has no value:\n${lines.join('\n')}`
+    : `${count} platform variables a service needs have no value:\n${lines.join('\n')}`;
 }
 
 function serviceNodeAt(graph: Graph, address: string): ServiceNode {
@@ -139,10 +141,10 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
     else readers.push(reader);
   }
 
-  const missing = [
-    ...(missingParams.size > 0 ? [missingEnvParamsSection(missingParams)] : []),
-    ...(missingSecrets.length > 0 ? [missingSecretsSection(missingSecrets)] : []),
-  ];
+  const missing =
+    missingParams.size > 0 || missingSecrets.length > 0
+      ? [missingSection(missingParams, missingSecrets)]
+      : [];
   const sections = [
     ...invalidInputs,
     ...missing,

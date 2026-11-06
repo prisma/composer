@@ -5,7 +5,7 @@
  * measurements. Type-only (vitest `--typecheck`, never executed).
  */
 import { expectTypeOf, test } from 'vitest';
-import type { PreflightInput, PreflightReport } from '../exports/app-config.ts';
+import type { PlatformVariableCheck, PreflightInput } from '../exports/app-config.ts';
 import type { AssembleInput, Bundle } from '../exports/deploy.ts';
 
 type ProgressReport = ((data: Readonly<Record<string, string | number>>) => void) | undefined;
@@ -13,7 +13,7 @@ type ProgressReport = ((data: Readonly<Record<string, string | number>>) => void
 test('assemble reports counts and labels, preflight what it checked and found', () => {
   expectTypeOf<AssembleInput['report']>().toEqualTypeOf<ProgressReport>();
   expectTypeOf<PreflightInput['report']>().toEqualTypeOf<
-    ((report: PreflightReport) => void) | undefined
+    ((report: PlatformVariableCheck) => void) | undefined
   >();
 });
 

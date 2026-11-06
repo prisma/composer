@@ -73,6 +73,10 @@ runs:
           echo "::error::The first deploy succeeded, but it should have stopped because the new project has no row for: $PLATFORM_VARIABLES"
           exit 1
         fi
+        if ! grep -qE 'Deploy failed\. [0-9]+ platform variables? a service needs (has|have) no value' <<<"$output"; then
+          echo "::error::The first deploy failed, but not at preflight"
+          exit 1
+        fi
         for name in $PLATFORM_VARIABLES; do
           if ! grep -qwF -- "$name" <<<"$output"; then
             echo "::error::The first deploy failed without naming the platform variable $name"

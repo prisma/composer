@@ -6,7 +6,9 @@
  * target's dev preflight. The framework never reads the contents, so an
  * extension that implements both must tell its own payload kinds apart.
  * Payloads carry metadata only, never secret values: the child's environment
- * is not a secret store.
+ * is not a secret store. One more variable, the framework's own, carries the
+ * platform variables every deploy preflight reported with no value, for the
+ * deploy report.
  */
 import { envVarSafeExtensionId } from './container-transport.ts';
 
@@ -111,11 +113,40 @@ function isUnsetPlatformVariable(value: unknown): value is UnsetPlatformVariable
   );
 }
 
-/** Whether `value`, as parsed from a preflight payload, is a `PreflightFindings`. */
-export function isPreflightFindings(value: unknown): value is PreflightFindings {
+function isPreflightFindings(value: unknown): value is PreflightFindings {
   return (
     isRecord(value) &&
     Array.isArray(value['unset']) &&
     value['unset'].every(isUnsetPlatformVariable)
   );
+}
+
+/** The variable that carries every extension's deploy preflight findings from the CLI process to the alchemy process. */
+export const PREFLIGHT_FINDINGS_ENV_VAR = 'PRISMA_COMPOSER_DEPLOY_FINDINGS';
+
+/** The env entry the CLI sets on the alchemy process. It is always set, and empty when nothing was found, so a stale value in the shell never reads as this run's. */
+export function preflightFindingsEnv(findings: PreflightFindings): Record<string, string> {
+  return {
+    [PREFLIGHT_FINDINGS_ENV_VAR]: findings.unset.length === 0 ? '' : JSON.stringify(findings),
+  };
+}
+
+/** The alchemy-process side: the findings the CLI carried, or none. Throws on a value that does not decode: that is a framework bug. */
+export function readPreflightFindings(
+  env: Readonly<Record<string, string | undefined>>,
+): PreflightFindings {
+  const text = env[PREFLIGHT_FINDINGS_ENV_VAR];
+  if (text === undefined || text.length === 0) return { unset: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = undefined;
+  }
+  if (!isPreflightFindings(parsed)) {
+    throw new Error(
+      `The deploy preflight's findings did not survive the transport into the alchemy process (${PREFLIGHT_FINDINGS_ENV_VAR}). This is a framework bug; re-running the deploy will not fix it.`,
+    );
+  }
+  return parsed;
 }

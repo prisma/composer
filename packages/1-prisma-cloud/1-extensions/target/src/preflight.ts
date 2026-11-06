@@ -5,9 +5,10 @@
  * It writes no variable and reads no value: env-var values are write-only.
  *
  * A variable with no row fails the deploy only when a service cannot boot
- * without it, decided from the service's schema (ADR-0058). The others are
- * handed back as findings, beside the `updatedAt` of each resolved row, which
- * the compute deploy hook folds into each deployment's triggers.
+ * without it, decided from the service's schema (ADR-0058). The others go to
+ * the deploy through `input.report`. It returns the `updatedAt` of each
+ * resolved row, which the compute deploy hook folds into each deployment's
+ * triggers.
  *
  * Control-plane only; runs in the CLI parent, on the caller's Management API
  * client when it passed one, and otherwise on a client built from env.
@@ -16,13 +17,11 @@ import type { Graph, ServiceNode } from '@internal/core';
 import { inputManifest, secretSourceManifest } from '@internal/core';
 import type {
   PlatformVariableReader,
-  PreflightFindings,
   PreflightInput,
   UnsetPlatformVariable,
 } from '@internal/core/config';
 import { platformVariableReaderText } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
-import { collectPlatformMarkers } from '@internal/input-document';
 import {
   drivePagesAsync,
   fromEnv,
@@ -32,16 +31,16 @@ import {
 } from '@internal/lowering';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import { mapWithConcurrency } from './bounded-concurrency.ts';
 import { prismaCloudContainerOf } from './container.ts';
+import type { DeployPreflightPayload } from './control/preflight-payload.ts';
 import { type EnvKeyClash, findEnvKeyClashes } from './env-key-clash.ts';
+import { mapWithConcurrency } from './map-with-concurrency.ts';
 import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
 import { envParamBindings, inputSecretNames } from './preflight-names.ts';
 import { checkPublicUrls } from './public-url.ts';
-import { paramIsRequired, requiredVariables } from './required-variables.ts';
+import { type MissingVariables, paramIsRequired, requiredVariables } from './required-variables.ts';
 import { secretName } from './secret.ts';
-import { serializeInput } from './serializer.ts';
 
 type EnvClass = 'production' | 'preview';
 
@@ -88,7 +87,7 @@ async function listEnvVars(
 }
 
 /** The row the platform resolves for one name in this environment, and whether any row the environment sees is the platform's own. */
-interface PlatformVariable {
+interface ResolvedRow {
   readonly updatedAt?: string;
   readonly managedBySystem: boolean;
 }
@@ -108,7 +107,7 @@ async function readPlatformVariable(
   projectId: string,
   branchId: string | undefined,
   key: string,
-): Promise<PlatformVariable | undefined> {
+): Promise<ResolvedRow | undefined> {
   const cls = classFor(branchId);
   let classRow: string | undefined;
   let branchRow: string | undefined;
@@ -209,12 +208,6 @@ async function pendingEnvKeyClashes(
 /** The preflight input typed against this extension's own client — the concrete form of the framework's erased `PreflightInput<unknown>`. */
 export type PrismaCloudPreflightInput = PreflightInput<ManagementApiClient>;
 
-/** What the deploy preflight hands back: the `updatedAt` of each resolved row, and the variables with no value that nothing requires. */
-export interface PreflightResult {
-  readonly updatedAt: ReadonlyMap<string, string>;
-  readonly findings: PreflightFindings;
-}
-
 // ——— Preflight errors (centralized; ADR-0029). Values are never logged. ———
 
 const tokenRequiredError = (): Error =>
@@ -244,14 +237,8 @@ function setCommands(
 const readersText = (readers: readonly PlatformVariableReader[]): string =>
   readers.length === 0 ? '' : `  (${readers.map(platformVariableReaderText).join('; ')})`;
 
-/** Required variables: one name a service needs, or several of which it needs some. */
-interface Required {
-  readonly names: readonly string[];
-  readonly serviceAddress: string;
-}
-
 function requiredError(
-  required: readonly Required[],
+  required: readonly MissingVariables[],
   readers: ReadonlyMap<string, readonly PlatformVariableReader[]>,
   commandsFor: (name: string) => readonly string[],
 ): Error {
@@ -358,7 +345,7 @@ function addReader(
 export async function runPreflight(
   input: PrismaCloudPreflightInput,
   deps?: { readonly client?: ManagementApiClient },
-): Promise<PreflightResult> {
+): Promise<DeployPreflightPayload> {
   checkPublicUrls(input.graph);
   const { projectId, branchId } = prismaCloudContainerOf(input.container);
 
@@ -388,7 +375,7 @@ export async function runPreflight(
   const clashes = findEnvKeyClashes(input.graph);
   if (names.length === 0 && clashes.length === 0) {
     input.report?.({ checked: 0, unset: [] });
-    return { updatedAt: new Map(), findings: { unset: [] } };
+    return { updatedAt: new Map() };
   }
 
   const client = input.credentials?.client ?? deps?.client ?? (await managementClient());
@@ -413,39 +400,31 @@ export async function runPreflight(
   if (managedBySystem.length > 0) throw managedBySystemError(managedBySystem);
   if (unset.size === 0) {
     input.report?.({ checked: names.length, unset: [] });
-    return { updatedAt, findings: { unset: [] } };
+    return { updatedAt };
   }
 
   const readers = new Map<string, PlatformVariableReader[]>();
-  const required: Required[] = [];
+  const required: MissingVariables[] = [];
   for (const { serviceAddress, binding, names: serviceNames } of services) {
     const unsetHere = serviceNames.filter((name) => unset.has(name));
     if (unsetHere.length === 0) continue;
     const node = serviceNodeAt(input.graph, serviceAddress);
-    const document = serializeInput(node, serviceAddress, binding, {
-      env: input.configuration,
-    });
-    const markers =
-      document === undefined ? [] : collectPlatformMarkers(JSON.parse(document.value));
-    const inArray = new Set<string>();
-    for (const marker of markers) {
+    const decided = requiredVariables(
+      node,
+      serviceAddress,
+      binding,
+      unsetHere,
+      input.configuration,
+    );
+    if (decided.kind === 'invalid') throw invalidInputError(serviceAddress, decided.message);
+    for (const marker of decided.markers) {
       if (!unset.has(marker.name)) continue;
       addReader(readers, marker.name, {
         kind: 'field',
         service: serviceAddress,
         path: marker.path,
       });
-      if (marker.inArray) inArray.add(marker.name);
     }
-    for (const name of inArray) required.push({ names: [name], serviceAddress });
-    const decided = requiredVariables(
-      node,
-      serviceAddress,
-      binding,
-      unsetHere.filter((name) => !inArray.has(name)),
-      input.configuration,
-    );
-    if (decided.kind === 'invalid') throw invalidInputError(serviceAddress, decided.message);
     required.push(...decided.missing);
   }
   for (const use of unread) {
@@ -459,7 +438,11 @@ export async function runPreflight(
       param: param.param,
     });
     if (paramIsRequired(serviceNodeAt(input.graph, param.serviceAddress), param.param)) {
-      required.push({ names: [param.name], serviceAddress: param.serviceAddress });
+      required.push({
+        names: [param.name],
+        serviceAddress: param.serviceAddress,
+        message: `per-key param "${param.param}" has no default and is not optional`,
+      });
     }
   }
 
@@ -471,7 +454,7 @@ export async function runPreflight(
     commands: commandsFor(name),
   }));
   input.report?.({ checked: names.length, unset: findings });
-  return { updatedAt, findings: { unset: findings } };
+  return { updatedAt };
 }
 
 /**

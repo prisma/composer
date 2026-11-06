@@ -280,7 +280,10 @@ export function computeDescriptor(
             }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(app, address)))),
             key: inputRow.key,
             value: inputValue,
-            pointers: inputRow.variables.map((variable) => variable.name),
+            // The names the document carries, not the binding: a schema can
+            // drop a bound leaf. Sorted, so reordering leaves cannot move the
+            // triggers.
+            pointers: [...new Set(inputRow.markers.map((marker) => marker.name))].sort(),
           });
           // Each generated leaf: generate its value ONCE (the resource keeps it
           // stable across redeploys via its persisted output) and provision it

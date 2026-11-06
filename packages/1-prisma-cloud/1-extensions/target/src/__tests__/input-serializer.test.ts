@@ -107,10 +107,10 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
     expect(absent).toEqual(['unset → NOT_SET_ANYWHERE_XYZ', 'empty → EMPTY_VALUE']);
   });
 
-  test('an env-bound array element that resolves absent is a loud error — positions cannot be omitted', () => {
+  test('an array position whose variable has no value fails, naming the variable', () => {
     expect(() =>
       resolveInputBinding({ list: ['a', envParam('NOT_SET_ANYWHERE_XYZ')] }, '', { env: {} }),
-    ).toThrow(/array element/);
+    ).toThrow(/reads the platform variable "NOT_SET_ANYWHERE_XYZ", which has no value/);
   });
 
   test('a raw SecretBox (a secret VALUE) in the binding is rejected loudly', () => {
@@ -298,7 +298,9 @@ describe('user keys spelled like a marker round-trip (ADR-0042)', () => {
     expect(row?.value).toContain('"$$$platform":"ALSO_NOT"');
     expect(row?.value).toContain('"$$secret":"OLD_USER_KEY"');
     expect(row?.value).toContain('"real":{"$platform":{"name":"REAL_SECRET","secret":true}}');
-    expect(row?.variables).toEqual([{ name: 'REAL_SECRET', secret: true }]);
+    expect(row?.markers).toEqual([
+      { name: 'REAL_SECRET', path: 'real', secret: true, inArray: false },
+    ]);
 
     const node = svc(anySchema);
     const value = await withEnv(
@@ -584,7 +586,10 @@ describe('distinct names for generated variables only (ADR-0041)', () => {
       a: { $platform: { name: 'SHARED', secret: true } },
       b: { $platform: { name: 'SHARED', secret: true } },
     });
-    expect(row?.variables).toEqual([{ name: 'SHARED', secret: true }]);
+    expect(row?.markers).toEqual([
+      { name: 'SHARED', path: 'a', secret: true, inArray: false },
+      { name: 'SHARED', path: 'b', secret: true, inArray: false },
+    ]);
   });
 
   test('two generated leaves whose paths normalize to the same var collide (generated/generated)', () => {

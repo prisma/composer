@@ -29,7 +29,7 @@ export function assertVariableName(name: string, factory: string): void {
   }
   if (!VARIABLE_NAME.test(name)) {
     throw new Error(
-      `${factory} name "${name}" is not a platform variable name: it must match ${VARIABLE_NAME.source}, an upper-case letter followed by upper-case letters, digits and underscores, because the platform accepts no other key and a process environment compares names with case.`,
+      `${factory} name "${name}" is not a platform variable name: it must match ${VARIABLE_NAME.source}, an upper-case letter followed by upper-case letters, digits and underscores. The platform accepts only upper-case letters, digits and underscores in a key. Refusing a leading underscore, which the platform accepts, is Composer's own rule: shells and tools use names that start with an underscore for their own variables.`,
     );
   }
   if (name.startsWith('COMPOSER_')) {

@@ -7,27 +7,22 @@
  * `serializer.ts` re-exports both names; import them from there.
  */
 
-import { addressKeySegments } from '@internal/input-document';
+import { addressKeySegments, composerKey } from '@internal/input-document';
 
 export { addressKeySegments };
 
 /**
  * `COMPOSER_<address segments>_<owner input>_<name>`, uppercased. Every
  * generated key lives in the framework's reserved COMPOSER_ namespace
- * (ADR-0029), so it can never collide with — and silently overwrite — a
- * user-provisioned platform var (e.g. a secret's external name). Composer
- * writes no unprefixed variable at all: DATABASE_URL(_POOLED) are the
- * platform's own names, banned in param.ts/secret.ts and owned by the
- * platform (control/extension.ts).
+ * (ADR-0029), so it can never collide with a platform variable the operator
+ * sets. Outside it, Composer writes only the create-only `DATABASE_URL` and
+ * `DATABASE_URL_POOLED` placeholder rows (ADR-0048); `variable-name.ts`
+ * refuses those names for a platform variable.
  */
 export const configKey = (
   address: string,
   d: { owner: 'service' | { readonly input: string }; name: string },
-): string => {
-  const segments = addressKeySegments(address);
-  const owner = d.owner === 'service' ? [] : [d.owner.input];
-  return ['COMPOSER', ...segments, ...owner, d.name].join('_').toUpperCase();
-};
+): string => composerKey(address, ...(d.owner === 'service' ? [] : [d.owner.input]), d.name);
 
 /** The framework-resolved origin row: COMPOSER_<addr>_ORIGIN. Written per
  *  compute service at serialize — the service's own provisioned endpoint URL,

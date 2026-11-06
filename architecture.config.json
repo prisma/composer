@@ -403,7 +403,7 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/bounded-concurrency.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/map-with-concurrency.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "control"

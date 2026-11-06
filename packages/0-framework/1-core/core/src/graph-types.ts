@@ -186,3 +186,10 @@ export class LoadError extends CliStructuredError {
     super('COMPOSE.GRAPH_INVALID', message, options);
   }
 }
+
+/** What an extension's `checkGraph` throws to refuse a graph it cannot deploy. Any other throw from the hook is a bug (ADR-0044). */
+export class GraphCheckError extends CliStructuredError {
+  constructor(message: string) {
+    super('COMPOSE.GRAPH_INVALID', message);
+  }
+}

@@ -39,10 +39,12 @@ export type {
   UnsetPlatformVariable,
 } from '../preflight-transport.ts';
 export {
-  isPreflightFindings,
+  PREFLIGHT_FINDINGS_ENV_VAR,
   platformVariableReaderText,
   preflightEnv,
   preflightEnvVarName,
+  preflightFindingsEnv,
+  readPreflightFindings,
   readPreflightPayload,
 } from '../preflight-transport.ts';
 /** Re-exported because `RunOutcome` hands them to a reporter — reading this surface must not also require the deploy one. */
@@ -64,21 +66,22 @@ export interface ExtensionDescriptor {
   readonly application?: ApplicationDescriptor;
   /** The extension's Alchemy providers — merged across all configured extensions (config order). */
   readonly providers?: () => Layer.Layer<never>;
-  /** Refuses a loaded graph this extension cannot deploy. The CLI calls it right after Load in every command that runs Load; a throw fails the command with the thrown message. */
+  /** Refuses a loaded graph this extension cannot deploy by throwing `GraphCheckError`. The CLI calls it right after Load in every command that runs Load. Any other throw is a bug. */
   readonly checkGraph?: (graph: Graph) => void;
   /**
    * Deploy-time prerequisite check — the CLI runs it once, after the app's
    * Project/Branch are resolved and BEFORE any stack file is written or Alchemy
    * runs. A target uses it to verify platform prerequisites (e.g. that every
-   * secret env var in the provision manifest exists for the resolved environment) and
-   * throws to abort the deploy. Async: it talks to the platform (ADR-0029).
+   * platform variable a service needs has a value) and throws to abort the
+   * deploy. Async: it talks to the platform (ADR-0064).
    *
    * What it returns is carried to the alchemy process for this same extension
    * to read back there (preflight-transport.ts) — preflight runs in the CLI
    * parent, and the alchemy child re-imports the config from scratch, so
    * anything the lowering needs from it must ride that transport. The payload
    * is the extension's own opaque string; the framework never reads it, and a
-   * secret value must never go in it.
+   * secret value must never go in it. What it hands `input.report` reaches the
+   * deploy report through the framework's own transport, not this payload.
    *
    * METHOD SYNTAX REQUIRED, for the same reason ContainerDescriptor's members
    * need it: the framework hands over the erased `PreflightInput<unknown>`,
@@ -86,8 +89,6 @@ export interface ExtensionDescriptor {
    * assigns here through method bivariance.
    */
   preflight?(input: PreflightInput): Promise<PreflightPayload>;
-  /** In the alchemy process, what this extension's deploy preflight found, read back from its payload. Lowering adds every extension's to the deploy report. */
-  readonly preflightFindings?: () => PreflightFindings;
   /**
    * Destroy-time cleanup — the CLI runs it once, after `alchemy destroy`
    * succeeds and BEFORE the environment's containers are removed. A target uses
@@ -151,15 +152,15 @@ export interface PreflightInput<C = unknown> {
   readonly secrets: AppSecrets;
   /** What the caller has already authenticated, for the platform calls preflight makes. Absent means the extension falls back to its own credential protocol. */
   readonly credentials?: ContainerCredentials<C> | undefined;
-  /** Hands the deploy what the check covered and found. Names and readers only: never a value. */
-  readonly report?: ((report: PreflightReport) => void) | undefined;
+  /** Hands the deploy how many platform variables the check read and which have no value. It carries nothing else. Names and readers only: never a value. */
+  readonly report?: ((check: PlatformVariableCheck) => void) | undefined;
   /** Shows the user a warning that does not stop the run. Only `prisma dev` passes it and shows the warnings; deploy passes none. */
   readonly warn?: ((message: string) => void) | undefined;
 }
 
-/** What a deploy preflight checked and found. */
-export interface PreflightReport extends PreflightFindings {
-  /** How many platform variables it checked. */
+/** What a deploy preflight's check of platform variables found: how many it read, and the ones with no value that nothing requires. Only platform variables; a preflight reports nothing else. */
+export interface PlatformVariableCheck extends PreflightFindings {
+  /** How many platform variables it read. */
   readonly checked: number;
 }
 

@@ -12,12 +12,18 @@ import type { Graph } from '@internal/core';
 import type {
   ContainerCredentials,
   ContainerInstance,
-  PreflightReport,
+  PlatformVariableCheck,
   ReporterDescriptor,
   RunReporter,
   UnsetPlatformVariable,
 } from '@internal/core/config';
-import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
+import {
+  containerEnv,
+  PREFLIGHT_FINDINGS_ENV_VAR,
+  preflightEnv,
+  preflightEnvVarName,
+  preflightFindingsEnv,
+} from '@internal/core/config';
 import { nodeAddresses, secretsKeys } from '@internal/core/deploy';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
@@ -548,7 +554,7 @@ async function runStackPipelineInner(
       steps.start({ name: 'preflight' });
       let checked = 0;
       const unset: UnsetPlatformVariable[] = [];
-      const report = (reported: PreflightReport): void => {
+      const report = (reported: PlatformVariableCheck): void => {
         checked += reported.checked;
         unset.push(...reported.unset);
       };
@@ -573,7 +579,10 @@ async function runStackPipelineInner(
       // collision (two extension ids mapping to one env var) is a preflight
       // failure, and must surface before the stack file is written.
       try {
-        preflightTransportEnv = preflightEnv(preflightPayloads);
+        preflightTransportEnv = {
+          ...preflightEnv(preflightPayloads),
+          ...preflightFindingsEnv({ unset }),
+        };
       } catch (error) {
         throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
       }
@@ -587,6 +596,7 @@ async function runStackPipelineInner(
     for (const extension of config.extensions) {
       preflightTransportEnv[preflightEnvVarName(extension.id)] ??= '';
     }
+    preflightTransportEnv[PREFLIGHT_FINDINGS_ENV_VAR] ??= '';
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;

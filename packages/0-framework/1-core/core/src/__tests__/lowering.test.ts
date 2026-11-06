@@ -16,6 +16,7 @@ import {
   type Bundle,
   buildConfig,
   connectionInputs,
+  deploymentResult,
   joinDeployment,
   type LowerContext,
   LowerError,
@@ -42,6 +43,7 @@ import {
   resource,
   service,
 } from '../node.ts';
+import { preflightFindingsEnv } from '../preflight-transport.ts';
 import { resolve } from '../value.ts';
 import { anyInputSchema, conn, providerContract } from './helpers.ts';
 
@@ -1436,6 +1438,38 @@ describe('joinDeployment', () => {
 
   test('no entries yields no results', () => {
     expect(joinDeployment(twoNodeGraph(), [])).toEqual([]);
+  });
+});
+
+describe('deploymentResult', () => {
+  test('carries the findings the CLI process sent from the deploy preflight', () => {
+    const root = module('shop', {}, (h) => {
+      h.provision(dbResource(), { id: 'db' });
+      return {};
+    });
+    const unset = {
+      name: 'MAIL_KEY',
+      readers: [{ kind: 'unread', node: 'shop.mail', nodeKind: 'module' }] as const,
+      commands: ["prisma project env add 'MAIL_KEY=<value>' --project 'proj' --role production"],
+    };
+    const env = preflightFindingsEnv({ unset: [unset] });
+
+    const result = deploymentResult(
+      'shop',
+      Load(root),
+      [{ address: 'shop.db', entities: [] }],
+      env,
+    );
+
+    expect(result.app).toBe('shop');
+    expect(result.nodes.map((node) => node.address)).toEqual(['shop.db']);
+    expect(result.findings).toEqual({ unset: [unset] });
+  });
+
+  test('carries no findings when the CLI process sent none', () => {
+    const root = module('shop', {}, () => ({}));
+
+    expect(deploymentResult('shop', Load(root), [], {}).findings).toEqual({ unset: [] });
   });
 });
 

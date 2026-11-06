@@ -4,19 +4,14 @@
  * variable carries either kind:
  *
  * - deploy: a JSON object holding `updatedAt`, which maps each pointed
- *   platform variable to the `updatedAt` of the row the platform resolves,
- *   and `findings`, the variables with no value that nothing requires;
+ *   platform variable to the `updatedAt` of the row the platform resolves;
  * - `prisma dev`: `dev:` followed by JSON naming the unset secrets and an
  *   HMAC-SHA256 of the current value of each variable a service points at.
  *
  * A deploy payload always starts with `{`, so the prefix tells them apart.
- * Names, readers, times and keyed hashes only, never a value.
+ * Names, times and keyed hashes only, never a value.
  */
-import {
-  isPreflightFindings,
-  type PreflightFindings,
-  readPreflightPayload,
-} from '@internal/core/config';
+import { readPreflightPayload } from '@internal/core/config';
 import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
 
 /** A value that changes when the pointed variable's value changes: the platform `updatedAt` on deploy, an HMAC of the value under `prisma dev`. Undefined when unknown. */
@@ -27,14 +22,11 @@ export interface TransportedPreflight {
   readonly pointerVersion: PointerVersion;
   /** The `envSecret` names `prisma dev` found unset; their leaves are left out of the input document. Always empty for a deploy. */
   readonly absentSecrets: ReadonlySet<string>;
-  /** The deploy preflight's findings. Empty under `prisma dev` and when nothing was transported. */
-  readonly findings: PreflightFindings;
 }
 
-/** What the deploy preflight hands the alchemy process. */
+/** What the deploy preflight hands the alchemy process: the `updatedAt` of the row the platform resolves for each platform variable that has one. */
 export interface DeployPreflightPayload {
   readonly updatedAt: ReadonlyMap<string, string>;
-  readonly findings: PreflightFindings;
 }
 
 export interface DevPreflightPayload {
@@ -55,17 +47,12 @@ const DEV_PAYLOAD_PREFIX = 'dev:';
 
 const byName = ([a]: [string, unknown], [b]: [string, unknown]) => (a < b ? -1 : 1);
 
-const NO_FINDINGS: PreflightFindings = { unset: [] };
-
-/** The deploy preflight's payload, or undefined when it read no pointed variable and found nothing. */
+/** The deploy preflight's payload, or undefined when no platform variable it read has a row. */
 export function serializeDeployPreflightPayload(
   payload: DeployPreflightPayload,
 ): string | undefined {
-  if (payload.updatedAt.size === 0 && payload.findings.unset.length === 0) return undefined;
-  return JSON.stringify({
-    updatedAt: Object.fromEntries([...payload.updatedAt].sort(byName)),
-    findings: payload.findings,
-  });
+  if (payload.updatedAt.size === 0) return undefined;
+  return JSON.stringify({ updatedAt: Object.fromEntries([...payload.updatedAt].sort(byName)) });
 }
 
 export function serializeDevPreflightPayload(payload: DevPreflightPayload): string {
@@ -121,14 +108,7 @@ export function decodePreflightPayload(payload: string | undefined): DecodedPref
   if (!('updatedAt' in parsed) || !isStringRecord(parsed.updatedAt)) {
     throw deployPayloadError('its "updatedAt" is not an object of string timestamps');
   }
-  if (!('findings' in parsed) || !isPreflightFindings(parsed.findings)) {
-    throw deployPayloadError('its "findings" do not have the expected shape');
-  }
-  return {
-    kind: 'deploy',
-    updatedAt: new Map(Object.entries(parsed.updatedAt)),
-    findings: parsed.findings,
-  };
+  return { kind: 'deploy', updatedAt: new Map(Object.entries(parsed.updatedAt)) };
 }
 
 const deployPayloadError = (reason: string): Error =>
@@ -169,10 +149,6 @@ export function transportedPreflight(
     get absentSecrets() {
       const payload = decode();
       return payload.kind === 'dev' ? payload.absentSecrets : noSecrets;
-    },
-    get findings() {
-      const payload = decode();
-      return payload.kind === 'deploy' ? payload.findings : NO_FINDINGS;
     },
   };
 }

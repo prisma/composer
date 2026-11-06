@@ -38,7 +38,7 @@ describe('envParam (Prisma Cloud param source)', () => {
     'rejects %s, which is not an upper-case platform variable name',
     (name) => {
       expect(() => envParam(name)).toThrow(
-        `envParam name "${name}" is not a platform variable name: it must match ^[A-Z][A-Z0-9_]*$, an upper-case letter followed by upper-case letters, digits and underscores, because the platform accepts no other key and a process environment compares names with case.`,
+        `envParam name "${name}" is not a platform variable name: it must match ^[A-Z][A-Z0-9_]*$, an upper-case letter followed by upper-case letters, digits and underscores. The platform accepts only upper-case letters, digits and underscores in a key. Refusing a leading underscore, which the platform accepts, is Composer's own rule: shells and tools use names that start with an underscore for their own variables.`,
       );
     },
   );

@@ -1281,7 +1281,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           generated: [],
           // The pointed platform variable, so the deploy hook can fold its
           // rotation timestamp into the deployment triggers.
-          variables: [{ name: 'STRIPE_SECRET_KEY', secret: true }],
+          markers: [{ name: 'STRIPE_SECRET_KEY', path: 'stripeKey', secret: true, inArray: false }],
         });
       },
     );
@@ -1545,7 +1545,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         value: '{}',
         absent: ['greeting → NOT_SET_GREETING_VAR'],
         generated: [],
-        variables: [],
+        markers: [],
       });
     });
   });
@@ -2736,7 +2736,6 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
         preflight: {
           pointerVersion: () => undefined,
           absentSecrets: new Set(),
-          findings: { unset: [] },
         },
       };
       const node = compute({ name: 'multi', deps: {}, build, expose: { any: anyContract } });
@@ -2796,7 +2795,6 @@ describe('a secret the prisma dev preflight found unset', () => {
       preflight: {
         pointerVersion: () => undefined,
         absentSecrets: new Set(['STRIPE_WEBHOOK_SECRET']),
-        findings: { unset: [] },
       },
     };
     const node = compute({

@@ -1,3 +1,6 @@
+/**
+ * What the deploy writes and boot reads for a service: the input document and its markers, and the `COMPOSER_` row keys and per-key param pointer rows beside it.
+ */
 export {
   collectPlatformMarkers,
   decodeVariableText,
