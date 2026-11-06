@@ -21,6 +21,8 @@
     "check:cli-engine-pin": "node scripts/check-cli-engine-pin.mjs",
     "check:skill-packaging": "node scripts/check-skill-packaging.mjs",
     "check:orm-pins": "node scripts/check-orm-pins.mjs",
+    "contracts:emit": "node scripts/emit-contracts.mjs",
+    "check:contracts-emitted": "node scripts/emit-contracts.mjs --check",
     "check:family-static-graph": "node scripts/check-family-static-graph.mjs",
     "check:floor-imports": "node scripts/check-floor-imports.mjs",
     "bump-minor": "node scripts/bump-minor.ts",
