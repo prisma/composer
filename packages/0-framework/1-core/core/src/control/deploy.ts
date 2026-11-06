@@ -10,6 +10,7 @@ import { deserializeContainers } from '../container-transport.ts';
 import { type Graph, Load, type NodeId, nodeAddresses } from '../graph.ts';
 import type { AppConfigurationRead } from '../graph-types.ts';
 import {
+  type AppRootNode,
   type BuildAdapter,
   isParamSource,
   type ModuleNode,
@@ -664,7 +665,7 @@ interface ReportInput {
  * Fails with LowerError or whatever an extension's lowering raises — the error type is open.
  */
 export function lowering(
-  root: ModuleNode,
+  root: ModuleNode | AppRootNode,
   config: PrismaAppConfig,
   opts: LowerOptions,
 ): Effect.Effect<undefined, LowerError, unknown> {
@@ -896,7 +897,7 @@ export function lowering(
  * extension registries → an Alchemy Stack (the default export the alchemy
  * CLI consumes).
  */
-export function lower(root: ModuleNode, config: PrismaAppConfig, opts: LowerOptions) {
+export function lower(root: ModuleNode | AppRootNode, config: PrismaAppConfig, opts: LowerOptions) {
   // A LowerError at deploy is fatal; orDie moves it off the error channel to
   // match what Alchemy.Stack accepts.
   const stackEffect = Effect.orDie(lowering(root, config, opts)) as Effect.Effect<undefined, never>;

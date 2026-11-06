@@ -49,16 +49,15 @@ app, executing nothing when imported. Three node kinds exist:
 | Resource | `rawPostgres()`, `bucket()` | A stateful managed dependency |
 | Resource: public URL | `publicUrl()` | Makes one service reachable from the internet at one hostname; depends on the service's exposed HTTP interface and exposes nothing |
 | Module | `module()` | A grouping boundary; runs no code of its own, depends on and exposes typed interfaces; its builder receives `deps`, `input`, `environment` and `provision` |
+| App root | `appRoot()` | The outermost module, the entry's default export; no `deps` or `expose`, and nothing can provision it; its builder receives `input`, `environment` and `provision` |
 
-Nodes connect through typed **interfaces**: `deps` declares what a node depends on,
-`expose` declares what it exposes. Wiring happens in a Module's builder via
-`provision()`, and the root Module, handed to the CLI, is the App:
+Nodes connect through typed **interfaces**: `deps` declares what a node depends on, `expose` declares what it exposes. Wiring happens in a Module's builder via `provision()`, and the app root, built with `appRoot()` and handed to the CLI, is the App:
 
 ```ts
 // module.ts
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 
-export default module('store', ({ provision }) => {
+export default appRoot('store', ({ provision }) => {
   const catalog = provision(catalogModule);
   provision(storefrontService, { deps: { catalog: catalog.rpc } });
 });

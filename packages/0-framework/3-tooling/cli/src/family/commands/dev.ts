@@ -271,8 +271,8 @@ export const createDevCommand = (operations: ComposerOperations) =>
       flags: {
         entry: flag.string({
           brief:
-            'The file whose default export is the application root module, built with ' +
-            'module(...). Overrides `entry` in the `composer` section of prisma.config.ts.',
+            "The file whose default export is the app's root, built with appRoot(...). " +
+            'Overrides `entry` in the `composer` section of prisma.config.ts.',
           placeholder: 'path',
         }),
         name: flag.string({

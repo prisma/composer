@@ -1,4 +1,4 @@
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { storage } from '@prisma/composer-prisma-cloud/storage';
 import blobsService from './src/blobs/service.ts';
 
@@ -11,7 +11,7 @@ import blobsService from './src/blobs/service.ts';
  *
  * A closed root: no boundary argument, no return — it only provisions.
  */
-export default module('storage-example', ({ provision }) => {
+export default appRoot('storage-example', ({ provision }) => {
   const store = provision(storage());
   provision(blobsService, { deps: { store: store.store } });
 });

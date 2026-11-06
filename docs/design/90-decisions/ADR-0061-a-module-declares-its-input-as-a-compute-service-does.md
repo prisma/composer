@@ -1,7 +1,7 @@
 # ADR-0061: A module declares its input the way a compute service does
 
 ```ts
-import { module } from '@prisma/composer';
+import { appRoot, module } from '@prisma/composer';
 import { field, secretString } from '@prisma/composer/arktype';
 import { envSecret, serviceOrigin } from '@prisma/composer-prisma-cloud';
 import { type } from 'arktype';
@@ -20,7 +20,7 @@ const auth = module('auth',
   });
 
 // the module that provisions it binds that input, as it would a service's
-export default module('shop', ({ provision }) => {
+export default appRoot('shop', ({ provision }) => {
   provision(auth, {
     input: { baseUrl: serviceOrigin('shop.web'), signingKey: envSecret('AUTH_SIGNING_SECRET') },
   });
@@ -37,7 +37,7 @@ A module declares all of its input as **one Standard Schema**, `input`, exactly 
 - **The binding** is typed from the schema's input type. Each key takes a literal, a value of the field's type, or a source such as `envSecret()`, which is a value too ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). A module with an input schema must be bound, and a module without one must not be.
 - **The body** receives `input`, a **dictionary** with one value per field, typed from the schema's output: `input.from`, or `input.smtp.user` for a nested field. It can pass a field on, by name, into a child module's or a service's `input`, a service param or a resource's props, and it can list a plain field as a `resolve()` dependency. It cannot read a field's data.
 - **The dictionary itself is not a value.** Passing the whole `input` where a value is accepted fails to compile, for every module. A cast gets past the compiler, so Load refuses it too, with an error that says the whole input of the module was passed on, and to pass its fields on by name.
-- **The root** may declare `input` too. Nothing provisions the root, so the deploy binds its input to the app configuration ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)): the merged values of the `config` adapters, which by default are every variable of the process environment, secrets included. So the root's input can hold a secret's text. Composer keeps it out of the file it hands the second process in two ways. Load refuses a root input field that the root's body passes on when an `envSecret()` in the graph reads the same name. The CLI refuses to write that file when any value in it contains a known secret: a value under a name an `envSecret()` in the graph reads. Each refusal names the field, never the value. The root may not declare `deps`, because a dependency needs a producer in the graph.
+- **The root**, built with `appRoot()`, may declare `input` too. Nothing provisions the root, so the deploy binds its input to the app configuration ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)): the merged values of the `config` adapters, which by default are every variable of the process environment, secrets included. So the root's input can hold a secret's text. Composer keeps it out of the file it hands the second process in two ways. Load refuses a root input field that the root's body passes on when an `envSecret()` in the graph reads the same name. The CLI refuses to write that file when any value in it contains a known secret: a value under a name an `envSecret()` in the graph reads. Each refusal names the field, never the value. The root may not declare `deps`, because a dependency needs a producer in the graph: `appRoot()` takes none, and Load refuses `deps` on a root built with `module()`.
 
 ## Reasoning
 
@@ -60,7 +60,7 @@ A module declares all of its input as **one Standard Schema**, `input`, exactly 
 - **`module()` takes `input`**, and `provision(module, …)` takes one `input` binding, typed from the schema. `ModuleNode<D, E, I>` and `ModuleContext<D, I>` carry the schema's type. `module()` refuses a `params` or `secrets` key, and `provision()` of a module refuses a `params` or `secrets` map, each with an error naming `input`. `paramNeed()` and the module form of `secret()` are gone.
 - **The body's `input` has the type `ModuleInput<S>`, which is not a `Value`.** Every binding type refuses it. Where the compiler sees no type, such as a binding slot typed `unknown`, only Load refuses it.
 - **`paramSource()` and `secretSource()`**, which targets use to build their sources, each return one object that is both the source and a value. `secretSource()` takes `label` and `secretsKey`, the app secrets key that holds the secret. `paramSource()` takes `label`, `configurationKey` and `redacted`: `configurationKey` is the app configuration key whose text is the source's real value at deploy, and `redacted` says whether a source known only at boot is a secret pointer or a plain one.
-- **Load accepts `input` on a root** and binds it to the app configuration, which the root's schema checks before any other module's binding. Load still refuses `deps` on a root.
+- **Load accepts `input` on a root** and binds it to the app configuration, which the root's schema checks before any other module's binding. `appRoot()` takes no `deps`, and Load still refuses `deps` on a root built with `module()`.
 - **A value passed on is checked twice**, by the module's schema and by the child's. Both run at deploy, before anything is created.
 
 ## Alternatives considered

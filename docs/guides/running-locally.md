@@ -15,11 +15,7 @@ call from a short script; there is no `prisma` command for them.
 | Run a second, clean copy, for tests | `prisma dev --environment test --fresh` (see [Environments](#each-environment-is-a-separate-local-copy)) |
 | Watch the running app's logs | the `log` operation (see [Logs](#logs)) |
 
-`module.ts` is your entry file — the one whose default export is the root
-module, the same file you pass to `prisma deploy`. No `PRISMA_*` variables
-and no `prisma auth login` are needed; local dev never talks to the
-platform. It runs as the environment `dev` unless you pass `--environment`,
-and each environment is a separate local copy of the app.
+`module.ts` is your entry file — the one whose default export is the app's root, built with `appRoot()`, the same file you pass to `prisma deploy`. No `PRISMA_*` variables and no `prisma auth login` are needed; local dev never talks to the platform. It runs as the environment `dev` unless you pass `--environment`, and each environment is a separate local copy of the app.
 
 ## Bring it up
 

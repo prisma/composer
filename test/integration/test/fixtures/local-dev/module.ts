@@ -11,12 +11,12 @@
  * bound to `LOCALDEV_FIXTURE_GREETING`; dev stops when it is unset. The names
  * are fixture-private, chosen not to collide with any real platform env var.
  */
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { bucket, envParam, envSecret, rawPostgres } from '@prisma/composer-prisma-cloud';
 import bgService from './bg-service.ts';
 import webService from './web-service.ts';
 
-export default module('localdevs4fixture', ({ provision }) => {
+export default appRoot('localdevs4fixture', ({ provision }) => {
   const db = provision(rawPostgres({ name: 'appdb' }));
   const store = provision(bucket({ name: 'files' }));
   provision(webService, { deps: { db, store } });

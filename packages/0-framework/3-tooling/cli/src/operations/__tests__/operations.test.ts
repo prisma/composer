@@ -182,9 +182,9 @@ function makeAppDir(name = 'fixture-app', secretsKey?: string): { dir: string; e
   fs.writeFileSync(
     entryPath,
     [
-      `import { module, secretSource, service } from ${JSON.stringify(coreIndex)};`,
+      `import { appRoot, secretSource, service } from ${JSON.stringify(coreIndex)};`,
       '',
-      `export default module(${JSON.stringify(name)}, {}, ({ provision }) => {`,
+      `export default appRoot(${JSON.stringify(name)}, {}, ({ provision }) => {`,
       '  provision(',
       '    service({',
       "      name: 'app',",
@@ -1280,9 +1280,9 @@ describe('destroy()', () => {
     fs.writeFileSync(
       app.entryPath,
       [
-        `import { module, resolve, service } from ${JSON.stringify(coreIndex)};`,
+        `import { appRoot, resolve, service } from ${JSON.stringify(coreIndex)};`,
         '',
-        "export default module('fixture-app', ({ environment, provision }) => {",
+        "export default appRoot('fixture-app', ({ environment, provision }) => {",
         '  const label = resolve([environment.name], ([name]) => {',
         '    globalThis.resolvedEnvironments.push(name);',
         '    return name;',
@@ -3526,7 +3526,7 @@ function makeInputAppDir(): { dir: string; entryPath: string } {
   fs.writeFileSync(
     app.entryPath,
     [
-      `import { module, service } from ${JSON.stringify(coreIndex)};`,
+      `import { appRoot, service } from ${JSON.stringify(coreIndex)};`,
       `import { type } from ${JSON.stringify(arktypeEntry)};`,
       '',
       'const app = service({',
@@ -3539,7 +3539,7 @@ function makeInputAppDir(): { dir: string; entryPath: string } {
       "  build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
       '});',
       '',
-      "export default module('hello-input', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {",
+      "export default appRoot('hello-input', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {",
       "  provision(app, { id: 'app', input: { greeting: input.GREETING } });",
       '});',
       '',
@@ -3893,7 +3893,7 @@ function makeSecondProcessAppDir(secretsKey = 'S13_SECRET'): { dir: string; entr
   fs.writeFileSync(
     app.entryPath,
     [
-      `import { module, paramSource, secretSource, service } from ${JSON.stringify(coreIndex)};`,
+      `import { appRoot, paramSource, secretSource, service } from ${JSON.stringify(coreIndex)};`,
       `import { type } from ${JSON.stringify(arktypeEntry)};`,
       '',
       'const configured = (key) => paramSource({ key }, { label: "configured(\'" + key + "\')", configurationKey: key });',
@@ -3909,7 +3909,7 @@ function makeSecondProcessAppDir(secretsKey = 'S13_SECRET'): { dir: string; entr
       "  build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
       '});',
       '',
-      "export default module('hello-second', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {",
+      "export default appRoot('hello-second', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {",
       '  provision(app, {',
       "    id: 'app',",
       `    input: { greeting: input.GREETING, origin: configured('APP_ORIGIN'), key: secret(${JSON.stringify(secretsKey)}) },`,
@@ -4410,7 +4410,7 @@ describe('no known secret is printed', () => {
     fs.writeFileSync(
       app.entryPath,
       [
-        `import { module, secretSource, service } from ${JSON.stringify(coreIndex)};`,
+        `import { appRoot, secretSource, service } from ${JSON.stringify(coreIndex)};`,
         `import { type } from ${JSON.stringify(arktypeEntry)};`,
         '',
         'const app = service({',
@@ -4423,7 +4423,7 @@ describe('no known secret is printed', () => {
         "  build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
         '});',
         '',
-        "export default module('hello-email', { input: type({ EMAIL_DELIVERY_MODE: 'string', EMAIL_FROM: 'string' }) }, ({ input, provision }) => {",
+        "export default appRoot('hello-email', { input: type({ EMAIL_DELIVERY_MODE: 'string', EMAIL_FROM: 'string' }) }, ({ input, provision }) => {",
         '  provision(app, {',
         "    id: 'app',",
         '    input: {',

@@ -7,32 +7,59 @@ import { loadEntry } from '../load-entry.ts';
 const fixture = (name: string) => path.join(import.meta.dir, 'fixtures', name);
 
 describe('loadEntry()', () => {
-  test('accepts a service default export', async () => {
-    const entry = await loadEntry(fixture('valid-service.ts'), import.meta.dir);
-    expect(entry.root.kind).toBe('service');
-    expect(entry.path).toBe(fixture('valid-service.ts'));
-  });
-
-  test('accepts a module default export', async () => {
+  test('accepts an app root default export', async () => {
     const entry = await loadEntry(fixture('valid-module.ts'), import.meta.dir);
     expect(entry.root.kind).toBe('module');
+    expect(entry.root.isRoot()).toBe(true);
+    expect(entry.path).toBe(fixture('valid-module.ts'));
+  });
+
+  test('accepts a module() default export', async () => {
+    const entry = await loadEntry(fixture('module-root.ts'), import.meta.dir);
+    expect(entry.root.kind).toBe('module');
+    expect(entry.root.isRoot()).toBe(false);
+  });
+
+  test('a service default export is COMPOSE.ROOT_NOT_MODULE, naming appRoot()', async () => {
+    const error: unknown = await loadEntry(fixture('valid-service.ts'), import.meta.dir).catch(
+      (e: unknown) => e,
+    );
+
+    expect(CliStructuredError.is(error)).toBe(true);
+    if (!CliStructuredError.is(error)) throw new Error('unreachable');
+    expect(error.code).toBe('COMPOSE.ROOT_NOT_MODULE');
+    expect(error.message).toBe(
+      `The entry "${fixture('valid-service.ts')}" default-exports a service. The app's root must be a module, built with appRoot().`,
+    );
+    expect(error.fix).toBe(
+      "Provision the service inside a root, e.g. export default appRoot('name', ({ provision }) => { provision(service); }).",
+    );
+    expect(error.where?.path).toBe(fixture('valid-service.ts'));
   });
 
   test('rejects a plain-object default export — names what the module must export', async () => {
-    await expect(loadEntry(fixture('non-node-export.ts'), import.meta.dir)).rejects.toThrow(
-      /must default-export a node \(a service or a module\)/,
+    const error: unknown = await loadEntry(fixture('non-node-export.ts'), import.meta.dir).catch(
+      (e: unknown) => e,
     );
+
+    expect(CliStructuredError.is(error)).toBe(true);
+    if (!CliStructuredError.is(error)) throw new Error('unreachable');
+    expect(error.code).toBe('COMPOSE.ENTRY_EXPORT_INVALID');
+    expect(error.message).toBe(
+      `Entry module "${fixture('non-node-export.ts')}" must default-export the app's root.`,
+    );
+    expect(error.fix).toBe('Build it with appRoot() from @prisma/composer.');
   });
 
   test('rejects a resource default export — a resource is not a valid root', async () => {
     await expect(loadEntry(fixture('resource-export.ts'), import.meta.dir)).rejects.toThrow(
-      /must default-export a node \(a service or a module\)/,
+      /must default-export the app's root/,
     );
   });
 
   test('resolves the entry path against the given cwd', async () => {
-    const entry = await loadEntry('fixtures/valid-service.ts', import.meta.dir);
-    expect(entry.path).toBe(fixture('valid-service.ts'));
+    const entry = await loadEntry('fixtures/valid-module.ts', import.meta.dir);
+    expect(entry.path).toBe(fixture('valid-module.ts'));
   });
 
   test('a non-JSX import failure is COMPOSE.ENTRY_UNLOADABLE carrying the entry path and the cause', async () => {
@@ -111,7 +138,7 @@ describe('loadEntry()', () => {
     // The hook resolved .cjs → .cts; resolution succeeded, but the fixture's
     // export is not a Composer node, so the failure is ENTRY_EXPORT_INVALID.
     expect(result.stderr).not.toContain('Cannot find module');
-    expect(result.stderr).toContain('must default-export a node');
+    expect(result.stderr).toContain("must default-export the app's root");
   }, 15000);
 
   test('a genuinely missing relative import still fails with the original error under node', () => {
@@ -130,11 +157,11 @@ describe('loadEntry()', () => {
   // no-op (nothing is registered) and the imports still work.
   test('a .js-extension import loads correctly in-process under bun', async () => {
     const entry = await loadEntry(fixture('entry-js-ext-import.ts'), import.meta.dir);
-    expect(entry.root.kind).toBe('service');
+    expect(entry.root.name).toBe('fixture-js-ext-root');
   });
 
   test('an extensionless import loads correctly in-process under bun', async () => {
     const entry = await loadEntry(fixture('entry-no-ext-import.ts'), import.meta.dir);
-    expect(entry.root.kind).toBe('service');
+    expect(entry.root.name).toBe('fixture-no-ext-root');
   });
 });

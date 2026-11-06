@@ -1,12 +1,12 @@
 /**
  * Pipeline step 2 (deploy-cli.md § The pipeline): import the entry module
- * (resolved against cwd) and require its default export to be a node — a
- * service or module, branded by core's factories. Whatever this module exports
- * IS the application; nothing else marks a root (ADR-0003).
+ * (resolved against cwd) and require its default export to be the app's root:
+ * an app root built with `appRoot()`, or a module built with `module()`
+ * (ADR-0003).
  */
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { ModuleNode, ServiceNode } from '@internal/core';
+import type { AppRootNode, ModuleNode } from '@internal/core';
 import { isNode } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
@@ -16,7 +16,7 @@ import { explainJsxLoadError } from './jsx-load-error.ts';
 export interface LoadedEntry {
   /** The resolved absolute path to the entry module on disk. */
   readonly path: string;
-  readonly root: ServiceNode | ModuleNode;
+  readonly root: ModuleNode | AppRootNode;
 }
 
 /** `unloadableFix`, when given, says where the path came from, so a wrong path names its source. */
@@ -55,22 +55,26 @@ export async function loadEntry(
     'a dynamically-imported module namespace object; only its default export is read here, and the isNode()/kind checks below are the real (runtime) guard on it'
   >(mod).default;
 
-  if (!isNode(root) || root.kind === 'dependency' || root.kind === 'resource') {
+  if (isNode(root) && root.kind === 'service') {
+    throw new CliStructuredError(
+      'COMPOSE.ROOT_NOT_MODULE',
+      `The entry "${resolvedPath}" default-exports a service. The app's root must be a module, built with appRoot().`,
+      {
+        fix: "Provision the service inside a root, e.g. export default appRoot('name', ({ provision }) => { provision(service); }).",
+        where: { path: resolvedPath },
+      },
+    );
+  }
+  if (!isNode(root) || root.kind !== 'module') {
     throw new CliStructuredError(
       'COMPOSE.ENTRY_EXPORT_INVALID',
-      `Entry module "${resolvedPath}" must default-export a node (a service or a module).`,
+      `Entry module "${resolvedPath}" must default-export the app's root.`,
       {
-        fix: 'Construct it with service() or module() from @prisma/composer.',
+        fix: 'Build it with appRoot() from @prisma/composer.',
         where: { path: resolvedPath },
       },
     );
   }
 
-  return {
-    path: resolvedPath,
-    root: blindCast<
-      ServiceNode | ModuleNode,
-      "isNode() plus the kind check above prove root is a service or module node at runtime; isNode's return type (the branded ServiceNode | ResourceNode | DependencyEnd | ModuleNode union) structurally lacks each kind's own fields, so TS cannot narrow further on its own"
-    >(root),
-  };
+  return { path: resolvedPath, root };
 }

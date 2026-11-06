@@ -38,8 +38,8 @@ function makeAppDir(): { dir: string; entryPath: string } {
   fs.writeFileSync(
     entryPath,
     [
-      `import { module, service } from ${JSON.stringify(coreIndex)};`,
-      "export default module('fixture-app', {}, ({ provision }) => {",
+      `import { appRoot, service } from ${JSON.stringify(coreIndex)};`,
+      "export default appRoot('fixture-app', {}, ({ provision }) => {",
       '  provision(',
       '    service({',
       "      name: 'app',",

@@ -1,4 +1,4 @@
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { envSecret } from '@prisma/composer-prisma-cloud';
 import { email, emailDeliveryModes } from '@prisma/composer-prisma-cloud/email';
 import { type } from 'arktype';
@@ -10,7 +10,7 @@ import mailerService from './src/mailer/service.ts';
  * checks the delivery mode before anything is created. The credential is a
  * secret, bound with envSecret(); it is required even in `none` mode.
  */
-export default module(
+export default appRoot(
   'email-example',
   {
     input: type({

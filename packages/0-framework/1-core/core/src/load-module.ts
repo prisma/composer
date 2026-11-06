@@ -19,6 +19,7 @@ import { boundaryPortsOf, slotNodesAndEdges } from './load-service.ts';
 import { buildModuleInput } from './module-input.ts';
 import {
   type AnyContract,
+  type AppRootNode,
   type DependencyEnd,
   type Deps,
   isConfigKeySegment,
@@ -263,7 +264,7 @@ function validateServiceParamBinding(
  * (and the authored edges touching them) are recorded against it.
  */
 function flatten(
-  moduleNode: ModuleNode,
+  moduleNode: ModuleNode | AppRootNode,
   selfId: NodeId,
   wiring: Record<string, unknown>,
   nodes: GraphNode[],
@@ -402,6 +403,16 @@ function flatten(
       throw new LoadError(
         `provision("${id}") expects a branded service, resource, or module node (construct it with ` +
           "the service()/resource()/module() factories or a pack's own).",
+      );
+    }
+    if (
+      untrusted.kind === 'module' &&
+      typeof untrusted.isRoot === 'function' &&
+      untrusted.isRoot()
+    ) {
+      throw new LoadError(
+        `Module "${selfId}" provisions the app root "${untrusted.name}". An app root is the deploy's ` +
+          'entry and cannot be provisioned. Build the module with module() instead.',
       );
     }
     localIds.add(id);
@@ -659,7 +670,7 @@ function flatten(
   return outputs;
 }
 
-export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
+export function loadModule(root: ModuleNode | AppRootNode, opts?: LoadOptions): Graph {
   const rootId = opts?.id ?? root.name;
   const rootDepKeys = Object.keys(root.deps);
   if (rootDepKeys.length > 0) {

@@ -5,7 +5,7 @@
 A node's address is the path of provision IDs starting at the root, and the root's address is the deployed app name. Every child's address therefore starts with the app name: `shop`, `shop.catalog`, `shop.auth.api`. That one string is the node's only identity. Composer writes it, byte for byte, as the platform `logicalId` of the node's row and of its node in the branch's application topology, and builds every other identifier for the node from it.
 
 ```ts
-export default module('shop', ({ provision }) => {
+export default appRoot('shop', ({ provision }) => {
   const catalog = provision(rawPostgres({ name: 'catalog' }));
   const auth = provision(authModule, { deps: { db: catalog } }); // module `auth`, containing compute service `api`
   provision(webService, {

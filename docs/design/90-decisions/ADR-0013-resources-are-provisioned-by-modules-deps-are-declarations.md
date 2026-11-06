@@ -18,12 +18,12 @@ the slot:
 
 ```ts
 // src/module.ts
-import { module } from "@prisma/composer";
+import { appRoot } from "@prisma/composer";
 import { postgres } from "@prisma/composer-prisma-cloud";
 import ingestService from "./ingest.ts";
 import apiService from "./api.ts";
 
-export default module("datahub", ({ provision }) => {
+export default appRoot("datahub", ({ provision }) => {
   const db = provision(rawPostgres({ name: "db" })); // provides rawPostgresContract
   provision(ingestService, { deps: { db } }); // ingest.deps.db requires it
   provision(apiService, { deps: { db } }); // api.deps.db requires it

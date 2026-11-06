@@ -5,11 +5,11 @@
 The unit of composition is a **Module**, authored with a single primitive:
 
 ```ts
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import catalogModule from './modules/catalog/module.ts';
 import storefrontService from './modules/storefront/service.ts';
 
-export default module('store', ({ provision }) => {
+export default appRoot('store', ({ provision }) => {
   const catalog = provision(catalogModule);
   provision(storefrontService, { deps: { catalog: catalog.rpc } });
 });

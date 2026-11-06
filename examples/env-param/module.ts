@@ -1,4 +1,4 @@
-import { module, resolve } from '@prisma/composer';
+import { appRoot, resolve } from '@prisma/composer';
 import { envParam, publicUrl } from '@prisma/composer-prisma-cloud';
 import echoService from './src/service.ts';
 
@@ -13,7 +13,7 @@ import echoService from './src/service.ts';
  *
  * A closed root: no boundary argument, no return — it only provisions.
  */
-export default module('env-param-example', ({ environment, provision }) => {
+export default appRoot('env-param-example', ({ environment, provision }) => {
   const label = resolve([environment.name], ([name]) => `deployed to ${name}`);
   const echo = provision(echoService, {
     input: { greeting: envParam('ENV_PARAM_GREETING'), environment: label },

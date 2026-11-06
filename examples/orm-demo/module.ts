@@ -1,4 +1,4 @@
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { postgres } from '@prisma/composer-prisma-cloud/orm';
 import { widgetContract } from './src/contract.ts';
 import widgetsService from './src/service.ts';
@@ -14,7 +14,7 @@ import widgetsService from './src/service.ts';
  * target storageHash) and `config` (the ORM config PATH the deploy
  * migration step loads to find migrations/ — never imported by the app build).
  */
-export default module('orm-demo', ({ provision }) => {
+export default appRoot('orm-demo', ({ provision }) => {
   const db = provision(
     postgres({ name: 'database', contract: widgetContract, config: './prisma.config.ts' }),
     { id: 'database' },
