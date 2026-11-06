@@ -42,6 +42,12 @@ test('the options take input and nothing else', () => {
   appRoot('shop', { expose: {} }, () => {});
   // @ts-expect-error an unknown key
   appRoot('shop', { input: greetingSchema, other: true }, () => {});
+  const withDeps = { input: greetingSchema, deps: {} };
+  // @ts-expect-error deps is refused on a non-literal options object too
+  appRoot('shop', withDeps, () => {});
+  const withExpose = { input: greetingSchema, expose: {} };
+  // @ts-expect-error expose is refused on a non-literal options object too
+  appRoot('shop', withExpose, () => {});
 });
 
 test("the body's context has input, environment and provision, and no deps", () => {

@@ -1083,7 +1083,7 @@ export function appRoot(
 ): AppRootNode<undefined>;
 export function appRoot<I extends StandardSchemaV1 | undefined = undefined>(
   name: string,
-  options: { input?: I },
+  options: { input?: I; deps?: never; expose?: never },
   body: (ctx: AppRootContext<I>) => void,
 ): AppRootNode<I>;
 export function appRoot(

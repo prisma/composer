@@ -56,7 +56,7 @@ export function Load(root: ServiceNode | ModuleNode | AppRootNode, opts?: LoadOp
   // TypeScript believes is a node), then route by its discriminant.
   if (!isNode(root)) {
     throw new LoadError(
-      'Load expects a branded service or module node (construct it with the service()/module() factories).',
+      'Load expects a branded service, module or app root node (construct it with the service(), module() or appRoot() factories).',
     );
   }
   if (root.kind === 'module') {
@@ -64,7 +64,7 @@ export function Load(root: ServiceNode | ModuleNode | AppRootNode, opts?: LoadOp
     return loadModule(root, opts);
   }
   if (root.kind === 'service') return loadService(root, opts?.id ?? 'root');
-  throw new LoadError('Load expects a service or module root (received another node kind).');
+  throw new LoadError('Load expects a service, module or app root (received another node kind).');
 }
 
 /** The app secrets key of every secret source the graph names, once each, in the order Load met them. A source built without a `secretsKey` is left out. */

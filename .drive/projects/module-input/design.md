@@ -30,7 +30,6 @@ export default appRoot('shop',
   ({ input, environment, provision }) => {
     const from = provision(variable({ name: 'EMAIL_FROM' }));
     const deliveryCredential = provision(variable.secret({ name: 'EMAIL_DELIVERY_CREDENTIAL' }));
-    const smtpPort = provision(variable({ name: 'SMTP_PORT', schema: type('number') }));
 
     provision(email(), { input: { from, deliveryCredential } });
     const host = resolve([input.SITE_HOSTNAME, environment.name], ([hostname, name]) =>
@@ -54,7 +53,7 @@ prisma deploy --environment staging   # the same files for staging, then the she
 prisma dev                            # the files for dev, then the shell
 ```
 
-`SITE_HOSTNAME` and `REGISTRY_TOKEN` are the root's input: the deploy needs them, so Composer reads them from the adapters and carries them. `EMAIL_FROM`, `EMAIL_DELIVERY_CREDENTIAL` and `SMTP_PORT` are platform variables: only the running service needs them, so Composer names them and never sees their values. A typical app's root input is small; most of what a service reads is a platform variable.
+`SITE_HOSTNAME` and `REGISTRY_TOKEN` are the root's input: the deploy needs them, so Composer reads them from the adapters and carries them. `EMAIL_FROM` and `EMAIL_DELIVERY_CREDENTIAL` are platform variables: only the running service needs them, so Composer names them and the deploy never sees their values. `prisma dev` reads them from local files, like every other variable. A typical app's root input is small; most of what a service reads is a platform variable.
 
 ## 2. Requirements
 
