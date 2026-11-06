@@ -8,7 +8,7 @@ The platform refuses an empty value. `POST /v1/environment-variables` with `valu
 
 ## 2. Key case
 
-The platform refuses any key that does not match `[A-Z_][A-Z0-9_]*`, on write and on the `key` list filter (422, "key: must match POSIX env-var key shape"). A lower-case or mixed-case key cannot exist as a row. Composer's rule `^[A-Z][A-Z0-9_]*$` is stricter only in refusing a leading underscore. Case cannot differ between a row and a name, so a lower-case `envSecret()` name never had a row and never deployed. It can exist in a project that only ran `prisma dev`, which reads local files by name and accepts any case today; the same holds for a leading underscore. Slice 2's release note says to rename such a name.
+The platform refuses any key that does not match `[A-Z_][A-Z0-9_]*`, on write and on the `key` list filter (422, "key: must match POSIX env-var key shape"). A lower-case or mixed-case key cannot exist as a row. Composer's rule `^[A-Z][A-Z0-9_]*$` is stricter only in refusing a leading underscore. Case cannot differ between a row and a name, so a lower-case `envSecret()` name never had a row and never deployed. It can exist in a project that only ran `prisma dev`, which reads local files by name and accepts any case today. A leading-underscore name is different: the platform accepts it, `envSecret()` accepts it today, so a deployed app can have a row under such a name. Slice 2's release note covers both: rename the lower-case name; for a leading-underscore name, create the row under the new name in every scope that has one, then rename the binding.
 
 ## 3. Preview-wide row from the CLI
 
