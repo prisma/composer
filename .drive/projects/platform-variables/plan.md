@@ -9,14 +9,14 @@ Planned 2026-11-06, replanned the same day after three reviews and the root-cons
 ## Order
 
 ```text
-P1 (appRoot) ── P2 (the node, the shortcuts, no seeding) ── P3 (schema)
+S1 (appRoot) ── S2 (the node, the shortcuts, no seeding) ── S3 (schema)
 ```
 
-Three slices, one after the other. P1 ships the root constructor alone: it is a breaking change every app feels, it stands on its own, and it keeps P2 reviewable. P2 ships the node and makes every operator variable, the shortcuts included, follow its rules in one PR, so that no two rules for one platform row ever coexist on `main`. P3 starts after P2 has merged, so no two slices rewrite one decision record at the same time. No slice depends on module-input S18.
+Three slices, one after the other. S1 ships the root constructor alone: it is a breaking change every app feels, it stands on its own, and it keeps S2 reviewable. S2 ships the node and makes every operator variable, the shortcuts included, follow its rules in one PR, so that no two rules for one platform row ever coexist on `main`. S3 starts after S2 has merged, so no two slices rewrite one decision record at the same time. No slice depends on module-input S18.
 
-## P1. The root is written with `appRoot()`
+## S1. The root is written with `appRoot()`
 
-Builds on: main. Hands to: P2 a root whose body context is typed differently from a nested module's, so P2 can add the one `provision()` overload only the root has.
+Builds on: main. Hands to: S2 a root whose body context is typed differently from a nested module's, so S2 can add the one `provision()` overload only the root has.
 
 - `appRoot(name, { input? }, body)` in `@prisma/composer`: what `module()` takes minus `deps` and `expose`. Its result is a root node that `provision()` refuses by type. The deploy and `prisma dev` load only a root node, and fail Load with a message naming `appRoot()` for an entry that is a `module()`. Compile-time in this slice: no `deps` or `expose` on the root, and no nesting of a root (design section 4).
 - Every example's root and every guide's root change `module(` to `appRoot(`; the agent skill too.
@@ -25,9 +25,9 @@ Builds on: main. Hands to: P2 a root whose body context is typed differently fro
 - QA: a `module()` entry fails Load with the `appRoot()` message; `provision(appRoot(…))` fails to compile.
 
 
-## P2. A platform variable is a node, and the deploy fills nothing
+## S2. A platform variable is a node, and the deploy fills nothing
 
-Builds on: P1 merged. Hands to: P3 a node whose value reaches a service through a `$platform` marker, with nothing filled on the platform and every shortcut following the same rules.
+Builds on: S1 merged. Hands to: S3 a node whose value reaches a service through a `$platform` marker, with nothing filled on the platform and every shortcut following the same rules.
 
 ### Platform checks, done first
 
@@ -61,7 +61,7 @@ Each answer is recorded in ADR-0064 before the code that depends on it is writte
 
 ### Shared package
 
-- One module below the target and the local target holding the marker format, the decoding rule (text only in P2), the validator call (none yet) and the error text. The local target's copies of the marker constants go.
+- One module below the target and the local target holding the marker format, the decoding rule (text only in S2), the validator call (none yet) and the error text. The local target's copies of the marker constants go.
 
 ### `prisma dev`
 
@@ -82,9 +82,9 @@ Each answer is recorded in ADR-0064 before the code that depends on it is writte
 - A nested module calling `provision(variable(…))` fails to compile; a `module()` entry fails Load with the `appRoot()` message.
 - A secret planted in a value and a search of the deploy output, the report, the stack file and the boot error for any part of it.
 
-## P3. `schema`
+## S3. `schema`
 
-Builds on: P2 merged. Hands to: nothing; closes the type requirement.
+Builds on: S2 merged. Hands to: nothing; closes the type requirement.
 
 ### Spike, done first
 

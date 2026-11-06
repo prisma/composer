@@ -36,7 +36,7 @@ The root, written with `appRoot()`, provisions the three nodes; a nested `module
 
 - **Module input** ([../module-input/design.md](../module-input/design.md)) defines runtime values, pointers, `field()` and the secret field, which a platform variable's value is bound through. Before its S18 ships, the secret field is `secretString()`; after, `secret(inner)`. This project does not depend on S18.
 - **The Prisma Cloud target** (`packages/1-prisma-cloud/1-extensions/target`) holds the nodes, the graph check, the serializer, preflight and the boot reader.
-- **Core** (`packages/0-framework/1-core/core`) gains `appRoot()` in P1, the root constructor, and three things in P2: the `provision()` overload on `appRoot()` that alone accepts a platform variable node; a resource that is a value, which `provision()` returns stamped with the address and with `id` on it; an extension's graph check hook that runs after Load; and preflight findings that the CLI prints (design sections 4, 5 and 9).
+- **Core** (`packages/0-framework/1-core/core`) gains `appRoot()` in S1, the root constructor, and three things in S2: the `provision()` overload on `appRoot()` that alone accepts a platform variable node; a resource that is a value, which `provision()` returns stamped with the address and with `id` on it; an extension's graph check hook that runs after Load; and preflight findings that the CLI prints (design sections 4, 5 and 9).
 - **The local target** (`packages/1-prisma-cloud/0-lowering/local-target`) fills and isolates variables under `prisma dev`.
 - **One shared package** below the target and the local target holds the marker format, the decoding rule, the validator call and the error text (design section 7).
 - **The Management API** provides the variable rows Composer lists, by project, class, branch and key.
@@ -54,10 +54,10 @@ The root, written with `appRoot()`, provisions the three nodes; a nested `module
 
 ## Transitional-shape constraints
 
-- Before P3, `schema` does not exist, and every platform variable's value is text.
+- Before S3, `schema` does not exist, and every platform variable's value is text.
 - Before module-input S18, a platform secret binds to a `secretString()` field.
 
-There is no window in which `envSecret()` and `variable.secret()` follow different rules: P2 changes both at once.
+There is no window in which `envSecret()` and `variable.secret()` follow different rules: S2 changes both at once.
 
 ## Definition of done
 
@@ -73,7 +73,7 @@ There is no window in which `envSecret()` and `variable.secret()` follow differe
 
 ## Open questions
 
-None for Will. Engineering choices left to the slices: the JSON Schema validator and its `format` behaviour (P3 spike), and the five platform checks (P2).
+None for Will. Engineering choices left to the slices: the JSON Schema validator and its `format` behaviour (S3 spike), and the five platform checks (S2).
 
 ## References
 
