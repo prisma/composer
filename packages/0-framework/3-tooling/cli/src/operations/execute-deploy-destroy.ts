@@ -10,7 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Graph } from '@internal/core';
 import type {
-  ContainerCredentials,
+  CallerCredentials,
   ContainerInstance,
   ReporterDescriptor,
   RunReporter,
@@ -168,7 +168,7 @@ async function beginReporters(
     readonly environment: string;
     readonly cwd: string;
     readonly reportId: string | undefined;
-    readonly credentials: ContainerCredentials | undefined;
+    readonly credentials: CallerCredentials | undefined;
   },
 ): Promise<readonly ExtensionReporter[]> {
   const opened = await Promise.all(

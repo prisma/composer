@@ -6,7 +6,7 @@
  */
 import type { RunAssembler } from '@internal/assemble';
 import type {
-  ContainerCredentials,
+  CallerCredentials,
   ContainerDescriptor,
   ContainerInstance,
 } from '@internal/core/config';
@@ -60,7 +60,7 @@ export interface OperationDeps {
    * call", and both commands are credential-free by contract: there is no
    * authenticated call on those paths for this to reach.
    */
-  readonly credentials?: ContainerCredentials | undefined;
+  readonly credentials?: CallerCredentials | undefined;
 }
 
 /**

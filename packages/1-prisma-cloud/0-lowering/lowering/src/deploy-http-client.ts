@@ -32,19 +32,30 @@ const rawCalls = (client: ManagementApiClient) =>
     "openapi-fetch's per-method calls take any path string at runtime; its typed signature only narrows the path to the documented ones, and this client forwards paths Alchemy built"
   >(client);
 
-/** openapi-fetch reads an error body to give it back parsed, so the response it returns has no body left. */
+const isJson = (contentType: string | null): boolean =>
+  contentType !== null && /[/+]json\b/i.test(contentType);
+
+/**
+ * openapi-fetch reads an error body and gives it back parsed, so the response
+ * it returns has no body left. A JSON body is serialized again, so a JSON
+ * string keeps its quotes; any other body was left as text.
+ */
 const withErrorBody = (response: Response, error: unknown): Response => {
   if (!response.bodyUsed) return response;
   const headers = new Headers(response.headers);
   headers.delete('content-length');
-  return new Response(typeof error === 'string' ? error : JSON.stringify(error), {
+  const body =
+    typeof error === 'string' && !isJson(response.headers.get('content-type'))
+      ? error
+      : JSON.stringify(error);
+  return new Response(body, {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
 };
 
-/** A `fetch` that sends each request through the SDK client, which owns authentication. */
+/** A `fetch` that sends each request through the SDK client. The client owns authentication, so any `Authorization` the caller set is dropped. */
 const fetchThrough = (client: ManagementApiClient): typeof globalThis.fetch => {
   const calls = rawCalls(client);
   const send = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -53,9 +64,9 @@ const fetchThrough = (client: ManagementApiClient): typeof globalThis.fetch => {
     if (!isMethod(method)) {
       return Promise.reject(new Error(`The Management API client cannot send ${method}.`));
     }
-    const headers: Record<string, string | null> = Object.fromEntries(
-      new Headers(init?.headers).entries(),
-    );
+    const forwarded = new Headers(init?.headers);
+    forwarded.delete('authorization');
+    const headers: Record<string, string | null> = Object.fromEntries(forwarded.entries());
     // Without a content type of its own, openapi-fetch would label the body JSON.
     if (init?.body != null && headers['content-type'] === undefined) headers['content-type'] = null;
     const { response, error } = await calls[method](`${url.pathname}${url.search}`, {
@@ -71,13 +82,14 @@ const fetchThrough = (client: ManagementApiClient): typeof globalThis.fetch => {
 };
 
 /**
- * The deploy's `HttpClient`. Requests to the Management API origin go through
- * `client`, which sets and refreshes the credential; every other host, such as
- * a presigned artifact upload URL, goes to node's transport unauthenticated,
+ * The deploy's `HttpClient`, for every host. Requests to the Management API
+ * `origin` go through `client`, which alone authenticates them: their own
+ * `Authorization` header is removed first. Every other host, such as a
+ * presigned artifact upload URL, goes to node's transport unauthenticated,
  * because those uploads need node's explicit Content-Length. Every request
  * carries the deploy-source headers.
  */
-export const managementHttpClientLayer = (
+export const deployHttpClientLayer = (
   client: ManagementApiClient,
   origin: string,
 ): Layer.Layer<HttpClient.HttpClient> =>

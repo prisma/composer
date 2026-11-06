@@ -8,7 +8,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type {
-  ContainerCredentials,
+  CallerCredentials,
   ContainerDescriptor,
   LocateContainerInput,
   PrismaAppConfig,
@@ -316,7 +316,7 @@ describe('a stored session', () => {
 
   test('deploys with no PRISMA_SERVICE_TOKEN: the engine client reaches the providers and state, and no credential enters process.env', async () => {
     const app = appDir();
-    const seen: { credentials: ContainerCredentials[]; envDuringApply: unknown[] } = {
+    const seen: { credentials: CallerCredentials[]; envDuringApply: unknown[] } = {
       credentials: [],
       envDuringApply: [],
     };
@@ -346,7 +346,7 @@ describe('a stored session', () => {
             },
           },
           container,
-          providers: (credentials) => {
+          providers: ({ credentials }) => {
             if (credentials !== undefined) seen.credentials.push(credentials);
             return Layer.empty;
           },

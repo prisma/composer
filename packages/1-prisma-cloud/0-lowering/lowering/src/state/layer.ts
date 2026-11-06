@@ -16,8 +16,7 @@ import { BUILD_ID_ENV } from '../builds/resources.ts';
 import { withResourceReporting } from '../builds/state-store.ts';
 import * as client from '../client.ts';
 import { resolveDefaultBranchId } from '../container.ts';
-import * as credentials from '../credentials.ts';
-import { managementHttpClientLayer } from '../management-http-client.ts';
+import { deployHttpClientLayer } from '../deploy-http-client.ts';
 import { failOnEmptyScopeWithLiveResources, scopeOccupied } from './empty-scope.ts';
 import { hostedStateBootstrapError } from './errors.ts';
 import {
@@ -59,12 +58,9 @@ export const prismaStateLayer = (
   },
   supplied?: client.ManagementApiClient,
 ): Layer.Layer<State, never, StackServices> =>
-  // The origin comes from the same resolver upstream's providers use
-  // (credentials.managementApiBaseUrl), so PRISMA_API_URL moves the state
-  // client and the resource providers together, never one without the other.
   Layer.unwrap(
-    credentials
-      .managementApiBaseUrl()
+    client
+      .managementApiOrigin(supplied)
       .pipe(Effect.map((origin) => stateLayerAgainst(origin, ids, supplied))),
   ).pipe(Layer.orDie);
 
@@ -106,10 +102,7 @@ export const stateLayerAgainst = (
   supplied?: client.ManagementApiClient,
 ): Layer.Layer<State, never, StackServices> => {
   const { projectId, branchId, defaultBranchId } = ids;
-  const dependencies =
-    supplied === undefined
-      ? client.layer({ apiOrigin }).pipe(Layer.provide(credentials.fromEnv()))
-      : Layer.succeed(client.ManagementClient, supplied);
+  const dependencies = client.suppliedOrFromEnv(supplied, apiOrigin);
 
   return Layer.effect(
     State,
@@ -152,18 +145,14 @@ export const stateLayerAgainst = (
         );
       }
 
-      // The store's requests go through `mgmt`, which authenticates them, so
-      // the bearer header Alchemy's store always sets is removed.
+      // `mgmt` authenticates the store's requests, and the deploy's HttpClient
+      // drops the empty bearer header the store sets from `authToken`.
       const service = yield* makeHttpStateStore({
         url: `${apiOrigin}/v1/projects/${projectId}/branches/${stateBranchId}/alchemy-state`,
         authToken: '',
-        transformClient: (req) =>
-          req.pipe(
-            HttpClientRequest.removeHeader('authorization'),
-            HttpClientRequest.setHeader(LEASE_HEADER, Redacted.value(lease.leaseId)),
-          ),
+        transformClient: HttpClientRequest.setHeader(LEASE_HEADER, Redacted.value(lease.leaseId)),
         id: 'prisma-postgres',
-      }).pipe(Effect.provide(managementHttpClientLayer(mgmt, apiOrigin)));
+      }).pipe(Effect.provide(deployHttpClientLayer(mgmt, apiOrigin)));
 
       const migrated = migrateRowsOnRead(service);
 
