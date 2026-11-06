@@ -384,7 +384,7 @@ The graph is still a composition of modules that are all the same, except the ro
 - **ADR-0042, service input:** the `$secret` marker; "Every variable a service's markers name must be distinct once normalised"; the three boot outcomes. Now the `$platform` marker, distinct names for `$generated` only, the four boot steps, the empty-text rule, and the array-position rule.
 - **ADR-0058, dev secrets:** "Each service gets only the variables its own rows point at" is stated as a local-target rule, not a Prisma Cloud one; and the recorded difference between dev's and deploy's input documents for an unset optional secret closes, because both now leave the key out.
 - **ADR-0062, values and config adapters:** "Deploy preflight and dev preflight fill a missing `envSecret()` platform variable". Now preflight fills nothing. Slice 3 rewrites the Values section.
-- **ADR-0064, new, "A platform variable is a node":** created with the platform facts of section 3, the graph check hook, the preflight findings, and sections 8 to 12 as they apply to every operator variable. Slice 3 adds the node.
+- **ADR-0064, new, "A platform variable is set on the platform, never by the deploy":** created with the platform facts of section 3, the graph check hook, the preflight findings, and sections 8 to 12 as they apply to every operator variable. Slice 3 adds the node.
 
 ### Slice 3: a platform variable is a node
 
