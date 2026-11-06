@@ -294,8 +294,9 @@ jobs:
 
       - name: Every ORM-family pin agrees
         run: pnpm check:orm-pins
+      # The examples' configs import the built extension packages.
       - name: Every committed contract is what the pinned toolchain emits
-        run: pnpm check:contracts-emitted
+        run: pnpm turbo run build --filter '@prisma/composer-prisma-cloud...' && pnpm check:contracts-emitted
       # Same built package, second invariant: nothing statically reachable
       # from the family or testing entrypoints may import alchemy or effect.
       - name: Check the family and testing static graphs
