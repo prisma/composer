@@ -516,7 +516,7 @@ The Management API is no help: the project and database both read `status: "read
 
 **Reproduction.**
 
-1. Provision `email()` with `input: { deliveryMode: envParam('EMAIL_DELIVERY_MODE'), from: envParam('EMAIL_FROM'), deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') }` and leave `EMAIL_DELIVERY_CREDENTIAL` unset in an environment where `EMAIL_DELIVERY_MODE=none`.
+1. Declare `EMAIL_DELIVERY_MODE` in the root's input with `type.enumerated(...emailDeliveryModes)`, provision `email()` with `input: { deliveryMode: input.EMAIL_DELIVERY_MODE, from: envParam('EMAIL_FROM'), deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') }`, and leave `EMAIL_DELIVERY_CREDENTIAL` unset in an environment where `EMAIL_DELIVERY_MODE=none`.
 2. Deploy → preflight fails before the service ever boots: the platform variable is missing.
 3. Set `EMAIL_DELIVERY_CREDENTIAL` to any non-empty string → deploy succeeds; the value is never read (verified: `none` mode never constructs a `Delivery` backing).
 

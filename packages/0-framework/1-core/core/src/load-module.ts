@@ -7,13 +7,13 @@ import {
   type Edge,
   type Graph,
   type GraphNode,
+  type InputBindingUse,
   LoadError,
   type LoadOptions,
   type NodeId,
   type ParamBinding,
   type PortEndpoint,
   RESOURCE_OUT_PORT,
-  type ServiceInputBinding,
 } from './graph-types.ts';
 import { boundaryPortsOf, slotNodesAndEdges } from './load-service.ts';
 import { buildModuleInput } from './module-input.ts';
@@ -269,7 +269,7 @@ function flatten(
   nodes: GraphNode[],
   edges: Edge[],
   pending: PendingWiring[],
-  inputBindings: ServiceInputBinding[],
+  inputBindings: InputBindingUse[],
   paramBindings: ParamBinding[],
   moduleInputs: ProvisionedModuleInput[],
   byId: Map<string, ServiceNode | ResourceNode | ModuleNode>,
@@ -496,13 +496,7 @@ function flatten(
         );
       }
       if (provisionInput !== undefined) {
-        inputBindings.push({
-          serviceAddress: fullAddress,
-          binding: blindCast<
-            ServiceInputBinding['binding'],
-            'the provision overloads type the binding as InputBinding; the collector receives it untyped'
-          >(provisionInput),
-        });
+        inputBindings.push({ serviceAddress: fullAddress, binding: provisionInput });
       }
       // A service param binding is optional per slot (default is the
       // fallback), so this only rejects a name that isn't a real param —
@@ -696,7 +690,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   const nodes: GraphNode[] = [];
   const edges: Edge[] = [];
   const pending: PendingWiring[] = [];
-  const inputBindings: ServiceInputBinding[] = [];
+  const inputBindings: InputBindingUse[] = [];
   const paramBindings: ParamBinding[] = [];
   const byId = new Map<string, ServiceNode | ResourceNode | ModuleNode>();
   const ports: BoundaryPort[] = [];

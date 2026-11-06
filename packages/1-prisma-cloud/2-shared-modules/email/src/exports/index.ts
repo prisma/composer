@@ -12,5 +12,7 @@ export {
   emailSendContract,
   emailSender,
 } from '../contract.ts';
+export type { EmailDeliveryMode } from '../delivery-mode.ts';
+export { emailDeliveryModes } from '../delivery-mode.ts';
 export { email } from '../email-module.ts';
 export { emailService } from './email-service.ts';

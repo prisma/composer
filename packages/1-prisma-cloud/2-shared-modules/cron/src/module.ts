@@ -4,7 +4,7 @@
  * a native platform timer can later replace the always-on scheduler without
  * changing app code.
  */
-import type { Deps, InputBinding, ModuleNode, Params, ServiceNode } from '@internal/core';
+import type { Deps, InputBindingOf, ModuleNode, Params, ServiceNode } from '@internal/core';
 import { module } from '@internal/core';
 import type { TriggerContract } from './contract.ts';
 import type { Schedule } from './schedule.ts';
@@ -14,7 +14,9 @@ import { cronScheduler } from './scheduler.ts';
  * The runner's input binding, required exactly when the runner declares an
  * input schema (ADR-0042) — the same rule `provision()` applies to a service.
  */
-type RunnerInput<I> = I extends undefined ? { input?: never } : { input: InputBinding };
+type RunnerInput<I extends ServiceNode['inputSchema']> = I extends undefined
+  ? { input?: never }
+  : { input: InputBindingOf<I> };
 
 /**
  * `opts.runner` is a service exposing `{ trigger }`; the returned module
@@ -39,10 +41,11 @@ export function cron<
   } & RunnerInput<I>,
 ): ModuleNode<RD, Record<never, never>> {
   return module(opts.name ?? 'cron', { deps: opts.runner.inputs }, ({ deps, provision }) => {
-    const runner = provision(opts.runner, {
+    const runnerNode: ServiceNode<RD, RP, { trigger: TriggerContract }> = opts.runner;
+    const runner = provision(runnerNode, {
       id: 'runner',
       deps,
-      ...(opts.input !== undefined ? { input: opts.input } : {}),
+      input: opts.input,
     });
     provision(cronScheduler(), {
       id: 'scheduler',

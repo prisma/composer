@@ -421,6 +421,12 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/delivery-mode.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
       "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/outbox-store.ts",
       "domain": "prisma-cloud",
       "layer": "modules",

@@ -7,6 +7,7 @@ import type {
   ParamBindings,
   RefPort,
   SecretSource,
+  SecretString,
   Value,
 } from '../exports/index.ts';
 import { dependency, module, resolve, resource, service } from '../exports/index.ts';
@@ -44,10 +45,10 @@ test('a value exposes no readable member', () => {
   void name.origin;
 });
 
-test('a value standing for input data is an input binding leaf; a Date or a source is not', () => {
-  expectTypeOf({ greeting: name }).toExtend<InputBinding>();
-  expectTypeOf({ when: date }).not.toExtend<InputBinding>();
-  expectTypeOf(secretValue).not.toExtend<InputBinding>();
+test('a value fits a binding field of its own type only', () => {
+  expectTypeOf({ greeting: name }).toExtend<InputBinding<{ greeting: string }>>();
+  expectTypeOf({ when: date }).not.toExtend<InputBinding<{ when: string }>>();
+  expectTypeOf({ key: secretValue }).not.toExtend<InputBinding<{ key: SecretString }>>();
 });
 
 test("a param binding accepts a value of the param's own type only", () => {

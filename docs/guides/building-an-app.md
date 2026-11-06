@@ -404,9 +404,8 @@ export default module('shop', ({ provision }) => {
 `{ from: 'staging+shop@example.com', deliveryCredential:
 envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
 
-- The body receives each field as a [value](#values-that-differ-per-environment).
-  It can pass a field into a `provision()` binding, or, if the field is
-  plain, list it as a `resolve()` dependency to compute with it.
+- The body receives `input`, a dictionary with one [value](#values-that-differ-per-environment) per field. It can pass a field into a `provision()` binding, or, if the field is plain, list it as a `resolve()` dependency to compute with it.
+- `input` itself is not a value. Pass each field on by name, as `input: { from: sender, replyTo: input.replyTo, deliveryCredential: input.deliveryCredential }` does above. Passing the whole `input` on, as in `provision(child, { input })`, fails to compile, and the deploy refuses it if a cast gets it past the compiler.
 - Reading a field in the body fails the deploy with a message naming the
   field: a template literal, `String()`, arithmetic, `JSON.stringify` or
   `Object.keys` on `input.domain` reports that `input.domain` of the module is
@@ -633,8 +632,8 @@ Because the input is a real schema, legality can be conditional — "no
 and `service.input()` narrows it like any other TypeScript union:
 
 ```ts
-const chatInput = type({ stripeEnabled: 'false' }).or(
-  type({ stripeEnabled: 'true', stripeSecretKey: secretString() }),
+const chatInput = type({ stripeEnabled: 'false', appOrigin: 'string' }).or(
+  type({ stripeEnabled: 'true', appOrigin: 'string', stripeSecretKey: secretString() }),
 );
 
 const chat = compute({ name: 'chat', input: chatInput, /* ... */ });
@@ -650,11 +649,7 @@ standalone `server.js`, which binds `PORT` itself.)
 
 ### Binding the input at provision
 
-The service declares what shapes are legal; the place that provisions it
-decides where each value comes from. The binding is a plain object mirroring
-the schema's shape whose leaves are literals, `envParam(...)`,
-`envSecret(...)`, or values from `resolve()`
-([below](#values-that-differ-per-environment)):
+The service declares what shapes are legal; the place that provisions it decides where each value comes from. The binding is a plain object mirroring the schema's shape whose leaves are literals, `envParam(...)`, `envSecret(...)`, or values from `resolve()` ([below](#values-that-differ-per-environment)). It is typed from the schema, as a module's binding is. So a binding of the wrong shape or kind fails to compile: a missing or undeclared key, a literal of the wrong type, a source in the wrong kind of field. A refinement the type cannot carry, such as a URL format, is checked by the deploy:
 
 ```ts
 import { envParam, envSecret } from '@prisma/composer-prisma-cloud';
@@ -668,23 +663,9 @@ provision(chat, {
 });
 ```
 
-Secretness is enforced by validation, not annotation: binding a plain
-literal where the schema expects a `SecretString` fails the deploy (a
-credential almost landed in plain config), and binding `envSecret` where the
-schema expects a string fails the same way. Neither side can silently
-misclassify a credential.
+Secretness is checked twice. The binding's type refuses a plain literal where the schema expects a `SecretString`, an `envSecret()` where it expects text, and a `SecretString` box written in the code, so each fails to compile. The deploy checks the binding with the schema too, so where the schema has no type information, or a cast hides the mistake, the deploy fails before anything is created. Neither side can silently misclassify a credential.
 
-**A field bound to `serviceOrigin()` or `generatedParam({ redacted: false })`
-is wrapped.** Their value exists only at boot, so at deploy the schema sees
-a pointer to the platform variable, and only a field wrapped with `field()`,
-from `@prisma/composer/arktype` (or `@prisma/composer/zod`), accepts it:
-`type({ returnUrl: field(type('string')) })`. A plain `'string'`
-field fails the deploy, and in a module's binding it fails to compile. A
-redacted `generatedParam()` is a secret, so its field is `secretString()`.
-In the service a wrapped field reads as its inner type:
-`service.input().returnUrl` is a `string`, because at boot the pointer has
-been replaced by the variable's text. `mockService()` takes the input
-double in the same shape.
+**A field bound to `serviceOrigin()` or `generatedParam({ redacted: false })` is wrapped.** Their value exists only at boot, so at deploy the schema sees a pointer to the platform variable, and only a field wrapped with `field()`, from `@prisma/composer/arktype` (or `@prisma/composer/zod`), accepts it: `type({ returnUrl: field(type('string')) })`. Binding one to a plain `'string'` field fails to compile, in a service's binding as in a module's, and the deploy refuses it where the compiler cannot see the schema's types. A redacted `generatedParam()` is a secret, so its field is `secretString()`. In the service a wrapped field reads as its inner type: `service.input().returnUrl` is a `string`, because at boot the pointer has been replaced by the variable's text. `mockService()` takes the input double in the same shape.
 
 An ArkType schema with a `SecretString` field cannot also transform its
 input. A morph anywhere in the schema, such as `'string.trim'`,
@@ -696,15 +677,7 @@ boot. The deploy checks for this and refuses such a schema, naming the
 secret field. Do the transform in the service code instead. A Zod schema
 keeps the secret box when it transforms, so it can do both.
 
-**`envParam('NAME')`** is for plain values the code *can't* know. An app
-origin is the canonical case: it's different on production and on every
-preview environment. The deploy reads the variable from the config pool: by default the shell that runs `prisma deploy` or `prisma dev`, or the `config` adapters you list ([Values from outside the code](#values-from-outside-the-code)), and writes its value into
-the service's input. So set it in that shell for every deploy; in CI, export
-it per environment. An unset or empty variable leaves the key out, and the
-schema decides ([below](#absence-is-the-schemas-call)). The value is a string,
-so bind `envParam` to string fields. To change it, deploy again with the new
-value. [`examples/env-param`](../../examples/env-param/) is the minimal working
-version, including a smoke script that proves the per-environment split.
+**`envParam('NAME')`** is for plain values the code *can't* know. An app origin is the canonical case: it's different on production and on every preview environment. The deploy reads the variable from the config pool: by default the shell that runs `prisma deploy` or `prisma dev`, or the `config` adapters you list ([Values from outside the code](#values-from-outside-the-code)), and writes its value into the service's input. So set it in that shell for every deploy; in CI, export it per environment. An unset or empty variable leaves the key out, and the schema decides ([below](#absence-is-the-schemas-call)). The value is text, so bind `envParam` to text fields. Binding it to a field of a narrower type, such as `'resend' | 'smtp' | 'none'`, fails to compile, because the variable may hold any text: declare that field in your root's `input` with the same type instead (for `email()`, build it from the exported `emailDeliveryModes`), and the root's schema checks the variable before anything is created. To change the value, deploy again with the new value. [`examples/env-param`](../../examples/env-param/) is the minimal working version, including a smoke script that proves the per-environment split.
 
 **`envSecret('NAME')`** is for credentials, with one rule: **the value never
 enters framework config**. Each environment keeps its own copy of the
@@ -967,10 +940,7 @@ deploy, and give `prisma dev` its secrets.
 A root's input takes no secret, so bind `envSecret()` inside the body, as
 `stripeKey` is above.
 
-Pass the root's input fields on one by one, as `from: input.EMAIL_FROM` is
-above. The root's whole `input` is every value the `config` adapters
-return, which by default is every variable of the shell, secrets included, so
-Load refuses it in a binding or a `resolve()` dependency.
+Pass the root's input fields on by name, as `from: input.EMAIL_FROM` is above. No module can pass its whole `input` on, and for the root it matters most: its whole `input` is every value the `config` adapters return, which by default is every variable of the shell, secrets included.
 
 The root's schema checks the config pool before anything is created, so a
 missing value fails with the schema's message.

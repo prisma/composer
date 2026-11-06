@@ -5,6 +5,11 @@ import { type InputOrigin, VALUE, VALUE_ORIGIN, type Value } from './value.ts';
 
 const INSPECT = Symbol.for('nodejs.util.inspect.custom');
 
+// Type-only, never assigned: brands a module body's input.
+declare const MODULE_INPUT: unique symbol;
+
+export type { MODULE_INPUT };
+
 type PlainObject = { readonly [key: string]: unknown };
 
 /**
@@ -30,10 +35,27 @@ type Fields<O, Absent> = {
 type FieldType<O, K extends keyof O> =
   Record<never, never> extends Pick<O, K> ? O[K] | undefined : O[K];
 
-/** The `input` a module body receives for its input schema `S`: one value per field, typed from the schema's output (ADR-0061). */
-export type ModuleInput<S extends StandardSchemaV1> = ModuleInputField<
-  StandardSchemaV1.InferOutput<S>
->;
+/**
+ * The `input` a module body receives for its input schema `S`: a dictionary
+ * with one value per field, typed from the schema's output (ADR-0061). It is
+ * not itself a value, and no binding accepts it: pass its fields on by name.
+ */
+export type ModuleInput<S extends StandardSchemaV1> = {
+  readonly [MODULE_INPUT]: true;
+} & FieldsOf<StandardSchemaV1.InferOutput<S>>;
+
+/** The type error an author sees for a module body's whole input passed where a value is accepted. */
+export type ModuleInputIsNotAValue =
+  'the whole input of a module is not a value; pass its fields on by name';
+
+/**
+ * Required of every object a binding accepts, so a module body's whole `input`
+ * fits none. Unlike `NotDeployTime`, a message string, it is an object
+ * constraint: its property's type is the message.
+ */
+export type NotModuleInput = {
+  readonly [MODULE_INPUT]?: ModuleInputIsNotAValue;
+};
 
 /** `input` or `input.a.b`: how an error names an input field. */
 export function inputFieldLabel(origin: InputOrigin): string {
@@ -41,6 +63,12 @@ export function inputFieldLabel(origin: InputOrigin): string {
 }
 
 function misuse(origin: InputOrigin, what: string): LoadError {
+  if (origin.path.length === 0) {
+    return new LoadError(
+      `input of module "${origin.module}" is a dictionary of values, not data, and ${what}. ` +
+        'A module body can only pass the fields of its input on, by name: into a provision() binding or, for a plain field, as a resolve() dependency.',
+    );
+  }
   const field = inputFieldLabel(origin);
   return new LoadError(
     `${field} of module "${origin.module}" is a value, not its real value, and ${what}. ` +
@@ -65,7 +93,9 @@ export function primitiveMisuse(hint: string): string {
  * Builds the `input` a module body receives. Every property access returns a
  * value recording its key path, and the same path always returns the same
  * object, so Load's identity-keyed maps see one value per field. Any way of
- * reading the real value throws a LoadError naming the field.
+ * reading the real value throws a LoadError naming the field. At run time the
+ * whole input still answers the value brand, at path `[]`, so Load can find
+ * and refuse it wherever it is passed on.
  */
 export function buildModuleInput(moduleAddress: NodeId): ModuleInput<StandardSchemaV1> {
   const byPath = new Map<string, object>();
@@ -143,6 +173,6 @@ export function buildModuleInput(moduleAddress: NodeId): ModuleInput<StandardSch
 
   return blindCast<
     ModuleInput<StandardSchemaV1>,
-    'the proxy answers the value brand and origin, and returns a further proxy for every string key, which is the shape ModuleInput describes'
+    'the proxy returns a further proxy, a value with its origin, for every string key, which is the shape ModuleInput describes; the dictionary brand is type-only'
   >(valueAt([]));
 }
