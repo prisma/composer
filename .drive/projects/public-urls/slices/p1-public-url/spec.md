@@ -102,7 +102,9 @@ It provides nothing (ADR-0063: a public URL exposes nothing). `rawHttp()` comes 
 
 ### 3.3 Checks at construction
 
-`publicUrl()` throws a plain `Error` naming the public URL's `id` when:
+First, `publicUrl()` throws a plain `Error` when `id` is missing or empty. Message: `publicUrl(): id is required.`, followed by ` It takes its identity as id, not name.` when the caller passed `name`. Added 2026-11-02 with the rename of `name` to `id`.
+
+Then it throws a plain `Error` naming the public URL's `id` when:
 
 - `url` is `undefined` or absent. Message: `publicUrl("site"): url is required. Pass a hostname, publicUrl.hostname(…), or publicUrl.prismaBuild().` ADR-0060: leaving `url` out is an error.
 - `url` is a string or a `HostnameStrategy` that is not a valid hostname (§ 3.4). A value is not checked here; it is checked in Load (§ 4).
