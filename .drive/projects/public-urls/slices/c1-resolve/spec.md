@@ -357,7 +357,7 @@ Why a computed value may not return a secret or param source in this slice: a fo
 
 ### 6.1 Why
 
-`publicUrl({ name, url, target })` (ADR-0060) is a resource: a RoutingUrl whose lifecycle Alchemy manages. It depends on the service it serves, and the dependency is known when the node is constructed, not at `provision()`. Today a resource declares no dependency slots and carries no configuration core can resolve, so core must let a resource declare slots, wire them at construction, and carry props that the second pass resolves. Nothing here is specific to public URLs.
+`publicUrl({ id, url, target })` (ADR-0060) is a resource: a RoutingUrl whose lifecycle Alchemy manages. It depends on the service it serves, and the dependency is known when the node is constructed, not at `provision()`. Today a resource declares no dependency slots and carries no configuration core can resolve, so core must let a resource declare slots, wire them at construction, and carry props that the second pass resolves. Nothing here is specific to public URLs.
 
 A public URL is a resource by kind, because a provider manages its lifecycle, and a driver by role, because it depends on what it sends traffic to and nothing calls it. The scheduled-work decision (ADR-0020) contrasted a driver with a resource a consumer loads; it does not rule out a driver whose lifecycle is managed. The amendment notes (§ 9) say so.
 

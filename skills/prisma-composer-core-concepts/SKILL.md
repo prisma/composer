@@ -2,7 +2,7 @@
 name: prisma-composer-core-concepts
 metadata:
   library: "@prisma/composer"
-  library_version: "0.36.0"
+  library_version: "0.37.0"
   version: 2026.9.1
 description: >-
   Use when deploying or managing an app that uses Prisma Composer
@@ -233,7 +233,8 @@ module's `api` port is a raw HTTP port: wire it with `rawHttp()`.
 
 **Public URLs.** A service is reachable from the internet only through a
 public URL the app declares:
-`provision(publicUrl({ name: 'site', url, target: web.http }))`, where
+`provision(publicUrl({ id: 'site', url, target: web.http }))`, where `id`
+sets the address (`shop.site`) and changing it replaces the URL, and where
 `web` exposes `http: rawHttpContract` (an RPC interface as `target` fails
 `tsc`; a module's forwarded HTTP interface lands on the service inside it).
 `url` is required and is one of two strategies: `publicUrl.prismaBuild()`

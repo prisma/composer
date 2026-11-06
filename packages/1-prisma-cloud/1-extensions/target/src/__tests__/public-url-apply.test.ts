@@ -160,7 +160,7 @@ function program(hostname: string, serviceId = APP_ID) {
   const graph = Load(
     module('shop', ({ provision }) => {
       const svc = provision(web);
-      provision(publicUrl({ name: 'site', url: hostname, target: svc.http }));
+      provision(publicUrl({ id: 'site', url: hostname, target: svc.http }));
     }),
   );
   const site = graph.nodes.find((n) => n.id === 'shop.site');

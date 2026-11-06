@@ -18,5 +18,5 @@ export default appRoot('env-param-example', ({ environment, provision }) => {
   const echo = provision(echoService, {
     input: { greeting: envParam('ENV_PARAM_GREETING'), environment: label },
   });
-  provision(publicUrl({ name: 'site', url: publicUrl.prismaBuild(), target: echo.http }));
+  provision(publicUrl({ id: 'site', url: publicUrl.prismaBuild(), target: echo.http }));
 });

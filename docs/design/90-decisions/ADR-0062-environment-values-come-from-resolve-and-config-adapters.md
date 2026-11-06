@@ -18,7 +18,7 @@ export default appRoot('shop',
       : name === 'production' ? publicUrl.hostname('shop.com')
       : publicUrl.prismaBuild());
 
-    provision(publicUrl({ name: 'site', url, target: web.http }));
+    provision(publicUrl({ id: 'site', url, target: web.http }));
   });
 ```
 
