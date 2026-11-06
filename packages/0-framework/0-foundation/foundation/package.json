@@ -1,6 +1,6 @@
 {
   "name": "@internal/foundation",
-  "version": "0.37.0",
+  "version": "0.38.0",
   "private": true,
   "type": "module",
   "description": "Foundation utilities: the audited cast helpers, runtime assertions, the redacting secret box, pointers, and their opt-in ArkType and Zod spellings.",
@@ -36,7 +36,7 @@
   "devDependencies": {
     "typescript": "^6.0.3",
     "tsdown": "^0.22.7",
-    "@internal/tsdown-config": "workspace:0.37.0",
+    "@internal/tsdown-config": "workspace:0.38.0",
     "arktype": "^2.2.3",
     "zod": "^4.4.3"
   }
