@@ -445,7 +445,22 @@ describe('step events', () => {
       step: { name: 'preflight' },
       outcome: 'ok',
       durationMs: 38_170,
-      data: { checked: 53, filled: 0, missing: 0 },
+      data: { checked: 53, unset: 1 },
+    },
+    {
+      kind: 'preflight-findings',
+      findings: {
+        unset: [
+          {
+            name: 'EMAIL_API_KEY',
+            readers: [{ kind: 'field', service: 'shop.email', path: 'apiKey' }],
+            commands: [
+              "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview",
+              "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview --branch 'pr-7'",
+            ],
+          },
+        ],
+      },
     },
     { kind: 'step-started', step: { name: 'record' } },
     { kind: 'step-finished', step: { name: 'record' }, outcome: 'failed', durationMs: 850 },
@@ -482,12 +497,29 @@ describe('step events', () => {
       '✔ assemble services (3m 42s)',
       '▸ check environment variables',
       '✔ check environment variables (38.2s)',
+      'Platform variables with no value:',
+      '  - EMAIL_API_KEY  (read by service "shop.email", field "apiKey")',
+      "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview",
+      "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview --branch 'pr-7'",
       '▸ record result',
       '✘ record result (850ms)',
       'console: https://console.ewr.prisma.build',
     ];
     expect(lines.filter((line) => expected.includes(line))).toEqual(expected);
     expect(plain(result.stderr)).toContain('Deployed shop to pr-7 in 12.3s.');
+  });
+
+  test('nothing prints for findings that list no variable', async () => {
+    const { cli } = composerCli({
+      fixtures: {
+        deploy,
+        deployEvents: [{ kind: 'preflight-findings', findings: { unset: [] } }],
+      },
+    });
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
+
+    expect(result.exitCode).toBe(0);
+    expect(plain(result.stderr)).not.toContain('Platform variables');
   });
 
   test("a finished step's durationMs is the measured one, even when the adapter reported its own", async () => {
@@ -523,6 +555,7 @@ describe('step events', () => {
       'step-finished',
       'step-started',
       'step-finished',
+      'message',
       'step-started',
       'step-finished',
       'endpoint',
@@ -542,14 +575,18 @@ describe('step events', () => {
     });
     expect(result.json[5]).toMatchObject({
       id: 'deploy.preflight',
-      data: { durationMs: 38_170, checked: 53, filled: 0, missing: 0 },
+      data: { durationMs: 38_170, checked: 53, unset: 1 },
     });
-    expect(result.json[8]).toMatchObject({
+    expect(result.json[6]).toMatchObject({
+      kind: 'message',
+      data: { unset: [{ name: 'EMAIL_API_KEY', readers: [{ service: 'shop.email' }] }] },
+    });
+    expect(result.json[9]).toMatchObject({
       kind: 'endpoint',
       name: 'console',
       url: 'https://console.ewr.prisma.build',
     });
-    expect(result.json[9]).toMatchObject({
+    expect(result.json[10]).toMatchObject({
       kind: 'result',
       envelope: { ok: true, result: { summary: { app: 'shop' }, durationMs: 12_300 } },
     });

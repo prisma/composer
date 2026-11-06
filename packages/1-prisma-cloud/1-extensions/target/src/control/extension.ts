@@ -336,7 +336,8 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
   // the alchemy process (no preflight) the lookup falls back to what the CLI
   // transported (preflight-payload.ts).
   const preflightTimestamps = new Map<string, string>();
-  const o = lazyOptions(opts, transportedPreflight(preflightTimestamps, process.env));
+  const transported = transportedPreflight(preflightTimestamps, process.env);
+  const o = lazyOptions(opts, transported);
 
   return {
     id: PRISMA_CLOUD_EXTENSION_ID,
@@ -368,6 +369,8 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         for (const [name, updatedAt] of result.updatedAt) preflightTimestamps.set(name, updatedAt);
         return serializeDeployPreflightPayload(result);
       }),
+
+    preflightFindings: () => transported.findings,
 
     // Records the deploy as a Build so it appears in the Console, and passes
     // the build's id into the apply so the state store can report what the

@@ -38,6 +38,8 @@ export interface EnvParamPayload {
  * its real value, that is the variable's value in the app configuration: what the
  * `config` adapters in prisma.config.ts return, by default the process
  * environment.
+ *
+ * @deprecated a root input field replaces envParam() in a binding; per-key params are unchanged
  */
 export function envParam(name: string): ParamSource<EnvParamPayload> & Value<string> {
   assertVariableName(name, 'envParam');

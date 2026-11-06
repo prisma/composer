@@ -54,3 +54,9 @@ export function requiredVariables(
     missing: missing.length > 0 ? missing : [{ names: unset, serviceAddress, message: withoutAll }],
   };
 }
+
+/** A per-key param is required when it has no default and is not optional. */
+export function paramIsRequired(node: ServiceNode, param: string): boolean {
+  const declared = node.params[param];
+  return declared !== undefined && declared.default === undefined && declared.optional !== true;
+}

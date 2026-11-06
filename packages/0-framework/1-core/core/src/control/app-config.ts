@@ -7,7 +7,7 @@ import type {
 } from '../container-transport.ts';
 import type { Graph } from '../graph.ts';
 import type { ServiceNode } from '../node.ts';
-import type { PreflightPayload } from '../preflight-transport.ts';
+import type { PreflightFindings, PreflightPayload } from '../preflight-transport.ts';
 import type {
   AlchemyStateLayer,
   ApplicationDescriptor,
@@ -86,6 +86,8 @@ export interface ExtensionDescriptor {
    * assigns here through method bivariance.
    */
   preflight?(input: PreflightInput): Promise<PreflightPayload>;
+  /** In the alchemy process, what this extension's deploy preflight found, read back from its payload. Lowering adds every extension's to the deploy report. */
+  readonly preflightFindings?: () => PreflightFindings;
   /**
    * Destroy-time cleanup — the CLI runs it once, after `alchemy destroy`
    * succeeds and BEFORE the environment's containers are removed. A target uses
@@ -149,10 +151,16 @@ export interface PreflightInput<C = unknown> {
   readonly secrets: AppSecrets;
   /** What the caller has already authenticated, for the platform calls preflight makes. Absent means the extension falls back to its own credential protocol. */
   readonly credentials?: ContainerCredentials<C> | undefined;
-  /** Hands the deploy's progress output what the check covered, as counts (e.g. `{ checked: 53, filled: 0, missing: 0 }`). Counts only: never a name or a value. */
-  readonly report?: ((counts: Readonly<Record<string, number>>) => void) | undefined;
+  /** Hands the deploy what the check covered and found. Names and readers only: never a value. */
+  readonly report?: ((report: PreflightReport) => void) | undefined;
   /** Shows the user a warning that does not stop the run. Only `prisma dev` passes it and shows the warnings; deploy passes none. */
   readonly warn?: ((message: string) => void) | undefined;
+}
+
+/** What a deploy preflight checked and found. */
+export interface PreflightReport extends PreflightFindings {
+  /** How many platform variables it checked. */
+  readonly checked: number;
 }
 
 /** The resolved destroy context handed to an extension's `teardown` hook. */

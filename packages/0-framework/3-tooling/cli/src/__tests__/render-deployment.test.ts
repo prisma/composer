@@ -30,7 +30,11 @@ const deployed = (address: string, entities: DeployedNode['entities']): Deployed
   entities,
 });
 
-const result = (app: string, nodes: readonly DeployedNode[]): DeploymentResult => ({ app, nodes });
+const result = (app: string, nodes: readonly DeployedNode[]): DeploymentResult => ({
+  app,
+  nodes,
+  findings: { unset: [] },
+});
 
 describe('renderDeployment', () => {
   test('renders the pinned tree: nested addresses, aligned entities, urls on their own line', () => {
@@ -149,6 +153,48 @@ describe('renderDeployment', () => {
 
   test('the app name alone when nothing deployed', () => {
     expect(renderDeployment(result('app', []))).toBe('app');
+  });
+
+  test('ends with every platform variable that has no value, its readers and the commands that set it', () => {
+    const rendered = renderDeployment({
+      ...result('shop', [deployed('shop.email', [{ kind: 'compute-service', id: 'cps_1' }])]),
+      findings: {
+        unset: [
+          {
+            name: 'EMAIL_API_KEY',
+            readers: [
+              { kind: 'field', service: 'shop.email', path: 'apiKey' },
+              { kind: 'param', service: 'shop.email', param: 'key' },
+            ],
+            commands: [
+              "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview",
+              "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview --branch 'staging'",
+            ],
+          },
+          {
+            name: 'AUDIT_TOKEN',
+            readers: [{ kind: 'unread', node: 'shop.audit', nodeKind: 'module' }],
+            commands: [
+              "prisma project env add 'AUDIT_TOKEN=<value>' --project 'proj_1' --role production",
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(rendered).toBe(
+      [
+        'shop',
+        '└─ email   compute-service cps_1',
+        '',
+        'Platform variables with no value:',
+        '  - EMAIL_API_KEY  (read by service "shop.email", field "apiKey"; read by service "shop.email", per-key param "key")',
+        "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview",
+        "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview --branch 'staging'",
+        '  - AUDIT_TOKEN  (named by module "shop.audit", read by no service)',
+        "    prisma project env add 'AUDIT_TOKEN=<value>' --project 'proj_1' --role production",
+      ].join('\n'),
+    );
   });
 
   test('deep nesting keeps every entity in one column', () => {

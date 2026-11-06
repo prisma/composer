@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { isSecretPointer, Load, module, service, string } from '@internal/core';
-import type { AppConfiguration, AppSecrets } from '@internal/core/config';
+import type { AppConfiguration, AppSecrets, PreflightReport } from '@internal/core/config';
 import { secretString } from '@internal/foundation/arktype';
 import { isSecretString } from '@internal/foundation/secret';
 import type { ManagementApiClient } from '@internal/lowering';
@@ -433,25 +433,25 @@ describe('runPreflight — reads existence and writes nothing', () => {
     expect(result.findings).toEqual({ unset: [] });
   });
 
-  test('reports how many names it checked and how many have no row', async () => {
-    const reports: Readonly<Record<string, number>>[] = [];
+  test('reports how many names it checked with its findings, and nothing when it fails', async () => {
+    const reports: PreflightReport[] = [];
     const run = (graph: ReturnType<typeof secretGraph>) =>
       preflightWith(
-        { graph, ...production, report: (counts) => reports.push(counts) },
+        { graph, ...production, report: (report) => reports.push(report) },
         { client: fakeClient(state) },
       );
 
-    await run(secretGraph());
+    const first = await run(secretGraph());
     await run(requiredSecretGraph()).catch(() => undefined);
     state.rows = [
       { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
     await run(secretGraph());
 
+    expect(first.findings.unset.map((variable) => variable.name)).toEqual(['STRIPE_SECRET_KEY']);
     expect(reports).toEqual([
-      { checked: 1, unset: 1 },
-      { checked: 1, unset: 1 },
-      { checked: 1, unset: 0 },
+      { checked: 1, ...first.findings },
+      { checked: 1, unset: [] },
     ]);
   });
 

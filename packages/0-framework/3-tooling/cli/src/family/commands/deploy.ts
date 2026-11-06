@@ -12,6 +12,7 @@ import {
   type DeployEvent,
   type DeployStep,
 } from '../../operations/deploy.ts';
+import { unsetPlatformVariablesText } from '../../unset-platform-variables.ts';
 import { convergeSpawn, operationDeps, settleConverge } from '../converge.ts';
 import { dataLine } from '../data-lines.ts';
 import type { ComposerOperations } from '../family.ts';
@@ -45,8 +46,14 @@ function formatDuration(ms: number): string {
   return `${String(Math.floor(seconds / 60))}m ${String(seconds % 60)}s`;
 }
 
-/** The operation's step events as engine events. The engine prints only `step`, so a finished step carries its duration in the text too. */
-function toEngineEvent(event: DeployEvent): EngineEvent {
+/** The operation's events as engine events. The engine prints only `step`, so a finished step carries its duration in the text too. */
+function toEngineEvent(event: DeployEvent): EngineEvent | undefined {
+  if (event.kind === 'preflight-findings') {
+    const text = unsetPlatformVariablesText(event.findings.unset);
+    return text === undefined
+      ? undefined
+      : { kind: 'message', severity: 'warn', text, data: event.findings };
+  }
   const id = stepId(event.step);
   if (event.kind === 'step-started') {
     return {
@@ -128,7 +135,10 @@ export const createDeployCommand = (operations: ComposerOperations) =>
           cwd: ctx.cwd,
           reportPath: args.flags.report,
           reportId: args.flags.buildId,
-          onEvent: (event) => ctx.report(toEngineEvent(event)),
+          onEvent: (event) => {
+            const engineEvent = toEngineEvent(event);
+            if (engineEvent !== undefined) ctx.report(engineEvent);
+          },
         },
         operationDeps({
           alchemy,

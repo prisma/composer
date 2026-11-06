@@ -3,7 +3,15 @@ import { createHash, createHmac } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { isSecretPointer, Load, module, resolve, type ServiceNode } from '@internal/core';
+import {
+  isSecretPointer,
+  Load,
+  module,
+  resolve,
+  type ServiceNode,
+  service,
+  string,
+} from '@internal/core';
 import { preflightEnv } from '@internal/core/config';
 import { isSecretString } from '@internal/foundation/secret';
 import { rawHttpContract } from '@internal/http';
@@ -81,6 +89,24 @@ const paramGraph = () =>
     }),
   );
 
+/** A service whose per-key param `token` reads API_TOKEN: required unless `token` has a default or is optional. */
+const tokenService = (token = string()) =>
+  service({
+    name: 'web',
+    extension: '@prisma/composer-prisma-cloud',
+    type: 'compute',
+    inputs: {},
+    params: { token },
+    build,
+  });
+
+const tokenGraph = (token = string()) =>
+  Load(
+    module('app', ({ provision }) => {
+      provision(tokenService(token), { id: 'web', params: { token: envParam('API_TOKEN') } });
+    }),
+  );
+
 const mixedGraph = (schema: StandardSchemaV1<unknown, unknown>) =>
   Load(
     module('app', ({ provision }) => {
@@ -88,10 +114,7 @@ const mixedGraph = (schema: StandardSchemaV1<unknown, unknown>) =>
         id: 'billing',
         input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
       });
-      provision(compute({ name: 'web', deps: {}, build }), {
-        id: 'web',
-        params: { port: envParam('APP_PORT') },
-      });
+      provision(tokenService(), { id: 'web', params: { token: envParam('API_TOKEN') } });
     }),
   );
 
@@ -331,18 +354,39 @@ describe('prisma dev preflight', () => {
     ).toBeUndefined();
   });
 
-  test('a missing env-sourced param is a hard error naming the variable and service', async () => {
-    const message = await preflightError(paramGraph());
+  test('an unset per-key param with no default that is not optional stops dev, naming the variable, the service and the param', async () => {
+    const message = await preflightError(tokenGraph());
 
-    expect(message).toContain('APP_PORT');
-    expect(message).toContain('service "app.web"');
+    expect(message).toContain(
+      '1 env-sourced param a service needs is not set:\n  - API_TOKEN  (read by service "app.web", per-key param "token")',
+    );
     expect(message).toContain('the `config` list for an env-sourced param');
+  });
+
+  test('an empty per-key param with no default that is not optional stops dev the same way', async () => {
+    configuration['API_TOKEN'] = '';
+
+    expect(await preflightError(tokenGraph())).toContain('API_TOKEN  (read by service "app.web"');
+  });
+
+  test('an unset per-key param with a default does not stop dev and has no fingerprint', async () => {
+    const payload = await preflight(tokenGraph(string({ default: 'local' })));
+
+    expect(payload).toBeUndefined();
+  });
+
+  test('an unset per-key param that is optional does not stop dev and has no fingerprint', async () => {
+    configuration['API_TOKEN'] = '';
+
+    const payload = await preflight(tokenGraph(string({ optional: true })));
+
+    expect(payload).toBeUndefined();
   });
 
   test('missing params and secrets are reported together, with the ways to set them given once', async () => {
     const message = await preflightError(mixedGraph(requiresSecrets('stripeKey')));
 
-    expect(message).toContain('APP_PORT  (required by service "app.web")');
+    expect(message).toContain('API_TOKEN  (read by service "app.web", per-key param "token")');
     expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
     expect(message.split('Set each missing variable').length - 1).toBe(1);
   });
@@ -353,7 +397,7 @@ describe('prisma dev preflight', () => {
     expect(message).toContain('invalid input for service "app.billing": somethingElse is required');
     expect(message).not.toContain('Deploy-time');
     expect(message).not.toContain('STRIPE_SECRET_KEY');
-    expect(message).toContain('APP_PORT  (required by service "app.web")');
+    expect(message).toContain('API_TOKEN  (read by service "app.web", per-key param "token")');
   });
 
   test('an env-sourced param that is set is fingerprinted for the alchemy process', async () => {
@@ -487,23 +531,23 @@ describe('prisma dev preflight', () => {
   });
 
   test('an env-sourced param is read from the app configuration', async () => {
-    process.env['APP_PORT'] = '3000';
+    process.env['API_TOKEN'] = 'from-the-shell';
     try {
-      expect(await preflightError(paramGraph())).toContain(
-        'APP_PORT  (required by service "app.web")',
+      expect(await preflightError(tokenGraph())).toContain(
+        'API_TOKEN  (read by service "app.web", per-key param "token")',
       );
 
-      configuration['APP_PORT'] = '3000';
-      const payload = devPayload(transported(await preflight(paramGraph())));
+      configuration['API_TOKEN'] = 'from-the-configuration';
+      const payload = devPayload(transported(await preflight(tokenGraph())));
 
-      expect([...payload.pointerVersions.keys()]).toEqual(['APP_PORT']);
+      expect([...payload.pointerVersions.keys()]).toEqual(['API_TOKEN']);
     } finally {
-      delete process.env['APP_PORT'];
+      delete process.env['API_TOKEN'];
     }
   });
 
   test('the missing-values message says where the adapters read', async () => {
-    const message = await preflightError(paramGraph());
+    const message = await preflightError(tokenGraph());
 
     expect(message).toContain(
       'Set each missing variable where an adapter in prisma.config.ts reads it: the `secrets` list of the `composer` section for a secret, the `config` list for an env-sourced param. environmentVariables() reads the shell you run `prisma dev` from; dotenv() reads .env, .env.local, .env.dev and .env.dev.local beside prisma.config.ts.',

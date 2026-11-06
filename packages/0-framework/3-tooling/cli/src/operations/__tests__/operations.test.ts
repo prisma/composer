@@ -19,6 +19,7 @@ import type {
   LocateContainerInput,
   PrismaAppConfig,
   RunOutcome,
+  UnsetPlatformVariable,
 } from '@internal/core/config';
 import { nodeAddresses } from '@internal/core/deploy';
 import type {
@@ -41,8 +42,10 @@ import {
   engineFailureFilePath,
 } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
+import { renderDeployment } from '../../render-deployment.ts';
 import { type AlchemyInvocation, alchemyCommandLine, spawnCommandLine } from '../../run-alchemy.ts';
 import { RUN_REPORT_VERSION } from '../../run-report.ts';
+import { unsetPlatformVariablesText } from '../../unset-platform-variables.ts';
 import { type DeployEvent, deployWithDeps } from '../deploy.ts';
 import { type DestroyInput, destroyWithDeps } from '../destroy.ts';
 import { type DevEvent, devWithDeps } from '../dev.ts';
@@ -1092,12 +1095,21 @@ describe('deploy()', () => {
 
 /** Each event as `kind name[:address] outcome`, for asserting order without timings. */
 function stepLine(event: DeployEvent): string {
+  if (event.kind === 'preflight-findings') {
+    return `findings ${event.findings.unset.map((variable) => variable.name).join(', ')}`;
+  }
   const name =
     event.step.name === 'assemble-service'
       ? `assemble-service:${event.step.address}`
       : event.step.name;
   return event.kind === 'step-started' ? `started ${name}` : `finished ${name} ${event.outcome}`;
 }
+
+const EMAIL_API_KEY_UNSET: UnsetPlatformVariable = {
+  name: 'EMAIL_API_KEY',
+  readers: [{ kind: 'field', service: 'shop.email', path: 'apiKey' }],
+  commands: ["prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role production"],
+};
 
 describe('deploy() step events', () => {
   test('a successful deploy reports every step in order, each with a duration and its data', async () => {
@@ -1110,7 +1122,7 @@ describe('deploy() step events', () => {
           config: composerConfig(
             fakeConfig({
               preflight: async (input) => {
-                input.report?.({ checked: 3, filled: 1, missing: 0 });
+                input.report?.({ checked: 3, unset: [EMAIL_API_KEY_UNSET] });
                 return undefined;
               },
             }),
@@ -1143,6 +1155,7 @@ describe('deploy() step events', () => {
       'finished connect ok',
       'started preflight',
       'finished preflight ok',
+      'findings EMAIL_API_KEY',
       'started apply',
       'finished apply ok',
       'started record',
@@ -1156,7 +1169,11 @@ describe('deploy() step events', () => {
     expect(finished('assemble-service')).toMatchObject({
       data: { strategy: 'traced', filesTraced: 975, bytes: 4096 },
     });
-    expect(finished('preflight')).toMatchObject({ data: { checked: 3, filled: 1, missing: 0 } });
+    expect(finished('preflight')).toMatchObject({ data: { checked: 3, unset: 1 } });
+    expect(events).toContainEqual({
+      kind: 'preflight-findings',
+      findings: { unset: [EMAIL_API_KEY_UNSET] },
+    });
     if (!result.ok) throw new Error('unreachable');
     expect(result.value.durationMs).toBeGreaterThanOrEqual(0);
   });
@@ -3697,7 +3714,7 @@ describe('the operations read the app configuration and the app secrets from the
               preflight: async (input) => {
                 const value = input.secrets['S4_SENTINEL'];
                 if (value !== undefined) received.push(value);
-                input.report?.({ checked: 1, filled: 1, missing: 0 });
+                input.report?.({ checked: 2, unset: [EMAIL_API_KEY_UNSET] });
                 return undefined;
               },
             }),
@@ -3717,6 +3734,14 @@ describe('the operations read the app configuration and the app secrets from the
     expect(received).toEqual([sentinel]);
     expect(events.length).toBeGreaterThan(0);
     for (const event of events) expect(JSON.stringify(event)).not.toContain(sentinel);
+    const findings = events.find((event) => event.kind === 'preflight-findings');
+    if (findings?.kind !== 'preflight-findings') throw new Error('expected the findings event');
+    const block = unsetPlatformVariablesText(findings.findings.unset);
+    expect(block).toContain('EMAIL_API_KEY');
+    expect(block).not.toContain(sentinel);
+    expect(renderDeployment({ app: 'app', nodes: [], findings: findings.findings })).not.toContain(
+      sentinel,
+    );
     expect(JSON.stringify(result)).not.toContain(sentinel);
     expect(fs.readFileSync(reportPath, 'utf8')).not.toContain(sentinel);
   });

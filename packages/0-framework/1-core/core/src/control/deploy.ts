@@ -20,6 +20,7 @@ import {
   type ServiceNode,
   slotsOf,
 } from '../node.ts';
+import type { PreflightFindings } from '../preflight-transport.ts';
 import type {
   ContainerInstance,
   ExtensionDescriptor,
@@ -210,6 +211,8 @@ export interface DeployedNode {
 export interface DeploymentResult {
   readonly app: string;
   readonly nodes: readonly DeployedNode[];
+  /** What every extension's deploy preflight found that did not stop the deploy. */
+  readonly findings: PreflightFindings;
 }
 
 export interface LowerOptions {
@@ -878,7 +881,15 @@ export function lowering(
           // strings here. The graph rides in on the closure, never in the
           // input: the plan hashes the resolved input, and a node carries
           // functions and Standard Schemas.
-          report({ app: opts.name, nodes: joinDeployment(graph, input.entries) });
+          report({
+            app: opts.name,
+            nodes: joinDeployment(graph, input.entries),
+            findings: {
+              unset: config.extensions.flatMap(
+                (extension) => extension.preflightFindings?.().unset ?? [],
+              ),
+            },
+          });
         }),
       );
       // `Date.now()` forces the report to run on an otherwise unchanged

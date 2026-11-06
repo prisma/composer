@@ -39,7 +39,7 @@ import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
 import { envParamBindings, inputSecretNames } from './preflight-names.ts';
 import { checkPublicUrls } from './public-url.ts';
-import { requiredVariables } from './required-variables.ts';
+import { paramIsRequired, requiredVariables } from './required-variables.ts';
 import { secretName } from './secret.ts';
 import { serializeInput } from './serializer.ts';
 
@@ -387,7 +387,7 @@ export async function runPreflight(
   ];
   const clashes = findEnvKeyClashes(input.graph);
   if (names.length === 0 && clashes.length === 0) {
-    input.report?.({ checked: 0, unset: 0 });
+    input.report?.({ checked: 0, unset: [] });
     return { updatedAt: new Map(), findings: { unset: [] } };
   }
 
@@ -410,9 +410,11 @@ export async function runPreflight(
     updatedAt.set(name, row.updatedAt);
     if (row.managedBySystem) managedBySystem.push(name);
   });
-  input.report?.({ checked: names.length, unset: unset.size });
   if (managedBySystem.length > 0) throw managedBySystemError(managedBySystem);
-  if (unset.size === 0) return { updatedAt, findings: { unset: [] } };
+  if (unset.size === 0) {
+    input.report?.({ checked: names.length, unset: [] });
+    return { updatedAt, findings: { unset: [] } };
+  }
 
   const readers = new Map<string, PlatformVariableReader[]>();
   const required: Required[] = [];
@@ -456,8 +458,7 @@ export async function runPreflight(
       service: param.serviceAddress,
       param: param.param,
     });
-    const declared = serviceNodeAt(input.graph, param.serviceAddress).params[param.param];
-    if (declared !== undefined && declared.default === undefined && declared.optional !== true) {
+    if (paramIsRequired(serviceNodeAt(input.graph, param.serviceAddress), param.param)) {
       required.push({ names: [param.name], serviceAddress: param.serviceAddress });
     }
   }
@@ -469,6 +470,7 @@ export async function runPreflight(
     readers: readers.get(name) ?? [],
     commands: commandsFor(name),
   }));
+  input.report?.({ checked: names.length, unset: findings });
   return { updatedAt, findings: { unset: findings } };
 }
 

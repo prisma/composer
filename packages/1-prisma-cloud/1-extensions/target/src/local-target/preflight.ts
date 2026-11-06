@@ -3,7 +3,8 @@
  * preflight uses (`preflight-names.ts`), with dev's value-sourcing policy.
  * Every value comes from what the command read: secrets from the app secrets, env-sourced params from the app configuration. An unset or empty secret is left out of the
  * service's input; it is an error only when the service's schema rejects
- * its absence. An unset or empty env-sourced param is always an error.
+ * its absence. An unset or empty per-key env-sourced param takes its default
+ * or is left out when optional; it is an error only when it is required.
  *
  * Control-plane only, runs in the CLI parent (no CliError import — see
  * container.ts). Reads no Management API — dev is credential-free.
@@ -11,8 +12,12 @@
 
 import type { Graph, ServiceNode } from '@internal/core';
 import { inputManifest } from '@internal/core';
-import type { PreflightInput, PreflightPayload } from '@internal/core/config';
-import { DEV_DIR, devEnvironmentDir } from '@internal/core/config';
+import type {
+  PlatformVariableReader,
+  PreflightInput,
+  PreflightPayload,
+} from '@internal/core/config';
+import { DEV_DIR, devEnvironmentDir, platformVariableReaderText } from '@internal/core/config';
 import {
   movePreEnvironmentDevState,
   readOrCreateFingerprintKey,
@@ -20,14 +25,13 @@ import {
 } from '@internal/local-target';
 import { configurationText } from '../configuration-text.ts';
 import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
-import {
-  collectPreflightNames,
-  envParamNotTextError,
-  inputSecretNames,
-  type PreflightName,
-} from '../preflight-names.ts';
+import { envParamBindings, envParamNotTextError, inputSecretNames } from '../preflight-names.ts';
 import { checkPublicUrls, publicUrlStrategies } from '../public-url.ts';
-import { type MissingVariables, requiredVariables } from '../required-variables.ts';
+import {
+  type MissingVariables,
+  paramIsRequired,
+  requiredVariables,
+} from '../required-variables.ts';
 
 const isSet = (value: string | undefined): value is string =>
   value !== undefined && value.length > 0;
@@ -42,9 +46,13 @@ function howToSet(environment: string): string {
   );
 }
 
-function missingEnvParamsSection(missing: readonly PreflightName[]): string {
-  const lines = missing.map((m) => `  - ${m.name}  (required by service "${m.address}")`);
-  return `${missing.length} env-sourced param(s) are not set:\n${lines.join('\n')}`;
+function missingEnvParamsSection(missing: ReadonlyMap<string, PlatformVariableReader[]>): string {
+  const lines = [...missing].map(
+    ([name, readers]) => `  - ${name}  (${readers.map(platformVariableReaderText).join('; ')})`,
+  );
+  return missing.size === 1
+    ? `1 env-sourced param a service needs is not set:\n${lines.join('\n')}`
+    : `${missing.size} env-sourced params a service needs are not set:\n${lines.join('\n')}`;
 }
 
 function missingSecretsSection(missing: readonly MissingVariables[]): string {
@@ -113,19 +121,26 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
     missingSecrets.push(...decided.missing);
   }
 
-  const missingParams: PreflightName[] = [];
-  for (const param of collectPreflightNames(input.graph).envParams) {
+  const missingParams = new Map<string, PlatformVariableReader[]>();
+  for (const param of envParamBindings(input.graph)) {
     const value = secretNames.has(param.name)
       ? secretValue(param.name)
       : configurationText(env, param.name, (kind) =>
-          envParamNotTextError(param.name, param.address, kind),
+          envParamNotTextError(param.name, param.serviceAddress, kind),
         );
-    if (isSet(value)) pointed.set(param.name, value);
-    else missingParams.push(param);
+    if (isSet(value)) {
+      pointed.set(param.name, value);
+      continue;
+    }
+    if (!paramIsRequired(serviceNodeAt(input.graph, param.serviceAddress), param.param)) continue;
+    const reader = { kind: 'param', service: param.serviceAddress, param: param.param } as const;
+    const readers = missingParams.get(param.name);
+    if (readers === undefined) missingParams.set(param.name, [reader]);
+    else readers.push(reader);
   }
 
   const missing = [
-    ...(missingParams.length > 0 ? [missingEnvParamsSection(missingParams)] : []),
+    ...(missingParams.size > 0 ? [missingEnvParamsSection(missingParams)] : []),
     ...(missingSecrets.length > 0 ? [missingSecretsSection(missingSecrets)] : []),
   ];
   const sections = [

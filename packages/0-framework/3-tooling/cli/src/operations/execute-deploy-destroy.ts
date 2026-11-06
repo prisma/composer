@@ -12,8 +12,10 @@ import type { Graph } from '@internal/core';
 import type {
   ContainerCredentials,
   ContainerInstance,
+  PreflightReport,
   ReporterDescriptor,
   RunReporter,
+  UnsetPlatformVariable,
 } from '@internal/core/config';
 import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
 import { nodeAddresses, secretsKeys } from '@internal/core/deploy';
@@ -113,6 +115,7 @@ function deploySteps(onEvent: ((event: DeployEvent) => void) | undefined) {
     failOpen(): void {
       for (const { step } of [...open.values()].reverse()) finish(step, 'failed');
     },
+    emit,
   };
 }
 
@@ -544,12 +547,11 @@ async function runStackPipelineInner(
     // or Alchemy runs, so a missing secret fails fast with nothing side-effected.
     if (action === 'deploy') {
       steps.start({ name: 'preflight' });
-      // Summed across extensions: each reports counts of its own checks.
-      const counts: Record<string, number> = {};
-      const report = (reported: Readonly<Record<string, number>>): void => {
-        for (const [key, value] of Object.entries(reported)) {
-          counts[key] = (counts[key] ?? 0) + value;
-        }
+      let checked = 0;
+      const unset: UnsetPlatformVariable[] = [];
+      const report = (reported: PreflightReport): void => {
+        checked += reported.checked;
+        unset.push(...reported.unset);
       };
       for (const extension of config.extensions) {
         if (extension.preflight === undefined) continue;
@@ -576,7 +578,8 @@ async function runStackPipelineInner(
       } catch (error) {
         throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
       }
-      steps.finish({ name: 'preflight' }, counts);
+      steps.finish({ name: 'preflight' }, { checked, unset: unset.length });
+      if (unset.length > 0) steps.emit({ kind: 'preflight-findings', findings: { unset } });
     }
     // The child inherits this process's environment, so every transport var
     // this run did NOT produce is blanked — a stale value exported into the
