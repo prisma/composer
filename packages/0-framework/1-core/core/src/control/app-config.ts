@@ -55,8 +55,12 @@ export interface ExtensionDescriptor {
   readonly provisions?: ReadonlyMap<symbol, ProvisionerDescriptor>;
   /** Once-per-lowering hook — the application's shared infrastructure (e.g. prisma-cloud's Project). */
   readonly application?: ApplicationDescriptor;
-  /** The extension's Alchemy providers — merged across all configured extensions (config order). */
-  readonly providers?: () => Layer.Layer<never>;
+  /**
+   * The extension's Alchemy providers — merged across all configured extensions (config order).
+   * `credentials` is what the caller already authenticated (`LowerOptions.credentials`); absent means the extension falls back to its own credential protocol.
+   * METHOD SYNTAX REQUIRED, like `preflight`: an extension types `credentials` against its own client, which assigns here only through method bivariance.
+   */
+  providers?(credentials?: ContainerCredentials): Layer.Layer<never>;
   /**
    * Deploy-time prerequisite check — the CLI runs it once, after the app's
    * Project/Branch are resolved and BEFORE any stack file is written or Alchemy
@@ -122,8 +126,11 @@ export interface ExtensionDescriptor {
 export interface StateDescriptor {
   /** The owning extension's id — matched against `ExtensionDescriptor.id`. */
   readonly extension: string;
-  /** Build the state layer. `container` is the owning extension's resolved instance; `undefined` when it declared no container descriptor. */
-  create(container: ContainerInstance | undefined): AlchemyStateLayer;
+  /** Build the state layer. `container` is the owning extension's resolved instance; `undefined` when it declared no container descriptor. `credentials` is as `ExtensionDescriptor.providers` receives it. */
+  create(
+    container: ContainerInstance | undefined,
+    credentials?: ContainerCredentials,
+  ): AlchemyStateLayer;
 }
 
 /** The resolved deploy context handed to an extension's `preflight` hook. `C` erases to `unknown` at the framework boundary — see ContainerCredentials. */

@@ -19,6 +19,7 @@ import {
 } from '../node.ts';
 import { type PreflightPayload, readPreflightPayload } from '../preflight-transport.ts';
 import type {
+  ContainerCredentials,
   ContainerInstance,
   ExtensionDescriptor,
   NodeDescriptor,
@@ -240,6 +241,8 @@ export interface LowerOptions {
   readonly containers: ReadonlyMap<string, ContainerInstance>;
   /** Each extension's preflight payload, by extension id. A generated stack file reads them with `transportedLowerInputs`. */
   readonly preflight: ReadonlyMap<string, string>;
+  /** What the caller already authenticated, handed to every extension's `providers()` and to the state descriptor's `create()`. Absent means each extension falls back to its own credential protocol. */
+  readonly credentials?: ContainerCredentials | undefined;
 }
 
 /** A build descriptor's normalized output: the produced bundle dir plus the app's runnable entry within it. */
@@ -619,7 +622,9 @@ export function resolveStateLayer(
   config: PrismaAppConfig,
   containers: ReadonlyMap<string, ContainerInstance>,
 ): AlchemyStateLayer {
-  return opts.state ?? config.state.create(containers.get(config.state.extension));
+  return (
+    opts.state ?? config.state.create(containers.get(config.state.extension), opts.credentials)
+  );
 }
 
 /**
@@ -627,9 +632,12 @@ export function resolveStateLayer(
  * extension without `providers` is skipped; no used-extensions-only
  * filtering (ADR-0017's pinned providers rule).
  */
-export function mergedProviders(config: PrismaAppConfig): Layer.Layer<never> {
+export function mergedProviders(
+  config: PrismaAppConfig,
+  credentials?: ContainerCredentials,
+): Layer.Layer<never> {
   const layers = config.extensions.flatMap((extension) =>
-    extension.providers !== undefined ? [extension.providers()] : [],
+    extension.providers !== undefined ? [extension.providers(credentials)] : [],
   );
   const [first, ...rest] = layers;
   return first === undefined ? Layer.empty : Layer.mergeAll(first, ...rest);
@@ -905,7 +913,7 @@ export function lower(root: ModuleNode, config: PrismaAppConfig, opts: LowerOpti
   // A LowerError at deploy is fatal; orDie moves it off the error channel to
   // match what Alchemy.Stack accepts.
   const stackEffect = Effect.orDie(lowering(root, config, opts)) as Effect.Effect<undefined, never>;
-  const providers = opts.providers ?? mergedProviders(config);
+  const providers = opts.providers ?? mergedProviders(config, opts.credentials);
 
   return Alchemy.Stack(
     opts.name,
