@@ -7,6 +7,7 @@
  * a running service.
  */
 import type { Delivery, DeliveryResult } from './delivery.ts';
+import type { EmailDeliveryMode } from './delivery-mode.ts';
 import {
   decodeCursor,
   type EmailRow,
@@ -84,7 +85,7 @@ export interface EmailHandlers {
 export interface HandlersConfig {
   readonly store: OutboxStore;
   readonly delivery: Delivery;
-  readonly deliveryMode: 'none' | 'resend' | 'smtp';
+  readonly deliveryMode: EmailDeliveryMode;
   /** The module-configured sender address (spec: not overridable per-send). */
   readonly from: string;
 }

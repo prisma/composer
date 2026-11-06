@@ -102,3 +102,52 @@ test('resolve() lists envParam(), and refuses envSecret(), generatedParam() and 
   // @ts-expect-error serviceOrigin() is known only at boot; a resolve() dependency must be a deploy-time value
   resolve([serviceOrigin('shop.web')], () => 'x');
 });
+
+test("each source fits a service's input field of its type", () => {
+  const relay = compute({
+    name: 'relay',
+    deps: {},
+    build,
+    input: type({
+      origin: 'string',
+      token: secretString(),
+      base: field(type('string')),
+      plainToken: field(type('string')),
+      key: secretString(),
+    }),
+  });
+  module('shop', ({ provision }) => {
+    provision(relay, {
+      input: {
+        origin: envParam('ORIGIN'),
+        token: generatedParam(),
+        base: serviceOrigin('shop.web'),
+        plainToken: generatedParam({ redacted: false }),
+        key: envSecret('KEY'),
+      },
+    });
+  });
+});
+
+test("a service's binding refuses a wrong literal, a runtime value in a plain field, envSecret() in a wrapped text field and serviceOrigin() in a secret field", () => {
+  const relay = compute({
+    name: 'relay',
+    deps: {},
+    build,
+    input: type({ host: 'string', from: field(type('string')), key: secretString() }),
+  });
+  module('shop', ({ provision }) => {
+    // @ts-expect-error host is text, not a number
+    provision(relay, { input: { host: 4, from: 'x', key: envSecret('KEY') } });
+    provision(relay, {
+      // @ts-expect-error serviceOrigin() is a runtime value; a plain field takes deploy-time data only
+      input: { host: serviceOrigin('shop.web'), from: 'x', key: envSecret('KEY') },
+    });
+    // @ts-expect-error envSecret() is a runtime value; a plain field takes deploy-time data only
+    provision(relay, { input: { host: envSecret('HOST'), from: 'x', key: envSecret('KEY') } });
+    // @ts-expect-error envSecret() is a secret runtime value; a wrapped text field takes a plain pointer only
+    provision(relay, { input: { host: 'h', from: envSecret('FROM'), key: envSecret('KEY') } });
+    // @ts-expect-error serviceOrigin() is a plain runtime value; a secretString() field takes a secret only
+    provision(relay, { input: { host: 'h', from: 'x', key: serviceOrigin('shop.web') } });
+  });
+});

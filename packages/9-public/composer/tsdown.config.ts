@@ -14,7 +14,7 @@ export default defineConfig({
   entry: {
     index: 'src/exports/index.ts',
     config: 'src/exports/config.ts',
-    'internal-pools': 'src/exports/internal-pools.ts',
+    'internal-app-configuration-file': 'src/exports/internal-app-configuration-file.ts',
     'internal-converge': 'src/exports/internal-converge.ts',
     'internal-converge-contract': 'src/exports/internal-converge-contract.ts',
     control: 'src/exports/control.ts',

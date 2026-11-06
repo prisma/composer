@@ -8,6 +8,7 @@
  * serve-schedule.test-d.ts.
  */
 import type { ModuleNode } from '@internal/core';
+import { secretString } from '@internal/foundation/arktype';
 import node from '@internal/node';
 import { compute, envSecret } from '@internal/prisma-cloud';
 import { contract, rpc } from '@internal/service-rpc';
@@ -47,7 +48,7 @@ const notARunner = compute({
 const runnerWithInput = compute({
   name: 'runner-with-input',
   deps: { worker: rpc(workerContract) },
-  input: type({ token: 'string' }),
+  input: type({ token: secretString() }),
   build,
   expose: { trigger: triggerContract },
 });

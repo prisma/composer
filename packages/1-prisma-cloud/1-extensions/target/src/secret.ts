@@ -57,7 +57,7 @@ export function envSecret(
   }
   return secretSource<EnvSecretPayload, Pointer<SecretString>>(
     { [PRISMA_CLOUD_SECRET_SOURCE]: true, name },
-    { label: `envSecret('${name}')` },
+    { label: `envSecret('${name}')`, secretsKey: name },
   );
 }
 

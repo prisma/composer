@@ -31,7 +31,7 @@ import {
   type ServiceLowering,
   transportedLowerInputs,
 } from '../control/deploy.ts';
-import { Load } from '../graph.ts';
+import { Load, nodeAddresses } from '../graph.ts';
 import {
   type BuildAdapter,
   type Deps,
@@ -616,21 +616,77 @@ describe('lowering a module root — a single service', () => {
     expect(serialize).toMatchObject({ config: { service: { label: 'test' } } });
   });
 
-  test('lowering() passes opts.configPool to Load', () => {
+  test('lowering() passes opts.appConfigurationRead to Load', () => {
     const { config, calls } = fakeExtension();
     const relay = module('relay', { input: anyInputSchema }, ({ input, provision }) => {
       const label = (input as never as { label: never }).label;
       provision(app('fake/compute', {}, { label: string() }), { id: 'svc', params: { label } });
     });
     const root = module('hello', ({ provision }) => {
-      provision(relay, { input: { label: paramSource({ name: 'X' }, { poolKey: 'X' }) } });
+      provision(relay, { input: { label: paramSource({ name: 'X' }, { configurationKey: 'X' }) } });
     });
     const bundles = { 'hello.relay.svc': { dir: 'dist/bundle', entry: 'server.js' } };
 
-    run(lowering(root, config, opts({ bundles, configPool: { X: 'probe' } })));
+    run(
+      lowering(
+        root,
+        config,
+        opts({
+          bundles,
+          appConfigurationRead: { rootInput: [], configurationKeyText: { X: 'probe' } },
+        }),
+      ),
+    );
 
     const serialize = calls.find((c) => c.phase === 'serialize');
     expect(serialize).toMatchObject({ config: { service: { label: 'probe' } } });
+  });
+
+  test('lowering refuses a graph whose node addresses differ from the checked ones, naming both sides', () => {
+    const { config } = fakeExtension();
+    const root = module('shop', ({ provision }) => {
+      provision(app('fake/compute', {}, {}), { id: 'echo' });
+    });
+    const bundles = { 'shop.echo': { dir: 'dist/bundle', entry: 'server.js' } };
+
+    expect(() =>
+      run(
+        lowering(
+          root,
+          config,
+          opts({
+            name: 'shop',
+            bundles,
+            firstProcessNodeAddresses: ['shop', 'shop.gone'],
+          }),
+        ),
+      ),
+    ).toThrow(
+      'The deploy\'s second process built a different graph from the one Composer checked in its first process. Only in the second process: "shop.echo". Only in the first process: "shop.gone". A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
+    );
+  });
+
+  test('lowering accepts the same addresses in any order', () => {
+    const { config } = fakeExtension();
+    const root = module('shop', ({ provision }) => {
+      provision(app('fake/compute', {}, {}), { id: 'echo' });
+    });
+    const bundles = { 'shop.echo': { dir: 'dist/bundle', entry: 'server.js' } };
+    const addresses = nodeAddresses(Load(root, { id: 'shop' }));
+
+    expect(() =>
+      run(
+        lowering(
+          root,
+          config,
+          opts({
+            name: 'shop',
+            bundles,
+            firstProcessNodeAddresses: [...addresses].reverse(),
+          }),
+        ),
+      ),
+    ).not.toThrow();
   });
 
   test("lowering() hands a resource descriptor its resolved props and its producer's outputs through connectionInputs", () => {

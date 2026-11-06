@@ -6,7 +6,7 @@ How a `publicUrl()` node ([ADR-0060](../../../../docs/design/90-decisions/ADR-00
 
 ```ts
 // Composer: the author's code
-provision(publicUrl({ name: 'site', url, target: web.http }));
+provision(publicUrl({ id: 'site', url, target: web.http }));
 ```
 
 When `url` names a hostname, the Composer node `shop.site` becomes one RoutingUrl record on the environment's Branch:

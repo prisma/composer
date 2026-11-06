@@ -41,7 +41,9 @@ const STDOUT_TO_STDERR = [
 ] as const;
 
 /** The adapter the operations call, backed by the engine's `ctx.spawn` so the
- *  terminal reaches alchemy natively and the engine owns signal policy. */
+ *  terminal reaches alchemy natively and the engine owns signal policy. It
+ *  ignores `invocation.redactedValues`: the child writes to the terminal, so
+ *  its output is not redacted (ADR-0062). */
 export function convergeSpawn(ctx: ConvergeContext): RunAlchemy {
   return async (invocation) => {
     const commandLine = alchemyCommandLine(invocation);

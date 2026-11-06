@@ -39,7 +39,7 @@ export default module('pipeline-config-adapters-fixture', ({ provision }) => {
     input: {
       greeting: paramSource<{ name: string }, string>(
         { name: 'CONFIG_POOL_PROBE' },
-        { poolKey: 'CONFIG_POOL_PROBE' },
+        { configurationKey: 'CONFIG_POOL_PROBE' },
       ),
     },
   });

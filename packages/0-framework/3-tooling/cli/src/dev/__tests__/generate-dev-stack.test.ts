@@ -24,7 +24,7 @@ describe('renderDevStackFile()', () => {
     );
     expect(content).not.toContain('deserializeContainers');
     expect(content).toContain(
-      "import { readConfigPool, readSecretsPool } from '@prisma/composer/internal/pools';",
+      "import { namedSecretsFromEnvironment, readAppConfigurationFile } from '@prisma/composer/internal/app-configuration-file';",
     );
     expect(content).toContain(
       "import { devEnvironmentDir, devState, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
@@ -45,7 +45,7 @@ describe('renderDevStackFile()', () => {
     expect(content).toContain('lower(app, config, {');
     expect(content).toContain('name: "app"');
     expect(content).toContain(
-      'providers: localTargetProviders(resolved, transported.containers, devDir, pools)',
+      'providers: localTargetProviders(resolved, transported.containers, devDir, file.appConfigurationRead.configurationKeyText, namedSecrets)',
     );
     expect(content).toContain('state: devState()');
     expect(content).not.toContain('dev: true');
@@ -91,7 +91,7 @@ describe('renderDevStackFile() — the environment', () => {
     expect(content).toContain('  name: "app",\n  environment: "test",\n');
   });
 
-  test('reads both pools from the adapters, passes the config pool to lower() directly after the environment, and both pools to the local providers', () => {
+  test('reads the app configuration file and the named secrets the CLI handed over, passes what Load read to lower() directly after the environment, and the configuration key text and the named secrets to the local providers', () => {
     const content = renderDevStackFile({
       entryPath: '/repo/app/module.ts',
       cwd: '/repo/app',
@@ -101,15 +101,13 @@ describe('renderDevStackFile() — the environment', () => {
       assembled: { devServers: {}, bundles: {} },
     });
 
+    expect(content).toContain('const file = readAppConfigurationFile(process.env);');
+    expect(content).toContain('const namedSecrets = namedSecretsFromEnvironment(process.env);');
     expect(content).toContain(
-      'const poolInput = { environment: "test", configFile: "/repo/app/prisma.config.ts" };',
+      '  environment: "test",\n  appConfigurationRead: file.appConfigurationRead,\n  firstProcessNodeAddresses: file.nodeAddresses,',
     );
     expect(content).toContain(
-      'const pools = { config: await readConfigPool(config, poolInput), secrets: await readSecretsPool(config, poolInput) };',
-    );
-    expect(content).toContain('  environment: "test",\n  configPool: pools.config,\n');
-    expect(content).toContain(
-      'localTargetProviders(resolved, transported.containers, devDir, pools)',
+      '  providers: localTargetProviders(resolved, transported.containers, devDir, file.appConfigurationRead.configurationKeyText, namedSecrets),',
     );
   });
 

@@ -103,15 +103,11 @@ describe('localTargetProviders', () => {
     };
     const resolved = await resolveLocalTargets(config);
 
-    expect(
-      localTargetProviders(resolved, new Map(), '/tmp/dev', { config: {}, secrets: {} }),
-    ).toBeDefined();
+    expect(localTargetProviders(resolved, new Map(), '/tmp/dev', {}, {})).toBeDefined();
   });
 
   test('an empty resolved map yields the empty layer', () => {
-    expect(
-      localTargetProviders(new Map(), new Map(), '/tmp/dev', { config: {}, secrets: {} }),
-    ).toBe(Layer.empty);
+    expect(localTargetProviders(new Map(), new Map(), '/tmp/dev', {}, {})).toBe(Layer.empty);
   });
 });
 

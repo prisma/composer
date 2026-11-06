@@ -23,7 +23,7 @@ export function module<D extends Deps, E extends Expose, I extends StandardSchem
 interface ModuleContext<D extends Deps, I extends StandardSchemaV1 | undefined> {
   /** The module's declared dependencies as wiring values — pass them into provision(). */
   readonly deps: { [K in keyof D]: InputRef<D[K]> };
-  /** The module's input: one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. Pass a field into a provision() binding or list it as a resolve() dependency. */
+  /** The module's input: a dictionary with one value per field, typed from its input schema's output (ADR-0061); `undefined` when it declares none. It is not itself a value: pass its fields on by name, into a provision() binding or, for a plain field, as a resolve() dependency. A root's input is the app configuration, validated by its schema. */
   readonly input: I extends StandardSchemaV1 ? ModuleInput<I> : undefined;
   /** The deploy-time facts of the environment, each a value: today only `environment.name`. */
   readonly environment: EnvironmentFacts;
@@ -136,21 +136,9 @@ binding `{ from: 'staging+shop@example.com', deliveryCredential:
 envSecret('EMAIL_DELIVERY_CREDENTIAL') }`. The binding has no `replyTo` key,
 because the root left that optional field out.
 
-The body holds one value for each key of the schema: `input.from`,
-`input.smtp.host`, or `input` itself for the whole input. Each is a
-[value](../03-domain-model/glossary.md#value), the same kind as
-`environment.name` and a `resolve()` result, and a provided one: the body is
-handed it. Its real value is the data at that key path in the module's
-validated input, which is the module's binding with its values replaced by
-their real values and passed through the module's schema. A real value is the
-schema's output, so a field typed `number` by a `string.integer.parse` schema
-receives `4`, not `'4'`. An input field bound to a deploy-time value is
-deploy-time: its real value is known by the end of Load. A field bound to
-`envSecret()`, `generatedParam()` or `serviceOrigin()` is a runtime value: the
-data is known only at boot, so its real value is a pointer, and its type says
-so: a
-wrapped field's type includes `Pointer<In>`, and a `secretString()` field's
-includes `Pointer<SecretString>`.
+The body holds `input`, a dictionary with one value for each key of the schema, such as `input.from` or `input.smtp.host`. Each is a [value](../03-domain-model/glossary.md#value), the same kind as `environment.name` and a `resolve()` result, and a provided one: the body is handed it. Its real value is the data at that key path in the module's validated input, which is the module's binding with its values replaced by their real values and passed through the module's schema. A real value is the schema's output, so a field typed `number` by a `string.integer.parse` schema receives `4`, not `'4'`. An input field bound to a deploy-time value is deploy-time: its real value is known by the end of Load. A field bound to `envSecret()`, `generatedParam()` or `serviceOrigin()` is a runtime value: the data is known only at boot, so its real value is a pointer, and its type says so: a wrapped field's type includes `Pointer<In>`, and a `secretString()` field's includes `Pointer<SecretString>`.
+
+`input` itself is not a value. Its type, `ModuleInput<S>`, carries a brand that every binding type refuses, so passing the whole `input` into a child module's or a service's `input`, a service param, a resource's props or a `resolve()` dependency fails to compile, for every module, the root included. A cast gets past the compiler, so Load refuses it too, naming where it was passed and saying to pass its fields on by name. A binding slot typed `unknown` accepts anything, so there only Load refuses it. A module receives the input it needs and no more: its body names each field it passes on.
 
 A leaf field can be **wrapped**: its schema is `field(inner)`, from
 `@prisma/composer/arktype` or `@prisma/composer/zod`
@@ -177,8 +165,8 @@ narrow inside a `resolve()` function.
 
 An input field is accepted in four places:
 
-- **a service's `input` binding**, at any depth, including the whole binding;
-- **a module's `input` binding**, at any depth, including the whole binding;
+- **a service's `input` binding**, at any depth; a field may be the whole binding, as in `input: input.smtp`;
+- **a module's `input` binding**, at any depth; a field may be the whole binding;
 - **a `resolve()` dependency**, for a plain field: `fn` receives the real
   value. Listing a field wrapped with `field()` or typed `secretString()`
   fails to compile, and Load refuses a listed field whose real value holds a
@@ -209,7 +197,7 @@ optional field the
 binding left out has no real value, and a binding that forwards it leaves the
 key out.
 
-A root's input is the config pool, validated by its schema before any other module's binding.
+A root's input is the app configuration, checked by its schema before any other module's binding.
 
 **Not detected.** Load cannot list a schema's keys, because Standard Schema
 exposes only `validate`. So a declared input field the body never uses is not
@@ -217,18 +205,24 @@ an error, unlike an unused `deps` entry.
 
 ## `provision()` accepts modules
 
-A module overload mirrors the service forms:
+`provision()` takes a service or a module with the same options for both. TypeScript tries its overloads in order:
+
+1. One for a service, then one for a module. Each infers the node's type parameters separately. Every ordinary call resolves here, and so does a wrapper that is generic in what the node exposes.
+2. For a wrapper whose node's dependencies are a type parameter, a pair for a service and a pair for a module, with `deps` written out. One of each pair requires `input`. The other, for a node without an input schema, refuses it.
+3. The generic overload below, declared last so that a call no overload accepts reports its error.
+
+The last overload, whose error a failing call reports:
 
 ```ts
-provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
-  child: ModuleNode<D, E, I>,
-  opts: {
-    id?: string;
-    deps: DepBindings<D>;                                      // omitted when D is empty
-    input: ModuleInputBinding<StandardSchemaV1.InferInput<I>>; // required when the module declares an input schema
-  },
-): ProvisionedRef<E>;
+provision<N extends ServiceNode | ModuleNode>(
+  node: N,
+  ...args: ProvisionArgs<N>, // `deps` required when the node declares dependencies, `input` when it declares an input schema
+): ProvisionedRef<ExposeOf<N>>;
 ```
+
+The `input` option has the type `InputBindingOf<I>`, the same for a service and a module. It is typed from the schema's input type, so a binding whose shape or kind the schema refuses fails to compile: a wrong literal type, a missing or undeclared key, a source in the wrong kind of field, or a missing `input` ([ADR-0042](../90-decisions/ADR-0042-service-input-is-one-standard-schema.md)). A refinement the type cannot express, such as a URL format, is checked by the deploy. The error names the binding key that does not fit, or says that a module's whole input is not a value.
+
+A generic wrapper that takes a caller's node and its binding, such as `cron()`, types its own `input` option as `InputBindingOf<I>`, so the caller's binding is checked against the node's schema at the wrapper's call. Inside, it passes the node on widened to the default schema type, `ServiceNode<D, P, E>` or `ModuleNode<D, E>`, whose binding type is `unknown`, and passes `input: opts.input` whether or not it is set. The wrapper's own option is the only compile-time check of the binding, and Load checks it again.
 
 The returned ref is indistinguishable from a provisioned service's. Whether an
 id names a service or a sub-module is invisible to sibling wiring, so topologies

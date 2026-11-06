@@ -1,6 +1,6 @@
 # Public URL scenarios
 
-Working draft. For each scenario: what the user wants, the Composer code they write, the topology that produces, and what exists on PDP and Foundry for each environment. Vocabulary is the current design: environments (not stages), `publicUrl({ name, url, target })`, two URL strategies, both methods on `publicUrl` itself (`publicUrl.hostname('host')` names the hostname, and a bare string is shorthand for it; `publicUrl.prismaBuild()` asks the platform for one), and `resolve(dependencies, fn)` to compute a value from inputs, deploy-time references such as `environment.name`, and other resolved values, which `fn` receives as one tuple. Nothing about public URLs depends on config adapters; they appear only in scenario 9, as an option for teams that keep hostnames outside the code.
+Working draft. For each scenario: what the user wants, the Composer code they write, the topology that produces, and what exists on PDP and Foundry for each environment. Vocabulary is the current design: environments (not stages), `publicUrl({ id, url, target })`, two URL strategies, both methods on `publicUrl` itself (`publicUrl.hostname('host')` names the hostname, and a bare string is shorthand for it; `publicUrl.prismaBuild()` asks the platform for one), and `resolve(dependencies, fn)` to compute a value from inputs, deploy-time references such as `environment.name`, and other resolved values, which `fn` receives as one tuple. Nothing about public URLs depends on config adapters; they appear only in scenario 9, as an option for teams that keep hostnames outside the code.
 
 Shared setup for every scenario:
 
@@ -24,7 +24,7 @@ On PDP, every compute service already has an Endpoint and a `*.prisma.build` hos
 export default module('shop', ({ environment, provision }) => {
   const auth = provision(authModule, { input: { signingKey: envSecret('AUTH_SIGNING_SECRET') } });
   const web = provision(webService, { deps: { auth: auth.rpc } });
-  provision(publicUrl({ name: 'site', url: publicUrl.prismaBuild(), target: web.http }));
+  provision(publicUrl({ id: 'site', url: publicUrl.prismaBuild(), target: web.http }));
 });
 ```
 
@@ -42,7 +42,7 @@ export default module('shop', ({ environment, provision }) => {
 
 ```ts
 provision(publicUrl({
-  name: 'site',
+  id: 'site',
   url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('shop.com') : publicUrl.prismaBuild()),
   target: web.http,
 }));
@@ -93,8 +93,8 @@ An environment name isn't always a valid DNS label (Composer allows `_`; labels 
 **User:** "`www.shop.com` and `shop.com` both serve `web`."
 
 ```ts
-provision(publicUrl({ name: 'site', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('shop.com') : publicUrl.prismaBuild()), target: web.http }));
-provision(publicUrl({ name: 'www', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('www.shop.com') : publicUrl.prismaBuild()), target: web.http }));
+provision(publicUrl({ id: 'site', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('shop.com') : publicUrl.prismaBuild()), target: web.http }));
+provision(publicUrl({ id: 'www', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('www.shop.com') : publicUrl.prismaBuild()), target: web.http }));
 ```
 
 **Topology:** two nodes, `shop.site` and `shop.www`, both wired to `shop.web.http`.
@@ -110,8 +110,8 @@ provision(publicUrl({ name: 'www', url: resolve([environment.name], ([name]) => 
 ```ts
 const api = provision(apiService, { deps: { db } });
 const web = provision(webService, { deps: { api: api.rpc } });
-provision(publicUrl({ name: 'site', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('shop.com') : publicUrl.prismaBuild()), target: web.http }));
-provision(publicUrl({ name: 'apiUrl', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('api.shop.com') : publicUrl.prismaBuild()), target: api.http }));
+provision(publicUrl({ id: 'site', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('shop.com') : publicUrl.prismaBuild()), target: web.http }));
+provision(publicUrl({ id: 'apiUrl', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('api.shop.com') : publicUrl.prismaBuild()), target: api.http }));
 ```
 
 `web` calls `api` over `api.rpc`, a service-to-service connection, not over `api.shop.com`. The public URL on `api` is for outside callers.
@@ -126,7 +126,7 @@ provision(publicUrl({ name: 'apiUrl', url: resolve([environment.name], ([name]) 
 
 ```ts
 const identity = provision(auth(), { deps: { db, email: mail.send }, input: { baseUrl: ... } });
-provision(publicUrl({ name: 'authUrl', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('auth.shop.com') : publicUrl.prismaBuild()), target: identity.api }));
+provision(publicUrl({ id: 'authUrl', url: resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('auth.shop.com') : publicUrl.prismaBuild()), target: identity.api }));
 ```
 
 The `auth()` module exposes `api` as a raw HTTP connection. At Load, `identity.api` resolves to the service inside the module (`shop.auth.service`), so the RoutingUrl points at that service. The module decided its `api` could be made public by exposing it; the app decided it is. `identity.admin` is a service RPC connection, so wiring a `publicUrl` to it is a type error.
@@ -141,7 +141,7 @@ The `auth()` module exposes `api` as a raw HTTP connection. At Load, `identity.a
 const authUrl = resolve([environment.name], ([name]) => name === 'production' ? publicUrl.hostname('auth.shop.com') : publicUrl.prismaBuild());
 const baseUrl = resolve([authUrl], ([url]) => `https://${url.hostname}`);
 const identity = provision(auth(), { deps: { db, email: mail.send }, input: { baseUrl } });
-provision(publicUrl({ name: 'authUrl', url: authUrl, target: identity.api }));
+provision(publicUrl({ id: 'authUrl', url: authUrl, target: identity.api }));
 ```
 
 The hostname feeds the service's input through a second `resolve()`, so the service gets a string URL derived from the hostname the code named. This works only for a named hostname: a prisma.build URL is the platform's hostname, which is a deploy result that `resolve()` cannot see, so in environments where `authUrl` resolves to `publicUrl.prismaBuild()` the second `resolve()` has no hostname to give and the service learns its own origin through `origin()` instead. The framework keeps no list of a service's URLs.
@@ -157,7 +157,7 @@ composer({ extensions: [...], state: prismaState(), config: [dotenv()] })
 // module.ts
 export default module('shop', { input: type({ 'SITE_HOSTNAME?': 'string' }) }, ({ input, environment, provision }) => {
   const web = provision(webService, { deps: { auth: auth.rpc } });
-  provision(publicUrl({ name: 'site', url: input.SITE_HOSTNAME, target: web.http }));
+  provision(publicUrl({ id: 'site', url: input.SITE_HOSTNAME, target: web.http }));
 });
 ```
 

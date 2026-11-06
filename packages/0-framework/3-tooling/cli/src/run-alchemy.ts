@@ -1,6 +1,7 @@
 /**
  * Pipeline step 9 (deploy-cli.md § The pipeline; design-notes.md's "Driving
- * Alchemy" call): hand the terminal to the generated stack file.
+ * Alchemy" call): run the generated stack file and, for programmatic hosts, pipe its
+ * output through redaction.
  *
  * Runs the bin of the `alchemy` the app's `@prisma/composer` depends on
  * (`resolveAlchemyBin`), started with Node (`nodeExecutable`). Never a
@@ -11,14 +12,16 @@
  * started. Under the CLI the engine starts it (`ctx.spawn`), which is what
  * makes Ctrl-C reach the child natively and keeps signal policy in one place.
  * `spawnAlchemy` is the default for programmatic hosts driving
- * `@prisma/composer/control`, which have no engine to borrow.
+ * `@prisma/composer/control`, which have no engine to borrow. Only
+ * `spawnAlchemy` redacts the child's output; under the CLI the child gets the
+ * terminal and its output is not redacted (ADR-0062).
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { CliStructuredError } from '@internal/foundation/errors';
 import spawn from 'cross-spawn';
 import { resolveAlchemyBin } from './alchemy-bin.ts';
-import { childEnvironment } from './config-adapters.ts';
+import { StreamRedactor } from './redaction.ts';
 
 /** The runtime facts that decide which Node starts Alchemy; injectable for tests. */
 export interface HostRuntime {
@@ -101,6 +104,8 @@ export interface AlchemyInvocation {
   readonly cwd: string;
   readonly stage: string;
   readonly env: Readonly<Record<string, string | undefined>>;
+  /** The known secrets and the credential-looking values, for `spawnAlchemy`'s stream redactor; the CLI's runner ignores them. Never in `env` or on the command line, which the engine may log. */
+  readonly redactedValues: readonly string[];
 }
 
 /** The command line an invocation becomes, once a binary has been resolved. */
@@ -153,7 +158,9 @@ export interface AlchemyOutcome {
 }
 
 /** Starts the converge and resolves when it ends. The CLI supplies one backed
- *  by `ctx.spawn`; hosts get `spawnAlchemy`. */
+ *  by `ctx.spawn`, which gives the child the terminal and does not redact its
+ *  output; hosts get `spawnAlchemy`, which pipes the output through the stream
+ *  redactor (ADR-0062). */
 export type RunAlchemy = (invocation: AlchemyInvocation) => Promise<AlchemyOutcome>;
 
 export interface AlchemyInvocationInput {
@@ -166,6 +173,8 @@ export interface AlchemyInvocationInput {
   readonly preflightEnv?: Readonly<Record<string, string>>;
   /** Extra additions beyond the containers — the deployment-result pointer. */
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
+  /** The known secrets and the credential-looking values, for `spawnAlchemy`'s stream redactor; the CLI's runner ignores them. Never in `env` or on the command line, which the engine may log. */
+  readonly redactedValues: readonly string[];
 }
 
 /** What becomes `alchemy deploy|destroy <stack file> --yes --stage <stage>`. */
@@ -175,19 +184,20 @@ export function alchemyInvocation(input: AlchemyInvocationInput): AlchemyInvocat
     stackFileRelativePath: input.stackFileRelativePath,
     cwd: input.cwd,
     stage: input.stage,
-    env: childEnvironment({ ...input.containerEnv, ...input.preflightEnv, ...input.env }),
+    env: { ...input.containerEnv, ...input.preflightEnv, ...input.env },
+    redactedValues: input.redactedValues,
   };
 }
 
 /**
- * The default runner for hosts with no engine: inherited stdio, the caller's
+ * The default runner for hosts with no engine: stdin inherited and output piped through redaction, the caller's
  * own process group, and the child's status returned verbatim. It does not
  * collapse a signal into an exit code — that collapse is what made a
  * Ctrl-C'd deploy report itself as a failure.
  */
 export const spawnAlchemy: RunAlchemy = async (invocation) => {
   const commandLine = alchemyCommandLine(invocation);
-  return { ...(await spawnCommandLine(commandLine)), commandLine };
+  return { ...(await spawnCommandLine(commandLine, invocation.redactedValues)), commandLine };
 };
 
 /**
@@ -228,16 +238,39 @@ export function reproduceCommand(
   return argv.map((arg) => shellArg(arg, platform)).join(' ');
 }
 
-/** Starts a resolved command line with inherited stdio and returns how it ended. */
-export function spawnCommandLine(line: AlchemyCommandLine): Promise<AlchemyOutcome> {
+/** Where a piped child's output is written. */
+export interface OutputStreams {
+  readonly stdout: { write(text: string): unknown };
+  readonly stderr: { write(text: string): unknown };
+}
+
+/** Starts a resolved command line with stdin inherited and its output piped through redaction, and returns how it ended. */
+export function spawnCommandLine(
+  line: AlchemyCommandLine,
+  redactedValues: readonly string[],
+  outputs: OutputStreams = process,
+): Promise<AlchemyOutcome> {
   return new Promise<AlchemyOutcome>((resolve, reject) => {
     const child = spawn(line.command, [...line.args], {
       cwd: line.cwd,
-      stdio: 'inherit',
+      stdio: ['inherit', 'pipe', 'pipe'],
       env: { ...process.env, ...line.env },
     });
+    const stdout = new StreamRedactor(redactedValues);
+    const stderr = new StreamRedactor(redactedValues);
+    const write = (stream: OutputStreams['stdout'], text: string): void => {
+      if (text.length > 0) stream.write(text);
+    };
+    child.stdout
+      ?.setEncoding('utf8')
+      .on('data', (chunk: string) => write(outputs.stdout, stdout.push(chunk)));
+    child.stderr
+      ?.setEncoding('utf8')
+      .on('data', (chunk: string) => write(outputs.stderr, stderr.push(chunk)));
     child.on('error', reject);
     child.on('close', (exitCode, signal) => {
+      write(outputs.stdout, stdout.end());
+      write(outputs.stderr, stderr.end());
       resolve({ exitCode, signal });
     });
   });

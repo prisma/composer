@@ -11,7 +11,7 @@
  * `envSecret(...)` leaves (ADR-0042). A param is never secret.
  */
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import type { Graph, ParamBinding, SecretSourceUse, ServiceInputBinding } from './graph-types.ts';
+import type { Graph, InputBindingUse, ParamBinding, SecretSourceUse } from './graph-types.ts';
 import type { ProvisionNeed, ServiceNode } from './node.ts';
 
 /**
@@ -145,7 +145,7 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
  * verifies each `envSecret` leaf's platform var exists before deploy; the
  * values are provisioned out-of-band).
  */
-export function inputManifest(graph: Graph): readonly ServiceInputBinding[] {
+export function inputManifest(graph: Graph): readonly InputBindingUse[] {
   return graph.inputBindings;
 }
 

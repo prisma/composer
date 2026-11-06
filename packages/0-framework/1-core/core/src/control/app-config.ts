@@ -143,8 +143,10 @@ export interface PreflightInput<C = unknown> {
   readonly container: ContainerInstance | undefined;
   /** The environment name. */
   readonly environment: string;
-  /** The pools the command read for this environment. Preflight fills a missing `envSecret()` platform variable from `pools.secrets` and an `envParam()` param's from `pools.config`. */
-  readonly pools: ConfigPools;
+  /** The app configuration the command read for this environment. Preflight fills a missing `envParam()` param's platform variable from it. */
+  readonly configuration: AppConfiguration;
+  /** The app secrets the command read for this environment. Preflight fills a missing `envSecret()` platform variable from it. */
+  readonly secrets: AppSecrets;
   /** What the caller has already authenticated, for the platform calls preflight makes. Absent means the extension falls back to its own credential protocol. */
   readonly credentials?: CallerCredentials<C> | undefined;
   /** Hands the deploy's progress output what the check covered, as counts (e.g. `{ checked: 53, filled: 0, missing: 0 }`). Counts only: never a name or a value. */
@@ -337,8 +339,10 @@ export interface LocalTargetProvidersInput {
   readonly container: ContainerInstance | undefined;
   /** Absolute path of the environment's dev state directory (`devEnvironmentDir`, under the cwd). */
   readonly devDir: string;
-  /** The pools the command read for this environment. A local deployment takes the values its rows point at from them. */
-  readonly pools: ConfigPools;
+  /** The text of each configuration key the graph reads, from the app configuration file. A local deployment takes the text its param rows point at from it. */
+  readonly configurationKeyText: Readonly<Record<string, string>>;
+  /** The app secrets the graph's `envSecret()`s name, which the first process handed the second. A local deployment takes the text its `$secret` pointers name from it. */
+  readonly namedSecrets: NamedSecrets;
 }
 
 export interface LocalTargetEmulatorsInput {
@@ -375,8 +379,10 @@ export interface LocalTargetAttachment {
     readonly address: string;
     readonly node: ServiceNode;
     readonly server: DevServer;
-    /** The pools the command read for this environment. The command takes the values the service's rows point at from them. */
-    readonly pools: ConfigPools;
+    /** The app configuration the command read for this environment. */
+    readonly configuration: AppConfiguration;
+    /** The app secrets the command read for this environment. */
+    readonly secrets: AppSecrets;
   }): Promise<{ readonly restarted: boolean }>;
   /** Stop everything the target runs for the app, so nothing of it keeps running after the session (emulators and data persist). */
   stopApp(): Promise<void>;
@@ -448,40 +454,32 @@ export interface ConfigAdapterInput {
 /** The values one adapter returns, by name. */
 export type ConfigValues = Readonly<Record<string, unknown>>;
 
-/**
- * A function in the `config` or `secrets` list of the `composer` section (ADR-0062):
- * it receives the environment and returns that environment's values. Composer calls it
- * in the CLI and again in the deploy engine's process, so it must return the same
- * values for the same environment both times.
- */
+/** A function in the `config` or `secrets` list of the `composer` section (ADR-0062): it receives the environment and returns that environment's values. Only the command's first process calls it; the second process reads what the first read from the app configuration file. */
 export type ConfigAdapter = (input: ConfigAdapterInput) => ConfigValues | Promise<ConfigValues>;
 
-/** What the `config` adapters return, merged by top-level key, a later adapter winning: the root's input, and what `envParam()` reads. */
-export type ConfigPool = Readonly<Record<string, unknown>>;
+/** The app configuration (ADR-0062): what the `config` adapters return, merged by top-level key, a later adapter winning. It is the root's input, and what `envParam()` reads. */
+export type AppConfiguration = Readonly<Record<string, unknown>>;
 
-/** What the `secrets` adapters return, merged the same way. Every value is text. Only preflight and local dev read it; it is never logged, reported or written anywhere but the platform variable it fills. */
-export type SecretsPool = Readonly<Record<string, string>>;
+/** The app secrets (ADR-0062): what the `secrets` adapters return, merged the same way. Every value is text. Preflight fills a missing `envSecret()` platform variable from it, and `prisma dev` hands its second process the values the graph's `envSecret()`s name. Composer redacts the values the graph's `envSecret()`s name wherever it prints. */
+export type AppSecrets = Readonly<Record<string, string>>;
 
-/** The two pools one command read for one environment. */
-export interface ConfigPools {
-  readonly config: ConfigPool;
-  readonly secrets: SecretsPool;
-}
+/** The app secrets an `envSecret()` in the graph names, each with text. `prisma dev`'s first process hands them to its second process in `PRISMA_COMPOSER_NAMED_SECRETS`. */
+export type NamedSecrets = Readonly<Record<string, string>>;
 
 /**
  * The config file's default export. `extensions` lists every extension the
  * app deploys through; `state` is the ONE state store per deploy — explicit,
  * platform-agnostic, never defaulted by an extension. `config` and `secrets`
- * list the adapters the two pools come from.
+ * list the adapters the app configuration and the app secrets come from.
  */
 export interface PrismaAppConfig {
   /** The module whose default export is the app root, relative to `prisma.config.ts`. `--entry` overrides it. */
   readonly entry?: string;
   readonly extensions: ExtensionDescriptor[];
   readonly state: StateDescriptor;
-  /** Where the config pool comes from. Defaults to `[environmentVariables()]`; a list given here replaces the default. */
+  /** Where the app configuration comes from. Defaults to `[environmentVariables()]`; a list given here replaces the default. */
   readonly config?: readonly ConfigAdapter[];
-  /** Where the secrets pool comes from. Defaults to `[environmentVariables()]`; a list given here replaces the default. */
+  /** Where the app secrets come from. Defaults to `[environmentVariables()]`; a list given here replaces the default. */
   readonly secrets?: readonly ConfigAdapter[];
 }
 

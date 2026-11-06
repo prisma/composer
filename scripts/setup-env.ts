@@ -201,9 +201,7 @@ async function main() {
     p.log.info('Keeping existing PRISMA_SERVICE_TOKEN');
   }
 
-  p.outro(
-    '.env is ready. Deploy: cd examples/storefront-auth && ( set -a; . ../../.env; set +a; pnpm exec alchemy deploy --yes )',
-  );
+  p.outro('.env is ready. Deploy: cd examples/storefront-auth && pnpm run deploy');
 }
 
 if (import.meta.main) {
