@@ -366,6 +366,39 @@ describe('prismaStateLayer against the platform state API', () => {
     }
   });
 
+  test('state requests go through a supplied client even when the deploy already built a FetchHttpClient', async () => {
+    const received: Request[] = [];
+    const supplied = createManagementApiClient({
+      baseUrl: fake.origin,
+      fetch: (request: Request) => {
+        received.push(request.clone());
+        return fetch(request);
+      },
+    });
+    const layer = stateLayerAgainst(
+      fake.origin,
+      { projectId: PROJECT_ID, branchId: BRANCH_ID },
+      supplied,
+    ).pipe(
+      Layer.provide(Layer.merge(stackContext, FetchHttpClient.layer)),
+    ) as unknown as Layer.Layer<State>;
+    const value = createdResource({ fqn: 'app/db' });
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const service = yield* yield* State;
+        yield* service.set({ stack: STACK, stage: STAGE, fqn: value.fqn, value });
+      }).pipe(Effect.orDie, Effect.provide(layer)),
+    );
+
+    expect(
+      received
+        .filter((request) => request.url.includes('/alchemy-state/state/'))
+        .map((request) => request.method),
+    ).toContain('PUT');
+    expect(fake.countRequests(/PUT .*\/alchemy-state\/state\//)).toBe(1);
+  });
+
   test('the layer’s merged redaction entry hides the lease header from anything rendered in its context', async () => {
     const rendered = await runLayer(() =>
       Effect.sync(() => JSON.stringify(Headers.fromInput({ [LEASE_HEADER]: 'lease-secret-1' }))),
