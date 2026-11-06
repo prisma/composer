@@ -30,7 +30,7 @@ export interface PreflightName {
   readonly nodeKind: SecretSourceUse['nodeKind'];
 }
 
-/** An env-sourced param's config pool value that preflight cannot write to a platform variable. */
+/** An env-sourced param's app configuration value that preflight cannot write to a platform variable. */
 export const envParamNotTextError = (name: string, address: string, kind: string): Error =>
   new Error(
     `The \`config\` adapters return ${kind} for "${name}", not text, so preflight cannot set the platform variable envParam('${name}') of service "${address}" reads. Make the adapter return a string.`,

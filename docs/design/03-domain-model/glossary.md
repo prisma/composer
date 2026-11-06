@@ -116,7 +116,7 @@ code never reads the environment (no-globals). Each key of a binding takes:
   into data. A source is a value too. Prisma Cloud's:
   - **`envParam(NAME)`** — the author supplies an environment-variable name.
     Where the value goes depends on where it is bound. In a service's input,
-    the deploy reads `NAME` from its [config pool](#config-pool) and writes
+    the deploy reads `NAME` from the [app configuration](#the-app-configuration) and writes
     the value into the service's input document, so every deploy reads it
     again. In a service's per-key params, the deploy writes a pointer row to
     a platform variable, and the service reads that variable at boot. Either
@@ -180,7 +180,7 @@ whatever inputs Composer is given
 ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
 The data a value stands for is its **real value**.
 
-- **Provided or computed.** A provided value is handed to the module body: `environment.name` is one, a deploy-time fact of the environment, and each field of a module's `input` is another, whose real value is read from the module's input after its schema has validated it. The `input` itself is a dictionary of these values, not a value, so no binding accepts it. A root's input is the config pool. A computed value is what `resolve(dependencies, fn)` returns; Load runs `fn` with its dependencies' real values after every module body has run, with `provision` disabled. `resolve()` declares a computed value; Load resolves every value.
+- **Provided or computed.** A provided value is handed to the module body: `environment.name` is one, a deploy-time fact of the environment, and each field of a module's `input` is another, whose real value is read from the module's input after its schema has validated it. The `input` itself is a dictionary of these values, not a value, so no binding accepts it. A root's input is the [app configuration](#the-app-configuration). A computed value is what `resolve(dependencies, fn)` returns; Load runs `fn` with its dependencies' real values after every module body has run, with `provision` disabled. `resolve()` declares a computed value; Load resolves every value.
 - **Deploy-time or runtime.** A deploy-time value has its real value by the
   end of Load: `environment.name`, a `resolve()` result, `envParam()`, whose
   real value is the variable's value at deploy, and a module input field
@@ -245,26 +245,41 @@ schema whose leaves are wrapped. For another Standard Schema library,
 `@prisma/composer` exports `Pointer`, `isPlainPointer()` and
 `isSecretPointer()`, with which an author writes the same two helpers. A service reads a wrapped field as `Out`: `service.input()` returns the schema's output with every pointer removed, because at boot each pointer has been replaced by the text of the variable it names.
 
-### Config pool
+### The app configuration
 
-The merged values the `config` adapters return for the environment being deployed, a later adapter winning by top-level key. It is the root module's input, validated by the root's schema, and what an `envParam('NAME')` reads `NAME` from, wherever it sits. With no `config` list in the `composer` section it is the process environment. In code it is `LoadOptions.configPool`, and the name a source reads is its **pool key** (`paramSource()`'s `poolKey` option). Composer reads it in the CLI and again in the deploy engine's process. It holds whatever the adapters return, which by default is the whole process environment, secrets included, so only the root's fields that its body passes on one by one reach the graph. No module can pass its whole input on: it fails to compile, and Load refuses it.
+The merged values the `config` adapters return for the environment, a later adapter winning by top-level key. "App" is what Composer calls the application, the outermost module, whose input it fills. It is the root module's input, checked by the root's schema, and what an `envParam('NAME')` reads `NAME` from, wherever it sits; the name a source reads is its **configuration key** (`paramSource()`'s `configurationKey`). With no `config` list it is the process environment, secrets included, so only the root fields its body passes on by name reach the graph. Only a command's first process reads it; the deploy's and `prisma dev`'s second process reads what the first process's Load read from the **app configuration file**. In code: `AppConfiguration`, `LoadOptions.configuration`.
 
-### Secrets pool
+### Configuration key
 
-The merged values the `secrets` adapters return, text only. Deploy preflight
-fills a missing `envSecret()` platform variable from it, and `prisma dev` gives
-a service its secrets from it. Composer never passes it to Load or a schema,
-and never writes its values to a file, a report, an error or deploy state.
-With no `secrets` list it is the process environment.
+The name in the app configuration that a param source reads: `envParam('NAME')` reads `NAME`. See [the app configuration](#the-app-configuration). In code: `paramSource()`'s `configurationKey`, and `AppConfigurationRead.configurationKeyText`, the text the first process read under each one.
+
+### The app secrets
+
+The merged values the `secrets` adapters return, text only. The name a secret source reads is its **secrets key** (`secretSource()`'s `secretsKey`; `envSecret('NAME')` passes `NAME`). Deploy preflight fills a missing `envSecret()` platform variable from it. `prisma dev` hands its second process only the **named secrets**, the values under the secrets keys the graph's `envSecret()`s name, in one environment variable, `PRISMA_COMPOSER_NAMED_SECRETS` (in code: `NamedSecrets`). The app secrets hold values Composer may carry; only the values under the secrets keys the graph names become known secrets. `prisma dev` compares the whole app secrets between rebuilds to notice a change, which reads them without making them known secrets. Composer never passes the app secrets to Load or a schema, never writes their values to a file, and redacts the values under the secrets keys wherever it prints. With no `secrets` list it is the process environment. In code: `AppSecrets`.
+
+### Secrets key
+
+The name in the app secrets that a secret source reads: `envSecret('NAME')` reads `NAME`. See [the app secrets](#the-app-secrets). In code: `secretSource()`'s `secretsKey`, and `secretsKeys(graph)`, every secrets key a graph reads.
+
+### Named secrets
+
+The app secrets under the secrets keys the graph reads, each with text. Only `prisma dev` hands them to its second process, in one environment variable. See [the app secrets](#the-app-secrets). In code: `NamedSecrets`, `PRISMA_COMPOSER_NAMED_SECRETS`.
+
+### Known secrets
+
+The values one command knows are secrets: the value under each secrets key the graph's `envSecret()`s name, in the app secrets or the app configuration. Nothing else is a known secret: a plain value in the same `.env` file, or the shell's `SHLVL=1` under `secrets: [dotenv(), environmentVariables()]`, is not. The CLI refuses to write the app configuration file when a value in it contains a known secret: one of eight characters or more anywhere in the value, a shorter one only as the whole value. The CLI redacts the known secrets wherever it prints, together with **credential-looking values**: text of eight characters or more under a variable name that looks like a credential's, which might not be secrets ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). In code: `KnownSecrets`, and `SecretRedaction`, which holds both kinds.
+
+### The app configuration file
+
+The JSON file a command's first process writes for its second process. It holds what Load read from the app configuration (the root input fields the root's body passes on, and the text of each configuration key the graph reads) and the first process's node addresses. It never holds a secret: Load and the CLI refuse to write one into it. Deploy and destroy write it to `.prisma-composer/app-configuration-<pid>-<uuid>.json` and delete it when the run ends. `prisma dev` writes it to `<dev environment dir>/app-configuration-<pid>.json` before each converge and deletes it as soon as that converge ends. Only its owner can read it. The CLI also deletes it when its process exits. A file left by a process killed outright is deleted at the start of a later deploy, destroy or `prisma dev`, once it is ten minutes old. It is not `prisma.config.ts`, which is "the config file". In code: `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, `AppConfigurationRead`, `readAppConfigurationFile`.
 
 ### Config adapter
 
-A function in the `config` or `secrets` list of the `composer` section. It
-receives the environment's name and the directory of `prisma.config.ts`, and
-returns that environment's values. `environmentVariables()` and `dotenv()` ship
-with Composer. An adapter is a mechanism, not a setting: the values stay
-wherever it reads them
-([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
+A function in the `config` list of the `composer` section. It receives the environment's name and the directory of `prisma.config.ts`, and returns that environment's values, which merge into the app configuration. `environmentVariables()` and `dotenv()` ship with Composer; `dotenv()` reads `.env` files through `dotenv-flow`. An adapter is a mechanism, not a setting: the values stay wherever it reads them ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
+
+### Secrets adapter
+
+A function in the `secrets` list of the `composer` section, with the same shape as a config adapter. Both lists use the `ConfigAdapter` type. What the secrets adapters return merges into the app secrets; every value must be text. Composer reads only the values under the secrets keys the graph names, and redacts those.
 
 ### Topology
 
@@ -422,8 +437,7 @@ A place the app runs: `production`, `staging`, a preview such as `pr-42`, or
 `dev` on a developer's machine. Chosen with `--environment`, never authored in
 the topology — the same graph deploys to any environment. Every environment has
 a name and none is special: `prisma deploy` defaults to `production` and
-`prisma dev` to `dev`. `dotenv()` reads `.env.<environment>` for the
-environment being deployed. Under `prisma dev`, each environment is a separate local
+`prisma dev` to `dev`. `dotenv()` reads `.env.<environment>` for the environment being deployed, and skips `.env.local` for the environment `test`. Under `prisma dev`, each environment is a separate local
 copy of the app, with its own services, databases, buckets and ports. On Prisma Cloud, `production` resolves to the Project's
 default **Branch** and any other environment to the Branch whose `gitName` is
 its name. "Stage" is the old word for the same concept, and "branch" is Prisma

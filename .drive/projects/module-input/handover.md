@@ -48,7 +48,7 @@ Pass `model: opus` explicitly on every agent.
 - **"App configuration" and "app secrets"** name the merged values of the config adapters and the secrets adapters. "App" is Composer's word for the application, the outermost module. Prisma Cloud's "App" label never constrains Composer's terms. The code still says "config pool" until S12 renames it.
 - **`envParam()` stays deploy-time.** In a service's input it is read at deploy and written into the input document. Making it a runtime pointer would break every existing app. It gets deprecated later.
 - **`environmentVariables()` returns the whole process environment.** No special cases, no filtering of credentials.
-- **Redaction covers every secret value Composer knows, at any length.** Under the default lists that is the values under names an `envSecret()` names. With a project's own secrets list, it is everything that list returns.
+- **Redaction covers every secret value Composer knows, at any length.** Those are the values under the names an `envSecret()` in the graph names, whatever the lists. The lists are pools Composer reads only for those names, so a project's own secrets list does not make its other values secrets.
 - **Inputs are always truthy `Value` objects.** Will does not want to hear about branching on them.
 - **Out of scope by Will's ruling:**
   - `dotenv-flow` skipping `.env.local` for `test`;

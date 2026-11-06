@@ -37,7 +37,7 @@ The naive fix is a flag on the param that a target recognizes — `autoProvision
 
 Both faults have one cause — a param *naming* a behavior that lives elsewhere, with nothing enforcing the link. The framework already has the right answer twice:
 
-- **Secrets** ([ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md)) make the wiring value a single opaque `SecretSource<T>` — a brand plus a payload core forwards and never reads; the target defines both the constructor and the reader. Core's surface never changed again no matter how many source kinds exist.
+- **Secrets** ([ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md)) make the wiring value a single opaque `SecretSource<T>` — a brand plus a payload core forwards and never reads; the target defines both the constructor and the reader. Core's surface never changed again no matter how many source kinds exist.
 - **Node descriptors** ([ADR-0017](ADR-0017-control-plane-loads-through-the-app-config.md)) make a node *reference* an implementation by `(extension, type)`; core resolves it through the config's registry and fails loudly on a miss (`unknownNodeTypeError`).
 
 A provisioning need is those two moves applied to a param value. From secrets it takes the **opaque branded slot**: `ProvisionNeed` is a brand plus a payload core never inspects, so core's type never accretes. From node descriptors it takes the **checked registry**: the brand resolves through the extension's `provisions` map, and a need no configured extension satisfies is `unknownProvisionerError`, not a silent no-op. The declarer *provides* a need value and the target *provides* a registered implementation — neither side is a bare string, and the link between them is enforced at deploy.
@@ -65,7 +65,7 @@ A provisioning need is those two moves applied to a param value. From secrets it
 
 ## Related
 
-- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) — the opaque branded slot this reuses; a secret's value is sourced out-of-band, a provisioned value is minted by the framework.
+- [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) — the opaque branded slot this reuses; a secret's value is sourced out-of-band, a provisioned value is minted by the framework.
 - [ADR-0017](ADR-0017-control-plane-loads-through-the-app-config.md) — the statically-listed registry with loud resolution this extends from nodes to param provisioners.
 - [ADR-0018](ADR-0018-config-params-carry-a-caller-owned-schema.md) — the no-enum-in-core principle applied to provisioning strategies.
 - [ADR-0019](ADR-0019-the-target-owns-config-serialization.md) — where a value is stored (which environment variable, in what encoding), which stays the target's.

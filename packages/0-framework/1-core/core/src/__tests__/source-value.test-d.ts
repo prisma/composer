@@ -10,7 +10,7 @@ import type {
 import { paramSource, secretSource } from '../exports/index.ts';
 
 const secretValue = secretSource<{ name: string }, SecretString>({ name: 'K' });
-const paramValue = paramSource<{ name: string }, string>({ name: 'G' }, { poolKey: 'G' });
+const paramValue = paramSource<{ name: string }, string>({ name: 'G' }, { configurationKey: 'G' });
 
 test('a secret source is a SecretSource and a Value of its type', () => {
   expectTypeOf(secretValue).toExtend<SecretSource>();

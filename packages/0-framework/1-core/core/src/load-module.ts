@@ -551,7 +551,7 @@ function flatten(
         moduleAddress: fullAddress,
         schema: childInputSchema,
         binding: provisionInput,
-        fromConfigPool: false,
+        isRoot: false,
       });
     }
     edges.push(...wiringEdges(localWiring, fullAddress));
@@ -670,21 +670,35 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
         `"${root.name}" from another module that provisions and wires it instead.`,
     );
   }
+  if (opts?.configuration !== undefined && opts.appConfigurationRead !== undefined) {
+    throw new LoadError(
+      'Load takes configuration, in the first process, or appConfigurationRead, in the second, not both.',
+    );
+  }
   const moduleInputs: ProvisionedModuleInput[] = [];
   if (root.inputSchema !== undefined) {
-    if (opts?.configPool === undefined) {
+    if (opts?.appConfigurationRead !== undefined) {
+      moduleInputs.push({
+        moduleAddress: rootId,
+        schema: root.inputSchema,
+        binding: undefined,
+        isRoot: true,
+        checked: opts.appConfigurationRead.rootInput,
+      });
+    } else if (opts?.configuration !== undefined) {
+      moduleInputs.push({
+        moduleAddress: rootId,
+        schema: root.inputSchema,
+        binding: opts.configuration,
+        isRoot: true,
+      });
+    } else {
       throw new LoadError(
         `Module "${root.name}" declares input and is being deployed as the root, but Load was given ` +
-          'no values from the `config` adapters to fill it from. Pass { configPool } to Load; prisma deploy and prisma dev ' +
+          'no app configuration to fill it from. Pass { configuration } to Load; prisma deploy and prisma dev ' +
           'pass the values the `config` adapters return.',
       );
     }
-    moduleInputs.push({
-      moduleAddress: rootId,
-      schema: root.inputSchema,
-      binding: opts.configPool,
-      fromConfigPool: true,
-    });
   }
 
   const nodes: GraphNode[] = [];
@@ -724,7 +738,8 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
   }
   const resolved = resolveValues({
     environment: opts?.environment,
-    configPool: opts?.configPool,
+    configuration: opts?.configuration,
+    appConfigurationRead: opts?.appConfigurationRead,
     inputBindings,
     params: paramBindings,
     moduleInputs,
@@ -748,6 +763,7 @@ export function loadModule(root: ModuleNode, opts?: LoadOptions): Graph {
     inputBindings: resolved.inputBindings,
     params: resolved.params,
     secretSources: resolved.secretSources,
+    appConfigurationRead: resolved.appConfigurationRead,
   };
 }
 

@@ -465,7 +465,7 @@ An `envParam()` field whose variable is unset or empty is a key left out, and wh
 - [ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md): a module has the same boundary as a service.
 - [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): values, runtime values and pointers, and the configuration `envParam()` reads.
 - [ADR-0021](ADR-0021-params-are-read-through-config-not-load.md), superseded: `config()` is replaced by `service.input()`; dependencies still read through `load()`.
-- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md), partly superseded: `envSecret()` survives as a binding leaf; the `secrets()` read and per-slot pointer rows are replaced.
+- [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md), partly superseded: `envSecret()` survives as a binding leaf; the `secrets()` read and per-slot pointer rows are replaced.
 - [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md), partly superseded: binding at `provision()` and `envParam()` survive; the `config()` read and per-key pointer rows are replaced.
 - [ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md): Composer's own provider params, still on per-key rows.
 - [config-params.md](../10-domains/config-params.md): the sources, and where each is accepted.

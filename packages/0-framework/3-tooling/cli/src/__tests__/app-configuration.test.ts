@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { ConfigAdapter, PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
+import { readAppConfiguration, readAppSecrets } from '../app-configuration.ts';
 import { dotenv } from '../config-adapters.ts';
-import { readConfigPool, readSecretsPool } from '../config-pools.ts';
+import * as appConfigurationFileEntry from '../exports/app-configuration-file.ts';
 import * as configEntry from '../exports/config.ts';
-import * as poolsEntry from '../exports/pools.ts';
 
 const base: PrismaAppConfig = {
   extensions: [],
@@ -31,41 +31,41 @@ afterEach(() => {
   delete process.env['S4_PROBE'];
 });
 
-describe('readConfigPool and readSecretsPool', () => {
-  test('with no config list, the config pool is the process environment', async () => {
+describe('readAppConfiguration and readAppSecrets', () => {
+  test('with no config list, the app configuration is the process environment', async () => {
     process.env['S4_PROBE'] = 'probe';
 
-    expect((await readConfigPool(base, input))['S4_PROBE']).toBe('probe');
+    expect((await readAppConfiguration(base, input))['S4_PROBE']).toBe('probe');
   });
 
-  test('with no secrets list, the secrets pool is the process environment', async () => {
+  test('with no secrets list, the app secrets is the process environment', async () => {
     process.env['S4_PROBE'] = 'probe';
 
-    expect((await readSecretsPool(base, input))['S4_PROBE']).toBe('probe');
+    expect((await readAppSecrets(base, input))['S4_PROBE']).toBe('probe');
   });
 
   test('adapters merge by top-level key in list order, a later adapter winning', async () => {
     const config = [() => ({ A: '1', B: '1' }), () => ({ B: '2' })];
 
-    expect(await readConfigPool(section({ config }), input)).toEqual({ A: '1', B: '2' });
+    expect(await readAppConfiguration(section({ config }), input)).toEqual({ A: '1', B: '2' });
   });
 
   test("an undefined value does not hide an earlier adapter's value", async () => {
     const config = [() => ({ A: '1' }), () => ({ A: undefined })];
 
-    const pool = await readConfigPool(section({ config }), input);
+    const values = await readAppConfiguration(section({ config }), input);
 
-    expect(pool).toEqual({ A: '1' });
+    expect(values).toEqual({ A: '1' });
   });
 
   test('the merge is shallow: a later object replaces an earlier one whole', async () => {
     const second = { b: 2 };
     const config = [() => ({ S: { a: 1 } }), () => ({ S: second })];
 
-    const pool = await readConfigPool(section({ config }), input);
+    const values = await readAppConfiguration(section({ config }), input);
 
-    expect(pool).toEqual({ S: { b: 2 } });
-    expect(pool['S']).toBe(second);
+    expect(values).toEqual({ S: { b: 2 } });
+    expect(values['S']).toBe(second);
   });
 
   test("each adapter receives the environment's name and the config file's directory", async () => {
@@ -75,7 +75,7 @@ describe('readConfigPool and readSecretsPool', () => {
       return {};
     };
 
-    await readConfigPool(section({ config: [recording] }), input);
+    await readAppConfiguration(section({ config: [recording] }), input);
 
     expect(seen).toEqual([{ environment: 'staging', configDirectory: '/app' }]);
   });
@@ -91,16 +91,19 @@ describe('readConfigPool and readSecretsPool', () => {
         return { [name]: name };
       };
 
-    const pool = await readConfigPool(section({ config: [adapter('a'), adapter('b')] }), input);
+    const values = await readAppConfiguration(
+      section({ config: [adapter('a'), adapter('b')] }),
+      input,
+    );
 
     expect(order).toEqual(['a:start', 'a:end', 'b:start', 'b:end']);
-    expect(pool).toEqual({ a: 'a', b: 'b' });
+    expect(values).toEqual({ a: 'a', b: 'b' });
   });
 
   test('a list the author writes replaces the default', async () => {
     process.env['S4_PROBE'] = 'probe';
 
-    expect(await readConfigPool(section({ config: [] }), input)).toEqual({});
+    expect(await readAppConfiguration(section({ config: [] }), input)).toEqual({});
   });
 
   test('an adapter that throws fails with CONFIG.ADAPTER_FAILED naming its list and position', async () => {
@@ -112,7 +115,7 @@ describe('readConfigPool and readSecretsPool', () => {
       },
     ];
 
-    const error = await structuredError(() => readSecretsPool(section({ secrets }), input));
+    const error = await structuredError(() => readAppSecrets(section({ secrets }), input));
 
     expect(error.code).toBe('CONFIG.ADAPTER_FAILED');
     expect(error.message).toBe(
@@ -137,7 +140,7 @@ describe('readConfigPool and readSecretsPool', () => {
     for (const [returned, kind] of cases) {
       const config = [() => returned as never];
 
-      const error = await structuredError(() => readConfigPool(section({ config }), input));
+      const error = await structuredError(() => readAppConfiguration(section({ config }), input));
 
       expect(error.code).toBe('CONFIG.ADAPTER_INVALID');
       expect(error.message).toBe(
@@ -153,7 +156,7 @@ describe('readConfigPool and readSecretsPool', () => {
   test('an adapter factory in place of its adapter names the fix', async () => {
     const config = [dotenv as never];
 
-    const error = await structuredError(() => readConfigPool(section({ config }), input));
+    const error = await structuredError(() => readAppConfiguration(section({ config }), input));
 
     expect(error.code).toBe('CONFIG.ADAPTER_INVALID');
     expect(error.message).toBe(
@@ -167,7 +170,7 @@ describe('readConfigPool and readSecretsPool', () => {
   test('a secrets adapter that returns a value that is not text fails naming the key and its kind, never the value', async () => {
     const secrets = [() => ({ TOKEN: 918273645 })];
 
-    const error = await structuredError(() => readSecretsPool(section({ secrets }), input));
+    const error = await structuredError(() => readAppSecrets(section({ secrets }), input));
 
     expect(error.code).toBe('CONFIG.ADAPTER_INVALID');
     expect(error.message).toBe(
@@ -178,15 +181,15 @@ describe('readConfigPool and readSecretsPool', () => {
     expect(error.message).not.toContain('918273645');
   });
 
-  test('the pools are frozen objects with no prototype', async () => {
+  test('the app configuration and the app secrets are frozen objects with no prototype', async () => {
     const config = section({ config: [() => ({ A: 'a' })], secrets: [() => ({ B: 'b' })] });
 
-    for (const pool of [
-      await readConfigPool(config, input),
-      await readSecretsPool(config, input),
+    for (const values of [
+      await readAppConfiguration(config, input),
+      await readAppSecrets(config, input),
     ]) {
-      expect(Object.isFrozen(pool)).toBe(true);
-      expect(Object.getPrototypeOf(pool)).toBeNull();
+      expect(Object.isFrozen(values)).toBe(true);
+      expect(Object.getPrototypeOf(values)).toBeNull();
     }
   });
 
@@ -194,20 +197,23 @@ describe('readConfigPool and readSecretsPool', () => {
     const parsed = JSON.parse('{"__proto__":{"INHERITED":"x"},"constructor":"c","prototype":"p"}');
     const config = section({ config: [() => parsed] });
 
-    const pool = await readConfigPool(config, input);
+    const values = await readAppConfiguration(config, input);
 
-    expect(Object.getPrototypeOf(pool)).toBeNull();
-    expect(pool['INHERITED']).toBeUndefined();
-    expect(pool['toString']).toBeUndefined();
-    expect(Object.keys(pool)).toEqual(['__proto__', 'constructor', 'prototype']);
-    expect(pool['constructor']).toBe('c');
-    expect(pool['prototype']).toBe('p');
+    expect(Object.getPrototypeOf(values)).toBeNull();
+    expect(values['INHERITED']).toBeUndefined();
+    expect(values['toString']).toBeUndefined();
+    expect(Object.keys(values)).toEqual(['__proto__', 'constructor', 'prototype']);
+    expect(values['constructor']).toBe('c');
+    expect(values['prototype']).toBe('p');
   });
 });
 
-describe('where the pool readers are published', () => {
-  test('the public config entry exports the adapters only; the pool readers are on the internal pools entry', () => {
+describe('where the readers are published', () => {
+  test('the public config entry exports the adapters only, and the second process reads through the app configuration file entry', () => {
     expect(Object.keys(configEntry).sort()).toEqual(['dotenv', 'environmentVariables']);
-    expect(Object.keys(poolsEntry).sort()).toEqual(['readConfigPool', 'readSecretsPool']);
+    expect(Object.keys(appConfigurationFileEntry).sort()).toEqual([
+      'namedSecretsFromEnvironment',
+      'readAppConfigurationFile',
+    ]);
   });
 });
