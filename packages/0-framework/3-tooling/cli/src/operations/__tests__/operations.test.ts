@@ -3977,7 +3977,7 @@ describe('the second process reads what the first process read', () => {
 
       if (graph === undefined || file === undefined) throw new Error('the deploy did not run');
       expect(seen).toEqual({
-        mode: 0o600,
+        mode: process.platform === 'win32' ? expect.any(Number) : 0o600,
         json: {
           appConfigurationRead: {
             rootInput: [{ path: ['GREETING'], value: 'hello' }],

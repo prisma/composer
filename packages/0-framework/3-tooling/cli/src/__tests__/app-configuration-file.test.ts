@@ -100,7 +100,7 @@ describe('the app configuration file', () => {
       knownSecrets: new KnownSecrets(),
     }).writeFile();
 
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o600);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({
       appConfigurationRead: {
         rootInput: [{ path: ['EMAIL_FROM'], value: 'shop@example.com' }],
@@ -120,7 +120,7 @@ describe('the app configuration file', () => {
       knownSecrets: new KnownSecrets(),
     }).writeFile();
 
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o600);
     expect(fs.readFileSync(file, 'utf8')).not.toBe('old');
   });
 
