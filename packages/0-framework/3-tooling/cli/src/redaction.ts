@@ -87,14 +87,14 @@ export function redactValues(text: string, values: Iterable<string>): string {
   return new SecretMatcher(values).redact(text);
 }
 
-/** `text` with bearer and basic tokens, JWTs, the password in a URL, and `token=…`-style pairs replaced by `[redacted]`. */
+/** `text` with bearer and basic tokens, JWTs, the password in a URL, and `token=…`-style pairs replaced by `[redacted]`. The `<value>` placeholder in a printed command is kept. */
 function redactShapes(text: string): string {
   return text
     .replace(/\b(Bearer|Basic)\s+[\w.~+/=-]+/gi, `$1 ${REDACTED}`)
     .replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]*/g, REDACTED)
     .replace(/(\b[a-z][\w+.-]*:\/\/[^\s:/@]*:)[^\s/@]+@/gi, `$1${REDACTED}@`)
     .replace(
-      /\b((?:[\w-]*[_-])?(?:token|secret|password|passwd|api[_-]?key|access[_-]?key|private[_-]?key)["']?\s*[:=]\s*["']?)[^\s"',;&]+/gi,
+      /\b((?:[\w-]*[_-])?(?:token|secret|password|passwd|api[_-]?key|access[_-]?key|private[_-]?key)["']?\s*[:=]\s*["']?)(?!<value>)[^\s"',;&]+/gi,
       `$1${REDACTED}`,
     );
 }

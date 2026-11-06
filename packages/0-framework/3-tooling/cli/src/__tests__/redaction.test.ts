@@ -51,6 +51,13 @@ describe('SecretRedaction', () => {
     expect(redaction.knownSecrets.values().size).toBe(0);
   });
 
+  test('SecretRedaction keeps the <value> placeholder in a command that sets a variable whose name contains SECRET', () => {
+    const command = "prisma project env add 'AUTH_SIGNING_SECRET=<value>' --project 'proj_1' --role production";
+
+    expect(new SecretRedaction({}).redact(command)).toBe(command);
+    expect(new SecretRedaction({}).redact('AUTH_SIGNING_SECRET=sk_live_abc')).toBe('AUTH_SIGNING_SECRET=[redacted]');
+  });
+
   test('SecretRedaction hides a value added after it first redacted', () => {
     const redaction = knowing('first-secret');
     expect(redaction.redact('first-secret later-secret')).toBe('[redacted] later-secret');
