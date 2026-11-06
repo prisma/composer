@@ -36,13 +36,13 @@ A **platform variable** is an environment variable on the platform that a servic
 
 `envSecret()` and `envParam()` check the name they are given, so Load fails with the message.
 
-- A name matches `^[A-Z][A-Z0-9_]*$`: an upper-case letter, then upper-case letters, digits and underscores.
+- A name matches `^[A-Z][A-Z0-9_]*$`: an upper-case letter, then upper-case letters, digits and underscores. The platform also accepts a leading underscore; Composer refuses it (see Reasoning).
 - These names are reserved: any name starting with `COMPOSER_`, which are Composer's own rows; `DATABASE_URL` and `DATABASE_URL_POOLED`, which Prisma Cloud sets and manages; `PORT`, which boot sets to the service's port; `PATH` and `HOME`, which `prisma dev` sets from the developer's shell. `HOST` is allowed.
 - **One name has one meaning.** Load refuses a name that `envParam()` or a root input field reads from the app configuration when an `envSecret()` names it as a secret. The Prisma Cloud extension's graph check refuses a name that both an `envParam()` and a field of the root's input use. The error names both uses. Two `envSecret('X')`, or two `envParam('X')`, read one variable and are allowed.
 
 ### The graph check
 
-`ExtensionDescriptor` has an optional `checkGraph(graph)`. The CLI calls every extension's `checkGraph` right after Load and before the registry coverage check. So it runs in `prisma deploy`, in `prisma dev` at start and at every rebuild, and in `destroy`. A command that reads only the app's name, such as `log`, does not run Load and does not run the check. A throw fails the command with `COMPOSE.GRAPH_INVALID` and the thrown message, before anything is created and before any dev service starts. The check sees the loaded graph only, never the app configuration or the app secrets.
+`ExtensionDescriptor` has an optional `checkGraph(graph)`. The CLI calls every extension's `checkGraph` right after Load and before the registry coverage check. So it runs in `prisma deploy`, in `prisma dev` at start and at every rebuild, and in `destroy`. A command that reads only the app's name, such as `log`, does not run Load and does not run the check. A check refuses a graph by throwing core's `GraphCheckError`, which fails the command with `COMPOSE.GRAPH_INVALID` and its message, before anything is created and before any dev service starts. Any other throw from the hook is a bug and reaches the user as one ([ADR-0044](ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md)). The check sees the loaded graph only, never the app configuration or the app secrets.
 
 ### The input document
 
@@ -56,7 +56,7 @@ Each place in a service's input document that reads a platform variable holds a 
 - A `$generated` marker names a variable Composer writes itself, for `generatedParam()` and `serviceOrigin()`. Two `$generated` markers in one document must name different variables, compared without case. Two `$platform` markers for one name are two reads of one variable and are allowed.
 - A user key spelled like a marker (`$platform`, `$generated`, or `$secret`) gains one leading `$` when written and loses it when read, so only Composer can place a marker.
 - The deploy report shows each marker as `$platform NAME` or `$generated NAME`.
-- The marker format, the code that finds every marker at any depth, and boot's handling of a marker live in one package, `@internal/input-document`. The serializer, boot and the local target all use it.
+- The marker format, the code that finds every marker at any depth, boot's handling of a marker, and the `COMPOSER_` row keys and per-key param pointer rows that boot reads beside the document live in one package, `@internal/input-document`. The serializer, boot and the local target all use it.
 
 ### Boot
 
@@ -79,7 +79,7 @@ Preflight runs after the deploy has resolved the app's Project and Branch, and b
 - **One list call per name.** The call is filtered by `projectId`, `class` and `key`, and walks every page. The class is `production` for the environment `production` and `preview` for every other. The environment sees the class row, and for a preview environment its own branch's row. At most eight calls run at once. A failed call fails the deploy.
 - **The row the platform resolves.** The branch row wins when there is one, otherwise the class row. Preflight keeps that row's `updatedAt`. A change to a class row under a branch override changes nothing the service receives, so it triggers nothing.
 - **A system row is refused.** A row the environment sees with `isManagedBySystem: true` fails the deploy, naming the variable.
-- **Required or reported, per service.** For each service that reads a variable with no row, preflight serialises the input with every variable present and runs the service's schema. A failure there is an invalid input, reported as such and never blamed on a variable. Then it runs the schema with every variable that has no row left out. If that passes, those variables are optional for that service. If it fails, it leaves out each one alone, and the ones whose absence alone fails are required. When no single one fails alone, the error says the service needs some of them. A variable in an array position is required without a check. This is the method [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-app-secrets-and-never-invents-them.md) gives the dev preflight, and both preflights call the same code.
+- **Required or reported, per service.** For each service that reads a variable with no row, preflight serialises the input with every variable present and runs the service's schema. A failure there is an invalid input, reported as such and never blamed on a variable. Then it runs the schema with every variable that has no row left out. If that passes, those variables are optional for that service. If it fails, it leaves out each one alone, and the ones whose absence alone fails are required. When no single one fails alone, the error says the service needs some of them. A variable an array position reads is required without a check. This is the method [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-app-secrets-and-never-invents-them.md) gives the dev preflight, and both preflights call the same code.
 - **A per-key param** is required when it has no default and is not optional.
 - **A secret in a module's input that no service reads** has no reader to need it. It is reported, never required.
 - **A required variable fails the deploy** with `DEPLOY.PREFLIGHT_FAILED`, before Alchemy runs:
@@ -94,7 +94,7 @@ Preflight runs after the deploy has resolved the app's Project and Branch, and b
   ```
 
   For production the one command is `--role production`. For every other environment the preview-wide command comes first, so the next preview branch is not missing it too, and the branch command second.
-- **The findings.** Every variable with no row that nothing requires is listed, with its readers (a service and field, a service and per-key param, or the module that names it and that no service reads it) and the commands that set it. `PreflightInput.report` carries the count of variables checked and this list, names and readers only, never a value. The deploy prints the list right after the preflight step, under `Platform variables with no value:`. With `--json` it is a message whose data is the list, and `onEvent` receives it as a `preflight-findings` event. The step's data stays `{ checked, unset }`, two counts. The list also travels on the preflight transport to the deploy's second process, and the deploy report repeats it at the end.
+- **The findings.** Every variable with no row that nothing requires is listed, with its readers (a service and field, a service and per-key param, or the module that names it and that no service reads it) and the commands that set it. `PreflightInput.report` takes a `PlatformVariableCheck`: the count of platform variables checked and this list, names and readers only, never a value. It carries platform-variable findings and that count, nothing else. The deploy prints the list right after the preflight step, under `Platform variables with no value:`. With `--json` it is a message whose data holds the list, and `onEvent` receives it as a `preflight-findings` event. The step's data stays `{ checked, unset }`, two counts. The CLI carries the list to the deploy's second process in core's own transport variable, `PRISMA_COMPOSER_DEPLOY_FINDINGS`, and lowering puts it into `DeploymentResult.findings`, so the deploy report repeats it at the end. An extension's own preflight payload never carries it.
 - **Triggers.** Each service's deployment triggers carry `<name>:updatedAt` for each platform variable its document or its per-key params point at, with `?` when the variable has no row. Changing a value on the platform and deploying again replaces exactly the deployments that read it.
 
 ### `prisma dev`
@@ -104,7 +104,7 @@ The local target plays the platform's part.
 - It fills each `envSecret()` variable from the app secrets and each per-key `envParam()` variable from the app configuration, under the variable's name. An app configuration value that is not text stops `prisma dev`, naming the variable, the service and the kind of value.
 - The first process hands the second process the named secrets, the app secrets under the secrets keys of the graph's secret sources, in `PRISMA_COMPOSER_NAMED_SECRETS`, in memory.
 - **It isolates.** A local service receives only the variables its own rows and `$platform` markers point at. This is a rule of the local target only: on Prisma Cloud every deployment receives every row of its class.
-- A missing value follows ADR-0058: a required secret or a required per-key param stops `prisma dev` before any service starts, naming it; an optional one is left out of the service's input, as the deploy's boot leaves it out.
+- A missing value follows ADR-0058: a required secret, a secret an array position reads, or a required per-key param stops `prisma dev` before any service starts, naming it and the service; an optional one is left out of the service's input, as the deploy's boot leaves it out.
 - A changed value pauses rebuilds until `prisma dev` is restarted. After the restart, the fingerprint trigger replaces only the readers' deployments.
 
 ### The shortcuts
@@ -115,7 +115,7 @@ The local target plays the platform's part.
 
 ## Reasoning
 
-**Seeding on deploy moves a local value to production.** The deploy used to copy a missing variable from the app secrets or the app configuration to the platform. With rows per class and per branch, and with `.env` read by every environment, that is how a developer's test key reaches production. A variable is the operator's, so the operator sets it, on the platform, in the scope the operator chooses.
+**Seeding on deploy moves a local value to production.** A deploy that copies a missing variable from the app secrets or the app configuration to the platform carries a developer's test key to production, because rows are per class and per branch and `.env` is read by every environment. A variable is the operator's, so the operator sets it, on the platform, in the scope the operator chooses.
 
 **Preflight is the only protection against a missing value.** The platform promotes a deployment whose process exits at boot and reports it running. So a deploy that succeeded with a required variable unset would leave a crashing service in place. Preflight refuses the case it can see without a value: the service's own schema says the variable is needed.
 
@@ -124,6 +124,8 @@ The local target plays the platform's part.
 **One call per name, not per scope.** The list filter by class and key already returns the class row and every branch row. Listing the whole class would return every branch's `COMPOSER_` rows on a preview project.
 
 **Upper-case names.** The platform accepts no other key, and Composer compares pointer names without case while a process environment on Linux compares them with case. With upper-case names a row and a name never differ by case, so boot finds the row preflight saw.
+
+**No leading underscore.** The platform accepts one; the rule is Composer's. Shells and tools use names that start with an underscore for their own variables: bash puts `_` in the environment of every command it runs, and the Java virtual machine reads `_JAVA_OPTIONS`. Keeping those names out of the app's names means an app's variable never meets one of them.
 
 **Empty means unset.** The platform cannot store an empty value. `prisma dev` already treated empty as unset. Treating empty as unset at boot too makes the two agree.
 

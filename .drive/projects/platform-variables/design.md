@@ -195,6 +195,8 @@ A platform variable's name must match `^[A-Z][A-Z0-9_]*$`: it starts with an upp
 
 Upper case only, because the platform accepts no other key (section 3), and because the two places a name is used do not agree about case: Composer compares pointer names without case, and a process environment on Linux compares them with case. With upper-case names a row and a name can never differ by case, so boot always finds the row preflight saw.
 
+No leading underscore, though the platform accepts one. Shells and tools use names that start with an underscore for their own variables: bash puts `_` in the environment of every command it runs, and the Java virtual machine reads `_JAVA_OPTIONS`. The rule is Composer's, and the error says so.
+
 ### Reserved names
 
 The constructor refuses these names, saying why:
