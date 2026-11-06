@@ -36,6 +36,8 @@ After: `Prisma.RoutingUrl` creates the platform row at once, with no DNS. The de
 
 **Reuse #2701.** alchemy-run/alchemy#2701 (Sam Goodwin, paused) has the pieces this needs: `DomainVerification` to read the TXT record, `AuthoritativeDns` to wait on authoritative nameservers, and the `DomainOwnership` resource. #2701 expects create to fail with `DomainOwnershipRequired` until the record resolves. The platform now creates the domain ownership `unverified` and returns it, so #2701 would treat an unverified one as proved. We replace #2701 and its base #2698 with our own pull request that carries their Prisma parts, waits on `status`, and carries `status` and `expiresAt` in its attributes (Will, 2026-11-06). Sam is asked to close his two.
 
+**Don't declare both resources for one exact hostname.** D2's `Prisma.DomainOwnership` takes over an `unverified` row it finds by domain without `--adopt`, and deletes it on destroy. The platform creates exactly that row for a RoutingUrl. So a stack that declares both a `Prisma.RoutingUrl` and a `Prisma.DomainOwnership` for the same exact hostname can delete the row the RoutingUrl relies on. D3's JSDoc and guide say so.
+
 **`Prisma.CustomDomain` stays** for now. The platform keeps `/v1/services/{id}/domains` as a view over RoutingUrls for one deprecation cycle. Composer switches in P2.
 
 ## Coherence rationale
