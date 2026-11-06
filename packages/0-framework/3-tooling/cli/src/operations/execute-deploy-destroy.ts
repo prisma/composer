@@ -354,10 +354,7 @@ async function runStackPipelineInner(
     if (!setup.ok) return setup;
     converge = setup.value;
   }
-  const platformCredentials =
-    deps.credentials === undefined
-      ? undefined
-      : { workspaceId: deps.credentials.workspaceId, client: deps.credentials.client };
+  const platformCredentials = deps.credentials;
 
   // Destroy-only guardrail — first, ahead of every other step, so it
   // surfaces even when the rest of the pipeline goes on to fail for an
@@ -732,55 +729,19 @@ async function runStackPipelineInner(
 
 interface ConvergeSetup {
   readonly appConverge: AppConverge;
-  /** The credential variables Alchemy reads, set for the length of the apply; `undefined` removes one. */
-  readonly credentialEnv: Readonly<Record<string, string | undefined>>;
 }
 
-/**
- * Alchemy runs in this process and reads its Prisma credential only from the
- * environment, and the engine gives a command no way to read a `prisma login`
- * session's token. So deploy needs a service token.
- */
-function serviceTokenRequired(): CliStructuredError {
-  return new CliStructuredError(
-    'DEPLOY.SERVICE_TOKEN_REQUIRED',
-    'Deploy needs PRISMA_SERVICE_TOKEN in the environment.',
-    {
-      why: 'Alchemy applies the deploy in this process and reads its Prisma credential from the environment. A `prisma login` session cannot reach it yet.',
-      fix: 'Create a service token for the workspace in the Prisma Console and set PRISMA_SERVICE_TOKEN to it, then deploy again.',
-    },
-  );
-}
-
-/**
- * What deploy's converge needs before anything is created: the service token,
- * and the app's own install of the converge. A caller that supplies credentials
- * supplies the token with them, and the token and workspace always come from
- * that one credential; a caller that supplies none leaves both to the
- * environment.
- */
+/** What deploy's converge needs before anything is created: the app's own install of the converge. */
 async function prepareConverge(
   deps: OperationDeps,
   appDir: string,
 ): Promise<Result<ConvergeSetup, CliStructuredError>> {
-  const credentials = deps.credentials;
-  const token =
-    credentials === undefined ? process.env['PRISMA_SERVICE_TOKEN'] : credentials.serviceToken;
-  if (token === undefined || token.length === 0) return notOk(serviceTokenRequired());
-  let appConverge: AppConverge;
   try {
-    appConverge = deps.converge ?? (await loadAppConverge(appDir));
+    return ok({ appConverge: deps.converge ?? (await loadAppConverge(appDir)) });
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;
   }
-  return ok({
-    appConverge,
-    credentialEnv:
-      credentials === undefined
-        ? {}
-        : { PRISMA_SERVICE_TOKEN: token, PRISMA_WORKSPACE_ID: credentials.workspaceId },
-  });
 }
 
 /** The structured failure a converge that did not apply settles as. */
@@ -853,7 +814,7 @@ async function convergeDeploy(
 ): Promise<Result<DeploymentSummary | undefined, CliStructuredError>> {
   const { cwd, environment, steps } = opts;
   const config = pipeline.configSource.value;
-  const env = { ...resolved.env, ...setup.credentialEnv };
+  const env = resolved.env;
   const redact = convergeRedactor(
     { ...process.env, ...env },
     poolSecrets(pipeline.pools, config.secrets !== undefined),
@@ -874,6 +835,7 @@ async function convergeDeploy(
       bundles: pipeline.assembled.bundles,
       containers: resolved.containers,
       preflight: resolved.preflight,
+      credentials: opts.deps.credentials,
       report: (result) => {
         summary = toDeploymentSummary(result);
       },

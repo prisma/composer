@@ -342,14 +342,14 @@ shared contract code into a chunk neither output contains:
 pnpm run build
 ```
 
-Deploying needs a service token. Create one in your workspace's settings in the [Prisma Console](https://console.prisma.io) and set it as `PRISMA_SERVICE_TOKEN`, on your machine and in CI alike:
+Deploying needs a signed-in `prisma`. Sign in once; it opens a browser and stores a session for one workspace:
 
 ```sh
-export PRISMA_SERVICE_TOKEN=<your service token>
+pnpm prisma auth login
 pnpm prisma deploy
 ```
 
-A `prisma auth login` session alone is not enough for `prisma deploy` yet; without the token it fails with `DEPLOY.SERVICE_TOKEN_REQUIRED`.
+In CI, set `PRISMA_SERVICE_TOKEN` to a service token from the [Prisma Console](https://console.prisma.io) instead.
 
 `pnpm prisma` runs under Node, which suits this app: the modules `prisma`
 loads declare services and never call Bun APIs themselves. An app whose

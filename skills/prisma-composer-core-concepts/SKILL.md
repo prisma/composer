@@ -407,10 +407,9 @@ complete pattern.
 
 Deploy compares the declared topology against recorded deploy state and
 applies only the difference. Re-deploying with nothing changed is a no-op;
-removing a node removes its deployed resource. `prisma deploy` needs
-`PRISMA_SERVICE_TOKEN` in the environment, on a developer machine too: it runs
-the deploy engine in its own process, and a `prisma auth login` session cannot
-reach it yet (`DEPLOY.SERVICE_TOKEN_REQUIRED`). The `/control` operations, and so
+removing a node removes its deployed resource. `prisma deploy` needs a signed-in
+identity: `prisma auth login` stores a session on a developer machine, and
+`PRISMA_SERVICE_TOKEN` overrides it in CI. The `/control` operations, and so
 a destroy script, never use that session: `deploy` and `destroy` read
 `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` from environment variables (both
 in the workspace's Console settings); `dev` and `log` read neither. The

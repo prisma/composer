@@ -23,7 +23,7 @@ code.
 The `prisma` commands and the operations you call from a script sign in
 differently:
 
-- **`prisma deploy`** needs `PRISMA_SERVICE_TOKEN` in the environment, a service token you create in the workspace's settings in the [Prisma Console](https://console.prisma.io). It overrides any stored session. Deploy runs Alchemy in the `prisma` process, and Alchemy reads its credential only from the environment, so a `prisma auth login` session alone is not enough yet: without the variable, deploy fails with `DEPLOY.SERVICE_TOKEN_REQUIRED` before it does anything. `prisma dev` needs no sign-in.
+- **`prisma deploy`** signs in the way every `prisma` command does. On your machine, run `prisma auth login` once; it opens a browser and stores a session for one workspace. In CI, set `PRISMA_SERVICE_TOKEN` instead; it overrides any stored session. `prisma dev` needs no sign-in.
 - **The operations of `@prisma/composer/control`**, and so a destroy script,
   never use a `prisma auth login` session. `deploy` and `destroy` read two
   environment variables, and each is required once the operation reaches
