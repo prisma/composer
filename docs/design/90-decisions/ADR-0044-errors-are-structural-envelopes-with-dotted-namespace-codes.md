@@ -1,6 +1,6 @@
 # ADR-0044: Errors are structural envelopes with dotted namespace codes
 
-Amended by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): `deploy` starts no Alchemy child, so the child exit-status passthrough below applies only to `prisma dev` and `destroy`. A failed `deploy` plan or apply is `DEPLOY.ENGINE_FAILED` and exits 2. `DEPLOY.INTERRUPTED`, `DEPLOY.SERVICE_TOKEN_REQUIRED`, `DEPLOY.CONVERGE_RUNNING`, `DEPLOY.WORKER_THREAD`, `DEPS.CONVERGE_UNRESOLVABLE` and `DEPS.CONVERGE_CONTRACT_MISMATCH` are added. An interrupted `prisma deploy` reports `DEPLOY.INTERRUPTED` as a message and ends with the engine's `CLI.ABORTED`, exiting 130 (143 for SIGTERM).
+Amended by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): `deploy` starts no Alchemy child, so the child exit-status passthrough below applies only to `prisma dev` and `destroy`. A failed `deploy` plan or apply is `DEPLOY.ENGINE_FAILED` and exits 2. `DEPLOY.INTERRUPTED`, `DEPLOY.CONVERGE_RUNNING`, `DEPLOY.WORKER_THREAD`, `DEPS.CONVERGE_UNRESOLVABLE` and `DEPS.CONVERGE_CONTRACT_MISMATCH` are added. An interrupted `prisma deploy` reports `DEPLOY.INTERRUPTED` as a message and ends with the engine's `CLI.ABORTED`, exiting 130 (143 for SIGTERM).
 
 Amended 2026-10-23: the `CONFIG` registry gains ENTRY_MISSING, for a command or operation that has no entry module from the config or an override.
 
@@ -102,14 +102,13 @@ Closed subcode registry:
   CONTAINER_FAILED,
   PREFLIGHT_FAILED, ENGINE_FAILED, TEARDOWN_FAILED, CONTAINER_REMOVE_FAILED,
   BUILD_REQUIRED, ALCHEMY_BIN_MISSING, NODE_MISSING, STACK_WRITE_FAILED,
-  INTERRUPTED, SERVICE_TOKEN_REQUIRED, CONVERGE_RUNNING, WORKER_THREAD
+  INTERRUPTED, CONVERGE_RUNNING, WORKER_THREAD
   *(STAGE_INVALID, STAGE_UNVALIDATABLE and SCOPE_MISSING retired by
   [ADR-0059](ADR-0059-a-deployment-environment-is-called-an-environment.md))*.
   ENVIRONMENT_REQUIRED: a `destroy` call names no environment.
   ENGINE_FAILED: Alchemy failed. `deploy` runs Alchemy in process and exits 2; `destroy` and `prisma dev` pass the Alchemy child's exit status through (see § Exit codes).
   INTERRUPTED: the abort signal stopped `deploy`'s plan or apply. `prisma deploy` exits 130 (143 for SIGTERM): it reports this code as a message event and ends with the engine's abort, `CLI.ABORTED`.
-  SERVICE_TOKEN_REQUIRED: `deploy`'s credential is not a service token, such as a `prisma login` session, or there is none in the environment ([ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md)). Temporary: it is retired when `@prisma/cli-engine` gives a command the active access token (the in-process credentials need, `needs: { credentials: 'process' }`, asked of `@prisma/cli-engine`), so a session can deploy.
-  CONVERGE_RUNNING: another in-process converge holds this process's environment and working directory.
+  CONVERGE_RUNNING: another in-process converge holds this process's working directory and the reporter variables it sets in the environment.
   WORKER_THREAD: `deploy` was called from a worker thread with a `cwd` other than the process's working directory, which a worker cannot change.
   `prisma dev` starts the Alchemy child the same way `deploy` does, so it
   raises ALCHEMY_BIN_MISSING and NODE_MISSING under `DEPLOY` too.
