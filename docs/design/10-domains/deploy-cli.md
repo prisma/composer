@@ -118,9 +118,7 @@ user can rerun it by hand (ADR-0007).
    the extension registries and the deploy's one state store (ADR-0017).
    Extension factories validate their own environment during config
    evaluation, erroring with the exact variable name — before any slow work.
-2. **Import the entry module.** Its default export must be a node (service or
-   Module). No marked root exists in the model — whatever you point the CLI at
-   *is* the application, and the graph reachable from it is what deploys.
+2. **Import the entry module.** Its default export must be the app's root: an app root built with `appRoot()`, or a module built with `module()`. The graph reachable from it is what deploys. A service is not independently deployable: the CLI refuses it with `COMPOSE.ROOT_NOT_MODULE`, naming the fix (wrap it: `appRoot('name', ({ provision }) => { provision(...); })`). Anything else is `COMPOSE.ENTRY_EXPORT_INVALID`. Every command that loads the entry, including the ones that only read the app's name from it, runs this check.
 3. **Resolve the name.** The root node's name (every node is named — ADR-0006),
    unless `--name` overrides it — CI's per-run ephemeral deploys use this so a
    name never collides with a standing demo. The resolved name is the root's
@@ -132,13 +130,7 @@ user can rerun it by hand (ADR-0007).
    `serviceOrigin()` can't be deployed under `--name`: the addresses in its
    code start with its own name, which then names no node.
 4. **Read the app secrets and the app configuration.** For `deploy` the CLI first calls the `secrets` adapters, then for every command the `config` adapters, in list order, each awaited, and merges what each list returns by top-level key, a later adapter winning. Both lists default to `[environmentVariables()]`. The app configuration is Load's input: the root's input and what `envParam()` reads. The app secrets are held in memory for preflight. Once Load has run, the values under the names an `envSecret()` in the graph reads, in either list, become the known secrets the CLI redacts; nothing else in the app secrets is read. An adapter that throws or returns something other than an object fails with `CONFIG.ADAPTER_FAILED` or `CONFIG.ADAPTER_INVALID`. No other process runs an adapter.
-5. **Load.** Core's `Load` walks the graph. The root's schema checks the
-   app configuration as the root's input before anything is created. A service with
-   an unwired dependency slot (one an enclosing Module normally wires to a
-   provisioned producer) fails here, with an error naming the input and
-   pointing at the composing Module. The deploy root must be a Module — a bare
-   service is not independently deployable; the CLI errors naming the fix
-   (wrap it: `module('name', ({ provision }) => { provision(...); })`).
+5. **Load.** Core's `Load` walks the graph. The root's schema checks the app configuration as the root's input before anything is created. A service with an unwired dependency slot (one an enclosing Module normally wires to a provisioned producer) fails here, with an error naming the input and pointing at the composing Module.
 6. **Validate coverage.** Every node's and build descriptor's
    `(extension, type)` must have a registry entry in the config; a gap errors
    naming the extension to add to the config.
@@ -292,8 +284,8 @@ them:
 
 | Failure | Error tells the user |
 | --- | --- |
-| Default export isn't a node | what the entry module must export |
-| Deploy root isn't a Module | to wrap the service in a Module |
+| Default export isn't the app's root | to build it with `appRoot()` |
+| Default export is a service | to provision the service inside an `appRoot()` root |
 | Unwired dependency slot | which input, and to deploy the composing Module |
 | Missing `composer` section in `prisma.config.ts` | what the section must contain (ADR-0049) |
 | Old `configPath` field in the section (`CONFIG.FIELD_RETIRED`) | to move `extensions` and `state` into the section and delete the old file (ADR-0049) |

@@ -174,7 +174,7 @@ export async function runPipeline(
   const configSource = checkConfigSource(source, cwd);
   const config = configSource.value;
 
-  // 1. Import the entry module; its default export must be a node.
+  // 1. Import the entry module; its default export must be the app's root.
   const resolved = resolveEntryPath(entry, configSource, cwd);
   const entryModule = await loadEntry(resolved.path, cwd, resolved.fix);
 
@@ -200,13 +200,6 @@ export async function runPipeline(
     environment: { name: environment },
     configuration,
   });
-  if (graph.root.node.kind !== 'module') {
-    throw new CliStructuredError('COMPOSE.ROOT_NOT_MODULE', 'The deploy root must be a module.', {
-      fix:
-        'Wrap your service, e.g. ' +
-        "export default module('name', ({ provision }) => { provision(service); }).",
-    });
-  }
   redaction.addKnownSecrets(valuesUnderSecretsKeys(configuration, secrets, secretsKeys(graph)));
 
   // 5. Registry coverage: every node/build in the graph has a matching descriptor in the config.

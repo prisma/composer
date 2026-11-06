@@ -165,10 +165,10 @@ describe('renderStackFile() — a module root', () => {
 describe('the generated stack file for a real module entry (no alchemy run)', () => {
   test('matches the pipeline’s Load → render sequence', async () => {
     const fixtureDir = path.join(import.meta.dir, 'fixtures');
-    const entry = await loadEntry('valid-module.ts', fixtureDir);
+    const entry = await loadEntry('valid-root.ts', fixtureDir);
 
     expect(entry.root.kind).toBe('module');
-    expect(entry.root.name).toBe('fixture-module');
+    expect(entry.root.name).toBe('fixture-root');
 
     Load(entry.root);
 
@@ -189,8 +189,8 @@ describe('the generated stack file for a real module entry (no alchemy run)', ()
 
     expect(content).toContain('import prismaConfig from "../prisma.config.ts";');
     expect(content).toContain('const config = prismaConfig.composer;');
-    expect(content).toContain('import app from "../valid-module.ts";');
-    expect(content).toContain('name: "fixture-module"');
+    expect(content).toContain('import app from "../valid-root.ts";');
+    expect(content).toContain('name: "fixture-root"');
     expect(content).toContain(
       `"one": { dir: ${JSON.stringify(path.join(fixtureDir, 'one', 'dist', 'bundle'))}, entry: "server.js" }`,
     );

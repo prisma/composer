@@ -46,14 +46,7 @@ function recordedApp(locations: readonly LocalNodeLocation[]): LocalTargetCurren
   };
 }
 
-const VALID_MODULE = path.join(
-  import.meta.dir,
-  '..',
-  '..',
-  '__tests__',
-  'fixtures',
-  'valid-module.ts',
-);
+const VALID_ROOT = path.join(import.meta.dir, '..', '..', '__tests__', 'fixtures', 'valid-root.ts');
 
 function configWith(current: LocalTargetDescriptor['current'], entry?: string): PrismaAppConfig {
   const descriptor: LocalTargetDescriptor = {
@@ -261,7 +254,7 @@ describe.skipIf(process.platform === 'win32')('devUrl', () => {
       cwd,
     });
     const stop = await devStop({
-      config: config(target.current, VALID_MODULE),
+      config: config(target.current, VALID_ROOT),
       environment: 'Dev',
       cwd,
     });
@@ -434,20 +427,20 @@ describe.skipIf(process.platform === 'win32')('devStop', () => {
   test("stops the config entry's app in dev and returns what it stopped", async () => {
     const target = asked(recordedApp(running));
 
-    const result = await devStop({ config: config(target.current, VALID_MODULE), cwd });
+    const result = await devStop({ config: config(target.current, VALID_ROOT), cwd });
 
     expect(stopped).toEqual(['shop']);
     expect(target.inputs).toEqual([
       {
         devDir: path.join(cwd, '.prisma-composer', 'dev', 'dev'),
-        app: 'fixture-module',
+        app: 'fixture-root',
         environment: 'dev',
       },
     ]);
     expect(result).toMatchObject({
       ok: true,
       value: {
-        app: 'fixture-module',
+        app: 'fixture-root',
         environment: 'dev',
         stopped: running.map(({ address, kind }) => ({ address, kind })),
       },
@@ -458,7 +451,7 @@ describe.skipIf(process.platform === 'win32')('devStop', () => {
     const target = asked(recordedApp(running));
 
     const result = await devStop({
-      config: config(target.current, VALID_MODULE),
+      config: config(target.current, VALID_ROOT),
       name: 'other',
       environment: 'test',
       cwd,
@@ -476,7 +469,7 @@ describe.skipIf(process.platform === 'win32')('devStop', () => {
 
   test('an app and environment with nothing recorded fails with DEV.NOT_STARTED_HERE, naming both', async () => {
     const result = await devStop({
-      config: config(async () => undefined, VALID_MODULE),
+      config: config(async () => undefined, VALID_ROOT),
       environment: 'test',
       cwd,
     });
@@ -485,7 +478,7 @@ describe.skipIf(process.platform === 'win32')('devStop', () => {
       ok: false,
       failure: {
         code: 'DEV.NOT_STARTED_HERE',
-        meta: { app: 'fixture-module', environment: 'test' },
+        meta: { app: 'fixture-root', environment: 'test' },
       },
     });
     expect(stopped).toEqual([]);

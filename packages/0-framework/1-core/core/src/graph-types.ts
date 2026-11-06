@@ -1,6 +1,13 @@
 import { CliStructuredError } from '@internal/foundation/errors';
 import type { ContractStyle } from './contract.ts';
-import type { DependencyEnd, ModuleNode, ResourceNode, SecretSource, ServiceNode } from './node.ts';
+import type {
+  AppRootNode,
+  DependencyEnd,
+  ModuleNode,
+  ResourceNode,
+  SecretSource,
+  ServiceNode,
+} from './node.ts';
 import type { EnvironmentRealValues } from './value.ts';
 
 /** Path-derived: root-scope children are bare ids ("auth", "db"); a nested module's own children dot-join under its address ("auth.db"). */
@@ -58,7 +65,7 @@ export interface GraphNode {
    * (the platform's application topology included) treats the id as opaque.
    */
   readonly parent: NodeId | undefined;
-  readonly node: ServiceNode | ResourceNode | DependencyEnd | ModuleNode;
+  readonly node: ServiceNode | ResourceNode | DependencyEnd | ModuleNode | AppRootNode;
 }
 
 /** The reserved name of a resource's single anonymous output port. Rejected as a user-declared port name (node.ts). */

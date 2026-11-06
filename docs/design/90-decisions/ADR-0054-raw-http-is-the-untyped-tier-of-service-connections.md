@@ -8,7 +8,7 @@ HTTP. The provider declares the port; the consumer declares the dependency; the
 module wires one to the other, exactly like any other connection.
 
 ```ts
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { rawHttp, rawHttpContract } from '@prisma/composer/http';
 import node from '@prisma/composer/node';
 import { compute } from '@prisma/composer-prisma-cloud';
@@ -22,7 +22,7 @@ const gateway = compute({
   build: node({ module: import.meta.url, entry: 'server.js' }),
 });
 
-export default module('web', ({ provision }) => {
+export default appRoot('web', ({ provision }) => {
   const docsRef = provision(docs);
   provision(gateway, { deps: { docs: docsRef.http } });
 });
