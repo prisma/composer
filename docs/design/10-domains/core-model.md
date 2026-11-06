@@ -1,6 +1,6 @@
 # Core model — classes and data structures
 
-> Amended by [ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares one `input` schema, as a compute service does, and receives opaque per-key references in its body. The `ModuleBuilder` below gains that `input`; the service-level slots described here are unchanged.
+> Amended by [ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares one `input` schema, as a compute service does, and receives `input` in its body, a dictionary with one value per field. The `ModuleBuilder` below gains that `input`; the service-level slots described here are unchanged.
 
 The complete type-level design of `@prisma/composer` and the target-pack contract,
 with `@prisma/composer-prisma-cloud` as the worked instance. This is the implementation
@@ -427,11 +427,22 @@ interface Graph {
   readonly edges: readonly Edge[]
 }
 
-interface LoadOptions {
+interface CommonLoadOptions {
   readonly id?: NodeId                              // the root's address; defaults to its name
   readonly environment?: { readonly name: string }  // required by any value over environment.name
-  readonly configPool?: Readonly<Record<string, unknown>>  // what a source's pool key reads, and the root's input; the commands pass what the config adapters return
 }
+interface FirstProcessLoadOptions extends CommonLoadOptions {
+  readonly configuration?: Readonly<Record<string, unknown>>
+      // the root's input, and what a source's configuration key reads; the first process passes what the config adapters return
+  readonly appConfigurationRead?: never
+}
+interface SecondProcessLoadOptions extends CommonLoadOptions {
+  readonly configuration?: never
+  readonly appConfigurationRead: AppConfigurationRead
+      // what the first process's Load read, from the app configuration file
+}
+type LoadOptions = FirstProcessLoadOptions | SecondProcessLoadOptions
+      // Load also refuses both at runtime, for a caller without type checks
 function Load(root: ServiceNode | ModuleNode, opts?: LoadOptions): Graph   // throws LoadError
 class LoadError extends Error {}  // code COMPOSE.GRAPH_INVALID; optional `cause`
 ```
@@ -683,7 +694,8 @@ interface LowerOptions {
   readonly name: string                                  // stack name (+ Load's root id override)
   readonly environment?: string                          // the environment being deployed, as --environment gave it;
                                                          // Load's environment.name. The generated stack files always pass it.
-  readonly configPool?: Readonly<Record<string, unknown>>       // passed to Load and the serializer; the generated stack files pass readConfigPool()
+  readonly appConfigurationRead?: AppConfigurationRead     // passed to Load and the serializer; deploy and dev pass their own Load's, the generated destroy stack file reads it from the app configuration file
+  readonly firstProcessNodeAddresses?: readonly string[]   // from the same file; lowering refuses a graph whose addresses differ
   // `prisma deploy` runs each service's build-adapter assembler and writes
   // the resulting bundle dirs here, into the generated stack file it hands to
   // `lower()` — one bundle per provision id (the deploy root is always a

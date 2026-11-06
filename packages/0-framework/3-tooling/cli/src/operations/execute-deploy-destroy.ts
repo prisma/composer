@@ -16,24 +16,36 @@ import type {
   RunReporter,
 } from '@internal/core/config';
 import { containerEnv, preflightEnvVarName } from '@internal/core/config';
+import { nodeAddresses } from '@internal/core/deploy';
 import { CliStructuredError, InternalError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
+import {
+  deployAppConfigurationFile,
+  prepareSecondProcess,
+  removeLeftoverAppConfigurationFiles,
+  type SecondProcessHandover,
+} from '../app-configuration-file.ts';
 import { type AppConverge, loadAppConverge } from '../app-converge.ts';
 import type { ComposerConfigSource } from '../composer-config.ts';
 import type { ConvergeOutcome, LoweredStack } from '../converge-in-process.ts';
 import {
   capFailureCause,
-  convergeRedactor,
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
   engineFailureFilePath,
-  poolSecrets,
   readEngineFailureCause,
   toDeploymentSummary,
   withComposerAdvice,
 } from '../deployment-summary.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from '../generate-stack.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
+import {
+  credentialLookingValues,
+  redactError,
+  redactSummary,
+  redactThrown,
+  SecretRedaction,
+} from '../redaction.ts';
 import {
   type AlchemyOutcome,
   alchemyInvocation,
@@ -102,6 +114,7 @@ interface StackPipelineOptions {
   readonly steps: DeploySteps;
   /** Deploy only: interrupts the plan or apply. */
   readonly signal: AbortSignal | undefined;
+  readonly redaction: SecretRedaction;
 }
 
 export async function executeDeploy(
@@ -121,6 +134,7 @@ export async function executeDeploy(
     reportPath: resolveRunReportPath(input.reportPath, process.env[RUN_REPORT_FILE_ENV], cwd),
     steps: deploySteps(input.onEvent),
     signal: input.signal,
+    redaction: new SecretRedaction(process.env),
   });
   if (!outcome.ok) return outcome;
   return ok({ summary: outcome.value });
@@ -143,6 +157,7 @@ export async function executeDestroy(
     reportPath: undefined,
     steps: deploySteps(undefined),
     signal: undefined,
+    redaction: new SecretRedaction(process.env),
   });
   if (!outcome.ok) return outcome;
   return okVoid();
@@ -170,6 +185,7 @@ async function beginReporters(
     readonly reportId: string | undefined;
     readonly credentials: CallerCredentials | undefined;
   },
+  redaction: SecretRedaction,
 ): Promise<readonly ExtensionReporter[]> {
   const opened = await Promise.all(
     extensions.map(async (extension) => {
@@ -179,7 +195,9 @@ async function beginReporters(
         return reporter === undefined ? undefined : { extensionId: extension.id, reporter };
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
-        console.warn(`\nCould not start deploy reporting for ${extension.id}: ${detail}`);
+        console.warn(
+          `\nCould not start deploy reporting for ${extension.id}: ${redaction.redact(detail)}`,
+        );
         return undefined;
       }
     }),
@@ -191,6 +209,7 @@ async function beginReporters(
 async function attachReporters(
   reporters: readonly ExtensionReporter[],
   containers: ReadonlyMap<ExtensionId, ContainerInstance>,
+  redaction: SecretRedaction,
 ): Promise<void> {
   await Promise.all(
     reporters.map(async ({ extensionId, reporter }) => {
@@ -198,14 +217,19 @@ async function attachReporters(
         await reporter.attach({ container: containers.get(extensionId) });
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
-        console.warn(`\nCould not attach this deploy to its project for ${extensionId}: ${detail}`);
+        console.warn(
+          `\nCould not attach this deploy to its project for ${extensionId}: ${redaction.redact(detail)}`,
+        );
       }
     }),
   );
 }
 
 /** Every session's contribution to the apply's environment, so reporting that happens inside the apply can find the run. */
-function reporterChildEnv(reporters: readonly ExtensionReporter[]): Record<string, string> {
+function reporterChildEnv(
+  reporters: readonly ExtensionReporter[],
+  redaction: SecretRedaction,
+): Record<string, string> {
   const env: Record<string, string> = {};
   for (const { extensionId, reporter } of reporters) {
     try {
@@ -213,7 +237,7 @@ function reporterChildEnv(reporters: readonly ExtensionReporter[]): Record<strin
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       console.warn(
-        `\nCould not pass deploy reporting into the apply for ${extensionId}: ${detail}`,
+        `\nCould not pass deploy reporting into the apply for ${extensionId}: ${redaction.redact(detail)}`,
       );
     }
   }
@@ -245,6 +269,7 @@ async function finishReporters(
     readonly message?: string;
     readonly summary?: DeploymentSummary | undefined;
   },
+  redaction: SecretRedaction,
 ): Promise<void> {
   // Flattened, not per node: a reporter reads the kinds its own extension
   // emits, and which node produced one is the CLI's presentation concern.
@@ -261,7 +286,7 @@ async function finishReporters(
         });
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
-        console.warn(`\nCould not report this deploy's outcome: ${detail}`);
+        console.warn(`\nCould not report this deploy's outcome: ${redaction.redact(detail)}`);
       }
     }),
   );
@@ -285,17 +310,23 @@ async function runStackPipeline(
   } catch (error) {
     opts.steps.closeOpen('failed');
     opts.steps.start({ name: 'record' });
+    const thrown = redactThrown(error, opts.redaction);
     // A defect, not a structured failure — still the end of the run, and the
     // only chance to record that it ended at all.
-    await finishReporters(reporters, {
-      ok: false,
-      cancelled: false,
-      code: 'DEPLOY.UNEXPECTED',
-      message: error instanceof Error ? error.message : String(error),
-    });
+    await finishReporters(
+      reporters,
+      {
+        ok: false,
+        cancelled: false,
+        code: 'DEPLOY.UNEXPECTED',
+        message: thrown.message,
+      },
+      opts.redaction,
+    );
     opts.steps.finish({ name: 'record' });
-    throw error;
+    throw thrown;
   }
+  if (!outcome.ok) outcome = notOk(redactError(outcome.failure, opts.redaction));
   if (!outcome.ok) opts.steps.closeOpen('failed');
   opts.steps.start({ name: 'record' });
   await finishReporters(
@@ -308,6 +339,7 @@ async function runStackPipeline(
           code: outcome.failure.code,
           message: outcome.failure.message,
         },
+    opts.redaction,
   );
   // Best-effort: an unwritable report fails the step, never the deploy.
   const reportWritten =
@@ -339,6 +371,7 @@ async function runStackPipelineInner(
   const { entry, config: composerConfig, name, environment, cwd, onEvent, deps, steps } = opts;
 
   steps.start({ name: 'prepare' });
+  removeLeftoverAppConfigurationFiles(cwd);
   try {
     validateEnvironmentName(environment);
   } catch (error) {
@@ -377,6 +410,7 @@ async function runStackPipelineInner(
     const pipelineDeps: PipelineDeps = {
       runAssembler: deps.runAssembler,
       readSecrets: action === 'deploy',
+      redaction: opts.redaction,
       onEvent: (event) => {
         switch (event.kind) {
           case 'loaded':
@@ -423,14 +457,18 @@ async function runStackPipelineInner(
     // one failure it most needs to describe.
     if (action === 'deploy') {
       reporters.push(
-        ...(await beginReporters(config.extensions, {
-          appName: resolvedName,
-          graph,
-          environment,
-          cwd,
-          reportId: opts.reportId,
-          credentials: platformCredentials,
-        })),
+        ...(await beginReporters(
+          config.extensions,
+          {
+            appName: resolvedName,
+            graph,
+            environment,
+            cwd,
+            reportId: opts.reportId,
+            credentials: platformCredentials,
+          },
+          opts.redaction,
+        )),
       );
     }
 
@@ -483,7 +521,7 @@ async function runStackPipelineInner(
 
     // Containers exist now, so each session can attach its run to the
     // Project/Branch its extension resolved.
-    await attachReporters(reporters, containers);
+    await attachReporters(reporters, containers, opts.redaction);
 
     // The Alchemy stage is never left to Alchemy's own default (`dev_$USER`
     // — machine-dependent, the TML-3157 incident): the state-owning extension's
@@ -512,7 +550,8 @@ async function runStackPipelineInner(
             graph,
             container: containers.get(extension.id),
             environment,
-            pools: pipeline.pools,
+            configuration: pipeline.configuration,
+            secrets: pipeline.secrets,
             credentials: platformCredentials,
             report,
           });
@@ -540,7 +579,7 @@ async function runStackPipelineInner(
       containers,
       stage: alchemyStage,
       preflight: preflightPayloads,
-      env: reporterChildEnv(reporters),
+      env: reporterChildEnv(reporters, opts.redaction),
     });
   }
 
@@ -558,12 +597,19 @@ async function runStackPipelineInner(
     '.prisma-composer',
     `deployment-result-${String(process.pid)}-${randomUUID()}.json`,
   );
+  let handover: SecondProcessHandover | undefined;
   // Every return below funnels through the finally: the child can write the
   // result file via the report hook before a later step fails, so failure
   // paths must remove it too — otherwise each failed run leaves resource
   // ids/URLs on disk and the files accumulate.
   try {
     try {
+      handover = prepareSecondProcess({
+        file: deployAppConfigurationFile(cwd, randomUUID()),
+        appConfigurationRead: pipeline.graph.appConfigurationRead,
+        nodeAddresses: nodeAddresses(pipeline.graph),
+        knownSecrets: opts.redaction.knownSecrets,
+      });
       stackPath = writeStackFile({
         entryPath: pipeline.entryModule.path,
         cwd,
@@ -572,6 +618,7 @@ async function runStackPipelineInner(
         environment,
         assembled: pipeline.assembled,
       });
+      handover.writeFile();
     } catch (error) {
       // Stack-file write I/O is structured here, at the catch that knows
       // which file was being written (base-type rule 6).
@@ -586,9 +633,11 @@ async function runStackPipelineInner(
       containerEnv: containerEnv(containers),
       preflightEnv: preflightTransportEnv,
       env: {
-        ...reporterChildEnv(reporters),
+        ...reporterChildEnv(reporters, opts.redaction),
+        ...handover.env,
         [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath,
       },
+      redactedValues: opts.redaction.allValues(),
     });
 
     // Hand the terminal to alchemy against the generated file. Alchemy plans
@@ -653,9 +702,8 @@ async function runStackPipelineInner(
       // The cause the child recorded on its way out, appended after the status
       // sentence so searches for that sentence still match. A signal-killed
       // child never runs its exit hook, so only this branch can have one.
-      const engineCause = readEngineFailureCause(
-        resultFilePath,
-        poolSecrets(pipeline.pools, pipeline.configSource.value.secrets !== undefined),
+      const engineCause = readEngineFailureCause(resultFilePath, (text) =>
+        opts.redaction.redact(text),
       );
       const withCause = (sentence: string) =>
         engineCause === undefined ? sentence : `${sentence}\n${engineCause}`;
@@ -724,6 +772,7 @@ async function runStackPipelineInner(
     } catch {
       // Best-effort cleanup — never masks the result it wraps.
     }
+    handover?.removeFile();
   }
 }
 
@@ -815,10 +864,8 @@ async function convergeDeploy(
   const { cwd, environment, steps } = opts;
   const config = pipeline.configSource.value;
   const env = resolved.env;
-  const redact = convergeRedactor(
-    { ...process.env, ...env },
-    poolSecrets(pipeline.pools, config.secrets !== undefined),
-  );
+  opts.redaction.addCredentialLookingValues(credentialLookingValues(env));
+  const redact = (text: string): string => opts.redaction.redact(text);
   let summary: DeploymentSummary | undefined;
 
   const root = pipeline.graph.root.node;
@@ -831,7 +878,7 @@ async function convergeDeploy(
     stack = setup.appConverge.lower(root, config, {
       name: pipeline.name,
       environment,
-      configPool: pipeline.pools.config,
+      appConfigurationRead: pipeline.graph.appConfigurationRead,
       bundles: pipeline.assembled.bundles,
       containers: resolved.containers,
       preflight: resolved.preflight,
@@ -881,5 +928,5 @@ async function convergeDeploy(
   }
   if (outcome.kind !== 'applied') return notOk(convergeFailure(outcome, redact));
   steps.finish({ name: 'apply' });
-  return ok(summary);
+  return ok(redactSummary(summary, opts.redaction));
 }

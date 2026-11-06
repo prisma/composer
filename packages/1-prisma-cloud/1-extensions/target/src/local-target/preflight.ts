@@ -1,7 +1,7 @@
 /**
  * Dev preflight (local-dev spec § 5, ADR-0041): the same name walk deploy's
  * preflight uses (`preflight-names.ts`), with dev's value-sourcing policy.
- * Every value comes from the pools the command read: secrets from the secrets pool, env-sourced params from the config pool. An unset or empty secret is left out of the
+ * Every value comes from what the command read: secrets from the app secrets, env-sourced params from the app configuration. An unset or empty secret is left out of the
  * service's input; it is an error only when the service's schema rejects
  * its absence. An unset or empty env-sourced param is always an error.
  *
@@ -18,8 +18,8 @@ import {
   readOrCreateFingerprintKey,
   removeRetiredSecretsFile,
 } from '@internal/local-target';
+import { configurationText } from '../configuration-text.ts';
 import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
-import { poolText } from '../pool-text.ts';
 import {
   collectPreflightNames,
   envParamNotTextError,
@@ -119,8 +119,8 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
   const devDir = `${process.cwd()}/${devEnvironmentDir(input.environment)}`;
   await removeRetiredSecretsFile(`${process.cwd()}/${DEV_DIR}`);
   await removeRetiredSecretsFile(devDir);
-  const env = input.pools.config;
-  const secretValue = (name: string): string | undefined => input.pools.secrets[name];
+  const env = input.configuration;
+  const secretValue = (name: string): string | undefined => input.secrets[name];
 
   const absentSecrets = new Set<string>();
   const secretNames = new Set<string>();
@@ -153,7 +153,9 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
   for (const param of collectPreflightNames(input.graph).envParams) {
     const value = secretNames.has(param.name)
       ? secretValue(param.name)
-      : poolText(env, param.name, (kind) => envParamNotTextError(param.name, param.address, kind));
+      : configurationText(env, param.name, (kind) =>
+          envParamNotTextError(param.name, param.address, kind),
+        );
     if (isSet(value)) pointed.set(param.name, value);
     else missingParams.push(param);
   }

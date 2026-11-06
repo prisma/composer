@@ -129,7 +129,7 @@ supplies only the brand and the wire contract.
 
 - [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md) — the input model
   and its generated source; what a service key *is*.
-- [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) — a secret: the
+- [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) — a secret: the
   environment-sourced, never-stored value a service key is deliberately *not*.
 - [ADR-0034](ADR-0034-deploy-state-lives-in-the-stage-branch.md) — the per-stage
   state store the key's value lives in.

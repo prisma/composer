@@ -196,7 +196,7 @@ from the platform.
   builds. An interrupt the engine catches is reported as `cancelled`; SIGKILL
   and a torn-down CI runner cannot be. CI cancellation is common, so this is
   the normal case, not a defect.
-- **A failed apply reports `DEPLOY.ENGINE_FAILED` as its `failingStep`.** Every failure Alchemy's plan or apply ends with shares that code. The `errorMessage` carries the errors Alchemy failed with, with every credential and pool secret removed.
+- **A failed apply reports `DEPLOY.ENGINE_FAILED` as its `failingStep`.** Every failure Alchemy's plan or apply ends with shares that code. The `errorMessage` carries the errors Alchemy failed with, with every known secret and credential-looking value removed (ADR-0062).
 - **`branchId` stays empty on a `production` deploy.** Only the Branch of
   another environment is attached to the Build.
 

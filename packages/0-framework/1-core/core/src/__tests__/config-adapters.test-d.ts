@@ -1,12 +1,13 @@
 /**
- * The `config` and `secrets` lists of the `composer` section, and the pools preflight receives.
+ * The `config` and `secrets` lists of the `composer` section, and the app configuration and the app secrets preflight receives.
  * Type-only (vitest `--typecheck`, never executed).
  */
 import { expectTypeOf, test } from 'vitest';
 import {
+  type AppConfiguration,
+  type AppSecrets,
   type ConfigAdapter,
   type ConfigAdapterInput,
-  type ConfigPools,
   defineConfig,
   type PreflightInput,
   type StateDescriptor,
@@ -34,6 +35,7 @@ test('an adapter receives the environment and the config directory', () => {
   expectTypeOf<Parameters<ConfigAdapter>[0]>().toEqualTypeOf<ConfigAdapterInput>();
 });
 
-test('preflight receives both pools', () => {
-  expectTypeOf<PreflightInput['pools']>().toEqualTypeOf<ConfigPools>();
+test('preflight receives the app configuration and the app secrets', () => {
+  expectTypeOf<PreflightInput['configuration']>().toEqualTypeOf<AppConfiguration>();
+  expectTypeOf<PreflightInput['secrets']>().toEqualTypeOf<AppSecrets>();
 });

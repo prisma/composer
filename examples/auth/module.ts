@@ -1,8 +1,9 @@
 import { module } from '@prisma/composer';
 import { envParam, envSecret, serviceOrigin } from '@prisma/composer-prisma-cloud';
 import { auth } from '@prisma/composer-prisma-cloud/auth';
-import { email } from '@prisma/composer-prisma-cloud/email';
+import { email, emailDeliveryModes } from '@prisma/composer-prisma-cloud/email';
 import { postgres } from '@prisma/composer-prisma-cloud/orm';
+import { type } from 'arktype';
 import apiService from './src/api/service.ts';
 import { appContract } from './src/contract.ts';
 import opsService from './src/ops/service.ts';
@@ -12,31 +13,36 @@ import opsService from './src/ops/service.ts';
  * `auth()` module wired to it, and the `email()` module as auth's email
  * dependency. `api` holds the `api` and `session` ports and the verifier; `ops`
  * holds `admin` and the smoke's read-only outbox. `baseUrl` is the api
- * service's public origin. The email module's input reads its delivery mode
- * and sender with envParam(), from the config adapters in prisma.config.ts;
- * its credential is required even in `none` mode.
+ * service's public origin. The email module's delivery mode comes from the
+ * root's input and its sender from envParam(), both read from the config
+ * adapters in prisma.config.ts; the root's schema checks the delivery mode
+ * before anything is created. The credential is required even in `none` mode.
  */
-export default module('auth-example', ({ provision }) => {
-  const db = provision(
-    postgres({ name: 'database', contract: appContract, config: './prisma.config.ts' }),
-    { id: 'database' },
-  );
-  const mail = provision(email(), {
-    id: 'mail',
-    input: {
-      deliveryMode: envParam('EMAIL_DELIVERY_MODE'),
-      from: envParam('EMAIL_FROM'),
-      deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
-    },
-  });
-  const identity = provision(auth(), {
-    id: 'auth',
-    deps: { db, email: mail.send },
-    input: { baseUrl: serviceOrigin('auth-example.api') },
-  });
-  provision(apiService, {
-    id: 'api',
-    deps: { authApi: identity.api, verifier: identity.api, session: identity.session },
-  });
-  provision(opsService, { id: 'ops', deps: { admin: identity.admin, outbox: mail.outbox } });
-});
+export default module(
+  'auth-example',
+  { input: type({ EMAIL_DELIVERY_MODE: type.enumerated(...emailDeliveryModes) }) },
+  ({ input, provision }) => {
+    const db = provision(
+      postgres({ name: 'database', contract: appContract, config: './prisma.config.ts' }),
+      { id: 'database' },
+    );
+    const mail = provision(email(), {
+      id: 'mail',
+      input: {
+        deliveryMode: input.EMAIL_DELIVERY_MODE,
+        from: envParam('EMAIL_FROM'),
+        deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
+      },
+    });
+    const identity = provision(auth(), {
+      id: 'auth',
+      deps: { db, email: mail.send },
+      input: { baseUrl: serviceOrigin('auth-example.api') },
+    });
+    provision(apiService, {
+      id: 'api',
+      deps: { authApi: identity.api, verifier: identity.api, session: identity.session },
+    });
+    provision(opsService, { id: 'ops', deps: { admin: identity.admin, outbox: mail.outbox } });
+  },
+);

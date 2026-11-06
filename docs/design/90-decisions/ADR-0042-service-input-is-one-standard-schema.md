@@ -1,293 +1,119 @@
-# ADR-0042: Service input is one standard schema; the binding carries the sourcing
-
-Extended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): modules declare `input` the same way.
-
-Amended 2026-10-30 (module-input project, fifth slice): the entry for the secrets decision below says the forwardable secret need (`secret()`) survives. It does not: a module takes a secret as a `secretString()` field of its own `input` (ADR-0061), so the one-schema model covers modules too.
-
-Amended 2026-10-30 (module-input project, sixth slice): `@prisma/composer/zod` ships beside `@prisma/composer/arktype`. Each exports `secretString()` and `field()`. Zod's `secretString()` is the `z.custom` described below. In both libraries `secretString()` also accepts a secret pointer, the real value at deploy of a secret known only at boot ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). `field(inner)` wraps the schema of one leaf field: the wrapped field accepts what `inner` accepts and a plain pointer, the real value at deploy of a plain value known only at boot, such as `serviceOrigin()`. Its input type is `In | Pointer<In>` and its output type `Out | Pointer<In>`. For a value that is not a pointer, a wrapped field reports `inner`'s error, except ArkType's message for a missing key, which names both branches (`from must be a string or an object (was missing)`). For any other Standard Schema library, `@prisma/composer` exports `Pointer`, `isPlainPointer()` and `isSecretPointer()`, beside `isSecretString()`, so an author can write the same two helpers. The deploy still checks a service's binding with the stand-ins described below, so neither change alters what a deploy accepts.
-
-Amended 2026-10-30 (module-input project, seventh slice): the deploy checks a service's binding with each value known only at boot in place as its pointer, not as a stand-in, so the sentinels described below are gone. An `envSecret()` or a redacted `generatedParam()` reaches the schema as a secret pointer, which `secretString()` accepts. A `serviceOrigin()` or a plain `generatedParam()` reaches it as a plain pointer, which only a field wrapped with `field()` accepts. So a field bound to `serviceOrigin()` or a plain `generatedParam()` must be wrapped: a plain `type('string')` field refuses it at deploy, and in a module's binding it fails to compile, because the three constructors are typed as runtime values ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). The serializer writes each pointer in the schema's output by its brands, so a copy the schema made still counts. ArkType copies its input when a transform runs anywhere in it, a wrapped field's included, or when it deletes undeclared keys, and a copied secret box loses its value. So the deploy checks a service whose binding holds a secret pointer a second time, with a stand-in box holding a known text in place of each secret pointer, and refuses the service, naming the field, if a box in the output no longer gives back that text. This covers a redacted `generatedParam()` as well as `envSecret()`. `secretString()` is typed `SecretString | Pointer<SecretString>`. `service.input()` returns the schema's output with every pointer removed, at any depth, because at boot each pointer has been replaced by the variable's text, and `mockService()`'s input double has the same type.
-
-## Decision
-
-A compute service declares its entire incoming configuration — plain values
-and secrets together — as **one [Standard Schema](https://standardschema.dev)**
-(Zod, ArkType, any conforming library), and reads it back through **one typed
-accessor**. The `params`/`secrets` declaration maps and the
-`config()`/`secrets()` accessor pair are replaced. `deps` and `origin()` are
-untouched.
-
-A service whose billing is optional looks like this:
+# ADR-0042: Service input is one Standard Schema, and the binding is typed from it
 
 ```ts
-// service.ts — the app declares what shapes are legal, in its own schema library
-const chatInput = z.discriminatedUnion("stripeEnabled", [
-  z.object({ stripeEnabled: z.literal(false) }),
-  z.object({
-    stripeEnabled: z.literal(true),
-    stripeSecretKey: secretString(),      // a field typed SecretString
-    stripeWebhookSecret: secretString(),
-  }),
+// service.ts: the service declares what shapes are legal, in its own schema library
+import { field, secretString } from '@prisma/composer/zod';
+import { compute } from '@prisma/composer-prisma-cloud';
+import { z } from 'zod';
+
+const chatInput = z.discriminatedUnion('stripeEnabled', [
+  z.object({ stripeEnabled: z.literal(false), returnUrl: field(z.string()) }),
+  z.object({ stripeEnabled: z.literal(true), returnUrl: field(z.string()), stripeSecretKey: secretString() }),
 ]);
 
-export default compute({ name: "chat", input: chatInput, deps: { /* … */ } });
+export default compute({ name: 'chat', input: chatInput, deps: { /* … */ }, build });
 ```
 
 ```ts
-// module.ts — the operator binds where each value comes from
+// module.ts: whoever provisions the service binds where each value comes from
 provision(chatService, {
   input: {
     stripeEnabled: true,
-    stripeSecretKey: envSecret("STRIPE_SECRET_KEY"),
-    stripeWebhookSecret: envSecret("STRIPE_WEBHOOK_SECRET"),
+    returnUrl: serviceOrigin('shop.web'),
+    stripeSecretKey: envSecret('STRIPE_SECRET_KEY'),
   },
 });
 ```
 
 ```ts
-// anywhere in the service — one call, one inferred type, narrowing included
-const input = service.input();
+// anywhere in the service: one call, one inferred type, narrowing included
+const input = chatService.input();
 if (input.stripeEnabled) stripe(input.stripeSecretKey.expose());
 ```
 
-Fields whose values are secret are simply fields **typed** as the framework's
-redacting `SecretString` box. `secretString()` is sugar for
-`z.custom<SecretString>(isSecretString)` — every schema library can express
-"must be an instance of X" natively, and the arktype spelling ships as
-`@prisma/composer/arktype`, an opt-in entry point no other surface imports.
-Secretness is enforced by validation, not annotated as metadata: binding a
-plain literal where the schema expects a `SecretString` fails at deploy (a
-credential almost landed in a plain config row), and binding `envSecret`
-where the schema expects a string fails the same way.
+## Decision
 
-## The mechanism: traverse the binding, validate with the schema
+A compute service declares all of its input, plain values and secrets together, as **one [Standard Schema](https://standardschema.dev)** (Zod, ArkType or any conforming library), `input`, and reads it back through **one typed accessor**, `service.input()`. Whoever provisions the service binds that input with `provision(service, { input: { … } })`. Dependencies stay separate: they are declared with `deps` and read through `service.load()`. The reserved `port` param is read through `service.port()`.
 
-The framework never looks inside the schema. Standard Schema exposes exactly
-one capability — `~standard.validate` — and deliberately excludes
-introspection; a framework that walks Zod's or ArkType's internals is coupled
-to those libraries' private representations. Instead, the two artifacts split
-the work:
+- **Secret fields** are typed `secretString()`. **A leaf field that may receive a value known only at boot**, such as another service's origin, is wrapped in `field()`. `@prisma/composer/arktype` and `@prisma/composer/zod` export both helpers. For any other library, `@prisma/composer` exports the `Pointer` type, `isPlainPointer()`, `isSecretPointer()` and `isSecretString()`, from which an author writes the same two helpers.
+- **The binding** mirrors the schema's shape. Each leaf is a literal, a value such as a `resolve()` result or a module's input field ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)), or a source: `envParam()`, `envSecret()`, `generatedParam()` or `serviceOrigin()`, each of which is a value too.
+- **The binding is typed from the schema's input type**, with the same mapping a module's binding uses ([ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)). So a wrong literal, an `envSecret()` in a text field, or a `serviceOrigin()` in a plain field fails to compile.
+- **The deploy checks the binding with the schema** before anything is created, with each value known only at boot in place as its pointer, and writes the schema's output into one input document.
+- **At boot** `service.input()` reads that document, puts each secret in a redacting box, checks the result with the schema again, and returns it.
 
-- **The binding is the traversable structure.** It is a plain object
-  mirroring the schema's shape whose leaves are literals, `envParam(...)`,
-  `envSecret(...)`, or `generatedParam(...)` markers (the source table in
-  [`../10-domains/config-params.md`](../10-domains/config-params.md)). A dumb
-  recursive descent over it yields everything provisioning needs: each
-  `envSecret` leaf becomes an in-memory sentinel plus a `$secret` pointer to
-  the operator's platform variable; each `generatedParam` leaf becomes a
-  sentinel plus a `$generated` pointer to a framework-owned variable the
-  deploy will fill, and is recorded for the descriptor's deploy step (§
-  Generated sources); everything else becomes config data. **The walk itself
-  creates no platform resource** — the sentinels live only long enough to be
-  validated and then written into the document as pointers, so a binding the
-  schema later rejects leaves nothing behind: validation runs before the one
-  document row is written. An `envSecret` pointer names the operator's own
-  variable, seeded by preflight; a `$generated` pointer names a variable the
-  descriptor's deploy step provisions (that step, not this walk, is where a
-  resource is created). The node graph itself is built from `deps`, which this
-  ADR does not touch.
-- **The schema is a black-box judge, invoked twice.** At deploy, the
-  resolved binding — literals as-is, env params read from the deploy shell,
-  each secret as an opaque `SecretString` sentinel, never the value — is
-  passed to `validate`. `stripeEnabled: true` with a missing key fails right
-  there, with the schema library's own error. At boot, the hydrated object
-  is validated again before the app sees it. Validation is synchronous both
-  times: a `validate` that returns a `Promise` (an async validator) is a
-  loud error, not awaited — deploy and boot judge on data already in hand,
-  so there is nothing to await. The typed object `service.input()` returns
-  is the schema's inferred output; a schema that carries no Standard Schema
-  type metadata still validates at runtime but is read as `unknown`.
+## The binding's type
 
-**The wire format is one self-describing document.** The deploy serializes
-the validated, defaults-applied object into a single env row
-(`COMPOSER_<addr>_INPUT`, re-stashed address-free at boot like every other
-row), with each secret leaf as a pointer naming the platform variable that
-holds the value:
+`InputBinding<T>` is what a binding accepts where the schema expects `T`. A leaf of type `T` takes a value of type `T`, or the literal `T`. Two kinds of leaf take no literal. A `SecretString` field takes a secret runtime value, such as `envSecret()` or a redacted `generatedParam()`, or a module's secret field passed on: a secret box written in a binding fails to compile, because a secret's value never sits in the code. A pointer is never written as a literal either: a field wrapped with `field()` takes `serviceOrigin()` or a plain `generatedParam()`, whose values are typed `RuntimeValue<string>`, which is `Value<Pointer<string>>`. A plain field takes neither kind of runtime value, and `envParam()`, whose value is text, fits only a field that accepts any text.
+
+`InputBindingOf<I>` is the binding of a node whose input schema is `I`. `provision()` takes it for a service and for a module, so the two look the same to whoever provisions them, as the module boundary decision asks ([ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md)). `input` is required exactly when the node declares an input schema, with or without dependencies, so a call that leaves it out fails to compile.
+
+The type checks a binding's shape and kind: the keys, the type of each literal, whether a leaf is a literal or a value, and whether a value is a secret or plain, deploy-time or known only at boot. It cannot check a refinement the schema's input type does not carry, such as a URL format, a minimum length or a pattern: a literal `'abc'` bound to a URL field compiles, and the deploy check refuses it. A schema without type information has the input type `unknown`, and its binding takes anything; the deploy check below still applies.
+
+## The deploy check
+
+The deploy resolves the binding. A literal stays as written. A deploy-time value becomes its real value: `envParam('NAME')` reads `NAME` from the app configuration, the values the `config` adapters return ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)), and an unset or empty `NAME` leaves the key out. A value known only at boot becomes a **pointer**, an object that names the platform variable holding the data and records its kind: a secret pointer for `envSecret()` and a redacted `generatedParam()`, a plain pointer for `serviceOrigin()` and a plain `generatedParam()`.
+
+The schema then checks the resolved binding, synchronously; a schema that returns a promise fails the deploy. `secretString()` accepts a secret box or a secret pointer. A wrapped field accepts what its inner schema accepts and a plain pointer. A plain field accepts neither pointer. So a plain field bound to `serviceOrigin()` fails the deploy with that field's own message, which catches a binding the compiler could not see: a schema without type information, or a cast. A schema may check a pointer but never replace it or move it to another field.
+
+A schema may return a copy of a pointer: ArkType copies its input when a transform runs anywhere in it, a wrapped field's included, and when it deletes undeclared keys. The copy keeps the pointer's brand and the variable it names, so the deploy recognises a pointer by those, never by object identity. A copied secret box, though, loses its value, so a service whose binding holds a secret pointer is checked a second time, with a stand-in box holding a known text in place of each secret pointer. If a box in the output no longer gives back that text, the deploy refuses the service, naming the field and saying that the schema copies its input. A Zod schema keeps the box when it transforms. A schema whose output holds a secret box its binding did not supply, such as a default, is refused too: no platform variable stands behind it.
+
+## The input document
+
+The deploy writes the schema's output, with defaults applied, into one environment row per service, `COMPOSER_<address>_INPUT`. Each pointer is written as a marker. A secret pointer from `envSecret()` becomes `{"$secret": "<VARIABLE>"}`, naming the operator's platform variable, which preflight checks exists. A `generatedParam()` and a `serviceOrigin()` become `{"$generated": "<VARIABLE>", "redacted": <true|false>}`, naming a variable in Composer's reserved `COMPOSER_` namespace that the deploy fills: with a value it generates once and keeps in deploy state, or with the other service's public origin. A marker records `redacted` because boot cannot ask the schema which fields are secret.
 
 ```json
 {
   "stripeEnabled": true,
-  "stripeSecretKey":     { "$secret": "STRIPE_SECRET_KEY" },
-  "stripeWebhookSecret": { "$secret": "STRIPE_WEBHOOK_SECRET" }
+  "returnUrl": { "$generated": "COMPOSER_SHOP_CHAT_RETURNURL_GENERATED", "redacted": false },
+  "stripeSecretKey": { "$secret": "STRIPE_SECRET_KEY" }
 }
 ```
 
-At boot, `service.input()` reads that one well-known row, walks the document
-(plain data again), replaces each `$secret` marker with a redacting box over
-the named variable, validates, and returns the typed object. No name
-reconstruction: the boot side cannot know the env-var names for a shape the
-framework cannot see, so the deploy leaves behind a document that describes
-itself. This is today's secret double-lookup (pointer row → platform
-variable), consolidated into one document instead of scattered per-slot rows.
-Secret values never appear in the document, so the deploy report can print it
-verbatim.
+No secret's value and no generated value appears in the document, so the deploy report prints it verbatim, with every key that resolved absent. A user key spelled like a marker, such as `$secret` or `$generated`, gains one more leading `$` when written and loses it when read, so only Composer can place a marker. Every variable a service's markers name must be distinct once normalised, or the deploy fails naming both input paths. The document is JSON, so the schema's output must be plain objects, arrays, text, numbers, booleans, null and secret boxes. A schema that outputs a `Date`, a `BigInt` or another class instance is outside this contract; keep the field as text and convert it in the service.
 
-The document is `JSON.stringify`d at deploy and re-parsed at boot, so the
-schema's validated output must be JSON-representable: plain objects, arrays,
-strings, numbers, booleans, and null, plus the framework's own `SecretString`
-leaves (which serialize to `$secret` pointers). A schema whose output carries
-`BigInt`, a `Date`, a class instance, or a symbol is outside the contract —
-the two ends would not see byte-identical input. Schemas that need such a
-value should keep the wire field a string and reconstruct it in the app.
+At boot `service.input()` reads the one row, replaces each `$secret` marker with a box over the named variable and each `$generated` marker with a box or text as its `redacted` says, checks the result with the schema, and returns the schema's output. Its type is the schema's output type with every pointer removed, at any depth, because at boot each pointer has been replaced by the variable's text: a wrapped field reads as its inner type, and a `secretString()` field as `SecretString`. `mockService()`'s input double has the same type.
 
-**Absence is arbitrated by the schema.** An env-bound leaf whose variable is
-unset (or empty) in the deploy shell resolves to *key omitted*; whether that
-is legal is the schema's call — `.optional()`, a union arm, or a hard error.
-This replaces any need for a framework-level "optional secret" flag: a
-credential for an off-by-default feature is an ordinary optional
-`SecretString` field. Because an omitted key can also be a typo'd variable
-name, the deploy report prints every key that resolved absent.
-
-### Generated sources
-
-A fourth source, `generatedParam(...)`, is a param the **target generates at
-deploy** rather than reads from the environment — a value with no external
-holder to reference (an rpc service key, an instance signing key). It is a
-config *param*, not a secret ([ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md)):
-the framework produces it and keeps it in deploy state, stable across
-redeploys. It rides the same walk as every other leaf, with three differences,
-all consequences of "the framework produces and stores this value":
-
-- **The pointer carries a redaction facet.** A generated leaf serializes to
-  `{"$generated": "<VAR>", "redacted": <bool>}`, where `<VAR>` is a
-  framework-owned variable name (reserved `COMPOSER_` prefix). It carries
-  `redacted` because — unlike an `envSecret`, which is always redacted — a
-  generated param may be either, and **boot cannot ask the schema** which:
-  Standard Schema exposes only `validate`, never a field's type. So the deploy,
-  which knows the facet, writes it into the self-describing document, and boot
-  reads it from the pointer: a redacted leaf hydrates to a `SecretString`, a
-  plain one to a string.
-- **The descriptor's deploy step provisions the value.** The walk records each
-  generated leaf; after it runs, the compute descriptor provisions one
-  generation resource per leaf (which mints the value once and returns the same
-  value on every later reconcile, so it is stable) and writes it to the named
-  framework variable. Preflight skips generated leaves entirely — there is no
-  operator variable to check.
-- **The value never appears in the document, redacted or not** — only the
-  pointer does, so the deploy report prints the document verbatim, exactly as
-  for secrets. The difference from a secret is *where the value lives*: a
-  secret's value is the operator's, injected by the platform and never in
-  state; a generated param's value is the framework's, provisioned into deploy
-  state. Redaction governs only whether that value is masked in logs.
-
-A single collision check covers both pointer kinds: after the walk, every
-`$secret` and `$generated` variable name on a service must be distinct once
-normalized, or the deploy fails naming both input paths — so a secret and a
-generated param can never quietly share a variable.
+An `envParam()` field whose variable is unset or empty is a key left out, and whether that is allowed is the schema's call: an optional field, a union member, or an error with the schema's message. So an optional secret, or a field that exists only when another field is set, is an ordinary schema, with no flag of Composer's.
 
 ## Reasoning
 
-**Configuration legality is relational, and the framework should not invent
-a language for it.** Real services have inputs like "no `stripeSecretKey`
-unless `stripeEnabled`" — conditionality that flat need-maps cannot state.
-Schema libraries express this trivially (unions, refinements, optionality),
-are already how applications describe incoming data, and give the app
-type-level narrowing for free. Per the don't-reinvent-the-wheel principle,
-the framework adopts them rather than growing its own conditional DSL — and
-per the no-guessing rule, everything the framework itself consumes (the
-binding, the document) is its own explicit, walkable data.
+**Legality is relational, and Composer should not invent a language for it.** A real service has inputs such as "no `stripeSecretKey` unless `stripeEnabled`". Per-key declarations cannot say that; a schema library says it with a union, and gives the service narrowing for free. Composer adopts the schema libraries the app already uses instead of growing its own.
 
-**Splitting shape from sourcing puts each fact where it is authored.** What
-combinations are legal is the service author's knowledge — it lives in the
-schema, versioned with the code that consumes it. Where values come from in
-a given deployment is the operator's knowledge — it lives in the binding at
-the composition root. Secretness rides the binding (`envSecret`) and the
-type (`SecretString`), and validation cross-checks the two, so neither side
-can silently misclassify a credential.
+**Composer never looks inside the schema.** Standard Schema exposes one capability, `validate`, and leaves out introspection on purpose. A framework that walked Zod's or ArkType's internals would be tied to their private representations. So the two halves split the work: the binding is plain data Composer can walk, and the schema is a black box that judges it, at deploy and again at boot. The binding's type comes from the schema's input type, which every Standard Schema publishes, so typing the binding needs no introspection either.
 
-**Validate-only is enough because the deploy holds the values.** The reason
-introspection feels necessary is the assumption that the framework must
-enumerate slots before values exist. But at deploy time the binding is
-resolved, so legality can be judged on the finished object; at boot the
-document makes enumeration unnecessary. The single deliberate limit: a
-schema cannot refine on a secret's *content* (deploy-time validation sees
-opaque boxes) — content rules about credentials the framework never reads
-are unenforceable by construction, and schemas must treat secret leaves as
-opaque.
+**Shape and kind fail in the editor.** The deploy check catches every binding the schema refuses, but late: after the author has run a deploy. Typing the binding from the schema moves the failures of shape and kind to the editor wherever the schema has types: a missing or undeclared key, a literal of the wrong type, a source in the wrong kind of field. The two checks agree because both come from the schema: the type from its input type, the deploy check from its `validate`. The deploy check stays, for a refinement the type cannot express, a schema without types, and a cast.
 
-**One document beats per-key rows.** Flattened names collide (`stripe_secret`
-the key vs `stripe.secret` the path), cannot express union arms or nesting,
-and require the boot side to know the key set. A defaults-applied document
-also guarantees deploy and boot judge byte-identical input — a schema-library
-version skew between deploy shell and runtime cannot apply different
-defaults. Test harnesses and local dev runners set one variable to one JSON
-document instead of hand-writing the row protocol.
+**Secretness is a type, checked both ways.** A secret field is typed `SecretString`, and a secret source gives a secret pointer. Binding a plain literal or a plain pointer to a secret field fails, and binding a secret source to a text field fails, at compile time and at deploy. Neither the service's author nor the operator can misclassify a credential without the other side noticing.
+
+**Pointers, not stand-ins.** The schema sees each value known only at boot as the pointer that names its variable. A wrapped field accepts a plain pointer and a plain field does not, so a field that would receive text only at boot must say so in its schema, and the deploy can tell. A schema cannot check a secret's content, because at deploy it sees a pointer; content checks on credentials Composer never reads are impossible by construction.
+
+**One document, not per-key rows.** Flattened key names collide (`stripe_secret` the key against `stripe.secret` the path), cannot express union members or nesting, and require the boot side to know every key. A self-describing document needs none of that, and because it holds the schema's output with defaults applied, deploy and boot judge the same data.
 
 ## Consequences
 
-1. **Breaking authoring change.** `compute()` takes `input` (a Standard
-   Schema) instead of `params` + `secrets`; `provision()` takes one `input`
-   binding; `service.input()` replaces `config()` and `secrets()`. The
-   reserved `port` param and `origin()` (ADR-0039) keep their existing
-   channels. Examples and consuming apps migrate mechanically.
-
-   That the framework's own per-service values stay on per-key rows is a
-   limit on this ADR's scope, not a judgement that they belong there — the
-   argument against per-key rows applies to them just as it does to the
-   user's config. Moving them onto a framework-owned document, alongside
-   this one and serialized by the same code, is tracked as its own project
-   ("framework configuration rides the same document as user input") and
-   would supersede this paragraph along with ADR-0031's separate channel.
-2. **Serializer change.** One JSON document row per service plus per-secret
-   platform variables, replacing per-key config rows and per-slot pointer
-   rows. A secret leaf serializes to exactly `{"$secret": "<VAR>"}` — an
-   object with the single key `$secret` and a string value, recognized only
-   in that exact shape. The marker is collision-free by escaping: on write,
-   any user key matching `/^\$+secret$/` gains one more leading `$`
-   (`$secret` → `$$secret`, `$$secret` → `$$$secret`); on read, one `$` is
-   stripped back off. So application data can carry a literal `$secret` key
-   and round-trip unchanged, while only the framework can place a
-   single-`$` marker — a forged pointer in user data is impossible.
-   Escaping and pointer-recognition apply at every level of the walk,
-   through nested objects and arrays alike.
-3. **Error quality is the schema library's.** Binding/schema drift surfaces
-   at deploy-time validation with the library's message, one step later than
-   a metadata-reading design would catch it. This is the price of
-   library-agnosticism, and it fails the deploy, never the running service.
-4. **Secret content is opaque to schemas.** `secretString()` validates
-   box-ness only. A schema that refines secret content is rejected loudly
-   rather than silently passing at deploy and failing at boot.
-5. **The deploy report grows two lines of honesty**: the serialized document
-   (secret-free by construction) and the list of keys that resolved absent.
+- `compute()` takes `input`, one Standard Schema, and `provision()` takes one `input` binding typed `InputBindingOf<I>`. `service.input()` returns the checked input. The service-level `params` and `secrets` declarations and the `config()` and `secrets()` accessors are gone. The reserved `port` and `origin()` keep their own accessors.
+- The type `InputBinding<T>` is shared by modules and services. A binding whose shape or kind the schema's input type refuses fails to compile: a wrong literal type, a missing or undeclared key, a source in the wrong kind of field, or a missing `input`. A refinement the type cannot express, such as a URL format, is checked by the deploy, as is a binding the compiler cannot see: a schema without type information, or a cast.
+- Errors about a binding's data are the schema library's own messages, at compile time as a type error and at deploy as the library's issue text.
+- A schema that copies its input cannot hold a secret field in ArkType; the deploy refuses it and names the field.
+- The deploy report prints each service's input document and every key that resolved absent.
+- Composer's own per-service values, such as another service's URL wired as a dependency, still travel on per-key rows ([ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md)). Moving them into a document like this one is a separate decision.
 
 ## Alternatives considered
 
-- **Introspect the schema** (walk Zod's `_def` / ArkType's nodes, or use
-  per-library metadata registries) — couples the framework to specific
-  libraries' private internals and versions, and Standard Schema's authors
-  excluded introspection deliberately. Rejected.
-- **A framework combinator DSL** (`secret({ when: … })`, conditional need
-  maps) — reinvents a fraction of what schema languages already do, worse,
-  and every app would have to learn it. Rejected.
-- **Per-key rows with declared-name reconstruction** (the status quo,
-  extended) — requires a boot-side enumeration the schema cannot provide,
-  cannot express nesting or union arms, and flattened names are ambiguous.
-  Rejected.
-- **An `optional` flag on secret slots** — solves only presence, not
-  conditionality, and adds a framework concept the schema subsumes as an
-  ordinary optional field. Rejected in favor of this design.
+- **Introspect the schema** (walk Zod's or ArkType's internal nodes, or use per-library metadata). Rejected: it ties Composer to private internals and versions, and Standard Schema's authors excluded introspection on purpose.
+- **A framework language for conditional configuration** (`secret({ when: … })`, conditional maps). Rejected: it reimplements a fraction of what schema languages do, and every app would have to learn it.
+- **Per-key rows with key names rebuilt at boot**, the model before this decision. Rejected: boot would need to enumerate keys the schema cannot list, and nesting and union members cannot be expressed.
+- **An `optional` flag on secret slots.** Rejected: it covers presence only, not conditions, and an optional field in the schema already says it.
+- **Opaque stand-ins at deploy**, which an earlier version of this decision used: the schema saw a stand-in box for each secret and a stand-in string for each generated value. Rejected: a plain text field accepted the stand-in for `serviceOrigin()`, so the deploy passed a binding that the service could only read as text at boot, and the schema never learned which fields wait for a value known only at boot. Pointers make the schema say so.
+- **A loosely typed binding**, which an earlier version of this decision used: one type that took any literal or source in any key, because the binding's exact shape seemed to need introspection. Rejected: a binding that type-checked could fail the deploy, and a service's binding looked different from a module's. The schema's input type gives the shape without introspection.
 
-## Related decisions
+## Related
 
-This ADR replaces the read surface those earlier decisions established; the
-sourcing mechanics they introduced survive as binding leaves.
-
-- **[ADR-0021](ADR-0021-params-are-read-through-config-not-load.md)
-  (superseded).** Params read through `config()`, a namespace separate from
-  `load()`. `config()` and the `params` declaration are gone; configuration
-  is now fields of the one `input` schema, read through `service.input()`.
-  Dependencies still read through `load()`, so the two remain separate.
-- **[ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) (partially
-  superseded).** The forwardable, nameless secret *need* (`secret()`,
-  `envSecret`) survives: a module still forwards a need without learning the
-  platform name, and a forwarded ref is a binding leaf. What is replaced is
-  the read surface (`secrets()` → a `SecretString` field of `input`) and the
-  per-slot pointer-row wire format (→ the one document row).
-- **[ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)
-  (partially superseded).** Binding a value at `provision()` and env
-  sourcing (`envParam('NAME')`) survive unchanged as binding mechanics. What
-  is replaced is the `config()` read and the per-key pointer rows.
-- **[ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md)
-  (untouched here, tracked separately).** The framework's own provider-param
-  channel (origin, service keys) still rides per-key rows; consequence 1
-  notes the project that would fold it onto a document like this one.
+- [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares its input the same way, and its binding has the same type.
+- [ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md): a module has the same boundary as a service.
+- [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): values, runtime values and pointers, and the app configuration `envParam()` reads.
+- [ADR-0021](ADR-0021-params-are-read-through-config-not-load.md), superseded: `config()` is replaced by `service.input()`; dependencies still read through `load()`.
+- [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md), partly superseded: `envSecret()` survives as a binding leaf; the `secrets()` read and per-slot pointer rows are replaced.
+- [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md), partly superseded: binding at `provision()` and `envParam()` survive; the `config()` read and per-key pointer rows are replaced.
+- [ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md): Composer's own provider params, still on per-key rows.
+- [config-params.md](../10-domains/config-params.md): the sources, and where each is accepted.

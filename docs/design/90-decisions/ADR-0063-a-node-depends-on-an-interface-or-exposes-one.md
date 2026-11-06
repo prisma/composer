@@ -60,7 +60,7 @@ The dataflow reading names an end by who provides it: the database is provided t
 
 ## Related
 
-- [ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md): a module's boundary is `deps` in and `expose` out; amended by this record's words.
+- [ADR-0016](ADR-0016-a-module-has-the-same-boundary-as-a-service.md): a module's boundary is `deps` and `expose`. Its current text uses this record's words.
 - [ADR-0013](ADR-0013-resources-are-provisioned-by-modules-deps-are-declarations.md): a dependency is a contract-checked slot.
 - [ADR-0054](ADR-0054-raw-http-is-the-untyped-tier-of-service-connections.md): the raw HTTP interface.
 - [ADR-0060](ADR-0060-public-traffic-reaches-a-service-through-a-public-url.md): the public URL, which depends on an exposed HTTP interface.

@@ -12,15 +12,17 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import type { Graph, ModuleNode, ServiceNode } from '@internal/core';
-import type { ConfigPools, ContainerInstance, PrismaAppConfig } from '@internal/core/config';
+import type { ContainerInstance, NamedSecrets, PrismaAppConfig } from '@internal/core/config';
 import type { DevServer } from '@internal/core/deploy';
+import { secretsKeys } from '@internal/core/deploy';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import { devEnvironmentDir, resolveLocalTargets } from '@internal/core/local-target';
 import { CliStructuredError, InternalError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
+import { removeLeftoverAppConfigurationFiles } from '../app-configuration-file.ts';
 import { type AppConverge, loadAppConverge } from '../app-converge.ts';
 import type { ConvergeOutcome } from '../converge-in-process.ts';
-import { convergeRedactor, poolSecrets, withComposerAdvice } from '../deployment-summary.ts';
+import { withComposerAdvice } from '../deployment-summary.ts';
 import {
   authoringModuleTargets,
   startWatch,
@@ -28,6 +30,7 @@ import {
   watchTargetsFrom,
 } from '../dev/watch.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
+import { redactDevEvent, redactError, redactThrown, SecretRedaction } from '../redaction.ts';
 import { validateEnvironmentName } from '../validate-environment.ts';
 import type { DevEvent, DevInput, DevSession, DevStep } from './dev.ts';
 import { claimDevEnvironmentName, requireDevEnvironmentName } from './dev-environment-name.ts';
@@ -130,10 +133,21 @@ function contentHash(file: string): string | undefined {
   }
 }
 
-function samePools(started: ConfigPools, now: ConfigPools): boolean {
+function sameValues(started: PipelineResult, now: PipelineResult): boolean {
   return (
-    isDeepStrictEqual(started.config, now.config) && isDeepStrictEqual(started.secrets, now.secrets)
+    isDeepStrictEqual(started.configuration, now.configuration) &&
+    isDeepStrictEqual(started.secrets, now.secrets)
   );
+}
+
+/** The app secrets the graph's `envSecret()`s name, for the local providers. In memory only. */
+function namedSecrets(current: PipelineResult): NamedSecrets {
+  const named: Record<string, string> = {};
+  for (const key of secretsKeys(current.graph)) {
+    const text = current.secrets[key];
+    if (text !== undefined && text !== '') named[key] = text;
+  }
+  return named;
 }
 
 type FailedConverge = Exclude<ConvergeOutcome, { readonly kind: 'applied' | 'interrupted' }>;
@@ -197,6 +211,21 @@ export async function executeDev(
   deps: OperationDeps,
   cwd: string,
 ): Promise<Result<DevSession, CliStructuredError>> {
+  const redaction = new SecretRedaction(process.env);
+  try {
+    const result = await executeDevInner(input, deps, cwd, redaction);
+    return result.ok ? result : notOk(redactError(result.failure, redaction));
+  } catch (error) {
+    throw redactThrown(error, redaction);
+  }
+}
+
+async function executeDevInner(
+  input: DevInput,
+  deps: OperationDeps,
+  cwd: string,
+  redaction: SecretRedaction,
+): Promise<Result<DevSession, CliStructuredError>> {
   if (process.platform === 'win32') {
     return notOk(
       new CliStructuredError(
@@ -209,6 +238,7 @@ export async function executeDev(
   const { onEvent } = input;
   const environment = input.environment ?? DEV_ENVIRONMENT;
   const devDir = path.join(cwd, devEnvironmentDir(environment));
+  removeLeftoverAppConfigurationFiles(cwd);
 
   let pipeline: Awaited<ReturnType<typeof runPipeline>>;
   let resolved: ReadonlyMap<string, LocalTargetDescriptor>;
@@ -228,7 +258,7 @@ export async function executeDev(
   // would be an unhandled rejection killing the process.
   const emit = (event: DevEvent): void => {
     try {
-      onEvent?.(event);
+      onEvent?.(redactDevEvent(event, redaction));
     } catch {
       // Swallowed: rendering is the host's; its failures are not the session's.
     }
@@ -242,6 +272,7 @@ export async function executeDev(
       runAssembler: deps.runAssembler,
       devServers: true,
       readSecrets: true,
+      redaction,
     };
     pipeline = await runPipeline(
       input.entry,
@@ -308,7 +339,8 @@ export async function executeDev(
           graph,
           container: containers.get(id),
           environment,
-          pools: pipeline.pools,
+          configuration: pipeline.configuration,
+          secrets: pipeline.secrets,
           warn: (message) => emit({ kind: 'target-warning', message }),
         });
         if (payload !== undefined) preflightPayloads.set(id, payload);
@@ -350,10 +382,7 @@ export async function executeDev(
   }
 
   const config = pipeline.configSource.value;
-  const redact = convergeRedactor(
-    process.env,
-    poolSecrets(pipeline.pools, config.secrets !== undefined),
-  );
+  const redact = (text: string): string => redaction.redact(text);
   const steps = stepTracker<DevStep>(
     (step) => (step.name === 'converge' ? step.id : `${step.converge}:${step.fqn}`),
     emit,
@@ -394,12 +423,18 @@ export async function executeDev(
       const stack = appConverge.lower(root, config, {
         name: current.name,
         environment,
-        configPool: current.pools.config,
+        appConfigurationRead: current.graph.appConfigurationRead,
         bundles: current.assembled.bundles,
         unassembled: Object.keys(current.assembled.devServers),
         containers,
         preflight: preflightPayloads,
-        providers: appConverge.localTargetProviders(resolved, containers, devDir, current.pools),
+        providers: appConverge.localTargetProviders(
+          resolved,
+          containers,
+          devDir,
+          current.graph.appConfigurationRead.configurationKeyText,
+          namedSecrets(current),
+        ),
         state: appConverge.devState(),
       });
       return await appConverge.converge({
@@ -460,7 +495,13 @@ export async function executeDev(
       let restarted: boolean;
       try {
         ({ restarted } = await withEmulatorRetry(() =>
-          serve({ address, node, server, pools: pipeline.pools }),
+          serve({
+            address,
+            node,
+            server,
+            configuration: pipeline.configuration,
+            secrets: pipeline.secrets,
+          }),
         ));
       } catch (error) {
         throw toStructured('DEV.SERVICE_START_FAILED', error);
@@ -592,6 +633,7 @@ export async function executeDev(
       runAssembler: deps.runAssembler,
       devServers: true,
       readSecrets: true,
+      redaction,
     };
     const watchFiles = deps.watch ?? startWatch;
     const onWatchError = (error: unknown): void =>
@@ -638,7 +680,7 @@ export async function executeDev(
           watchDeps,
         );
         if (stopping) return;
-        if (!samePools(pipeline.pools, rePipeline.pools)) {
+        if (!sameValues(pipeline, rePipeline)) {
           if (!valuesChanged) emit({ kind: 'values-changed' });
           valuesChanged = true;
           return;

@@ -411,7 +411,8 @@ async function withSql<T>(url: string, fn: (sql: Bun.SQL) => Promise<T>): Promis
 const PROVING_PRODUCT_ID = 'proving-row';
 const APP_NAME = 'store';
 const catalogDist = path.join(storeDir, 'modules', 'catalog', 'dist', 'server.mjs');
-const DEV_STACK_FILE = path.join(storeDir, '.prisma-composer', 'dev', 'dev', 'alchemy.run.ts');
+const DEV_DIR = path.join(storeDir, '.prisma-composer', 'dev', 'dev');
+const DEV_STACK_FILE = path.join(DEV_DIR, 'alchemy.run.ts');
 
 const REAL_WATCH_TIMEOUT_MS = 30_000;
 const catalogModule = path.join(storeDir, 'modules', 'catalog', 'src', 'module.ts');
@@ -544,6 +545,10 @@ async function main(): Promise<void> {
     assert(
       !fs.existsSync(DEV_STACK_FILE),
       'prisma dev converges in process and writes no alchemy.run.ts',
+    );
+    assert(
+      !fs.readdirSync(DEV_DIR).some((name) => name.startsWith('app-configuration-')),
+      'prisma dev converges in process and writes no app configuration file',
     );
     console.log('[proving] PASS criterion 1: credential-free bring-up + HTTP round-trip');
 

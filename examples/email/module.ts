@@ -1,6 +1,6 @@
 import { module } from '@prisma/composer';
 import { envSecret } from '@prisma/composer-prisma-cloud';
-import { email } from '@prisma/composer-prisma-cloud/email';
+import { email, emailDeliveryModes } from '@prisma/composer-prisma-cloud/email';
 import { type } from 'arktype';
 import mailerService from './src/mailer/service.ts';
 
@@ -12,7 +12,12 @@ import mailerService from './src/mailer/service.ts';
  */
 export default module(
   'email-example',
-  { input: type({ EMAIL_DELIVERY_MODE: "'resend' | 'smtp' | 'none'", EMAIL_FROM: 'string' }) },
+  {
+    input: type({
+      EMAIL_DELIVERY_MODE: type.enumerated(...emailDeliveryModes),
+      EMAIL_FROM: 'string',
+    }),
+  },
   ({ input, provision }) => {
     const mail = provision(email(), {
       input: {

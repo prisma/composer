@@ -1,5 +1,5 @@
 /**
- * The generated stack file (destroy's) imports the declaring prisma.config.ts and hand its
+ * The generated stack file (destroy's) imports the declaring prisma.config.ts and hands its
  * `composer` export to lower(). These tests run the generated file in a child
  * process against a real prisma.config.ts, with the heavy imports stubbed, so
  * the import itself is executed rather than string-matched.
@@ -42,19 +42,19 @@ function runStack(stackFile: string) {
 }
 
 describe('the generated stack file, evaluated', () => {
-  const configPool = {
-    read: 'config',
-    environment: 'staging',
-    configFile: path.join(fixtureDir, 'prisma.config.ts'),
+  const file = {
+    appConfigurationRead: { rootInput: [], configurationKeyText: { read: 'from-file' } },
+    nodeAddresses: ['stub-address'],
   };
 
-  test('the stack passes the composer export of prisma.config.ts, the environment, and the config pool it reads, to lower(), and reads no secrets', () => {
+  test('the stack passes the composer export of prisma.config.ts, the environment, and the app configuration file, to lower(), and runs no adapter', () => {
     expect(runStack(writeStackFile(stackInput))).toEqual({
       app: 'fixture-module',
       extensions: ['fixture-extension'],
       state: 'fixture-extension',
       environment: 'staging',
-      configPool,
+      appConfigurationRead: file.appConfigurationRead,
+      firstProcessNodeAddresses: file.nodeAddresses,
     });
   });
 

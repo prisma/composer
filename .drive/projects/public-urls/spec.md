@@ -15,7 +15,7 @@ export default module('shop', ({ environment, provision }) => {
     : name === 'staging' ? 'staging.shop.com'
     : publicUrl.prismaBuild());
 
-  provision(publicUrl({ name: 'site', url, target: web.http }));
+  provision(publicUrl({ id: 'site', url, target: web.http }));
 });
 ```
 

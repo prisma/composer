@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { Load, LoadError, module } from '@internal/core';
+import { secretString } from '@internal/foundation/arktype';
 import node from '@internal/node';
 import { compute, envSecret } from '@internal/prisma-cloud';
 import { contract, rpc } from '@internal/service-rpc';
@@ -68,7 +69,7 @@ describe('cron()', () => {
     const runnerWithInput = compute({
       name: 'runner',
       deps: { worker: rpc(workerContract) },
-      input: type({ token: 'string' }),
+      input: type({ token: secretString() }),
       build,
       expose: { trigger: triggerContract },
     });
@@ -94,7 +95,7 @@ describe('cron()', () => {
     const runnerWithInput = compute({
       name: 'runner',
       deps: { worker: rpc(workerContract) },
-      input: type({ token: 'string' }),
+      input: type({ token: secretString() }),
       build,
       expose: { trigger: triggerContract },
     });

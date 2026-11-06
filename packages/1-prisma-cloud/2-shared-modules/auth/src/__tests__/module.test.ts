@@ -116,7 +116,7 @@ describe('auth()', () => {
 
   test('an envParam() baseUrl reaches the service as its value at deploy', () => {
     const graph = Load(rootWithAuth(envParam('AUTH_BASE_URL')), {
-      configPool: { AUTH_BASE_URL: 'https://app.example' },
+      configuration: { AUTH_BASE_URL: 'https://app.example' },
     });
     expect(serviceBindingOf(graph.inputBindings)['baseUrl']).toBe('https://app.example');
   });

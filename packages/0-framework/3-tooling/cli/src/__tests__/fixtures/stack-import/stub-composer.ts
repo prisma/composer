@@ -14,7 +14,7 @@ plugin({
     build.module(
       '@prisma/composer/deploy',
       js(
-        'export const lower = (app, config, opts) => { console.log(JSON.stringify({ app: app.name, extensions: config.extensions.map((e) => e.id), state: config.state.extension, environment: opts.environment, configPool: opts.configPool, })); return {}; }; export const transportedLowerInputs = () => ({ containers: new Map(), preflight: new Map() });',
+        'export const lower = (app, config, opts) => { console.log(JSON.stringify({ app: app.name, extensions: config.extensions.map((e) => e.id), state: config.state.extension, environment: opts.environment, appConfigurationRead: opts.appConfigurationRead, firstProcessNodeAddresses: opts.firstProcessNodeAddresses })); return {}; }; export const transportedLowerInputs = () => ({ containers: new Map(), preflight: new Map() });',
       ),
     );
     build.module(
@@ -22,9 +22,9 @@ plugin({
       js('export const deploymentReport = () => {}; export const captureEngineFailure = () => {};'),
     );
     build.module(
-      '@prisma/composer/internal/pools',
+      '@prisma/composer/internal/app-configuration-file',
       js(
-        "export const readConfigPool = async (section, input) => ({ read: 'config', environment: input.environment, configFile: input.configFile }); export const readSecretsPool = async () => ({ read: 'secrets' });",
+        "export const readAppConfigurationFile = () => ({ appConfigurationRead: { rootInput: [], configurationKeyText: { read: 'from-file' } }, nodeAddresses: ['stub-address'] });",
       ),
     );
   },

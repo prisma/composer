@@ -30,7 +30,7 @@ test("email()'s input is the wrapped fields deliveryMode and from, and a secret 
   expectTypeOf<
     StandardSchemaV1.InferInput<NonNullable<ReturnType<typeof email>['inputSchema']>>
   >().toEqualTypeOf<{
-    deliveryMode: string | Pointer<string>;
+    deliveryMode: 'resend' | 'smtp' | 'none' | Pointer<'resend' | 'smtp' | 'none'>;
     from: string | Pointer<string>;
     deliveryCredential: SecretString | Pointer<SecretString>;
   }>();
@@ -41,7 +41,7 @@ test("the module's send port wires into a consumer's emailSender() slot", () => 
     const mail = provision(email(), {
       id: 'email',
       input: {
-        deliveryMode: envParam('EMAIL_DELIVERY_MODE'),
+        deliveryMode: 'none',
         from: envParam('EMAIL_FROM'),
         deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
       },
@@ -59,7 +59,7 @@ test("the module's outbox port wires into a consumer's rpc(emailOutboxContract) 
     const mail = provision(email(), {
       id: 'email',
       input: {
-        deliveryMode: envParam('EMAIL_DELIVERY_MODE'),
+        deliveryMode: 'none',
         from: envParam('EMAIL_FROM'),
         deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
       },
@@ -77,7 +77,7 @@ test('the outbox slot accepts an outbox port but rejects a wrong-kind (postgres)
   expectTypeOf<RefPort<typeof rawPostgresContract>>().not.toExtend<typeof emailOutboxContract>();
 });
 
-test("email() needs its input, takes a value of the root's narrower type, and refuses a plain string credential", () => {
+test("email() needs its input, takes a value of the root's narrower type, and refuses a plain string credential or a delivery mode that may be any text", () => {
   let mode!: Value<'resend' | 'smtp' | 'none'>;
   module('root', {}, ({ provision }) => {
     // @ts-expect-error email() declares an input, so the provision needs one
@@ -86,6 +86,15 @@ test("email() needs its input, takes a value of the root's narrower type, and re
       id: 'narrow',
       input: {
         deliveryMode: mode,
+        from: envParam('EMAIL_FROM'),
+        deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
+      },
+    });
+    provision(email(), {
+      id: 'any-text',
+      input: {
+        // @ts-expect-error envParam() may hold any text; deliveryMode is resend, smtp or none
+        deliveryMode: envParam('EMAIL_DELIVERY_MODE'),
         from: envParam('EMAIL_FROM'),
         deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
       },

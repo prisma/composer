@@ -55,12 +55,12 @@ import * as net from 'node:net';
 import * as path from 'node:path';
 import { Load } from '@prisma/composer';
 import type {
-  ConfigPools,
   ContainerInstance,
   ExtensionDescriptor,
   LocalTargetAttachment,
 } from '@prisma/composer/config';
 import { devEnvironmentDir } from '@prisma/composer/config';
+import { secretsKeys } from '@prisma/composer/deploy';
 import {
   convergeInProcess,
   devState,
@@ -174,7 +174,18 @@ async function assembleFixture(): Promise<Record<string, FixtureBundle>> {
 interface DevConvergeInput {
   readonly containers: ReadonlyMap<string, ContainerInstance>;
   readonly preflight: ReadonlyMap<string, string>;
-  readonly pools: ConfigPools;
+  readonly graph: ReturnType<typeof Load>;
+  readonly appSecrets: Readonly<Record<string, string>>;
+}
+
+/** The app secrets the graph's `envSecret()`s name, as `prisma dev` hands them to the local providers. */
+function namedSecrets(input: DevConvergeInput): Record<string, string> {
+  return Object.fromEntries(
+    secretsKeys(input.graph).flatMap((key) => {
+      const text = input.appSecrets[key];
+      return text === undefined || text === '' ? [] : [[key, text]];
+    }),
+  );
 }
 
 /**
@@ -198,11 +209,17 @@ async function converge(
   const stack = lower(appModule, config, {
     name: APP_NAME,
     environment: 'dev',
-    configPool: input.pools.config,
+    appConfigurationRead: input.graph.appConfigurationRead,
     bundles,
     containers: input.containers,
     preflight: input.preflight,
-    providers: localTargetProviders(resolved, input.containers, devDir, input.pools),
+    providers: localTargetProviders(
+      resolved,
+      input.containers,
+      devDir,
+      input.graph.appConfigurationRead.configurationKeyText,
+      namedSecrets(input),
+    ),
     state: devState(),
   });
   const outcome = await convergeInProcess({
@@ -417,27 +434,33 @@ async function main(): Promise<void> {
     const dev = await localTargetThunk();
     devContainer = await dev.container.ensure({ appName: APP_NAME, environment: 'dev' });
 
-    // 3. Load the graph (mirrors the CLI pipeline's own Load step).
-    const graph = Load(appModule, { id: APP_NAME });
+    // 3. Load the graph with what the default adapters return (mirrors the CLI pipeline's own Load step).
+    process.env['LOCALDEV_FIXTURE_API_KEY'] = 'test-api-key';
+    process.env['LOCALDEV_FIXTURE_GREETING'] = 'hello';
+    const read: {
+      readonly configuration: Readonly<Record<string, string>>;
+      readonly secrets: Readonly<Record<string, string>>;
+    } = {
+      configuration: { LOCALDEV_FIXTURE_GREETING: 'hello' },
+      secrets: { LOCALDEV_FIXTURE_API_KEY: 'test-api-key' },
+    };
+    const graph = Load(appModule, {
+      id: APP_NAME,
+      environment: { name: 'dev' },
+      configuration: read.configuration,
+    });
 
     // 4. Assemble both services (real build adapter, hand-written "built" entries).
     const bundles = await assembleFixture();
 
     // 5. Preflight — the fixture's secret/env-param proof lives in the
     // dedicated S5 script (local-dev-criteria-4-5.integration.ts), which
-    // deliberately runs WITHOUT these set; this script sets both so its own
+    // deliberately runs WITHOUT these set; this script sets both in step 3 so its own
     // (unrelated) proofs keep passing regardless of shell state.
-    process.env['LOCALDEV_FIXTURE_API_KEY'] = 'test-api-key';
-    process.env['LOCALDEV_FIXTURE_GREETING'] = 'hello';
-    // What the default adapters return: the generated stack file reads the same variables.
-    const pools = {
-      config: { LOCALDEV_FIXTURE_GREETING: 'hello' },
-      secrets: { LOCALDEV_FIXTURE_API_KEY: 'test-api-key' },
-    };
     const preflightPayload =
       dev.preflight === undefined
         ? undefined
-        : await dev.preflight({ graph, container: devContainer, environment: 'dev', pools });
+        : await dev.preflight({ graph, container: devContainer, environment: 'dev', ...read });
     process.chdir(originalCwd);
 
     // 6. Emulators — ensures compute always, buckets because the graph has
@@ -457,7 +480,8 @@ async function main(): Promise<void> {
       containers: new Map([[descriptor.id, devContainer]]),
       preflight:
         preflightPayload === undefined ? new Map() : new Map([[descriptor.id, preflightPayload]]),
-      pools,
+      graph,
+      appSecrets: read.secrets,
     };
     const first = await converge(bundles, convergeInput);
     if (!first.ok) {

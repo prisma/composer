@@ -2,7 +2,7 @@
 name: prisma-composer-core-concepts
 metadata:
   library: "@prisma/composer"
-  library_version: "0.36.0"
+  library_version: "0.37.0"
   version: 2026.9.1
 description: >-
   Use when deploying or managing an app that uses Prisma Composer
@@ -142,21 +142,8 @@ platform variable and never carries the value.
 
 Rules that bite:
 
-1. **Secretness is enforced by validation.** A literal bound where the schema
-   expects `SecretString` fails the deploy; `envSecret` bound to a plain
-   string field fails the same way. An ArkType schema with a `SecretString`
-   field cannot also transform its input: a morph anywhere in it
-   (`'string.trim'`, `.pipe()`, `field(type('string.integer.parse'))`) or
-   `'+': 'delete'` copies the input, the copied secret loses its value, and
-   the deploy refuses it. Transform in the service code instead; a Zod schema
-   keeps the box.
-2. **`envParam` values arrive as raw strings**; bind them to string fields. In
-   a service's `input`, the deploy reads the variable from the config pool
-   on every deploy and writes its value into the input document. As a service
-   param, the deploy writes a pointer row to a platform variable, which the
-   service reads at boot. `envSecret` always lives on the platform: each
-   environment keeps its own copy, and the secrets pool only seeds a missing
-   name (the deploy fails early, naming the variable, when both lack it).
+1. **Secretness is checked by the binding's type and by the deploy.** A `provision()` binding, a service's or a module's, is typed from the schema: a literal or a `SecretBox` where the schema expects `SecretString`, or `envSecret` in a text field, fails to compile, and the deploy refuses it where the schema has no types. An ArkType schema with a `SecretString` field cannot also transform its input: a morph anywhere in it (`'string.trim'`, `.pipe()`, `field(type('string.integer.parse'))`) or `'+': 'delete'` copies the input, the copied secret loses its value, and the deploy refuses it. Transform in the service code instead; a Zod schema keeps the box.
+2. **`envParam` values arrive as raw strings**; bind them to string fields. A field of a narrower type, such as `email()`'s `deliveryMode`, refuses `envParam` at compile time; declare that field in the root's `input` instead, for `email()` from the exported `emailDeliveryModes`. In a service's `input`, the deploy reads the variable from the app configuration on every deploy and writes its value into the input document. As a service param, the deploy writes a pointer row to a platform variable, which the service reads at boot. `envSecret` always lives on the platform: each environment keeps its own copy, and the app secrets only seed a missing name (the deploy fails early, naming the variable, when both lack it).
 3. **Absence is the schema's call.** An env-bound field whose variable is
    unset or empty resolves to *key omitted*, which is legal only if the
    schema allows it (optional field, union arm). The deploy report prints the
@@ -172,19 +159,15 @@ Rules that bite:
    refuse both, naming `input`. A service's `params` stay.
 6. `input.apiKey.expose()` is the only way to a secret's value; the box
    redacts everywhere else (logs, JSON, errors).
-7. **A field bound to `serviceOrigin()` or a plain `generatedParam()` is
-   wrapped**: `field(type('string'))`. At deploy the schema sees a pointer,
-   and a plain `'string'` field refuses it (a deploy error, and a compile
-   error in a module's binding). `service.input()` and `mockService`'s input
-   double read the field as its inner type.
+7. **A field bound to `serviceOrigin()` or a plain `generatedParam()` is wrapped**: `field(type('string'))`. At deploy the schema sees a pointer, and a plain `'string'` field refuses it: a compile error in a service's or a module's binding, and a deploy error where the schema has no types. `service.input()` and `mockService`'s input double read the field as its inner type.
 
 ### Values that differ per environment
 
 The graph is the same in every environment; only configuration may differ.
 
-- A module declares `input` (one Standard Schema) as a service does; `provision(module, { input })` binds it, and the body receives each field as a value it can pass into a binding or, for a plain field, list in `resolve()`. A root's `input` is the config pool, and a module's `input` takes every source a service's does.
+- A module declares `input` (one Standard Schema) as a service does; `provision(module, { input })` binds it, and the body receives `input`, a dictionary of values: it passes each field on by name into a binding or, for a plain field, lists it in `resolve()`. Passing the whole `input` on fails to compile, and the deploy refuses it. A root's `input` is the app configuration, and a module's `input` takes every source a service's does.
 - `field(inner)` from `@prisma/composer/arktype` or `@prisma/composer/zod` wraps one leaf field's schema (`field(type('string'))`, `field(z.string())`) so it also accepts a plain pointer, which is what a value known only at boot such as `serviceOrigin()` is at deploy. In the body the field is `Value<string | Pointer<string>>`: pass it into another wrapped field or a service's input, never a plain `string` field (compile error). Wrap leaves, not object schemas; an ArkType default goes outside: `field(type('string')).default('x')`. Other schema libraries: `Pointer`, `isPlainPointer()` and `isSecretPointer()` from `@prisma/composer`. Wrap every leaf of a reusable module's schema other than a `secretString()` field, unless a `resolve()` lists it; keep a root's fields plain. `field(secretString())` is wrong: it accepts a plain pointer into a secret field, and the service fails at boot.
-- `composer({ config: [...], secrets: [...] })` lists config adapters; each gets the environment's name and returns values, later wins by top-level key. Both default to `[environmentVariables()]` (the shell); a list you write replaces the default. `dotenv()` reads `.env`, `.env.local`, `.env.<environment>`, `.env.<environment>.local`, later wins. The config pool is the root's input and what `envParam()` reads; pass the root's input fields on one by one, because Load refuses its whole `input` (the whole pool, by default every shell variable). The secrets pool only seeds `envSecret()` platform variables and `prisma dev`'s secrets, never the root's input. Both import from `@prisma/composer/config`. Credentials (`PRISMA_SERVICE_TOKEN`) still come from the shell.
+- `composer({ config: [...], secrets: [...] })` lists config adapters; each gets the environment's name and returns values, later wins by top-level key. Both default to `[environmentVariables()]` (the shell); a list you write replaces the default. `dotenv()` reads `.env`, `.env.local`, `.env.<environment>`, `.env.<environment>.local`, later wins. The app configuration is the root's input and what `envParam()` reads; pass the root's input fields on by name, as every module does; its whole `input` would be the whole app configuration, by default every shell variable. The app secrets only seed `envSecret()` platform variables and `prisma dev`'s secrets, never the root's input. Both import from `@prisma/composer/config`. Credentials (`PRISMA_SERVICE_TOKEN`) still come from the shell. `dotenv()` reads `.env`, `.env.local`, `.env.<environment>`, `.env.<environment>.local` through `dotenv-flow` (no `.env.local` for `test`); remove `import 'dotenv/config'` when you list it. Composer redacts the values under the names an `envSecret()` reads, in either list; the lists' other values are not secrets and print as they are, apart from values that look like credentials. Under `prisma deploy` and `prisma dev` the deploy engine's progress, log lines and failures are redacted too.
 - A field exists only under a plain object: a path into a string, an array or a secret, such as `input.tags[0]`, fails the deploy naming the path.
 - A truthiness check such as `if (input.enabled)` is not caught: the field is an object, so the branch always runs, in every environment. A module's structure cannot depend on its input; to provision something only sometimes, let the parent decide whether to provision it.
 - The module body receives `environment`; `environment.name` is a value standing for the name `--environment` gave (`production` for `prisma deploy`, `dev` for `prisma dev` by default).
@@ -251,7 +234,8 @@ module's `api` port is a raw HTTP port: wire it with `rawHttp()`.
 
 **Public URLs.** A service is reachable from the internet only through a
 public URL the app declares:
-`provision(publicUrl({ name: 'site', url, target: web.http }))`, where
+`provision(publicUrl({ id: 'site', url, target: web.http }))`, where `id`
+sets the address (`shop.site`) and changing it replaces the URL, and where
 `web` exposes `http: rawHttpContract` (an RPC interface as `target` fails
 `tsc`; a module's forwarded HTTP interface lands on the service inside it).
 `url` is required and is one of two strategies: `publicUrl.prismaBuild()`
@@ -725,7 +709,7 @@ provision exactly like your own:
 | `storage` from `/storage` | An S3-backed blob store (own Postgres + minted credentials) | `store` |
 | `streams` from `/streams` | Durable append-only event streams over a `store` | `streams` |
 | `auth` from `/auth` | Signup, login, sessions, and JWT verification (Better Auth in one service, own database). `auth({ signUp: 'closed' })` makes Better Auth refuse self-service sign-up; operator-created accounts go through `admin.createUser({ email, name, password?, emailVerified? })` from a service wired to `admin` (it throws on a duplicate email and sends no mail); a signed-in user deletes their own account with Better Auth's `POST /api/auth/delete-user` through the proxy (password, or a session < 24 h old); operators delete with `admin.removeUser({ userId })`; either way your own rows follow your `auth:User` FK's `onDelete` (`Cascade` deletes them, `Restrict` refuses the deletion). Bind `input: { baseUrl }`, the public app origin: `serviceOrigin('<app>.<service>')`, `envParam(...)` or a literal. | `api`, `session`, `admin` |
-| `email` from `/email` | Transactional email with a stored outbox (own service and database). Bind `input: { deliveryMode, from, deliveryCredential }`; the credential with `envSecret(...)`, required even when `deliveryMode` is `none`. | `send`, `outbox` |
+| `email` from `/email` | Transactional email with a stored outbox (own service and database). Bind `input: { deliveryMode, from, deliveryCredential }`; the credential with `envSecret(...)`, required even when `deliveryMode` is `none`. `deliveryMode` is one of `emailDeliveryModes`; bind a literal or a root input field declared from it (`type.enumerated(...emailDeliveryModes)`, `z.enum(emailDeliveryModes)`), not `envParam()`. | `send`, `outbox` |
 
 `bucket()` (imported alongside `rawPostgres`) is a raw S3-compatible bucket:
 the dependency end receives `{ url, bucket, accessKeyId, secretAccessKey }`,

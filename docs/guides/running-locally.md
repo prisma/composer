@@ -145,7 +145,7 @@ export default definePrismaConfig({
 });
 ```
 
-`.env.dev` holds values only the environment `dev` reads. Without a `config` or `secrets` list, Composer reads the shell, so `import 'dotenv/config'` at the top of `prisma.config.ts` also works. A changed value restarts the dev server on the next `prisma dev`.
+`.env.dev` holds values only the environment `dev` reads. Without a `config` or `secrets` list, Composer reads the shell, so `import 'dotenv/config'` at the top of `prisma.config.ts` also works; remove it when you list `dotenv()`. A changed value restarts the dev server on the next `prisma dev`.
 
 What else changes for such a service:
 
@@ -428,13 +428,15 @@ token, workspace, or network is involved. Five consequences worth knowing:
   });
   ```
 
-  `dotenv()` reads `.env`, `.env.local`, `.env.dev` and `.env.dev.local` beside `prisma.config.ts` for the environment `dev`, a later file winning. `.env.dev` holds values only the environment `dev` reads. With no `secrets` list, `prisma dev` reads the shell it runs in, so `import 'dotenv/config'` as the first line of `prisma.config.ts` also works.
+  `dotenv()` reads `.env`, `.env.local`, `.env.dev` and `.env.dev.local` beside `prisma.config.ts` for the environment `dev`, a later file winning. `.env.dev` holds values only the environment `dev` reads. With no `secrets` list, `prisma dev` reads the shell it runs in, so `import 'dotenv/config'` as the first line of `prisma.config.ts` also works; remove it when you list `dotenv()`.
 
   If a secret your service's input schema requires is unset or empty, `prisma dev` stops before it starts anything and names the variable and the service. If the schema marks the secret optional, the service starts and sees that field as absent. Change a value and run `prisma dev` again, without `--fresh`, and the services that read it restart with the new value.
 
   **`.env` and `.env.local` are read by every environment, including `prisma deploy` to `production`.** Deploy uploads any secret the target environment does not have yet, so a local-only secret in those files becomes the hosted value. Put local-only values in `.env.dev` or `.env.dev.local`.
 
   A `.env` that only your framework loads (Next.js, for example) does not count, because Composer reads each secret before the dev server starts (see [Dev servers](#dev-servers)).
+
+  `prisma dev` treats as secrets only the values under the names an `envSecret()` in the graph reads, and redacts those values in what it prints. The other values in `.env` and the shell are not secrets to it, and print as they are, apart from values that look like credentials, such as a long value under a name containing `TOKEN` or `KEY`.
 
   Each service gets only the secrets and env-sourced params its own input and params point at. Code that reads `process.env.X` directly, where `X` is bound by another service, gets nothing.
 - Changing a value an adapter reads while `prisma dev` runs pauses rebuilds at the next rebuild, with a message; restart `prisma dev` to use the new values.
