@@ -8,6 +8,8 @@ Prerequisites: platform slice 3 (prisma/pdp-control-plane#5924) deployed to prod
 
 Sam Goodwin's alchemy-run/alchemy#2701 and its base #2698 are replaced by the Alchemy pull request (Will, 2026-11-06). Sam is asked to close both once it is open.
 
+**Agreed with charlemagne-88, 2026-11-11:** the error codes below ship in platform slice 8. Apex hostnames are supported: Foundry accepts a hostname with no CNAME when its A or AAAA records include a switchboard address, so flattening, ALIAS or ANAME works; slice 4 corrects `RoutingUrls.md`. Alchemy accepts a hostname change to an apex whose A/AAAA answers match the switchboard's.
+
 **Platform request before opening:** distinct error codes for the RoutingUrl create and update refusals. Today a duplicate `logicalId` 409 is `client-error`, and an invalid hostname and a service on another Branch are both `validation-error`; only the quota 409 has its own code (`quota-exceeded`). Proposed: `logical-id-taken`, `invalid-hostname`, `service-on-another-branch`. Then the Distilled pull request types the four errors on `/error/code` (as patch 005 does), and Alchemy uses `catchTags` instead of matching message text (U2 review round 3, finding 1).
 
 **Platform doc to correct:** `docs/compute/RoutingUrls.md` uses `shop.com`, an apex, with a CNAME record to the switchboard. Foundry's OpenAPI spec says registration needs a direct CNAME, which an apex cannot have, so a flattened apex fails. Alchemy's `Prisma.RoutingUrl` refuses a hostname change to an apex and says so.
