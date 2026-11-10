@@ -43,7 +43,8 @@ A module declares the same boundary a service does:
 
 ## Consequences
 
-- The authoring surface is `module(name, { deps?, input?, expose? }, body)`. The body receives `{ deps, input, environment, provision }` and returns one port per declared exposed interface. A module with an empty boundary, also written `module(name, body)`, is the closed form a deploy root takes.
+- The authoring surface is `module(name, { deps?, input?, expose? }, body)`. The body receives `{ deps, input, environment, provision }` and returns one port per declared exposed interface. A module with an empty boundary is also written `module(name, body)`.
+- The root is the one module without this boundary. It is built with `appRoot(name, { input? }, body)`, which takes no `deps` and no `expose`, because nothing provisions the root; its body receives `{ input, environment, provision }`. `provision()` refuses an app root, so a root is never nested. A module built with `module()` is still accepted as the root.
 - `module()` refuses a `params` or `secrets` key, and `provision()` of a module refuses a `params` or `secrets` map, each with an error naming `input`. A module takes its input only through `input`; a service keeps its reserved `params`, such as `port`.
 - Load checks the boundary, and each failure is a Load error that names its fix: a declared dependency the body neither passes on nor returns; a declared exposed interface the body does not return, or returns a port that does not satisfy; a root that declares dependencies, since nothing above it can wire them; and a dependency cycle. A declared input field the body never uses is not an error, because Load cannot list a schema's keys.
 - Deploy addresses are hierarchical: a child's address is its parent's plus its provision id, and assembled bundles are keyed by the full address.

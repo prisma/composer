@@ -41,7 +41,7 @@ export interface ProvisionedModuleInput {
   /** The binding the provision() call supplied, values in place. */
   readonly binding: unknown;
   /** True for the root, whose binding is the app configuration. */
-  readonly isRoot: boolean;
+  readonly isLoadRoot: boolean;
   /** For the root in the second process: its fields as the first process checked them. The root's schema does not run. */
   readonly checked?: readonly RootInputField[];
 }
@@ -404,7 +404,7 @@ function validateModuleInput(
   }
   if (result.issues !== undefined) {
     const messages = result.issues.map((issue) => issue.message).join('; ');
-    if (entry.isRoot) {
+    if (entry.isLoadRoot) {
       const forEnvironment =
         environment === undefined ? '' : ` for the environment "${environment.name}"`;
       throw new LoadError(
@@ -636,7 +636,7 @@ export function resolveValues(input: {
           );
         }
         if (origin.path.length === 0) {
-          const everyVariable = entry.isRoot
+          const everyVariable = entry.isLoadRoot
             ? " The root's input is every value the `config` adapters return, which by default is every variable of the process environment, secrets included."
             : '';
           throw new LoadError(
@@ -655,7 +655,7 @@ export function resolveValues(input: {
           result = field.value;
         } else {
           result = readPath(validatedInputOf(entry), origin);
-          if (entry.isRoot) {
+          if (entry.isLoadRoot) {
             rootFields.set(
               origin.path.join('\0'),
               result === undefined ? { path: origin.path } : { path: origin.path, value: result },
@@ -691,7 +691,7 @@ export function resolveValues(input: {
   };
 
   const rootModuleAddress = (): string =>
-    input.moduleInputs.find((entry) => entry.isRoot)?.moduleAddress ?? '';
+    input.moduleInputs.find((entry) => entry.isLoadRoot)?.moduleAddress ?? '';
 
   const appConfigurationReadOf = (
     inputBindings: readonly InputBindingUse[],

@@ -1,6 +1,6 @@
-import { service } from '@internal/core';
+import { appRoot, service } from '@internal/core';
 
-export default service({
+const fixtureService = service({
   name: 'fixture-no-ext-service',
   extension: 'test/pack',
   type: 'fixture/service',
@@ -12,4 +12,8 @@ export default service({
     module: import.meta.url,
     entry: 'server.js',
   },
+});
+
+export default appRoot('fixture-no-ext-root', ({ provision }) => {
+  provision(fixtureService);
 });

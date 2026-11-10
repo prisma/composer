@@ -52,14 +52,14 @@ belongs on the rpc ports instead.
 
 ```ts
 // module.ts (the root)
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { serviceOrigin } from '@prisma/composer-prisma-cloud';
 import { auth } from '@prisma/composer-prisma-cloud/auth';
 import { postgres } from '@prisma/composer-prisma-cloud/orm';
 import { appContract } from './src/contract.ts';
 import apiService from './src/api/service.ts';
 
-export default module('app', ({ provision }) => {
+export default appRoot('app', ({ provision }) => {
   const db = provision(
     postgres({ name: 'database', contract: appContract, config: './prisma.config.ts' }),
     { id: 'database' },

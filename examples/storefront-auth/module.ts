@@ -1,4 +1,4 @@
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { envSecret } from '@prisma/composer-prisma-cloud';
 import authModule from '@storefront-auth/auth';
 import storefrontService from '@storefront-auth/storefront';
@@ -10,7 +10,7 @@ import storefrontService from '@storefront-auth/storefront';
  * storefront's `auth` slot exactly as it would for any other producer of
  * that contract.
  */
-export default module('storefront-auth', ({ provision }) => {
+export default appRoot('storefront-auth', ({ provision }) => {
   // The root binds the auth module's signingKey to the platform variable
   // AUTH_SIGNING_SECRET; preflight fills it from the app secrets when missing.
   const auth = provision(authModule, {

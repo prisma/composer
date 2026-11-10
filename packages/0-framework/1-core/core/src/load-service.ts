@@ -7,7 +7,14 @@ import {
   LoadError,
   type NodeId,
 } from './graph-types.ts';
-import { isNode, type ModuleNode, type ResourceNode, type ServiceNode, slotsOf } from './node.ts';
+import {
+  type AppRootNode,
+  isNode,
+  type ModuleNode,
+  type ResourceNode,
+  type ServiceNode,
+  slotsOf,
+} from './node.ts';
 import { topoSort } from './toposort.ts';
 
 /**
@@ -19,7 +26,7 @@ import { topoSort } from './toposort.ts';
  */
 export function boundaryPortsOf(
   id: NodeId,
-  node: ModuleNode | ServiceNode | ResourceNode,
+  node: ModuleNode | AppRootNode | ServiceNode | ResourceNode,
 ): BoundaryPort[] {
   const ports: BoundaryPort[] = [];
   const slots: Record<string, unknown> = node.kind === 'module' ? node.deps : slotsOf(node);

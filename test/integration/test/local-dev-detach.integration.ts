@@ -29,7 +29,7 @@ import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Load, module } from '@prisma/composer';
+import { appRoot, Load } from '@prisma/composer';
 import { DEV_DIR, devEnvironmentDir } from '@prisma/composer/config';
 import { devStop, devUrl } from '@prisma/composer/control';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
@@ -192,7 +192,7 @@ async function reserveServicePortsBelow(port: number): Promise<void> {
   const target = await localTarget();
   await target.emulators?.({
     graph: Load(
-      module('portskip', () => {}),
+      appRoot('portskip', () => {}),
       { id: 'portskip' },
     ),
     container: await target.container.ensure({ appName: 'portskip', environment: 'dev' }),

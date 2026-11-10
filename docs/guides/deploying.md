@@ -1,13 +1,6 @@
 # Deploying and operating
 
-`prisma deploy` takes your entry file (the one whose default export is the
-root module) and stands the whole app up on Prisma Cloud. To remove the app
-with every environment, delete its Project with `prisma project delete`. To
-remove one environment, call the `destroy` operation from `@prisma/composer/control`
-in a script (see [Removing an app or an environment](#removing-an-app-or-an-environment)).
-Which **environment** you're touching — `production`, `staging`, a preview such
-as `pr-42` — is always your choice when you run it, never something in your
-code.
+`prisma deploy` takes your entry file (the one whose default export is the app's root, built with `appRoot()`) and stands the whole app up on Prisma Cloud. To remove the app with every environment, delete its Project with `prisma project delete`. To remove one environment, call the `destroy` operation from `@prisma/composer/control` in a script (see [Removing an app or an environment](#removing-an-app-or-an-environment)). Which **environment** you're touching — `production`, `staging`, a preview such as `pr-42` — is always your choice when you run it, never something in your code.
 
 | You want to… | Run |
 | --- | --- |
@@ -101,12 +94,7 @@ with one further up. The deploy imports that file again while it runs, so keep
 the section in the file itself rather than building it somewhere the file
 cannot reach.
 
-`entry` is the module whose default export is your app's root module. It is
-relative to `prisma.config.ts`, so `prisma deploy` finds it from any
-directory below that file. `--entry <path>` on `prisma deploy` or `prisma dev`
-replaces it for one run, relative to the directory you run the command in.
-With neither, the command stops with `CONFIG.ENTRY_MISSING` before doing any
-work.
+`entry` is the module whose default export is your app's root, built with `appRoot()`. It is relative to `prisma.config.ts`, so `prisma deploy` finds it from any directory below that file. `--entry <path>` on `prisma deploy` or `prisma dev` replaces it for one run, relative to the directory you run the command in. With neither, the command stops with `CONFIG.ENTRY_MISSING` before doing any work.
 
 `prisma dev` keeps its local state, the record of which local service,
 database and bucket backs each node, in the directory it runs in. Run

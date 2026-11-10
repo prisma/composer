@@ -20,8 +20,8 @@ function entryNamed(name: string): string {
   const file = path.join(CWD, `${name}.ts`);
   fs.writeFileSync(
     file,
-    `import { module } from ${JSON.stringify(import.meta.resolve('@prisma/composer'))};\n` +
-      `export default module(${JSON.stringify(name)}, {}, () => ({}));\n`,
+    `import { appRoot } from ${JSON.stringify(import.meta.resolve('@prisma/composer'))};\n` +
+      `export default appRoot(${JSON.stringify(name)}, () => {});\n`,
   );
   return file;
 }

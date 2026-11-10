@@ -48,11 +48,11 @@ Provision `storage()` in a module and wire its `store` port into a consumer's
 
 ```ts
 // module.ts — the deploy root
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { storage } from '@prisma/composer-prisma-cloud/storage';
 import blobs from './src/blobs/service.ts';
 
-export default module('my-app', ({ provision }) => {
+export default appRoot('my-app', ({ provision }) => {
   const store = provision(storage()); // owns its Postgres + minted credentials
   provision(blobs, { deps: { store: store.store } });
 });

@@ -1213,11 +1213,11 @@ export default compute({
 // src/module.ts — the app root: the module OWNS the database. It provisions the
 // identity `rawPostgres({ name })` and wires its ref into the service's slot (the
 // contract matches); its name names the app (ADR-0006).
-import { module } from "@prisma/composer"
+import { appRoot } from "@prisma/composer"
 import { postgres } from "@prisma/composer-prisma-cloud"
 import service from "./service.ts"
 
-export default module("hello", (h) => {
+export default appRoot("hello", (h) => {
   const db = h.provision("db", rawPostgres({ name: "db" }))
   h.provision("hello", service, { db })
 })
@@ -1297,7 +1297,7 @@ export default async function Home() {
 import { postgres } from "@prisma/composer-prisma-cloud"
 import authService from "./modules/auth/src/service"
 import storefrontService from "./modules/storefront/src/service"
-export default module("storefront-auth", (h) => {
+export default appRoot("storefront-auth", (h) => {
   const db = h.provision("db", rawPostgres({ name: "db" }))
   const authRef = h.provision("auth", authService, { db })         // db→auth dependency edge
   h.provision("storefront", storefrontService, { auth: authRef.http })  // auth→storefront dependency edge

@@ -41,6 +41,7 @@
       "forShare": true,
       "forUpdate": true,
       "insertOnConflictSkip": true,
+      "insertOnConflictTarget": true,
       "insertOnConflictWithoutTarget": true,
       "lateral": true,
       "lockNowait": true,
@@ -56,7 +57,7 @@
       "id": "auth",
       "kind": "extension",
       "targetId": "postgres",
-      "version": "0.33.0"
+      "version": "0.38.0"
     }
   },
   "meta": {},

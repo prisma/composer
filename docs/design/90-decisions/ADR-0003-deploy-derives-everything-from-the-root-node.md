@@ -6,16 +6,7 @@ Amended 2026-10-23: the entry path is the `entry` field of the `composer` sectio
 
 ## Decision
 
-The deploy entrypoint is `prisma-composer deploy <entry>`, where `entry` is a module
-whose default export is a **module** — the application root, and the composition
-unit that wires services and infrastructure together. Everything about the
-*application* is derived from it: it is the graph reachable from that module, and
-its name comes from the root node (overridable with `--name`). The one thing
-that is not derivable — which control-plane extensions exist, and the deploy's
-state store — lives in `prisma-composer.config.ts` (ADR-0017). The config carries
-no application settings: no app reference, no name, no per-service options.
-*(Amended 2026-10-23: it carries one input to the tool, the `entry` path, which
-says where the root module is and names nothing about the application.)*
+The deploy entrypoint is `prisma-composer deploy <entry>`, where `entry` is a module whose default export is the **app root**: the outermost module, built with `appRoot()`, and the composition unit that wires services and infrastructure together. A module built with `module()` is also accepted as the root. Everything about the *application* is derived from it: it is the graph reachable from that root, and its name comes from the root node (overridable with `--name`). The one thing that is not derivable — which control-plane extensions exist, and the deploy's state store — lives in `prisma-composer.config.ts` (ADR-0017). The config carries no application settings: no app reference, no name, no per-service options. *(Amended 2026-10-23: it carries one input to the tool, the `entry` path, which says where the root module is and names nothing about the application.)*
 
 Here is what an app author writes: a service module declaring a service and its
 dependencies, and a root module provisioning what those dependencies need and
@@ -35,11 +26,11 @@ export default compute({
 });
 
 // src/module.ts — the root: the module provisions the database and wires it in (ADR-0013).
-import { module } from "@prisma/composer";
+import { appRoot } from "@prisma/composer";
 import { postgres } from "@prisma/composer-prisma-cloud";
 import service from "./service.ts";
 
-export default module("hello", ({ provision }) => {
+export default appRoot("hello", ({ provision }) => {
   const db = provision(rawPostgres({ name: "db" }));
   provision(service, { deps: { db } });
 });
@@ -60,16 +51,14 @@ that supplies compose's building blocks for a given deploy target,
 dependencies need and wires the result in — the mechanism ADR-0013 covers in
 full.
 
-The application root is a **module** — the composition unit. A single service
-with no dependencies of its own is deployed by wrapping it in a one-service
-module, with nothing to wire:
+The application root is a module, built with `appRoot()`. A single service with no dependencies of its own is deployed by wrapping it in a one-service root, with nothing to wire:
 
 ```ts
 // src/module.ts
-import { module } from "@prisma/composer";
+import { appRoot } from "@prisma/composer";
 import service from "./service.ts";
 
-export default module("hello", ({ provision }) => {
+export default appRoot("hello", ({ provision }) => {
   provision(service);
 });
 ```
@@ -108,13 +97,7 @@ silently: a node whose `(extension, type)` has no registry entry fails
 immediately with an error naming the extension to add to
 `prisma-composer.config.ts`.
 
-Deriving everything from the entry module also settles what "the root" means:
-**nothing marks a root in the model** beyond its kind — whatever module you point
-the CLI at *is* the application, and the graph reachable from its default
-export is what deploys. The root must be a module: pointing the CLI at a bare
-service is rejected with an error telling you to wrap it in a module. This keeps
-one deploy shape rather than a second, service-rooted pipeline path. Two things
-follow:
+Deriving everything from the entry module also settles what "the root" means: it is the module the entry default-exports, and the graph reachable from it is what deploys. The root is marked by its type, not only by being the one you deploy: `appRoot()` builds an app root, which `provision()` refuses, so a root can never be nested inside another module. A module built with `module()` is still accepted as the root. Pointing the CLI at a bare service is rejected with an error telling you to wrap it in `appRoot()`. This keeps one deploy shape rather than a second, service-rooted pipeline path. Two things follow:
 
 - A **one-service module** is the standalone-deploy story: it deploys as a
   complete application with its own project and its own state. Any slice of a

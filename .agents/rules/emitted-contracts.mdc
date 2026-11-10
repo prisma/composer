@@ -1,0 +1,13 @@
+---
+description: "Emitted ORM contracts (contract.json, contract.d.ts) are written only by `pnpm contracts:emit`. Read before changing an ORM pin or any contract file."
+globs: ["**/contract.json", "**/contract.d.ts", "**/contract.prisma", "**/prisma.config.ts", "pnpm-workspace.yaml"]
+alwaysApply: false
+---
+
+# Emitted contracts come from `pnpm contracts:emit`
+
+`pnpm contracts:emit` re-emits every committed contract with the pinned `prisma` CLI and formats the output. Run it after any change to an ORM pin, the `prisma` pin or a contract source, and commit what it writes. Never edit an emitted `contract.json` or `contract.d.ts`. CI runs `pnpm check:contracts-emitted`, which fails when a committed contract differs from what the pinned toolchain emits.
+
+An ORM upgrade recipe that says to edit a `contract.d.ts` applies only to frozen copies under `migrations/snapshots/<hash>/`, which no config emits. Every other `contract.d.ts` is emitted.
+
+A new contract is found only if its config is named `prisma.config.ts` and its output directory holds a committed `contract.json`.

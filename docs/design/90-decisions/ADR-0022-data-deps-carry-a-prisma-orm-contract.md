@@ -36,7 +36,7 @@ await db.orm.public.Widget.create({ label });
 
 // module.ts — the RESOURCE end. It takes the contract AND the
 // prisma.config.ts PATH — a plain string the deploy reads, never imported.
-export default module('orm-demo', ({ provision }) => {
+export default appRoot('orm-demo', ({ provision }) => {
   const db = provision(
     postgres({ name: 'database', contract: widgetContract, config: './prisma.config.ts' }),
     { id: 'database' },

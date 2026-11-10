@@ -93,7 +93,7 @@ const { products } = await catalog.listProducts({});
 The root module is the app — provision the pieces, wire the typed ports:
 
 ```ts
-export default module('store', ({ provision }) => {
+export default appRoot('store', ({ provision }) => {
   const catalog = provision(catalogModule);                       // owns its own Postgres
   const orders = provision(ordersModule, { deps: { catalog: catalog.rpc } });
   provision(storefrontService, { deps: { catalog: catalog.rpc, orders: orders.rpc } });

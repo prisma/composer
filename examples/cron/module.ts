@@ -1,4 +1,4 @@
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { cron } from '@prisma/composer-prisma-cloud/cron';
 import runnerService, { schedule } from './src/runner/service.ts';
 import workerService from './src/worker/service.ts';
@@ -13,7 +13,7 @@ import workerService from './src/worker/service.ts';
  *
  * A closed root: no boundary argument and no return — it only provisions.
  */
-export default module('cron-example', ({ provision }) => {
+export default appRoot('cron-example', ({ provision }) => {
   const worker = provision(workerService);
   provision(cron({ schedule, runner: runnerService }), { deps: { worker: worker.rpc } });
 });

@@ -30,7 +30,7 @@ import {
 import { getMigrations } from 'better-auth/db/migration';
 import { admin, bearer, jwt, magicLink } from 'better-auth/plugins';
 import pg from 'pg';
-import emptyAppContractJson from '../execution/empty-app-contract.json' with { type: 'json' };
+import emptyAppContractJson from '../execution/empty-app/contract.json' with { type: 'json' };
 import { ensureLocalAuthSchema } from '../execution/local-schema.ts';
 import { AUTH_PACK_ID, AUTH_SCHEMA, authPack } from '../pack/index.ts';
 import {
