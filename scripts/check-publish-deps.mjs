@@ -164,6 +164,8 @@ export function findPrivateDependencyViolations(pkgJson, privateNames) {
 
 const NON_REGISTRY_SPEC_RE =
   /^(?:[a-z][a-z0-9+.-]*:\/\/|git(?:\+[a-z]+)?:|github:|gitlab:|bitbucket:|file:|link:)/i;
+const NPM_ALIAS_RE = /^npm:(?:@[^/@]+\/)?[^@]+@/;
+const LOCAL_PATH_SPEC_RE = /^(?:\.{1,2}\/|\/|~\/)/;
 
 /**
  * Returns true if `spec` installs from somewhere other than the npm registry:
@@ -173,7 +175,9 @@ const NON_REGISTRY_SPEC_RE =
  * Exported for unit tests.
  */
 export function isNonRegistrySpec(spec) {
-  return typeof spec === 'string' && NON_REGISTRY_SPEC_RE.test(spec);
+  if (typeof spec !== 'string') return false;
+  const target = spec.replace(NPM_ALIAS_RE, '');
+  return NON_REGISTRY_SPEC_RE.test(target) || LOCAL_PATH_SPEC_RE.test(target);
 }
 
 /**
