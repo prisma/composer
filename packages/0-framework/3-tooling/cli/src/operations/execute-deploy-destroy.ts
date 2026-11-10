@@ -19,7 +19,6 @@ import type {
 } from '@internal/core/config';
 import {
   containerEnv,
-  PREFLIGHT_FINDINGS_ENV_VAR,
   preflightEnv,
   preflightEnvVarName,
   preflightFindingsEnv,
@@ -553,13 +552,10 @@ async function runStackPipelineInner(
     alchemyStage = containers.get(config.state.extension)?.alchemyStage ?? environment;
     steps.finish({ name: 'connect' });
 
-    // Preflight (deploy only): each extension checks its platform prerequisites,
-    // such as a platform variable a service needs (ADR-0064), before any stack
-    // file is written or Alchemy runs.
+    const unset: UnsetPlatformVariable[] = [];
     if (action === 'deploy') {
       steps.start({ name: 'preflight' });
       let checked = 0;
-      const unset: UnsetPlatformVariable[] = [];
       const report = (reported: PlatformVariableCheck): void => {
         checked += reported.checked;
         unset.push(
@@ -589,10 +585,7 @@ async function runStackPipelineInner(
       // collision (two extension ids mapping to one env var) is a preflight
       // failure, and must surface before the stack file is written.
       try {
-        preflightTransportEnv = {
-          ...preflightEnv(preflightPayloads),
-          ...preflightFindingsEnv({ unset }),
-        };
+        preflightTransportEnv = preflightEnv(preflightPayloads);
       } catch (error) {
         throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
       }
@@ -606,7 +599,7 @@ async function runStackPipelineInner(
     for (const extension of config.extensions) {
       preflightTransportEnv[preflightEnvVarName(extension.id)] ??= '';
     }
-    preflightTransportEnv[PREFLIGHT_FINDINGS_ENV_VAR] ??= '';
+    Object.assign(preflightTransportEnv, preflightFindingsEnv({ unset }));
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;

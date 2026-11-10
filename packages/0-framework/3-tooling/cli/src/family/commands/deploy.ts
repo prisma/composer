@@ -46,7 +46,7 @@ function formatDuration(ms: number): string {
   return `${String(Math.floor(seconds / 60))}m ${String(seconds % 60)}s`;
 }
 
-/** The operation's events as engine events. The engine prints only `step`, so a finished step carries its duration in the text too. */
+/** The operation's events as engine events. */
 function toEngineEvent(event: DeployEvent): EngineEvent | undefined {
   if (event.kind === 'preflight-findings') {
     const text = unsetPlatformVariablesText(event.findings.unset);

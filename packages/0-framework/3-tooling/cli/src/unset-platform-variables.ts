@@ -1,4 +1,3 @@
-/** The block the deploy prints after its preflight step and again at the end of its report. */
 import { platformVariableReaderText, type UnsetPlatformVariable } from '@internal/core/config';
 
 const variableLines = (variable: UnsetPlatformVariable): readonly string[] => [
@@ -8,7 +7,6 @@ const variableLines = (variable: UnsetPlatformVariable): readonly string[] => [
   ...variable.commands.map((command) => `    ${command}`),
 ];
 
-/** `Platform variables with no value:` and one entry per variable, or `undefined` when there is none. */
 export function unsetPlatformVariablesText(
   unset: readonly UnsetPlatformVariable[],
 ): string | undefined {

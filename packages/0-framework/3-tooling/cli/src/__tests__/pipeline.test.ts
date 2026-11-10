@@ -188,7 +188,7 @@ describe('an extension graph check', () => {
     expect(checked).toEqual([graph]);
   });
 
-  test('a graph check that refuses the graph fails the pipeline as COMPOSE.GRAPH_INVALID with its message and extension id, before registry coverage and assemble', async () => {
+  test('a graph check that refuses the graph stops the command before anything is built, with its message', async () => {
     let assembled = false;
     const uncovered = withCheck(() => {
       throw new GraphCheckError('the graph is wrong');
@@ -220,7 +220,7 @@ describe('an extension graph check', () => {
     expect(await run.catch((error: unknown) => error)).toBe(bug);
   });
 
-  test('a graph check runs after the known secrets are added', async () => {
+  test('a graph check runs with the app secrets already known to redaction', async () => {
     const appComposer = appConfigurationConfig.composer;
     if (appComposer === undefined) throw new Error('the fixture declares a composer section');
     const [appExtension, ...appOthers] = appComposer.extensions;
