@@ -14,7 +14,7 @@ vi.mock('../src/service.ts', async () => {
     default: mockService(actual.default, {
       auth: {
         verify: async ({ token }) => ({ ok: token.length > 0 }),
-        secretCheck: async () => ({ ok: true }),
+        keyCheck: async () => ({ value: 'key-check-value' }),
       },
     }),
   };
@@ -27,6 +27,6 @@ describe('Home (page.tsx)', () => {
     const html = renderToStaticMarkup(await Home());
 
     expect(html).toContain('Auth /verify says: true');
-    expect(html).toContain('Secret /check says: true');
+    expect(html).toContain('Auth /keyCheck says: key-check-value');
   });
 });

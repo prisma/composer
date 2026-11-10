@@ -5,15 +5,11 @@
  * Delete this file with `legacy-resource-ids.ts`.
  */
 import type { Graph, ServiceNode } from '@internal/core';
+import { INPUT_KEY_NAME } from '@internal/input-document';
+import { configKey } from './config-key.ts';
 import { addressBelowApp } from './legacy-resource-ids.ts';
 import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
-import {
-  configKey,
-  generatedParamVarName,
-  INPUT_KEY_NAME,
-  paramEntries,
-  serializeInput,
-} from './serializer.ts';
+import { generatedParamVarName, paramEntries, serializeInput } from './serializer.ts';
 
 export interface EnvKeyClash {
   /** The variable both rows are written under. */

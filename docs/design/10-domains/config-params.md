@@ -92,18 +92,7 @@ Resolution order per param: binding, else `default`, else absent (only legal
 for an `optional` param) — a required param nothing binds fails the deploy
 loudly, naming the param and the service.
 
-An **env-sourced** param mirrors the secrets rail (§ Secrets): the stored row is
-a pointer to the platform variable's NAME (discriminated from a JSON-encoded
-literal by the `@composer-param-pointer:` value prefix, which no JSON output
-can start with), deploy preflight verifies the name exists per environment (filling
-it from the app configuration when absent, failing early otherwise), and boot does
-the double-lookup — pointer, then platform variable. The differences from a
-secret are deliberate: the value reads back through `config()`, **unredacted**;
-the platform variable's **raw string** is handed to the param's own schema (no
-decode — a `number()` param bound to `envParam` fails at boot); and an empty
-string is a value, valid iff the schema accepts it. A module passes a binding
-down to a child as a field of its own `input`. Value changes need a redeploy,
-same as secret rotation.
+An **env-sourced** param is stored like a secret (§ Secrets). Its stored row holds the name of the platform variable, not a value. A `@composer-param-pointer:` prefix marks the row as a name; no JSON-encoded literal can start with that prefix. The operator sets the variable on the platform. The deploy checks whether the variable has a value in the environment, and does not set it. At boot, the service reads the row to find the variable's name, then reads that variable. A variable with no value gives the param its default, or leaves it out when the param is optional. The deploy check and boot fail only for a required param ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)). Three things differ from a secret on purpose. The value reads back **unredacted**. The param's own schema receives the variable's **raw text**, with no decoding, so a `number()` param bound to `envParam` fails at boot. An empty string means unset, because the platform cannot store one. A module passes a binding down to a child as a field of its own `input`. A changed value needs a redeploy, as a rotated secret does.
 
 **One concept, a param, bound to a source** (the glossary's *params and their
 sources* is the canonical statement). Four sources, by where the value comes
@@ -291,23 +280,14 @@ secrets).
 
 The round trip carries only the name, never the value:
 
-1. **Bind.** The root binds each secret field to a platform name, and each
-   module on the way passes it on as a field of its input. Load records
-   each service's input binding, and preflight collects every `envSecret()` it
-   names.
-2. **Preflight.** Before Alchemy runs, the deploy verifies every bound name
-   exists on the platform for the target environment's class/branch, filling a name
-   from the app secrets when the platform lacks it (a direct write-only POST,
-   never an Alchemy resource, never overwriting an existing value). A name
-   missing from both fails the deploy, listing exactly what's absent.
-3. **Pointer row.** The target writes a pointer per secret field — the generated key
-   (`COMPOSER_`-prefixed, like every generated key) maps to the bound name, not a
-   value:
+1. **Bind.** The root binds each secret field to a platform name, and each module on the way passes it on as a field of its input. Load records each service's input binding, and preflight collects every `envSecret()` it names.
+2. **Set.** The operator sets the variable on the platform with `prisma project env add`, for production, for every preview environment, or for one. The deploy does not copy a value from the app secrets to the platform.
+3. **Preflight.** Before Alchemy runs, the deploy checks whether each name has a row the environment sees, and writes none. A missing name that a service's schema requires fails the deploy, with its readers and the command that sets it; a missing name nothing requires is listed and the deploy goes on.
+4. **Marker.** The target writes the service's input document with a marker in place of each secret field, naming the variable, not its value:
+   ```json
+   { "signingKey": { "$platform": { "name": "AUTH_SIGNING_KEY", "secret": true } } }
    ```
-   COMPOSER_SHOP_AUTH_SIGNINGKEY = "AUTH_SIGNING_KEY"   # service `auth` in the app `shop`
-   ```
-4. **Boot double-lookup.** Boot reads the pointer for the name, then reads
-   `process.env[name]` for the platform value, and wraps it in a `SecretBox`.
+5. **Boot.** Boot reads `process.env[name]` for each marker and wraps the text in a `SecretBox`. An unset or empty variable leaves the field out, and the service's schema decides.
 
 The `COMPOSER_` prefix reserves the framework's generated keys into their own
 namespace, so a generated key never collides with — and silently overwrites — a

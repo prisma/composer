@@ -18,6 +18,7 @@
     "@internal/bundle-paths": "workspace:0.38.0",
     "@internal/core": "workspace:0.38.0",
     "@internal/dev-emulators": "workspace:0.38.0",
+    "@internal/input-document": "workspace:0.38.0",
     "@internal/lowering": "workspace:0.38.0",
     "@internal/s3-protocol": "workspace:0.38.0",
     "@prisma/dev": "^0.25.2",

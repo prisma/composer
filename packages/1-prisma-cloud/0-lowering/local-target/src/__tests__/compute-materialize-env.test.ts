@@ -24,10 +24,12 @@ async function writeRows(rows: Record<string, string>): Promise<void> {
 test('each service gets the current values of only the variables its own rows point at', async () => {
   await writeRows({
     COMPOSER_BILLING_INPUT: JSON.stringify({
-      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
-      nested: [{ origin: { $secret: 'APP_ORIGIN' } }],
+      stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+      nested: [{ origin: { $platform: { name: 'APP_ORIGIN', secret: true } } }],
     }),
-    COMPOSER_MAILER_INPUT: JSON.stringify({ key: { $secret: 'MAILER_KEY' } }),
+    COMPOSER_MAILER_INPUT: JSON.stringify({
+      key: { $platform: { name: 'MAILER_KEY', secret: true } },
+    }),
   });
   const secrets = {
     STRIPE_SECRET_KEY: 'sk_test_1',
@@ -63,7 +65,9 @@ test('a param pointer row gives the service the current value of the variable it
 
 test('a value changed in the app secrets reaches the service on the next materialization', async () => {
   await writeRows({
-    COMPOSER_BILLING_INPUT: JSON.stringify({ stripeKey: { $secret: 'STRIPE_SECRET_KEY' } }),
+    COMPOSER_BILLING_INPUT: JSON.stringify({
+      stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+    }),
   });
   await materializeEnv(devDir, 'billing', 4000, {}, { STRIPE_SECRET_KEY: 'sk_test_old' });
 
@@ -81,8 +85,8 @@ test('a value changed in the app secrets reaches the service on the next materia
 test('a pointed variable that is unset or empty is not given to the service', async () => {
   await writeRows({
     COMPOSER_BILLING_INPUT: JSON.stringify({
-      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
-      mailer: { $secret: 'MAILER_KEY' },
+      stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+      mailer: { $platform: { name: 'MAILER_KEY', secret: true } },
     }),
   });
 
@@ -94,7 +98,9 @@ test('a pointed variable that is unset or empty is not given to the service', as
 
 test('a local deployment takes its secrets from the app secrets and its param pointers from the app configuration, never the shell', async () => {
   await writeRows({
-    COMPOSER_BILLING_INPUT: JSON.stringify({ stripeKey: { $secret: 'STRIPE_SECRET_KEY' } }),
+    COMPOSER_BILLING_INPUT: JSON.stringify({
+      stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+    }),
     COMPOSER_BILLING_ORIGIN: '@composer-param-pointer:APP_ORIGIN',
   });
   process.env['STRIPE_SECRET_KEY'] = 'shell';

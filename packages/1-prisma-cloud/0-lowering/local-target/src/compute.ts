@@ -14,6 +14,14 @@ import * as path from 'node:path';
 import { App, Deployment, EnvironmentVariable, Project } from '@alchemy.run/prisma';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
 import { computeClient } from '@internal/dev-emulators';
+import {
+  collectPlatformMarkers,
+  composerKey,
+  decodeParamPointer,
+  INPUT_KEY_NAME,
+  isParamPointerRow,
+  ownKeyPrefix,
+} from '@internal/input-document';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
@@ -67,32 +75,6 @@ async function artifactSha256(artifactPath: string): Promise<string> {
   return digest;
 }
 
-/**
- * The env-var key the app's own boot-side `deserialize()` reads for its
- * `port` service param — `COMPOSER_<ADDRESS SEGMENTS>_PORT`. Mirrors
- * `@prisma/composer-prisma-cloud`'s serializer.ts `configKey(address, {
- * owner: 'service', name: 'port' })` byte-for-byte; duplicated rather than
- * imported because `@internal/local-target` sits below the extensions layer
- * and cannot import a target's serializer (ADR-0028's layer order) — the two
- * encode one shared wire protocol (ADR-0029) and must never diverge.
- */
-function servicePortEnvKey(address: string): string {
-  return ['COMPOSER', ...addressKeySegments(address), 'PORT'].join('_').toUpperCase();
-}
-
-/** The `COMPOSER_<ADDRESS SEGMENTS>_` prefix every env row this address OWNS carries — `configKey`'s convention (see `servicePortEnvKey`'s doc comment). */
-function ownEnvKeyPrefix(address: string): string {
-  return `${['COMPOSER', ...addressKeySegments(address)].join('_').toUpperCase()}_`;
-}
-
-/** The serializer's `addressKeySegments`, duplicated for the same reason as `servicePortEnvKey`: `-` in the app name becomes `_`. */
-function addressKeySegments(address: string): string[] {
-  return address
-    .split('.')
-    .filter((s) => s.length > 0)
-    .map((s) => s.replaceAll('-', '_'));
-}
-
 const COMPOSER_NAMESPACE_PREFIX = 'COMPOSER_';
 
 /**
@@ -107,7 +89,7 @@ export function scopedEnvRows(
   allRows: Readonly<Record<string, string>>,
   address: string,
 ): Record<string, string> {
-  const ownPrefix = ownEnvKeyPrefix(address);
+  const ownPrefix = ownKeyPrefix(address);
   const scoped: Record<string, string> = {};
   for (const [key, value] of Object.entries(allRows)) {
     if (key.startsWith(ownPrefix) || !key.startsWith(COMPOSER_NAMESPACE_PREFIX)) {
@@ -117,40 +99,21 @@ export function scopedEnvRows(
   return scoped;
 }
 
-// The pointer formats of `@prisma/composer-prisma-cloud`'s serializer.ts,
-// duplicated for the same layer-order reason as `servicePortEnvKey`.
-const PARAM_POINTER_PREFIX = '@composer-param-pointer:';
-const SECRET_MARKER = '$secret';
-const INPUT_KEY_NAME = 'INPUT';
-
-function collectSecretPointers(value: unknown, out: Set<string>): void {
-  if (Array.isArray(value)) {
-    for (const member of value) collectSecretPointers(member, out);
-    return;
-  }
-  if (!Predicate.isObject(value)) return;
-  const pointer = value[SECRET_MARKER];
-  if (Object.keys(value).length === 1 && typeof pointer === 'string') {
-    out.add(pointer);
-    return;
-  }
-  for (const member of Object.values(value)) collectSecretPointers(member, out);
-}
-
-/** The variables this service's own rows point at: its param pointer rows, and its input document's `$secret` pointers. */
 export function pointedVariables(
   rows: Readonly<Record<string, string>>,
   address: string,
 ): { readonly params: ReadonlySet<string>; readonly secrets: ReadonlySet<string> } {
-  const ownPrefix = ownEnvKeyPrefix(address);
+  const ownPrefix = ownKeyPrefix(address);
   const params = new Set<string>();
   const secrets = new Set<string>();
   for (const [key, value] of Object.entries(rows)) {
     if (!key.startsWith(ownPrefix)) continue;
-    if (value.startsWith(PARAM_POINTER_PREFIX)) {
-      params.add(value.slice(PARAM_POINTER_PREFIX.length));
+    if (isParamPointerRow(value)) {
+      params.add(decodeParamPointer(value));
     } else if (key === `${ownPrefix}${INPUT_KEY_NAME}`) {
-      collectSecretPointers(JSON.parse(value), secrets);
+      for (const marker of collectPlatformMarkers(JSON.parse(value))) {
+        (marker.secret ? secrets : params).add(marker.name);
+      }
     }
   }
   return { params, secrets };
@@ -222,7 +185,7 @@ export async function materializeEnv(
 ): Promise<Record<string, string>> {
   const rows = await envStore(devDir).read();
   const env: Record<string, string> = scopedEnvRows(rows, address);
-  env[servicePortEnvKey(address)] = JSON.stringify(port);
+  env[composerKey(address, 'PORT')] = JSON.stringify(port);
   const pointed = pointedVariables(rows, address);
   const setIfText = (name: string, value: unknown): void => {
     if (typeof value === 'string' && value.length > 0) env[name] = value;

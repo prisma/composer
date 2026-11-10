@@ -51,6 +51,21 @@ describe('SecretRedaction', () => {
     expect(redaction.knownSecrets.values().size).toBe(0);
   });
 
+  test('SecretRedaction keeps a <value> placeholder after a name that contains SECRET', () => {
+    const text = "set 'AUTH_SIGNING_SECRET=<value>' first";
+
+    expect(new SecretRedaction({}).redact(text)).toBe(text);
+    expect(new SecretRedaction({}).redact('AUTH_SIGNING_SECRET=sk_live_abc')).toBe(
+      'AUTH_SIGNING_SECRET=[redacted]',
+    );
+  });
+
+  test('SecretRedaction redacts a real value that only starts with the placeholder', () => {
+    for (const text of ['SECRET=<value>abc123', 'SECRET=<value>-real', 'password=<value>s3cret']) {
+      expect(new SecretRedaction({}).redact(text)).not.toContain('<value>');
+    }
+  });
+
   test('SecretRedaction hides a value added after it first redacted', () => {
     const redaction = knowing('first-secret');
     expect(redaction.redact('first-secret later-secret')).toBe('[redacted] later-secret');

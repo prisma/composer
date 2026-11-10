@@ -16,6 +16,7 @@ import {
   type Bundle,
   buildConfig,
   connectionInputs,
+  deploymentResult,
   joinDeployment,
   type LowerContext,
   LowerError,
@@ -42,6 +43,7 @@ import {
   resource,
   service,
 } from '../node.ts';
+import { PREFLIGHT_FINDINGS_ENV_VAR } from '../preflight-transport.ts';
 import { resolve } from '../value.ts';
 import { anyInputSchema, conn, providerContract } from './helpers.ts';
 
@@ -1439,6 +1441,44 @@ describe('joinDeployment', () => {
   });
 });
 
+const withEnv = <T>(values: Record<string, string | undefined>, fn: () => T): T => {
+  const previous = new Map(Object.keys(values).map((k) => [k, process.env[k]]));
+  for (const [k, v] of Object.entries(values)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  try {
+    return fn();
+  } finally {
+    for (const [k, v] of previous) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+};
+
+describe('deploymentResult', () => {
+  test('joins the deployed entries with the graph and carries the findings it is given', () => {
+    const root = module('shop', {}, (h) => {
+      h.provision(dbResource(), { id: 'db' });
+      return {};
+    });
+    const unset = {
+      name: 'MAIL_KEY',
+      readers: [{ kind: 'unread', node: 'shop.mail', nodeKind: 'module' }] as const,
+      commands: ["prisma project env add 'MAIL_KEY=<value>' --project 'proj' --role production"],
+    };
+
+    const result = deploymentResult('shop', Load(root), [{ address: 'shop.db', entities: [] }], {
+      unset: [unset],
+    });
+
+    expect(result.app).toBe('shop');
+    expect(result.nodes.map((node) => node.address)).toEqual(['shop.db']);
+    expect(result.findings).toEqual({ unset: [unset] });
+  });
+});
+
 describe('lowering() — the report path', () => {
   test('without opts.report, lowering declares no action and stays sync-runnable', () => {
     const { config } = fakeExtension();
@@ -1448,6 +1488,18 @@ describe('lowering() — the report path', () => {
     // would drag alchemy's Stack context into the requirements and runSync
     // would die. `run()` is Effect.runSync.
     expect(run(lowering(root, config, opts(svcBundles)))).toBeUndefined();
+  });
+
+  test('findings that do not decode fail lowering before any node is lowered', () => {
+    const { config, calls } = fakeExtension();
+    const root = singleServiceWithDbModule();
+
+    withEnv({ [PREFLIGHT_FINDINGS_ENV_VAR]: 'not json' }, () => {
+      expect(() =>
+        run(lowering(root, config, opts({ ...svcBundles, report: () => undefined }))),
+      ).toThrow(/could not be read in the second process/);
+    });
+    expect(calls).toEqual([]);
   });
 });
 
@@ -1551,22 +1603,6 @@ describe('container threading through lowering() (the parent→child transport r
     };
     return { descriptor, config, seen };
   }
-
-  const withEnv = <T>(values: Record<string, string | undefined>, fn: () => T): T => {
-    const previous = new Map(Object.keys(values).map((k) => [k, process.env[k]]));
-    for (const [k, v] of Object.entries(values)) {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
-    try {
-      return fn();
-    } finally {
-      for (const [k, v] of previous) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-      }
-    }
-  };
 
   const dbModule = () =>
     module('shop', {}, (h) => {

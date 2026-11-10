@@ -16,15 +16,15 @@ const { appOrigin } = web.config();   // string
 
 ## Decision
 
-A service's per-key param can be bound at `provision()` to a literal or to a target-owned source such as `envParam('NAME')`, instead of only carrying an authoring-time `default`. An env-sourced param is the plain sibling of [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md)'s secret: the same name-carried source, the same per-environment platform variable, the same preflight, but read back unredacted and validated by the param's own schema.
+A service's per-key param can be bound at `provision()` to a literal or to a target-owned source such as `envParam('NAME')`, instead of only carrying an authoring-time `default`. An env-sourced param is the plain sibling of [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md)'s secret: the same name-carried source, the same per-environment platform variable that the operator sets, the same preflight check, but read back unredacted and validated by the param's own schema.
 
 `envParam('NAME')` returns a value, typed `Value<string>`, that is also the source ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). It reads `NAME` from the app configuration, what the `composer` section's `config` adapters return. Where it sits decides when:
 
-- **In a service's per-key params**, the deploy writes a pointer row naming the platform variable. Preflight fills a missing variable from the app configuration. The service reads the variable at boot.
-- **In a service's `input`**, the deploy writes the text into the service's input document. An unset or empty value leaves the key out, and the schema decides.
+- **In a service's per-key params**, the deploy writes a pointer row naming the platform variable, which the operator sets on the platform. The service reads the variable at boot. A variable with no value gives the param its default, or leaves it out when the param is optional; boot fails only for a required param.
+- **In a service's `input`**, the deploy writes the text into the service's input document. An unset or empty value leaves the key out, and the schema decides. This use is deprecated: a field of the root's input replaces it, and `envParam()`'s JSDoc carries `@deprecated`.
 - **In a module's `input` or as a `resolve()` dependency**, Load reads the text as the value's real value. An unset or empty value has none: in a binding the key is left out, and listed in `resolve()` it fails the Load, naming the variable.
 
-The value must be text; anything else fails the Load, naming the key and the kind of value, before anything is created. Core knows a source only as an opaque payload; `paramSource(payload, { label, configurationKey, redacted })` is the constructor a target calls. `configurationKey` is the app configuration key whose text is the source's real value at deploy; `redacted` makes a source known only at boot a secret pointer rather than a plain one. Prisma Cloud's `envParam('NAME')` passes `configurationKey: NAME`.
+The name follows the platform variable name rules of [ADR-0064](ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md): upper case, and not a reserved name. In a binding, the value must be text; anything else fails the Load, naming the key and the kind of value, before anything is created. Core knows a source only as an opaque payload; `paramSource(payload, { label, configurationKey, redacted })` is the constructor a target calls. `configurationKey` is the app configuration key whose text is the source's real value at deploy; `redacted` makes a source known only at boot a secret pointer rather than a plain one. Prisma Cloud's `envParam('NAME')` passes `configurationKey: NAME`.
 
 The deploy reads the app configuration once, in its first process, and hands its second process the text of every configuration key the graph reads, in the app configuration file ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)).
 
@@ -36,18 +36,18 @@ The deploy reads the app configuration once, in its first process, and hands its
 
 **The wire: a pointer, told apart by shape.** An env-sourced param's stored row carries the platform variable's name, not a value. It shares its key, `COMPOSER_<address>_<name>`, with a literal-bound param, so writer and reader tell them apart by the stored value. Literal values are JSON-encoded; a pointer row is `@composer-param-pointer:<NAME>`. No `JSON.stringify` output begins with `@`, so the two never collide.
 
-**Boot: double lookup, then the schema, on the raw string.** Boot reads the pointer for the name, reads that platform variable, and hands the raw string to the param's own schema. A `number()` param bound to `envParam` fails at boot with the existing invalid-value error, because the variable is a string. An unset platform variable is a boot error naming the param, the pointer key and the variable. An empty string is a value, which reaches the schema like any other.
+**Boot reads the pointer, then the variable, then runs the schema on the raw string.** Boot reads the pointer for the name, reads that platform variable, and hands the raw string to the param's own schema. A `number()` param bound to `envParam` fails at boot with the existing invalid-value error, because the variable is a string. A variable that is unset or empty has no value, as the platform cannot store an empty one: the param takes its default, or is left out when it is optional. A required param fails boot with `The param "<name>" of this service reads the platform variable "<NAME>", which has no value. Set it with prisma project env add.`
 
-**Preflight covers env-sourced params as it covers secrets.** Before anything is provisioned, the deploy checks that every env-sourced param's platform name exists for the environment, fills a missing one from the app configuration with one write-only call, and fails early, listing the names, when the app configuration lacks it too.
+**Preflight covers env-sourced params as it covers secrets, and only checks them.** Before Alchemy runs, deploy preflight checks whether each per-key param's platform variable has a row the environment sees. A missing variable fails the deploy when the param has no default and is not optional, naming the variable, the service, the param and the commands that set it. Otherwise it is listed and the deploy goes on ([ADR-0064](ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)). Under `prisma dev` the local target gives the service the value from the app configuration, under the same rule.
 
 ## Consequences
 
 - A provision-time literal is schema-validated when config is built, and beats the `default`.
 - A required param that nothing binds fails the deploy loudly.
 - Env-sourced params are strings at the boundary. Decoding before the schema, per ADR-0019, is an additive change if a real consumer needs it.
-- A value change needs a redeploy: a compute version snapshots its environment at creation.
+- A value change needs a redeploy: a compute version snapshots its environment at creation. The deployment's triggers carry the variable's `updatedAt`, so a deploy after a change replaces exactly the services that read it.
 - The `@composer-param-pointer:` prefix is reserved only in raw stored-row space, which literals never occupy.
-- A name may not be read both by `envParam()` and by `envSecret()`; Load refuses it.
+- A name may not be read both by `envParam()` and by `envSecret()`; Load refuses it. A name may not be used both by `envParam()` and by a field of the root's input; the Prisma Cloud extension's graph check refuses it.
 
 ## Alternatives considered
 
@@ -65,4 +65,5 @@ The deploy reads the app configuration once, in its first process, and hands its
 - [ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md) — framework-minted param values, which live in deploy state.
 - [ADR-0018](ADR-0018-config-params-carry-a-caller-owned-schema.md) and [ADR-0019](ADR-0019-the-target-owns-config-serialization.md) — schema on the declaration, wire owned by the target.
 - [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md) — values and the app configuration.
+- [ADR-0064](ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md) — platform variables: names, boot and preflight.
 - [config-params.md](../10-domains/config-params.md).

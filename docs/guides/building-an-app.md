@@ -675,12 +675,16 @@ keeps the secret box when it transforms, so it can do both.
 
 **`envParam('NAME')`** is for plain values the code *can't* know. An app origin is the canonical case: it's different on production and on every preview environment. The deploy reads the variable from the app configuration: by default the shell that runs `prisma deploy` or `prisma dev`, or the `config` adapters you list ([Values from outside the code](#values-from-outside-the-code)), and writes its value into the service's input. So set it in that shell for every deploy; in CI, export it per environment. An unset or empty variable leaves the key out, and the schema decides ([below](#absence-is-the-schemas-call)). The value is text, so bind `envParam` to text fields. Binding it to a field of a narrower type, such as `'resend' | 'smtp' | 'none'`, fails to compile, because the variable may hold any text: declare that field in your root's `input` with the same type instead (for `email()`, build it from the exported `emailDeliveryModes`), and the root's schema checks the variable before anything is created. To change the value, deploy again with the new value. [`examples/env-param`](../../examples/env-param/) is the minimal working version, including a smoke script that proves the per-environment split.
 
-**`envSecret('NAME')`** is for credentials, with one rule: **the value never enters framework config**. Each environment keeps its own copy of the platform variable, and that copy is the store: at deploy, preflight checks that the environment has the variable, and copies a missing one up from the app secrets: by default the deploying shell, so CI (or you) exports `STRIPE_SECRET_KEY` for a first deploy. The framework carries only the variable's *name*; the platform injects the value straight into the running instance. What your code gets is a `SecretString` box that redacts on logging, rendering, and JSON-serialization — leaking it takes a deliberate `.expose()`:
+**`envParam()` in an input binding is deprecated.** Declare the value as a field of your root's `input` instead and pass the field on by name ([Values from outside the code](#values-from-outside-the-code)): the root's schema then checks it before anything is created. It still works. Only `envParam()` in an input binding is deprecated; `envParam()` in a service's per-key params is not. Editors strike through every `envParam()` call, including in per-key params, because one function serves both uses. The deprecation applies only to an input binding.
+
+**`envSecret('NAME')`** is for credentials, with one rule: **the value never enters framework config**. The value lives in a platform variable that you set on the platform, for production, for every preview environment, or for one: `prisma project env add 'STRIPE_SECRET_KEY=<value>' --project '<project id>' --role preview`. The deploy does not copy it from `.env` or your shell. At deploy, preflight checks that the environment has the variable, and fails, with the command to run, when a service's schema requires a variable that has no value ([Deploying § Platform variables](deploying.md#platform-variables)). The framework carries only the variable's *name*; the platform injects the value straight into the running instance. Under `prisma dev` the value comes from the `secrets` adapters instead. What your code gets is a `SecretString` box that redacts on logging, rendering, and JSON-serialization — leaking it takes a deliberate `.expose()`:
 
 ```ts
 const input = service.input();
 if (input.stripeEnabled) stripe(input.stripeSecretKey.expose());
 ```
+
+`envSecret()` and `envParam()` take an upper-case name: an upper-case letter followed by upper-case letters, digits and underscores, such as `STRIPE_SECRET_KEY`. Any name starting with `COMPOSER_`, and `DATABASE_URL`, `DATABASE_URL_POOLED`, `PORT`, `PATH` and `HOME`, are reserved. A name has one meaning: `envParam('X')` and `envSecret('X')`, or `envParam('X')` and a field `X` of your root's input, cannot both appear in one app. Each of these fails before anything is created, naming the rule.
 
 A reusable Module takes a secret as a `secretString()` field of its `input`
 and passes it on without ever learning the platform name
@@ -689,7 +693,7 @@ a Module require credentials without dictating your naming.
 
 ### Absence is the schema's call
 
-An env-bound field whose variable is unset (or empty) in the app configuration resolves to *key omitted*; whether that is legal is the schema's call — an optional field, a union arm, or a validation error that fails the deploy. A credential for an off-by-default feature is an ordinary optional `SecretString` field, not a framework flag. Because an omitted key can also be a typo'd variable name, the deploy report prints every key that resolved absent.
+An env-bound field whose variable is unset (or empty) resolves to *key omitted*: an `envParam()` field at deploy, from the app configuration, and an `envSecret()` field at boot, from the platform. The schema decides whether that is allowed: an optional field, a union member, or a validation error that fails the deploy. A credential for an off-by-default feature is an ordinary optional `SecretString` field, not a framework flag. Because an omitted key can also be a mistyped variable name, the deploy report prints every key that resolved absent.
 
 ### What travels
 
@@ -699,13 +703,10 @@ pointer naming the platform variable that holds the value — never the value
 itself:
 
 ```json
-{ "stripeEnabled": true, "stripeSecretKey": { "$secret": "STRIPE_SECRET_KEY" } }
+{ "stripeEnabled": true, "stripeSecretKey": { "$platform": { "name": "STRIPE_SECRET_KEY", "secret": true } } }
 ```
 
-At boot the framework swaps each pointer for a redacting box over the named
-variable, validates against the schema again, and `service.input()` returns
-the typed object. The document is secret-free by construction, which is why
-the deploy report can print it verbatim.
+At boot the framework swaps each marker for a redacting box over the named variable, or leaves the field out when the variable is unset or empty, validates against the schema again, and `service.input()` returns the typed object. When the schema fails and a field was left out, the error ends with the names of the variables that had no value. A marker inside an array cannot be left out, so an unset variable there fails boot, naming it. The document holds no secret values, which is why the deploy report can print it, with each marker shown as `$platform NAME`.
 
 ## Values that differ per environment
 
@@ -904,8 +905,7 @@ the shell.
 
 `envParam('NAME')` reads `NAME` from the app configuration.
 
-The `secrets` adapters fill a missing `envSecret()` platform variable at
-deploy, and give `prisma dev` its secrets.
+The `secrets` adapters give `prisma dev` its secrets. A deploy reads them only to know which values to redact. The operator sets a platform variable on the platform; the deploy does not copy it from the `secrets` adapters ([Deploying § Platform variables](deploying.md#platform-variables)).
 
 A root's input takes no secret, so bind `envSecret()` inside the body, as
 `stripeKey` is above.

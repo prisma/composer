@@ -15,8 +15,8 @@
  *
  * Criterion 5 (value sourcing): every value comes from the environment of
  * the run, either the shell or a `.env` the fixture's `prisma.config.ts`
- * loads. A required secret or env-sourced param that is unset or empty stops
- * dev with an error naming it. An optional secret that is unset or empty
+ * loads. A required secret that is unset or empty stops dev with an error
+ * naming it. An optional secret that is unset or empty
  * reaches the service as absent. A value changed between two runs reaches
  * the running service on the next warm start.
  *
@@ -278,7 +278,7 @@ async function expectPreflightFailure(env: NodeJS.ProcessEnv): Promise<string> {
 
 function assertNamesMissing(log: string, variable: string, service: string): void {
   // In the structured frame the quotes around the service name arrive JSON-escaped.
-  const named = new RegExp(`${variable}\\s+\\(required by service \\\\?"${service}\\\\?"`);
+  const named = new RegExp(`${variable}\\s+\\(read by service \\\\?"${service}\\\\?"`);
   assert(named.test(log), `the error must name ${variable} and service "${service}"`);
   assert(
     log.includes('environmentVariables() reads the shell you run `prisma dev` from'),
@@ -324,16 +324,6 @@ async function main(): Promise<void> {
       assertNamesMissing(log, 'LOCALDEV_FIXTURE_API_KEY', 'localdevs4fixture.bkg');
     }
     console.log('[proving] PASS: a required secret that is unset or empty stops dev, naming it');
-
-    // ——— Criterion 5: a required env-sourced param that is unset stops dev ———
-    const paramLog = await expectPreflightFailure(
-      baseEnv({
-        LOCALDEV_FIXTURE_API_KEY: 'a-real-looking-key',
-        LOCALDEV_FIXTURE_GREETING: undefined,
-      }),
-    );
-    assertNamesMissing(paramLog, 'LOCALDEV_FIXTURE_GREETING', 'localdevs4fixture.bkg');
-    console.log('[proving] PASS: an unset env-sourced param stops dev, naming it');
 
     // ——— Criterion 5: a value loaded by prisma.config.ts reaches the service; an unset optional secret arrives absent ———
     fs.writeFileSync(envFile, 'LOCALDEV_FIXTURE_API_KEY=from-the-config-file\n');

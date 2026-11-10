@@ -3,7 +3,15 @@ import { createHash, createHmac } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { isSecretPointer, Load, module, resolve, type ServiceNode } from '@internal/core';
+import {
+  isSecretPointer,
+  Load,
+  module,
+  resolve,
+  type ServiceNode,
+  service,
+  string,
+} from '@internal/core';
 import { preflightEnv } from '@internal/core/config';
 import { isSecretString } from '@internal/foundation/secret';
 import { rawHttpContract } from '@internal/http';
@@ -81,6 +89,24 @@ const paramGraph = () =>
     }),
   );
 
+/** A service whose per-key param `token` reads API_TOKEN: required unless `token` has a default or is optional. */
+const tokenService = (token = string()) =>
+  service({
+    name: 'web',
+    extension: '@prisma/composer-prisma-cloud',
+    type: 'compute',
+    inputs: {},
+    params: { token },
+    build,
+  });
+
+const tokenGraph = (token = string()) =>
+  Load(
+    module('app', ({ provision }) => {
+      provision(tokenService(token), { id: 'web', params: { token: envParam('API_TOKEN') } });
+    }),
+  );
+
 const mixedGraph = (schema: StandardSchemaV1<unknown, unknown>) =>
   Load(
     module('app', ({ provision }) => {
@@ -88,10 +114,7 @@ const mixedGraph = (schema: StandardSchemaV1<unknown, unknown>) =>
         id: 'billing',
         input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
       });
-      provision(compute({ name: 'web', deps: {}, build }), {
-        id: 'web',
-        params: { port: envParam('APP_PORT') },
-      });
+      provision(tokenService(), { id: 'web', params: { token: envParam('API_TOKEN') } });
     }),
   );
 
@@ -196,7 +219,7 @@ function billingDocument(
 ): unknown {
   const node = graph.nodes.find((entry) => entry.id === 'app.billing')?.node as ServiceNode;
   const binding = graph.inputBindings.find((b) => b.serviceAddress === 'app.billing')?.binding;
-  const { absentSecrets } = transportedPreflight(new Map(), childEnv);
+  const { absentSecrets } = transportedPreflight(() => undefined, childEnv);
   const row = serializeInput(node, 'app.billing', binding, { env: {}, absentSecrets });
   return JSON.parse(row?.value ?? 'null');
 }
@@ -238,7 +261,7 @@ describe('prisma dev preflight', () => {
 
     expect(message).toContain('STRIPE_SECRET_KEY');
     expect(message).toContain('service "app.billing"');
-    expect(message).toContain('stripeKey is required');
+    expect(message).toContain('field "stripeKey"');
     expect(message).toContain('the `secrets` list of the `composer` section for a secret');
     expect(message).toContain('environmentVariables() reads the shell you run `prisma dev` from');
   });
@@ -249,7 +272,9 @@ describe('prisma dev preflight', () => {
 
     const message = await preflightError(billingGraph(requiresSecrets('stripeKey')));
 
-    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
+    expect(message).toContain(
+      'STRIPE_SECRET_KEY  (read by service "app.billing", field "stripeKey")',
+    );
   });
 
   test('the error lists every missing required secret and leaves out the optional ones', async () => {
@@ -259,14 +284,16 @@ describe('prisma dev preflight', () => {
     expect(message).not.toContain('STRIPE_WEBHOOK_SECRET');
 
     const both = await preflightError(billingGraph(requiresSecrets('stripeKey', 'webhookSecret')));
-    expect(both).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
-    expect(both).toContain('STRIPE_WEBHOOK_SECRET  (required by service "app.billing"');
+    expect(both).toContain('STRIPE_SECRET_KEY  (read by service "app.billing", field "stripeKey")');
+    expect(both).toContain(
+      'STRIPE_WEBHOOK_SECRET  (read by service "app.billing", field "webhookSecret")',
+    );
   });
 
-  test('when the schema needs some of several unset secrets but none alone, the error says so instead of calling each one required', async () => {
+  test('when the schema needs at least one of several unset secrets but none alone, the error says so instead of calling each one required', async () => {
     const message = await preflightError(billingGraph(requiresOneOf('stripeKey', 'webhookSecret')));
 
-    expect(message).toContain('some of STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET');
+    expect(message).toContain('at least one of STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET');
     expect(message).not.toContain('required by service');
   });
 
@@ -277,7 +304,7 @@ describe('prisma dev preflight', () => {
     const childEnv = transported(await preflight(graph));
 
     expect(billingDocument(graph, childEnv)).toEqual({
-      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
+      stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
     });
   });
 
@@ -289,7 +316,7 @@ describe('prisma dev preflight', () => {
     const childEnv = transported(await preflight(graph));
 
     expect(billingDocument(graph, childEnv)).toEqual({
-      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
+      stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
     });
   });
 
@@ -309,7 +336,7 @@ describe('prisma dev preflight', () => {
     const memberFor = async (value: string) => {
       secrets['STRIPE_SECRET_KEY'] = value;
       const { pointerVersion } = transportedPreflight(
-        new Map(),
+        () => undefined,
         transported(await preflight(graph)),
       );
       return pointerVersion('STRIPE_SECRET_KEY');
@@ -327,23 +354,63 @@ describe('prisma dev preflight', () => {
     const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
 
     expect(
-      transportedPreflight(new Map(), childEnv).pointerVersion('STRIPE_WEBHOOK_SECRET'),
+      transportedPreflight(() => undefined, childEnv).pointerVersion('STRIPE_WEBHOOK_SECRET'),
     ).toBeUndefined();
   });
 
-  test('a missing env-sourced param is a hard error naming the variable and service', async () => {
-    const message = await preflightError(paramGraph());
+  test('a secret an array position reads that is unset stops dev, naming the variable and the service', async () => {
+    const graph = Load(
+      module('app', ({ provision }) => {
+        provision(compute({ name: 'billing', deps: {}, input: requiresSecrets(), build }), {
+          id: 'billing',
+          input: { keys: [envSecret('STRIPE_SECRET_KEY')] },
+        });
+      }),
+    );
 
-    expect(message).toContain('APP_PORT');
-    expect(message).toContain('service "app.web"');
+    const message = await preflightError(graph);
+
+    expect(message).toContain(
+      '1 platform variable a service needs has no value:\n  - STRIPE_SECRET_KEY  (read by service "app.billing", field "keys.0")\n      required by service "app.billing": an array position reads it, and an array position cannot be left out',
+    );
+  });
+
+  test('an unset per-key param with no default that is not optional stops dev, naming the variable, the service and the param', async () => {
+    const message = await preflightError(tokenGraph());
+
+    expect(message).toContain(
+      '1 platform variable a service needs has no value:\n  - API_TOKEN  (read by service "app.web", per-key param "token")',
+    );
     expect(message).toContain('the `config` list for an env-sourced param');
+  });
+
+  test('an empty per-key param with no default that is not optional stops dev the same way', async () => {
+    configuration['API_TOKEN'] = '';
+
+    expect(await preflightError(tokenGraph())).toContain('API_TOKEN  (read by service "app.web"');
+  });
+
+  test('an unset per-key param with a default does not stop dev and has no fingerprint', async () => {
+    const payload = await preflight(tokenGraph(string({ default: 'local' })));
+
+    expect(payload).toBeUndefined();
+  });
+
+  test('an unset per-key param that is optional does not stop dev and has no fingerprint', async () => {
+    configuration['API_TOKEN'] = '';
+
+    const payload = await preflight(tokenGraph(string({ optional: true })));
+
+    expect(payload).toBeUndefined();
   });
 
   test('missing params and secrets are reported together, with the ways to set them given once', async () => {
     const message = await preflightError(mixedGraph(requiresSecrets('stripeKey')));
 
-    expect(message).toContain('APP_PORT  (required by service "app.web")');
-    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
+    expect(message).toContain('API_TOKEN  (read by service "app.web", per-key param "token")');
+    expect(message).toContain(
+      'STRIPE_SECRET_KEY  (read by service "app.billing", field "stripeKey")',
+    );
     expect(message.split('Set each missing variable').length - 1).toBe(1);
   });
 
@@ -353,7 +420,7 @@ describe('prisma dev preflight', () => {
     expect(message).toContain('invalid input for service "app.billing": somethingElse is required');
     expect(message).not.toContain('Deploy-time');
     expect(message).not.toContain('STRIPE_SECRET_KEY');
-    expect(message).toContain('APP_PORT  (required by service "app.web")');
+    expect(message).toContain('API_TOKEN  (read by service "app.web", per-key param "token")');
   });
 
   test('an env-sourced param that is set is fingerprinted for the alchemy process', async () => {
@@ -389,11 +456,12 @@ describe('prisma dev preflight', () => {
     expect(second.pointerVersions.get('APP_PORT')).not.toBe(first.pointerVersions.get('APP_PORT'));
   });
 
-  test('a secret shared by two services stops dev naming only the service that requires it', async () => {
+  test('a secret shared by two services stops dev, naming both services that read it', async () => {
     const message = await preflightError(sharedGraph());
 
-    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
-    expect(message).not.toContain('service "app.reports"');
+    expect(message).toContain(
+      'STRIPE_SECRET_KEY  (read by service "app.billing", field "stripeKey"; read by service "app.reports", field "stripeKey")',
+    );
   });
 
   test('a secret shared by two services that is set gets one fingerprint', async () => {
@@ -463,7 +531,9 @@ describe('prisma dev preflight', () => {
     try {
       const message = await preflightError(billingGraph(requiresSecrets('stripeKey')));
 
-      expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
+      expect(message).toContain(
+        'STRIPE_SECRET_KEY  (read by service "app.billing", field "stripeKey")',
+      );
     } finally {
       delete process.env['STRIPE_SECRET_KEY'];
     }
@@ -487,23 +557,31 @@ describe('prisma dev preflight', () => {
   });
 
   test('an env-sourced param is read from the app configuration', async () => {
-    process.env['APP_PORT'] = '3000';
+    process.env['API_TOKEN'] = 'from-the-shell';
     try {
-      expect(await preflightError(paramGraph())).toContain(
-        'APP_PORT  (required by service "app.web")',
+      expect(await preflightError(tokenGraph())).toContain(
+        'API_TOKEN  (read by service "app.web", per-key param "token")',
       );
 
-      configuration['APP_PORT'] = '3000';
-      const payload = devPayload(transported(await preflight(paramGraph())));
+      configuration['API_TOKEN'] = 'from-the-configuration';
+      const payload = devPayload(transported(await preflight(tokenGraph())));
 
-      expect([...payload.pointerVersions.keys()]).toEqual(['APP_PORT']);
+      expect([...payload.pointerVersions.keys()]).toEqual(['API_TOKEN']);
     } finally {
-      delete process.env['APP_PORT'];
+      delete process.env['API_TOKEN'];
     }
   });
 
+  test('a per-key param whose app configuration value is not text stops dev, naming the variable, the service and the kind', async () => {
+    configuration['API_TOKEN'] = 42;
+
+    expect(await preflightError(tokenGraph())).toBe(
+      'The `config` adapters return a number for "API_TOKEN", not text, so prisma dev cannot give service "app.web" the value envParam(\'API_TOKEN\') reads. Make the adapter return a string.',
+    );
+  });
+
   test('the missing-values message says where the adapters read', async () => {
-    const message = await preflightError(paramGraph());
+    const message = await preflightError(tokenGraph());
 
     expect(message).toContain(
       'Set each missing variable where an adapter in prisma.config.ts reads it: the `secrets` list of the `composer` section for a secret, the `config` list for an env-sourced param. environmentVariables() reads the shell you run `prisma dev` from; dotenv() reads .env, .env.local, .env.dev and .env.dev.local beside prisma.config.ts.',

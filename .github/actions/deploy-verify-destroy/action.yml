@@ -29,6 +29,13 @@ inputs:
     description: Space-separated project-name prefixes for ci-cleanup.ts
     required: false
     default: storefront-auth orm-demo hello
+  platform-variables:
+    description: >
+      Space-separated names of platform variables the app needs. When set, the
+      action generates a random value for each, checks that the first deploy
+      stops at preflight naming each one, sets them, and deploys again.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -45,6 +52,24 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: pnpm turbo run build --filter '${{ inputs.build-filter }}'
+
+    - name: Generate platform variable values
+      if: inputs.platform-variables != ''
+      shell: bash
+      env:
+        PLATFORM_VARIABLES: ${{ inputs.platform-variables }}
+      run: bun "$GITHUB_WORKSPACE/scripts/e2e-generate-platform-variables.ts" $PLATFORM_VARIABLES
+
+    - name: First deploy stops at preflight, then set platform variables
+      id: first-deploy
+      if: inputs.platform-variables != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        STACK_NAME: ${{ inputs.stack-name }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        PLATFORM_VARIABLES: ${{ inputs.platform-variables }}
+      run: bun "$GITHUB_WORKSPACE/scripts/e2e-first-deploy.ts" $PLATFORM_VARIABLES
 
     - name: Deploy
       id: deploy
@@ -81,9 +106,7 @@ runs:
       run: bun "$GITHUB_WORKSPACE/scripts/e2e-verify-deploy-list.ts"
 
     - name: Destroy
-      # Check the Deploy step's outcome, not `.alchemy/` presence — deploy
-      # state is hosted, not local to the runner.
-      if: always() && steps.deploy.outcome != 'skipped'
+      if: always() && (steps.deploy.outcome != 'skipped' || steps.first-deploy.outcome != 'skipped')
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:

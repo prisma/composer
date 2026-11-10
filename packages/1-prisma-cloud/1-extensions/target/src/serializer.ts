@@ -26,15 +26,26 @@ import type { Config, ConfigParam, Params, ServiceNode } from '@internal/core';
 import { isParamSource, isSecretPointer, isSecretSource } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import { SecretBox } from '@internal/foundation/secret';
+import {
+  addressKeySegments,
+  decodeParamPointer,
+  escapeKey,
+  generatedMarker,
+  INPUT_KEY_NAME,
+  isParamPointerRow,
+  type PlatformMarkerUse,
+  platformMarker,
+  readDocument,
+  requiredParamUnsetMessage,
+  withUnsetVariables,
+} from '@internal/input-document';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
-import { addressKeySegments, configKey, ORIGIN_KEY_NAME } from './config-key.ts';
+import { configKey, ORIGIN_KEY_NAME } from './config-key.ts';
 import { configurationText } from './configuration-text.ts';
 import { isEnvParamSource, isGeneratedParamSource, isOriginParamSource } from './param.ts';
 import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
 import { secretName } from './secret.ts';
-
-export { addressKeySegments, configKey, ORIGIN_KEY_NAME };
 
 // The ambient environment of whatever runtime hosts the bundle. Declared
 // structurally so this entry imports no runtime's types. Writable: run()
@@ -98,31 +109,7 @@ function decode(owner: ParamEntry['owner'], raw: string): unknown {
   return owner === 'service' ? JSON.parse(raw) : raw;
 }
 
-// ——— Env-sourced param pointer rows: the non-secret sibling of the secret
-// pointer channel below. A service's own param is EITHER literal-bound
-// (JSON-encoded via `encode` above, unchanged) OR env-source-bound (a pointer
-// to a platform var, this marker) for a given deploy — never both — so the
-// two need to be told apart from the stored row alone, with no separate
-// channel to consult. `JSON.stringify` output always starts with one of
-// `"{[-0123456789tfn` (string/object/array/number/bool/null); the marker
-// starts with `@`, which no JSON.stringify output can start with, so the two
-// never collide.
-const PARAM_POINTER_PREFIX = '@composer-param-pointer:';
-
-/** True iff `raw` is a param pointer row (as opposed to a JSON-encoded literal). */
-export const isParamPointerRow = (raw: string): boolean => raw.startsWith(PARAM_POINTER_PREFIX);
-
-/** Builds a param pointer row's stored value from the platform var NAME it points to. */
-export const encodeParamPointer = (name: string): string => `${PARAM_POINTER_PREFIX}${name}`;
-
-/** Reverses `encodeParamPointer`: the platform var NAME a pointer row points to. */
-export const decodeParamPointer = (raw: string): string => raw.slice(PARAM_POINTER_PREFIX.length);
-
 function coerce(raw: string | undefined, d: ParamEntry, key: string, env: Env): unknown {
-  // "" is UNRESOLVED, not a value — falls to the default or, if required, is
-  // a loud boot failure; a NON-EMPTY value that fails its param's declared
-  // schema is an error regardless of any default (a default substitutes for
-  // absence, never for garbage).
   const present = raw !== undefined && raw !== '';
   if (!present) {
     if (d.param.default !== undefined) return d.param.default;
@@ -130,7 +117,7 @@ function coerce(raw: string | undefined, d: ParamEntry, key: string, env: Env): 
     throw new Error(`missing required config param "${d.name}" (env ${key})`);
   }
   if (d.owner === 'service' && isParamPointerRow(raw)) {
-    return coerceEnvSourcedParam(raw, d, key, env);
+    return coerceEnvSourcedParam(raw, d, env);
   }
   try {
     return standardValidateSync(d.param.schema, decode(d.owner, raw));
@@ -140,30 +127,20 @@ function coerce(raw: string | undefined, d: ParamEntry, key: string, env: Env): 
   }
 }
 
-/**
- * Boot resolution for an env-sourced param: double-lookup (pointer → platform
- * var), then the param's own schema on the raw string — no JSON decode, and
- * no redaction (it's config, not a secret). An UNSET platform var is a loud
- * boot failure naming both the param and the platform var; an EMPTY string is
- * not special-cased here — it reaches the schema like any other value, so it
- * passes iff the schema accepts it (deliberately unlike a literal param's own
- * ""-means-absent rule, and unlike a secret's non-empty requirement).
- */
-function coerceEnvSourcedParam(raw: string, d: ParamEntry, key: string, env: Env): unknown {
+function coerceEnvSourcedParam(raw: string, d: ParamEntry, env: Env): unknown {
   const platformVar = decodeParamPointer(raw);
   const value = env[platformVar];
-  if (value === undefined) {
-    throw new Error(
-      `env-sourced config param "${d.name}" (env ${key} → ${platformVar}) is unset: the platform ` +
-        `variable "${platformVar}" was not injected — the deploy did not provision it.`,
-    );
+  if (value === undefined || value === '') {
+    if (d.param.default !== undefined) return d.param.default;
+    if (d.param.optional === true) return undefined;
+    throw new Error(requiredParamUnsetMessage(d.name, platformVar));
   }
   try {
     return standardValidateSync(d.param.schema, value);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     throw new Error(
-      `invalid value for env-sourced config param "${d.name}" (env ${key} → ${platformVar}): ${message}`,
+      `The param "${d.name}" reads the platform variable "${platformVar}", whose value is invalid: ${message}`,
     );
   }
 }
@@ -180,16 +157,16 @@ export const deserialize = (node: ServiceNode, address: string, env: Env = proce
   for (const d of paramEntries(node)) {
     const key = configKey(address, d);
     const value = coerce(env[key], d, key, env);
-    if (d.owner === 'service') {
-      service[d.name] = value;
-    } else {
+    let target = service;
+    if (d.owner !== 'service') {
       let bucket = inputs[d.owner.input];
       if (bucket === undefined) {
         bucket = {};
         inputs[d.owner.input] = bucket;
       }
-      bucket[d.name] = value;
+      target = bucket;
     }
+    if (value !== undefined) target[d.name] = value;
   }
 
   return { service, inputs };
@@ -261,21 +238,6 @@ export function stashRows(node: ServiceNode, address: string, env: Env): Record<
   return rows;
 }
 
-// ——— Input channel (ADR-0042): ONE self-describing JSON document per service.
-//
-// Deploy resolves the provision-time input binding (literals as-is, envParam
-// leaves read from the app configuration, envSecret leaves as `$secret` pointers),
-// validates the resolved object with the service's own Standard Schema
-// (each value known only at boot as its pointer — never a value), and writes the
-// defaults-applied result to COMPOSER_<addr>_INPUT. Boot reads that one row,
-// swaps each pointer for a redacting box over the named platform var,
-// validates again, and hands the app the typed object. Writer and reader
-// share the walk below, so they cannot drift. Secret VALUES never enter the
-// document.
-
-/** The input document's own row name; its full key is COMPOSER_<addr>_INPUT. */
-export const INPUT_KEY_NAME = 'INPUT';
-
 /** The input document row's key for a service address. */
 export const inputKey = (address: string): string =>
   configKey(address, { owner: 'service', name: INPUT_KEY_NAME });
@@ -293,45 +255,6 @@ export const generatedParamVarName = (address: string, path: string): string => 
   const pathSegments = path.split('.').filter((s) => s.length > 0);
   return ['COMPOSER', ...segments, ...pathSegments, 'GENERATED'].join('_').toUpperCase();
 };
-
-// The document's two reserved keys, "$secret" and "$generated". User data may
-// legitimately contain such a key, so the writer escapes any key matching
-// /^\$+(secret|generated)$/ by prefixing one more "$" ("$secret" → "$$secret",
-// "$$secret" → "$$$secret"), and the reader strips one "$" back off — a
-// round-trip under which only the framework can put a literal single-"$" marker
-// in the document.
-const SECRET_MARKER = '$secret';
-const GENERATED_MARKER = '$generated';
-const ESCAPABLE_KEY = /^\$+(?:secret|generated)$/;
-const ESCAPED_KEY = /^\$\$+(?:secret|generated)$/;
-
-/** True for a secret pointer as the deploy writes it into the input document: `{ "$secret": "<PLATFORM_VAR>" }` and nothing else. */
-function isWrittenSecretPointer(value: unknown): value is { readonly $secret: string } {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.keys(value).length === 1 &&
-    SECRET_MARKER in value &&
-    typeof value[SECRET_MARKER] === 'string'
-  );
-}
-
-/** True for the framework's generated pointer: `{ "$generated": "<PLATFORM_VAR>", "redacted": <bool> }` and nothing else. The `redacted` facet rides the pointer so boot — which is schema-blind — knows whether to box (§ 4.1). */
-function isGeneratedPointer(
-  value: unknown,
-): value is { readonly $generated: string; readonly redacted: boolean } {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.keys(value).length === 2 &&
-    GENERATED_MARKER in value &&
-    typeof value[GENERATED_MARKER] === 'string' &&
-    'redacted' in value &&
-    typeof value['redacted'] === 'boolean'
-  );
-}
 
 /** A plain data object (not an array, not a class instance) — the only object shape a binding/document may nest. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -352,7 +275,6 @@ export interface GeneratedLeaf {
   readonly origin?: string;
 }
 
-/** One pointer var name and the input path that produced it — the collision guard's unit. */
 export interface PointerName {
   readonly path: string;
   readonly varName: string;
@@ -369,6 +291,23 @@ export interface ResolvedInputBinding {
 
 const NO_ABSENT_SECRETS: ReadonlySet<string> = new Set();
 
+function absentArrayPositionError(member: unknown, position: string, address: string): Error {
+  const key = `input binding key "${position}" of service "${address}"`;
+  if (isSecretSource(member)) {
+    return new Error(
+      `${key} reads the platform variable "${secretName(member, 'an array position')}", which has no value. An array position cannot be left out: set the variable, or bind a literal.`,
+    );
+  }
+  if (isEnvParamSource(member)) {
+    return new Error(
+      `${key} reads "${member.payload.name}" from the app configuration, which has no value for it. An array position cannot be left out: set it where a \`config\` adapter reads it, or bind a literal.`,
+    );
+  }
+  return new Error(
+    `${key} resolved to no value, but only envSecret() and envParam() can. This is a framework bug.`,
+  );
+}
+
 /** How `resolveInputBinding`, `serializeInput` and `inputValidationFailure` read the environment and which secrets they leave out. */
 export interface SerializeInputOptions {
   /** Where `envParam` leaves are read: the app configuration, or in the second process the configuration key text from the app configuration file. The process environment when not given. */
@@ -384,15 +323,6 @@ function withDefaults(options: SerializeInputOptions): Required<SerializeInputOp
   };
 }
 
-/**
- * Deploy guard (ADR-0041, closing review finding F02): every pointer var name a
- * service's input binding produces — `$secret` names AND `$generated` names —
- * must be distinct after normalization. Env var names compare case-insensitively
- * (the platform uppercases), so two input paths whose names differ only in case
- * would silently overwrite each other at deploy; fail loudly naming both. One
- * general check over both pointer kinds, not a per-marker special case (it also
- * covers the pre-existing `foo`/`FOO` class for secrets).
- */
 export function assertDistinctPointerNames(
   pointers: readonly PointerName[],
   address: string,
@@ -404,7 +334,7 @@ export function assertDistinctPointerNames(
     if (prior !== undefined) {
       throw new Error(
         `invalid input for service "${address}": input paths "${prior.path}" and "${pointer.path}" ` +
-          `both resolve to the platform variable "${normalized}" — pointer variable names must be ` +
+          `both resolve to the generated variable "${normalized}" — generated variable names must be ` +
           'distinct (env var names compare case-insensitively).',
       );
     }
@@ -455,7 +385,6 @@ export function resolveInputBinding(
         value,
         path === '' ? 'the input binding root' : `input key "${path}"`,
       );
-      pointers.push({ path, varName: name });
       if (absentSecrets.has(name)) {
         absent.push(path === '' ? `(root) → ${name}` : `${path} → ${name}`);
         return ABSENT;
@@ -491,10 +420,7 @@ export function resolveInputBinding(
       return value.map((member, index) => {
         const resolvedMember = walk(member, path === '' ? String(index) : `${path}.${index}`);
         if (resolvedMember === ABSENT) {
-          throw new Error(
-            `input binding key "${path}[${index}]" is an env-bound array element whose variable is ` +
-              'unset — an array position cannot be omitted; bind a literal or provision the variable.',
-          );
+          throw absentArrayPositionError(member, `${path}[${index}]`, address);
         }
         return resolvedMember;
       });
@@ -536,19 +462,14 @@ export function resolveInputBinding(
 /** One serialized input document, ready to write as an env row. */
 export interface InputDocumentRow {
   readonly key: string;
-  /** The JSON document — defaults-applied, secret leaves as `$secret` pointers, generated leaves as `$generated` pointers, secret-free by construction. */
+  /** The JSON document: defaults applied, each secret leaf a `$platform` marker, each generated leaf a `$generated` marker, never a secret's value. */
   readonly value: string;
   /** Dot-joined binding paths whose env-bound leaf resolved absent — deploy-report fodder. */
   readonly absent: readonly string[];
   /** Generated leaves the descriptor must provision (a `GeneratedParam` resource + env row each). */
   readonly generated: readonly GeneratedLeaf[];
-  /**
-   * The platform variable each `$secret` pointer in the document names —
-   * operator-provisioned, never written by Composer. The deploy hook folds
-   * each one's `updatedAt` into the environment fingerprint, so rotating a
-   * secret out of band ships a new deployment.
-   */
-  readonly secrets: readonly string[];
+  /** Every `$platform` marker the document holds, in document order. Composer does not write the variables they name. */
+  readonly markers: readonly PlatformMarkerUse[];
 }
 
 /** The text a stand-in box holds: known, and not a secret. */
@@ -557,7 +478,7 @@ const STAND_IN_TEXT = 'composer-stand-in-not-a-secret';
 /**
  * Deploy: resolve the binding, judge it with the service's own schema (each
  * value known only at boot as its pointer), and serialize the
- * defaults-applied VALIDATED output, each pointer written as a `$secret` or
+ * defaults-applied VALIDATED output, each pointer written as a `$platform` or
  * `$generated` marker, into one JSON row. Returns `undefined` for a service
  * with no input schema. A service whose binding holds a secret pointer is
  * judged a second time, with a stand-in box in place of each secret pointer,
@@ -583,19 +504,9 @@ export function serializeInput(
   }
   const { validated, generated, absent, resolved } = judged;
   refuseLostSecrets(node, address, resolved);
-  const emittedSecrets = new Set<string>();
-  const document = substitutePointers(validated, generated, address, emittedSecrets);
-  return {
-    key: inputKey(address),
-    value: JSON.stringify(document),
-    absent,
-    generated,
-    // The names the DOCUMENT actually carries (a schema transform can drop a
-    // bound leaf), sorted and unique: the fingerprint depends only on the set
-    // of referenced variables, so a binding refactor that reorders or
-    // duplicates leaves cannot move it.
-    secrets: [...emittedSecrets].sort(),
-  };
+  const markers: PlatformMarkerUse[] = [];
+  const document = substitutePointers(validated, generated, address, markers);
+  return { key: inputKey(address), value: JSON.stringify(document), absent, generated, markers };
 }
 
 /**
@@ -737,7 +648,7 @@ export function inputValidationFailure(
 
 /**
  * Walks the VALIDATED output and writes each pointer as its document marker:
- * an `envSecret` pointer as `{ "$secret": name }`, and a `generatedParam` or
+ * an `envSecret` pointer as a `$platform` marker with `secret: true`, and a `generatedParam` or
  * `serviceOrigin` pointer as `{ "$generated": VAR, "redacted": <bool> }`, found
  * by the input path its binding put it at. A pointer is recognised by its
  * brands, never by identity, so a copy the schema made still counts. Escapes
@@ -749,15 +660,15 @@ function substitutePointers(
   value: unknown,
   generated: readonly GeneratedLeaf[],
   address: string,
-  emittedSecrets: Set<string>,
+  markers: PlatformMarkerUse[],
 ): unknown {
   const generatedByPath = new Map(generated.map((leaf) => [leaf.path, leaf]));
-  const walk = (v: unknown, path: string): unknown => {
+  const walk = (v: unknown, path: string, inArray = false): unknown => {
     const leaf = generatedByPath.get(path);
     if (isSecretSource(v)) {
       const name = secretName(v, path === '' ? 'the input binding root' : `input key "${path}"`);
-      emittedSecrets.add(name);
-      return { [SECRET_MARKER]: name };
+      markers.push({ name, path, secret: true, inArray });
+      return platformMarker(name, true);
     }
     if (isParamSource(v)) {
       if (leaf === undefined) {
@@ -766,7 +677,7 @@ function substitutePointers(
             'binding did not put there: the schema moved it. A schema may check such a field, never move or transform it.',
         );
       }
-      return { [GENERATED_MARKER]: leaf.varName, redacted: leaf.redacted };
+      return generatedMarker(leaf.varName, leaf.redacted);
     }
     if (leaf !== undefined && v !== undefined) {
       throw new Error(
@@ -781,13 +692,14 @@ function substitutePointers(
           "platform variable); bind the field with envSecret('NAME') instead.",
       );
     }
-    if (Array.isArray(v)) return v.map((m, i) => walk(m, path === '' ? String(i) : `${path}.${i}`));
+    if (Array.isArray(v)) {
+      return v.map((m, i) => walk(m, path === '' ? String(i) : `${path}.${i}`, true));
+    }
     if (isPlainObject(v)) {
       const out: Record<string, unknown> = {};
       for (const [key, member] of Object.entries(v)) {
         if (member === undefined) continue;
-        const written = ESCAPABLE_KEY.test(key) ? `$${key}` : key;
-        out[written] = walk(member, path === '' ? key : `${path}.${key}`);
+        out[escapeKey(key)] = walk(member, path === '' ? key : `${path}.${key}`);
       }
       return out;
     }
@@ -808,14 +720,6 @@ function substitutePointers(
   return walk(value, '');
 }
 
-/**
- * Boot: read the one input document row (address-free after run()'s
- * re-stash), swap each `$secret` pointer for a redacting box over the named
- * platform var, unescape reserved keys, validate with the service's own
- * schema, and return the typed object. A missing row is a loud failure naming
- * the env var — a deployed environment always writes it; a local harness must
- * supply it (set the row to the serialized input document).
- */
 export function readInput(node: ServiceNode, address: string): unknown {
   const schema = node.inputSchema;
   if (schema === undefined) {
@@ -844,53 +748,18 @@ export function readInput(node: ServiceNode, address: string): unknown {
         `document (set ${key} to it).`,
     );
   }
-  const hydrated = hydrateInputDocument(parsed, key);
+  const { value, unset } = readDocument(parsed, {
+    variable: (name) => process.env[name],
+    secret: (text) => new SecretBox(text),
+  });
   try {
-    return standardValidateSync(schema, hydrated);
+    return standardValidateSync(schema, value);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    throw new Error(`invalid input document (env ${key}): ${message}`);
+    throw new Error(
+      `The input of service "${node.name}" (environment variable ${key}) is invalid: ${withUnsetVariables(message, unset)}`,
+    );
   }
-}
-
-/** Reverses the document encoding: `$secret` pointers become redacting boxes; a `$generated` pointer becomes a box iff its `redacted` facet is true, a plain string otherwise; escaped reserved keys drop one "$". */
-function hydrateInputDocument(value: unknown, key: string): unknown {
-  if (isWrittenSecretPointer(value)) {
-    const name = value[SECRET_MARKER];
-    const secret = process.env[name];
-    if (secret === undefined || secret === '') {
-      throw new Error(
-        `secret input is not provisioned (env ${key} → ${name}): the platform var "${name}" is unset or empty.`,
-      );
-    }
-    return new SecretBox(secret);
-  }
-  if (isGeneratedPointer(value)) {
-    const varName = value[GENERATED_MARKER];
-    const generated = process.env[varName];
-    if (generated === undefined || generated === '') {
-      throw new Error(
-        `generated input is not provisioned (env ${key} → ${varName}): the platform variable ` +
-          `"${varName}" is unset or empty — the deploy provisions this variable, so its absence ` +
-          'means the deploy and the running service disagree.',
-      );
-    }
-    // Boot is schema-blind, so the redacted facet rides the pointer: box iff it
-    // says so, plain string otherwise. The schema field the author wrote (a
-    // `secretString()` box or a plain string) agrees with the facet by
-    // construction — a disagreement is a wiring error validation catches (§ 4.5).
-    return value.redacted ? new SecretBox(generated) : generated;
-  }
-  if (Array.isArray(value)) return value.map((member) => hydrateInputDocument(member, key));
-  if (isPlainObject(value)) {
-    const out: Record<string, unknown> = {};
-    for (const [k, member] of Object.entries(value)) {
-      const read = ESCAPED_KEY.test(k) ? k.slice(1) : k;
-      out[read] = hydrateInputDocument(member, key);
-    }
-    return out;
-  }
-  return value;
 }
 
 // ——— Reserved provider params (ADR-0031): a provider-side minted value —

@@ -5,7 +5,8 @@
  * Delete this file once no such environment remains.
  */
 import { renamedFrom } from 'alchemy/Rename';
-import { configKey, generatedParamVarName, inputKey } from './serializer.ts';
+import { configKey } from './config-key.ts';
+import { generatedParamVarName, inputKey } from './serializer.ts';
 
 /** The address without its first segment, the app name: `shop.auth.api` in the app `shop` is `auth.api`. */
 export function addressBelowApp(address: string, app: string): string {

@@ -12,10 +12,17 @@ import type { Graph } from '@internal/core';
 import type {
   ContainerCredentials,
   ContainerInstance,
+  PlatformVariableCheck,
   ReporterDescriptor,
   RunReporter,
+  UnsetPlatformVariable,
 } from '@internal/core/config';
-import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
+import {
+  containerEnv,
+  preflightEnv,
+  preflightEnvVarName,
+  preflightFindingsEnv,
+} from '@internal/core/config';
 import { nodeAddresses, secretsKeys } from '@internal/core/deploy';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
@@ -35,7 +42,13 @@ import {
 } from '../deployment-summary.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from '../generate-stack.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
-import { redactError, redactSummary, redactThrown, SecretRedaction } from '../redaction.ts';
+import {
+  redactError,
+  redactSummary,
+  redactThrown,
+  redactUnsetPlatformVariable,
+  SecretRedaction,
+} from '../redaction.ts';
 import {
   type AlchemyOutcome,
   alchemyInvocation,
@@ -113,6 +126,7 @@ function deploySteps(onEvent: ((event: DeployEvent) => void) | undefined) {
     failOpen(): void {
       for (const { step } of [...open.values()].reverse()) finish(step, 'failed');
     },
+    emit,
   };
 }
 
@@ -538,18 +552,17 @@ async function runStackPipelineInner(
     alchemyStage = containers.get(config.state.extension)?.alchemyStage ?? environment;
     steps.finish({ name: 'connect' });
 
-    // Preflight (deploy only): each extension verifies its platform
-    // prerequisites — e.g. that every secret env var in the provision manifest
-    // exists for the resolved environment (ADR-0029) — BEFORE any stack file is written
-    // or Alchemy runs, so a missing secret fails fast with nothing side-effected.
+    const unset: UnsetPlatformVariable[] = [];
     if (action === 'deploy') {
       steps.start({ name: 'preflight' });
-      // Summed across extensions: each reports counts of its own checks.
-      const counts: Record<string, number> = {};
-      const report = (reported: Readonly<Record<string, number>>): void => {
-        for (const [key, value] of Object.entries(reported)) {
-          counts[key] = (counts[key] ?? 0) + value;
-        }
+      let checked = 0;
+      const report = (reported: PlatformVariableCheck): void => {
+        checked += reported.checked;
+        unset.push(
+          ...reported.unset.map((variable) =>
+            redactUnsetPlatformVariable(variable, opts.redaction),
+          ),
+        );
       };
       for (const extension of config.extensions) {
         if (extension.preflight === undefined) continue;
@@ -576,7 +589,8 @@ async function runStackPipelineInner(
       } catch (error) {
         throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
       }
-      steps.finish({ name: 'preflight' }, counts);
+      steps.finish({ name: 'preflight' }, { checked, unset: unset.length });
+      if (unset.length > 0) steps.emit({ kind: 'preflight-findings', findings: { unset } });
     }
     // The child inherits this process's environment, so every transport var
     // this run did NOT produce is blanked — a stale value exported into the
@@ -585,6 +599,7 @@ async function runStackPipelineInner(
     for (const extension of config.extensions) {
       preflightTransportEnv[preflightEnvVarName(extension.id)] ??= '';
     }
+    Object.assign(preflightTransportEnv, preflightFindingsEnv({ unset }));
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;

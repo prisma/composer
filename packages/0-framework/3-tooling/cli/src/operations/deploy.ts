@@ -6,6 +6,7 @@
  * fails to load comes back as a structured failure, never a throw out of
  * the host.
  */
+import type { PreflightFindings } from '@internal/core/config';
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../composer-config.ts';
@@ -26,7 +27,9 @@ export type DeployEvent =
       readonly durationMs: number;
       /** What the step measured, as its build adapter or deploy target reported it. The fields vary by adapter and target. */
       readonly data?: Readonly<Record<string, string | number>> | undefined;
-    };
+    }
+  /** Right after the preflight step, when it found platform variables with no value that no service needs. */
+  | { readonly kind: 'preflight-findings'; readonly findings: PreflightFindings };
 
 /** The environment `deploy` targets when none is named. */
 export const DEFAULT_DEPLOY_ENVIRONMENT = 'production';

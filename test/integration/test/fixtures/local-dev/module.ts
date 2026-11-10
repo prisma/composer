@@ -8,7 +8,7 @@
  * required, so dev stops when `LOCALDEV_FIXTURE_API_KEY` is unset;
  * `webhookSecret` is optional, so an unset `LOCALDEV_FIXTURE_WEBHOOK_SECRET`
  * reaches the service as absent. The param rides the reserved `port` channel,
- * bound to `LOCALDEV_FIXTURE_GREETING`; dev stops when it is unset. The names
+ * bound to `LOCALDEV_FIXTURE_GREETING`; `port` has a default, so dev starts when it is unset. The names
  * are fixture-private, chosen not to collide with any real platform env var.
  */
 import { appRoot } from '@prisma/composer';

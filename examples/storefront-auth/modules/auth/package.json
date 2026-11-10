@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/module.ts",
     "./contract": "./src/contract.ts",
+    "./key-check": "./src/key-check.ts",
     "./fake": "./testing/fake.ts"
   },
   "scripts": {

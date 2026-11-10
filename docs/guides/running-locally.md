@@ -422,13 +422,13 @@ token, workspace, or network is involved. Five consequences worth knowing:
 
   If a secret your service's input schema requires is unset or empty, `prisma dev` stops before it starts anything and names the variable and the service. If the schema marks the secret optional, the service starts and sees that field as absent. Change a value and run `prisma dev` again, without `--fresh`, and the services that read it restart with the new value.
 
-  **`.env` and `.env.local` are read by every environment, including `prisma deploy` to `production`.** Deploy uploads any secret the target environment does not have yet, so a local-only secret in those files becomes the hosted value. Put local-only values in `.env.dev` or `.env.dev.local`.
+  **`.env` and `.env.local` are read by every environment, including `prisma deploy` to `production`.** The deploy does not copy a secret to the platform, but a plain value in those files becomes the deployed root input or `envParam()` value. Put local-only values in `.env.dev` or `.env.dev.local`.
 
   A `.env` that only your framework loads (Next.js, for example) does not count, because Composer reads each secret before the dev server starts (see [Dev servers](#dev-servers)).
 
   `prisma dev` treats as secrets only the values under the names an `envSecret()` in the graph reads, and redacts those values in what it prints. The other values in `.env` and the shell are not secrets to it, and print as they are, apart from values that look like credentials, such as a long value under a name containing `TOKEN` or `KEY`.
 
-  Each service gets only the secrets and env-sourced params its own input and params point at. Code that reads `process.env.X` directly, where `X` is bound by another service, gets nothing.
+  Each service gets only the secrets and env-sourced params its own input and params point at. Code that reads `process.env.X` directly, where `X` is bound by another service, gets nothing under `prisma dev`. On Prisma Cloud every service receives every platform variable of its class, so do not rely on this isolation there.
 - Changing a value an adapter reads while `prisma dev` runs pauses rebuilds at the next rebuild, with a message; restart `prisma dev` to use the new values.
 - **The emulators outlive a session.** They're shared, machine-wide daemons,
   so your data survives `Ctrl-C` and even a reboot until you `--fresh`. That's

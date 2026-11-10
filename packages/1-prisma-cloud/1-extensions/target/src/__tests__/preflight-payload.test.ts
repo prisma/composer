@@ -1,12 +1,3 @@
-/**
- * Runs BOTH halves of the rotation-timestamp transport: the CLI half
- * produces a payload from a real `runPreflight`, the framework transport
- * carries it as env vars, and the alchemy half rebuilds the lookup from
- * those vars alone — injecting a lookup directly would pass even if nothing
- * were transported. Assertions are on the `<name>:updatedAt` trigger members
- * the deploy hook builds from the lookup — the exact inputs
- * `Prisma.Deployment.triggers` fingerprints.
- */
 import { describe, expect, test } from 'bun:test';
 import { Load, module } from '@internal/core';
 import { preflightEnv } from '@internal/core/config';
@@ -45,28 +36,28 @@ const graph = () =>
     }),
   );
 
-/** A platform holding STRIPE_SECRET_KEY, last written at `updatedAt`. Its VALUE is never returned — the API returns none. */
-const fakePlatform = (updatedAt: string): ManagementApiClient =>
+/** A platform holding STRIPE_SECRET_KEY, last written at `updatedAt`, or no row when `updatedAt` is undefined. Its VALUE is never returned — the API returns none. */
+const fakePlatform = (updatedAt: string | undefined): ManagementApiClient =>
   ({
     GET: async () => ({
       data: {
-        data: [{ branchId: null, updatedAt }],
+        data: updatedAt === undefined ? [] : [{ branchId: null, updatedAt }],
         pagination: { nextCursor: null, hasMore: false },
       },
       error: undefined,
       response: new Response(null, { status: 200 }),
     }),
     POST: async () => {
-      throw new Error('this fake platform already has every name; nothing should be created');
+      throw new Error('preflight never creates a platform variable');
     },
   }) as unknown as ManagementApiClient;
 
 /** The pointed platform variables serialize collected for this service — the input document points at the rotating secret. */
 const pointers = ['STRIPE_SECRET_KEY'];
 
-/** The CLI process: run the real preflight against a platform that last wrote the secret at `updatedAt`, and hand its findings to the framework transport. */
-async function cliProcess(updatedAt: string): Promise<Record<string, string>> {
-  const timestamps = await runPreflight(
+/** The real preflight against a platform that last wrote the secret at `updatedAt`. */
+const preflightAgainst = (updatedAt: string | undefined) =>
+  runPreflight(
     {
       graph: graph(),
       configuration: {},
@@ -80,7 +71,10 @@ async function cliProcess(updatedAt: string): Promise<Record<string, string>> {
     },
     { client: fakePlatform(updatedAt) },
   );
-  const payload = serializeDeployPreflightPayload(timestamps);
+
+/** The first process: run the real preflight and hand its payload to the framework transport. */
+async function cliProcess(updatedAt: string | undefined): Promise<Record<string, string>> {
+  const payload = serializeDeployPreflightPayload(await preflightAgainst(updatedAt));
   return preflightEnv(
     payload === undefined ? new Map() : new Map([[PRISMA_CLOUD_EXTENSION_ID, payload]]),
   );
@@ -94,7 +88,7 @@ async function cliProcess(updatedAt: string): Promise<Record<string, string>> {
  * fingerprint moves on.
  */
 function alchemyProcessPointerTriggers(env: Record<string, string>): Record<string, string> {
-  const { pointerVersion } = transportedPreflight(new Map(), env);
+  const { pointerVersion } = transportedPreflight(() => undefined, env);
   return Object.fromEntries(
     pointers.map((name) => [`${name}:updatedAt`, pointerVersion(name) ?? '?']),
   );
@@ -120,8 +114,15 @@ describe('the rotation signal across the CLI → alchemy process boundary', () =
 
     expect(env).toEqual({
       PRISMA_COMPOSER_PREFLIGHT_PRISMA_COMPOSER_PRISMA_CLOUD:
-        '{"STRIPE_SECRET_KEY":"2026-05-05T12:00:00.000Z"}',
+        '{"updatedAt":{"STRIPE_SECRET_KEY":"2026-05-05T12:00:00.000Z"}}',
     });
+  });
+
+  test('a variable with no value sends no payload, and its trigger member is unknown', async () => {
+    const env = await cliProcess(undefined);
+
+    expect(env).toEqual({});
+    expect(alchemyProcessPointerTriggers(env)).toEqual({ 'STRIPE_SECRET_KEY:updatedAt': '?' });
   });
 
   test('without the transport the alchemy process learns nothing — the trigger cannot move', async () => {
@@ -137,10 +138,12 @@ describe('the rotation signal across the CLI → alchemy process boundary', () =
 });
 
 describe('what the payload may contain', () => {
-  test('timestamps only — a name, an ISO time, and nothing else', () => {
+  test("the payload holds each variable's name and last-change time, and no value", () => {
     expect(
-      serializeDeployPreflightPayload(new Map([['STRIPE_SECRET_KEY', '2026-05-05T12:00:00.000Z']])),
-    ).toBe('{"STRIPE_SECRET_KEY":"2026-05-05T12:00:00.000Z"}');
+      serializeDeployPreflightPayload({
+        updatedAt: new Map([['STRIPE_SECRET_KEY', '2026-05-05T12:00:00.000Z']]),
+      }),
+    ).toBe('{"updatedAt":{"STRIPE_SECRET_KEY":"2026-05-05T12:00:00.000Z"}}');
   });
 
   test('the same times in a different order serialize identically — sorted by name', () => {
@@ -150,22 +153,25 @@ describe('what the payload may contain', () => {
     ]);
     const other = new Map([...one].reverse());
 
-    expect(serializeDeployPreflightPayload(other)).toBe(serializeDeployPreflightPayload(one));
+    expect(serializeDeployPreflightPayload({ updatedAt: other })).toBe(
+      serializeDeployPreflightPayload({ updatedAt: one }),
+    );
   });
 
-  test('a deploy with no pointed variable carries no payload at all', () => {
-    expect(serializeDeployPreflightPayload(new Map())).toBeUndefined();
+  test('a deploy with no variable that has a row carries no payload at all', () => {
+    expect(serializeDeployPreflightPayload({ updatedAt: new Map() })).toBeUndefined();
   });
 
-  test('a round trip preserves every name', () => {
-    const timestamps = new Map([
+  test('a round trip preserves every name and time', () => {
+    const updatedAt = new Map([
       ['A_KEY', '2026-01-01T00:00:00.000Z'],
       ['B_KEY', '2026-02-02T00:00:00.000Z'],
     ]);
-    const payload = serializeDeployPreflightPayload(timestamps);
 
-    const decoded = decodePreflightPayload(payload);
-    expect(decoded.kind === 'deploy' ? [...decoded.updatedAt] : []).toEqual([...timestamps]);
+    expect(decodePreflightPayload(serializeDeployPreflightPayload({ updatedAt }))).toEqual({
+      kind: 'deploy',
+      updatedAt,
+    });
   });
 
   test('an absent payload decodes as nothing sent', () => {
@@ -173,11 +179,29 @@ describe('what the payload may contain', () => {
   });
 
   test('a payload that is present but unreadable fails loudly rather than losing the signal', () => {
-    expect(() => decodePreflightPayload('not json')).toThrow(/did not survive the transport/);
-    expect(() => decodePreflightPayload('"a string"')).toThrow(/not a JSON object/);
-    expect(() => decodePreflightPayload('{"A_KEY":42}')).toThrow(
-      /"A_KEY" is not a string timestamp/,
+    expect(() => decodePreflightPayload('not json')).toThrow(
+      /could not be read in the second process/,
     );
+    expect(() => decodePreflightPayload('"a string"')).toThrow(/not a JSON object/);
+    expect(() => decodePreflightPayload('{"updatedAt":{"A_KEY":42}}')).toThrow(
+      /"updatedAt" is not an object of string timestamps/,
+    );
+  });
+});
+
+describe("the CLI process's own preflight", () => {
+  test('a variable deleted since the last check is treated as having no value', async () => {
+    let snapshot: ReadonlyMap<string, string> | undefined;
+    const { pointerVersion } = transportedPreflight(
+      () => snapshot,
+      await cliProcess('2026-05-05T12:00:00.000Z'),
+    );
+
+    snapshot = (await preflightAgainst('2026-07-07T09:15:00.000Z')).updatedAt;
+    expect(pointerVersion('STRIPE_SECRET_KEY')).toBe('2026-07-07T09:15:00.000Z');
+
+    snapshot = (await preflightAgainst(undefined)).updatedAt;
+    expect(pointerVersion('STRIPE_SECRET_KEY')).toBeUndefined();
   });
 });
 
@@ -189,9 +213,11 @@ describe('one transport variable, two kinds of payload', () => {
 
   test('a deploy payload names no absent secret and reads as timestamps', () => {
     const preflight = transportedPreflight(
-      new Map(),
+      () => undefined,
       childEnv(
-        serializeDeployPreflightPayload(new Map([['STRIPE_SECRET_KEY', '2026-10-01T00:00:00Z']])),
+        serializeDeployPreflightPayload({
+          updatedAt: new Map([['STRIPE_SECRET_KEY', '2026-10-01T00:00:00Z']]),
+        }),
       ),
     );
 
@@ -201,7 +227,7 @@ describe('one transport variable, two kinds of payload', () => {
 
   test('a dev payload carries the absent secrets and the value versions', () => {
     const preflight = transportedPreflight(
-      new Map(),
+      () => undefined,
       childEnv(
         serializeDevPreflightPayload({
           absentSecrets: ['STRIPE_WEBHOOK_SECRET'],
@@ -215,7 +241,7 @@ describe('one transport variable, two kinds of payload', () => {
   });
 
   test('with no payload nothing is absent and every version is unknown', () => {
-    const preflight = transportedPreflight(new Map(), childEnv(undefined));
+    const preflight = transportedPreflight(() => undefined, childEnv(undefined));
 
     expect([...preflight.absentSecrets]).toEqual([]);
     expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBeUndefined();
