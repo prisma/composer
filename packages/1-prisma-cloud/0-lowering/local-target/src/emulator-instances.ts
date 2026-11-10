@@ -483,10 +483,21 @@ const STOP_BEFORE_EXIT_TIMEOUT_MS = 30_000;
  * an awaited stop would never run.
  */
 export function stopAppInstancesBeforeExit(scope: AppScope, stopAppEntry: string): void {
-  spawnSync(process.execPath, [stopAppEntry, scope.devDir, scope.app, scope.environment], {
-    stdio: ['ignore', 'ignore', 'inherit'],
-    timeout: STOP_BEFORE_EXIT_TIMEOUT_MS,
-  });
+  const result = spawnSync(
+    process.execPath,
+    [stopAppEntry, scope.devDir, scope.app, scope.environment],
+    {
+      stdio: ['ignore', 'ignore', 'inherit'],
+      timeout: STOP_BEFORE_EXIT_TIMEOUT_MS,
+    },
+  );
+  if (result.error === undefined && result.status === 0) return;
+  const why =
+    result.error?.message ??
+    (result.signal !== null
+      ? `it was ended by ${result.signal}`
+      : `it exited with code ${String(result.status)}`);
+  process.stderr.write(`The app could not be stopped: ${why}. Run \`prisma dev stop\`.\n`);
 }
 
 /**

@@ -38,6 +38,7 @@ const EXIT_TIMEOUT_MS = 60_000;
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-dev-interrupt-'));
 const emulatorsDir = path.join(tempRoot, 'emulators');
 const APP = 'localdevs4fixture';
+let sessionPid: number | undefined;
 
 function env(): NodeJS.ProcessEnv {
   const result: NodeJS.ProcessEnv = {
@@ -137,6 +138,7 @@ async function main(): Promise<void> {
   fs.closeSync(logFd);
   const pid = child.pid;
   assert(pid !== undefined, 'prisma dev started');
+  sessionPid = pid;
   const exited = new Promise<number | null>((resolve) => {
     child.once('exit', (code, signal) => resolve(code ?? (signal === null ? null : 128)));
   });
@@ -176,6 +178,18 @@ async function main(): Promise<void> {
   console.log('PASS: Ctrl-C ends prisma dev and stops every service');
 }
 
+/** Ends a `prisma dev` that a failure left running, with every process in its group. */
+async function endSession(): Promise<void> {
+  if (sessionPid === undefined || !isAlive(sessionPid)) return;
+  const group = -sessionPid;
+  process.kill(group, 'SIGTERM');
+  const deadline = Date.now() + 5_000;
+  while (isAlive(sessionPid) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (isAlive(sessionPid)) process.kill(group, 'SIGKILL');
+}
+
 async function stopEmulator(name: string): Promise<void> {
   const file = path.join(emulatorsDir, `${name}.json`);
   if (!fs.existsSync(file)) return;
@@ -188,8 +202,9 @@ async function stopEmulator(name: string): Promise<void> {
   if (isAlive(pid)) process.kill(pid, 'SIGKILL');
 }
 
-/** Deletes the app's instances through the target's own teardown, then ends the emulators. */
+/** Ends a leftover session, deletes the app's instances through the target's own teardown, then ends the emulators. */
 async function cleanUp(): Promise<void> {
+  await endSession();
   process.chdir(integrationDir);
   process.env['PRISMA_COMPOSER_EMULATORS_DIR'] = emulatorsDir;
   const localTarget = prismaCloud().localTarget;
