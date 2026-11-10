@@ -31,9 +31,9 @@ inputs:
     default: storefront-auth orm-demo hello
   platform-variables:
     description: >
-      Space-separated names of platform variables the app needs. The job's
-      environment holds their values. When set, the first deploy must stop at
-      preflight naming each one, then the action sets them and deploys again.
+      Space-separated names of platform variables the app needs. When set, the
+      action generates a random value for each, checks that the first deploy
+      stops at preflight naming each one, sets them, and deploys again.
     required: false
     default: ''
 
@@ -52,6 +52,13 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: pnpm turbo run build --filter '${{ inputs.build-filter }}'
+
+    - name: Generate platform variable values
+      if: inputs.platform-variables != ''
+      shell: bash
+      env:
+        PLATFORM_VARIABLES: ${{ inputs.platform-variables }}
+      run: bun "$GITHUB_WORKSPACE/scripts/e2e-generate-platform-variables.ts" $PLATFORM_VARIABLES
 
     - name: First deploy stops at preflight
       id: first-deploy

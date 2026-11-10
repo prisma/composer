@@ -3,6 +3,7 @@
 // re-keyed the platform environment address-free, so service.load() below
 // reads it directly, with no address.
 
+import { createHmac } from 'node:crypto';
 import { serve } from '@prisma/composer/service-rpc';
 import { SQL } from 'bun';
 import service from './service.ts';
@@ -10,15 +11,6 @@ import service from './service.ts';
 const { db } = service.load(); // db: RawPostgresConfig — the app owns its client
 const { signingKey } = service.input(); // signingKey: SecretString — redacts everywhere but expose() (ADR-0042)
 const port = service.port();
-
-// The E2E's KNOWN test marker for the secret the root binds to AUTH_SIGNING_SECRET
-// (matched by the value the deploy provisions — see .github/workflows/e2e-deploy.yml
-// and scripts/e2e-verify.sh). `secretCheck` below proves the secret round-tripped
-// (root envSecret -> input-document $platform marker -> boot lookup -> SecretBox) by comparing
-// `signingKey.expose()` to this marker and returning ONLY a boolean. `.expose()` is
-// the sole reader; the value is never rendered or logged (SecretBox redacts). This
-// constant is a non-sensitive demonstration marker, not a real credential.
-const EXPECTED_SIGNING_SECRET = 'sk_test_ci_storefront_auth';
 
 // The app constructs its own client from the binding (ADR-0015). Module-scoped,
 // so it is one pool per process. idleTimeout closes the pooled connection
@@ -47,9 +39,9 @@ const handler = serve(service, {
         return { ok: false };
       }
     },
-    // True iff the injected secret matches the expected marker — proof it was
-    // provisioned and double-looked-up, without ever returning the value.
-    secretCheck: async () => ({ ok: signingKey.expose() === EXPECTED_SIGNING_SECRET }),
+    sign: async ({ challenge }) => ({
+      signature: createHmac('sha256', signingKey.expose()).update(challenge).digest('hex'),
+    }),
   },
 });
 export default handler;

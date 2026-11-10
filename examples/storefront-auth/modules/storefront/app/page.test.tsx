@@ -14,7 +14,7 @@ vi.mock('../src/service.ts', async () => {
     default: mockService(actual.default, {
       auth: {
         verify: async ({ token }) => ({ ok: token.length > 0 }),
-        secretCheck: async () => ({ ok: true }),
+        sign: async ({ challenge }) => ({ signature: `signature-of-${challenge}` }),
       },
     }),
   };
@@ -24,9 +24,19 @@ describe('Home (page.tsx)', () => {
   it('renders the storefront -> auth round trip with load() stubbed to a fake auth', async () => {
     const { default: Home } = await import('./page.tsx');
 
-    const html = renderToStaticMarkup(await Home());
+    const html = renderToStaticMarkup(await Home({ searchParams: Promise.resolve({}) }));
 
     expect(html).toContain('Auth /verify says: true');
-    expect(html).toContain('Secret /check says: true');
+    expect(html).not.toContain('Auth /sign says');
+  });
+
+  it('renders auth.sign() of the challenge query parameter', async () => {
+    const { default: Home } = await import('./page.tsx');
+
+    const html = renderToStaticMarkup(
+      await Home({ searchParams: Promise.resolve({ challenge: 'abc' }) }),
+    );
+
+    expect(html).toContain('Auth /sign says: signature-of-abc');
   });
 });

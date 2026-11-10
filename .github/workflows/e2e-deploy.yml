@@ -34,13 +34,6 @@ jobs:
     env:
       PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
       PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
-      # A test marker, not a secret. It must match the auth service's
-      # EXPECTED_SIGNING_SECRET (examples/storefront-auth/modules/auth/src/server.ts). The deploy never
-      # reads it (ADR-0064): the first deploy stops at preflight because the
-      # fresh project has no AUTH_SIGNING_SECRET row, the action's
-      # e2e-set-platform-variables.ts sets this value on the platform, and the
-      # second deploy succeeds.
-      AUTH_SIGNING_SECRET: sk_test_ci_storefront_auth
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -50,7 +43,7 @@ jobs:
           working-directory: examples/storefront-auth
           build-filter: '@prisma/example-storefront-auth...'
           stack-name: storefront-auth-ci-${{ github.run_id }}
-          verify-command: bash scripts/e2e-verify.sh
+          verify-command: bun scripts/e2e-verify.ts
           platform-variables: AUTH_SIGNING_SECRET
 
   deploy-orm-demo:
