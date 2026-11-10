@@ -377,6 +377,12 @@ export interface LocalTargetAttachment {
   }): Promise<{ readonly restarted: boolean }>;
   /** Stop everything the target runs for the app, so nothing of it keeps running after the session (emulators and data persist). */
   stopApp(): Promise<void>;
+  /**
+   * Does what `stopApp()` does and returns only once it is done, without the event loop: for a
+   * process that is exiting and cannot await. Optional: without it, an exit that interrupts
+   * `stopApp()` leaves the app running.
+   */
+  stopAppBeforeExit?(): void;
 }
 
 /** `<cwd>/.prisma-composer/dev` — local dev's state directory (ADR-0041, ADR-0004's tool-state rule), holding one folder per environment. */
