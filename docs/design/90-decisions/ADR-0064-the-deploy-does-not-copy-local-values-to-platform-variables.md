@@ -20,7 +20,7 @@ Platform variables with no value:
 
 ## Decision
 
-A **platform variable** is an environment variable on the platform that a service reads at boot. Today `envSecret('NAME')` and a per-key `envParam('NAME')` param name one.
+A **platform variable** is an environment variable on the platform that a service reads at boot. `envSecret('NAME')` and a per-key `envParam('NAME')` param name one.
 
 The deploy does not copy a platform variable's value from the developer's local environment: the `secrets` and `config` adapters, by default `.env` files and the shell. An implicit copy can push a local value into a remote environment by accident. For now the operator sets each value on Prisma Cloud with `prisma project env add`, and the deploy creates, changes and deletes no platform variable. Preflight checks only that every variable a service needs has a value. This is not a rule that the deploy may never set a variable. An explicit way to set variables through `deploy`, where the operator says which values go to which environment, is expected later (see Future work).
 
@@ -38,7 +38,7 @@ Destroying the production environment removes the Project, and with it every var
 
 ### Names
 
-`envSecret()` and `envParam()` check the name they are given, so Load fails with the message.
+`envSecret()` and `envParam()` check the name they are given, and Load fails with a message naming the rule.
 
 - A name matches `^[A-Z][A-Z0-9_]*$`: an upper-case letter, then upper-case letters, digits and underscores. The platform also accepts a leading underscore; Composer refuses it (see Reasoning).
 - These names are reserved: any name starting with `COMPOSER_`, which are Composer's own rows; `DATABASE_URL` and `DATABASE_URL_POOLED`, which Prisma Cloud sets and manages; `PORT`, which boot sets to the service's port; `PATH` and `HOME`, which `prisma dev` sets from the developer's shell. `HOST` is allowed.
@@ -58,9 +58,9 @@ Each place in a service's input document that reads a platform variable holds a 
 
 - `name` is the variable. `secret` is `true` for `envSecret()`.
 - A `$generated` marker names a variable Composer writes itself, for `generatedParam()` and `serviceOrigin()`. Two `$generated` markers in one document must name different variables, compared without case. Two `$platform` markers for one name are two reads of one variable and are allowed.
-- A user key spelled like a marker (`$platform`, `$generated`, or `$secret`) gains one leading `$` when written and loses it when read, so only Composer can place a marker.
+- A user key spelled like a marker (`$platform` or `$generated`) gains one leading `$` when written and loses it when read, so only Composer can place a marker.
 - The deploy report shows each marker as `$platform NAME` or `$generated NAME`.
-- The marker format, the code that finds every marker at any depth, boot's handling of a marker, and the `COMPOSER_` row keys and per-key param pointer rows that boot reads beside the document live in one package, `@internal/input-document`. The serializer, boot and the local target all use it.
+- The marker format, the code that finds every marker at any depth, boot's handling of a marker, the names of Composer's own `COMPOSER_…` rows, and the rows that tell boot which platform variable each per-key param reads live in one package, `@internal/input-document`. The serializer, boot and the local target all use it.
 
 ### Boot
 
@@ -109,7 +109,7 @@ The local target plays the platform's part.
 - The first process hands the second process the named secrets, the app secrets under the secrets keys of the graph's secret sources, in `PRISMA_COMPOSER_NAMED_SECRETS`, in memory.
 - **It isolates.** A local service receives only the variables its own rows and `$platform` markers point at. This is a rule of the local target only: on Prisma Cloud every deployment receives every row of its class.
 - A missing value follows ADR-0058: a required secret, a secret an array position reads, or a required per-key param stops `prisma dev` before any service starts, naming it and the service; an optional one is left out of the service's input, as the deploy's boot leaves it out.
-- A changed value pauses rebuilds until `prisma dev` is restarted. After the restart, the fingerprint trigger replaces only the readers' deployments.
+- A changed value pauses rebuilds until `prisma dev` is restarted. After the restart, the deployment's `<name>:updatedAt` trigger replaces only the readers' deployments.
 
 ### The shortcuts
 
@@ -131,31 +131,30 @@ The local target plays the platform's part.
 
 **No leading underscore.** The platform accepts one; the rule is Composer's. Shells and tools use names that start with an underscore for their own variables: bash puts `_` in the environment of every command it runs, and the Java virtual machine reads `_JAVA_OPTIONS`. Keeping those names out of the app's names means an app's variable never meets one of them.
 
-**Empty means unset.** The platform cannot store an empty value. `prisma dev` already treated empty as unset. Treating empty as unset at boot too makes the two agree.
+**Empty means unset.** The platform cannot store an empty value. `prisma dev` treats empty as unset. Treating empty as unset at boot too makes the two agree.
 
 **The graph check runs after Load.** A rule that depends on more than one place in the graph cannot run in a constructor. Running it right after Load, in every command that runs Load, refuses a bad graph before preflight and before any dev service starts, without a deploy.
 
 ## Consequences
 
 - A new environment needs its platform variables set first. For a new app, the first deploy creates the Project and Branch, then stops at preflight with the commands that set each required variable, including the project's id.
-- Every new preview branch reads the preview-wide row. A project that relied on the deploy writing one override per branch needs one preview-wide row per name.
+- Every new preview branch reads the preview-wide row.
 - A deploy succeeds with an optional variable unset and lists it. Because the platform has no way to store "deliberately empty", the list also holds a variable whose absence is intended.
-- A process that exits at boot for a reason preflight cannot see, such as a value that the schema refuses, is still promoted. The guide names `prisma service logs <service>` as where the error is.
+- A process that exits at boot for a reason preflight cannot see, such as a value that the schema refuses, is promoted. The guide names `prisma service logs <service>` as where the error is.
 - Every service on Prisma Cloud sees every variable of its class. Composer records which service reads which variable in its graph and in each input document, so it can send that record if the platform ever takes one.
 - Under `prisma dev` and on the platform, a service with an unset optional secret receives the same input: the field is absent. Dev's input document leaves the marker out; the deploy's document holds the marker, and boot leaves the key out.
-- The deploy still reads the app secrets, only to redact the values under the graph's secrets keys wherever it prints.
+- The deploy reads the app secrets only to redact the values under the graph's secrets keys wherever it prints.
 
 ## Alternatives considered
 
-- **Keep copying local values on deploy.** Rejected: an implicit copy is how a local value reaches a remote environment by accident.
+- **Copy local values on deploy.** Rejected: an implicit copy is how a local value reaches a remote environment by accident.
 - **Succeed with every variable unset, and report.** Rejected: the platform promotes a service that exits at boot and reports it running, so the deploy would leave it crashing. Preflight refuses the case the schema can show without a value.
 - **Two list calls per name, one per scope.** Rejected: one call filtered by class and key returns both.
 - **The newest row's `updatedAt` as the trigger.** Rejected: a change to a class row under a branch override would redeploy a service whose value did not change.
-- **Keep reading `$secret` beside `$platform`.** Rejected: the input document and the boot code ship in the same package and the same deployment, so no older document is ever read by newer boot code.
 
 ## Future work
 
-- **An explicit way to set platform variables through `deploy`.** The operator names the values and the environments they go to, and the deploy writes those rows. It needs its own design. It must not read local values implicitly, which is what this decision removed.
+- **An explicit way to set platform variables through `deploy`.** The operator names the values and the environments they go to, and the deploy writes those rows. It needs its own design. It must not read local values implicitly.
 
 ## Related
 

@@ -31,7 +31,7 @@ Under `prisma dev`, a secret's value comes only from the app secrets, and an env
 - **A changed value redeploys the services that read it.** Each `Deployment`'s triggers carry a `<name>:updatedAt` member per variable its rows point at. On a hosted deploy it holds the platform variable's `updatedAt`. Under `prisma dev` it holds the fingerprint from the payload: an HMAC-SHA256 of the value under a random 32-byte key that `prisma dev` creates once in `.prisma-composer/dev/<environment>/fingerprint.key` (mode 0600). Alchemy writes trigger members to its state as given, which is why the fingerprint is keyed: a bare hash of a short secret could be reversed by guessing. A lost key causes one redeploy, and `--fresh` deletes it.
 - **A changed adapter value pauses rebuilds.** When what the adapters return at a rebuild differs from what they returned at start, `prisma dev` keeps the values it started with and stops rebuilding until it is restarted, as it does after an edit to `prisma.config.ts`.
 - **Composer never reads a secret back from storage.** The `secrets.json` store in `.prisma-composer/dev/` is gone, and `prisma dev` deletes a leftover one when it starts.
-- **Deploy sends no dev payload.** Its input document holds a marker for every secret, and boot leaves out a key whose variable has no value.
+- **The deploy passes no secret values to the second process.** Its input document holds a marker for every secret, and boot leaves out a key whose variable has no value.
 
 ## Reasoning
 
