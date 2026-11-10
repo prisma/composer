@@ -1,9 +1,3 @@
-/**
- * The progress channels core hands to extensions: assemble takes an optional
- * `report` callback for a bag of counts and labels, preflight one for what it
- * checked and found, and the assembled artifact itself carries no
- * measurements. Type-only (vitest `--typecheck`, never executed).
- */
 import { expectTypeOf, test } from 'vitest';
 import type { PlatformVariableCheck, PreflightInput } from '../exports/app-config.ts';
 import type { AssembleInput, Bundle } from '../exports/deploy.ts';

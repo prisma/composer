@@ -1497,7 +1497,7 @@ describe('lowering() — the report path', () => {
     withEnv({ [PREFLIGHT_FINDINGS_ENV_VAR]: 'not json' }, () => {
       expect(() =>
         run(lowering(root, config, opts({ ...svcBundles, report: () => undefined }))),
-      ).toThrow(/did not survive the transport/);
+      ).toThrow(/could not be read in the second process/);
     });
     expect(calls).toEqual([]);
   });

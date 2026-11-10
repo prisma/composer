@@ -53,12 +53,12 @@ describe('preflightEnv()', () => {
           ['acme/widgets', 'b'],
         ]),
       ),
-    ).toThrow(/"acme\.widgets" and "acme\/widgets" both map to the preflight transport variable/);
+    ).toThrow(/"acme\.widgets" and "acme\/widgets" both use the environment variable/);
   });
 
-  test("an extension whose variable would be the findings' variable fails loudly", () => {
+  test('an extension whose variable would be the findings variable is refused, naming the reserved variable', () => {
     expect(() => preflightEnv(new Map([['findings', 'a']]))).toThrow(
-      /"findings" maps to the preflight transport variable "PRISMA_COMPOSER_PREFLIGHT_FINDINGS"/,
+      'Extension id "findings" uses the environment variable "PRISMA_COMPOSER_PREFLIGHT_FINDINGS", which Composer reserves. Rename the extension.',
     );
   });
 });
@@ -106,10 +106,10 @@ describe('the deploy preflight findings', () => {
 
   test('that do not decode fail rather than print a partial report', () => {
     expect(() => readPreflightFindings({ [PREFLIGHT_FINDINGS_ENV_VAR]: 'not json' })).toThrow(
-      /did not survive the transport/,
+      /could not be read in the second process/,
     );
     expect(() =>
       readPreflightFindings({ [PREFLIGHT_FINDINGS_ENV_VAR]: '{"unset":[{"name":"A_KEY"}]}' }),
-    ).toThrow(/did not survive the transport/);
+    ).toThrow(/could not be read in the second process/);
   });
 });

@@ -6,9 +6,7 @@
  * target's dev preflight. The framework never reads the contents, so an
  * extension that implements both must tell its own payload kinds apart.
  * Payloads carry metadata only, never secret values: the child's environment
- * is not a secret store. One more variable, the framework's own, carries the
- * platform variables every deploy preflight reported with no value, for the
- * deploy report.
+ * is not a secret store.
  */
 import { envVarSafeExtensionId } from './container-transport.ts';
 
@@ -29,14 +27,13 @@ export function preflightEnv(payloads: ReadonlyMap<string, string>): Record<stri
     const varName = preflightEnvVarName(extensionId);
     if (varName === PREFLIGHT_FINDINGS_ENV_VAR) {
       throw new Error(
-        `Extension id "${extensionId}" maps to the preflight transport variable "${varName}", which carries the deploy preflight's findings — rename the extension.`,
+        `Extension id "${extensionId}" uses the environment variable "${varName}", which Composer reserves. Rename the extension.`,
       );
     }
     const owner = ownerByVarName.get(varName);
     if (owner !== undefined) {
       throw new Error(
-        `Extension ids "${owner}" and "${extensionId}" both map to the preflight transport ` +
-          `variable "${varName}" — rename one of the extensions.`,
+        `Extension ids "${owner}" and "${extensionId}" both use the environment variable "${varName}". Rename one of the extensions.`,
       );
     }
     ownerByVarName.set(varName, extensionId);
@@ -150,7 +147,7 @@ export function readPreflightFindings(
   }
   if (!isPreflightFindings(parsed)) {
     throw new Error(
-      `The deploy preflight's findings did not survive the transport into the second process (${PREFLIGHT_FINDINGS_ENV_VAR}). This is a framework bug; re-running the deploy will not fix it.`,
+      `The deploy check's findings could not be read in the second process (${PREFLIGHT_FINDINGS_ENV_VAR}). This is a Composer bug; deploying again will not fix it.`,
     );
   }
   return parsed;

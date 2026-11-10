@@ -148,19 +148,18 @@ export interface PreflightInput<C = unknown> {
   readonly environment: string;
   /** The app configuration the command read for this environment. */
   readonly configuration: AppConfiguration;
-  /** The app secrets the command read for this environment. The deploy preflight reads no value from them and writes no platform variable; the dev preflight gives each local service its secrets from them. */
+  /** The app secrets the command read for this environment. */
   readonly secrets: AppSecrets;
   /** What the caller has already authenticated, for the platform calls preflight makes. Absent means the extension falls back to its own credential protocol. */
   readonly credentials?: ContainerCredentials<C> | undefined;
-  /** Hands the deploy how many platform variables the check read and which have no value. It carries nothing else. Names and readers only: never a value. */
+  /** Hands the deploy how many platform variables the check read and which have no value. */
   readonly report?: ((check: PlatformVariableCheck) => void) | undefined;
   /** Shows the user a warning that does not stop the run. Only `prisma dev` passes it and shows the warnings; deploy passes none. */
   readonly warn?: ((message: string) => void) | undefined;
 }
 
-/** What a deploy preflight's check of platform variables found: how many it read, and the ones with no value that nothing requires. Only platform variables; a preflight reports nothing else. */
+/** What a deploy preflight's check of platform variables found: how many it read, and the ones with no value that nothing requires. */
 export interface PlatformVariableCheck extends PreflightFindings {
-  /** How many platform variables it read. */
   readonly checked: number;
 }
 
