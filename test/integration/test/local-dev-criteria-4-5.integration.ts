@@ -278,7 +278,7 @@ async function expectPreflightFailure(env: NodeJS.ProcessEnv): Promise<string> {
 
 function assertNamesMissing(log: string, variable: string, service: string): void {
   // In the structured frame the quotes around the service name arrive JSON-escaped.
-  const named = new RegExp(`${variable}\\s+\\(required by service \\\\?"${service}\\\\?"`);
+  const named = new RegExp(`${variable}\\s+\\(read by service \\\\?"${service}\\\\?"`);
   assert(named.test(log), `the error must name ${variable} and service "${service}"`);
   assert(
     log.includes('environmentVariables() reads the shell you run `prisma dev` from'),
