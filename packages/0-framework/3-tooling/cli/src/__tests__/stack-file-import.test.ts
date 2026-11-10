@@ -18,10 +18,10 @@ afterEach(() => {
 });
 
 const stackInput = {
-  entryPath: path.join(import.meta.dir, 'fixtures', 'valid-module.ts'),
+  entryPath: path.join(import.meta.dir, 'fixtures', 'valid-root.ts'),
   cwd: fixtureDir,
   configFile: path.join(fixtureDir, 'prisma.config.ts'),
-  name: 'fixture-module',
+  name: 'fixture-root',
   environment: 'staging',
   assembled: { devServers: {}, bundles: {} },
 };
@@ -49,7 +49,7 @@ describe('the generated stack file, evaluated', () => {
 
   test('the stack passes the composer export of prisma.config.ts, the environment, and the app configuration file, to lower(), and runs no adapter', () => {
     expect(runStack(writeStackFile(stackInput))).toEqual({
-      app: 'fixture-module',
+      app: 'fixture-root',
       extensions: ['fixture-extension'],
       state: 'fixture-extension',
       environment: 'staging',

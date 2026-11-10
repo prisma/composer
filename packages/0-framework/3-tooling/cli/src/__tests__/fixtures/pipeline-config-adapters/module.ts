@@ -1,4 +1,4 @@
-import { module, paramSource, service } from '@internal/core';
+import { appRoot, module, paramSource, service } from '@internal/core';
 
 const anyInput = {
   '~standard': {
@@ -34,7 +34,7 @@ const greeter = module('greeter', { input: greetingInput }, ({ input, provision 
   provision(echo, { input: { greeting: input.greeting } });
 });
 
-export default module('pipeline-config-adapters-fixture', ({ provision }) => {
+export default appRoot('pipeline-config-adapters-fixture', ({ provision }) => {
   provision(greeter, {
     input: {
       greeting: paramSource<{ name: string }, string>(

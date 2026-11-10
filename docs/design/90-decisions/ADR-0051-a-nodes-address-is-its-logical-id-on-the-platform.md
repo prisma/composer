@@ -9,7 +9,7 @@
 Every node's address is its identity on Prisma Cloud. Composer writes the address, byte for byte, as the `logicalId` of the one platform row that represents the node, and submits the same string as the node's `logicalId` in the branch's application topology. Nothing else is ever written to `logicalId`.
 
 ```ts
-export default module('shop', ({ provision }) => {
+export default appRoot('shop', ({ provision }) => {
   const catalog = provision(rawPostgres({ name: 'catalog' }));
   const auth = provision(authModule, { deps: { db: catalog } }); // module `auth`, containing compute service `api`
   provision(webService, { deps: { db: catalog, auth: auth.rpc } }); // compute service `web`

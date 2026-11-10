@@ -140,7 +140,7 @@ const entryInvalid: ConfigFinding = {
 export const entryMissing: ConfigFinding = {
   code: 'CONFIG.ENTRY_MISSING',
   summary: 'No entry module is set, so there is no app to load.',
-  why: 'The entry is the module whose default export is the app root, built with module(...).',
+  why: 'The entry is the module whose default export is the app root, built with appRoot(...).',
   fix: "Set `entry: './module.ts'` in the `composer` section of prisma.config.ts, or pass `--entry <path>` (the `entry` input when calling @prisma/composer/control).",
   field: 'entry',
 };

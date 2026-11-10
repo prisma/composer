@@ -123,13 +123,30 @@ describe('isNonRegistrySpec', () => {
       'github:foo/bar',
       'file:../local',
       'link:../local',
+      'npm:alchemy@https://pkg.alchemy.run/alchemy/abc123',
+      'npm:@scope/pkg@git+https://github.com/foo/bar.git',
+      '../alchemy.tgz',
+      './vendor/pkg',
+      '/abs/pkg.tgz',
+      'user/repo',
+      'user/repo#abc123',
+      'npm:alchemy@user/repo#abc123',
     ]) {
       assert.equal(isNonRegistrySpec(spec), true, spec);
     }
   });
 
   it('does not flag registry versions, ranges or npm aliases', () => {
-    for (const spec of ['1.2.3', '^1.2.3', '>=4.0.0-rc.110 || >=4.0.0', 'npm:foo@^1.0.0', '*']) {
+    for (const spec of [
+      '1.2.3',
+      '^1.2.3',
+      '>=4.0.0-rc.110 || >=4.0.0',
+      'npm:foo@^1.0.0',
+      'npm:@scope/foo@1.2.3',
+      '@scope/pkg',
+      '@scope/pkg@1.2.3',
+      '*',
+    ]) {
       assert.equal(isNonRegistrySpec(spec), false, spec);
     }
   });

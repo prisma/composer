@@ -164,16 +164,27 @@ export function findPrivateDependencyViolations(pkgJson, privateNames) {
 
 const NON_REGISTRY_SPEC_RE =
   /^(?:[a-z][a-z0-9+.-]*:\/\/|git(?:\+[a-z]+)?:|github:|gitlab:|bitbucket:|file:|link:)/i;
+const NPM_ALIAS_RE = /^npm:(?:@[^/@]+\/)?[^@]+@/;
+const LOCAL_PATH_SPEC_RE = /^(?:\.{1,2}\/|\/|~\/)/;
+const GITHUB_SHORTHAND_RE = /^[^@/:\s]+\/[^/:\s]+(?:#.*)?$/;
 
 /**
  * Returns true if `spec` installs from somewhere other than the npm registry:
- * a tarball URL, a git source, or a local path. A published package with
+ * a tarball URL, a git source, a local path, or GitHub shorthand
+ * (`user/repo`, optionally `#ref`). The shorthand pattern excludes `@`, so
+ * scoped registry specs never match. A published package with
  * such a dependency makes every consumer install depend on that host.
  *
  * Exported for unit tests.
  */
 export function isNonRegistrySpec(spec) {
-  return typeof spec === 'string' && NON_REGISTRY_SPEC_RE.test(spec);
+  if (typeof spec !== 'string') return false;
+  const target = spec.replace(NPM_ALIAS_RE, '');
+  return (
+    NON_REGISTRY_SPEC_RE.test(target) ||
+    LOCAL_PATH_SPEC_RE.test(target) ||
+    GITHUB_SHORTHAND_RE.test(target)
+  );
 }
 
 /**

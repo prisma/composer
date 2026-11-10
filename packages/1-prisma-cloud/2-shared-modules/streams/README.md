@@ -98,12 +98,12 @@ port into `streams()` — the key needs no wiring at all:
 
 ```ts
 // module.ts — the deploy root
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { storage } from '@prisma/composer-prisma-cloud/storage';
 import { streams } from '@prisma/composer-prisma-cloud/streams';
 import worker from './src/worker/service.ts';
 
-export default module('my-app', ({ provision }) => {
+export default appRoot('my-app', ({ provision }) => {
   const store = provision(storage());
   const events = provision(streams(), { deps: { store: store.store } });
   provision(worker, { deps: { streams: events.streams } });

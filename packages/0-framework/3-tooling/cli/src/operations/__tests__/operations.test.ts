@@ -172,7 +172,11 @@ const coreIndex = path.resolve(
 );
 
 /** An app whose one service is `app`. With `secretsKey`, the service's input reads that app secrets key, so the graph names it. */
-function makeAppDir(name = 'fixture-app', secretsKey?: string): { dir: string; entryPath: string } {
+function makeAppDir(
+  name = 'fixture-app',
+  secretsKey?: string,
+  factory: 'appRoot' | 'module' = 'appRoot',
+): { dir: string; entryPath: string } {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-')));
   tmpDirs.push(dir);
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'fixture-app' }));
@@ -182,9 +186,9 @@ function makeAppDir(name = 'fixture-app', secretsKey?: string): { dir: string; e
   fs.writeFileSync(
     entryPath,
     [
-      `import { module, secretSource, service } from ${JSON.stringify(coreIndex)};`,
+      `import { ${factory}, secretSource, service } from ${JSON.stringify(coreIndex)};`,
       '',
-      `export default module(${JSON.stringify(name)}, {}, ({ provision }) => {`,
+      `export default ${factory}(${JSON.stringify(name)}, ({ provision }) => {`,
       '  provision(',
       '    service({',
       "      name: 'app',",
@@ -203,7 +207,6 @@ function makeAppDir(name = 'fixture-app', secretsKey?: string): { dir: string; e
         ? `    { id: 'app', input: { key: secretSource({ key: ${JSON.stringify(secretsKey)} }, { label: 'secret', secretsKey: ${JSON.stringify(secretsKey)} }) } },`
         : "    { id: 'app' },",
       '  );',
-      '  return {};',
       '});',
       '',
     ].join('\n'),
@@ -287,6 +290,32 @@ describe('deploy()', () => {
     expect(spawned).toBe(false);
     expect(fs.existsSync(path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'))).toBe(false);
     expect(result.value.summary).toBeUndefined();
+  });
+
+  test('an entry built with module() deploys as an appRoot() entry does', async () => {
+    const app = makeAppDir('hello-module', undefined, 'module');
+    const requests: ConvergeRequest[] = [];
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(fakeConfig()),
+          entry: app.entryPath,
+          environment: 'ci-7',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          converge: appConverge(recordingConverge(requests)),
+          credentials: { workspaceId: 'ws_handler', client: {} },
+        },
+      ),
+    );
+
+    if (!result.ok) throw result.failure;
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.stage).toBe('ci-7');
+    expect(requests[0]?.stack.stackName).toBe('hello-module');
   });
 
   test("the config's entry resolves against the config file's directory, not cwd", async () => {
@@ -1309,9 +1338,9 @@ describe('destroy()', () => {
     fs.writeFileSync(
       app.entryPath,
       [
-        `import { module, resolve, service } from ${JSON.stringify(coreIndex)};`,
+        `import { appRoot, resolve, service } from ${JSON.stringify(coreIndex)};`,
         '',
-        "export default module('fixture-app', ({ environment, provision }) => {",
+        "export default appRoot('fixture-app', ({ environment, provision }) => {",
         '  const label = resolve([environment.name], ([name]) => {',
         '    globalThis.resolvedEnvironments.push(name);',
         '    return name;',
@@ -3989,7 +4018,7 @@ function makeInputAppDir(): { dir: string; entryPath: string } {
   fs.writeFileSync(
     app.entryPath,
     [
-      `import { module, service } from ${JSON.stringify(coreIndex)};`,
+      `import { appRoot, service } from ${JSON.stringify(coreIndex)};`,
       `import { type } from ${JSON.stringify(arktypeEntry)};`,
       '',
       'const app = service({',
@@ -4002,7 +4031,7 @@ function makeInputAppDir(): { dir: string; entryPath: string } {
       "  build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
       '});',
       '',
-      "export default module('hello-input', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {",
+      "export default appRoot('hello-input', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {",
       "  provision(app, { id: 'app', input: { greeting: input.GREETING } });",
       '});',
       '',
@@ -4348,7 +4377,7 @@ function makeSecondProcessAppDir(secretsKey = 'S13_SECRET'): { dir: string; entr
   fs.writeFileSync(
     app.entryPath,
     [
-      `import { module, paramSource, secretSource, service } from ${JSON.stringify(coreIndex)};`,
+      `import { appRoot, paramSource, secretSource, service } from ${JSON.stringify(coreIndex)};`,
       `import { type } from ${JSON.stringify(arktypeEntry)};`,
       '',
       'const configured = (key) => paramSource({ key }, { label: "configured(\'" + key + "\')", configurationKey: key });',
@@ -4364,7 +4393,7 @@ function makeSecondProcessAppDir(secretsKey = 'S13_SECRET'): { dir: string; entr
       "  build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
       '});',
       '',
-      "export default module('hello-second', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {",
+      "export default appRoot('hello-second', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {",
       '  provision(app, {',
       "    id: 'app',",
       `    input: { greeting: input.GREETING, origin: configured('APP_ORIGIN'), key: secret(${JSON.stringify(secretsKey)}) },`,
@@ -4865,7 +4894,7 @@ describe('no known secret is printed', () => {
     fs.writeFileSync(
       app.entryPath,
       [
-        `import { module, secretSource, service } from ${JSON.stringify(coreIndex)};`,
+        `import { appRoot, secretSource, service } from ${JSON.stringify(coreIndex)};`,
         `import { type } from ${JSON.stringify(arktypeEntry)};`,
         '',
         'const app = service({',
@@ -4878,7 +4907,7 @@ describe('no known secret is printed', () => {
         "  build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
         '});',
         '',
-        "export default module('hello-email', { input: type({ EMAIL_DELIVERY_MODE: 'string', EMAIL_FROM: 'string' }) }, ({ input, provision }) => {",
+        "export default appRoot('hello-email', { input: type({ EMAIL_DELIVERY_MODE: 'string', EMAIL_FROM: 'string' }) }, ({ input, provision }) => {",
         '  provision(app, {',
         "    id: 'app',",
         '    input: {',

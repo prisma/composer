@@ -1,4 +1,4 @@
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { cron } from '@prisma/composer-prisma-cloud/cron';
 import catalogModule from '@store/catalog';
 import ordersModule from '@store/orders';
@@ -21,7 +21,7 @@ import storefrontService from '@store/storefront';
  * deps mirror the runner's own — so the root wires `catalog` into it exactly
  * as it would for any other consumer of that contract.
  */
-export default module('store', ({ provision }) => {
+export default appRoot('store', ({ provision }) => {
   const catalog = provision(catalogModule);
   const orders = provision(ordersModule, { deps: { catalog: catalog.rpc } });
 

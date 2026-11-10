@@ -42,11 +42,11 @@ export default compute({
 
 ```ts
 // module.ts — the root
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import api from './apps/api/src/service.ts';
 import web from './apps/web/src/service.ts';
 
-export default module('shop', ({ provision }) => {
+export default appRoot('shop', ({ provision }) => {
   const apiService = provision(api);
   provision(web, { deps: { api: apiService.http } });
 });

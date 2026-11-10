@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import type { Graph, ModuleNode, ServiceNode } from '@internal/core';
+import type { AppRootNode, Graph, ModuleNode, ServiceNode } from '@internal/core';
 import type { ContainerInstance, NamedSecrets, PrismaAppConfig } from '@internal/core/config';
 import type { DevServer } from '@internal/core/deploy';
 import { secretsKeys } from '@internal/core/deploy';
@@ -415,7 +415,7 @@ async function executeDevInner(
 
   const lowerAndConverge = async (
     current: PipelineResult,
-    root: ModuleNode,
+    root: ModuleNode | AppRootNode,
     signal: AbortSignal | undefined,
     id: string,
   ): Promise<ConvergeOutcome> => {

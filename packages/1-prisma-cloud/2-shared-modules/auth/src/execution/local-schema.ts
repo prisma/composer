@@ -22,7 +22,7 @@ import {
 } from '@prisma/orm-toolchain/migration-tools/spaces';
 import pg from 'pg';
 import { AUTH_PACK_HEAD_HASH, AUTH_PACK_ID, authPack } from '../pack/index.ts';
-import emptyAppContractJson from './empty-app-contract.json' with { type: 'json' };
+import emptyAppContractJson from './empty-app/contract.json' with { type: 'json' };
 
 interface MarkerRow {
   readonly space: string;
