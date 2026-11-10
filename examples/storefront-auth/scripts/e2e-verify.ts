@@ -1,17 +1,12 @@
 #!/usr/bin/env bun
 /**
- * Polls the deployed storefront until it renders the storefront -> auth round
- * trip: `auth.verify()` returns true, and `auth.sign()` returns the
- * HMAC-SHA256 of a random challenge keyed with AUTH_SIGNING_SECRET. A correct
- * signature proves the platform variable reached the auth service.
- *
- * Finds the storefront URL through the Management API, or takes it from
- * STOREFRONT_URL (for example a local `prisma dev` run).
+ * Polls the deployed storefront until `auth.verify()` returns true and
+ * `auth.keyCheck()` matches the key check of AUTH_SIGNING_SECRET.
  * Env: AUTH_SIGNING_SECRET; PRISMA_SERVICE_TOKEN unless STOREFRONT_URL is set;
  * STACK_NAME overrides the project name (default storefront-auth).
  */
 
-import { createHmac, randomBytes } from 'node:crypto';
+import { keyCheckValue } from '@storefront-auth/auth/key-check';
 import { type } from 'arktype';
 
 const API = 'https://api.prisma.io/v1';
@@ -58,14 +53,10 @@ async function storefrontUrl(): Promise<string> {
   return /^https?:\/\//.test(domain) ? domain : `https://${domain}/`;
 }
 
-const signingSecret = requiredEnv('AUTH_SIGNING_SECRET');
-const challenge = randomBytes(16).toString('hex');
-const expectedSignature = createHmac('sha256', signingSecret).update(challenge).digest('hex');
+const expectedKeyCheck = keyCheckValue(requiredEnv('AUTH_SIGNING_SECRET'));
 
-const baseUrl = await storefrontUrl();
-console.log(`Storefront URL: ${baseUrl}`);
-const url = new URL(baseUrl);
-url.searchParams.set('challenge', challenge);
+const url = await storefrontUrl();
+console.log(`Storefront URL: ${url}`);
 
 const deadline = Date.now() + POLL_DEADLINE_MS;
 let lastBody = '';
@@ -75,10 +66,10 @@ while (Date.now() < deadline) {
     lastBody = (await response.text()).replaceAll('<!-- -->', '');
     if (
       lastBody.includes('Auth /verify says: true') &&
-      lastBody.includes(`Auth /sign says: ${expectedSignature}`)
+      lastBody.includes(`Auth /keyCheck says: ${expectedKeyCheck}`)
     ) {
       console.log(
-        'Round trip OK: auth.verify() returned true and auth.sign() signed the challenge with AUTH_SIGNING_SECRET.',
+        'Round trip OK: auth.verify() returned true and auth.keyCheck() matches AUTH_SIGNING_SECRET.',
       );
       process.exit(0);
     }
@@ -88,7 +79,7 @@ while (Date.now() < deadline) {
   await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
 }
 console.error(
-  "The storefront never rendered 'Auth /verify says: true' and the expected signature within the deadline. Last body:",
+  "The storefront never rendered 'Auth /verify says: true' and the expected key check within the deadline. Last body:",
 );
 console.error(lastBody.slice(0, 3000));
 process.exit(1);

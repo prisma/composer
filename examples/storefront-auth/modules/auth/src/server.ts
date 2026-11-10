@@ -3,9 +3,9 @@
 // re-keyed the platform environment address-free, so service.load() below
 // reads it directly, with no address.
 
-import { createHmac } from 'node:crypto';
 import { serve } from '@prisma/composer/service-rpc';
 import { SQL } from 'bun';
+import { keyCheckValue } from './key-check.ts';
 import service from './service.ts';
 
 const { db } = service.load(); // db: RawPostgresConfig — the app owns its client
@@ -39,9 +39,7 @@ const handler = serve(service, {
         return { ok: false };
       }
     },
-    sign: async ({ challenge }) => ({
-      signature: createHmac('sha256', signingKey.expose()).update(challenge).digest('hex'),
-    }),
+    keyCheck: async () => ({ value: keyCheckValue(signingKey.expose()) }),
   },
 });
 export default handler;

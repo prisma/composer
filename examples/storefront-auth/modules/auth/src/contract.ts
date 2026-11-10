@@ -8,6 +8,5 @@ import { type } from 'arktype';
 
 export const authContract = contract({
   verify: rpc({ input: type({ token: 'string' }), output: type({ ok: 'boolean' }) }),
-  // HMAC-SHA256 of the challenge, keyed with the signing key, hex-encoded.
-  sign: rpc({ input: type({ challenge: 'string' }), output: type({ signature: 'string' }) }),
+  keyCheck: rpc({ input: type({}), output: type({ value: 'string' }) }),
 });

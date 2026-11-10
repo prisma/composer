@@ -4,22 +4,16 @@ import service from '../src/service.ts';
 // time — so render per request instead of prerendering.
 export const dynamic = 'force-dynamic';
 
-interface HomeProps {
-  readonly searchParams: Promise<{ challenge?: string | string[] }>;
-}
-
-export default async function Home({ searchParams }: HomeProps) {
+export default async function Home() {
   const { auth } = service.load();
   const { ok } = await auth.verify({ token: 'demo-token' });
-  const { challenge } = await searchParams;
-  const signature =
-    typeof challenge === 'string' ? (await auth.sign({ challenge })).signature : undefined;
+  const { value: keyCheck } = await auth.keyCheck({});
 
   return (
     <main>
       <h1>Storefront</h1>
       <p>Auth /verify says: {String(ok)}</p>
-      {signature !== undefined && <p>Auth /sign says: {signature}</p>}
+      <p>Auth /keyCheck says: {keyCheck}</p>
     </main>
   );
 }

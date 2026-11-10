@@ -27,6 +27,6 @@ const fakeAuth = compute({
 export default serve(fakeAuth, {
   rpc: {
     verify: async ({ token }) => ({ ok: token.length > 0 }),
-    sign: async ({ challenge }) => ({ signature: `fake-signature-of-${challenge}` }),
+    keyCheck: async () => ({ value: 'fake-key-check' }),
   },
 });
