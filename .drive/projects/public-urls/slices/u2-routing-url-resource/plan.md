@@ -14,6 +14,8 @@ Sam Goodwin's alchemy-run/alchemy#2701 and its base #2698 are replaced by the Al
 
 **Platform doc to correct:** `docs/compute/RoutingUrls.md` uses `shop.com`, an apex, with a CNAME record to the switchboard. Foundry's OpenAPI spec says registration needs a direct CNAME, which an apex cannot have, so a flattened apex fails. Alchemy's `Prisma.RoutingUrl` refuses a hostname change to an apex and says so.
 
+**Before opening, after platform slice 8:** regenerate Distilled against the final spec, add the error-code patch and switch Alchemy to `catchTags`, then run `drive-code-review` on both branches once more. That review covers the apex support and the nameserver lookup fix in Alchemy `47fecd7d3`, which no review has seen yet.
+
 ## Distilled pull request (branch `feat/prisma-routing-urls`)
 
 - **D1.** The REST protocol fills `T.ResponseCode()` members, and `@distilled.cloud/prisma` is regenerated from the live spec: RoutingUrl operations, domain ownership `status` and `expiresAt`, and `httpStatus` on the two creates. One pull request, though Distilled's rules prefer the runtime change on its own; the description says why.
