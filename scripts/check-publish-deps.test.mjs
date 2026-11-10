@@ -128,6 +128,9 @@ describe('isNonRegistrySpec', () => {
       '../alchemy.tgz',
       './vendor/pkg',
       '/abs/pkg.tgz',
+      'user/repo',
+      'user/repo#abc123',
+      'npm:alchemy@user/repo#abc123',
     ]) {
       assert.equal(isNonRegistrySpec(spec), true, spec);
     }

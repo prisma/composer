@@ -166,6 +166,7 @@ const NON_REGISTRY_SPEC_RE =
   /^(?:[a-z][a-z0-9+.-]*:\/\/|git(?:\+[a-z]+)?:|github:|gitlab:|bitbucket:|file:|link:)/i;
 const NPM_ALIAS_RE = /^npm:(?:@[^/@]+\/)?[^@]+@/;
 const LOCAL_PATH_SPEC_RE = /^(?:\.{1,2}\/|\/|~\/)/;
+const GITHUB_SHORTHAND_RE = /^[^@/:\s]+\/[^/:\s]+(?:#.*)?$/;
 
 /**
  * Returns true if `spec` installs from somewhere other than the npm registry:
@@ -177,7 +178,11 @@ const LOCAL_PATH_SPEC_RE = /^(?:\.{1,2}\/|\/|~\/)/;
 export function isNonRegistrySpec(spec) {
   if (typeof spec !== 'string') return false;
   const target = spec.replace(NPM_ALIAS_RE, '');
-  return NON_REGISTRY_SPEC_RE.test(target) || LOCAL_PATH_SPEC_RE.test(target);
+  return (
+    NON_REGISTRY_SPEC_RE.test(target) ||
+    LOCAL_PATH_SPEC_RE.test(target) ||
+    GITHUB_SHORTHAND_RE.test(target)
+  );
 }
 
 /**
