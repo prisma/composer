@@ -289,7 +289,7 @@ describe('deploy()', () => {
 
   test('an entry built with module() deploys as an appRoot() entry does', async () => {
     const app = makeAppDir('hello-module', undefined, 'module');
-    const stages: string[] = [];
+    const requests: ConvergeRequest[] = [];
 
     const result = await silently(() =>
       deployWithDeps(
@@ -301,20 +301,16 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async (input) => {
-            stages.push(input.stage);
-            const file = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
-            if (typeof file === 'string') fs.writeFileSync(file, JSON.stringify(summaryFixture));
-            return { exitCode: 0, signal: null };
-          },
+          converge: appConverge(recordingConverge(requests)),
+          credentials: { workspaceId: 'ws_handler', client: {} },
         },
       ),
     );
 
-    expect(stages).toEqual(['ci-7']);
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error('unreachable');
-    expect(result.value.summary).toEqual(summaryFixture);
+    if (!result.ok) throw result.failure;
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.stage).toBe('ci-7');
+    expect(requests[0]?.stack.stackName).toBe('hello-module');
   });
 
   test("the config's entry resolves against the config file's directory, not cwd", async () => {
