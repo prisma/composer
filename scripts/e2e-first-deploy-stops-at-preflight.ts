@@ -49,8 +49,9 @@ if (deploy.exitCode === 0) {
 if (!preflightRefusal.test(output)) {
   fail('The first deploy failed, but not at preflight');
 }
+const wordsInOutput = new Set(output.split(/[^A-Za-z0-9_]+/));
 for (const name of names) {
-  if (!new RegExp(`\\b${name}\\b`).test(output)) {
+  if (!wordsInOutput.has(name)) {
     fail(`The first deploy stopped at preflight without naming ${name}`);
   }
 }
