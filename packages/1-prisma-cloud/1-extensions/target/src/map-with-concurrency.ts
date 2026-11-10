@@ -1,8 +1,3 @@
-/**
- * Runs `task` on every item with at most `limit` running at once, and keeps
- * the results in the items' order. The first failure rejects the whole call,
- * and no task starts after it.
- */
 export async function mapWithConcurrency<T, R>(
   items: readonly T[],
   limit: number,

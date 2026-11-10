@@ -1,18 +1,3 @@
-/**
- * Deploy preflight (ADR-0029). Before Alchemy runs, it reads, for every
- * platform variable the graph names, whether a row exists in the scopes the
- * environment sees, and when the row the platform resolves was last written.
- * It writes no variable and reads no value: env-var values are write-only.
- *
- * A variable with no row fails the deploy only when a service cannot boot
- * without it, decided from the service's schema (ADR-0058). The others go to
- * the deploy through `input.report`. It returns the `updatedAt` of each
- * resolved row, which the compute deploy hook folds into each deployment's
- * triggers.
- *
- * Control-plane only; runs in the CLI parent, on the caller's Management API
- * client when it passed one, and otherwise on a client built from env.
- */
 import type { Graph, ServiceNode } from '@internal/core';
 import { inputManifest, secretSourceManifest } from '@internal/core';
 import type {
@@ -20,7 +5,6 @@ import type {
   PreflightInput,
   UnsetPlatformVariable,
 } from '@internal/core/config';
-import { platformVariableReaderText } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import {
   drivePagesAsync,
@@ -35,11 +19,17 @@ import { prismaCloudContainerOf } from './container.ts';
 import type { DeployPreflightPayload } from './control/preflight-payload.ts';
 import { type EnvKeyClash, findEnvKeyClashes } from './env-key-clash.ts';
 import { mapWithConcurrency } from './map-with-concurrency.ts';
+import { addReader, missingVariableNames, missingVariablesText } from './missing-variables-text.ts';
 import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
 import { envParamBindings, inputSecretNames } from './preflight-names.ts';
 import { checkPublicUrls } from './public-url.ts';
-import { checkRequirements, type MissingVariables, paramIsRequired } from './required-variables.ts';
+import {
+  checkRequirements,
+  type MissingVariables,
+  paramIsRequired,
+  requiredParam,
+} from './required-variables.ts';
 import { secretName } from './secret.ts';
 
 type EnvClass = 'production' | 'preview';
@@ -86,22 +76,13 @@ async function listEnvVars(
   >(res);
 }
 
-/** The row the platform resolves for one name in this environment, and whether any row the environment sees is the platform's own. */
 interface ResolvedRow {
   readonly updatedAt?: string;
   readonly managedBySystem: boolean;
 }
 
-/** At most this many list calls run at once. */
 const LIST_CONCURRENCY = 8;
 
-/**
- * What the platform holds for `key` in this environment. One list call,
- * filtered by class and key, walked to its last page. The environment sees
- * the class row (no branch) and, for a preview environment, its own
- * branch's row; the branch row wins when there is one, as the platform
- * resolves it.
- */
 async function readPlatformVariable(
   client: ManagementApiClient,
   projectId: string,
@@ -221,7 +202,6 @@ const listFailedError = (key: string, error: unknown): Error =>
 /** `value` as one POSIX shell word: single-quoted, each embedded `'` written as `'\''`. */
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
-/** The commands that set `name`: the production row, or the preview-wide row first and this branch's row second. */
 function setCommands(
   name: string,
   projectId: string,
@@ -234,45 +214,15 @@ function setCommands(
     : [`${add} --role preview`, `${add} --role preview --branch ${shellQuote(environment)}`];
 }
 
-const readersText = (readers: readonly PlatformVariableReader[]): string =>
-  readers.length === 0 ? '' : `  (${readers.map(platformVariableReaderText).join('; ')})`;
-
 function requiredError(
   required: readonly MissingVariables[],
   readers: ReadonlyMap<string, readonly PlatformVariableReader[]>,
   commandsFor: (name: string) => readonly string[],
 ): Error {
-  const names = [...new Set(required.flatMap((entry) => entry.names))];
-  const reasons = new Map<string, string[]>();
-  const groups: MissingVariables[] = [];
-  for (const entry of required) {
-    const [only] = entry.names;
-    if (entry.names.length !== 1 || only === undefined) {
-      groups.push(entry);
-      continue;
-    }
-    const why = reasons.get(only) ?? [];
-    if (entry.decidedBy === 'rule') {
-      why.push(`      required by service "${entry.serviceAddress}": ${entry.message}`);
-    }
-    reasons.set(only, why);
-  }
-  const lines = [
-    ...[...reasons].map(([name, why]) =>
-      [`  - ${name}${readersText(readers.get(name) ?? [])}`, ...why].join('\n'),
-    ),
-    ...groups.map(
-      (entry) =>
-        `  - some of ${entry.names.join(', ')}  (service "${entry.serviceAddress}" needs some of them: ${entry.message})`,
-    ),
-  ];
-  const countLine =
-    names.length === 1
-      ? '1 platform variable a service needs has no value:'
-      : `${names.length} platform variables a service needs have no value:`;
+  const names = missingVariableNames(required);
   const commands = names.flatMap(commandsFor).map((command) => `  - ${command}`);
   return new Error(
-    `Deploy failed. ${countLine}\n${lines.join('\n')}\n\n` +
+    `Deploy failed. ${missingVariablesText(required, readers)}\n\n` +
       `Set ${names.length === 1 ? 'it' : 'them'} on the platform, then deploy again:\n` +
       commands.join('\n'),
   );
@@ -280,7 +230,7 @@ function requiredError(
 
 const managedBySystemError = (names: readonly string[]): Error =>
   new Error(
-    `Deploy failed. ${names.map((name) => `"${name}"`).join(', ')} ${names.length === 1 ? 'is a platform variable' : 'are platform variables'} that Prisma Cloud manages itself (isManagedBySystem), so the app cannot read ${names.length === 1 ? 'it' : 'them'} as its own. Rename ${names.length === 1 ? 'it' : 'them'} in the app.`,
+    `Deploy failed. ${names.map((name) => `"${name}"`).join(', ')} ${names.length === 1 ? 'is a platform variable' : 'are platform variables'} that Prisma Cloud manages itself, so the app cannot read ${names.length === 1 ? 'it' : 'them'} as its own. Rename ${names.length === 1 ? 'it' : 'them'} in the app.`,
   );
 
 const invalidInputError = (serviceAddress: string, message: string): Error =>
@@ -333,25 +283,6 @@ function serviceNodeAt(graph: Graph, address: string): ServiceNode {
   return found;
 }
 
-/** Appends `reader` to `name`'s readers. */
-function addReader(
-  readers: Map<string, PlatformVariableReader[]>,
-  name: string,
-  reader: PlatformVariableReader,
-): void {
-  const list = readers.get(name);
-  if (list === undefined) readers.set(name, [reader]);
-  else list.push(reader);
-}
-
-/**
- * The Prisma Cloud extension's `preflight`. Checks every platform variable
- * the graph names: the `envSecret()` leaves of every service's input
- * binding, every secret source in `graph.secretSources` (including one in a
- * module's input that no service receives), and every per-key param bound to
- * `envParam()`. Writes nothing. Fails when a variable a service needs has no
- * row, or when a row the environment sees is the platform's own.
- */
 export async function runPreflight(
   input: PrismaCloudPreflightInput,
   deps?: { readonly client?: ManagementApiClient },
@@ -448,12 +379,7 @@ export async function runPreflight(
       param: param.param,
     });
     if (paramIsRequired(serviceNodeAt(input.graph, param.serviceAddress), param.param)) {
-      required.push({
-        names: [param.name],
-        serviceAddress: param.serviceAddress,
-        message: `per-key param "${param.param}" has no default and is not optional`,
-        decidedBy: 'rule',
-      });
+      required.push(requiredParam(param));
     }
   }
 

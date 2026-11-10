@@ -23,7 +23,8 @@ export interface EnvSecretPayload {
 /**
  * A value pointing at a named Prisma Cloud platform secret variable (ADR-0029),
  * dereferenced at boot. Only the name is carried; the value is provisioned
- * out-of-band. `assertVariableName` says which names it accepts. It returns a value known
+ * out-of-band. The name is an upper-case letter, then upper-case letters,
+ * digits and underscores. It returns a value known
  * only at boot, which a resolve() function cannot list, and which throws when
  * turned into text.
  */

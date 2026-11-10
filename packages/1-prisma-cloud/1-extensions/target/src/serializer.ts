@@ -27,8 +27,8 @@ import { isParamSource, isSecretPointer, isSecretSource } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import { SecretBox } from '@internal/foundation/secret';
 import {
+  addressKeySegments,
   decodeParamPointer,
-  encodeParamPointer,
   escapeKey,
   generatedMarker,
   INPUT_KEY_NAME,
@@ -41,21 +41,11 @@ import {
 } from '@internal/input-document';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
-import { addressKeySegments, configKey, ORIGIN_KEY_NAME } from './config-key.ts';
+import { configKey, ORIGIN_KEY_NAME } from './config-key.ts';
 import { configurationText } from './configuration-text.ts';
 import { isEnvParamSource, isGeneratedParamSource, isOriginParamSource } from './param.ts';
 import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
 import { secretName } from './secret.ts';
-
-export {
-  addressKeySegments,
-  configKey,
-  decodeParamPointer,
-  encodeParamPointer,
-  INPUT_KEY_NAME,
-  isParamPointerRow,
-  ORIGIN_KEY_NAME,
-};
 
 // The ambient environment of whatever runtime hosts the bundle. Declared
 // structurally so this entry imports no runtime's types. Writable: run()
@@ -120,9 +110,6 @@ function decode(owner: ParamEntry['owner'], raw: string): unknown {
 }
 
 function coerce(raw: string | undefined, d: ParamEntry, key: string, env: Env): unknown {
-  // "" is unresolved, not a value: it falls to the default or, if required,
-  // fails boot. A non-empty value that fails its schema is an error whatever
-  // the default.
   const present = raw !== undefined && raw !== '';
   if (!present) {
     if (d.param.default !== undefined) return d.param.default;
@@ -130,7 +117,7 @@ function coerce(raw: string | undefined, d: ParamEntry, key: string, env: Env): 
     throw new Error(`missing required config param "${d.name}" (env ${key})`);
   }
   if (d.owner === 'service' && isParamPointerRow(raw)) {
-    return coerceEnvSourcedParam(raw, d, key, env);
+    return coerceEnvSourcedParam(raw, d, env);
   }
   try {
     return standardValidateSync(d.param.schema, decode(d.owner, raw));
@@ -140,26 +127,20 @@ function coerce(raw: string | undefined, d: ParamEntry, key: string, env: Env): 
   }
 }
 
-/**
- * Boot resolution for a per-key `envParam()` param: the pointer row names a
- * platform variable, whose text the param's schema checks with no JSON
- * decode. An unset or empty variable takes the param's default, or is left
- * out when the param is optional, and fails boot only when it is required.
- */
-function coerceEnvSourcedParam(raw: string, d: ParamEntry, key: string, env: Env): unknown {
+function coerceEnvSourcedParam(raw: string, d: ParamEntry, env: Env): unknown {
   const platformVar = decodeParamPointer(raw);
   const value = env[platformVar];
   if (value === undefined || value === '') {
     if (d.param.default !== undefined) return d.param.default;
     if (d.param.optional === true) return undefined;
-    throw new Error(requiredParamUnsetMessage(d.name, key, platformVar));
+    throw new Error(requiredParamUnsetMessage(d.name, platformVar));
   }
   try {
     return standardValidateSync(d.param.schema, value);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     throw new Error(
-      `invalid value for env-sourced config param "${d.name}" (env ${key} → ${platformVar}): ${message}`,
+      `The param "${d.name}" reads the platform variable "${platformVar}", whose value is invalid: ${message}`,
     );
   }
 }
@@ -257,16 +238,6 @@ export function stashRows(node: ServiceNode, address: string, env: Env): Record<
   return rows;
 }
 
-// ——— Input channel (ADR-0042): ONE self-describing JSON document per service.
-//
-// Deploy resolves the provision-time input binding (literals as-is, envParam
-// leaves read from the app configuration, envSecret leaves as `$platform` markers),
-// validates the resolved object with the service's own Standard Schema
-// (each value known only at boot as its pointer — never a value), and writes the
-// defaults-applied result to COMPOSER_<addr>_INPUT. Boot reads that one row,
-// replaces each marker (`@internal/input-document`), validates again, and
-// hands the app the typed object. Secret values never enter the document.
-
 /** The input document row's key for a service address. */
 export const inputKey = (address: string): string =>
   configKey(address, { owner: 'service', name: INPUT_KEY_NAME });
@@ -304,7 +275,6 @@ export interface GeneratedLeaf {
   readonly origin?: string;
 }
 
-/** One generated variable name and the input path that produced it. */
 export interface PointerName {
   readonly path: string;
   readonly varName: string;
@@ -353,13 +323,6 @@ function withDefaults(options: SerializeInputOptions): Required<SerializeInputOp
   };
 }
 
-/**
- * Every `$generated` variable a service's input binding produces must be
- * distinct after upper-casing (ADR-0041): Composer writes each one, so two
- * input paths that differ only in case would overwrite each other. Two
- * `$platform` markers for one name are two reads of one variable and are not
- * checked here.
- */
 export function assertDistinctPointerNames(
   pointers: readonly PointerName[],
   address: string,
@@ -757,14 +720,6 @@ function substitutePointers(
   return walk(value, '');
 }
 
-/**
- * Boot (`service.input()`): read the one input document row (address-free
- * after run()'s re-stash), replace each marker by `readDocument`'s rules,
- * and validate with the service's own schema. When the schema fails, the
- * error ends with the platform variables that had no value. A missing row
- * fails naming the env var: a deployed environment always writes it, and a
- * local harness must supply it.
- */
 export function readInput(node: ServiceNode, address: string): unknown {
   const schema = node.inputSchema;
   if (schema === undefined) {
@@ -794,7 +749,6 @@ export function readInput(node: ServiceNode, address: string): unknown {
     );
   }
   const { value, unset } = readDocument(parsed, {
-    key,
     variable: (name) => process.env[name],
     secret: (text) => new SecretBox(text),
   });
@@ -802,7 +756,9 @@ export function readInput(node: ServiceNode, address: string): unknown {
     return standardValidateSync(schema, value);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    throw new Error(`invalid input document (env ${key}): ${withUnsetVariables(message, unset)}`);
+    throw new Error(
+      `The input of service "${node.name}" (environment variable ${key}) is invalid: ${withUnsetVariables(message, unset)}`,
+    );
   }
 }
 

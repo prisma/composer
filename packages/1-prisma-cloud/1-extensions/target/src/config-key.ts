@@ -1,24 +1,5 @@
-/**
- * The env-row key convention the serializer writes and the boot reads,
- * kept in a module that imports no target module so the reserved provider params
- * (`origin-key.ts`, `streams-keys.ts`) can derive their keys from it at
- * module load while `serializer.ts` imports their list
- * (`provider-params.ts`) for `stashRows` — without an import cycle.
- * `serializer.ts` re-exports both names; import them from there.
- */
+import { composerKey } from '@internal/input-document';
 
-import { addressKeySegments, composerKey } from '@internal/input-document';
-
-export { addressKeySegments };
-
-/**
- * `COMPOSER_<address segments>_<owner input>_<name>`, uppercased. Every
- * generated key lives in the framework's reserved COMPOSER_ namespace
- * (ADR-0029), so it can never collide with a platform variable the operator
- * sets. Outside it, Composer writes only the create-only `DATABASE_URL` and
- * `DATABASE_URL_POOLED` placeholder rows (ADR-0048); `variable-name.ts`
- * refuses those names for a platform variable.
- */
 export const configKey = (
   address: string,
   d: { owner: 'service' | { readonly input: string }; name: string },

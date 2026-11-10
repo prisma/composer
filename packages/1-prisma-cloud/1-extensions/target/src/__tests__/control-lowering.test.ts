@@ -1198,7 +1198,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     });
   });
 
-  test('the input document serializes to ONE row — secret leaves are $platform markers, never values (ADR-0042)', async () => {
+  test("a service's input is written as one variable that names its secrets and holds none of their values", async () => {
     await withEnv(
       // The real secret value is present in the deploy shell, proving it still
       // cannot reach the serialized row.

@@ -1,10 +1,11 @@
-/** The local Deployment provider and the serializer use one marker format, from `@internal/input-document`; this proves they agree. */
 import { expect, test } from 'bun:test';
 import { service } from '@internal/core';
+import { encodeParamPointer } from '@internal/input-document';
 import { pointedVariables } from '@internal/local-target';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import { configKey } from '../config-key.ts';
 import { envSecret } from '../secret.ts';
-import { configKey, encodeParamPointer, serializeInput } from '../serializer.ts';
+import { serializeInput } from '../serializer.ts';
 
 const anySchema: StandardSchemaV1<unknown, unknown> = {
   '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },

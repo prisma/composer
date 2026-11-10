@@ -358,12 +358,6 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         ),
       ),
 
-    // Deploy-time prerequisite check (ADR-0029): reads whether each platform
-    // variable the graph names has a row, and writes none. Timestamps are kept
-    // for this process and serialized onto the preflight transport for the
-    // second process. The parameter annotation recovers this extension's own
-    // client type from the framework's erased one; without it
-    // `input.credentials` arrives as `unknown`.
     preflight: (input: PrismaCloudPreflightInput) =>
       runPreflight(input).then((result) => {
         preflightTimestamps = result.updatedAt;

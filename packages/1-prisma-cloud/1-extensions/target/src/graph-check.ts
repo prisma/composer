@@ -39,7 +39,6 @@ function envParamUses(graph: Graph): readonly EnvParamUse[] {
   return uses;
 }
 
-/** Refuses a name that `envParam()` and a field of the root's input both use. */
 export function checkGraph(graph: Graph): void {
   const rootFields = new Map(
     graph.appConfigurationRead.rootInput.map((field) => [field.path[0], field]),

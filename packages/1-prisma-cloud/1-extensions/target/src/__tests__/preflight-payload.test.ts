@@ -1,12 +1,3 @@
-/**
- * Runs BOTH halves of the deploy preflight transport: the CLI half
- * produces a payload from a real `runPreflight`, the framework transport
- * carries it as env vars, and the alchemy half rebuilds the lookup from
- * those vars alone — injecting a lookup directly would pass even if nothing
- * were transported. Assertions are on the `<name>:updatedAt` trigger members
- * the deploy hook builds from the lookup — the exact inputs
- * `Prisma.Deployment.triggers` fingerprints.
- */
 import { describe, expect, test } from 'bun:test';
 import { Load, module } from '@internal/core';
 import { preflightEnv } from '@internal/core/config';
@@ -147,7 +138,7 @@ describe('the rotation signal across the CLI → alchemy process boundary', () =
 });
 
 describe('what the payload may contain', () => {
-  test('names and times only', () => {
+  test("the payload holds each variable's name and last-change time, and no value", () => {
     expect(
       serializeDeployPreflightPayload({
         updatedAt: new Map([['STRIPE_SECRET_KEY', '2026-05-05T12:00:00.000Z']]),
@@ -188,7 +179,9 @@ describe('what the payload may contain', () => {
   });
 
   test('a payload that is present but unreadable fails loudly rather than losing the signal', () => {
-    expect(() => decodePreflightPayload('not json')).toThrow(/did not survive the transport/);
+    expect(() => decodePreflightPayload('not json')).toThrow(
+      /could not be read in the second process/,
+    );
     expect(() => decodePreflightPayload('"a string"')).toThrow(/not a JSON object/);
     expect(() => decodePreflightPayload('{"updatedAt":{"A_KEY":42}}')).toThrow(
       /"updatedAt" is not an object of string timestamps/,
@@ -197,7 +190,7 @@ describe('what the payload may contain', () => {
 });
 
 describe("the CLI process's own preflight", () => {
-  test('the latest snapshot is the whole answer, so a deleted variable never falls back to the transported one', async () => {
+  test('a variable deleted since the last check is treated as having no value', async () => {
     let snapshot: ReadonlyMap<string, string> | undefined;
     const { pointerVersion } = transportedPreflight(
       () => snapshot,

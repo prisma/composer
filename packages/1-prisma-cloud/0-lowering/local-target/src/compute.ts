@@ -99,7 +99,6 @@ export function scopedEnvRows(
   return scoped;
 }
 
-/** The variables this service's own rows point at: its param pointer rows, and its input document's `$platform` markers at any depth. */
 export function pointedVariables(
   rows: Readonly<Record<string, string>>,
   address: string,

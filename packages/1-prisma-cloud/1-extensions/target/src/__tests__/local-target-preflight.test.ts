@@ -261,7 +261,7 @@ describe('prisma dev preflight', () => {
 
     expect(message).toContain('STRIPE_SECRET_KEY');
     expect(message).toContain('service "app.billing"');
-    expect(message).toContain('stripeKey is required');
+    expect(message).toContain('field "stripeKey"');
     expect(message).toContain('the `secrets` list of the `composer` section for a secret');
     expect(message).toContain('environmentVariables() reads the shell you run `prisma dev` from');
   });
@@ -272,7 +272,9 @@ describe('prisma dev preflight', () => {
 
     const message = await preflightError(billingGraph(requiresSecrets('stripeKey')));
 
-    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
+    expect(message).toContain(
+      'STRIPE_SECRET_KEY  (read by service "app.billing", field "stripeKey")',
+    );
   });
 
   test('the error lists every missing required secret and leaves out the optional ones', async () => {
@@ -282,14 +284,16 @@ describe('prisma dev preflight', () => {
     expect(message).not.toContain('STRIPE_WEBHOOK_SECRET');
 
     const both = await preflightError(billingGraph(requiresSecrets('stripeKey', 'webhookSecret')));
-    expect(both).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
-    expect(both).toContain('STRIPE_WEBHOOK_SECRET  (required by service "app.billing"');
+    expect(both).toContain('STRIPE_SECRET_KEY  (read by service "app.billing", field "stripeKey")');
+    expect(both).toContain(
+      'STRIPE_WEBHOOK_SECRET  (read by service "app.billing", field "webhookSecret")',
+    );
   });
 
-  test('when the schema needs some of several unset secrets but none alone, the error says so instead of calling each one required', async () => {
+  test('when the schema needs at least one of several unset secrets but none alone, the error says so instead of calling each one required', async () => {
     const message = await preflightError(billingGraph(requiresOneOf('stripeKey', 'webhookSecret')));
 
-    expect(message).toContain('some of STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET');
+    expect(message).toContain('at least one of STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET');
     expect(message).not.toContain('required by service');
   });
 
@@ -367,7 +371,7 @@ describe('prisma dev preflight', () => {
     const message = await preflightError(graph);
 
     expect(message).toContain(
-      '1 platform variable a service needs has no value:\n  - STRIPE_SECRET_KEY  (required by service "app.billing": an array position reads it, and an array position cannot be left out)',
+      '1 platform variable a service needs has no value:\n  - STRIPE_SECRET_KEY  (read by service "app.billing", field "keys.0")\n      required by service "app.billing": an array position reads it, and an array position cannot be left out',
     );
   });
 
@@ -404,7 +408,9 @@ describe('prisma dev preflight', () => {
     const message = await preflightError(mixedGraph(requiresSecrets('stripeKey')));
 
     expect(message).toContain('API_TOKEN  (read by service "app.web", per-key param "token")');
-    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
+    expect(message).toContain(
+      'STRIPE_SECRET_KEY  (read by service "app.billing", field "stripeKey")',
+    );
     expect(message.split('Set each missing variable').length - 1).toBe(1);
   });
 
@@ -450,11 +456,12 @@ describe('prisma dev preflight', () => {
     expect(second.pointerVersions.get('APP_PORT')).not.toBe(first.pointerVersions.get('APP_PORT'));
   });
 
-  test('a secret shared by two services stops dev naming only the service that requires it', async () => {
+  test('a secret shared by two services stops dev, naming both services that read it', async () => {
     const message = await preflightError(sharedGraph());
 
-    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
-    expect(message).not.toContain('service "app.reports"');
+    expect(message).toContain(
+      'STRIPE_SECRET_KEY  (read by service "app.billing", field "stripeKey"; read by service "app.reports", field "stripeKey")',
+    );
   });
 
   test('a secret shared by two services that is set gets one fingerprint', async () => {
@@ -524,7 +531,9 @@ describe('prisma dev preflight', () => {
     try {
       const message = await preflightError(billingGraph(requiresSecrets('stripeKey')));
 
-      expect(message).toContain('STRIPE_SECRET_KEY  (required by service "app.billing"');
+      expect(message).toContain(
+        'STRIPE_SECRET_KEY  (read by service "app.billing", field "stripeKey")',
+      );
     } finally {
       delete process.env['STRIPE_SECRET_KEY'];
     }

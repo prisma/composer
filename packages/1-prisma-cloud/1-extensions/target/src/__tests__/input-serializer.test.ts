@@ -1,9 +1,3 @@
-/**
- * The input channel (ADR-0042): the deploy-side binding walk
- * (`resolveInputBinding`), the one-document serialization (`serializeInput`),
- * and the boot-side read (`readInput`) — classification, absence, marker key
- * escaping, validation with pointers in place, and the round trip.
- */
 import { describe, expect, test } from 'bun:test';
 import {
   isSecretPointer,
@@ -181,7 +175,7 @@ describe('serializeInput — validate with pointers in place, serialize the vali
     });
   });
 
-  test('without absent secrets (every deploy), an unset secret is still written as a marker', () => {
+  test('the deploy writes a marker for a secret whose variable is unset', () => {
     const row = serializeInput(
       svc(conditional),
       'web',
@@ -301,7 +295,7 @@ describe('user keys spelled like a marker round-trip (ADR-0042)', () => {
     '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },
   };
 
-  test('a user key "$platform", "$$platform" or "$secret" gains one "$" on write and loses it on read', async () => {
+  test('a user key "$platform" or "$$platform" gains one "$" on write and loses it on read, and "$secret" is written as it is', async () => {
     const binding = {
       real: envSecret('REAL_SECRET'),
       forged: { $platform: { name: 'NOT_A_MARKER', secret: true } },
@@ -311,7 +305,7 @@ describe('user keys spelled like a marker round-trip (ADR-0042)', () => {
     const row = serializeInput(svc(anySchema), 'web', binding, { env: {} });
     expect(row?.value).toContain('"$$platform":{"name":"NOT_A_MARKER","secret":true}');
     expect(row?.value).toContain('"$$$platform":"ALSO_NOT"');
-    expect(row?.value).toContain('"$$secret":"OLD_USER_KEY"');
+    expect(row?.value).toContain('"$secret":"OLD_USER_KEY"');
     expect(row?.value).toContain('"real":{"$platform":{"name":"REAL_SECRET","secret":true}}');
     expect(row?.markers).toEqual([
       { name: 'REAL_SECRET', path: 'real', secret: true, inArray: false },
@@ -361,7 +355,7 @@ describe('readInput — the boot half', () => {
       },
       () => {
         expect(() => readInput(node, '')).toThrow(
-          /^invalid input document \(env COMPOSER_INPUT\): .*\(platform variables with no value: UNSET_SECRET_VAR\)$/,
+          /^The input of service "web" \(environment variable COMPOSER_INPUT\) is invalid: .*\(platform variables with no value: UNSET_SECRET_VAR\)$/,
         );
       },
     );
@@ -400,7 +394,7 @@ describe('readInput — the boot half', () => {
       },
       () => {
         expect(() => readInput(node, '')).toThrow(
-          'input key "keys.0" (env COMPOSER_INPUT) reads the platform variable "ARRAY_SECRET_VAR", which has no value. An array position cannot be left out: set "ARRAY_SECRET_VAR" with prisma project env add.',
+          'The input field "keys.0" reads the platform variable "ARRAY_SECRET_VAR", which has no value. An array position cannot be left out: set "ARRAY_SECRET_VAR" with prisma project env add.',
         );
       },
     );
@@ -434,7 +428,9 @@ describe('readInput — the boot half', () => {
   test('a boot document failing validation is loud, naming the row', async () => {
     const node = svc(conditional);
     await withEnv({ [inputKey('')]: '{"stripeEnabled":true}' }, () => {
-      expect(() => readInput(node, '')).toThrow(/invalid input document \(env COMPOSER_INPUT\)/);
+      expect(() => readInput(node, '')).toThrow(
+        /The input of service "web" \(environment variable COMPOSER_INPUT\) is invalid/,
+      );
     });
   });
 
@@ -544,15 +540,16 @@ describe('serializeInput — generated leaves become $generated pointers (ADR-00
     expect(value.token).not.toBeInstanceOf(SecretBox);
   });
 
-  test('a missing generated var at boot is a hard error naming the var and the disagreement', async () => {
+  test('a missing generated variable at boot fails, naming the variable and telling the user to deploy again', async () => {
     const node = svc(type({ secret: secretString() }));
     await withEnv(
       {
         [inputKey('')]: '{"secret":{"$generated":"COMPOSER_WEB_SECRET_GENERATED","redacted":true}}',
       },
       () => {
-        expect(() => readInput(node, '')).toThrow(/COMPOSER_INPUT → COMPOSER_WEB_SECRET_GENERATED/);
-        expect(() => readInput(node, '')).toThrow(/deploy and the running service disagree/);
+        expect(() => readInput(node, '')).toThrow(
+          /"COMPOSER_WEB_SECRET_GENERATED", which the deploy writes, has no value. Deploy again./,
+        );
       },
     );
   });
@@ -590,7 +587,7 @@ describe('the reserved $generated key — user data round-trips (ADR-0041)', () 
 });
 
 describe('distinct names for generated variables only (ADR-0041)', () => {
-  test('two secret leaves reading the same platform variable are two reads of one variable', () => {
+  test('two fields that read the same platform variable are two reads of one variable', () => {
     const row = serializeInput(
       svc(type({ a: secretString(), b: secretString() })),
       'web',

@@ -32,14 +32,14 @@ export interface EnvParamPayload {
  * Binds a param slot to a named Prisma Cloud platform env var — the non-secret
  * sibling of `envSecret` (spec: env-sourced config params). The platform
  * injects the value into the running instance per environment; the param's own
- * schema validates it at boot, unredacted. `assertVariableName` says which
- * names it accepts. It returns a
+ * schema validates it at boot, unredacted. The name is an upper-case letter,
+ * then upper-case letters, digits and underscores. It returns a
  * value known at deploy: where a module's input or a resolve() function needs
  * its real value, that is the variable's value in the app configuration: what the
  * `config` adapters in prisma.config.ts return, by default the process
  * environment.
  *
- * @deprecated a root input field replaces envParam() in a binding; per-key params are unchanged
+ * @deprecated Only in a module or service `input` binding, where a root input field replaces it. Binding a per-key param with envParam() is not deprecated.
  */
 export function envParam(name: string): ParamSource<EnvParamPayload> & Value<string> {
   assertVariableName(name, 'envParam');

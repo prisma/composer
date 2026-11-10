@@ -415,6 +415,12 @@
       "plane": "control"
     },
     {
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/missing-variables-text.ts",
+      "domain": "prisma-cloud",
+      "layer": "extensions",
+      "plane": "control"
+    },
+    {
       "glob": "packages/1-prisma-cloud/1-extensions/target/src/graph-check.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",

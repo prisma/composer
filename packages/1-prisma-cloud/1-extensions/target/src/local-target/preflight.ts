@@ -17,7 +17,7 @@ import type {
   PreflightInput,
   PreflightPayload,
 } from '@internal/core/config';
-import { DEV_DIR, devEnvironmentDir, platformVariableReaderText } from '@internal/core/config';
+import { DEV_DIR, devEnvironmentDir } from '@internal/core/config';
 import {
   movePreEnvironmentDevState,
   readOrCreateFingerprintKey,
@@ -25,12 +25,14 @@ import {
 } from '@internal/local-target';
 import { configurationText } from '../configuration-text.ts';
 import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
+import { addReader, missingVariablesText } from '../missing-variables-text.ts';
 import { envParamBindings, envParamNotTextError, inputSecretNames } from '../preflight-names.ts';
 import { checkPublicUrls, publicUrlStrategies } from '../public-url.ts';
 import {
   checkRequirements,
   type MissingVariables,
   paramIsRequired,
+  requiredParam,
 } from '../required-variables.ts';
 
 const isSet = (value: string | undefined): value is string =>
@@ -44,27 +46,6 @@ function howToSet(environment: string): string {
     'environmentVariables() reads the shell you run `prisma dev` from; dotenv() reads .env, ' +
     `.env.local, .env.${encoded} and .env.${encoded}.local beside prisma.config.ts.`
   );
-}
-
-function missingSection(
-  params: ReadonlyMap<string, PlatformVariableReader[]>,
-  secrets: readonly MissingVariables[],
-): string {
-  const lines = [
-    ...[...params].map(
-      ([name, readers]) => `  - ${name}  (${readers.map(platformVariableReaderText).join('; ')})`,
-    ),
-    ...secrets.map((m) =>
-      m.names.length === 1
-        ? `  - ${m.names[0]}  (required by service "${m.serviceAddress}": ${m.message})`
-        : `  - some of ${m.names.join(', ')}  (service "${m.serviceAddress}" needs some of them: ` +
-          `${m.message})`,
-    ),
-  ];
-  const count = new Set([...params.keys(), ...secrets.flatMap((m) => m.names)]).size;
-  return count === 1
-    ? `1 platform variable a service needs has no value:\n${lines.join('\n')}`
-    : `${count} platform variables a service needs have no value:\n${lines.join('\n')}`;
 }
 
 function serviceNodeAt(graph: Graph, address: string): ServiceNode {
@@ -102,7 +83,8 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
   const absentSecrets = new Set<string>();
   const secretNames = new Set<string>();
   const pointed = new Map<string, string>();
-  const missingSecrets: MissingVariables[] = [];
+  const required: MissingVariables[] = [];
+  const readers = new Map<string, PlatformVariableReader[]>();
   const invalidInputs: string[] = [];
   for (const { serviceAddress, binding } of inputManifest(input.graph)) {
     const names = inputSecretNames(binding, serviceAddress);
@@ -120,10 +102,18 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
       invalidInputs.push(`invalid input for service "${serviceAddress}": ${decided.message}`);
       continue;
     }
-    missingSecrets.push(...decided.missing);
+    for (const marker of decided.markers) {
+      if (unset.includes(marker.name)) {
+        addReader(readers, marker.name, {
+          kind: 'field',
+          service: serviceAddress,
+          path: marker.path,
+        });
+      }
+    }
+    required.push(...decided.missing);
   }
 
-  const missingParams = new Map<string, PlatformVariableReader[]>();
   for (const param of envParamBindings(input.graph)) {
     const value = secretNames.has(param.name)
       ? secretValue(param.name)
@@ -135,16 +125,15 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
       continue;
     }
     if (!paramIsRequired(serviceNodeAt(input.graph, param.serviceAddress), param.param)) continue;
-    const reader = { kind: 'param', service: param.serviceAddress, param: param.param } as const;
-    const readers = missingParams.get(param.name);
-    if (readers === undefined) missingParams.set(param.name, [reader]);
-    else readers.push(reader);
+    addReader(readers, param.name, {
+      kind: 'param',
+      service: param.serviceAddress,
+      param: param.param,
+    });
+    required.push(requiredParam(param));
   }
 
-  const missing =
-    missingParams.size > 0 || missingSecrets.length > 0
-      ? [missingSection(missingParams, missingSecrets)]
-      : [];
+  const missing = required.length > 0 ? [missingVariablesText(required, readers)] : [];
   const sections = [
     ...invalidInputs,
     ...missing,

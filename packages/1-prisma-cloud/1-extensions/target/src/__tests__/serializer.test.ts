@@ -5,16 +5,18 @@
  */
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { type ConfigParam, number, param, service, string } from '@internal/core';
-import type { StandardSchemaV1 } from '@standard-schema/spec';
 import {
-  configKey,
   decodeParamPointer,
+  encodeParamPointer,
+  isParamPointerRow,
+} from '@internal/input-document';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
+import { configKey } from '../config-key.ts';
+import {
   deserialize,
   encode,
-  encodeParamPointer,
   generatedParamVarName,
   inputKey,
-  isParamPointerRow,
   readOrigin,
   stashRows,
 } from '../serializer.ts';
@@ -109,7 +111,7 @@ describe('deserialize — env-sourced param boot resolution', () => {
 
   test('a required param whose platform variable is unset or empty fails boot, saying to set the variable', async () => {
     const expected =
-      'config param "appOrigin" (env COMPOSER_WEB_APPORIGIN → PLATFORM_APP_ORIGIN) has no value: set the platform variable "PLATFORM_APP_ORIGIN" with prisma project env add.';
+      'The param "appOrigin" of this service reads the platform variable "PLATFORM_APP_ORIGIN", which has no value. Set it with prisma project env add.';
     await withEnv({ [key]: encodeParamPointer('PLATFORM_APP_ORIGIN') }, () => {
       expect(() => deserialize(svc(), address)).toThrow(expected);
     });
@@ -164,7 +166,7 @@ describe('deserialize — env-sourced param boot resolution', () => {
       () => {
         expect(deserialize(node, address).service['appOrigin']).toBe('not a url');
         expect(() => deserialize(rejecting, address)).toThrow(
-          /invalid value for env-sourced config param "appOrigin"/,
+          /The param "appOrigin" reads the platform variable "PLATFORM_APP_ORIGIN", whose value is invalid/,
         );
       },
     );
@@ -263,7 +265,7 @@ describe('stashRows — what run() writes, as a pure function of an environment 
   test("throws run()'s boot error for a row the service cannot read", () => {
     const { APP_ORIGIN: _unset, ...withoutPlatformVar } = env;
     expect(() => stashRows(node(), address, withoutPlatformVar)).toThrow(
-      /config param "appOrigin".*APP_ORIGIN.*has no value/,
+      /The param "appOrigin" of this service reads the platform variable "APP_ORIGIN", which has no value/,
     );
   });
 });

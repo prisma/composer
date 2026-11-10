@@ -4,9 +4,10 @@ import { configOf, hydrateSync, isNode, number, param, service, string } from '@
 import { secretString } from '@internal/foundation/arktype';
 import { RPC_ACCEPTED_KEYS_ENV } from '@internal/service-rpc';
 import { type } from 'arktype';
+import { configKey } from '../config-key.ts';
 import { compute, rawPostgres, rawPostgresContract } from '../exports/index.ts';
 import { bootstrapService } from '../exports/testing.ts';
-import { configKey, deserialize, encode } from '../serializer.ts';
+import { deserialize, encode } from '../serializer.ts';
 import { RPC_ACCEPTED_KEYS_PARAM } from '../service-keys.ts';
 import { STREAMS_API_KEY_ENV, STREAMS_API_KEY_PARAM } from '../streams-keys.ts';
 

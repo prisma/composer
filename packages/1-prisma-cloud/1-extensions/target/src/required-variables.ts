@@ -1,13 +1,7 @@
-/**
- * Which unset platform variables a service cannot do without, decided from its
- * schema and never from a value (ADR-0058). Both the deploy preflight and the
- * `prisma dev` preflight use it.
- */
 import type { ServiceNode } from '@internal/core';
 import type { PlatformMarkerUse } from '@internal/input-document';
 import { inputValidationFailure, serializeInput } from './serializer.ts';
 
-/** One variable a service needs, or several of which it needs some, with the reason. */
 export interface MissingVariables {
   readonly names: readonly string[];
   readonly serviceAddress: string;
@@ -16,7 +10,6 @@ export interface MissingVariables {
   readonly decidedBy: 'schema' | 'rule';
 }
 
-/** The verdict on a service's unset variables. `markers` are the input document's `$platform` markers, returned so the caller need not serialize the input again. */
 export type RequirementCheck =
   | { readonly kind: 'invalid'; readonly message: string }
   | {
@@ -28,13 +21,6 @@ export type RequirementCheck =
 const ARRAY_POSITION_MESSAGE =
   'an array position reads it, and an array position cannot be left out';
 
-/**
- * Validates the input with every variable present; a failure there is an
- * invalid input. A variable an array position reads is required. Then
- * validates with every other name in `unset` left out; if that fails, with
- * each one alone left out, and the ones whose absence alone fails are
- * required. When none fails alone, the service needs some of them.
- */
 export function checkRequirements(
   node: ServiceNode,
   serviceAddress: string,
@@ -87,8 +73,18 @@ export function checkRequirements(
   );
 }
 
-/** A per-key param is required when it has no default and is not optional. */
 export function paramIsRequired(node: ServiceNode, param: string): boolean {
   const declared = node.params[param];
   return declared !== undefined && declared.default === undefined && declared.optional !== true;
 }
+
+export const requiredParam = (param: {
+  readonly name: string;
+  readonly serviceAddress: string;
+  readonly param: string;
+}): MissingVariables => ({
+  names: [param.name],
+  serviceAddress: param.serviceAddress,
+  message: `per-key param "${param.param}" has no default and is not optional`,
+  decidedBy: 'rule',
+});

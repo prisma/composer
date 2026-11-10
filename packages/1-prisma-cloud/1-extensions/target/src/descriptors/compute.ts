@@ -3,7 +3,13 @@
 import * as Prisma from '@alchemy.run/prisma';
 import { isParamSource } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
-import { describeDocument } from '@internal/input-document';
+import {
+  decodeParamPointer,
+  describeDocument,
+  encodeParamPointer,
+  isParamPointerRow,
+  type PlatformMarkerUse,
+} from '@internal/input-document';
 import {
   ARTIFACT_CONTENT_TYPE,
   appAfterEnvironment,
@@ -12,6 +18,7 @@ import {
 import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
+import { configKey } from '../config-key.ts';
 import { GeneratedParam } from '../generated-param-resource.ts';
 import {
   fromLegacyId,
@@ -25,16 +32,7 @@ import {
 import { paramBindingFor, paramName } from '../param.ts';
 import { provisionedEdges } from '../provisioned-edges.ts';
 import { resourceId } from '../resource-ids.ts';
-import {
-  configKey,
-  decodeParamPointer,
-  encode,
-  encodeParamPointer,
-  type InputDocumentRow,
-  isParamPointerRow,
-  paramEntries,
-  serializeInput,
-} from '../serializer.ts';
+import { encode, type InputDocumentRow, paramEntries, serializeInput } from '../serializer.ts';
 import {
   asOwnRow,
   cloudApplicationOf,
@@ -80,17 +78,10 @@ export interface ComputeSerialized {
    * replacement. Alchemy also writes the members to its state as given,
    * `Redacted` values in plain text included. Because upstream resolves the actual
    * values, a value re-issued under a stable resource identity (a connection
-   * rotated in place, a re-minted service key) moves the fingerprint too —
-   * closing the blind spot the deleted Composer-side fingerprint had to accept
-   * (ADR-0048 recorded it).
+   * rotated in place, a re-minted service key) moves the fingerprint too.
    */
   readonly triggers: Readonly<Record<string, unknown>>;
-  /**
-   * Operator-owned platform variables the environment POINTS at and Composer
-   * does not write — no value ever exists to trigger on, so each contributes its
-   * preflight `updatedAt` as a `<name>:updatedAt` trigger member at deploy
-   * time, and an out-of-band rotation still replaces the deployment.
-   */
+  /** Platform variables the service reads and Composer does not write; each joins the triggers as `<name>:updatedAt`. */
   readonly pointers: readonly string[];
   readonly port: number;
   readonly input?: InputDocumentRow;
@@ -148,12 +139,9 @@ interface EnvRow {
   readonly pointers?: readonly string[];
 }
 
-/**
- * The report's two input lines (ADR-0042): the input document, with each
- * marker shown as `$platform NAME` or `$generated NAME`, and every binding key
- * that resolved absent in the app configuration (a possible mistyped variable
- * name). Newlines in a detail value render as one line per entry.
- */
+const sortedMarkerNames = (markers: readonly PlatformMarkerUse[]): string[] =>
+  [...new Set(markers.map((marker) => marker.name))].sort();
+
 function inputDetails(serialized: ComputeSerialized): {
   readonly details?: Readonly<Record<string, string>>;
 } {
@@ -195,11 +183,6 @@ export function computeDescriptor(
         return { serviceId: svc.appId, projectId, endpointDomain: svc.appEndpointDomain };
       }),
 
-    // Two channels of rows: PARAMS (reserved-param literals JSON-encoded;
-    // dependency provisioning refs passed through, keeping their ordering
-    // edge) and the INPUT document (one JSON row per service, secret leaves
-    // as `$platform` markers, never a value — ADR-0042). The class/branch
-    // scope is identical for both.
     serialize: (ctx, provisioned, config) =>
       Effect.gen(function* () {
         const { address, node, graph } = ctx;
@@ -264,26 +247,18 @@ export function computeDescriptor(
           },
         );
         if (inputRow !== undefined) {
-          // Each `$platform` marker in the document names an operator-owned
-          // platform variable Composer does not write, so its rotation shows up
-          // only as that variable's `updatedAt`.
           const inputValue = envValue(inputRow.value);
           rows.push({
             record: yield* Prisma.EnvironmentVariable(resourceId(address, 'env', inputRow.key), {
               project: projectId,
               key: inputRow.key,
-              // The defaults-applied document: markers naming platform
-              // variables, never values (ADR-0042).
               value: inputValue,
               class: cls,
               ...branch,
             }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(app, address)))),
             key: inputRow.key,
             value: inputValue,
-            // The names the document carries, not the binding: a schema can
-            // drop a bound leaf. Sorted, so reordering leaves cannot move the
-            // triggers.
-            pointers: [...new Set(inputRow.markers.map((marker) => marker.name))].sort(),
+            pointers: sortedMarkerNames(inputRow.markers),
           });
           // Each generated leaf: generate its value ONCE (the resource keeps it
           // stable across redeploys via its persisted output) and provision it

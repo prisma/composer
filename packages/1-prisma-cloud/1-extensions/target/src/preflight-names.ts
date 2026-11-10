@@ -1,9 +1,3 @@
-/**
- * The platform variable names the deploy preflight and the dev preflight both
- * walk: the `envSecret` leaves of a service's input binding (ADR-0042) and the
- * per-key params bound to `envParam()`.
- */
-
 import type { Graph } from '@internal/core';
 import { isSecretSource, paramManifest } from '@internal/core';
 import {
@@ -14,18 +8,18 @@ import {
 } from './param.ts';
 import { secretName } from './secret.ts';
 
-/** An env-sourced param's app configuration value that is not text, so `prisma dev` cannot give it to the service. */
 export const envParamNotTextError = (name: string, address: string, kind: string): Error =>
   new Error(
     `The \`config\` adapters return ${kind} for "${name}", not text, so prisma dev cannot give service "${address}" the value envParam('${name}') reads. Make the adapter return a string.`,
   );
 
-/** Every `envSecret` leaf of one input binding: its platform name, found by the same dumb recursive descent the serializer uses (ADR-0042). */
+const composerWritesItsValue = (binding: unknown): boolean =>
+  isGeneratedParamSource(binding) || isOriginParamSource(binding);
+
 function collectSecretLeafNames(binding: unknown, serviceAddress: string, out: string[]): void {
-  // Composer writes a generated leaf's variable itself, and its payload holds no operator variable.
-  if (isGeneratedParamSource(binding) || isOriginParamSource(binding)) return;
+  if (composerWritesItsValue(binding)) return;
   if (isSecretSource(binding)) {
-    out.push(secretName(binding, `an input-binding secret leaf of service "${serviceAddress}"`));
+    out.push(secretName(binding, `a secret in the input of service "${serviceAddress}"`));
     return;
   }
   if (typeof binding !== 'object' || binding === null) return;
@@ -33,21 +27,18 @@ function collectSecretLeafNames(binding: unknown, serviceAddress: string, out: s
   for (const member of members) collectSecretLeafNames(member, serviceAddress, out);
 }
 
-/** The distinct `envSecret` names one service's input binding points at. */
 export function inputSecretNames(binding: unknown, serviceAddress: string): readonly string[] {
   const leafNames: string[] = [];
   collectSecretLeafNames(binding, serviceAddress, leafNames);
   return [...new Set(leafNames)];
 }
 
-/** A per-key param bound to `envParam()`: the platform variable it points at, and its service and param name. */
 export interface EnvParamBinding {
   readonly name: string;
   readonly serviceAddress: string;
   readonly param: string;
 }
 
-/** Every per-key param bound to `envParam()`, one entry per param. */
 export function envParamBindings(graph: Graph): readonly EnvParamBinding[] {
   return paramManifest(graph)
     .filter((binding) => isEnvParamSource(binding.binding))

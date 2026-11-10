@@ -1,35 +1,27 @@
 const VARIABLE_NAME = /^[A-Z][A-Z0-9_]*$/;
 
+const DATABASE_URL_REASON =
+  'Prisma Cloud sets and manages DATABASE_URL and DATABASE_URL_POOLED itself. Declare the database your service uses and read its url from that connection.';
+const SHELL_REASON =
+  'under prisma dev the local target sets PATH and HOME from your shell, so a value on the platform would never be seen locally.';
+
 const RESERVED_NAMES: ReadonlyMap<string, string> = new Map([
-  [
-    'DATABASE_URL',
-    'Prisma Cloud sets and manages DATABASE_URL and DATABASE_URL_POOLED itself. Declare the database your service uses and read its url from that connection.',
-  ],
-  [
-    'DATABASE_URL_POOLED',
-    'Prisma Cloud sets and manages DATABASE_URL and DATABASE_URL_POOLED itself. Declare the database your service uses and read its url from that connection.',
-  ],
+  ['DATABASE_URL', DATABASE_URL_REASON],
+  ['DATABASE_URL_POOLED', DATABASE_URL_REASON],
   ['PORT', "boot sets PORT to the service's port."],
-  [
-    'PATH',
-    'under prisma dev the local target sets PATH and HOME from your shell, so a value on the platform would never be seen locally.',
-  ],
-  [
-    'HOME',
-    'under prisma dev the local target sets PATH and HOME from your shell, so a value on the platform would never be seen locally.',
-  ],
+  ['PATH', SHELL_REASON],
+  ['HOME', SHELL_REASON],
 ]);
 
-/** Throws unless `name` may name a platform variable. `factory` names the function that was given it, for the message. */
 export function assertVariableName(name: string, factory: string): void {
   if (typeof name !== 'string' || name.length === 0) {
     throw new Error(
-      `${factory}() requires a non-empty platform variable name, e.g. ${factory}('API_KEY').`,
+      `${factory}() requires a non-empty platform variable name, for example ${factory}('API_KEY').`,
     );
   }
   if (!VARIABLE_NAME.test(name)) {
     throw new Error(
-      `${factory} name "${name}" is not a platform variable name: it must match ${VARIABLE_NAME.source}, an upper-case letter followed by upper-case letters, digits and underscores. The platform accepts only upper-case letters, digits and underscores in a key. Refusing a leading underscore, which the platform accepts, is Composer's own rule: shells and tools use names that start with an underscore for their own variables.`,
+      `${factory} name "${name}" is not a platform variable name: it must be an upper-case letter followed by upper-case letters, digits and underscores, for example API_KEY.`,
     );
   }
   if (name.startsWith('COMPOSER_')) {

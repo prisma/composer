@@ -106,7 +106,6 @@ const fakeClient = (state: FakeState): ManagementApiClient =>
     },
   }) as unknown as ManagementApiClient;
 
-/** Load never validates a binding, so a pass-anything schema is enough here. Every field it reads is optional. */
 const anySchema: StandardSchemaV1<unknown, unknown> = {
   '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },
 };
@@ -171,7 +170,6 @@ const noSecretGraph = () =>
     }),
   );
 
-/** Only a generated leaf — the deploy provisions its var; nothing for an operator to set. */
 const generatedGraph = () =>
   Load(
     module('app', ({ provision }) => {
@@ -183,7 +181,7 @@ const generatedGraph = () =>
   );
 
 /** Two services binding the SAME platform name; `web` requires it when `webRequires` is set. */
-const sharedSecretGraph = (webRequires = false) =>
+const sharedNestedSecretGraph = (webRequires = false) =>
   Load(
     module('app', ({ provision }) => {
       provision(
@@ -197,14 +195,12 @@ const sharedSecretGraph = (webRequires = false) =>
       );
       provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
         id: 'ingest',
-        // Nested on purpose — preflight's walk must find a leaf at any depth.
         input: { stripe: { key: envSecret('STRIPE_SECRET_KEY') } },
       });
     }),
   );
 
-// The reserved `port` param has a default, so an unset variable it points at is never required.
-const paramGraph = () =>
+const defaultedParamGraph = () =>
   Load(
     module('app', ({ provision }) => {
       provision(compute({ name: 'web', deps: {}, build }), {
@@ -296,14 +292,14 @@ const failureOf = async (run: Promise<unknown>): Promise<string> => {
   return error.message;
 };
 
-describe('runPreflight — reads existence and writes nothing', () => {
+describe('the deploy check reads which variables exist and sets none', () => {
   let state: FakeState;
 
   beforeEach(() => {
     state = { gets: [], posts: [], rows: [] };
   });
 
-  test('production: checks the production class; a present name passes', async () => {
+  test('in production, a variable with a production row passes', async () => {
     state.rows = [
       { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
@@ -318,7 +314,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
     ]);
   });
 
-  test('named environment: a preview-wide row (branchId null) counts as present', async () => {
+  test('in a named environment, a preview-wide row counts as a value', async () => {
     state.rows = [
       { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
@@ -331,7 +327,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
     expect(state.gets[0]?.['class']).toBe('preview');
   });
 
-  test("named environment: this branch's own row counts as present", async () => {
+  test("in a named environment, this branch's own row counts as a value", async () => {
     state.rows = [
       { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: 'br-1' },
     ];
@@ -342,7 +338,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
     );
   });
 
-  test("named environment: another branch's row does not count", async () => {
+  test("in a named environment, another branch's row does not count", async () => {
     state.rows = [
       { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: 'br-2' },
     ];
@@ -354,7 +350,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
     expect(message).toContain('STRIPE_SECRET_KEY');
   });
 
-  test('production: a production row with a branch does not count', async () => {
+  test('in production, a production row with a branch does not count', async () => {
     state.rows = [
       { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: 'br-2' },
     ];
@@ -366,7 +362,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
     expect(message).toContain('STRIPE_SECRET_KEY');
   });
 
-  test('POST /v1/environment-variables is never called, even when the app secrets hold a value for a missing name', async () => {
+  test('sets no platform variable, even when the app secrets hold a value for a missing name', async () => {
     await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, async () => {
       await preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) });
       await preflightWith(
@@ -375,7 +371,10 @@ describe('runPreflight — reads existence and writes nothing', () => {
       ).catch(() => undefined);
     });
     await withValues({ configuration: { APP_PORT: '3100', API_TOKEN: 'tok' } }, async () => {
-      await preflightWith({ graph: paramGraph(), ...production }, { client: fakeClient(state) });
+      await preflightWith(
+        { graph: defaultedParamGraph(), ...production },
+        { client: fakeClient(state) },
+      );
       await preflightWith(
         { graph: requiredParamGraph(), ...production },
         { client: fakeClient(state) },
@@ -484,7 +483,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
     expect(result).toEqual({ updatedAt: new Map(), findings: { unset: [] } });
   });
 
-  test('a generated leaf is skipped — no platform calls at all', async () => {
+  test('a value Composer generates needs no platform check', async () => {
     await preflightWith({ graph: generatedGraph(), ...production }, { client: fakeClient(state) });
 
     expect(state.gets).toEqual([]);
@@ -571,7 +570,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
 
   test('the same platform name bound by two services is listed once, and the finding names both readers', async () => {
     const result = await preflightWith(
-      { graph: sharedSecretGraph(), ...production },
+      { graph: sharedNestedSecretGraph(), ...production },
       { client: fakeClient(state) },
     );
 
@@ -585,7 +584,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
   test('a name one of two readers requires fails, and the error names both readers', async () => {
     const message = await failureOf(
       preflightWith(
-        { graph: sharedSecretGraph(true), ...production },
+        { graph: sharedNestedSecretGraph(true), ...production },
         { client: fakeClient(state) },
       ),
     );
@@ -595,7 +594,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
     );
   });
 
-  test('when the schema needs some of several unset variables but none alone, the error says so', async () => {
+  test('when the schema needs at least one of several unset variables but none alone, the error says so', async () => {
     const graph = Load(
       module('app', ({ provision }) => {
         provision(compute({ name: 'billing', deps: {}, input: requiresOneOf('a', 'b'), build }), {
@@ -611,7 +610,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
 
     expect(message).toStartWith(
       'Deploy failed. 2 platform variables a service needs have no value:\n' +
-        '  - some of KEY_A, KEY_B  (service "app.billing" needs some of them: one of a, b is required)\n\n' +
+        '  - at least one of KEY_A, KEY_B  (service "app.billing" needs at least one of them: one of a, b is required)\n\n' +
         'Set them on the platform, then deploy again:\n',
     );
   });
@@ -709,7 +708,7 @@ describe('runPreflight — reads existence and writes nothing', () => {
 
   test('a per-key envParam() with a default is reported, never required', async () => {
     const result = await preflightWith(
-      { graph: paramGraph(), ...production },
+      { graph: defaultedParamGraph(), ...production },
       { client: fakeClient(state) },
     );
 
