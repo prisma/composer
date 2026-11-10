@@ -170,7 +170,9 @@ const GITHUB_SHORTHAND_RE = /^[^@/:\s]+\/[^/:\s]+(?:#.*)?$/;
 
 /**
  * Returns true if `spec` installs from somewhere other than the npm registry:
- * a tarball URL, a git source, or a local path. A published package with
+ * a tarball URL, a git source, a local path, or GitHub shorthand
+ * (`user/repo`, optionally `#ref`). The shorthand pattern excludes `@`, so
+ * scoped registry specs never match. A published package with
  * such a dependency makes every consumer install depend on that host.
  *
  * Exported for unit tests.

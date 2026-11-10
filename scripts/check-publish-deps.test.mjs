@@ -143,6 +143,8 @@ describe('isNonRegistrySpec', () => {
       '>=4.0.0-rc.110 || >=4.0.0',
       'npm:foo@^1.0.0',
       'npm:@scope/foo@1.2.3',
+      '@scope/pkg',
+      '@scope/pkg@1.2.3',
       '*',
     ]) {
       assert.equal(isNonRegistrySpec(spec), false, spec);
