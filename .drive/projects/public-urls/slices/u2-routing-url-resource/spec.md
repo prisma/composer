@@ -26,7 +26,7 @@ After: `Prisma.RoutingUrl` creates the platform row at once, with no DNS. The de
 
 **Attributes come from the response:** `routingUrlId`, `serviceId`, `hostname`, `logicalId`, `status`, `conditions`, `firstUnmetCondition`, `records` (each with its condition, type, name, value and ttl), `ownershipExpiry`, `heldBy`, `customDomainSyncError` and `setupUrl`. Composer's P2 prints `firstUnmetCondition`, `records` and `setupUrl`.
 
-**Errors are typed.** A 409 on create or update is either the service's hostname quota (`quota-exceeded`) or another live row on the Branch with the same `logicalId`; each gets its own error. A 422 is an invalid hostname or a service on another Branch.
+**Errors are matched on Distilled's generic errors**, so U2 needs no second Distilled pull request. A 409 (`Conflict`) on create or update is either the service's hostname quota or another live row on the Branch with the same `logicalId`; the resource tells them apart by the error code in the body and raises its own typed Alchemy error for each. A 422 (`UnprocessableEntity`) is an invalid hostname or a service on another Branch, handled the same way.
 
 **The domain ownership is the platform's job.** Create and update leave `createDomainOwnership` at its default, `true`. The platform then creates an `unverified` exact-hostname domain ownership when no verified one covers the hostname. The resource never records, reads into its state, or deletes a domain ownership. Deleting a RoutingUrl leaves the domain ownership in place, because it belongs to the workspace and may cover other hostnames.
 
@@ -42,7 +42,7 @@ After: `Prisma.RoutingUrl` creates the platform row at once, with no DNS. The de
 
 ## Coherence rationale
 
-One new resource and the client it calls. The Distilled regeneration is a separate pull request in its own repository, merged first, as alchemy-run/distilled#1007 was for #2701.
+One new resource and the client it calls. Exactly two upstream pull requests: one on alchemy-run/distilled (the REST status code support and the regeneration together), merged first, and one on alchemy-run/alchemy (`Prisma.DomainOwnership` and `Prisma.RoutingUrl` together).
 
 ## Scope
 
