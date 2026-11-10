@@ -2,6 +2,8 @@
 
 U2 produces exactly two upstream pull requests: one on alchemy-run/distilled and one on alchemy-run/alchemy (Will, 2026-11-10: the Alchemy team must not get more). Steps below are build steps, not pull requests.
 
+**Neither pull request is opened until the platform's full API has shipped**, through platform slice 8 (the `prisma.build` endpoint), so the Alchemy team sees one Distilled and one Alchemy pull request for the whole API (Will, 2026-11-10). Until then the branches are built and kept on the bot forks; the Distilled regeneration is redone once, against the final spec, before opening.
+
 Prerequisites: platform slice 3 (prisma/pdp-control-plane#5924) deployed to production (done 2026-11-06); live Prisma credentials for Alchemy's integration tests confirmed before the live tests.
 
 Sam Goodwin's alchemy-run/alchemy#2701 and its base #2698 are replaced by the Alchemy pull request (Will, 2026-11-06). Sam is asked to close both once it is open.
