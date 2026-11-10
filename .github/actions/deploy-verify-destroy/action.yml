@@ -31,10 +31,9 @@ inputs:
     default: storefront-auth orm-demo hello
   platform-variables:
     description: >
-      Space-separated names of platform variables the app needs and whose
-      values the job's environment holds. When set, the first deploy must stop
-      at preflight naming each one; the action then sets them on the platform
-      and deploys again.
+      Space-separated names of platform variables the app needs. The job's
+      environment holds their values. When set, the first deploy must stop at
+      preflight naming each one, then the action sets them and deploys again.
     required: false
     default: ''
 
@@ -63,26 +62,7 @@ runs:
         STACK_NAME: ${{ inputs.stack-name }}
         ENVIRONMENT: ${{ inputs.environment }}
         PLATFORM_VARIABLES: ${{ inputs.platform-variables }}
-      run: |
-        set +e
-        output="$(bun "$GITHUB_WORKSPACE/node_modules/.bin/prisma" deploy --name "$STACK_NAME" --environment "$ENVIRONMENT" 2>&1)"
-        status=$?
-        set -e
-        printf '%s\n' "$output"
-        if [ "$status" -eq 0 ]; then
-          echo "::error::The first deploy succeeded, but it should have stopped because the new project has no row for: $PLATFORM_VARIABLES"
-          exit 1
-        fi
-        if ! grep -qE 'Deploy failed\. [0-9]+ platform variables? a service needs (has|have) no value' <<<"$output"; then
-          echo "::error::The first deploy failed, but not at preflight"
-          exit 1
-        fi
-        for name in $PLATFORM_VARIABLES; do
-          if ! grep -qwF -- "$name" <<<"$output"; then
-            echo "::error::The first deploy failed without naming the platform variable $name"
-            exit 1
-          fi
-        done
+      run: bun "$GITHUB_WORKSPACE/scripts/e2e-first-deploy-stops-at-preflight.ts" $PLATFORM_VARIABLES
 
     - name: Set platform variables
       if: inputs.platform-variables != ''
