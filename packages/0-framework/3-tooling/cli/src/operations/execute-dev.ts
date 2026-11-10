@@ -490,6 +490,9 @@ async function executeDevInner(
   let configWatch: WatchHandle | undefined;
   // Ends the inline following of dev servers' output when the session stops.
   const following = new AbortController();
+  const stopBeforeExit = (): void => {
+    for (const attachment of attachments) attachment.stopAppBeforeExit?.();
+  };
   try {
     for (const attachment of attachments) {
       // Recorded BEFORE the call: startServices can start some services and
@@ -517,6 +520,10 @@ async function executeDevInner(
       const closed = Promise.resolve();
       return ok({ endpoints, stop: () => closed, closed });
     }
+    // Ctrl-C under `npm run` delivers SIGINT twice, once from the terminal and
+    // once forwarded by npm, and the CLI engine exits at once on the second,
+    // before stop() can finish. Stopping again on exit closes that gap.
+    process.once('exit', stopBeforeExit);
 
     // The foreground session shows what its dev servers write, prefixed with
     // the address; services that run artifacts are not streamed (ADR-0056).
@@ -678,6 +685,7 @@ async function executeDevInner(
               emit({ kind: 'stop-error', message: failureMessage(error) });
             }
           }
+          process.off('exit', stopBeforeExit);
           emit({ kind: 'stopped' });
           resolveClosed();
         })();
@@ -691,6 +699,7 @@ async function executeDevInner(
     // Cleanup runs whatever the error's shape; only structured failures come
     // back as values — a non-structured escape is a bug and throws (rule 6).
     following.abort();
+    process.off('exit', stopBeforeExit);
     watch?.stop();
     configWatch?.stop();
     await Promise.all(started.map((a) => a.stopApp().catch(() => undefined)));

@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.mjs",
+    "./stop-app-main": "./dist/stop-app-main.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {
