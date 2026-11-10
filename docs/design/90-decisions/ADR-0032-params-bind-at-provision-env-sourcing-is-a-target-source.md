@@ -5,7 +5,7 @@
 const web = compute({ name: 'web', params: { appOrigin: string() }, build: /* … */ });
 
 // 2. The application binds it at provision: a literal, or envParam().
-export default module('app', ({ provision }) => {
+export default appRoot('app', ({ provision }) => {
   provision(web, { params: { appOrigin: envParam('APP_ORIGIN') } });
   // …or a literal: { params: { appOrigin: 'https://example.com' } }
 });

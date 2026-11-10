@@ -1,4 +1,4 @@
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { envParam, envSecret, serviceOrigin } from '@prisma/composer-prisma-cloud';
 import { auth } from '@prisma/composer-prisma-cloud/auth';
 import { email, emailDeliveryModes } from '@prisma/composer-prisma-cloud/email';
@@ -18,7 +18,7 @@ import opsService from './src/ops/service.ts';
  * adapters in prisma.config.ts; the root's schema checks the delivery mode
  * before anything is created. The credential is required even in `none` mode.
  */
-export default module(
+export default appRoot(
   'auth-example',
   { input: type({ EMAIL_DELIVERY_MODE: type.enumerated(...emailDeliveryModes) }) },
   ({ input, provision }) => {

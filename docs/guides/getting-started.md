@@ -233,18 +233,15 @@ it's an ordinary HTTP server that happens to receive a typed client.
 
 ## 4. Compose the app
 
-The root module is the app. It provisions both services and wires the quotes
-service's exposed port into the gateway's dependency slot — `provision()`
-returns a ref carrying one port per exposed contract, so `quotes.rpc` exists
-because the service declared `expose: { rpc: … }`:
+The root module is the app. It is built with `appRoot()`, and nothing provisions it. It provisions both services and wires the quotes service's exposed port into the gateway's dependency slot — `provision()` returns a ref carrying one port per exposed contract, so `quotes.rpc` exists because the service declared `expose: { rpc: … }`:
 
 ```ts
 // module.ts
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import gatewayService from './src/gateway/service.ts';
 import quotesService from './src/quotes/service.ts';
 
-export default module('my-app', ({ provision }) => {
+export default appRoot('my-app', ({ provision }) => {
   const quotes = provision(quotesService);
   provision(gatewayService, { deps: { quotes: quotes.rpc } });
 });

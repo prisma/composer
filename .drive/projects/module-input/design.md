@@ -2,7 +2,9 @@
 
 This is the whole design of the module input project, as settled with Will on 2026-10-29 and 2026-10-30, and extended on 2026-11-05 with platform variables (section 5) and secrets in the root's input (section 7). It is the authoritative statement of it. It describes how the system behaves, not how the code is arranged. Slices S2 to S5 build an earlier version of it; [plan.md](plan.md) says what is built and which slice builds each remaining change.
 
-The 2026-11-05 extension follows a platform change. Prisma Cloud is moving environment variables to the project and workspace, with rules that decide which branches see which values, and a service gets a variable only by subscribing to it. So the platform, not Composer, isolates each service's environment, and a deploy may name a variable that has no value yet. Composer's part is to put the subscription in the graph, as a node.
+On 2026-11-06 Will split platform variables into their own project. Their design is now [../platform-variables/design.md](../platform-variables/design.md), which supersedes sections 5, 8 and 9 of this file wherever they speak of platform variables, preflight filling or `envSecret()`. This file keeps the root's input, carried secrets and `secret(inner)`.
+
+The 2026-11-05 extension follows a platform change. Prisma Cloud keeps environment variables in the project, with a shared value per class and per-branch overrides, and a deploy may name a variable that has no value yet. Every deployment receives every variable of its class; neither the platform nor Composer isolates a service's environment on Prisma Cloud. Composer's part is to put the variable in the graph, as a node, and to record which service reads it.
 
 ## 1. What it is for
 
@@ -23,14 +25,13 @@ export default module('email',
   });
 
 // the root
-export default module('shop',
+export default appRoot('shop',
   { input: type({ 'SITE_HOSTNAME?': 'string', REGISTRY_TOKEN: secret(type('string')) }) },
   ({ input, environment, provision }) => {
-    const emailFrom = provision(platformVariable({ name: 'EMAIL_FROM' }));
-    const emailCredential = provision(platformSecret({ name: 'EMAIL_DELIVERY_CREDENTIAL' }));
-    const port = provision(platformVariable({ name: 'PORT', parse: type('number') }));
+    const from = provision(variable({ name: 'EMAIL_FROM' }));
+    const deliveryCredential = provision(variable.secret({ name: 'EMAIL_DELIVERY_CREDENTIAL' }));
 
-    provision(email(), { input: { from: emailFrom.value, deliveryCredential: emailCredential.value } });
+    provision(email(), { input: { from, deliveryCredential } });
     const host = resolve([input.SITE_HOSTNAME, environment.name], ([hostname, name]) =>
       hostname ?? `${name}.shop.com`);
   });
@@ -52,7 +53,7 @@ prisma deploy --environment staging   # the same files for staging, then the she
 prisma dev                            # the files for dev, then the shell
 ```
 
-`SITE_HOSTNAME` and `REGISTRY_TOKEN` are the root's input: the deploy needs them, so Composer reads them from the adapters and carries them. `EMAIL_FROM`, `EMAIL_DELIVERY_CREDENTIAL` and `PORT` are platform variables: only the running service needs them, so Composer names them and never sees their values. A typical app's root input is small; most of what a service reads is a platform variable.
+`SITE_HOSTNAME` and `REGISTRY_TOKEN` are the root's input: the deploy needs them, so Composer reads them from the adapters and carries them. `EMAIL_FROM` and `EMAIL_DELIVERY_CREDENTIAL` are platform variables: only the running service needs them, so Composer names them and the deploy never sees their values. `prisma dev` reads them from local files, like every other variable. A typical app's root input is small; most of what a service reads is a platform variable.
 
 ## 2. Requirements
 
@@ -99,7 +100,7 @@ type({
 z.object({ from: field(z.string()), baseUrl: field(z.string().url()), deliveryCredential: secret(type('string')), host: z.string() })
 ```
 
-- **Types.** `field(inner)` accepts `In | Pointer<In>` and outputs `Out | Pointer<In>`, where `In` and `Out` are the inner schema's input and output types. The pointer is typed by `In` because it stands for what the service's schema receives at boot, before the inner schema runs. So `port` above accepts `Pointer<string>`, from a text platform variable or a `serviceOrigin()`, and the service receives a number. A platform variable with `parse: type('number')` gives a `Pointer<number>`, which `field(type('number'))` accepts and `field(type('string'))` refuses. Neither library infers the pointer's type parameter through a union, so `field()` casts its result to these types.
+- **Types.** `field(inner)` accepts `In | Pointer<In>` and outputs `Out | Pointer<In>`, where `In` and `Out` are the inner schema's input and output types. The pointer is typed by `In` because it stands for what the service's schema receives at boot, before the inner schema runs. So `port` above accepts `Pointer<string>`, from a text platform variable or a `serviceOrigin()`, and the service receives a number. A platform variable with `schema: type('number')` gives a `Pointer<number>`, which `field(type('number'))` accepts and `field(type('string'))` refuses. Neither library infers the pointer's type parameter through a union, so `field()` casts its result to these types.
 - **Checking.** `field(inner)` is a union that the schema library checks itself: a plain pointer, or a value the inner schema accepts. So the deploy check runs the author's whole schema, with pointers in place. For a field bound to a runtime value, the inner schema's check happens only at boot, when the service's schema sees the variable's text.
 - **Leaves only.** `field()` wraps a leaf. An object field stays a plain object schema, and its leaves are wrapped, as `smtp`'s are above. Wrapping an object schema fails three ways. At boot the pointer becomes text, which an object schema refuses. In the body, `input.smtp.host` stops type-checking. And ArkType cannot build the union around an object schema that has a transform anywhere inside it. A root's fields stay plain too, because the app configuration never holds a pointer (section 7).
 - **Secrets.** `secret(inner)` is the secret counterpart of `field(inner)`: it accepts a secret box or a secret pointer, and `inner` says what the secret's content must be, checked at boot when the service unboxes it. `field()` accepts only plain pointers, and `secret()` only secret ones. So a platform secret bound to a wrapped text field fails the deploy check, and so does a `serviceOrigin()` bound to a `secret()` field. `secretString()` is the older name for `secret(type('string'))`, and goes.
@@ -178,28 +179,9 @@ A runtime value's real value at deploy is a pointer (section 3). The service rea
 
 ## 5. Platform variables, and the other sources
 
-### A platform variable is a node
+### Platform variables
 
-A value the platform owns is pulled into the topology the way any external dependency is: by provisioning it as a Resource. `@prisma/composer-prisma-cloud` exports two resources, **`platformVariable({ name, parse? })`** and **`platformSecret({ name, parse? })`**. Each node has one output, `value`: a runtime value whose pointer names the platform variable `name`. A plain pointer for a variable, a secret pointer for a secret.
-
-- **The node is the subscription.** A service whose input holds the pointer depends on the variable. When the deploy writes the service, it also records that the service subscribes to that variable. Once the platform has subscriptions, it gives a service only the variables it subscribes to. Until then, Prisma Cloud's variables are set per project, and the Prisma Cloud target already sets variables on each service directly, so the first step is to stop stripping a service's environment at boot and let a service see the project's variables plus what Composer sets on it. The local target keeps giving each service only what its input points at, because there is no platform.
-- **The deploy creates subscriptions, never values.** A deploy succeeds when a variable it names has no value on the platform; the deploy report lists the variable as not set, and so does the platform. The platform's own rules decide which branches and environments see which values, so a preview environment inherits what its rules give it, and Composer provisions nothing per environment. Seeding a value from a local file is a separate, explicit command if there is one at all, never a side effect of `deploy`.
-- **Three platform states.** A variable may have no entry, an entry set to void, or an entry with a value, the empty string included. The deploy report flags only the first. At boot the first two leave the field's key out of the service's input document, and the third gives the value. The receiving field's schema decides whether an absent key is acceptable, as it does for any optional input. So a variable must be set on the platform, possibly to void, and whether it is required is the service's business, not the node's.
-- **Its identity is its address.** `name` is a parameter, and the node's address is the ordinary one, so renaming the variable is a graph change a diff shows. Two modules may each provision a node for the same `name`; both subscribe the services under them to the one platform variable.
-- **Load lists them.** Without deploying, Load knows every platform variable the app depends on, which services subscribe to each, and what each expects. That is the inspectability requirement, applied to variables. The deploy report lists the variables the platform has no entry for; today it can tell by reading the project's variable names, as preflight already does.
-
-### `parse`: the variable's type travels with the subscription
-
-A platform variable's value is text. A service field typed `number` should still be able to take one, without the service's schema having to know that the value arrives as text. The conversion cannot be code: the value exists only at boot, in the service's process, and the module's code is not there. So the conversion is **data that travels with the subscription**: a type the author declares on the node.
-
-`parse` takes a schema from any library that implements [Standard JSON Schema](https://standardschema.dev/json-schema), the companion to Standard Schema that ArkType 2.1.28 and Zod 4.2 implement. A schema object exposes `~standard.jsonSchema.input()` and `.output()`, which return plain JSON Schema, and keeps its TypeScript type.
-
-- **For the compiler,** `value` is `RuntimeValue<T>` where `T` is the schema's output type: `platformVariable({ name: 'PORT', parse: type('number') }).value` is `RuntimeValue<number>`, so `field(type('number'))` accepts it. Without `parse`, `T` is `string`.
-- **At deploy,** Composer calls the schema's `jsonSchema.input()` and writes the result into the subscription and into the service's input document, beside the pointer. The schema never runs on a value, because there is none.
-- **At boot,** the variable's text is the JSON encoding of the value, except when the JSON Schema's type is `string`, where the text is the value itself. Boot decodes by that rule, validates the result against the JSON Schema in the marker with a validator Composer ships in the service runtime, and hands it to the service's schema, which judges it as it judges any input. A value that does not decode or does not fit fails boot with an error naming the platform variable and the schema, before the service's own schema runs. Composer decodes nothing it was not told to. The platform is not expected to validate anything; Composer does it. The local target validates `.env` values the same way before `prisma dev` starts a service, so a bad value is reported before any service boots.
-- **No transforms.** A schema that changes its value, such as `string.numeric.parse`, is code, and no code runs on a platform value anywhere. Load refuses a `parse` whose `jsonSchema.input()` and `jsonSchema.output()` differ, naming the variable.
-- **Encodable only.** A schema the library cannot express as JSON Schema, such as a custom refinement function, fails at Load with the library's message. Boot can enforce only what the document says.
-- **One schema per variable.** Two nodes for the same `name` with different `parse` schemas fail the deploy, because one variable has one meaning.
+A value the platform owns, which a service reads at boot, is a **platform variable**: a node, `variable({ name, schema? })` or `variable.secret({ name })`, which only the root, written with `appRoot()`, may provision, and whose provisioned result is a runtime value. Its design is the [platform-variables project](../platform-variables/design.md). This project relies on it only for what section 4 says about runtime values.
 
 ### The other sources
 
@@ -296,7 +278,7 @@ A run stopped by a forced exit cannot delete its file. At the start of each depl
 - **The second process's output is not redacted, for now.** The CLI's command engine gives the second process the terminal, so Composer never sees Alchemy's output. Redacting it needed a change to the engine (prisma/prisma-cli#383), which Will dropped on 2026-11-05: Composer will soon run Alchemy through its programmatic API, in its own process, which lets Composer redact that output. That work must redact Alchemy's output itself: nothing redacts it unless the integration routes it through the command's redaction. Until then Alchemy's output prints as it does today. The redactor still covers everything Composer itself prints, including the second process's failure cause.
 - A schema's refusal of a `secret()` field says what kind of value it got, never the value.
 - Under `prisma dev`, the local compute emulator saves each service's environment, secret values included, in its own state file (mode 0600). That is recorded and deferred.
-- **Isolation.** On Prisma Cloud a service receives the variables it subscribes to and nothing else, and the platform enforces that. Composer's own isolation of a service's environment, which the dev secrets decision records, stays only in the local target.
+- **Isolation.** On Prisma Cloud a service receives every variable of its class; nothing isolates its environment there. Composer's own isolation of a service's environment, which the dev secrets decision records, exists only in the local target.
 
 ## 10. What goes away
 
@@ -312,7 +294,7 @@ This design also removes or replaces the following. All but the last were built 
 - **The second process's own run of the config adapters**, and the requirement that adapters return the same values in both processes.
 - **A service binding's loose type, `InputBinding`**, which accepts any source in any key.
 - **Preflight's filling of platform variables** from the app configuration and the app secrets, on deploy and on dev (section 8). The local target fills them itself.
-- **Composer's isolation of a service's environment on Prisma Cloud.** The platform does it through subscriptions (section 5).
+- **Composer's isolation of a service's environment on Prisma Cloud.** There was none to remove: the Prisma Cloud boot adds Composer's rows and removes nothing, and the platform gives every deployment every variable of its class. Isolation exists only in the local target.
 - **`secretString()`**, replaced by `secret(inner)`.
 - **`envSecret()` and `envParam()`**, deprecated together as shortcuts and removed later.
 - **The rule that the root's input holds no secret.** A root `secret()` field is a carried secret (section 7).
@@ -337,7 +319,7 @@ Slices of this project, designed with Will after the others ([plan.md](plan.md))
 
 The 2026-11-05 extension settles three items that were listed here: a developer's local secret reaching another environment (the deploy no longer fills platform variables, section 8), secrets getting a home distinct from plain values (only the values the root names are known secrets, section 9), and `secret(schema)` (section 3, built with platform variables).
 
-To settle in the platform variables slice, not here:
+To settle in S18, not here:
 
 - **What the deploy writes into the service's input document.** Today it writes the schema's validated output, and boot validates it again. A transforming schema, such as `field(type('string.numeric.parse'))`, then fails at boot for a literal binding: the deploy wrote the number, and boot offers the number to a schema that takes text. Writing the resolved binding instead, and running the schema once at boot, fixes that and makes "deploy and boot judge the same data" literally true. The slice decides.
 
@@ -370,14 +352,14 @@ Each amendment says plainly which recorded statement it reverses:
 - **Dev secrets**: it rejected "Load `.env` in Composer itself", and told projects to add `import 'dotenv/config'`. `dotenv()` partly reverses the first: Composer ships the loader, but the user still names it in `prisma.config.ts`. A project that adopts `dotenv()` removes the import. The dev second process now receives its secrets from the first process, not from its own environment or adapters.
 - **Errors**: a structured error is never transformed between where it is raised and who receives it. Now redaction is the one change: before an operation returns an error, Composer removes every secret value it knows from its text and drops its cause.
 
-The 2026-11-05 extension reverses these further, each rewritten in full as one current record in the platform variables slice:
+The 2026-11-05 extension reverses these further. S18 rewrites the records about carried secrets and `secret(inner)`; the platform-variables project rewrites the records about preflight filling, isolation and the `$platform` marker:
 
 - **Secrets (ADR-0029)**: "a secret is an environment-sourced value the framework never stores", and `envSecret()` "is the only thing the framework calls a secret". Now a secret is any value handled as one: a platform secret, which Composer never sees, or a carried secret, which the root reads from the app secrets and the deploy sets on a service. Where a value comes from no longer decides whether it is a secret.
 - **Env-sourced params (ADR-0032)** and **dev secrets (ADR-0058)**: preflight fills a missing platform variable from the app configuration or the app secrets. Now the deploy fills nothing on the platform; the local target fills its own.
-- **Dev secrets (ADR-0058)**: "each service gets only the variables its own rows point at", enforced by Composer. On Prisma Cloud the platform enforces it through subscriptions.
+- **Dev secrets (ADR-0058)**: "each service gets only the variables its own rows point at", stated as a general rule. It is a local-target rule only: on Prisma Cloud every deployment receives every variable of its class, and nothing isolates a service's environment there.
 - **`resolve()` and config adapters (ADR-0062)**: "the root's input holds no secret", "the app secrets never reach Load", and "every value a project's own secrets adapters return" is redacted. Now a root `secret()` field is filled from the app secrets, and only those values are known secrets.
 - **Service input (ADR-0042)**: `secretString()` becomes `secret(inner)`; the input document gains a `$platform` marker carrying the variable's name and JSON Schema; and whatever the slice decides about writing the resolved binding instead of the schema's output.
-- **The glossary**: `secretString()` becomes `secret()`; **platform variable**, **platform secret**, **subscription**, **carried secret** and **known secrets** get entries; the Secret entry stops saying `envSecret()` is the only secret.
+- **The glossary**: `secretString()` becomes `secret()`; **platform variable**, **platform secret**, **carried secret** and **known secrets** get entries; the Secret entry stops saying `envSecret()` is the only secret.
 
 ### The glossary
 

@@ -2,14 +2,14 @@
 name: prisma-composer-core-concepts
 metadata:
   library: "@prisma/composer"
-  library_version: "0.37.0"
+  library_version: "0.38.0"
   version: 2026.9.1
 description: >-
   Use when deploying or managing an app that uses Prisma Composer
   (`@prisma/composer`): wiring its services and Modules, running it locally,
   testing composed services, or standing up / tearing down an environment.
   Triggers on "prisma composer", "@prisma/composer", "prisma app",
-  `prisma deploy`, `prisma dev`, `compute()`, `module()`, `contract()`,
+  `prisma deploy`, `prisma dev`, `compute()`, `appRoot()`, `module()`, `contract()`,
   `service.load()`, `mockService`, `bootstrapService`.
 ---
 
@@ -49,16 +49,15 @@ app, executing nothing when imported. Three node kinds exist:
 | Resource | `rawPostgres()`, `bucket()` | A stateful managed dependency |
 | Resource: public URL | `publicUrl()` | Makes one service reachable from the internet at one hostname; depends on the service's exposed HTTP interface and exposes nothing |
 | Module | `module()` | A grouping boundary; runs no code of its own, depends on and exposes typed interfaces; its builder receives `deps`, `input`, `environment` and `provision` |
+| App root | `appRoot()` | The outermost module, the entry's default export; no `deps` or `expose`, and nothing can provision it; its builder receives `input`, `environment` and `provision` |
 
-Nodes connect through typed **interfaces**: `deps` declares what a node depends on,
-`expose` declares what it exposes. Wiring happens in a Module's builder via
-`provision()`, and the root Module, handed to the CLI, is the App:
+Nodes connect through typed **interfaces**: `deps` declares what a node depends on, `expose` declares what it exposes. Wiring happens in a Module's builder via `provision()`, and the app root, built with `appRoot()` and handed to the CLI, is the App:
 
 ```ts
 // module.ts
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 
-export default module('store', ({ provision }) => {
+export default appRoot('store', ({ provision }) => {
   const catalog = provision(catalogModule);
   provision(storefrontService, { deps: { catalog: catalog.rpc } });
 });

@@ -19,10 +19,10 @@ export default compute({
 });
 
 // module.ts — the app decides that web is public, and at which hostname
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { publicUrl } from '@prisma/composer-prisma-cloud';
 
-export default module('shop', ({ provision }) => {
+export default appRoot('shop', ({ provision }) => {
   const web = provision(webService);
   provision(publicUrl({ id: 'site', url: 'shop.com', target: web.http }));
 });

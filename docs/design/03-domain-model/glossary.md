@@ -40,12 +40,13 @@ distinct type, with composition behaviours a Service doesn't have.
   transparent: the framework sees its dependencies and exposed interfaces *and* the internal topology it owns. The
   Module decides how the Services, Resources, and Modules it wraps connect; its
   knowledge ends at its boundary.
-- **The App is the outermost Module.** The whole application is itself a Module —
-  the outermost one, and what you deploy — owning the top-level topology: the
-  Module-to-Module wiring and any shared Resources. A shared database, for instance,
-  is owned by the outermost Module, which wires it to each consumer's data dependency (and
-  owns its migration — see Aggregate Contract). There is no separate root construct;
-  "App" names the outermost Module, it is not a distinct kind of node.
+- **The App is the outermost Module.** The whole application is itself a Module — the outermost one, and what you deploy — owning the top-level topology: the Module-to-Module wiring and any shared Resources. A shared database, for instance, is owned by the outermost Module, which wires it to each consumer's data dependency (and owns its migration — see Aggregate Contract). It is written with `appRoot()`, which builds an [app root](#app-root): a module node in every other respect, but one that nothing can provision, so it is never nested. A root written with `module()` is still accepted.
+
+### App root
+
+The **root** is a position: the outermost module, the one the entry default-exports and nothing provisions. The **root module** and the **root node** are other names for that position. A node built with `module()` can hold it: an entry that default-exports one is still accepted as the root.
+
+The **app root** is a type: `AppRootNode`, built with `appRoot()`. It is the only node this repository's guidance puts in the root position. It takes what `module()` takes minus `deps` and `expose`, because nothing provisions it, so nothing can wire into it or consume from it. Its body receives `input`, `environment` and `provision`. `provision()` refuses an app root, at compile time and at Load, so it is never nested. In code: `appRoot()`, `AppRootNode`, `AppRootContext`, and `isRoot()` on every module node, which answers `true` only for an app root, even when a `module()` node holds the root position.
 
 ### Service
 
@@ -380,20 +381,11 @@ A **Prisma ORM** contract — a deterministic, hashable description of the schem
 slice a Module may access (identified by its `storageHash`). A Module's data dependency
 declares the contract it requires; this is also the per-Module least-privilege scope.
 
-Whoever **owns** a database owns the migration that makes it satisfy the contract —
-*who owns the wiring owns the migration*. A database that belongs to no Module has no
-migration owner, which is why every database is owned by exactly one Module (the
-implicit root Module when it is shared; see Aggregate Contract).
+Whoever **owns** a database owns the migration that makes it satisfy the contract — *who owns the wiring owns the migration*. A database that belongs to no Module has no migration owner, which is why every database is owned by exactly one Module (the app root when it is shared; see Aggregate Contract).
 
 ### Aggregate Contract
 
-A database has exactly **one owning Module** — the Module it lives inside, or, when it is
-shared, the enclosing **implicit root Module** that wires it to its consumers. The
-owner owns the schema and the migration; each consumer connects via a data dependency
-declaring the contract slice it needs. The owner's schema must satisfy the
-**aggregate** — the union of every consumer's contract — and consumer slices must
-not overlap (a Prisma ORM concept). The cloud can verify the live DB satisfies the
-aggregate via the marker/ledger.
+A database has exactly **one owning Module** — the Module it lives inside, or, when it is shared, the enclosing **[app root](#app-root)** that wires it to its consumers. The owner owns the schema and the migration; each consumer connects via a data dependency declaring the contract slice it needs. The owner's schema must satisfy the **aggregate** — the union of every consumer's contract — and consumer slices must not overlap (a Prisma ORM concept). The cloud can verify the live DB satisfies the aggregate via the marker/ledger.
 
 ## Planes & process
 
@@ -498,11 +490,7 @@ invokes it), but importing runs nothing. The Service body is opaque to the frame
 
 ### module
 
-The library function that defines a **Module** — the same wiring surface as
-`service`, but transparent (the framework sees the internal topology) and with
-`provision` in scope. Its body wires the nodes it owns; it runs no code of its own.
-It is the single authoring primitive; the App is the outermost `module()`, picked
-out only by being the one you deploy.
+The library function that defines a **Module** — the same wiring surface as `service`, but transparent (the framework sees the internal topology) and with `provision` in scope. Its body wires the nodes it owns; it runs no code of its own. It defines every module below the root; the root, the App, is built with `appRoot()` (see [App root](#app-root)).
 
 ### Direction by position
 
@@ -567,7 +555,7 @@ is in `layering.md`; this is the term-by-term catalogue.
   unit. `Alchemy.Stack(name, { providers, state }, Effect.gen(…))`. `lower()`
   emits one Stack for the whole app; `prisma deploy` drives it over the
   app module the config's `entry` names (no hand-written stack file — ADR-0003).
-  `→` **Topology / implicit root Module**.
+  `→` **Topology / app root**.
 - **Resource\<Type, Props, Attributes>** — a managed entity with a string type
   tag, desired-input **Props**, and cloud-returned **Attributes**. Declared, then
   `yield*`-ed. Composer binds upstream alchemy's: `Prisma.Project`, `Database`,
@@ -668,9 +656,7 @@ is where the framework's own binding layer gets built.
   [ADR-0025](../90-decisions/ADR-0025-name-the-unit-of-composition-module.md),
   which supersedes the unit noun in
   [ADR-0014](../90-decisions/ADR-0014-one-authoring-primitive.md).
-- **App** is no longer superseded: it names the **outermost Module** — the whole
-  application you build and deploy. Use **Topology** for the wired graph and
-  **Module** for a unit; **App** for the composed whole.
+- **App** is no longer superseded: it names the **outermost Module** — the whole application you build and deploy, built with `appRoot()`; see [App root](#app-root). Use **Topology** for the wired graph and **Module** for a unit; **App** for the composed whole.
 - **Descriptor** → an internal/substrate term; avoid in the authoring vocabulary
   (and note Prisma ORM uses "Descriptor" for its own components).
 - **Durable Stream as "the backbone"** → streams are *one of two* transports

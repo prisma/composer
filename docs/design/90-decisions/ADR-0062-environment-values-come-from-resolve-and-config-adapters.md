@@ -5,10 +5,10 @@ Amended by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): `deploy` runs
 ```ts
 // module.ts
 import { type } from 'arktype';
-import { module, resolve } from '@prisma/composer';
+import { appRoot, resolve } from '@prisma/composer';
 import { envSecret, publicUrl } from '@prisma/composer-prisma-cloud';
 
-export default module('shop',
+export default appRoot('shop',
   { input: type({ EMAIL_FROM: 'string', 'SITE_HOSTNAME?': 'string' }) },
   ({ input, environment, provision }) => {
     const web = provision(webService, {

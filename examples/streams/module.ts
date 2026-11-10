@@ -1,4 +1,4 @@
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { storage } from '@prisma/composer-prisma-cloud/storage';
 import { streams } from '@prisma/composer-prisma-cloud/streams';
 import jobsService from './src/jobs/service.ts';
@@ -16,7 +16,7 @@ import jobsService from './src/jobs/service.ts';
  *
  * A closed root: no boundary argument, no return — it only provisions.
  */
-export default module('streams-example', ({ provision }) => {
+export default appRoot('streams-example', ({ provision }) => {
   const store = provision(storage());
   const events = provision(streams(), { deps: { store: store.store } });
   provision(jobsService, { deps: { events: events.streams } });

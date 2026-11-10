@@ -1,4 +1,4 @@
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import siteService from './src/service.ts';
 
 /**
@@ -7,6 +7,6 @@ import siteService from './src/service.ts';
  * the `entry` in prisma.config.ts,
  * stands it up as one Compute service.
  */
-export default module('composer-docs', ({ provision }) => {
+export default appRoot('composer-docs', ({ provision }) => {
   provision(siteService);
 });

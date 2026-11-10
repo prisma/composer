@@ -130,7 +130,7 @@ and has no RPC contract. To call one, the provider exposes
 `rawHttpContract` and the caller declares `rawHttp()`:
 
 ```ts
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { rawHttp, rawHttpContract } from '@prisma/composer/http';
 import node from '@prisma/composer/node';
 import { compute } from '@prisma/composer-prisma-cloud';
@@ -148,7 +148,7 @@ const gateway = compute({
   build: node({ module: import.meta.url, entry: '../dist/gateway/server.mjs' }),
 });
 
-export default module('web', ({ provision }) => {
+export default appRoot('web', ({ provision }) => {
   const siteRef = provision(site);
   const docsRef = provision(docs);
   provision(gateway, { deps: { site: siteRef.http, docs: docsRef.http } });
@@ -348,11 +348,7 @@ const auth = provision(authModule, { input: { signingKey: envSecret('AUTH_SIGNIN
 provision(storefrontService, { deps: { auth: auth.rpc } });
 ```
 
-A Module can also declare boundary `deps` — dependencies its parent must supply,
-wired exactly like a service's. The builder function receives them as `deps`,
-ready to forward into a `provision()` call. (Before Composer 0.36 this field was
-called `inputs`; rename it in the builder function's destructuring.) The root module you already have is just the
-outermost Module, with no boundary at all.
+A Module can also declare boundary `deps` — dependencies its parent must supply, wired exactly like a service's. The builder function receives them as `deps`, ready to forward into a `provision()` call. (Before Composer 0.36 this field was called `inputs`; rename it in the builder function's destructuring.) The root module you already have is the outermost Module, built with `appRoot()`: it has no boundary, and nothing can provision it.
 
 `provision(node, opts?)` takes:
 
@@ -375,7 +371,7 @@ A module declares its configuration as one `input` schema, as a service does
 ([below](#service-input)), and whoever provisions it binds `input`:
 
 ```ts
-import { module, resolve } from '@prisma/composer';
+import { appRoot, module, resolve } from '@prisma/composer';
 import { field, secretString } from '@prisma/composer/arktype';
 import { envSecret } from '@prisma/composer-prisma-cloud';
 import { type } from 'arktype';
@@ -393,7 +389,7 @@ const email = module(
   },
 );
 
-export default module('shop', ({ provision }) => {
+export default appRoot('shop', ({ provision }) => {
   provision(email, {
     input: { from: 'shop@example.com', deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') },
   });
@@ -719,9 +715,9 @@ computes it with `resolve()`, from the name of the environment being
 deployed:
 
 ```ts
-import { module, resolve } from '@prisma/composer';
+import { appRoot, resolve } from '@prisma/composer';
 
-export default module('shop', ({ environment, provision }) => {
+export default appRoot('shop', ({ environment, provision }) => {
   const greeting = resolve([environment.name], ([name]) => `hello from ${name}`);
   const shout = resolve([greeting], ([text]) => text.toUpperCase());
   provision(echoService, { input: { greeting: shout } });
@@ -793,7 +789,7 @@ from the environment's name.
 `envParam()` is known at deploy, so `resolve()` can list it: `fn` receives the variable's value at deploy, read from the app configuration. `envSecret()`, `generatedParam()` and `serviceOrigin()` are known only at boot: the deploy never holds a secret, and it creates a generated value or a service's origin after it has run `fn`. So `fn` would have nothing to compute with, and `resolve()` cannot list them. Nor can it list a module's input field wrapped with `field()` or typed `secretString()`, because its real value may be one of them. A dependency must be a **deploy-time value**: `environment.name`, another `resolve()` result, `envParam()`, or a plain field of a module's input. Bind the other sources directly:
 
 ```ts
-import { module, resolve } from '@prisma/composer';
+import { appRoot, module, resolve } from '@prisma/composer';
 import { field, secretString } from '@prisma/composer/arktype';
 import { envParam, envSecret, serviceOrigin } from '@prisma/composer-prisma-cloud';
 import { type } from 'arktype';
@@ -809,7 +805,7 @@ const billing = module(
   },
 );
 
-export default module('shop', ({ provision }) => {
+export default appRoot('shop', ({ provision }) => {
   provision(billing, {
     input: {
       greeting: resolve([envParam('GREETING')], ([greeting]) => greeting.toUpperCase()),
@@ -880,7 +876,7 @@ export default definePrismaConfig({
 
 ```ts
 // module.ts: the root declares its input; the deploy fills it from the app configuration
-export default module(
+export default appRoot(
   'shop',
   { input: type({ EMAIL_FROM: 'string', 'SITE_HOSTNAME?': 'string' }) },
   ({ input, environment, provision }) => {
@@ -952,11 +948,11 @@ export default compute({
 
 ```ts
 // module.ts
-import { module } from '@prisma/composer';
+import { appRoot } from '@prisma/composer';
 import { publicUrl } from '@prisma/composer-prisma-cloud';
 import webService from './web/src/service.ts';
 
-export default module('shop', ({ provision }) => {
+export default appRoot('shop', ({ provision }) => {
   const web = provision(webService);
   provision(publicUrl({ id: 'site', url: 'shop.com', target: web.http }));
 });
@@ -1006,10 +1002,10 @@ The hostname usually differs per environment, so `url` is usually a
 or a bare string:
 
 ```ts
-import { module, resolve } from '@prisma/composer';
+import { appRoot, resolve } from '@prisma/composer';
 import { publicUrl } from '@prisma/composer-prisma-cloud';
 
-export default module('shop', ({ environment, provision }) => {
+export default appRoot('shop', ({ environment, provision }) => {
   const web = provision(webService);
   const url = resolve([environment.name], ([name]) =>
     name === 'production' ? 'shop.com' : publicUrl.prismaBuild());

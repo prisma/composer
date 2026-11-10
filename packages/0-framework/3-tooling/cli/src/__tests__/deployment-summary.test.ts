@@ -250,7 +250,7 @@ describe('withComposerAdvice', () => {
       'src',
     );
     const messages = fs
-      .readdirSync(providerSrc)
+      .readdirSync(providerSrc, { recursive: true, encoding: 'utf8' })
       .filter((file) => file.endsWith('.ts'))
       .flatMap((file) =>
         adoptMessagesIn(fs.readFileSync(path.join(providerSrc, file), 'utf8'), 'adoption'),
