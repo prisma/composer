@@ -8,7 +8,8 @@
  * workspace `package.json` via `set-version.ts`, and regenerates
  * `pnpm-lock.yaml` so the lockfile's `workspace:<version>` specifiers
  * match the new manifests (CI installs with `--frozen-lockfile` and
- * fails on any mismatch).
+ * fails on any mismatch), then re-emits every contract, because an emitted
+ * contract records the auth pack's version.
  *
  * Reading from HEAD (rather than disk) is what makes the script
  * idempotent: re-running it without committing the previous bump
@@ -61,6 +62,13 @@ execFileSync('node', [setVersionScript, nextVersion], {
 console.log('');
 console.log('Regenerating pnpm-lock.yaml…');
 execFileSync('pnpm', ['install', '--lockfile-only'], {
+  cwd: rootDir,
+  stdio: 'inherit',
+});
+
+console.log('');
+console.log('Re-emitting contracts, which record the auth pack version…');
+execFileSync('pnpm', ['contracts:emit'], {
   cwd: rootDir,
   stdio: 'inherit',
 });

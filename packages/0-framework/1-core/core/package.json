@@ -1,6 +1,6 @@
 {
   "name": "@internal/core",
-  "version": "0.37.0",
+  "version": "0.38.0",
   "type": "module",
   "exports": {
     ".": "./dist/index.mjs",
@@ -19,12 +19,12 @@
   },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "2.0.0-beta.84",
-    "effect": "4.0.5",
-    "@internal/foundation": "workspace:0.37.0"
+    "alchemy": "catalog:",
+    "effect": "catalog:",
+    "@internal/foundation": "workspace:0.38.0"
   },
   "devDependencies": {
-    "@internal/tsdown-config": "workspace:0.37.0",
+    "@internal/tsdown-config": "workspace:0.38.0",
     "@types/bun": "^1.3.13",
     "arktype": "^2.2.3",
     "tsdown": "^0.22.7",
