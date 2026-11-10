@@ -23,6 +23,8 @@ import {
 import type { BucketConfig } from '@prisma/composer-prisma-cloud';
 
 const DEFAULT_CONTENT_TYPE = 'application/octet-stream';
+const STORAGE_CONNECT_TIMEOUT_MS = 3_000;
+const STORAGE_REQUEST_TIMEOUT_MS = 5_000;
 
 async function collect(body: unknown): Promise<Uint8Array> {
   if (
@@ -43,6 +45,22 @@ function statusOf(error: unknown): number | undefined {
   return typeof meta.httpStatusCode === 'number' ? meta.httpStatusCode : undefined;
 }
 
+function storageFailure(operation: string, error: unknown, startedAt: number): Response {
+  const name = error instanceof Error ? error.name : 'Error';
+  const message = error instanceof Error ? error.message : String(error);
+  const timedOut = /timeout|abort/i.test(name);
+  const body = {
+    failedHop: 'storage',
+    operation,
+    error: name,
+    message,
+    storageStatus: statusOf(error) ?? null,
+    elapsedMs: Date.now() - startedAt,
+  };
+  console.error('storage call failed', JSON.stringify(body));
+  return Response.json(body, { status: timedOut ? 504 : 502 });
+}
+
 export function createBlobApp(config: BucketConfig): (req: Request) => Promise<Response> {
   const client = new S3Client({
     region: 'auto',
@@ -51,7 +69,12 @@ export function createBlobApp(config: BucketConfig): (req: Request) => Promise<R
     credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
     requestChecksumCalculation: 'WHEN_REQUIRED',
     responseChecksumValidation: 'WHEN_REQUIRED',
-    maxAttempts: 3,
+    maxAttempts: 2,
+    requestHandler: {
+      connectionTimeout: STORAGE_CONNECT_TIMEOUT_MS,
+      requestTimeout: STORAGE_REQUEST_TIMEOUT_MS,
+      throwOnRequestTimeout: true,
+    },
   });
   const bucket = config.bucket;
 
@@ -105,7 +128,7 @@ export function createBlobApp(config: BucketConfig): (req: Request) => Promise<R
     return new Response(null, { status: 204 });
   };
 
-  return async (req: Request): Promise<Response> => {
+  const route = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
 
@@ -131,5 +154,14 @@ export function createBlobApp(config: BucketConfig): (req: Request) => Promise<R
       }
     }
     return new Response('not found', { status: 404 });
+  };
+
+  return async (req: Request): Promise<Response> => {
+    const startedAt = Date.now();
+    try {
+      return await route(req);
+    } catch (error) {
+      return storageFailure(`${req.method} ${new URL(req.url).pathname}`, error, startedAt);
+    }
   };
 }
