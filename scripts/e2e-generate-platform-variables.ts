@@ -1,13 +1,4 @@
 #!/usr/bin/env bun
-/**
- * Generates a random value for each named platform variable and exports it to
- * the later steps of the current GitHub Actions job through `$GITHUB_ENV`.
- * Masks each value in the job log. Never prints a value.
- *
- * Usage: e2e-generate-platform-variables.ts <NAME> [<NAME> ...]
- * Env: GITHUB_ENV (set by GitHub Actions).
- */
-
 import { randomBytes } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 

@@ -60,7 +60,7 @@ runs:
         PLATFORM_VARIABLES: ${{ inputs.platform-variables }}
       run: bun "$GITHUB_WORKSPACE/scripts/e2e-generate-platform-variables.ts" $PLATFORM_VARIABLES
 
-    - name: First deploy stops at preflight
+    - name: First deploy stops at preflight, then set platform variables
       id: first-deploy
       if: inputs.platform-variables != ''
       shell: bash
@@ -69,16 +69,7 @@ runs:
         STACK_NAME: ${{ inputs.stack-name }}
         ENVIRONMENT: ${{ inputs.environment }}
         PLATFORM_VARIABLES: ${{ inputs.platform-variables }}
-      run: bun "$GITHUB_WORKSPACE/scripts/e2e-first-deploy-stops-at-preflight.ts" $PLATFORM_VARIABLES
-
-    - name: Set platform variables
-      if: inputs.platform-variables != ''
-      shell: bash
-      env:
-        STACK_NAME: ${{ inputs.stack-name }}
-        ENVIRONMENT: ${{ inputs.environment }}
-        PLATFORM_VARIABLES: ${{ inputs.platform-variables }}
-      run: bun "$GITHUB_WORKSPACE/scripts/e2e-set-platform-variables.ts" $PLATFORM_VARIABLES
+      run: bun "$GITHUB_WORKSPACE/scripts/e2e-first-deploy.ts" $PLATFORM_VARIABLES
 
     - name: Deploy
       id: deploy
@@ -115,9 +106,6 @@ runs:
       run: bun "$GITHUB_WORKSPACE/scripts/e2e-verify-deploy-list.ts"
 
     - name: Destroy
-      # Check the deploy steps' outcomes, not `.alchemy/` presence — deploy
-      # state is hosted, not local to the runner. The first deploy may have
-      # created the project even when every later step was skipped.
       if: always() && (steps.deploy.outcome != 'skipped' || steps.first-deploy.outcome != 'skipped')
       shell: bash
       working-directory: ${{ inputs.working-directory }}
