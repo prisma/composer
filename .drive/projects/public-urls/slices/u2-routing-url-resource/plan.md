@@ -10,6 +10,8 @@ Sam Goodwin's alchemy-run/alchemy#2701 and its base #2698 are replaced by the Al
 
 **Platform request before opening:** distinct error codes for the RoutingUrl create and update refusals. Today a duplicate `logicalId` 409 is `client-error`, and an invalid hostname and a service on another Branch are both `validation-error`; only the quota 409 has its own code (`quota-exceeded`). Proposed: `logical-id-taken`, `invalid-hostname`, `service-on-another-branch`. Then the Distilled pull request types the four errors on `/error/code` (as patch 005 does), and Alchemy uses `catchTags` instead of matching message text (U2 review round 3, finding 1).
 
+**Platform doc to correct:** `docs/compute/RoutingUrls.md` uses `shop.com`, an apex, with a CNAME record to the switchboard. Foundry's OpenAPI spec says registration needs a direct CNAME, which an apex cannot have, so a flattened apex fails. Alchemy's `Prisma.RoutingUrl` refuses a hostname change to an apex and says so.
+
 ## Distilled pull request (branch `feat/prisma-routing-urls`)
 
 - **D1.** The REST protocol fills `T.ResponseCode()` members, and `@distilled.cloud/prisma` is regenerated from the live spec: RoutingUrl operations, domain ownership `status` and `expiresAt`, and `httpStatus` on the two creates. One pull request, though Distilled's rules prefer the runtime change on its own; the description says why.
