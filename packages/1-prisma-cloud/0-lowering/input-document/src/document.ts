@@ -1,18 +1,15 @@
 export const PLATFORM_MARKER = '$platform';
 export const GENERATED_MARKER = '$generated';
 
-/** Where a service's input reads a platform variable: `{ "$platform": { "name": "X", "secret": true } }`. */
 export interface PlatformMarker {
   readonly $platform: { readonly name: string; readonly secret?: true };
 }
 
-/** Where a service's input reads a variable Composer generates: `{ "$generated": "COMPOSER_…", "redacted": true }`. */
 export interface GeneratedMarker {
   readonly $generated: string;
   readonly redacted: boolean;
 }
 
-/** One `$platform` marker found in a document. `path` is dot-joined, with user keys unescaped. */
 export interface PlatformMarkerUse {
   readonly name: string;
   readonly path: string;
@@ -57,13 +54,12 @@ export function isGeneratedMarker(value: unknown): value is GeneratedMarker {
   );
 }
 
-const ESCAPABLE_KEY = /^\$+(?:platform|generated|secret)$/;
-const ESCAPED_KEY = /^\$\$+(?:platform|generated|secret)$/;
+const ESCAPABLE_KEY = /^\$+(?:platform|generated)$/;
+const ESCAPED_KEY = /^\$\$+(?:platform|generated)$/;
 
 /** A user key spelled like a marker gains one `$` when written, so only Composer can place a marker. */
 export const escapeKey = (key: string): string => (ESCAPABLE_KEY.test(key) ? `$${key}` : key);
 
-/** Reverses `escapeKey`. */
 export const unescapeKey = (key: string): string => (ESCAPED_KEY.test(key) ? key.slice(1) : key);
 
 const joinPath = (path: string, segment: string | number): string =>
@@ -79,7 +75,6 @@ function refuseMalformedMarker(value: Record<string, unknown>, path: string): vo
   }
 }
 
-/** Every `$platform` marker in a document, at any depth. */
 export function collectPlatformMarkers(document: unknown): PlatformMarkerUse[] {
   const uses: PlatformMarkerUse[] = [];
   const walk = (value: unknown, path: string, inArray: boolean): void => {
@@ -106,15 +101,8 @@ export function collectPlatformMarkers(document: unknown): PlatformMarkerUse[] {
   return uses;
 }
 
-/** The value a platform variable's text gives: the text itself. */
-export const decodeVariableText = (text: string): string => text;
-
 export interface ReadDocumentOptions {
-  /** The environment key the document was read from, for error messages. */
-  readonly key: string;
-  /** A variable's text, or undefined when it is not set. */
   readonly variable: (name: string) => string | undefined;
-  /** Puts a secret's text in a secret box. */
   readonly secret: (text: string) => unknown;
 }
 
@@ -126,9 +114,6 @@ export interface ReadDocument {
 
 const ABSENT: unique symbol = Symbol('input-document-absent');
 
-/**
- * Boot's first three steps: a marker whose variable is unset or empty leaves its key out, one with text takes the decoded text, and a secret's text goes in a secret box. User keys are unescaped. The service's schema runs after this, on `value`.
- */
 export function readDocument(document: unknown, options: ReadDocumentOptions): ReadDocument {
   const unset = new Set<string>();
   const textOf = (name: string): string | undefined => {
@@ -140,19 +125,18 @@ export function readDocument(document: unknown, options: ReadDocumentOptions): R
       const { name, secret } = value.$platform;
       const text = textOf(name);
       if (text === undefined) {
-        if (inArray) throw unsetInArrayError(name, path, options.key);
+        if (inArray) throw unsetInArrayError(name, path);
         unset.add(name);
         return ABSENT;
       }
-      const decoded = decodeVariableText(text);
-      return secret === true ? options.secret(decoded) : decoded;
+      return secret === true ? options.secret(text) : text;
     }
     if (isGeneratedMarker(value)) {
       const name = value.$generated;
       const text = textOf(name);
       if (text === undefined) {
         throw new Error(
-          `generated input is not provisioned (env ${options.key} → ${name}): the platform variable "${name}" is unset or empty. The deploy writes this variable, so its absence means the deploy and the running service disagree.`,
+          `The platform variable "${name}", which the deploy writes, has no value. Deploy again.`,
         );
       }
       return value.redacted ? options.secret(text) : text;
@@ -183,25 +167,22 @@ export function readDocument(document: unknown, options: ReadDocumentOptions): R
   return { value: value === ABSENT ? undefined : value, unset: [...unset] };
 }
 
-function unsetInArrayError(name: string, path: string, key: string): Error {
+function unsetInArrayError(name: string, path: string): Error {
   return new Error(
-    `input key "${path}" (env ${key}) reads the platform variable "${name}", which has no value. An array position cannot be left out: set "${name}" with prisma project env add.`,
+    `The input field "${path}" reads the platform variable "${name}", which has no value. An array position cannot be left out: set "${name}" with prisma project env add.`,
   );
 }
 
-/** A schema failure's message, ending with the platform variables whose keys boot left out, when there are any. */
 export function withUnsetVariables(message: string, unset: readonly string[]): string {
   return unset.length === 0
     ? message
     : `${message} (platform variables with no value: ${unset.join(', ')})`;
 }
 
-/** The boot error for a required per-key param whose platform variable has no value. */
-export function requiredParamUnsetMessage(param: string, key: string, name: string): string {
-  return `config param "${param}" (env ${key} → ${name}) has no value: set the platform variable "${name}" with prisma project env add.`;
+export function requiredParamUnsetMessage(param: string, name: string): string {
+  return `The param "${param}" of this service reads the platform variable "${name}", which has no value. Set it with prisma project env add.`;
 }
 
-/** The document as compact JSON, with each marker shown as `$platform NAME` or `$generated NAME`. */
 export function describeDocument(document: unknown): string {
   const describe = (value: unknown): string => {
     if (isPlatformMarker(value)) return `$platform ${value.$platform.name}`;

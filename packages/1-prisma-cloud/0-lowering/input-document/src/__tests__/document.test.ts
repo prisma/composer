@@ -13,7 +13,7 @@ import {
 const boxed = (text: string) => ({ boxed: text });
 
 const read = (document: unknown, env: Record<string, string>) =>
-  readDocument(document, { key: 'COMPOSER_INPUT', variable: (name) => env[name], secret: boxed });
+  readDocument(document, { variable: (name) => env[name], secret: boxed });
 
 describe('platformMarker', () => {
   test('carries secret: true only for a secret', () => {
@@ -24,10 +24,11 @@ describe('platformMarker', () => {
 
 describe('the key escape', () => {
   test('a user key spelled like a marker gains one "$" and loses it on read', () => {
-    for (const key of ['$platform', '$$platform', '$generated', '$secret', '$$secret']) {
+    for (const key of ['$platform', '$$platform', '$generated']) {
       expect(escapeKey(key)).toBe(`$${key}`);
       expect(unescapeKey(escapeKey(key))).toBe(key);
     }
+    expect(escapeKey('$secret')).toBe('$secret');
     expect(escapeKey('platform')).toBe('platform');
     expect(escapeKey('$platforms')).toBe('$platforms');
     expect(unescapeKey('$platform')).toBe('$platform');
@@ -78,7 +79,7 @@ describe('readDocument', () => {
 
   test('an unset variable in an array position fails, naming the variable and the path', () => {
     expect(() => read({ list: ['a', platformMarker('LISTED', true)] }, {})).toThrow(
-      'input key "list.1" (env COMPOSER_INPUT) reads the platform variable "LISTED", which has no value. An array position cannot be left out: set "LISTED" with prisma project env add.',
+      'The input field "list.1" reads the platform variable "LISTED", which has no value. An array position cannot be left out: set "LISTED" with prisma project env add.',
     );
   });
 
@@ -92,7 +93,7 @@ describe('readDocument', () => {
       plain: 'p',
     });
     expect(() => read(document, { G_PLAIN: 'p' })).toThrow(
-      /COMPOSER_INPUT → G_SECRET.*deploy and the running service disagree/,
+      'The platform variable "G_SECRET", which the deploy writes, has no value. Deploy again.',
     );
   });
 

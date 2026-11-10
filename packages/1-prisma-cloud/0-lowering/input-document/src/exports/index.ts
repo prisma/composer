@@ -3,7 +3,6 @@
  */
 export {
   collectPlatformMarkers,
-  decodeVariableText,
   describeDocument,
   escapeKey,
   GENERATED_MARKER,
