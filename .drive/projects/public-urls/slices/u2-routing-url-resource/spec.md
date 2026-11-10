@@ -50,7 +50,7 @@ In:
 - alchemy-run/distilled: regenerate `@distilled.cloud/prisma` from the deployed spec, so the RoutingUrl operations and their typed errors exist.
 - alchemy-run/alchemy `packages/prisma`: `RoutingUrl.ts`, its provider (live and local), its export, and Providers registration.
 - Tests in `packages/integration-tests/test/Prisma/`, following Alchemy's own conventions, with a live test against production using credentials confirmed before dispatch.
-- The resource's JSDoc and generated reference page; a short section in the Compute custom-domain guide.
+- The resource's JSDoc; a short section in the Compute custom-domain guide. (`docs:gen` produces no reference page for any Prisma resource.)
 
 Deliberately out:
 - Publishing DNS records through a DNS adapter for a RoutingUrl ([design note 8](../../design-notes.md): a follow-on).
