@@ -1,5 +1,7 @@
 # ADR-0062: A value that differs per environment is computed with `resolve()`; values from outside the code come through config adapters
 
+Amended by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): `deploy` runs Alchemy in its first process and passes what Load read from the app configuration to `lower()` as a value, so it starts no second process and writes no app configuration file. What this record says about a deploy's second process, the app configuration file and `CONFIG.SECRET_AS_PLAIN_VALUE` now holds for `prisma dev` and `destroy` only. Alchemy's output under `deploy` reaches Composer as events and log lines, which it redacts like everything else it prints.
+
 ```ts
 // module.ts
 import { type } from 'arktype';

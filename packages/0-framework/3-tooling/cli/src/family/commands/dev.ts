@@ -20,7 +20,7 @@ import { ok } from '@prisma/cli-engine/protocol';
 import type { DevEvent, DevInput } from '../../operations/dev.ts';
 import { DEV_ENVIRONMENT, type ServiceEndpoint } from '../../operations/shared.ts';
 import type { AlchemyInvocation, AlchemyOutcome, RunAlchemy } from '../../run-alchemy.ts';
-import { convergeSpawn, settleConvergeFailure } from '../converge.ts';
+import { convergeSpawn, settleConvergeFailure } from '../dev-converge-child.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
 

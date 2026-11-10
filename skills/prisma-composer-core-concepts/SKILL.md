@@ -489,22 +489,27 @@ environment as production, so deploy and destroy refuse it with
 
 **The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.85 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
-Composer runs the alchemy package installed beside the app's
+`prisma deploy` runs alchemy inside the `prisma` process through alchemy's
+programmatic API: no generated file and no child process. Its progress prints
+as one step per resource, and a failure is `DEPLOY.ENGINE_FAILED` carrying the
+engine's own errors (credentials redacted, capped at 1000 characters), or
+`DEPLOY.INTERRUPTED` after Ctrl-C, which releases the environment's lease.
+For `prisma dev` and `destroy`, Composer runs the alchemy package installed beside the app's
 `@prisma/composer` and starts it with Node (the first `node` on PATH when `prisma` runs
 under Bun; `DEPLOY.NODE_MISSING` if none), so the app needs no direct
 `alchemy` dependency and no `.bin` link. No global Alchemy installation is
 needed.
 
-1. The deploy and destroy operations write the pipeline's results to a generated, gitignored
-   stack file at `.prisma-composer/alchemy.run.ts`, then run the alchemy CLI
+1. The destroy operation writes the pipeline's results to a generated, gitignored
+   stack file at `.prisma-composer/alchemy.run.ts`, then runs the alchemy CLI
    against it as a child process; `dev` does the same at
    `.prisma-composer/dev/<environment>/alchemy.run.ts` with local providers. The file
    carries the computed values as literals but reads credentials via
    `fromEnv()`, so nothing sensitive lands on disk, and it is regenerated
    every run: output, not configuration, never edited.
-2. Failures are bisectable through that file. A failing deploy names its
+2. Failures are bisectable through that file. A failing destroy or dev converge names its
    path and prints a reproduce command: Node running the bin of the `alchemy`
-   Composer depends on, with `deploy .prisma-composer/alchemy.run.ts --yes
+   Composer depends on, with `destroy .prisma-composer/alchemy.run.ts --yes
    --stage <stage>` (Alchemy's own flag; on Prisma Cloud its value is the
    environment's Branch id). Running it directly separates "the framework computed the wrong thing" from "the engine or
    platform rejected the right thing". An engine failure surfaces as

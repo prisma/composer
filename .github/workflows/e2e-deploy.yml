@@ -182,4 +182,5 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
       - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run build --filter '@internal/lowering^...'
       - run: bun scripts/logical-id-resolution.ts

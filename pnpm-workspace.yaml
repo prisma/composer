@@ -13,10 +13,10 @@ catalog:
   # alchemy and every @alchemy.run/* package move together, at one commit or
   # one release; @distilled.cloud/prisma is the exact version
   # @alchemy.run/prisma depends on. See the upgrade-alchemy-effect skill.
-  alchemy: 2.0.0-beta.85
-  '@alchemy.run/prisma': 2.0.0-beta.85
-  '@distilled.cloud/prisma': 1.0.0-rc.18
-  effect: 4.1.0
-  '@effect/platform-bun': 4.1.0
-  '@effect/platform-node': 4.1.0
-  '@effect/platform-node-shared': 4.1.0
+  alchemy: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz
+  '@alchemy.run/prisma': https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95
+  '@distilled.cloud/prisma': https://pkg.alchemy.run/@distilled.cloud/prisma/-/9af912743056174c99bfc63a4702e5c09d6e5d718057b81e8964ffde4f87408b.tgz
+  effect: 4.1.2
+  '@effect/platform-bun': 4.1.2
+  '@effect/platform-node': 4.1.2
+  '@effect/platform-node-shared': 4.1.2

@@ -192,7 +192,7 @@ describe('a hostname public URL under the Alchemy apply engine', () => {
     const { platform, options } = fakePlatform(['shop.com']);
     const stack = scratchStack(options, 'public-url-refused');
 
-    const exit = await runScratch(Effect.exit(stack.deploy(program('shop.com'))), options);
+    const exit = await runScratch(Effect.exit(stack.deploy(program('shop.com'))));
 
     expect(Exit.isFailure(exit)).toBe(true);
     expect(failureText(exit)).toContain(
@@ -206,12 +206,12 @@ describe('a hostname public URL under the Alchemy apply engine', () => {
     const { platform, options } = fakePlatform(['new.shop.com']);
     const stack = scratchStack(options, 'public-url-change');
 
-    const first = await runScratch(Effect.exit(stack.deploy(program('shop.com'))), options);
+    const first = await runScratch(Effect.exit(stack.deploy(program('shop.com'))));
     expect(Exit.isSuccess(first)).toBe(true);
     expect([...platform.domains.values()].map((d) => d.hostname)).toEqual(['shop.com']);
     platform.requests.length = 0;
 
-    const second = await runScratch(Effect.exit(stack.deploy(program('new.shop.com'))), options);
+    const second = await runScratch(Effect.exit(stack.deploy(program('new.shop.com'))));
 
     expect(Exit.isFailure(second)).toBe(true);
     expect(failureText(second)).toContain(
@@ -226,9 +226,9 @@ describe('a hostname public URL under the Alchemy apply engine', () => {
     const { platform, options } = fakePlatform([]);
     const stack = scratchStack(options, 'public-url-replace');
 
-    await runScratch(stack.deploy(program('shop.com')), options);
+    await runScratch(stack.deploy(program('shop.com')));
     platform.requests.length = 0;
-    await runScratch(stack.deploy(program('new.shop.com')), options);
+    await runScratch(stack.deploy(program('new.shop.com')));
 
     const create = platform.requests.indexOf(`POST /v1/apps/${APP_ID}/domains`);
     const remove = platform.requests.indexOf('DELETE /v1/domains/dom_1');
@@ -241,12 +241,9 @@ describe('a hostname public URL under the Alchemy apply engine', () => {
     const { platform, options } = fakePlatform([]);
     const stack = scratchStack(options, 'public-url-move');
 
-    await runScratch(stack.deploy(program('shop.com')), options);
+    await runScratch(stack.deploy(program('shop.com')));
     platform.requests.length = 0;
-    const moved = await runScratch(
-      Effect.exit(stack.deploy(program('shop.com', OTHER_APP_ID))),
-      options,
-    );
+    const moved = await runScratch(Effect.exit(stack.deploy(program('shop.com', OTHER_APP_ID))));
 
     expect(Exit.isFailure(moved)).toBe(true);
     expect(failureText(moved)).toContain(

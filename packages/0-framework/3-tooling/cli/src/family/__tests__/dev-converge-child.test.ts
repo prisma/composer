@@ -13,7 +13,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ChildResult } from '@prisma/cli-engine';
 import { alchemyInvocation } from '../../run-alchemy.ts';
-import { type ConvergeContext, convergeSpawn } from '../converge.ts';
+import { type ConvergeContext, convergeSpawn } from '../dev-converge-child.ts';
 
 const tmpDirs: string[] = [];
 

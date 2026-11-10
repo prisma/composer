@@ -16,6 +16,7 @@ import * as Headers from 'effect/http/Headers';
 import * as HttpClientRequest from 'effect/http/HttpClientRequest';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
+import type { ManagementApiClient } from '../../client.ts';
 import { stateLayerAgainst } from '../layer.ts';
 import {
   acquireDeployLease,
@@ -303,8 +304,9 @@ describe('prismaStateLayer against the platform state API', () => {
       projectId: PROJECT_ID,
       branchId: BRANCH_ID,
     },
+    supplied?: ManagementApiClient,
   ): Promise<A> => {
-    const layer = stateLayerAgainst(fake.origin, ids).pipe(
+    const layer = stateLayerAgainst(fake.origin, ids, supplied).pipe(
       Layer.provide(stackContext),
     ) as unknown as Layer.Layer<State>;
     return Effect.runPromise(
@@ -335,6 +337,66 @@ describe('prismaStateLayer against the platform state API', () => {
     expect(fetched).toEqual(value);
     // The scope's finalizer released the lease.
     expect(fake.liveLeaseIds()).toEqual([]);
+  });
+
+  test('over a supplied client, every state request goes through it with the lease header and no Authorization', async () => {
+    const received: Request[] = [];
+    const supplied = createManagementApiClient({
+      baseUrl: fake.origin,
+      fetch: (request: Request) => {
+        received.push(request.clone());
+        return fetch(request);
+      },
+    });
+    const value = createdResource({ fqn: 'app/db' });
+
+    await runLayer(
+      (service) => service.set({ stack: STACK, stage: STAGE, fqn: value.fqn, value }),
+      undefined,
+      supplied,
+    );
+
+    const stateRequests = received.filter((request) =>
+      request.url.includes('/alchemy-state/state/'),
+    );
+    expect(stateRequests.map((request) => request.method)).toContain('PUT');
+    expect(received.every((request) => !request.headers.has('authorization'))).toBe(true);
+    for (const request of stateRequests) {
+      expect(request.headers.get(LEASE_HEADER)).not.toBeNull();
+    }
+  });
+
+  test('state requests go through a supplied client even when the deploy already built a FetchHttpClient', async () => {
+    const received: Request[] = [];
+    const supplied = createManagementApiClient({
+      baseUrl: fake.origin,
+      fetch: (request: Request) => {
+        received.push(request.clone());
+        return fetch(request);
+      },
+    });
+    const layer = stateLayerAgainst(
+      fake.origin,
+      { projectId: PROJECT_ID, branchId: BRANCH_ID },
+      supplied,
+    ).pipe(
+      Layer.provide(Layer.merge(stackContext, FetchHttpClient.layer)),
+    ) as unknown as Layer.Layer<State>;
+    const value = createdResource({ fqn: 'app/db' });
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const service = yield* yield* State;
+        yield* service.set({ stack: STACK, stage: STAGE, fqn: value.fqn, value });
+      }).pipe(Effect.orDie, Effect.provide(layer)),
+    );
+
+    expect(
+      received
+        .filter((request) => request.url.includes('/alchemy-state/state/'))
+        .map((request) => request.method),
+    ).toContain('PUT');
+    expect(fake.countRequests(/PUT .*\/alchemy-state\/state\//)).toBe(1);
   });
 
   test('the layer’s merged redaction entry hides the lease header from anything rendered in its context', async () => {

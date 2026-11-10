@@ -24,6 +24,8 @@ test('Composer and generated Prisma API credentials coexist in one context', asy
   );
 
   expect(Redacted.value(result.composer.token)).toBe('test-service-token');
-  expect(Redacted.value(result.generated.apiToken)).toBe('test-service-token');
+  expect(result.generated.apiToken && Redacted.value(result.generated.apiToken)).toBe(
+    'test-service-token',
+  );
   expect(result.generated.apiBaseUrl).toBe('https://api.prisma.test');
 });

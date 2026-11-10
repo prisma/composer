@@ -107,7 +107,7 @@ async function beginSession(
 
   // The caller's already-authenticated client, when the engine supplied one
   // — "present means the extension must not build its own from the
-  // environment" (ContainerCredentials). The env token is the standalone
+  // environment" (CallerCredentials). The env token is the standalone
   // fallback, for hosts driving `@prisma/composer/control` without an engine.
   const injected = input.credentials?.client;
   const token = env['PRISMA_SERVICE_TOKEN'];

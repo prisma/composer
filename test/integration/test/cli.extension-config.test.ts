@@ -12,7 +12,7 @@
  * Composer family through the root pnpm override, the same way the example
  * apps do, rather than importing the CLI's internals.
  *
- * `deploy` declares `needs: { credentials: 'child' }`, so the engine refuses
+ * `deploy` declares `needs: { credentials: true }`, so the engine refuses
  * the run before the handler when nothing is signed in — which would stop
  * these invocations short of the resolution they exist to exercise. Both cases
  * therefore supply an environment credential, and the second one supplies a

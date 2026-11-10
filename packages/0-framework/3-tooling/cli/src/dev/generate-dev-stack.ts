@@ -71,8 +71,9 @@ function renderOptions(input: DevStackFileInput): string {
     lines.push(`  unassembled: [${unassembled.map(quote).join(', ')}],`);
   }
 
+  lines.push('  ...transported,');
   lines.push(
-    '  providers: localTargetProviders(resolved, containers, devDir, file.appConfigurationRead.configurationKeyText, namedSecrets),',
+    '  providers: localTargetProviders(resolved, transported.containers, devDir, file.appConfigurationRead.configurationKeyText, namedSecrets),',
   );
   lines.push('  state: devState(),');
 
@@ -89,9 +90,8 @@ export function renderDevStackFile(input: DevStackFileInput): string {
   // module's own imports, and this renderer ships in the testing entry.
   const imports = [
     "import * as path from 'node:path';",
-    "import { deserializeContainers } from '@prisma/composer/config';",
     "import { namedSecretsFromEnvironment, readAppConfigurationFile } from '@prisma/composer/internal/app-configuration-file';",
-    "import { lower } from '@prisma/composer/deploy';",
+    "import { lower, transportedLowerInputs } from '@prisma/composer/deploy';",
     "import { devEnvironmentDir, devState, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
     `import prismaConfig from ${quote(configImport)};`,
     `import app from ${quote(appImport)};`,
@@ -112,7 +112,7 @@ if (config === undefined) {
   throw new Error(${quote(noComposerExportMessage(input.configFile))});
 }
 
-const containers = deserializeContainers(config.extensions, process.env);
+const transported = transportedLowerInputs(config);
 const resolved = await resolveLocalTargets(config);
 const devDir = path.join(process.cwd(), devEnvironmentDir(${quote(input.environment)}));
 const file = readAppConfigurationFile(process.env);
