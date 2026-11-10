@@ -87,7 +87,7 @@ export interface ComputeSerialized {
   readonly triggers: Readonly<Record<string, unknown>>;
   /**
    * Operator-owned platform variables the environment POINTS at and Composer
-   * never writes — no value ever exists to trigger on, so each contributes its
+   * does not write — no value ever exists to trigger on, so each contributes its
    * preflight `updatedAt` as a `<name>:updatedAt` trigger member at deploy
    * time, and an out-of-band rotation still replaces the deployment.
    */
@@ -265,7 +265,7 @@ export function computeDescriptor(
         );
         if (inputRow !== undefined) {
           // Each `$platform` marker in the document names an operator-owned
-          // platform variable Composer never writes, so its rotation shows up
+          // platform variable Composer does not write, so its rotation shows up
           // only as that variable's `updatedAt`.
           const inputValue = envValue(inputRow.value);
           rows.push({

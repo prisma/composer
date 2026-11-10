@@ -15,7 +15,7 @@ from the purpose, not the other way around.
   ships the Prisma Cloud pack, and the core stays target-agnostic.
 - **A queryable topology.** The inferred topology is a first-class artifact you and
   your agents can interrogate from the CLI.
-- **Recreate the whole topology in a fresh environment.** Every element has a managed lifecycle, so standing up a new environment provisions the entire module from nothing, with no click-ops. The one prerequisite is the platform variables the app reads, such as API keys: the operator sets them on the platform first, because Composer never writes one. Before any service or database is created, the deploy names every platform variable a service needs that has no value, with the command that sets it.
+- **Recreate the whole topology in a fresh environment.** Every element has a managed lifecycle, so standing up a new environment provisions the entire module from nothing, with no click-ops. The one prerequisite is the platform variables the app reads, such as API keys: for now the operator sets them on the platform first, because the deploy does not copy local values to the platform. Before any service or database is created, the deploy names every platform variable a service needs that has no value, with the command that sets it.
 - **Reproduce every element in the local dev emulator.** The same topology runs
   locally: each Resource ships a local stand-in beside its real provider, so
   `prisma dev` emulates the deployed module without touching the cloud.

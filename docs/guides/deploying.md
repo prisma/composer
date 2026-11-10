@@ -281,7 +281,7 @@ configure printed it and nothing depended on it.
 
 ## Platform variables
 
-A platform variable is an environment variable on Prisma Cloud that a service reads at boot: the one an `envSecret('NAME')` names, or a service param bound to `envParam('NAME')`. You set it on the platform. The deploy never creates, changes or deletes one, and never copies a value from `.env` or your shell to the platform.
+A platform variable is an environment variable on Prisma Cloud that a service reads at boot: the one an `envSecret('NAME')` names, or a service param bound to `envParam('NAME')`. You set it on the platform. The deploy does not copy a value from `.env` or your shell to the platform, because that could push a local value into a remote environment by accident, and today it creates, changes and deletes no platform variable.
 
 Set a variable with the `prisma` CLI, at one of three scopes:
 

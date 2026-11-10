@@ -92,7 +92,7 @@ Resolution order per param: binding, else `default`, else absent (only legal
 for an `optional` param) — a required param nothing binds fails the deploy
 loudly, naming the param and the service.
 
-An **env-sourced** param mirrors the secrets rail (§ Secrets): the stored row is a pointer to the platform variable's NAME (discriminated from a JSON-encoded literal by the `@composer-param-pointer:` value prefix, which no JSON output can start with), the operator sets the variable on the platform, deploy preflight checks whether it has a value in the environment and writes none, and boot does the double-lookup — pointer, then platform variable. A variable with no value gives the param its default, or leaves it out when the param is optional; preflight fails the deploy, and boot fails, only for a required param ([ADR-0064](../90-decisions/ADR-0064-a-platform-variable-is-set-on-the-platform-never-by-the-deploy.md)). The differences from a secret are deliberate: the value reads back **unredacted**; the platform variable's **raw string** is handed to the param's own schema (no decode — a `number()` param bound to `envParam` fails at boot); and an empty string means unset, because the platform cannot store one. A module passes a binding
+An **env-sourced** param mirrors the secrets rail (§ Secrets): the stored row is a pointer to the platform variable's NAME (discriminated from a JSON-encoded literal by the `@composer-param-pointer:` value prefix, which no JSON output can start with), the operator sets the variable on the platform, deploy preflight checks whether it has a value in the environment and writes none, and boot does the double-lookup — pointer, then platform variable. A variable with no value gives the param its default, or leaves it out when the param is optional; preflight fails the deploy, and boot fails, only for a required param ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)). The differences from a secret are deliberate: the value reads back **unredacted**; the platform variable's **raw string** is handed to the param's own schema (no decode — a `number()` param bound to `envParam` fails at boot); and an empty string means unset, because the platform cannot store one. A module passes a binding
 down to a child as a field of its own `input`. Value changes need a redeploy,
 same as secret rotation.
 
@@ -283,7 +283,7 @@ secrets).
 The round trip carries only the name, never the value:
 
 1. **Bind.** The root binds each secret field to a platform name, and each module on the way passes it on as a field of its input. Load records each service's input binding, and preflight collects every `envSecret()` it names.
-2. **Set.** The operator sets the variable on the platform with `prisma project env add`, for production, for every preview environment, or for one. Composer never writes it.
+2. **Set.** The operator sets the variable on the platform with `prisma project env add`, for production, for every preview environment, or for one. The deploy does not copy a value from the app secrets to the platform.
 3. **Preflight.** Before Alchemy runs, the deploy checks whether each name has a row the environment sees, and writes none. A missing name that a service's schema requires fails the deploy, with its readers and the command that sets it; a missing name nothing requires is listed and the deploy goes on.
 4. **Marker.** The target writes the service's input document with a marker in place of each secret field, naming the variable, not its value:
    ```json

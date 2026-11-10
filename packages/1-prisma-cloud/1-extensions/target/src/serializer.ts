@@ -505,7 +505,7 @@ export interface InputDocumentRow {
   readonly absent: readonly string[];
   /** Generated leaves the descriptor must provision (a `GeneratedParam` resource + env row each). */
   readonly generated: readonly GeneratedLeaf[];
-  /** Every `$platform` marker the document holds, in document order. Composer never writes the variables they name. */
+  /** Every `$platform` marker the document holds, in document order. Composer does not write the variables they name. */
   readonly markers: readonly PlatformMarkerUse[];
 }
 

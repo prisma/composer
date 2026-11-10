@@ -1,4 +1,4 @@
-# 2. The deploy fills nothing
+# 2. The deploy stops copying local values
 
 Parent: [project spec](../../spec.md), [plan](../../plan.md) section 2, [design](../../design.md) sections 3, 5, 6, 8 to 13. Grounding against the code on 2026-11-06: `wip/pv-review/slice2-grounding.md`.
 
@@ -22,7 +22,7 @@ Platform variables with no value:
     prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_…' --role preview --branch 'staging'
 ```
 
-- The deploy writes no variable. Today preflight copies a missing `envSecret()` value from the developer's `.env` to the platform; after this slice it only reads whether a row exists.
+- The deploy does not copy local values to platform variables, because an implicit copy can push a local value into a remote environment by accident. An explicit way to set variables through `deploy` is expected later (deferred.md). Today preflight copies a missing `envSecret()` value from the developer's `.env` to the platform; after this slice it only reads whether a row exists.
 - A variable with no row fails the deploy only when a service cannot boot without it, decided from the service's schema and never from a value. One nothing needs is listed, after the preflight step and again in the deploy report, with the command that sets it. The deploy succeeds.
 - Every operator variable that exists today, `envSecret()` and `envParam()`, follows one rule set: upper-case names, reserved names, one meaning per name, a `$platform` marker in the input document, four boot steps, existence at both scopes the platform offers, triggers on the resolved row's `updatedAt`, and the same rules under `prisma dev`.
 - There is no node yet. `envSecret()` is the only way to name a platform secret, and every value is text. Slice 3 adds the node under these rules, so no platform row ever follows two rule sets on `main`.
@@ -125,7 +125,7 @@ Design section 12. The JSDoc of `envParam()` gains `@deprecated` with the messag
 
 Design section 14, slice 2. Each is rewritten in place as the current statement, with no supersession note.
 
-- **ADR-0064, new.** **(decided here)** Its file is `ADR-0064-a-platform-variable-is-set-on-the-platform-never-by-the-deploy.md`, and `design.md` section 14 is corrected to that title, because a record titled "a platform variable is a node" would be false on `main` until slice 3 merges, and the chosen title stays true after it. It records the platform facts of design section 3, the graph check hook, the name rules, the `$platform` marker, the four boot steps, the preflight rules and findings, the `prisma dev` rules and the shortcuts' status, as they apply to every operator variable. Its line goes into `docs/design/90-decisions/README.md`.
+- **ADR-0064, new.** **(decided here)** Its file is `ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md`, and `design.md` section 14 is corrected to that title, because a record titled "a platform variable is a node" would be false on `main` until slice 3 merges, and the chosen title stays true after it. It records the platform facts of design section 3, the graph check hook, the name rules, the `$platform` marker, the four boot steps, the preflight rules and findings, the `prisma dev` rules and the shortcuts' status, as they apply to every operator variable. Its line goes into `docs/design/90-decisions/README.md`.
 - **ADR-0029 and ADR-0062:** preflight fills nothing. **ADR-0032:** an unset pointed param takes its default or is left out when optional. **ADR-0042:** the `$platform` marker, distinct names for `$generated` only, the four boot steps, empty means unset, the array-position rule. **ADR-0058:** isolation is a local-target rule, and the input a service receives under `prisma dev` and on the platform now agrees for an unset optional secret: the key is absent. Dev's document leaves the marker out; the deploy's document holds it, and boot leaves the key out.
 - **Glossary:** The app configuration, The app secrets, Secrets key, Named secrets and Known secrets say nothing fills a platform variable, and define each set through the names the graph's secret sources use.
 - **Purpose, `goals.md`:** a new environment needs its platform variables set first, and preflight names every one a service needs before any service or database is created.

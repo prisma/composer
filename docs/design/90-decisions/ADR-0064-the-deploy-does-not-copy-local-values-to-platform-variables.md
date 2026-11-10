@@ -1,4 +1,4 @@
-# ADR-0064: A platform variable is set on the platform, never by the deploy
+# ADR-0064: The deploy does not copy local values to platform variables
 
 ```ts
 // module.ts
@@ -20,7 +20,11 @@ Platform variables with no value:
 
 ## Decision
 
-A **platform variable** is an environment variable on the platform that a service reads at boot and that the operator sets. Today `envSecret('NAME')` and a per-key `envParam('NAME')` param name one. A deploy never creates, changes or deletes a platform variable. Destroying the production environment removes the Project, and with it every variable set on it. Composer records which service reads which variable, checks at deploy that every variable a service needs has a value, lists the ones with none, and reads the value only inside the running service. The rows Composer does write are its own: the `COMPOSER_…` rows of each service, and the create-only `DATABASE_URL` and `DATABASE_URL_POOLED` placeholders of [ADR-0048](ADR-0048-prisma-cloud-resources-come-from-the-upstream-alchemy-provider.md). An app can read none of those names.
+A **platform variable** is an environment variable on the platform that a service reads at boot. Today `envSecret('NAME')` and a per-key `envParam('NAME')` param name one.
+
+The deploy does not copy a platform variable's value from the developer's local environment: the `secrets` and `config` adapters, by default `.env` files and the shell. An implicit copy can push a local value into a remote environment by accident. For now the operator sets each value on Prisma Cloud with `prisma project env add`, and the deploy creates, changes and deletes no platform variable. Preflight checks only that every variable a service needs has a value. This is not a rule that the deploy may never set a variable. An explicit way to set variables through `deploy`, where the operator says which values go to which environment, is expected later (see Future work).
+
+Destroying the production environment removes the Project, and with it every variable set on it. Composer records which service reads which variable, checks at deploy that every variable a service needs has a value, lists the ones with none, and reads the value only inside the running service. The rows Composer does write are its own: the `COMPOSER_…` rows of each service, and the create-only `DATABASE_URL` and `DATABASE_URL_POOLED` placeholders of [ADR-0048](ADR-0048-prisma-cloud-resources-come-from-the-upstream-alchemy-provider.md). An app can read none of those names.
 
 ### What Prisma Cloud does
 
@@ -115,7 +119,7 @@ The local target plays the platform's part.
 
 ## Reasoning
 
-**Seeding on deploy moves a local value to production.** A deploy that copies a missing variable from the app secrets or the app configuration to the platform carries a developer's test key to production, because rows are per class and per branch and `.env` is read by every environment. A variable is the operator's, so the operator sets it, on the platform, in the scope the operator chooses.
+**An implicit copy moves a local value to a remote environment.** A deploy that copies a missing variable from the app secrets or the app configuration to the platform can carry a developer's test key to production, because `.env` is read for every environment. Copying on each deploy also writes one override row per preview branch. Until the operator can say explicitly which value goes to which environment, the operator sets each value on the platform, in the scope the operator chooses.
 
 **Preflight is the only protection against a missing value.** The platform promotes a deployment whose process exits at boot and reports it running. So a deploy that succeeded with a required variable unset would leave a crashing service in place. Preflight refuses the case it can see without a value: the service's own schema says the variable is needed.
 
@@ -143,12 +147,15 @@ The local target plays the platform's part.
 
 ## Alternatives considered
 
-- **Keep seeding on deploy.** Rejected: seeding on deploy is how a local value reaches production.
-- **A seeding command**, such as one that copies `.env` values to the platform. Shelved by Will on 2026-11-05.
+- **Keep copying local values on deploy.** Rejected: an implicit copy is how a local value reaches a remote environment by accident.
 - **Succeed with every variable unset, and report.** Rejected: the platform promotes a service that exits at boot and reports it running, so the deploy would leave it crashing. Preflight refuses the case the schema can show without a value.
 - **Two list calls per name, one per scope.** Rejected: one call filtered by class and key returns both.
 - **The newest row's `updatedAt` as the trigger.** Rejected: a change to a class row under a branch override would redeploy a service whose value did not change.
 - **Keep reading `$secret` beside `$platform`.** Rejected: the input document and the boot code ship in the same package and the same deployment, so no older document is ever read by newer boot code.
+
+## Future work
+
+- **An explicit way to set platform variables through `deploy`.** The operator names the values and the environments they go to, and the deploy writes those rows. It needs its own design. It must not read local values implicitly, which is what this decision removed.
 
 ## Related
 

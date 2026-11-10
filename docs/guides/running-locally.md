@@ -422,7 +422,7 @@ token, workspace, or network is involved. Five consequences worth knowing:
 
   If a secret your service's input schema requires is unset or empty, `prisma dev` stops before it starts anything and names the variable and the service. If the schema marks the secret optional, the service starts and sees that field as absent. Change a value and run `prisma dev` again, without `--fresh`, and the services that read it restart with the new value.
 
-  **`.env` and `.env.local` are read by every environment, including `prisma deploy` to `production`.** The deploy never copies a secret to the platform, but a plain value in those files becomes the deployed root input or `envParam()` value. Put local-only values in `.env.dev` or `.env.dev.local`.
+  **`.env` and `.env.local` are read by every environment, including `prisma deploy` to `production`.** The deploy does not copy a secret to the platform, but a plain value in those files becomes the deployed root input or `envParam()` value. Put local-only values in `.env.dev` or `.env.dev.local`.
 
   A `.env` that only your framework loads (Next.js, for example) does not count, because Composer reads each secret before the dev server starts (see [Dev servers](#dev-servers)).
 

@@ -10,7 +10,7 @@ Written from scratch on 2026-11-06 against `main` after #419 plus this branch's 
 
 ```text
 1. The root is written with appRoot()
-2. The deploy fills nothing
+2. The deploy stops copying local values
 3. A platform variable is a node
 4. A platform variable has a schema
 ```
@@ -40,11 +40,11 @@ Each slice is one pull request, merged before the next starts. Slice 1 stands al
 
 **Spec:** [slices/1-the-root-is-written-with-approot/spec.md](slices/1-the-root-is-written-with-approot/spec.md).
 
-## 2. The deploy fills nothing
+## 2. The deploy stops copying local values
 
 **Starts from:** slice 1 merged.
 
-**After this slice merges:** `prisma deploy` never creates a variable on the platform. Preflight reads only whether each variable an app names has a row, at the two scopes the platform offers (the environment's project class and its branch), and when it last changed. A variable with no row that a service needs, decided from the service's schema and never from a value, fails the deploy before anything is created, naming the variable, the service and field that read it, and the `prisma project env add` command that sets it. A variable with no row that nothing needs is listed after the preflight step and again in the deploy report, and the deploy succeeds. A changed value redeploys exactly the services that read it. An `envSecret()` or `envParam()` name must be upper case and must not be `COMPOSER_…`, `DATABASE_URL`, `DATABASE_URL_POOLED`, `PORT`, `PATH` or `HOME`; one name has one meaning in an app. A service's input document carries `{ "$platform": { "name": "X", "secret": true } }` where it carried `{ "$secret": "X" }`. At boot a variable with no value leaves its key out and the service's schema decides; an empty value is unset; a boot error names the variable and never its text. `prisma dev` gives a service only the variables its markers and rows point at, applies the same missing-value rule, and stops before any service starts when a required one is unset. `envParam()` in a binding is deprecated. There is no node yet: `envSecret()` is the only way to name a platform secret, and every value is text.
+**After this slice merges:** `prisma deploy` does not copy local values to the platform, and creates no platform variable. Preflight reads only whether each variable an app names has a row, at the two scopes the platform offers (the environment's project class and its branch), and when it last changed. A variable with no row that a service needs, decided from the service's schema and never from a value, fails the deploy before anything is created, naming the variable, the service and field that read it, and the `prisma project env add` command that sets it. A variable with no row that nothing needs is listed after the preflight step and again in the deploy report, and the deploy succeeds. A changed value redeploys exactly the services that read it. An `envSecret()` or `envParam()` name must be upper case and must not be `COMPOSER_…`, `DATABASE_URL`, `DATABASE_URL_POOLED`, `PORT`, `PATH` or `HOME`; one name has one meaning in an app. A service's input document carries `{ "$platform": { "name": "X", "secret": true } }` where it carried `{ "$secret": "X" }`. At boot a variable with no value leaves its key out and the service's schema decides; an empty value is unset; a boot error names the variable and never its text. `prisma dev` gives a service only the variables its markers and rows point at, applies the same missing-value rule, and stops before any service starts when a required one is unset. `envParam()` in a binding is deprecated. There is no node yet: `envSecret()` is the only way to name a platform secret, and every value is text.
 
 **Satisfies:** R2, R6, R7; R5 for everything that exists in this slice.
 
