@@ -47,7 +47,7 @@ Four changes, two in Composer and two on the platform:
 - [ ] Releasing a setup ("Remove setup") or closing the setup PR unmerged deletes the Project the connect created, and only that one.
 - [ ] Every linked Project in production has a `logicalId`; the backfill reports zero remaining.
 - [ ] `prisma deploy --create` creates a Project from a laptop; without the flag the same deploy refuses.
-- [ ] The Composer decision records "a stage is a deploy-time environment resolved to Project and Branch" and "a node's address is its full path from the app name" are amended: the fallback is gone, and creating a Project needs `--create`. The deploying guide and the core-concepts skill say that a deploy finds its Project by `logicalId` and needs `--create` to make one. The guide's `prisma deploy module.ts --name demo-42` example still works, with `--create` on its first run.
+- [ ] The Composer decision records "a stage is a deploy-time environment resolved to Project and Branch" and "a node's address is its full path from the app name" are amended: the fallback is gone, and creating a Project needs `--create`. The deploying guide and the core-concepts skill say that a deploy finds its Project by `logicalId` and needs `--create` to make one. The guide's `prisma deploy --name demo-42` example still works, with `--create` on its first run (`--name` itself is removed later, by `node-identity-and-consent`).
 - [ ] prisma/composer#355 closed with a comment pointing at this project.
 
 # Open questions
@@ -56,7 +56,7 @@ Four changes, two in Composer and two on the platform:
 
 # References
 
-- Design synthesis and scenarios: `.drive/projects/node-identity-and-consent/design-notes.md` and `assets/`.
+- The whole design, of which this project is part 1: [node-identity-and-consent/design.md](../node-identity-and-consent/design.md).
 - Slack thread with Søren, 2026-10-14, and prisma/composer#355.
 - Composer decision records, in `docs/design/90-decisions/`: ADR-0006 "every node is named", ADR-0024 "a stage is a deploy-time environment resolved to Project and Branch", ADR-0050 "Composer runs as prisma deploy and prisma dev", ADR-0057 "a node's address is its full path from the app name" (it superseded ADR-0051), and ADR-0059 "a place the app runs is called an environment, not a stage or a branch".
 - Control plane, prisma/pdp-control-plane: ADR-010 "a connected repository is the trust boundary for CI deploys" (it mints a workspace-wide token), ADR-011 "project slug as the deploy-target identity", `docs/CiOidcTokenExchange.md`, and `docs/compute/GitHubImport.md` for the repository link lifecycle.

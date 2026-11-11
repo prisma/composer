@@ -1,74 +1,58 @@
 # Purpose
 
-Make every identity change in a Composer graph deliberate and every data-losing deploy consented. Today one string on each node is at once its identity, its label and its address, so an edit that looks cosmetic re-identifies a node and the next deploy deletes a database or forks a Project. After this project, a node's identity and its label are two fields, a label edit changes nothing structural, an identity edit is visible in the diff and asks before it destroys anything, and the platform's CI credential can only reach the Project it was issued for.
-
-This project builds on `deployment-identity`, which already makes Composer find a Project by identifier only and create one only when told. That project closes the reported problem; this one makes the model right. It is written for handoff to another team.
+Make every change to a Composer node's identity deliberate, and make every deploy that would delete a database or bucket ask a person first. The design is in [design.md](design.md); this spec is the project contract the slices are planned against.
 
 # At a glance
 
-Three phases, each shipping on its own.
+- Every node is declared with a required `id`, the last segment of its address. `name` no longer gives identity. `prisma deploy --name` is removed.
+- A deploy that would delete a database or bucket asks one question per database or bucket, answered by `--delete <address>` or `--rename <old address>:<new address>`, following the ORM's rules for destructive operations. Non-interactive runs fail with `CLI.CONSENT_REQUIRED` and change nothing.
+- On the platform, later: CI tokens scoped to one Project, then answering a CI deploy's questions in Console.
 
-**Phase 2: separate identity from label.**
-Every node definition carries a required `logicalId` and an optional `name`. `logicalId` is hand-written, stable over time, and the only value that reaches the platform row's `logicalId` and the application topology. `name` reaches the display name and nothing else; absent, Composer does not manage the label. The provision-time `id` override stays for provisioning the same node twice or a packaged module whose consumer needs a different address. The single-string form, `module('store', …)` and `postgres({ name })`, stops loading with an error naming the two-field form. `--name` on `prisma deploy` goes away. The generated setup files and the Console's reader of the module file follow.
-
-**Phase 3: ask before losing data.**
-A deploy whose plan would delete a Database or Bucket, or re-identify a node, uses the ORM's consent model: one question per subject, answered by `--delete <subject>` or `--rename <old>:<new>`; `--yes` never consents; there is no `--force`; non-interactive runs fail with `CLI.CONSENT_REQUIRED` naming the flags. CI fails closed and a human consents from a laptop. `--rename` updates the platform row's `logicalId` in place, which is the survivable rename the branch-topology design left open.
-
-**Phase 4: platform.**
-CI tokens scoped to the Project the repo is connected to, then Console approval of consent questions raised by a CI deploy.
+This project builds on `deployment-identity`, which makes a deploy find its Project by `logicalId` only and create one only with `--create`.
 
 # Non-goals
 
-- Conveniences that derive `logicalId` from `name`. Required everywhere first; conveniences only if that proves necessary, and never a default from `name`.
-- Consent recorded in code (`renamedFrom`, `retired(...)`, Terraform-style `moved` blocks). Rejected; see design notes.
-- A committed consent file bound to a plan hash. Rejected; see design notes.
-- A deprecation period for the single-string form. Composer is pre-1.0.
-- Changing the deploy action or the generated workflow for anything in phases 2 and 3.
+- Defaulting `id` from `name`.
+- Consent written into the code by the author, or a committed consent file.
+- Questions about services, environment variables or connections, which hold no data.
+- A deprecation period for `name` as identity.
+- Any change to the deploy action or the generated workflow in parts 2 and 3.
 
 # Place in the larger world
 
-- Composer: the node constructors in `@prisma/composer` and the Prisma Cloud extension; Load, which assigns each node its address; the `prisma deploy` command; and container resolution, which finds the Project before Alchemy runs.
-- Control plane: the setup-PR generator (`planComposerSetup.ts`, `buildModule`), the module-file inspector that reads the declared name at connect, and the resource update path that the import project (`projects/composer-import/spec.md`) adds for binding rows by platform id. Phase 3's `--rename` depends on that path accepting a new `logicalId` on service, database and bucket rows.
-- The control plane's decision record on CI trust ("a connected repository is the trust boundary for CI deploys") mints a workspace-wide token and defers narrowing it. Phase 4 is where that narrowing lands. The control plane's CI-builds spec requires that every screen a user acts on is in Console, which is why consent approval belongs there rather than in GitHub.
-- The ORM's CLI Style Guide, "Destructive operation confirmation", is the consent model to copy exactly.
+- Composer: every node constructor, Load (which builds each address), `prisma deploy`, and the plan step before a deploy changes anything.
+- The ORM's CLI Style Guide, "Destructive operation confirmation": the consent rules to follow exactly, including `CLI.CONSENT_REQUIRED`, `CLI.CONSENT_UNUSED` and the control API's answer callback.
+- Control plane: Console's setup pull request generator and its reader of the module file must write and read `id`. Part 4 narrows the CI token the control plane mints today for a whole workspace.
 
 # Cross-cutting requirements
 
-- `logicalId` is the only identity. No code path may match a platform row by display name.
-- Every node kind that lowers to a platform row passes its `logicalId`. A new node kind is not done until it does. Composer's decision record "a node's address is its logical ID on the platform" already requires this; it is restated here because phase 2 touches every constructor.
-- Consent is per subject and never defaulted. `--yes` and `-y` accept prompt defaults only.
-- The graph is Composer's image of the system: values edited on the platform are set back on the next deploy. The one deliberate exception is a label whose declaration omits `name`.
+The requirements table in [design.md](design.md#requirements-this-design-meets) is the contract. In particular:
+
+- One identity per node: the `id`s form the address, and the address is the platform `logicalId`.
+- No code path matches a platform row by display name.
+- No deploy deletes a database or bucket without a statement naming it; `--yes` never answers.
 - Composer stays unaware of GitHub.
 
 # Transitional-shape constraints
 
-- Phase 2 lands in one Composer release, because it breaks every existing module. The generated setup files and the Console inspector ship before or with it.
-- Phase 3's `--delete` can ship before `--rename`; `--rename` waits on the platform update path. Until then a re-identified node is delete-and-create with consent.
-- Phase 4's two halves are independent: scoped tokens first, approval second.
+- Part 2 lands in one Composer release, because it breaks every module. Console's setup files and module reader ship before or with it.
+- In part 3, `--delete` may ship before `--rename`. Until `--rename` ships, a changed address of a database or bucket is answered only by `--delete`.
 
 # Project DoD
 
-- [ ] A module written with the two-field form deploys; the same module with a single-string node fails to load with an error naming the fix.
-- [ ] Renaming a database's `name` and deploying changes its Console label and nothing else. Renaming its `logicalId` without a statement fails with `CLI.CONSENT_REQUIRED`; with `--rename old:new` the same row keeps its data and carries the new identifier; with `--delete old` the row is deleted and a new one created. Each proven against a real Project.
-- [ ] A push-to-deploy run whose plan would delete a database fails closed and names the flags; no row changes.
-- [ ] A fresh Console connect writes the two-field root with a hoisted `logicalId` constant, and connecting a repo that brings its own two-field config reads the identifier correctly.
-- [ ] A CI token minted for a connected repo cannot read or write another Project in the workspace.
-- [ ] A new Composer decision record states the two-field model and the consent model, and amends the records on node naming, environment resolution and node addresses. The guides, examples and the core-concepts skill use the two-field form throughout.
+- [ ] A module declared with `id` deploys; a node declared with `name` and no `id` fails to load with an error saying to write `id`.
+- [ ] Against a real Project: changing a database's `id` and deploying without a statement fails with `CLI.CONSENT_REQUIRED` and changes nothing; with `--rename` the same database keeps its rows under the new `logicalId`; with `--delete` it is deleted and a new one created.
+- [ ] A push-to-deploy run that would delete a database fails and names the flags; no row changes.
+- [ ] Console's setup pull request writes `id`, and Console reads `id` from a repository that brings its own module.
+- [ ] A connected repository's CI token cannot read or write another Project in the workspace.
+- [ ] The decision records listed in [design.md](design.md#what-this-changes-in-the-recorded-design) are amended or superseded; the guides, examples and the agent skill use `id` throughout.
 
 # Open questions
 
-- What the identity field on a child's definition is called. This design was settled before the decision record "a node's address is its full path from the app name" landed. That record makes the full address (`store.catalog`) the platform `logicalId`. So on a child, the value an author writes (`'catalog'`) is one segment of the `logicalId`, not the `logicalId` itself; only on the root are they equal. Either the field keeps the name `logicalId` and the docs explain that a child's `logicalId` is the full path built from it, or it gets a name for the segment. This needs a decision before phase 2 starts.
-
-- Whether Console approval (phase 4b) is built in this project or spun out once scoped tokens exist. Decide at phase 4 planning.
-- Whether the plan output for an identity change below the root needs its own flag beyond the consent question. Decide in phase 3 slice planning.
+See [design.md](design.md#open-questions). None blocks part 2 except the first (whether `name` survives as a label), which decides part 2's API.
 
 # References
 
-- Design notes with every decision, its reasoning, and the rejected alternatives: [design-notes.md](design-notes.md).
-- User scenarios the design must cover: [assets/user-scenarios.md](assets/user-scenarios.md).
-- Worked example of the two-field model: [assets/logicalid-walkthrough.md](assets/logicalid-walkthrough.md).
-- Predecessor project: `.drive/projects/deployment-identity/`.
-- ORM consent model: prisma/orm `docs/CLI Style Guide.md`, section "Destructive operation confirmation". The two ORM changes that introduced it are "migration plan asks before a lossy type change" (commit 07a7bc06) and "migration plan requires consent for destructive auto-baselines" (commit c5a8b5ad).
-- Composer decision records, in `docs/design/90-decisions/`: ADR-0006 "every node is named", ADR-0024 "a stage is a deploy-time environment resolved to Project and Branch", ADR-0050 "Composer runs as prisma deploy and prisma dev", ADR-0057 "a node's address is its full path from the app name" (it superseded ADR-0051), and ADR-0059 "a place the app runs is called an environment, not a stage or a branch".
-- Control plane, prisma/pdp-control-plane: ADR-010 "a connected repository is the trust boundary for CI deploys", ADR-011 "project slug as the deploy-target identity", `projects/branch-topology/spec.md`, `projects/composer-import/spec.md`, and `docs/compute/GitHubImport.md`.
-- Linear: Node identity and consent (Terminal team).
+- [design.md](design.md)
+- prisma/orm `docs/CLI Style Guide.md`, "Destructive operation confirmation".
+- Linear: "Node identity and consent" (Terminal team).

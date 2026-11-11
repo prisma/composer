@@ -1,42 +1,37 @@
 # Project Plan — node-identity-and-consent
 
-## Summary
+**Spec:** [spec.md](spec.md) · **Design:** [design.md](design.md)
 
-Handoff plan. The slices below are the phases from the design, in the order they must ship. The receiving team decomposes each into slices of its own at pickup. Linear project: [Node identity and consent](https://linear.app/prisma-company/project/node-identity-and-consent-9ec5f9f522c0) (P-TML-1157). Builds on `deployment-identity` (P-TML-1156), which must be in production first.
+Handoff plan. Each part below is shipped on its own; the team picking it up splits it into slices. Builds on `deployment-identity`, which must be in production first. Linear project: [Node identity and consent](https://linear.app/prisma-company/project/node-identity-and-consent-9ec5f9f522c0).
 
-**Spec:** `.drive/projects/node-identity-and-consent/spec.md`
+## Part 2 — `id` on every node (Composer, then Console)
 
-## Phases
+Every node constructor takes a required `id`; Load builds addresses from `id`s; a node declared with `name` and no `id` fails to load, naming `id`; `prisma deploy --name` is removed; guides, examples and the agent skill use `id`; the decision records listed in the design are amended. Then Console: the setup pull request writes `id`, and the module reader reads it. One Composer release.
 
-### Phase 2 — Separate identity from label (Composer, then control plane)
+- **Needs first:** `deployment-identity` in production, and an answer to the design's first open question.
+- **Hands to part 3:** Composer can tell an identity change from any other edit.
 
-Every node definition takes `logicalId` (required) and `name` (optional); Load uses `logicalId` for the address; the single-string form fails to load with an error naming the fix; `--name` is removed from `prisma deploy`; guides, examples and the core-concepts skill move to the two-field form; a new decision record states the model and amends the records on node naming, environment resolution and node addresses. Then the control plane: the setup-PR generator writes the two-field root with a hoisted `logicalId` constant and a one-line comment, and the module-file inspector reads that constant. One Composer release.
+## Part 3 — Ask before a database or bucket is deleted (Composer)
 
-- **Builds on:** `deployment-identity` in production.
-- **Hands to:** phase 3 — Composer can tell a label edit from an identity edit.
+Before applying, the deploy computes its plan; each database or bucket it would delete is a question answered by `--delete <address>` or `--rename <old>:<new>`, following the ORM's consent rules; non-interactive runs fail with `CLI.CONSENT_REQUIRED`. `--rename` writes Alchemy rename declarations for the run and updates the row's `logicalId` in place, which the platform already allows for services, databases and buckets. `--delete` may ship first.
 
-### Phase 3 — Ask before losing data (Composer, with a platform dependency)
+- **Needs first:** part 2.
+- **Hands to part 4:** a CI deploy that needs answers fails with questions the platform could carry.
 
-The ORM's consent model in `prisma deploy`: one question per subject whose row would be deleted or re-identified, answered by `--delete <subject>` or `--rename <old>:<new>`; `--yes` never consents; non-interactive runs fail with `CLI.CONSENT_REQUIRED`. `--delete` can ship first. `--rename` waits on the platform's update path accepting a new `logicalId` on service, database and bucket rows (the import project adds it).
+## Part 4 — Platform (control plane)
 
-- **Builds on:** phase 2.
-- **Hands to:** phase 4 — CI deploys that need consent fail closed with a named question the platform could carry.
+4a. CI tokens scoped to the connected repository's Project. 4b. Console shows a CI deploy's questions and re-runs it with the answers.
 
-### Phase 4 — Platform (control plane)
-
-4a. CI tokens scoped to the Project the repo is connected to (the narrowing the control plane's CI-trust decision record deferred). 4b. Console approval: the build record carries the consent questions, Console shows them, an operator answers, the CI run re-runs with the answers.
-
-- **Builds on:** 4a on nothing beyond `deployment-identity`; 4b on 4a and phase 3.
-- **Hands to:** close-out.
+- **Needs first:** 4a nothing beyond `deployment-identity`; 4b needs 4a and part 3.
 
 ## Sequencing
 
-- Stack: 2 → 3 → 4b.
-- Parallel: 4a alongside phases 2 and 3.
+- In order: 2, then 3, then 4b.
+- In parallel: 4a alongside 2 and 3.
 
 ## Close-out (required)
 
-- [ ] Verify all acceptance criteria in `.drive/projects/node-identity-and-consent/spec.md`
-- [ ] Migrate long-lived docs into `docs/` (the ADR; the design notes' decisions and rejected alternatives belong in it)
-- [ ] Strip repo-wide references to `.drive/projects/node-identity-and-consent/**`
-- [ ] Delete `.drive/projects/node-identity-and-consent/`
+- [ ] Verify every DoD condition in [spec.md](spec.md).
+- [ ] Move the long-lived design into a Composer decision record under `docs/design/90-decisions/`.
+- [ ] Remove references to `.drive/projects/node-identity-and-consent/`.
+- [ ] Delete `.drive/projects/node-identity-and-consent/`.

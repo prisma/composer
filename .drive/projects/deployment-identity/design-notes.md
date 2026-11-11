@@ -11,8 +11,8 @@
 The Project's `logicalId` is the app name: the decision record "a node's address is its full path from the app name" makes the root's address the app name, and every address is its node's `logicalId`. Container resolution matches on it and on nothing else. If no Project matches, the deploy stops unless `--create` was passed. The platform creates the Project when a repo is connected, so a connected repo's CI run always finds its Project and never needs `--create`.
 
 ```
-prisma deploy module.ts            # finds Project by logicalId, or refuses
-prisma deploy module.ts --create   # finds, or creates with that logicalId
+prisma deploy            # finds the Project by logicalId, or refuses
+prisma deploy --create   # finds it, or creates it with that logicalId
 ```
 
 The refusal message is the whole point: "No Project with logicalId `storefront` in this workspace. This deploy would create a new project rather than update one. Pass `--create` to do that. If this repository is connected in Console, the Project should already exist; check the connection."
@@ -30,4 +30,4 @@ The refusal message is the whole point: "No Project with logicalId `storefront` 
 
 ## References
 
-- Full design, including the phases this project does not deliver: `.drive/projects/node-identity-and-consent/design-notes.md`.
+- The whole design, including the parts this project does not deliver: [node-identity-and-consent/design.md](../node-identity-and-consent/design.md).
