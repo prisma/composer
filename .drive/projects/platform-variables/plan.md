@@ -4,7 +4,7 @@ Spec: [spec.md](spec.md), which numbers the requirements (R1 to R8) and the deci
 
 ## Status
 
-Written from scratch on 2026-11-06 against `main` after #419 plus this branch's `appRoot()` design, after Will's third round of decisions and the platform checks. Slice 1 is specified.
+Slices 1 and 2 are merged. Slice 3 is specified.
 
 ## Order
 
@@ -72,27 +72,26 @@ Each slice is one pull request, merged before the next starts. Slice 1 stands al
 
 **Starts from:** slice 2 merged.
 
-**After this slice merges:** An app's root provisions `variable({ name })` for a plain platform variable and `variable.secret({ name })` for a platform secret, both from `@prisma/composer-prisma-cloud`. `provision()` returns the value itself, with `id` on it, so the root passes it into a module's or a service's input binding: a plain one into a `field()`, a secret into a secret field. A `module()` body that calls `provision(variable(…))`, at the root or below it, does not compile, and the error names `appRoot()` as the fix. The loaded graph lists every platform variable node and, for each service, the variables it reads, without deploying. Two declarations of one name in the root fail Load naming both; so does a value in a `resolve()` dependency, a resource's props, per-key params, the whole input or a plain field. The deploy, preflight, boot and `prisma dev` treat a node's variable exactly as slice 2 treats an `envSecret()`'s, and `prisma dev` also fills a plain platform variable from the app configuration. The examples and guides use the nodes. `envSecret()` is deprecated in favour of `variable.secret()`, and below the root it fails Load with a message saying to provision the node in the root and pass the value down. `schema` does not exist yet; every value is text.
+**The decision.** An app declares each platform variable it reads as a node in its root: `provision(variable({ name }))` for a plain one, `provision(variable.secret({ name }))` for a secret. `provision()` returns the value itself, so the root passes it down through module inputs like any other value. Only the app root can provision one, and the compiler enforces it. Core learns one new concept for this, a value resource: a resource node that is also a value. Everything slice 2 does for an `envSecret()` applies to the nodes, and `envSecret()` becomes a deprecated spelling of a platform secret.
 
-**Satisfies:** R1; R2, R5 and R7 for the nodes.
+**After this slice merges:**
 
-**Design:** D2, D3, D4, D5, D6, D7 (the node's rules), D8 (the node's constructor), D12 (plain platform variables under dev), D14 (`envSecret()` as a spelling of the node), D15. Design sections 4, 5, 6, 10, 12, 14.
+- `variable()` and `variable.secret()` exist in `@prisma/composer-prisma-cloud`. A plain value fits a `field()` field or a service's per-key param; a secret fits a secret field and arrives boxed.
+- `provision(variable(…))` in a `module()` body, at the root or below it, does not compile, and the error names `appRoot()`.
+- The loaded graph lists every platform variable node and, for each service, the variables it reads.
+- Right after Load, the target's graph check refuses: two nodes for one name; one name used two ways, except a plain node beside a per-key `envParam()`, which read the same variable; a node value as a service's whole input; and `envSecret()` written below the root.
+- Deploy, preflight and boot treat a node's variable as slice 2 treats an `envSecret()`'s. The node creates nothing, is not sent in the application topology, and has no line in the deploy report.
+- `prisma dev` fills a plain platform variable from the app configuration and refuses a value that is not text before any service starts.
+- The `email`, `auth` and `storefront-auth` examples use the nodes; `env-param` moves to a root input field. The guides, the skill and the records describe the nodes.
+- `schema` does not exist yet; every value is text.
 
-**Builds:**
+**Satisfies:** R1; R2, R5 and R7 for the nodes; R8 for the records it rewrites.
 
-- Core: the one `provision()` overload on `appRoot()`'s body that accepts a platform variable node; `module()`'s body does not get it, and its compile error for a platform variable node names `appRoot()`. A resource node that provides no contract may be a value: the target builds the source at construction, and `provision()` returns it with the provisioned address stamped into the pointer's data and `id` set on it. The rule that a root's fields are plain or secret, never `field()`, stays a Load check (design section 4).
-- The constructors: `variable({ name })` and `variable.secret({ name })`, each building its source at construction with the target's payload (the name, whether it is a secret), using slice 2's name checker, with a descriptor that provisions nothing and is not sent to the application topology. The default id is the name in camel case; an explicit `id` wins; two names giving one id fail Load with the duplicate-id error and say to pass `id`. Types: `RuntimeValue<string> & { id: string }` for plain, `RuntimeValue<SecretString> & { id: string }` for secret, bound to `secretString()` until module-input S18 ships; a plain value in a secret field or a secret in a `field()` fails to compile (design section 4).
-- The graph check gains: one declaration per name inside the root, across both forms and for the same node object provisioned twice; the one-meaning rule extended to the two node kinds; a value in a place it may not go, naming the variable and the place; `envSecret()` below the root, with the migration message (design sections 4 to 6 and 12).
-- The reads relation: the loaded graph records, beside each service's binding, the platform variables it reads, from the addresses stamped in the pointers Load finds at any depth; the target groups it by variable for the report and for errors, and lists each `envSecret()` beside the nodes through the existing list of secret sources (design section 5).
-- The serializer, preflight and boot handle a node's marker through slice 2's code; nothing per row changes. The local target fills a plain platform variable from the app configuration under its name, refuses a value that is not text before any service starts, and hands plain values to the second process in the app configuration file beside the keys it already carries; the second process gives the local target the two sets, never the whole configuration or secrets (design section 10).
-- `envSecret()` is marked deprecated, with a message naming `variable.secret()`.
-- Examples `email`, `auth`, `storefront-auth` and `env-param` move to the nodes. The building-an-app and deploying guides and the agent skill show the nodes, the mental model (name, readers, schema; the operator chooses scope), and one line on why only the root provisions them.
-- Records, each rewritten in place as the current statement: ADR-0064 gains the node (design sections 4 to 6, the core changes, and section 15's alternatives); ADR-0062's Values section (a third origin of a runtime value); ADR-0063 (a service also reads a platform variable, a third relationship that is not an edge); ADR-0029 (a secret is any value handled as one; a platform secret is the kind Composer never sees); ADR-0058 (the named secrets are defined through platform secrets); the glossary's new entries Platform variable and Platform secret, and its Module (App), Core nouns, Resource, Topology, Address and logical ID, Input, Value, RuntimeValue, The app configuration, The app secrets, Secrets key, Named secrets and Known secrets entries, now defined through platform secrets with `envSecret()` as one spelling; the domain map; the architectural principle "A node's address is its identity" and ADR-0051, which gain the name-as-identity exception. Some of these were rewritten in slice 2; rewriting them again is allowed because the slices are sequential.
-- The release note: `envSecret('X')` becomes `variable.secret({ name: 'X' })` provisioned in the root, before and after; `envSecret()` below the root fails Load; `envSecret()` is deprecated.
+**Design:** D2 to D7, D8 (the node's constructor), D12 (plain platform variables under dev), D14 (`envSecret()` as a spelling of a platform secret), D15. Design sections 4, 5, 6, 10, 12 and 14.
 
-**Checked on Prisma Cloud:** an app with a plain node, a secret node and a module that receives both through its input, deployed with the secret unset and required (preflight refuses) and then set (the service boots with the value). A fresh preview branch of that app. A nested module calling `provision(variable(…))` fails to compile naming `appRoot()`, and so does a `module()` root's body. The same app under `prisma dev` with its values in `.env.dev`. The planted-secret search repeated with a secret node.
+**Checked on Prisma Cloud:** an app with a plain node, a secret node and a module that receives both through its input, deployed with the secret unset and required (preflight refuses), then set (the service boots with the value); a plain node in a per-key param; a fresh preview branch of that app; a nested module and a `module()` root's body failing to compile with `appRoot()` in the error; the same app under `prisma dev`; the planted-secret search with a secret node.
 
-**Spec:** to be written when slice 2 merges.
+**Spec:** [slices/3-a-platform-variable-is-a-node/spec.md](slices/3-a-platform-variable-is-a-node/spec.md), which holds every type, rule, message, file, record and test, and the alternatives considered.
 
 ## 4. A platform variable has a schema
 
