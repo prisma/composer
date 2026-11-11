@@ -38,7 +38,7 @@ export default appRoot('shop', {}, ({ provision }) => {
 
 The deploy does not copy any of these values from the developer's local environment, and does not read or need them. A missing value fails the deploy only when a field that must have a value reads it; otherwise the deploy lists the variable as not set and succeeds. For now the operator sets the values on the platform.
 
-The two shortcuts become spellings of the same thing. `envSecret('NAME')` is a platform secret written inline, with the meaning of `variable.secret({ name: 'NAME' })` provisioned in the root, and follows every rule in this document. `envParam('NAME')` in an input binding is a deploy-time value from the app configuration, not a platform variable, and is deprecated with `envSecret()`; a root input field replaces it. Section 12 has the detail.
+The two shortcuts, `envSecret()` and `envParam()`, are removed. A value the deploy reads is a field of the app root's `input`; a value the service reads at boot is a platform variable node. Section 12 has the detail.
 
 ## 2. Requirements
 
@@ -144,7 +144,7 @@ This reverses the glossary's statement that "there is no separate root construct
 
 ### How the value is built
 
-Core already has the one abstraction this needs: a **source**, a value whose real value at deploy is itself, a pointer, built by a target from a payload core never reads. `envSecret()` is one. A platform variable node builds its value the same way:
+Core already has the one abstraction this needs: a **source**, a value whose real value at deploy is itself, a pointer, built by a target from a payload core never reads. `generatedParam()` is one. A platform variable node builds its value the same way:
 
 - **The constructor builds the source.** `variable()` and `variable.secret()` each build one source at construction, with the target's own payload: the variable's name, whether it is a secret, and the JSON Schema (section 7). A secret's source carries the name as its secrets key, so Composer knows what to redact and what `prisma dev` hands its second process, exactly as `envSecret()`'s does. The node holds this source.
 - **`provision()` stamps the address.** `provision(node)` returns a copy of the node's source whose pointer data also holds the provisioned node's address. The address is ordinary data in the pointer, not a symbol-keyed origin, so it survives the copy a schema library may make of a pointer. This is what lets Load say which service reads which node after the value has passed through a module's input.
@@ -158,7 +158,7 @@ Section 14 records that this is a third origin of a runtime value beside the tab
 - **A service's input binding:** a wrapped field (`field()`) for a plain platform variable, a secret field for a platform secret. Before module-input S18 ships, the secret field is `secretString()`; after it, `secret(inner)`. The deploy check and the compiler refuse the other combinations, as module-input already does for every pointer.
 - **A module's input binding,** into a wrapped field or a secret field, from which the module passes it on.
 - **Two fields of one service may read one variable.** Each gets its own marker, and both read the same text at boot. The deploy's check that a service's markers name distinct variables keeps applying to `$generated` markers, which each own a variable, and stops applying to `$platform` markers.
-- **A service's per-key params,** for a plain platform variable. It writes a pointer row that the service reads at boot, as a per-key `envParam()` does.
+- **A service's per-key params,** for a plain platform variable. It writes a pointer row that the service reads at boot, the same row a per-key `envParam()` wrote before slice 3 removed it.
 - **Nowhere else.** A `resolve()` dependency, a resource's props, the whole input of a service, and a plain field (a schema member written without `field()` or a secret field) all need data the deploy has. The compiler refuses each where it can see the type. Where it cannot, Load refuses a `resolve()` dependency and a resource's props, the target's graph check (section 5) refuses the whole input, and the service's own schema refuses a plain field, naming the variable.
 
 ### What the target does with the node
@@ -186,7 +186,7 @@ Core's Load knows nothing about the node's payload, so the rules that read the p
 - **The constructor** checks everything that depends on one node alone: the name's form and the reserved names (section 6), and the `schema` (section 7). It throws, so Load fails with the constructor's message and no hook is needed.
 - **The target's graph check** checks everything that depends on more than one node, and anything that needs the resolved bindings. It is one hook that an extension registers and that runs right after Load, in every command that runs Load: `prisma deploy`, `prisma dev` and `destroy`. A command that loads the entry only to read the app's name never runs Load, so the check does not run there. So a bad graph fails before preflight, before any dev service starts, and without a deploy. This hook is new; slice 2 adds it to core. Today's similar checks run only at serialize or in preflight, which means at deploy.
 
-The graph check enforces: one declaration per name inside the root, one meaning per name (section 6), a value bound as a service's whole input (section 4), and `envSecret()` below the root (section 12). The array-position rule (section 8) runs in the serializer, where array positions are known. Root-only for the nodes needs no check, because the compiler enforces it (section 4). Each error names the variable and every address involved.
+The graph check enforces: one declaration per name inside the root, one meaning per name (section 6), and a value bound as a service's whole input (section 4). The array-position rule (section 8) runs in the serializer, where array positions are known. Root-only for the nodes needs no check, because the compiler enforces it (section 4). Each error names the variable and every address involved.
 
 ## 6. Names
 
@@ -217,11 +217,9 @@ Within one app, a name is used in exactly one of these ways, and the graph check
 
 - a plain platform variable node;
 - a platform secret node;
-- `envSecret('NAME')`, written inline;
-- `envParam('NAME')`, in a binding or in a service's per-key params;
 - a field of the root's input, plain or secret, that the root's body passes on.
 
-A name used two ways means two things: a value from the platform at boot, and a value from the app configuration at deploy, or one variable claimed by two declarations. Composer already refuses `envParam()` with `envSecret()`, and a root field with `envSecret()`. This rule covers every pair, with one error that names both uses. The same way used twice is fine where it is fine today: two `envParam('X')` in two bindings, or two `envSecret('X')`, read one variable. Two nodes for one name are never fine (section 4).
+A name used two ways means two things: a value from the platform at boot, and a value from the app configuration at deploy, or one variable claimed by two declarations. Composer already refuses a root field with a secret of the same name. This rule covers every pair, with one error that names both uses. Two nodes for one name are refused too (section 4).
 
 ## 7. `schema`: the variable's type travels as data
 
@@ -322,7 +320,7 @@ The local target has no platform, so it plays the platform's part.
 
 - **It fills each platform variable from the developer's values:** a plain platform variable from the app configuration, a platform secret from the app secrets, each under the variable's `name`. These are the lists `prisma.config.ts` names, read once per converge in the first process.
 - **A plain platform variable's value must be text.** An app configuration value under its name that is not text fails `prisma dev` before any service starts, naming the variable and the kind of value found, as `envParam()` does today. The app secrets are text already.
-- **What reaches the second process.** The first process hands the second process each plain platform variable's text in the app configuration file, beside the configuration keys it already carries, and each platform secret's text in `PRISMA_COMPOSER_NAMED_SECRETS`, in memory, as `envSecret()`'s today. The check that refuses to write a known secret into the file applies unchanged. The second process gives the local target the two sets, never the whole app configuration or app secrets.
+- **What reaches the second process.** The first process hands the second process each plain platform variable's text in the app configuration file, beside the root's input, and each platform secret's text in `PRISMA_COMPOSER_NAMED_SECRETS`, in memory. The check that refuses to write a known secret into the file applies unchanged. The second process gives the local target the two sets, never the whole app configuration or app secrets.
 - **It isolates.** A local service receives only the variables its own rows point at: its param pointer rows and the `$platform` markers in its input document. The local target collects `$platform` markers at any depth, as it collects `$secret` markers today.
 - **It validates before any service starts.** The first process decodes and validates each filled value against its marker's JSON Schema, by the rules in sections 7 and 8, with the one shared implementation. A value that fails stops `prisma dev` with the message boot would give.
 - **A missing value follows ADR-0058.** The dev preflight leaves every unset platform variable out and validates the service's input. If the schema accepts it, the variables were optional. If it fails, the error lists the variables whose absence alone fails, where to set them (`.env.dev`, `.env.dev.local` or the shell), and the schema's message.
@@ -332,22 +330,25 @@ The local target has no platform, so it plays the platform's part.
 ## 11. Secrets and redaction
 
 - A platform secret's value never enters Composer during a deploy. It is a pointer in the input document, and the platform delivers it at boot.
-- **Known secrets.** Under deploy and dev, the value under each platform secret's `name` in the app secrets or the app configuration is a known secret, and Composer redacts it wherever it prints. This is what `envSecret()` names do today. Composer never uses these values on deploy; it reads them only to redact them, because a developer's shell often holds the production value of a secret it deploys.
+- **Known secrets.** Under deploy and dev, the value under each platform secret's `name` in the app secrets or the app configuration is a known secret, and Composer redacts it wherever it prints. Composer never uses these values on deploy; it reads them only to redact them, because a developer's shell often holds the production value of a secret it deploys.
 - **Under `prisma dev`,** a platform secret's value is read, handed to the second process in memory, and given to the local service. It is never written to a file Composer owns. The compute emulator's copy of a service's environment is the known limit ADR-0058 records.
 - **At boot and under `prisma dev`,** an error about a platform variable names the variable and what was expected, never the text (section 8). A test plants a secret, decodes it under a number schema, and checks that the error holds no part of it.
 - **In the deploy report,** a marker shows its name and type only, and a schema's annotations are removed before the marker is written.
 
 ## 12. The shortcuts
 
-Both shortcuts stay as deprecated spellings and are removed in a later release.
+Slice 3 removes `envSecret()` and `envParam()`. After it, an app gets a value from outside its code in exactly two ways:
 
-- **`envSecret('NAME')` is a platform secret written inline.** It stays a source, not a node: Load creates no node from a value it finds in a binding, which would need a mechanism nobody has designed for a form that is going away. It writes the same `$platform` marker as `variable.secret()`, with `secret: true`, and follows every rule here: the name's form and the reserved names, one meaning per name, no seeding, the missing-variable rules, and the rule that empty means unset. The target lists each `envSecret()` beside the nodes, through the existing list of secret sources, so the deploy report and errors name both. `envSecret()` below the root fails the graph check with an error that says to provision `variable.secret({ name })` in the root and pass its value through the module's input; the compiler cannot refuse it while `envSecret()` is a source, because a source may be written in any binding. The only thing lost against the node is that the graph does not list it as a node.
-- **`envParam('NAME')` in an input binding** is a deploy-time value from the app configuration, not a platform variable. It is deprecated, and a root input field replaces it.
-- **`envParam('NAME')` in a service's per-key params,** the older form of input, also stops being filled by preflight. At boot an unset pointed param takes the param's default or is left out if the param is optional, as a marker does; today it fails boot regardless. The boot error for a required one names the variable and says to set it on the platform; today it says the deploy did not provision it, which stops being true.
+- **A value the deploy reads** is a field of the app root's `input`, filled from the app configuration. It replaces `envParam('NAME')` in an input binding, which was already a deploy-time value from the app configuration and not a platform variable.
+- **A value the service reads at boot** is a platform variable node provisioned in the app root. `variable.secret({ name })` replaces `envSecret('NAME')`. `variable({ name })` replaces `envParam('NAME')` in a service's per-key params: a plain node there writes the same pointer row, and the service reads the variable at boot.
+
+One mechanism for each kind of value means every platform variable is a node the graph lists, and no rule needs to tell a node from an inline spelling. Core keeps no source that reads the app configuration, so Load reads the app configuration for the root's input only. The code that existed only for the two functions goes with them. Apps and docs in Prisma's other repositories move in those repositories, following slice 3's migration guide.
+
+Until slice 3, slice 2's rules apply to both functions: `envSecret('NAME')` writes the `$platform` marker with `secret: true` and follows every rule here, and an unset per-key `envParam()` param takes its default or is left out when optional.
 
 ## 13. What changes for existing apps
 
-Slice 1 makes the first change. Slice 2 makes every change that touches an existing platform row at once, so that no two rules for one row ever coexist on `main`. Slice 3 makes the last two, which concern only the new node's spelling.
+Slice 1 makes the first change. Slice 2 makes every change that touches an existing platform row at once, so that no two rules for one row ever coexist on `main`. Slice 3 replaces the two shortcuts with the node and the root's input; it changes no platform row.
 
 - **The root is written with `appRoot()`** (slice 1). Every app in this repository changes `module(` to `appRoot(` on its entry; a `deps` or `expose` on the root fails to compile. An entry that is still a `module()` deploys exactly as before. Nested modules do not change. Slice 1 breaks nothing.
 - **The deploy no longer creates a variable** (slice 2, as is every change below unless marked). A project that relied on `deploy` copying `envSecret()` values from `.env` to the platform sets them on the platform instead. The release note gives the commands.
@@ -355,11 +356,9 @@ Slice 1 makes the first change. Slice 2 makes every change that touches an exist
 - **The deploy fails for a missing variable only when a service needs it.** An optional one is reported. Today every missing name fails the deploy.
 - **Names are upper case.** An `envSecret()` or `envParam()` name with a lower-case letter fails Load. No deployed project has one, because the platform refuses a key that is not upper case (section 3), so the release note has no step for it.
 - **`PORT`, `PATH` and `HOME` are reserved.** An `envSecret()` or `envParam()` that names one fails Load.
-- **`envSecret('NAME')` below the root fails the graph check right after Load** (slice 3), with the migration message in section 12.
 - **An unset `envParam()` per-key param with a default or optional** boots instead of failing.
-- **`envParam()` is deprecated** (slice 2), and **`envSecret()` is deprecated** (slice 3, once `variable.secret()` exists to replace it).
-
-Nothing else changes for an app that uses neither shortcut.
+- **`envParam()` in a binding is deprecated** (slice 2).
+- **`envSecret()` and `envParam()` are removed** (slice 3). Each use moves: `envSecret('X')` to `provision(variable.secret({ name: 'X' }))` in the root; `envParam('X')` in an input binding to a field of the root's `input`; `envParam('X')` in per-key params to `provision(variable({ name: 'X' }))` in the root. A root that names a platform variable must be built with `appRoot()`. The variables on the platform keep their names and rows. Slice 3's release note is the migration guide.
 
 ## 14. What this design reverses, and which slice amends each record
 
@@ -395,16 +394,19 @@ The graph is still a composition of modules that are all the same, except the ro
 - **Glossary, Resource:** "A node whose lifecycle a provider manages." Now also a node that refers to a value the platform owns.
 - **Architectural principles, "A node's address is its identity, everywhere," and ADR-0057:** a node's one identity is its address, written as the `logicalId` of its platform row, and every node is in the application topology. The principle stays. Each gains one sentence: a node that names something Composer does not own, such as a platform variable node, records no platform row and no topology node, and the thing it names keeps its owner's handle, the variable's name.
 - **Glossary, Topology:** "Every node in the topology has a managed lifecycle." Now every node either has one or refers to something the operator sets, and the second kind is listed by name when an environment is created.
-- **Glossary, Input:** `envSecret()` "is the only thing the framework calls a secret", and "A value is a secret only when it is externally sourced and never in state — `envSecret`". Now a platform secret, spelled as a node or as `envSecret()`, and a carried secret (module-input S18) are secrets.
+- **Glossary, Input:** `envSecret()` "is the only thing the framework calls a secret", and "A value is a secret only when it is externally sourced and never in state — `envSecret`". Now a platform secret, built with `variable.secret()`, and a carried secret (module-input S18) are secrets.
 - **Glossary, Value and RuntimeValue:** the sources that give a runtime value are listed as `envSecret()`, `generatedParam()` and `serviceOrigin()`, and "every plain pointer is a `Pointer<string>`". Now a platform variable node gives one, and a plain pointer is typed by its schema.
-- **Glossary, The app secrets, Secrets key, Named secrets, Known secrets:** Slice 2 defined each set through the names the graph's secret sources use. Now each is defined through platform secrets, of which `envSecret()` is one spelling.
-- **Glossary, The app configuration:** gains that under `prisma dev` the local target fills a plain platform variable from it.
+- **Glossary, The app secrets, Secrets key, Named secrets, Known secrets:** Slice 2 defined each set through the names the graph's secret sources use. Now each is defined through platform secret nodes.
+- **Glossary, The app configuration, and The app configuration file:** the app configuration fills the root's input, and under `prisma dev` the target's dev preflight reads plain platform variables from it. No source reads a configuration key. The file holds the root's input and, under `prisma dev`, the platform variable texts.
+- **Glossary, every other entry that names `envSecret()` or `envParam()`:** each names the node or a root input field. New entries: Platform variable node, Platform secret, Value resource, A variable on the platform, Root input field.
 - **Domain map:** "Every node carries a managed lifecycle" and "Configuration is not a node. Keys, URLs, and secrets parameterise Services and Resources". Now a platform variable is a node that names a value the operator sets, and the rest of configuration is still input.
-- **ADR-0029, secrets:** "There is exactly one secret concept" and `envSecret()` is "the source". Now a secret is any value handled as one, and a platform secret is the kind Composer never sees. Module-input S18 adds the carried secret to the same record when it ships.
+- **ADR-0029, secrets:** "There is exactly one secret concept" and `envSecret()` is "the source". Now a secret is any value handled as one, and a platform secret, built with `variable.secret()`, is the kind Composer never sees. Module-input S18 adds the carried secret to the same record when it ships.
 - **ADR-0058, dev secrets:** the named secrets are defined through platform secrets.
-- **ADR-0062, values and config adapters:** "secrets reach platform variables through secrets adapters"; the runtime-value table lists only sources. Now the Values section records a third origin of a runtime value, one a resource gives. The S18 rewrite of this record, for the root's secret field, builds on slice 3's.
+- **ADR-0062, values and config adapters:** "secrets reach platform variables through secrets adapters"; the runtime-value table lists only sources. Now the Values section records a third origin of a runtime value, one a resource gives. `envParam()` leaves the deploy-time values, `envSecret()` leaves the runtime ones, and a configuration value is a root input field only: core's `paramSource()` takes no `configurationKey`. The S18 rewrite of this record, for the root's secret field, builds on slice 3's.
+- **ADR-0032, env-sourced params:** a per-key param is bound with `envParam()`. Now it takes a literal or a plain platform variable node's value, which writes the same pointer row.
+- **ADR-0039, ADR-0042 and ADR-0061:** each names `envSecret()` or `envParam()`. Now each names the node or a root input field.
 - **ADR-0063, two relationships:** a node depends on an interface or exposes one. Now a service also reads a platform variable, a third relationship that is not an edge.
-- **ADR-0064:** gains the node, sections 4 to 6, the core changes slice 3 makes (the `provision()` overload on `appRoot()`, a resource that is a value), and the alternatives in section 15.
+- **ADR-0064:** gains the node, sections 4 to 6, the Prisma Cloud use of the core changes slice 3 makes, and the alternatives in section 15. Its "shortcuts" section becomes the two ways to get a value. Core's rules (the `provision()` overload on `appRoot()`, a resource that is a value) go in ADR-0062.
 
 ### Slice 4: a platform variable has a schema
 
@@ -434,6 +436,6 @@ No two slices rewrite one record at the same time: each slice starts after the o
 - **Run the module's schema at boot.** Impossible: the schema is code in the app's module, which is not in the service's bundle.
 - **Let the platform validate.** Will expects the platform never to validate values against a schema. Composer validates at boot and in `prisma dev`.
 - **Keep copying local values on deploy.** An implicit copy is how a local value reaches a remote environment by accident. An explicit way to set variables through `deploy` is expected later (deferred.md).
-- **Make `envSecret()` a node provisioned where it is written.** Rejected: Load would have to create a node from a value found in a binding, with an owner and an id nobody has defined, for a form the same slice deprecates.
+- **Make `envSecret()` a node provisioned where it is written.** Rejected: Load would have to create a node from a value found in a binding, with an owner and an id nobody has defined, for a form the same slice removes.
 - **"Subscription" as the word for a service reading a variable.** Rejected: it names a platform mechanism that does not exist, reads as "receives updates as they happen", which is false, and already means streaming in the principles.
 - **Wait for the platform to record which service reads which variable.** Not needed: every part ships against today's API (section 3), and the platform's record would change nothing an author writes.

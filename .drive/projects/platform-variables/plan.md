@@ -17,7 +17,7 @@ Slices 1 and 2 are merged. Slice 3 is specified.
 
 Four slices, because the root constructor, the rule change for every existing variable, the new node and the schema are each one afternoon's review with their own release note, and shipping the rule change before the node keeps one rule set per platform row at every point on `main`.
 
-Each slice is one pull request, merged before the next starts. Slice 1 stands alone because it moves every root in the repository and its guidance; keeping that move out of the platform-variable slices keeps their reviews about platform variables. It is additive, not breaking. Slice 2 changes the rules for every operator variable that exists on `main` today, which means every `envSecret()` and `envParam()`: no seeding, upper-case names, the `$platform` marker, required-or-reported in preflight. Slice 3 adds the node under those same rules. After slice 2 there is one rule set and the shortcuts follow it; after slice 3 the nodes follow the same one, so no platform row ever follows two rule sets on `main`. Slice 4 adds `schema` last, because it is the only part that needs a validator, and it starts after slice 3 has merged so that no two slices rewrite one decision record at the same time. No slice depends on module-input S18.
+Each slice is one pull request, merged before the next starts. Slice 1 stands alone because it moves every root in the repository and its guidance; keeping that move out of the platform-variable slices keeps their reviews about platform variables. It is additive, not breaking. Slice 2 changes the rules for every operator variable that exists on `main` today, which means every `envSecret()` and `envParam()`: no seeding, upper-case names, the `$platform` marker, required-or-reported in preflight. Slice 3 adds the node under those same rules and removes the shortcuts. After slice 2 there is one rule set and the shortcuts follow it; after slice 3 the nodes follow the same one, so no platform row ever follows two rule sets on `main`. Slice 4 adds `schema` last, because it is the only part that needs a validator, and it starts after slice 3 has merged so that no two slices rewrite one decision record at the same time. No slice depends on module-input S18.
 
 ## 1. The root is written with `appRoot()`
 
@@ -72,22 +72,24 @@ Each slice is one pull request, merged before the next starts. Slice 1 stands al
 
 **Starts from:** slice 2 merged.
 
-**The decision.** An app declares each platform variable it reads as a node in its root: `provision(variable({ name }))` for a plain one, `provision(variable.secret({ name }))` for a secret. `provision()` returns the value itself, so the root passes it down through module inputs like any other value. Only the app root can provision one, and the compiler enforces it. Core learns one new concept for this, a value resource: a resource node that is also a value. Everything slice 2 does for an `envSecret()` applies to the nodes, and `envSecret()` becomes a deprecated spelling of a platform secret.
+**The decision.** An app declares each platform variable it reads as a node in its root: `provision(variable({ name }))` for a plain one, `provision(variable.secret({ name }))` for a secret. `provision()` returns the value itself, so the root passes it down through module inputs like any other value. Only the app root can provision one, and the compiler enforces it. Core learns one new concept for this, a value resource: a resource node that is also a value. Everything slice 2 does for an `envSecret()` applies to the nodes. `envSecret()` and `envParam()` are removed: a value the deploy reads is a field of the app root's `input`, and a value the service reads at boot is a node.
 
 **After this slice merges:**
 
 - `variable()` and `variable.secret()` exist in `@prisma/composer-prisma-cloud`. A plain value fits a `field()` field or a service's per-key param; a secret fits a secret field and arrives boxed.
 - `provision(variable(…))` in a `module()` body, at the root or below it, does not compile, and the error names `appRoot()`.
 - The loaded graph lists every platform variable node and, for each service, the variables it reads.
-- Right after Load, the target's graph check refuses: two nodes for one name; one name used two ways, except a plain node beside a per-key `envParam()`, which read the same variable; a node value as a service's whole input; and `envSecret()` written below the root.
+- Right after Load, the target's graph check refuses: two nodes for one name; a node and a root input field with one name; and a node value as a service's whole input.
 - Deploy, preflight and boot treat a node's variable as slice 2 treats an `envSecret()`'s. The node creates nothing, is not sent in the application topology, and has no line in the deploy report.
-- `prisma dev` fills a plain platform variable from the app configuration and refuses a value that is not text before any service starts.
-- The `email`, `auth` and `storefront-auth` examples use the nodes; `env-param` moves to a root input field. The guides, the skill and the records describe the nodes.
+- `prisma dev` fills a plain platform variable from the app configuration, in an input field or a per-key param, and refuses a value that is not text before any service starts.
+- `@prisma/composer-prisma-cloud` no longer exports `envSecret()`, `envParam()` or `secretName()`. Core's `paramSource()` takes no `configurationKey`, and Load reads nothing from the app configuration except the root's input. The release note is a migration guide with a before and after for each use.
+- The `email`, `auth` and `storefront-auth` examples use the nodes; `env-param` becomes `root-input`, an example of a root input field. The guides, the skill and the records teach the two ways to get a value.
+- Apps and docs in Prisma's other repositories move off the removed functions in those repositories, not in this slice.
 - `schema` does not exist yet; every value is text.
 
 **Satisfies:** R1; R2, R5 and R7 for the nodes; R8 for the records it rewrites.
 
-**Design:** D2 to D7, D8 (the node's constructor), D12 (plain platform variables under dev), D14 (`envSecret()` as a spelling of a platform secret), D15. Design sections 4, 5, 6, 10, 12 and 14.
+**Design:** D2 to D7, D8 (the node's constructor), D12 (plain platform variables under dev), D14 (the shortcuts removed), D15. Design sections 4, 5, 6, 10, 12 and 14.
 
 **Checked on Prisma Cloud:** an app with a plain node, a secret node and a module that receives both through its input, deployed with the secret unset and required (preflight refuses), then set (the service boots with the value); a plain node in a per-key param; a fresh preview branch of that app; a nested module and a `module()` root's body failing to compile with `appRoot()` in the error; the same app under `prisma dev`; the planted-secret search with a secret node.
 
@@ -127,7 +129,7 @@ Each slice is one pull request, merged before the next starts. Slice 1 stands al
 
 - **One slice.** Rejected: the root constructor, the rule change for existing variables, the node and `schema` are four changes with four release notes, and no reviewer holds them in one sitting.
 - **`appRoot()` inside the node slice.** Rejected: moving every root in the repository and its guidance doubles that slice's diff and makes its review about something other than platform variables.
-- **The rule change and the node in one slice.** Rejected: one pull request holding two core changes, a new node, the serializer, boot, preflight, the shortcuts, per-key params, a shared package, `prisma dev`, the examples, seven decision records and a dozen glossary entries cannot be reviewed in one sitting, and its release note mixes "your existing deploy changes" with "here is a new API". Splitting keeps the one-rule-set constraint, because slice 2 changes every operator variable at once and slice 3 adds a spelling under the same rules.
+- **The rule change and the node in one slice.** Rejected: one pull request holding two core changes, a new node, the serializer, boot, preflight, the shortcuts, per-key params, a shared package, `prisma dev`, the examples, seven decision records and a dozen glossary entries cannot be reviewed in one sitting, and its release note mixes "your existing deploy changes" with "here is a new API". Splitting keeps the one-rule-set constraint, because slice 2 changes every operator variable at once and slice 3 replaces the shortcuts with the node under the same rules.
 - **The node first, the rule change after.** Rejected: between the two, nodes would follow the new rules and `envSecret()` the old, which is the two-rule-set window the design forbids.
 - **`schema` before the rule change.** Rejected: `schema` needs the marker and the shared decoding package that slice 2 creates.
 - **`schema` inside the node slice.** Rejected: it adds a validator choice and a spike to a slice that already carries the node and the records, and it would have two slices rewrite ADR-0042 and ADR-0064 at once.
