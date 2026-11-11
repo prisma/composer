@@ -11,7 +11,7 @@ A service reads some of its configuration only at boot, from values the operator
 Two terms, used throughout:
 
 - **A variable on the platform** is a row in a Prisma Cloud project: a name and a text. Composer writes some rows itself, all named `COMPOSER_…`; the operator sets the others, in the Console, with `prisma project env add`, or through the Management API.
-- **A platform variable** is a node in the app's graph that names a variable the operator sets. A **platform secret** is the same node for a value that must be handled as a secret: boxed in the service and redacted wherever Composer prints. Where this document means the general kind, it says "a platform variable node" or "both kinds"; where it means the non-secret kind alone, it says "a plain platform variable".
+- **A platform variable** is a variable the operator sets on the platform and a service reads by name at boot. A **platform variable node** is the node in the app root that declares one. A **platform secret** is a platform variable whose value must be handled as a secret: boxed in the service and redacted wherever Composer prints. Where this document means the non-secret kind alone, it says "a plain platform variable".
 
 Only the root provisions a platform variable node, and the root is written with `appRoot()` (section 4). The root passes the value down through a module's input, like any other value.
 
@@ -108,7 +108,7 @@ A platform variable node is a named request for a value that something outside t
 
 The node says nothing about where the value lives. That is the operator's decision, made in the platform's own terms. On Prisma Cloud a name is resolved for each reader at two scopes today, project class and branch, and the most local wins; a service scope is expected later (section 3). Each reader receives the value the platform resolves for that reader under that name, at whatever scopes the platform offers. The topology does not express scope, and preflight (section 9) is the only part of Composer that knows which scopes exist, so a new scope changes preflight's list calls and nothing else in the deploy; `prisma dev`'s local source is the one other place (section 3). Once a service scope exists, one node can give two readers two different values, when the operator chose to; the deploy report shows every name with its readers so the operator can see what each one resolves from.
 
-**The name is the variable's identity in Composer.** For nodes Composer owns, the address is the identity, and it becomes the `logicalId` on the node's platform row (ADR-0057). A platform variable node has no row of its own, because Composer does not own the thing it names: the operator does, under the name. So here the name plays the role the address plays elsewhere. This is a deliberate exception to the principle that a node's address is its identity, and it is justified by ownership: Composer identifies what it owns by address, and refers to what it does not own by the handle its owner uses. Section 14 records the exception.
+**The node's address is its identity; the row keeps the variable's name.** For nodes Composer owns, the address is the identity, and it becomes the `logicalId` on the node's platform row (ADR-0057). A platform variable node has no row of its own, because Composer does not own the thing it names: the operator does, under the name. The node's identity is still its address, as for every node, and Composer refers to the node by its address everywhere. The row it names keeps its owner's handle, the variable's name. A node that names something Composer does not own records no platform row and no topology node. The principle stays as it is and gains this one clarifying sentence (section 14).
 
 ### The constructors
 
@@ -203,7 +203,7 @@ No leading underscore, though the platform accepts one. Shells and tools use nam
 The constructor refuses these names, saying why:
 
 - **Any name starting with `COMPOSER_`.** Composer's own rows.
-- **`DATABASE_URL` and `DATABASE_URL_POOLED`.** Prisma Cloud seeds and manages them, as `envSecret()` and `envParam()` already say; a service reads its database through its dependency on the database node.
+- **`DATABASE_URL` and `DATABASE_URL_POOLED`.** Prisma Cloud seeds and manages these names; a service reads its database through its dependency on the database node.
 - **`PORT`.** Boot sets it to the service's port.
 - **`PATH` and `HOME`.** Under `prisma dev` the local target sets both from the developer's shell, so a value of either on the platform would never be seen locally, which breaks requirement 5.
 
@@ -319,7 +319,7 @@ An empty value cannot exist on the platform (section 3), so at boot a variable i
 The local target has no platform, so it plays the platform's part.
 
 - **It fills each platform variable from the developer's values:** a plain platform variable from the app configuration, a platform secret from the app secrets, each under the variable's `name`. These are the lists `prisma.config.ts` names, read once per converge in the first process.
-- **A plain platform variable's value must be text.** An app configuration value under its name that is not text fails `prisma dev` before any service starts, naming the variable and the kind of value found, as `envParam()` does today. The app secrets are text already.
+- **A plain platform variable's value must be text.** An app configuration value under its name that is not text fails `prisma dev` before any service starts, naming the variable and the kind of value found. The app secrets are text already.
 - **What reaches the second process.** The first process hands the second process each plain platform variable's text in the app configuration file, beside the root's input, and each platform secret's text in `PRISMA_COMPOSER_NAMED_SECRETS`, in memory. The check that refuses to write a known secret into the file applies unchanged. The second process gives the local target the two sets, never the whole app configuration or app secrets.
 - **It isolates.** A local service receives only the variables its own rows point at: its param pointer rows and the `$platform` markers in its input document. The local target collects `$platform` markers at any depth, as it collects `$secret` markers today.
 - **It validates before any service starts.** The first process decodes and validates each filled value against its marker's JSON Schema, by the rules in sections 7 and 8, with the one shared implementation. A value that fails stops `prisma dev` with the message boot would give.
@@ -337,10 +337,12 @@ The local target has no platform, so it plays the platform's part.
 
 ## 12. The shortcuts
 
-Slice 3 removes `envSecret()` and `envParam()`. After it, an app gets a value from outside its code in exactly two ways:
+Slice 3 removes `envSecret()` and `envParam()`. After it, a value the operator supplies reaches the app in exactly two ways:
 
 - **A value the deploy reads** is a field of the app root's `input`, filled from the app configuration. It replaces `envParam('NAME')` in an input binding, which was already a deploy-time value from the app configuration and not a platform variable.
 - **A value the service reads at boot** is a platform variable node provisioned in the app root. `variable.secret({ name })` replaces `envSecret('NAME')`. `variable({ name })` replaces `envParam('NAME')` in a service's per-key params: a plain node there writes the same pointer row, and the service reads the variable at boot.
+
+The environment's facts, such as `environment.name`, and the values Composer creates for its own use, through `generatedParam()` and `serviceOrigin()`, are separate and do not change.
 
 One mechanism for each kind of value means every platform variable is a node the graph lists, and no rule needs to tell a node from an inline spelling. Core keeps no source that reads the app configuration, so Load reads the app configuration for the root's input only. The code that existed only for the two functions goes with them. Apps and docs in Prisma's other repositories move in those repositories, following slice 3's migration guide.
 
@@ -420,7 +422,7 @@ No two slices rewrite one record at the same time: each slice starts after the o
 
 - **A platform variable as a property of an input field,** such as `field(type('number'), { env: 'SMTP_PORT' })`. Rejected by Will: a platform input is part of the topology, so it is a node, not a property of a field.
 - **A new node kind, such as a "reference", instead of a resource.** More honest in the types, but it changes core's node union and the platform's topology kind list, which another team owns. A resource that provisions nothing, with the reversal recorded, costs less and says the same thing.
-- **A source with no node,** as `envSecret()` is. It leaves nothing for Load to list as a node, no address, and no single place for `schema`.
+- **A source with no node,** as `envSecret()` was. It leaves nothing for Load to list as a node, no address, and no single place for `schema`.
 - **"Resource outputs" as a new core concept, with Load asking the target for the pointer.** Rejected: core already has the source, which carries the secrets key redaction and `prisma dev` need; "output" already means Alchemy's attributes and the retired end of a connection; and Load calling a target would be core's first dependency on one.
 - **A platform variable node anywhere in the tree.** Rejected: a variable's name is one space per project, so a nested module naming one claims it for every app and instance, and hides from the module's input what the module needs.
 - **Root-only enforced by a Load check alone,** with `module()` as the root. Rejected by Will on 2026-11-06: the rule is structural, so the type system should carry it, and a Load check would let a library ship a module that compiles and fails every app that uses it. `appRoot()` makes the misuse fail to compile.

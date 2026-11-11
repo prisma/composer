@@ -33,10 +33,12 @@ We are adding a platform variable node to the app's graph, and removing `envSecr
 
 The app root provisions a node with `variable({ name })` for a plain value, or `variable.secret({ name })` for a secret, both from `@prisma/composer-prisma-cloud`. `provision()` returns the value itself, with `id` on it, so the root passes `from` and `deliveryCredential` down through module inputs to the services that read them. Only `appRoot()` can provision one: in a `module()` body the call does not compile, and the error names `appRoot()`. The loaded graph lists every node and, for each service, the variables it reads, without deploying. Deploy, preflight, boot and `prisma dev` handle a node's variable under slice 2's rules.
 
-After this slice an app gets a value from outside its code in exactly two ways:
+After this slice a value the operator supplies reaches the app in exactly two ways:
 
 - **A value the deploy reads** is a field of the app root's `input`. The `config` adapters fill it when the deploy runs, and module-input S18 adds secret fields filled from the `secrets` adapters. This replaces `envParam()` in an input binding.
 - **A value the service reads at boot** is a platform variable node, provisioned in the app root. This replaces `envSecret()` everywhere, and `envParam()` in a service's per-key params. A plain node in a per-key param writes the same pointer row a per-key `envParam()` wrote.
+
+The environment's facts, such as `environment.name`, and the values Composer creates for its own use, through `generatedParam()` and `serviceOrigin()`, are separate and do not change.
 
 `envSecret()`, `envParam()` and `secretName()` are no longer exported. There is one way to name a platform variable, so every platform variable is a node in the graph, and the code that existed only to support the two functions goes (4.5, 5.8).
 
@@ -72,7 +74,7 @@ These follow the project spec's terms. Slice 3 makes the glossary match them.
 - **Platform secret.** A platform variable whose value is handled as a secret: boxed in the service and redacted wherever Composer prints. Built with `variable.secret({ name })`. The term marks the variables whose text must never appear in output.
 - **A variable on the platform**, or **row.** Any entry in a Prisma Cloud project's environment variables: a name and a non-empty text, at a class and optionally a branch. That includes Composer's own `COMPOSER_` rows, which are not platform variables. The term names the platform's storage, as distinct from what the app reads.
 - **Value resource.** Core's name for a resource node that is also a value: provisioning it returns a value, not a reference to a port. A platform variable node is the one value resource today. The term lets core state its rules without knowing about Prisma Cloud.
-- **Root input field.** A field of the app root's `input`. The `config` adapters fill it when the deploy or `prisma dev` runs; module-input S18 adds secret fields filled from the `secrets` adapters. It is the one way to give the app a value the deploy reads.
+- **Root input field.** A field of the app root's `input`. The `config` adapters fill it when the deploy or `prisma dev` runs; module-input S18 adds secret fields filled from the `secrets` adapters. It is the one way for the operator to supply a value the deploy reads.
 
 ## 3. How it works, end to end
 
@@ -229,14 +231,14 @@ What core removes:
 
 What core renames:
 
-- **The texts a local deployment reads.** `LocalTargetProvidersInput.configurationKeyText` in `control/local-target.ts` becomes `platformVariableText`, and so does `localTargetProviders()`'s parameter. It holds the text of each plain platform variable a service reads, which the target's dev preflight found (5.6). Today it holds the texts Load read for `envParam()`.
+- **The texts a local deployment reads.** `LocalTargetProvidersInput.configurationKeyText` in `control/app-config.ts` becomes `plainVariableText`, and so does `localTargetProviders()`'s parameter in `control/local-target.ts`. It holds the text of each plain platform variable a service reads, which the target's dev preflight found (5.6). Its doc comment reads: "Text of each plain platform variable a service reads, by name. Never a secret." The name says the values are plain, because platform secrets travel in memory as named secrets and are never written to a file (ADR-0058). The doc comment of `namedSecrets` beside it, which says "the graph's `envSecret()`s", says "the graph's platform secrets".
 
 What core rewords, because it names a removed function:
 
 - the `resolve()` refusal of a returned source in `resolve-values.ts`, which says "such as envSecret() or envParam()";
 - the refusal of `secrets` on a service's `provision()` in `load-module.ts`, which says a service takes its secrets "as envSecret(...) leaves". It now says the service takes its secrets as values bound to `secretString()` fields of its `input` binding;
 - the unbound-param error in `control/deploy.ts`, which suggests "e.g. envParam('NAME')". It now says "a literal value or a value such as a platform variable";
-- the doc comments that name either function: `value.ts` (the `Value` and origin comments), `node.ts` (`SecretSource`, `SourceOptions`, `SecretSourceOptions`, `ParamSource`, `paramSource()`, `isParamSource()`), `config.ts`, `graph-types.ts`, `control/app-config.ts` and `control/deploy.ts`.
+- the doc comments that name either function: `value.ts` (the `Value` and origin comments), `node.ts` (`SecretSource`, `SourceOptions`, `SecretSourceOptions`, `ParamSource`, `paramSource()`, `isParamSource()`), `config.ts`, `graph-types.ts`, `control/app-config.ts` (including line 274, "Value sourcing (secrets/env-params)") and `control/deploy.ts`.
 
 This is a breaking change to core's public extension interface: a target that passed `configurationKey` to `paramSource()` must read the value through a root input field instead. No target outside this repository is known to pass it. The release note says so (8).
 
@@ -461,7 +463,9 @@ Under `prisma dev`, Composer plays the platform's part: it gives each service th
 **Filling a plain platform variable.** The target's dev preflight, `runDevPreflight` in `local-target/preflight.ts`, runs in the first process with the app configuration. For each plain node a service reads (from `valueReads`), it reads the app configuration under the variable's name, once, with the existing `configuration-text.ts` helper. It decides one of three outcomes:
 
 - **Text.** The name and text go into the texts it returns. The value joins `pointerVersions`, so a changed value restarts only its readers.
-- **Unset or empty.** The name joins `absentVariables`, so the dev document leaves it out, as for an unset secret. For a per-key param, the param takes its default or is left out when optional. The requirement check decides whether a reader needs it.
+- **Unset or empty.** What happens depends on where each reader reads it, from the reader's `valueReads` entries:
+  - **An input field.** The name joins `absentVariables`, so the dev document leaves the field out, as for an unset secret. `checkRequirements` decides whether the service's schema needs it, as in slice 2.
+  - **A per-key param.** The loop judges the param with `paramIsRequired`. A required one is reported with `requiredParam` and stops dev, as the deleted `envParam()` loop did. An optional one, or one with a default, is skipped: the second process writes no text for it, so the param takes its default or is left out. A per-key read has no marker in the input document, so the name joins `absentVariables` only when an input field also reads it.
 - **Present but not text.** `prisma dev` stops before any service starts:
 
   ```text
@@ -470,17 +474,22 @@ Under `prisma dev`, Composer plays the platform's part: it gives each service th
 
   With several readers it says `which services "shop.mail.service" and "shop.digest.service" read`.
 
-The per-key `envParam()` path in the dev preflight, and its message `envParamNotTextError`, go (5.8).
+The per-key `envParam()` path in the dev preflight, and its message `envParamNotTextError`, go (5.8). `paramIsRequired` and `requiredParam` stay, used by the plain node loop.
 
 **How the texts reach the second process.** The app configuration file holds the root's input, as today, and a new top-level member for these texts. Load's record of what it read stays as it is, so it still shows that Load read no platform variable's value.
 
-- `LocalTargetDescriptor.preflight` in `packages/0-framework/1-core/core/src/control/app-config.ts` returns `Promise<DevPreflightResult>`, `{ readonly payload: PreflightPayload; readonly platformVariableText: Readonly<Record<string, string>> }`, instead of `Promise<PreflightPayload>`. The deploy preflight's type does not change.
-- `executeDev` in `cli/src/operations/execute-dev.ts` keeps the texts from the start-time preflight. It passes them to `prepareSecondProcess` in `cli/src/app-configuration-file.ts` as a new input, `platformVariableText`, on the first converge and on every rebuild. The deploy passes `{}`.
-- `prepareSecondProcess` writes the file as `{ appConfigurationRead: { rootInput }, platformVariableText, nodeAddresses }`. It runs `refuseSecretsIn` on the root's input and on `platformVariableText` before it writes. So every plain value is checked against the known secrets. A plain value equal to a secret's value fails with `CONFIG.SECRET_AS_PLAIN_VALUE`.
-- `readAppConfigurationFile` returns `platformVariableText` beside `appConfigurationRead` and `nodeAddresses`, and refuses a file without it.
-- The generated dev stack (`cli/src/dev/generate-dev-stack.ts`) passes `file.platformVariableText` to `localTargetProviders()`, in place of `file.appConfigurationRead.configurationKeyText`.
+- `LocalTargetDescriptor.preflight` in `packages/0-framework/1-core/core/src/control/app-config.ts` returns `Promise<DevPreflightResult>`, `{ readonly payload: PreflightPayload; readonly plainVariableText: Readonly<Record<string, string>> }`, with the same doc comment as in 4.5,, instead of `Promise<PreflightPayload>`. The deploy preflight's type does not change.
+- `executeDev` in `cli/src/operations/execute-dev.ts` keeps the texts from the start-time preflight. It passes them to `prepareSecondProcess` in `cli/src/app-configuration-file.ts` as a new input, `plainVariableText`, on the first converge and on every rebuild. The deploy passes `{}`.
+- `prepareSecondProcess` writes the file as `{ appConfigurationRead: { rootInput }, plainVariableText, nodeAddresses }`. It runs `refuseSecretsIn` on the root's input and on `plainVariableText` before it writes. So every plain value is checked against the known secrets. A plain value equal to a secret's value fails with `CONFIG.SECRET_AS_PLAIN_VALUE`. For a member of `plainVariableText`, `refuseSecretsIn` names the place as the platform variable, not as a configuration key, which this slice removes:
 
-**The second process.** The local target fills a plain `$platform` marker and a per-key pointer from `platformVariableText`, and a secret marker from the named secrets. In `packages/1-prisma-cloud/0-lowering/local-target/src/compute.ts`, `materializeEnv` takes `platformVariableText` where it took `configurationKeyText`. The lookup is the same.
+  ```text
+  The platform variable "EMAIL_FROM", which prisma dev read from the `config` adapters, holds the value of the secret "EMAIL_DELIVERY_CREDENTIAL". Composer hands the second process every plain value in a file, and never writes a secret to a file.
+  Fix: keep the value of "EMAIL_DELIVERY_CREDENTIAL" out of the platform variable "EMAIL_FROM", or give "EMAIL_FROM" a different value.
+  ```
+- `readAppConfigurationFile` returns `plainVariableText` beside `appConfigurationRead` and `nodeAddresses`, and refuses a file without it.
+- The generated dev stack (`cli/src/dev/generate-dev-stack.ts`) passes `file.plainVariableText` to `localTargetProviders()`, in place of `file.appConfigurationRead.configurationKeyText`.
+
+**The second process.** The local target fills a plain `$platform` marker and a per-key pointer from `plainVariableText`, and a secret marker from the named secrets. In `packages/1-prisma-cloud/0-lowering/local-target/src/compute.ts`, `materializeEnv` takes `plainVariableText` where it took `configurationKeyText`. The lookup is the same.
 
 **Isolation, the missing-value rule and restarts.** These are slice 2's, extended to plain variables. The dev preflight's requirement check uses `absentVariables`. A changed value pauses rebuilds until `prisma dev` restarts, as `sameValues` already does for any change to the app configuration.
 
@@ -504,15 +513,17 @@ A platform variable node no service reads is reported in "Platform variables wit
 - **`local-target/preflight.ts`.** The loop over `envParamBindings()` that reads each per-key `envParam()` from the app configuration or, for a name a secret also uses, from the app secrets. The plain node loop in 5.6 replaces it.
 - **`serializer.ts`.** The `envParam()` branch of `resolveInputBinding`, which reads the app configuration at deploy; the `env` member of `SerializeInputOptions` and its default, `process.env`; the import of `configuration-text.ts`; the `envParam()` case of `absentArrayPositionError`.
 - **`descriptors/compute.ts`.** The `env: ctx.opts.appConfigurationRead.configurationKeyText` passed to `serializeInput`.
+- **`required-variables.ts`.** `checkRequirements` loses its `env` parameter, which it passed only to the serializer for `envParam()` leaves. Its two callers, `preflight.ts` and `local-target/preflight.ts`, stop passing the app configuration.
+- **The deploy preflight's input.** After this, the Prisma Cloud deploy preflight reads nothing from `PrismaCloudPreflightInput.configuration`. The member stays: it comes from core's `PreflightInput`, which every extension's preflight receives, and the dev preflight still reads the app configuration.
 - **`configuration-text.ts`** stays. Only the dev preflight uses it now.
 
 ## 6. Examples
 
 The examples show the two ways to get a value, so new apps copy them.
 
-- **`examples/email`.** `envSecret('EMAIL_DELIVERY_CREDENTIAL')` becomes `provision(variable.secret({ name: 'EMAIL_DELIVERY_CREDENTIAL' }))` in the root. `EMAIL_FROM` is already a root input field and stays one. The doc comment in `module.ts`, `tests/secret-bindings.ts` and `tests/module.test.ts` (which imports `secretName`) use the node and `platformVariableName`.
-- **`examples/auth`.** `envParam('EMAIL_FROM')` becomes `provision(variable({ name: 'EMAIL_FROM' }))`, and `envSecret('EMAIL_DELIVERY_CREDENTIAL')` becomes `provision(variable.secret(…))`. `EMAIL_FROM` is now read from the platform at boot, not from the deploy's shell. The doc comment in `module.ts` and `.env.example` say where to set it. `tests/module.test.ts` stops importing `secretName`.
-- **`examples/storefront-auth`.** `envSecret('AUTH_SIGNING_SECRET')` becomes `provision(variable.secret({ name: 'AUTH_SIGNING_SECRET' }))`. The comment in `modules/auth/src/service.ts` and `module.test.ts` (which imports `secretName`) change with it. The CI flow from slice 2 is unchanged.
+- **`examples/email`.** `envSecret('EMAIL_DELIVERY_CREDENTIAL')` becomes `provision(variable.secret({ name: 'EMAIL_DELIVERY_CREDENTIAL' }))` in the root. `EMAIL_FROM` is already a root input field and stays one. The doc comment in `module.ts`, `tests/secret-bindings.ts` and `tests/module.test.ts` (which imports `secretName`) use the node. The tests find the binding's variable through the public graph: they look up the entry in `graph.valueReads` by reader and site path, take the node at its `resource` from `graph.nodes`, and read `props.name`. `platformVariableName` is internal, so the examples cannot import it.
+- **`examples/auth`.** `envParam('EMAIL_FROM')` becomes `provision(variable({ name: 'EMAIL_FROM' }))`, and `envSecret('EMAIL_DELIVERY_CREDENTIAL')` becomes `provision(variable.secret(…))`. `EMAIL_FROM` is now read from the platform at boot, not from the deploy's shell. The doc comment in `module.ts` and `.env.example` say where to set it. `tests/module.test.ts` stops importing `secretName` and asserts through `graph.valueReads` and the node's `props.name`, as `examples/email` does.
+- **`examples/storefront-auth`.** `envSecret('AUTH_SIGNING_SECRET')` becomes `provision(variable.secret({ name: 'AUTH_SIGNING_SECRET' }))`. The comment in `modules/auth/src/service.ts` changes with it. `module.test.ts` stops importing `secretName` and asserts through `graph.valueReads` and the node's `props.name`, as `examples/email` does. The CI flow from slice 2 is unchanged.
 - **`examples/env-param` becomes `examples/root-input`.** Its `envParam('ENV_PARAM_GREETING')` in a service binding becomes a root input field, `ROOT_INPUT_GREETING`, declared in the root's `input` schema and passed to the service. The example keeps its meaning: a value the deploy reads from the shell, different per environment. Every file that names it changes:
   - the directory, `examples/env-param` → `examples/root-input`;
   - `package.json`: the package name `@prisma/example-env-param` → `@prisma/example-root-input`, the turbo filter in its `deploy` script, and the variables `ENV_PARAM_STACK_NAME`, `ENV_PARAM_ENVIRONMENT` and `ENV_PARAM_REPORT` → `ROOT_INPUT_…`;
@@ -544,8 +555,9 @@ Each record is rewritten in place as the current statement, with no history and 
 - **ADR-0064.** Gains the Prisma Cloud use: the constructors, the default id, the graph check's rules, the per-key params rule, the serializer, preflight and dev handling of plain values, and design section 15's other alternatives. "The shortcuts" section is replaced by the two ways to get a value. "Names" says `variable()` and `variable.secret()` check the name. "One name has one meaning" lists the node and the root input field. The code sample uses a node. Its title stays: the deploy does not copy local values to what the nodes name. Its line in the ADR index changes with it.
 - **ADR-0032.** A per-key param takes a literal or a plain platform variable node's value. The node's value writes a pointer row that the service reads at boot. The code sample provisions `variable({ name: 'APP_ORIGIN' })` in the root and binds it. The title stays: a platform variable is a target-owned source. Its line in the ADR index changes with it.
 - **ADR-0029.** A secret is any value handled as one. A platform secret, built with `variable.secret()`, is the kind Composer never sees during a deploy. Its ADR index line changes with it.
-- **ADR-0058.** The named secrets are the values under the secrets keys of the graph's secret sources, which are the platform secret nodes. The app configuration file it describes holds, under `prisma dev`, the text of each plain platform variable a service reads, in `platformVariableText`, checked against the known secrets like every other plain value.
-- **ADR-0042, ADR-0039 and ADR-0061.** Every mention of `envSecret()` or `envParam()` becomes the node or a root input field. ADR-0042's marker says `secret: true` for a platform secret.
+- **ADR-0058.** The named secrets are the values under the secrets keys of the graph's secret sources, which are the platform secret nodes. The app configuration file it describes holds, under `prisma dev`, the text of each plain platform variable a service reads, in `plainVariableText`, checked against the known secrets like every other plain value. Its line in the ADR index changes with it.
+- **ADR-0042, ADR-0039 and ADR-0061.** Every mention of `envSecret()` or `envParam()` becomes the node or a root input field. ADR-0042's marker says `secret: true` for a platform secret. Their lines in the ADR index change with them.
+- **ADR-0041.** Line 39's "Value sourcing (secrets/env-params)" says "platform variables".
 - **ADR-0063.** A service also reads a platform variable: a third relationship, recorded as `valueReads`, not as an edge.
 - **ADR-0017.** Unchanged. The platform variable node has a descriptor and is looked up like every other node. Only the application topology and the deploy report skip a value resource.
 - **ADR-0057 and the principle "A node's address is its identity, everywhere"** (`docs/design/01-principles/architectural-principles.md`). The rule stays as it is. Each gains one sentence: a node that names something Composer does not own, such as a platform variable node, records no platform row and no topology node, and the thing it names keeps its owner's handle, such as the variable's name. ADR-0057's line in the ADR index gains the same clause.
@@ -561,6 +573,7 @@ Each record is rewritten in place as the current statement, with no history and 
   - `running-locally.md` says a plain platform variable comes from the `config` adapters under `prisma dev`.
 - **Skill.** `skills/prisma-composer-core-concepts/SKILL.md` teaches the two ways. It is staged with `scripts/stage-skills.mjs`, run from `packages/9-public/composer`.
 - **Logs left as they are.** `gotchas.md` and `open-chat-port-friction.md` record past friction, so they keep the names they were written with.
+- **The vendored skill is left as it is.** `.agents/skills/prisma-compute/references/` teaches both functions in five files. It is a copy of the `prisma-compute` skill from `prisma/skills`, recorded in `skills-lock.json`, so it changes upstream first. After `prisma/skills` changes, the copy is synced and `skills-lock.json` updated (`deferred.md`). Until then, agents in this repository can read the removed functions there.
 
 ### Terminology sweep
 
@@ -585,7 +598,7 @@ These uses name rows the app does not declare, so they are wrong. They change to
 
 The PR description carries this migration guide. Each case has a before and after.
 
-**`envSecret()` and `envParam()` are removed.** An app now gets a value from outside its code in two ways. A value the deploy reads is a field of the app root's `input`. A value the service reads at boot is a platform variable node, provisioned in the app root. Nothing on the platform changes: each variable keeps its name and its rows.
+**`envSecret()` and `envParam()` are removed.** A value the operator supplies now reaches the app in two ways. A value the deploy reads is a field of the app root's `input`. A value the service reads at boot is a platform variable node, provisioned in the app root. `environment.name`, `generatedParam()` and `serviceOrigin()` do not change. Nothing on the platform changes: each variable keeps its name and its rows.
 
 **1. `envSecret('X')` in a binding becomes a secret node.**
 
@@ -620,6 +633,10 @@ export default appRoot('shop', { input: type({ GREETING: 'string' }) }, ({ input
 
 An unset optional value: declare the field optional in the root's schema (`'GREETING?': 'string'`).
 
+An `envParam('X')` written in a module below the root moves the same way: the module declares an input field, and the root reads `X` as a root input field and passes it down.
+
+An `envParam('X')` was a value known at deploy, so it was also valid as a `resolve()` dependency and in a resource's props. There, use the root input field: `resolve([input.X], …)` or `props: { x: input.X }`. A platform variable node cannot go in either place, because its value is known only at boot.
+
 **3. `envParam('X')` in a service's per-key params becomes a plain node.** The value still comes from the platform at boot, through the same pointer row.
 
 ```ts
@@ -631,18 +648,18 @@ const appOrigin = provision(variable({ name: 'APP_ORIGIN' }));
 provision(web, { params: { appOrigin } });
 ```
 
-**4. A root built with `module()` becomes `appRoot()`.** Only `appRoot()` can provision a node. An entry that is still `module('shop', …)` and names a platform variable must change to `appRoot('shop', …)`.
+**4. A root built with `module()` becomes `appRoot()`.** Only `appRoot()` can provision a node. An entry that is still `module('shop', …)` and names a platform variable must change to `appRoot('shop', …)`. `appRoot()` takes no `deps` and no `expose`, and its body receives `{ input, environment, provision }`. A `module()` root that declares either drops them: nothing provisions the root, so nothing wires its dependencies or reads what it exposes.
 
 **Other changes.**
 
-- **`secretName()` is removed.** No public replacement: the target reads a node's name itself.
+- **`secretName()` is removed.** No public replacement: the target reads a node's name itself. A test that used it to find which variable a binding reads finds the entry in `graph.valueReads`, takes the node at its `resource` from `graph.nodes`, and reads `props.name`.
 - **The duplicate-id error** names the node already at the id and says to pass `id`.
 - **For extension authors:** core's `paramSource()` no longer takes `configurationKey`. Read a deploy-time value through a root input field.
 
 **Follow-ups in other repositories.** These are not work in this slice. Each repository moves when it upgrades Composer:
 
-- Six internal Prisma apps call the removed functions: the `prisma/streams` deploy apps, `prisma/asks`, `prisma/program` and `prisma/pdp-control-plane`.
-- `prisma/skills` and `prisma/web` document them.
+- Internal Prisma apps call the removed functions: the deploy apps in `prisma/streams`, and the apps in `prisma/asks`, `prisma/program` and `prisma/pdp-control-plane`.
+- `prisma/skills` and `prisma/web` document them. This repository holds a copy of the `prisma-compute` skill from `prisma/skills`, under `.agents/skills/prisma-compute/`, which is synced after `prisma/skills` changes.
 
 They are recorded in `deferred.md` (section 10).
 
@@ -692,15 +709,15 @@ Everything below is observable without reading the code. Each item names its tes
 
 - **18.** Under `prisma dev`:
   - a plain node is filled from the app configuration, in an input field and in a per-key param;
-  - a required unset per-key param stops dev;
-  - an unset per-key param with a default takes the default;
+  - a required unset per-key param stops dev, judged by `paramIsRequired`;
+  - an unset optional per-key param, or one with a default, does not stop dev and takes its default;
   - an unset optional input field is left out of the input document;
   - a required unset input field stops dev;
   - a non-text value stops dev before any service starts, with the message in 5.6;
   - a changed value changes only its readers' fingerprints.
 
-  Test: target `local-target-preflight.test.ts`.
-- **19.** Under `prisma dev`, a plain node's text that holds a secret's value fails with `CONFIG.SECRET_AS_PLAIN_VALUE`. The deploy's app configuration file has an empty `platformVariableText`. The graph's `appConfigurationRead` holds the root's input only. A rebuild's handover holds the texts from the start-time preflight. The second process reads `platformVariableText` from the file and passes it to the local target. Tests: CLI `app-configuration-file.test.ts`, `stack-file-import.test.ts`, `dev/__tests__/generate-dev-stack.test.ts`, and an `executeDev` test of the merge on the first converge and on a rebuild.
+  Test: target `local-target-preflight.test.ts`. Its per-key cases bind a plain node to a required param, an optional param and a param with a default, and check that only the required one stops dev.
+- **19.** Under `prisma dev`, a plain node's text that holds a secret's value fails with `CONFIG.SECRET_AS_PLAIN_VALUE`. The deploy's app configuration file has an empty `plainVariableText`. The graph's `appConfigurationRead` holds the root's input only. A rebuild's handover holds the texts from the start-time preflight. The second process reads `plainVariableText` from the file and passes it to the local target. Tests: CLI `app-configuration-file.test.ts`, `stack-file-import.test.ts`, `dev/__tests__/generate-dev-stack.test.ts`, and an `executeDev` test of the merge on the first converge and on a rebuild.
 - **21.** The integration fixture `test/integration/test/fixtures/local-dev/module.ts` provisions two secret nodes and one plain node in a per-key param, and `prisma dev` serves their values. Run only that file locally, with `bun run test/local-dev.integration.ts` from `test/integration`, not the full integration suite.
 
 ### The removal (4.5, 5.8)
@@ -709,7 +726,7 @@ Everything below is observable without reading the code. Each item names its tes
 - **23.** Core's `paramSource()` takes no `configurationKey`: passing one does not compile. Every param source is known only at boot, and listing one in `resolve()` fails with the pointer refusal. `AppConfigurationRead` has no `configurationKeyText`. Tests: core `source-value.test-d.ts` and `source-value.test.ts`.
 - **24.** `examples/root-input` deploys, and its smoke script finds the greeting the deploy shell held. Test: the manual QA in section 11.
 
-The tests that build `envSecret()`, `envParam()`, `secretName()` or a `configurationKey` source change to the nodes or to root input fields, or are deleted where they test removed behaviour. They are: target `secret.test.ts` (deleted; its name and redaction cases move to `platform-variable.test.ts`), `param.test.ts`, `sources.test-d.ts`, `graph-check.test.ts`, `input-serializer.test.ts`, `serializer.test.ts`, `preflight.test.ts`, `preflight-payload.test.ts`, `local-target-preflight.test.ts`, `dev-pointed-variables.test.ts`, `control-lowering.test.ts`, `bootstrap-service.test.ts` and `generated-param.test.ts`; core `source-value.test.ts`, `source-value.test-d.ts`, `source-load.test.ts`, `resolve-values.test.ts`, `root-input.test.ts`, `module-input.test.ts`, `pointer.test.ts`, `load-options.test-d.ts` and `lowering.test.ts`; CLI `app-configuration-file.test.ts`, `pipeline.test.ts`, `stack-file-import.test.ts`, `dev/__tests__/generate-dev-stack.test.ts` and `operations/__tests__/operations.test.ts`; the local target's `bucket-providers.test.ts`, `compute-port-order.test.ts`, `custom-domain-provider.test.ts`, `emulator-instances.test.ts` and `postgres-providers.test.ts`, which pass `configurationKeyText` to the providers.
+The tests that build `envSecret()`, `envParam()`, `secretName()` or a `configurationKey` source change to the nodes or to root input fields, or are deleted where they test removed behaviour. They are: target `secret.test.ts` (deleted; its name and redaction cases move to `platform-variable.test.ts`), `param.test.ts`, `sources.test-d.ts`, `graph-check.test.ts`, `input-serializer.test.ts`, `serializer.test.ts`, `preflight.test.ts`, `preflight-payload.test.ts`, `local-target-preflight.test.ts`, `dev-pointed-variables.test.ts`, `control-lowering.test.ts`, `bootstrap-service.test.ts` and `generated-param.test.ts`; core `source-value.test.ts`, `source-value.test-d.ts`, `source-load.test.ts`, `resolve-values.test.ts`, `root-input.test.ts`, `module-input.test.ts`, `pointer.test.ts`, `load-options.test-d.ts` and `lowering.test.ts`; CLI `app-configuration-file.test.ts`, `pipeline.test.ts`, `stack-file-import.test.ts`, `dev/__tests__/generate-dev-stack.test.ts` and `operations/__tests__/operations.test.ts`; target `orm-postgres-ordering.test.ts`, which builds a payload with `absentSecrets`; the local target's `bucket-providers.test.ts`, `compute-port-order.test.ts`, `custom-domain-provider.test.ts`, `emulator-instances.test.ts` and `postgres-providers.test.ts`, which pass `configurationKeyText` to the providers; and its `compute-materialize-env.test.ts`, whose cases named "param pointers from the app configuration" become the plain variable texts.
 
 ## 10. Scope
 
@@ -730,7 +747,7 @@ Sections 4 to 8.
 - Remove "A separate export for `envParam()` in per-key params": the function is gone.
 - Remove "The one-meaning-per-name check misses an `envParam()` passed indirectly": the function is gone, and a node and a root input field are both declared in the root, where the check sees them.
 - Remove "Renaming `absentSecrets`": this slice does it.
-- New: moving Prisma's other repositories off `envSecret()` and `envParam()`: the `prisma/streams` deploy apps, `prisma/asks`, `prisma/program` and `prisma/pdp-control-plane`, and the docs in `prisma/skills` and `prisma/web`.
+- New: moving Prisma's other repositories off `envSecret()` and `envParam()`: the deploy apps in `prisma/streams`, the apps in `prisma/asks`, `prisma/program` and `prisma/pdp-control-plane`, and the docs in `prisma/skills` and `prisma/web`. After `prisma/skills` changes, sync this repository's copy under `.agents/skills/prisma-compute/` and update `skills-lock.json`.
 - New: a plain platform variable node added by a code change while `prisma dev` runs gets its value only when `prisma dev` restarts, because a rebuild runs no preflight.
 - Rewrite "A value given by a resource that also provides a contract": the value is held under a core-only key, so the conflict is the return of `provision()`, which would have to carry both the contract's ports and the value.
 
@@ -772,7 +789,7 @@ Each entry gives the option, what this spec chose instead, and why.
 
 **Refusing a node value in per-key params.** The design lists per-key params among the places a platform variable may not go, because they "need data the deploy has". They do not: a per-key param bound to a platform variable writes a pointer row that the service reads at boot (ADR-0032, ADR-0064). With `envParam()` removed, refusing the node there would leave per-key params with no way to read a platform variable. A plain node in per-key params is accepted (5.2, 5.5). The build corrects `design.md` line 161 in place.
 
-**Keeping `configurationKeyText` in the graph's record for the dev texts.** `AppConfigurationRead.configurationKeyText` could stay, filled by nothing at Load and by the dev texts in the file. That gives one field two meanings: what Load read, and what the dev preflight found. The field goes, and the file carries `platformVariableText`, named for what it holds (5.6).
+**Keeping `configurationKeyText` in the graph's record for the dev texts.** `AppConfigurationRead.configurationKeyText` could stay, filled by nothing at Load and by the dev texts in the file. That gives one field two meanings: what Load read, and what the dev preflight found. The field goes, and the file carries `plainVariableText`, named for what it holds (5.6).
 
 **The CLI filling dev values.** The plan said plain values go into the app configuration file "beside the keys it already carries", without saying who writes them. Load cannot, because Load also runs for deploy, and the deploy does not read these values. The CLI cannot, because only the target reads the payload that holds the name. A core field such as `devConfigurationKey`, mirroring `secretsKey`, would let the CLI find the names, but it adds a core concept for one target's need. The target's dev preflight works the values out, and `prepareSecondProcess` writes them into the file (5.6).
 
