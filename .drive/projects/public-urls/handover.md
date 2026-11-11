@@ -6,7 +6,7 @@ You take over as the **orchestrator** of the public-URLs project. It spans prism
 
 ## Start here
 
-1. Check out branch `docs/public-urls-plan-current` from the `bot` remote (`git@github-wmadden-electric:wmadden-electric/composer.git` style; it is pushed to `bot`). It holds every project document change since prisma/composer#416. It is not merged and is not a pull request: it rides along in the next real Composer pull request (P2 below), because Will doesn't want a PR for doc-only changes.
+1. Check out branch `docs/public-urls-plan-current` from prisma/composer (pushed through the `bot` remote, `git@github-wmadden-electric:prisma/composer.git`). It holds every project document change since prisma/composer#416. It is not merged and is not a pull request: it rides along in the next real Composer pull request (P2 below), because Will doesn't want a PR for doc-only changes.
 2. Read, in this order:
    - `docs/design/01-principles/` and the ADRs the plan names (ADR-0057 node address, ADR-0059 to ADR-0062 public URLs).
    - `.drive/projects/public-urls/spec.md`, `plan.md`, `design-notes.md` (notes 7 and 12 matter most now).
