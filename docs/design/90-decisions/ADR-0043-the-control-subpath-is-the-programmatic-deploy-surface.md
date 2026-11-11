@@ -1,6 +1,6 @@
 # ADR-0043: `@prisma/composer/control` is the programmatic deploy surface
 
-Amended by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): `deploy` runs Alchemy in the calling process, so the report hook returns the `DeploymentSummary` as a value; `deploy` sets no `PRISMA_COMPOSER_DEPLOYMENT_RESULT_FILE`. `deploy` also takes an optional `signal` that interrupts the plan or apply.
+Amended by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): `deploy` runs Alchemy in the calling process, so the report hook returns the `DeploymentSummary` as a value; `deploy` sets no `PRISMA_COMPOSER_DEPLOYMENT_RESULT_FILE`. `deploy` also takes an optional `signal` that interrupts the plan or apply, and so does `dev`, whose signal interrupts a running converge (2026-11-02).
 
 Amended by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md): each operation takes a required `config: { value, file }`, and the effect-conflict diagnosis is retired. Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the `prisma-composer` binary is retired; the `prisma` CLI renders two of the four operations, as `prisma deploy` and `prisma dev`, and `destroy` and `log` are called from scripts. The surface below is otherwise unchanged.
 

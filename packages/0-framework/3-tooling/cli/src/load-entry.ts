@@ -10,13 +10,15 @@ import type { AppRootNode, ModuleNode } from '@internal/core';
 import { isNode } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
-import { registerEntryResolution } from './entry-resolution.ts';
+import { recordAppFiles, registerEntryResolution } from './entry-resolution.ts';
 import { explainJsxLoadError } from './jsx-load-error.ts';
 
 export interface LoadedEntry {
   /** The resolved absolute path to the entry module on disk. */
   readonly path: string;
   readonly root: ModuleNode | AppRootNode;
+  /** The app definition files: the entry and every other app file (outside `node_modules`) this import loaded for the first time. A later import of a cached entry yields only the entry. */
+  readonly files: readonly string[];
 }
 
 /** `unloadableFix`, when given, says where the path came from, so a wrong path names its source. */
@@ -28,8 +30,9 @@ export async function loadEntry(
   registerEntryResolution();
   const resolvedPath = path.resolve(cwd, entryArg);
   let mod: unknown;
+  let files: readonly string[];
   try {
-    mod = await import(pathToFileURL(resolvedPath).href);
+    ({ value: mod, files } = await recordAppFiles(() => import(pathToFileURL(resolvedPath).href)));
   } catch (error) {
     const explained = explainJsxLoadError(error, resolvedPath);
     if (explained !== undefined) {
@@ -76,5 +79,5 @@ export async function loadEntry(
     );
   }
 
-  return { path: resolvedPath, root };
+  return { path: resolvedPath, files: [...new Set([resolvedPath, ...files])], root };
 }

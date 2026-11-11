@@ -1,6 +1,6 @@
 # ADR-0007: Deploy drives Alchemy through a generated stack file
 
-Superseded for `deploy` by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): `deploy` runs Alchemy's plan and apply in the `prisma` process and writes no stack file. `destroy` and `prisma dev` still drive the Alchemy CLI through the generated file as described below.
+Superseded for `deploy` and `prisma dev` by [ADR-0064](ADR-0064-deploy-runs-alchemy-in-process.md): both run Alchemy's plan and apply in the `prisma` process and write no stack file. `destroy` still drives the Alchemy CLI through the generated file as described below.
 
 Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the commands that generate and drive the stack file are `prisma deploy` and `prisma dev`; teardown is the `destroy` operation on `@prisma/composer/control`, which drives `alchemy destroy` against the same generated file. The `prisma-composer` binary is retired. The generated-file mechanism below is unchanged.
 

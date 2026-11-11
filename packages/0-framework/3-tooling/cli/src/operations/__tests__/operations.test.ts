@@ -21,17 +21,18 @@ import type {
   RunOutcome,
 } from '@internal/core/config';
 import { type LowerOptions, lower } from '@internal/core/deploy';
-import type {
-  LocalTargetAttachment,
-  LocalTargetCurrentApp,
-  LocalTargetDescriptor,
+import {
+  devState,
+  type LocalTargetAttachment,
+  type LocalTargetCurrentApp,
+  type LocalTargetDescriptor,
+  localTargetProviders,
 } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import * as Layer from 'effect/Layer';
 import {
   APP_CONFIGURATION_FILE_ENV,
   LEFTOVER_APP_CONFIGURATION_FILE_AGE_MS,
-  NAMED_SECRETS_ENV,
 } from '../../app-configuration-file.ts';
 import { type AppConverge, HOST_COMPOSER_VERSION } from '../../app-converge.ts';
 import type { ComposerConfigSource } from '../../composer-config.ts';
@@ -219,10 +220,14 @@ const fakeAssembler = async (node: ServiceNode) => ({
 });
 
 const APPLIED: ConvergeOutcome = { kind: 'applied' };
+const FAILED: ConvergeOutcome = {
+  kind: 'failed',
+  reasons: [{ tag: 'ProviderError', message: 'the provider refused' }],
+};
 
 /** Core's own `lower` with a stand-in for Alchemy's plan and apply: deploy tests never run the real Alchemy here. */
 function appConverge(converge: Converge): AppConverge {
-  return { lower, converge };
+  return { lower, converge, localTargetProviders, devState };
 }
 
 // A caller passing no credentials leaves the token to the environment.
@@ -868,11 +873,11 @@ describe('deploy() credentials, app converge and redaction', () => {
       app,
       {
         converge: {
+          ...appConverge(recordingConverge(requests)),
           lower: (root, config, opts) => {
             lowered.push(opts);
             return lower(root, config, opts);
           },
-          converge: recordingConverge(requests),
         },
         credentials,
       },
@@ -923,7 +928,7 @@ describe('deploy() credentials, app converge and redaction', () => {
     );
     fs.writeFileSync(
       path.join(pkg, 'converge.mjs'),
-      "export const lower = () => ({}); export const convergeInProcess = async (request) => ({ kind: 'applied', cwd: request.cwd });",
+      "export const lower = () => ({}); export const convergeInProcess = async (request) => ({ kind: 'applied', cwd: request.cwd }); export const localTargetProviders = () => ({}); export const devState = () => ({});",
     );
 
     const result = await silently(() =>
@@ -993,10 +998,10 @@ describe('deploy() credentials, app converge and redaction', () => {
         {
           credentials,
           converge: {
+            ...appConverge(applied),
             lower: () => {
               throw new Error(`state store refused ${token}`);
             },
-            converge: applied,
           },
         },
         stateBroken,
@@ -1857,11 +1862,16 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     logs: async function* () {},
   };
 
-  async function childEnvOfDev(
-    preflight: LocalTargetDescriptor['preflight'],
-  ): Promise<Readonly<Record<string, string | undefined>>> {
+  /** Runs a detached dev session and returns what it lowered and converged. */
+  async function convergedDev(preflight: LocalTargetDescriptor['preflight']): Promise<{
+    readonly lowered: LowerOptions[];
+    readonly requests: ConvergeRequest[];
+    readonly spawned: number;
+  }> {
     const app = makeAppDir('hello-dev');
-    let childEnv: Readonly<Record<string, string | undefined>> = {};
+    const lowered: LowerOptions[] = [];
+    const requests: ConvergeRequest[] = [];
+    let spawned = 0;
     const result = await silently(() =>
       devWithDeps(
         {
@@ -1872,44 +1882,50 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async (invocation) => {
-            childEnv = invocation.env;
+          alchemy: async () => {
+            spawned += 1;
             return { exitCode: 0, signal: null };
+          },
+          converge: {
+            ...appConverge(async (request) => {
+              requests.push(request);
+              return APPLIED;
+            }),
+            lower: (root, config, opts) => {
+              lowered.push(opts);
+              return lower(root, config, opts);
+            },
           },
         },
       ),
     );
     expect(result.ok).toBe(true);
-    return childEnv;
+    return { lowered, requests, spawned };
   }
 
-  test("the dev preflight's payload reaches the alchemy process", async () => {
-    const env = await childEnvOfDev(() => Promise.resolve('dev:{"absentSecrets":[]}'));
+  test("the dev preflight's payload reaches lower() as a value, and the converge sets no environment variable", async () => {
+    const { lowered, requests } = await convergedDev(() =>
+      Promise.resolve('dev:{"absentSecrets":[]}'),
+    );
 
-    expect(env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_EXTENSION']).toBe('dev:{"absentSecrets":[]}');
+    expect(lowered).toHaveLength(1);
+    expect(lowered[0]?.preflight).toEqual(
+      new Map([['fixture-extension', 'dev:{"absentSecrets":[]}']]),
+    );
+    expect(lowered[0]?.containers.get('fixture-extension')?.serialize()).toBe('dev');
+    expect(requests.map((request) => request.env)).toEqual([{}]);
   }, 15_000);
 
-  test('a stale payload in the shell is blanked for every configured extension', async () => {
-    const saved = {
-      own: process.env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_EXTENSION'],
-      build: process.env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_BUILD'],
-    };
-    process.env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_EXTENSION'] = 'stale';
-    process.env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_BUILD'] = 'stale';
-    try {
-      const env = await childEnvOfDev(() => Promise.resolve(undefined));
+  test('dev lowers against the local providers and state store, and converges as a deploy in this process, starting no Alchemy child', async () => {
+    const { lowered, requests, spawned } = await convergedDev(() => Promise.resolve(undefined));
 
-      expect(env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_EXTENSION']).toBe('');
-      expect(env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_BUILD']).toBe('');
-    } finally {
-      for (const [key, name] of [
-        ['own', 'PRISMA_COMPOSER_PREFLIGHT_FIXTURE_EXTENSION'],
-        ['build', 'PRISMA_COMPOSER_PREFLIGHT_FIXTURE_BUILD'],
-      ] as const) {
-        if (saved[key] === undefined) delete process.env[name];
-        else process.env[name] = saved[key];
-      }
-    }
+    expect(spawned).toBe(0);
+    expect(lowered[0]?.providers).toBeDefined();
+    expect(lowered[0]?.state).toBeDefined();
+    expect(lowered[0]?.environment).toBe('dev');
+    expect(requests.map(({ operation, stage }) => ({ operation, stage }))).toEqual([
+      { operation: 'deploy', stage: 'dev' },
+    ]);
   }, 15_000);
 
   test('a throw after services start (endpoint merge) is a pipeline failure, and the started services are stopped again', async () => {
@@ -1934,7 +1950,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          converge: appConverge(async () => APPLIED),
         },
       ),
     );
@@ -1960,10 +1976,10 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async (input) => {
+          converge: appConverge(async (input) => {
             stages.push(input.stage);
-            return { exitCode: 1, signal: null };
-          },
+            return FAILED;
+          }),
         },
       ),
     );
@@ -1995,7 +2011,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
           fresh: true,
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+        { runAssembler: fakeAssembler, converge: appConverge(async () => APPLIED) },
       ),
     );
 
@@ -2009,10 +2025,10 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(environments).toEqual(['ensure:Dev']);
   }, 15_000);
 
-  test("--environment runs that environment's copy: its own folder, stack file and Alchemy stage, and --fresh tears down only it", async () => {
+  test("--environment runs that environment's copy: its own folder and Alchemy stage, and --fresh tears down only it; no stack file is written", async () => {
     const app = makeAppDir('hello-dev');
     const environments: string[] = [];
-    const runs: { stage: string; stack: string }[] = [];
+    const runs: { stage: string; cwd: string }[] = [];
 
     await silently(() =>
       devWithDeps(
@@ -2025,10 +2041,10 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async (input) => {
-            runs.push({ stage: input.stage, stack: input.stackFileRelativePath });
-            return { exitCode: 1, signal: null };
-          },
+          converge: appConverge(async (request) => {
+            runs.push({ stage: request.stage, cwd: request.cwd });
+            return FAILED;
+          }),
         },
       ),
     );
@@ -2041,13 +2057,9 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       `emulators:${devDir}`,
       `attach:${devDir}`,
     ]);
-    expect(runs).toEqual([
-      {
-        stage: 'feature/x',
-        stack: path.join('.prisma-composer', 'dev', 'feature%2Fx', 'alchemy.run.ts'),
-      },
-    ]);
-    expect(fs.existsSync(path.join(devDir, 'alchemy.run.ts'))).toBe(true);
+    expect(runs).toEqual([{ stage: 'feature/x', cwd: app.dir }]);
+    expect(fs.existsSync(path.join(devDir, 'alchemy.run.ts'))).toBe(false);
+    expect(fs.readdirSync(devDir)).toEqual(['environment-name']);
   }, 15_000);
 
   test.each([
@@ -2078,10 +2090,10 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
           },
           {
             runAssembler: fakeAssembler,
-            alchemy: async () => {
+            converge: appConverge(async () => {
               converged = true;
-              return { exitCode: 0, signal: null };
-            },
+              return APPLIED;
+            }),
           },
         ),
       );
@@ -2121,7 +2133,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 1, signal: null }),
+          converge: appConverge(async () => FAILED),
         },
       ),
     );
@@ -2132,7 +2144,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(stops).toBe(1);
   }, 15_000);
 
-  test('a converge that cannot be spawned still stops the app services', async () => {
+  test('a converge that throws still stops the app services', async () => {
     const app = makeAppDir('hello-dev');
     let stops = 0;
     const attachment: LocalTargetAttachment = {
@@ -2154,9 +2166,9 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => {
-            throw new Error('spawn failed');
-          },
+          converge: appConverge(async () => {
+            throw new Error('outcome.reasons is not iterable');
+          }),
         },
       ),
     );
@@ -2192,7 +2204,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          converge: appConverge(async () => APPLIED),
         },
       ),
     );
@@ -2205,9 +2217,9 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
   }, 15_000);
 
   /**
-   * The session keeps the config it started with, while each rebuild's child
-   * would import prisma.config.ts from disk. So an edit is reported, and
-   * rebuilds stop until the user restarts dev, rather than mixing the two.
+   * The session keeps the config it started with. So an edit is reported, and
+   * rebuilds stop until the user restarts dev, rather than converging a
+   * config that is not the one on disk.
    */
   test('an edit to prisma.config.ts is reported, and rebuilds stop until dev restarts', async () => {
     const app = makeAppDir('hello-dev');
@@ -2241,10 +2253,10 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
             ...(await fakeAssembler(node)),
             watch: [buildOutput],
           }),
-          alchemy: async () => {
+          converge: appConverge(async () => {
             converges += 1;
-            return { exitCode: 0, signal: null };
-          },
+            return APPLIED;
+          }),
         },
       );
       if (!start.ok) throw new Error('expected a started session');
@@ -2269,8 +2281,9 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
 
   /**
    * A rebuild re-assembles every service's artifact directory, and the
-   * converge child reads those directories. A second rebuild starting while
-   * the first child is still running rewrites them underneath it.
+   * converge reads those directories. A second rebuild starting while the
+   * first converge is still running rewrites them underneath it, and one
+   * process runs one converge at a time.
    */
   test('a build change during a rebuild waits for it, and later changes coalesce into one rebuild', async () => {
     const app = makeAppDir('hello-dev');
@@ -2303,14 +2316,14 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
             ...(await fakeAssembler(node)),
             watch: [path.join(app.dir, 'built.txt')],
           }),
-          alchemy: async () => {
+          converge: appConverge(async () => {
             converges += 1;
             running += 1;
             mostRunning = Math.max(mostRunning, running);
             if (converges > 1) await new Promise<void>((resolve) => releases.push(resolve));
             running -= 1;
-            return { exitCode: 0, signal: null };
-          },
+            return APPLIED;
+          }),
           watch: (targets, onChange) => {
             if (!targets.some((t) => t.paths.includes(path.join(app.dir, 'prisma.config.ts')))) {
               buildChange = onChange;
@@ -2337,6 +2350,418 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       expect(mostRunning).toBe(1);
       await start.value.stop();
     });
+  }, 15_000);
+
+  /** A started dev session whose build watch the test fires by hand. */
+  async function devWithBuildWatch(
+    app: { dir: string; entryPath: string },
+    converge: Converge,
+    events: DevEvent[],
+    input: { readonly signal?: AbortSignal } = {},
+  ) {
+    let change: () => void = () => undefined;
+    let stops = 0;
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopApp: () => {
+        stops += 1;
+        return Promise.resolve();
+      },
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+    const start = await devWithDeps(
+      {
+        config: composerConfig(devConfigWith(attachment)),
+        entry: app.entryPath,
+        cwd: app.dir,
+        onEvent: (event) => void events.push(event),
+        ...input,
+      },
+      {
+        runAssembler: fakeAssembler,
+        converge: appConverge(converge),
+        watch: (targets, onChange) => {
+          if (targets.some((target) => target.paths.includes(app.entryPath))) change = onChange;
+          return { ready: Promise.resolve(), stop: () => undefined };
+        },
+      },
+    );
+    return { start, change: () => change(), stops: () => stops };
+  }
+
+  const waitUntil = async (done: () => boolean) => {
+    for (let waited = 0; !done() && waited < 5_000; waited += 10) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
+
+  test('each converge is a step around its resources, and a failed one closes every step it opened', async () => {
+    const app = makeAppDir('hello-dev');
+    const events: DevEvent[] = [];
+    let converges = 0;
+
+    await silently(async () => {
+      const { start, change } = await devWithBuildWatch(
+        app,
+        async (request) => {
+          converges += 1;
+          request.onEvent?.({
+            kind: 'resource',
+            fqn: 'hello-dev.app',
+            resourceType: 'Local.Compute',
+            status: 'pending',
+            phase: 'pending',
+          });
+          request.onEvent?.({
+            kind: 'resource',
+            fqn: 'hello-dev.app',
+            resourceType: 'Local.Compute',
+            status: converges === 1 ? 'created' : 'updating',
+            phase: converges === 1 ? 'done' : 'running',
+          });
+          request.onEvent?.({ kind: 'log', severity: 'info', text: 'applied' });
+          return converges === 1 ? APPLIED : FAILED;
+        },
+        events,
+      );
+      if (!start.ok) throw start.failure;
+      change();
+      await waitUntil(() => events.some((event) => event.kind === 'converge-failed'));
+      await start.value.stop();
+    });
+
+    const steps = events.flatMap((event): object[] => {
+      if (event.kind === 'step-started') return [{ started: event.step }];
+      if (event.kind === 'step-finished') return [{ finished: event.step, outcome: event.outcome }];
+      if (event.kind === 'message') return [{ message: event.text }];
+      return [];
+    });
+    const resource = (converge: string, status: string) => ({
+      name: 'apply-resource',
+      converge,
+      fqn: 'hello-dev.app',
+      resourceType: 'Local.Compute',
+      status,
+    });
+    expect(steps).toEqual([
+      { started: { name: 'converge', id: 'dev.converge' } },
+      { started: resource('dev.converge', 'created') },
+      { finished: resource('dev.converge', 'created'), outcome: 'ok' },
+      { message: 'applied' },
+      { finished: { name: 'converge', id: 'dev.converge' }, outcome: 'ok' },
+      { started: { name: 'converge', id: 'dev.rebuild.1' } },
+      { started: resource('dev.rebuild.1', 'updating') },
+      { message: 'applied' },
+      { finished: resource('dev.rebuild.1', 'updating'), outcome: 'failed' },
+      { finished: { name: 'converge', id: 'dev.rebuild.1' }, outcome: 'failed' },
+    ]);
+  }, 15_000);
+
+  test("stopping during a rebuild's pipeline returns without waiting for it, and the rebuild does not converge", async () => {
+    const app = makeAppDir('hello-dev');
+    let change: () => void = () => undefined;
+    let assembles = 0;
+    let release: () => void = () => undefined;
+    const assembling = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let converges = 0;
+
+    await silently(async () => {
+      const start = await devWithDeps(
+        {
+          config: composerConfig(devConfigWith(runningAttachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        {
+          runAssembler: async (node: ServiceNode) => {
+            assembles += 1;
+            if (assembles > 1) await assembling;
+            return fakeAssembler(node);
+          },
+          converge: appConverge(async () => {
+            converges += 1;
+            return APPLIED;
+          }),
+          watch: (targets, onChange) => {
+            if (targets.some((target) => target.paths.includes(app.entryPath))) change = onChange;
+            return { ready: Promise.resolve(), stop: () => undefined };
+          },
+        },
+      );
+      if (!start.ok) throw start.failure;
+      change();
+      await waitUntil(() => assembles === 2);
+      await start.value.stop();
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(converges).toBe(1);
+  }, 15_000);
+
+  test('a failed rebuild is reported with its cause, keeps the app running, and the next change converges again', async () => {
+    const app = makeAppDir('hello-dev');
+    const events: DevEvent[] = [];
+    let converges = 0;
+
+    let stopsBeforeStop = -1;
+    await silently(async () => {
+      const { start, change, stops } = await devWithBuildWatch(
+        app,
+        async () => {
+          converges += 1;
+          return converges === 2 ? FAILED : APPLIED;
+        },
+        events,
+      );
+      if (!start.ok) throw start.failure;
+      change();
+      await waitUntil(() => events.some((event) => event.kind === 'converge-failed'));
+      change();
+      await waitUntil(() => events.filter((event) => event.kind === 'ready').length === 2);
+      stopsBeforeStop = stops();
+      await start.value.stop();
+    });
+
+    expect(events.filter((event) => event.kind === 'converge-failed')).toEqual([
+      {
+        kind: 'converge-failed',
+        code: 'DEV.CONVERGE_FAILED',
+        message: 'ProviderError: the provider refused',
+        reasons: [{ tag: 'ProviderError', message: 'the provider refused' }],
+      },
+    ]);
+    expect(converges).toBe(3);
+    expect(stopsBeforeStop).toBe(0);
+  }, 15_000);
+
+  test('stopping the session interrupts the running converge and waits for it before stopping the services', async () => {
+    const app = makeAppDir('hello-dev');
+    const events: DevEvent[] = [];
+    const order: string[] = [];
+    let converges = 0;
+
+    await silently(async () => {
+      const { start, change } = await devWithBuildWatch(
+        app,
+        async (request) => {
+          converges += 1;
+          if (converges === 1) return APPLIED;
+          order.push('converging');
+          await new Promise<void>((resolve) =>
+            request.signal?.addEventListener('abort', () => resolve(), { once: true }),
+          );
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          order.push('lease released');
+          return { kind: 'interrupted' };
+        },
+        events,
+      );
+      if (!start.ok) throw start.failure;
+      change();
+      await waitUntil(() => order.includes('converging'));
+      await start.value.stop();
+      order.push('stopped');
+    });
+
+    expect(order).toEqual(['converging', 'lease released', 'stopped']);
+    expect(events.some((event) => event.kind === 'converge-failed')).toBe(false);
+    expect(events.at(-1)).toEqual({ kind: 'stopped' });
+  }, 15_000);
+
+  test('Ctrl-C during the first converge is DEV.INTERRUPTED, and the started services are stopped', async () => {
+    const app = makeAppDir('hello-dev');
+    const interrupt = new AbortController();
+    let stops = 0;
+
+    const result = await silently(async () => {
+      const { start, stops: stopCount } = await devWithBuildWatch(
+        app,
+        async (request) => {
+          interrupt.abort();
+          return request.signal?.aborted === true ? { kind: 'interrupted' } : APPLIED;
+        },
+        [],
+        { signal: interrupt.signal },
+      );
+      stops = stopCount();
+      return start;
+    });
+
+    if (result.ok) throw new Error('expected an interruption');
+    expect(result.failure.code).toBe('DEV.INTERRUPTED');
+    expect(stops).toBe(1);
+  }, 15_000);
+
+  test('a failed first converge carries its reasons, without a stack file or reproduce command', async () => {
+    const app = makeAppDir('hello-dev');
+
+    const result = await silently(async () => {
+      const { start } = await devWithBuildWatch(app, async () => FAILED, []);
+      return start;
+    });
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure.code).toBe('DEV.CONVERGE_FAILED');
+    expect(result.failure.message).toBe(
+      'The app could not be converged.\nProviderError: the provider refused',
+    );
+    expect(result.failure.meta).toEqual({
+      reasons: [{ tag: 'ProviderError', message: 'the provider refused' }],
+    });
+    expect(
+      fs.existsSync(path.join(app.dir, '.prisma-composer', 'dev', 'dev', 'alchemy.run.ts')),
+    ).toBe(false);
+  }, 15_000);
+
+  /**
+   * The app is imported once, in this process, and Node and Bun cache the
+   * import. A rebuild therefore cannot see an edit to a file that defines the
+   * app, so the session says so and pauses instead of converging the old one.
+   */
+  test('an edit to a file that defines the app is reported, and rebuilds stop until dev restarts', async () => {
+    const app = makeAppDir('hello-dev');
+    const events: DevEvent[] = [];
+    let converges = 0;
+
+    await silently(async () => {
+      const { start, change } = await devWithBuildWatch(
+        app,
+        async () => {
+          converges += 1;
+          return APPLIED;
+        },
+        events,
+      );
+      if (!start.ok) throw start.failure;
+      fs.appendFileSync(app.entryPath, '// a topology edit\n');
+      change();
+      change();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await start.value.stop();
+    });
+
+    expect(events.filter((event) => event.kind === 'definition-changed')).toEqual([
+      { kind: 'definition-changed', files: [app.entryPath] },
+    ]);
+    expect(converges).toBe(1);
+  }, 15_000);
+
+  test('an edit to any app file the entry loaded is reported, not only the entry and service files', async () => {
+    const app = makeAppDir('hello-dev');
+    const helper = path.join(app.dir, 'inputs.ts');
+    fs.writeFileSync(helper, 'export const inputs = {};\n');
+    fs.writeFileSync(
+      app.entryPath,
+      fs
+        .readFileSync(app.entryPath, 'utf8')
+        .replace('      inputs: {},', '      inputs,')
+        .replace('\nexport default', "\nimport { inputs } from './inputs.ts';\nexport default"),
+    );
+    const events: DevEvent[] = [];
+    let converges = 0;
+
+    await silently(async () => {
+      const { start, change } = await devWithBuildWatch(
+        app,
+        async () => {
+          converges += 1;
+          return APPLIED;
+        },
+        events,
+      );
+      if (!start.ok) throw start.failure;
+      fs.appendFileSync(helper, '// an edit\n');
+      change();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await start.value.stop();
+    });
+
+    expect(events.filter((event) => event.kind === 'definition-changed')).toEqual([
+      { kind: 'definition-changed', files: [helper] },
+    ]);
+    expect(converges).toBe(1);
+  }, 15_000);
+
+  test.each([
+    ['already-running', 'DEV.CONVERGE_RUNNING'],
+    ['worker-thread', 'DEV.WORKER_THREAD'],
+  ] as const)(
+    'a first converge refused as %s is %s',
+    async (reason, code) => {
+      const app = makeAppDir('hello-dev');
+
+      const result = await silently(async () => {
+        const { start } = await devWithBuildWatch(
+          app,
+          async () => ({ kind: 'refused', reason }),
+          [],
+        );
+        return start;
+      });
+
+      if (result.ok) throw new Error('expected a refusal');
+      expect(result.failure.code).toBe(code);
+    },
+    15_000,
+  );
+
+  test("a refused rebuild's converge-failed carries the refusal's code", async () => {
+    const app = makeAppDir('hello-dev');
+    const events: DevEvent[] = [];
+    let converges = 0;
+
+    await silently(async () => {
+      const { start, change } = await devWithBuildWatch(
+        app,
+        async () => {
+          converges += 1;
+          return converges === 1 ? APPLIED : { kind: 'refused', reason: 'already-running' };
+        },
+        events,
+      );
+      if (!start.ok) throw start.failure;
+      change();
+      await waitUntil(() => events.some((event) => event.kind === 'converge-failed'));
+      await start.value.stop();
+    });
+
+    expect(events.filter((event) => event.kind === 'converge-failed')).toEqual([
+      {
+        kind: 'converge-failed',
+        code: 'DEV.CONVERGE_RUNNING',
+        message: 'Another converge is already running in this process.',
+        reasons: [],
+      },
+    ]);
+  }, 15_000);
+
+  test('a save that leaves the definition files unchanged still rebuilds', async () => {
+    const app = makeAppDir('hello-dev');
+    const events: DevEvent[] = [];
+    let converges = 0;
+
+    await silently(async () => {
+      const { start, change } = await devWithBuildWatch(
+        app,
+        async () => {
+          converges += 1;
+          return APPLIED;
+        },
+        events,
+      );
+      if (!start.ok) throw start.failure;
+      fs.writeFileSync(app.entryPath, fs.readFileSync(app.entryPath));
+      change();
+      await waitUntil(() => converges === 2);
+      await start.value.stop();
+    });
+
+    expect(events.some((event) => event.kind === 'definition-changed')).toBe(false);
+    expect(converges).toBe(2);
   }, 15_000);
 
   describe('the prisma.config.ts watch', () => {
@@ -2374,10 +2799,10 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
             ...(await fakeAssembler(node)),
             watch: [path.join(app.dir, 'built.txt')],
           }),
-          alchemy: async () => {
+          converge: appConverge(async () => {
             converges += 1;
-            return { exitCode: 0, signal: null };
-          },
+            return APPLIED;
+          }),
           watch: (targets, onChange, onError) => {
             watchers.push({ paths: targets.flatMap((t) => t.paths), onChange, onError });
             return { ready: Promise.resolve(), stop: () => undefined };
@@ -2473,7 +2898,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          converge: appConverge(async () => APPLIED),
         },
       );
       if (!start.ok) throw new Error('expected a started session');
@@ -2483,7 +2908,15 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(events).toEqual(['ready', 'unwatchable', 'stopping', 'stop-error', 'stopped']);
+    expect(events).toEqual([
+      'step-started',
+      'step-finished',
+      'ready',
+      'unwatchable',
+      'stopping',
+      'stop-error',
+      'stopped',
+    ]);
   }, 15_000);
 
   test('the DevSession contract: closed settles only via stop(), stop() is idempotent, and no process signal handler is ever registered', async () => {
@@ -2508,7 +2941,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          converge: appConverge(async () => APPLIED),
         },
       );
       if (!start.ok) throw new Error('expected a started session');
@@ -2561,7 +2994,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          converge: appConverge(async () => APPLIED),
           watch: () => {
             watches += 1;
             throw new Error('a detached session must not watch');
@@ -2576,7 +3009,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
 
     expect(watches).toBe(0);
     expect(stops).toBe(0);
-    expect(events).toEqual(['ready']);
+    expect(events).toEqual(['step-started', 'step-finished', 'ready']);
   }, 15_000);
 
   test('a host onEvent that throws cannot prevent closed from settling', async () => {
@@ -2600,7 +3033,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          converge: appConverge(async () => APPLIED),
         },
       );
       if (!start.ok) throw new Error('expected a started session');
@@ -2632,17 +3065,17 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => {
+          converge: appConverge(async () => {
             convergeRan = true;
-            return { exitCode: 0, signal: null };
-          },
+            return APPLIED;
+          }),
         },
       ),
     );
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
-    expect(result.failure.code).toBe('DEV.STACK_WRITE_FAILED');
+    expect(result.failure.code).toBe('DEV.ENVIRONMENT_WRITE_FAILED');
     expect(convergeRan).toBe(false);
   }, 15_000);
 });
@@ -3366,7 +3799,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
       },
     };
     const events: DevEvent[] = [];
-    let stackFile = '';
+    const lowered: LowerOptions[] = [];
 
     await silently(async () => {
       const start = await devWithDeps(
@@ -3379,13 +3812,15 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
         {
           runAssembler: () =>
             Promise.reject(new Error('a service with a dev server is not assembled')),
-          alchemy: async () => {
-            order.push('converge');
-            stackFile = fs.readFileSync(
-              path.join(app.dir, '.prisma-composer', 'dev', 'dev', 'alchemy.run.ts'),
-              'utf8',
-            );
-            return { exitCode: 0, signal: null };
+          converge: {
+            ...appConverge(async () => {
+              order.push('converge');
+              return APPLIED;
+            }),
+            lower: (root, config, opts) => {
+              lowered.push(opts);
+              return lower(root, config, opts);
+            },
           },
         },
       );
@@ -3404,7 +3839,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
       cwd: '/app/web',
     });
     expect(order).toEqual(['converge', 'startServices', 'serve', 'endpoints']);
-    expect(stackFile).toContain('unassembled: ["hello-dev.app"],');
+    expect(lowered.map((opts) => opts.unassembled)).toEqual([['hello-dev.app']]);
     expect(served).toEqual([
       {
         address: 'hello-dev.app',
@@ -3420,7 +3855,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
     });
   }, 15_000);
 
-  test('an edit to the entry module reconverges and serves again; a restart is reported', async () => {
+  test('a rebuild converges and serves again; a restart is reported', async () => {
     const app = makeAppDir('hello-dev');
     let serves = 0;
     const attachment: LocalTargetAttachment = {
@@ -3435,6 +3870,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
     };
     const events: DevEvent[] = [];
     let converges = 0;
+    let change: () => void = () => undefined;
 
     await silently(async () => {
       const start = await devWithDeps(
@@ -3446,15 +3882,19 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => {
+          converge: appConverge(async () => {
             converges += 1;
-            return { exitCode: 0, signal: null };
+            return APPLIED;
+          }),
+          watch: (targets, onChange) => {
+            if (targets.some((target) => target.paths.includes(app.entryPath))) change = onChange;
+            return { ready: Promise.resolve(), stop: () => undefined };
           },
         },
       );
       if (!start.ok) throw new Error(`expected a started session: ${start.failure.message}`);
 
-      fs.appendFileSync(app.entryPath, '// a topology edit\n');
+      change();
       await until(() => events.some((event) => event.kind === 'dev-server-restarted'));
       await start.value.stop();
     });
@@ -3484,10 +3924,10 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => {
+          converge: appConverge(async () => {
             converges += 1;
-            return { exitCode: 0, signal: null };
-          },
+            return APPLIED;
+          }),
         },
       ),
     );
@@ -3514,10 +3954,10 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => {
+          converge: appConverge(async () => {
             converges += 1;
-            return { exitCode: 0, signal: null };
-          },
+            return APPLIED;
+          }),
         },
       ),
     );
@@ -3556,7 +3996,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
           entry: app.entryPath,
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+        { runAssembler: fakeAssembler, converge: appConverge(async () => APPLIED) },
       ),
     );
 
@@ -3864,7 +4304,7 @@ describe.skipIf(process.platform === 'win32')(
       const result = await silently(() =>
         devWithDeps(
           { config: composerConfig(config), entry: app.entryPath, cwd: app.dir, detach: true },
-          { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+          { runAssembler: fakeAssembler, converge: appConverge(async () => APPLIED) },
         ),
       );
 
@@ -3877,7 +4317,6 @@ describe.skipIf(process.platform === 'win32')(
       const app = makeAppDir('hello-dev');
       const buildOutput = path.join(app.dir, 'built.txt');
       fs.writeFileSync(buildOutput, 'v1');
-      const stackFile = path.join(app.dir, '.prisma-composer', 'dev', 'dev', 'alchemy.run.ts');
       const events: DevEvent[] = [];
       let converges = 0;
       let assembles = 0;
@@ -3905,14 +4344,13 @@ describe.skipIf(process.platform === 'win32')(
               assembles += 1;
               return { ...(await fakeAssembler(node)), watch: [buildOutput] };
             },
-            alchemy: async () => {
+            converge: appConverge(async () => {
               converges += 1;
-              return { exitCode: 0, signal: null };
-            },
+              return APPLIED;
+            }),
           },
         );
         if (!start.ok) throw new Error('expected a started session');
-        fs.rmSync(stackFile);
 
         value = 'v2';
         fs.writeFileSync(buildOutput, 'v2');
@@ -3928,7 +4366,6 @@ describe.skipIf(process.platform === 'win32')(
       });
 
       expect(valuesChanges()).toEqual([{ kind: 'values-changed' }]);
-      expect(fs.existsSync(stackFile)).toBe(false);
       expect(converges).toBe(1);
     }, 20_000);
   },
@@ -4007,6 +4444,7 @@ describe('the second process reads what the first process read', () => {
         {
           runAssembler: fakeAssembler,
           converge: {
+            ...appConverge(applied),
             lower: (root, config, options) => {
               lowered.push(options);
               return lower(root, config, options);
@@ -4121,7 +4559,7 @@ describe('the second process reads what the first process read', () => {
             cwd: dir,
             detach: true,
           },
-          { runAssembler: fakeAssembler, alchemy },
+          { runAssembler: fakeAssembler, converge: appConverge(applied) },
         ),
     };
 
@@ -4145,65 +4583,49 @@ describe('the second process reads what the first process read', () => {
   const refusedPlainValues = [
     {
       what: 'a root input field holding the text under a secrets key',
-      configuration: { ...values(), GREETING: 'plain-SECRET-91' },
-      secrets: { S13_SECRET: 'plain-SECRET-91' },
+      configuration: { ...values(), GREETING: 'plain-SECRET-91', S13_SECRET: 'plain-SECRET-91' },
       where: 'Root input field input.GREETING',
     },
     {
       what: 'a configuration key holding the text under a secrets key',
-      configuration: { ...values(), APP_ORIGIN: 'plain-SECRET-91' },
-      secrets: { S13_SECRET: 'plain-SECRET-91' },
+      configuration: { ...values(), APP_ORIGIN: 'plain-SECRET-91', S13_SECRET: 'plain-SECRET-91' },
       where: 'Configuration key "APP_ORIGIN"',
     },
   ];
-  for (const { what, configuration, secrets, where } of refusedPlainValues) {
-    test.skipIf(process.platform === 'win32')(
-      `dev refuses ${what}, before writing any file or starting the second process`,
-      async () => {
-        const app = makeSecondProcessAppDir();
-        const attachment: LocalTargetAttachment = {
-          startServices: () => Promise.resolve(),
-          stopApp: () => Promise.resolve(),
-          endpoints: () => Promise.resolve([]),
-          logs: async function* () {},
-        };
-        let started = false;
+  for (const { what, configuration, where } of refusedPlainValues) {
+    test(`destroy refuses ${what}, before writing any file or starting the second process`, async () => {
+      const app = makeSecondProcessAppDir();
+      let started = false;
 
-        const result = await silently(() =>
-          devWithDeps(
-            {
-              config: composerConfig({
-                ...devConfigWith(attachment),
-                config: [() => configuration],
-                secrets: [() => secrets],
-              }),
-              entry: app.entryPath,
-              cwd: app.dir,
-              detach: true,
+      const result = await silently(() =>
+        destroyWithDeps(
+          {
+            config: composerConfig({ ...fakeConfig(), config: [() => configuration] }),
+            entry: app.entryPath,
+            environment: 'staging',
+            cwd: app.dir,
+          },
+          {
+            runAssembler: fakeAssembler,
+            alchemy: async () => {
+              started = true;
+              return { exitCode: 0, signal: null };
             },
-            {
-              runAssembler: fakeAssembler,
-              alchemy: async () => {
-                started = true;
-                return { exitCode: 0, signal: null };
-              },
-            },
-          ),
-        );
+          },
+        ),
+      );
 
-        if (result.ok) throw new Error('dev should fail');
-        expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
-        expect(result.failure.message).toBe(
-          `${where} holds the value of the secret "S13_SECRET", which an envSecret() in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
-        );
-        expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
-        expect(started).toBe(false);
-        expect(
-          filesUnder(app.dir).filter((file) => path.basename(file).startsWith('app-configuration')),
-        ).toEqual([]);
-      },
-      15_000,
-    );
+      if (result.ok) throw new Error('destroy should fail');
+      expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
+      expect(result.failure.message).toBe(
+        `${where} holds the value of the secret "S13_SECRET", which an envSecret() in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
+      );
+      expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
+      expect(started).toBe(false);
+      expect(
+        filesUnder(app.dir).filter((file) => path.basename(file).startsWith('app-configuration')),
+      ).toEqual([]);
+    });
   }
 
   test('a known limit: an adapter failure before Load is not redacted by a value only an envSecret() names', async () => {
@@ -4231,7 +4653,7 @@ describe('the second process reads what the first process read', () => {
   });
 
   test.skipIf(process.platform === 'win32')(
-    'dev hands the second process the named secrets through its environment, never in a file',
+    'dev hands lower() what Load read and the local providers the named secrets in memory, and writes no app configuration file',
     async () => {
       const app = makeSecondProcessAppDir();
       const attachment: LocalTargetAttachment = {
@@ -4240,16 +4662,9 @@ describe('the second process reads what the first process read', () => {
         endpoints: () => Promise.resolve([]),
         logs: async function* () {},
       };
-      const configurationFile = path.join(
-        app.dir,
-        '.prisma-composer',
-        'dev',
-        'dev',
-        `app-configuration-${String(process.pid)}.json`,
-      );
-      let secretsEnv: string | undefined;
-      let fileDuringConverge = false;
-      let filesHoldingSecret: string[] = [];
+      const lowered: LowerOptions[] = [];
+      const provided: { configurationKeyText: unknown; namedSecrets: unknown }[] = [];
+      let writtenDuringConverge: string[] | undefined;
 
       const result = await silently(() =>
         devWithDeps(
@@ -4265,23 +4680,48 @@ describe('the second process reads what the first process read', () => {
           },
           {
             runAssembler: fakeAssembler,
-            alchemy: async (input) => {
-              secretsEnv = input.env[NAMED_SECRETS_ENV];
-              fileDuringConverge = fs.existsSync(configurationFile);
-              filesHoldingSecret = filesUnder(app.dir).filter((candidate) =>
-                fs.readFileSync(candidate, 'utf8').includes('dev-secret-value'),
-              );
-              return { exitCode: 0, signal: null };
+            converge: {
+              ...appConverge(async () => {
+                writtenDuringConverge = filesUnder(app.dir).filter(
+                  (file) =>
+                    path.basename(file).startsWith('app-configuration') ||
+                    fs.readFileSync(file, 'utf8').includes('dev-secret-value'),
+                );
+                return APPLIED;
+              }),
+              lower: (root, config, options) => {
+                lowered.push(options);
+                return lower(root, config, options);
+              },
+              localTargetProviders: (resolved, containers, devDir, configurationKeyText, named) => {
+                provided.push({ configurationKeyText, namedSecrets: named });
+                return localTargetProviders(
+                  resolved,
+                  containers,
+                  devDir,
+                  configurationKeyText,
+                  named,
+                );
+              },
             },
           },
         ),
       );
 
-      expect(result.ok).toBe(true);
-      expect(secretsEnv).toBe('{"S13_SECRET":"dev-secret-value"}');
-      expect(filesHoldingSecret).toEqual([]);
-      expect(fileDuringConverge).toBe(true);
-      expect(fs.existsSync(configurationFile)).toBe(false);
+      if (!result.ok) throw result.failure;
+      expect(lowered.map((options) => options.appConfigurationRead)).toEqual([
+        {
+          rootInput: [{ path: ['GREETING'], value: 'hello' }],
+          configurationKeyText: { APP_ORIGIN: 'https://origin.example' },
+        },
+      ]);
+      expect(provided).toEqual([
+        {
+          configurationKeyText: { APP_ORIGIN: 'https://origin.example' },
+          namedSecrets: { S13_SECRET: 'dev-secret-value' },
+        },
+      ]);
+      expect(writtenDuringConverge).toEqual([]);
     },
     15_000,
   );
@@ -4321,6 +4761,7 @@ describe('no known secret is printed', () => {
           {
             runAssembler: fakeAssembler,
             converge: {
+              ...appConverge(applied),
               lower: (root, config, options) => {
                 lowered = options;
                 return lower(root, config, options);
@@ -4506,6 +4947,7 @@ describe('no known secret is printed', () => {
         {
           runAssembler: fakeAssembler,
           converge: {
+            ...appConverge(applied),
             lower: (root, config, options) => {
               lowered.push(options);
               return lower(root, config, options);
@@ -4588,6 +5030,53 @@ describe('no known secret is printed', () => {
   });
 
   test.skipIf(process.platform === 'win32')(
+    "no known secret reaches a dev converge's log lines, its failure reasons or dev's error",
+    async () => {
+      const app = makeAppDir('hello-dev', 'DEV_TOKEN');
+      const attachment: LocalTargetAttachment = {
+        startServices: () => Promise.resolve(),
+        stopApp: () => Promise.resolve(),
+        endpoints: () => Promise.resolve([]),
+        logs: async function* () {},
+      };
+      const events: DevEvent[] = [];
+
+      const result = await silently(() =>
+        devWithDeps(
+          {
+            config: composerConfig({
+              ...devConfigWith(attachment),
+              secrets: [() => ({ DEV_TOKEN: 'dev-SENTINEL-73' })],
+            }),
+            entry: app.entryPath,
+            cwd: app.dir,
+            detach: true,
+            onEvent: (event) => void events.push(event),
+          },
+          {
+            runAssembler: fakeAssembler,
+            converge: appConverge(async (request) => {
+              request.onEvent?.({ kind: 'log', severity: 'info', text: 'key dev-SENTINEL-73' });
+              return {
+                kind: 'failed',
+                reasons: [{ tag: 'Error', message: 'bad dev-SENTINEL-73' }],
+              };
+            }),
+          },
+        ),
+      );
+
+      if (result.ok) throw new Error('dev should fail');
+      expect(result.failure.code).toBe('DEV.CONVERGE_FAILED');
+      expect(events).toContainEqual({ kind: 'message', severity: 'info', text: 'key [redacted]' });
+      expect(JSON.stringify(events)).not.toContain('SENTINEL');
+      expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SENTINEL');
+      expect(JSON.stringify(result.failure.meta)).toContain('bad [redacted]');
+    },
+    15_000,
+  );
+
+  test.skipIf(process.platform === 'win32')(
     "a dev event's message is redacted",
     async () => {
       const app = makeAppDir('hello-dev', 'DEV_TOKEN');
@@ -4616,7 +5105,7 @@ describe('no known secret is printed', () => {
           {
             runAssembler: () =>
               Promise.reject(new Error('a service with a dev server is not assembled')),
-            alchemy: async () => ({ exitCode: 0, signal: null }),
+            converge: appConverge(applied),
           },
         );
         if (!start.ok) throw new Error(`expected a started session: ${start.failure.message}`);

@@ -7,6 +7,9 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import { HOST_COMPOSER_VERSION, loadAppConverge } from '../app-converge.ts';
 import { CONVERGE_CONTRACT } from '../converge-contract.ts';
 
+const FULL_ENTRY =
+  "export const lower = () => {}; export const convergeInProcess = async () => ({ kind: 'applied' }); export const localTargetProviders = () => {}; export const devState = () => {};";
+
 const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
@@ -69,12 +72,11 @@ async function failureOf(dir: string): Promise<CliStructuredError> {
 }
 
 describe('loadAppConverge', () => {
-  test("loads lower and convergeInProcess from the app's own @prisma/composer", async () => {
+  test("loads lower, convergeInProcess and the local target's functions from the app's own @prisma/composer", async () => {
     const dir = appWith({
       exports: { './internal/converge': './dist/internal-converge.mjs' },
       files: {
-        'dist/internal-converge.mjs':
-          "export const lower = () => {}; export const convergeInProcess = async () => ({ kind: 'applied' });",
+        'dist/internal-converge.mjs': FULL_ENTRY,
       },
     });
 
@@ -85,6 +87,8 @@ describe('loadAppConverge', () => {
 
     expect(engine.lower).toBe(stub.lower);
     expect(engine.converge).toBe(stub.convergeInProcess);
+    expect(engine.localTargetProviders).toBe(stub.localTargetProviders);
+    expect(engine.devState).toBe(stub.devState);
   });
 
   test('an app without @prisma/composer is DEPS.CONVERGE_UNRESOLVABLE', async () => {
@@ -110,14 +114,29 @@ describe('loadAppConverge', () => {
       }),
     );
 
-    expect(failure.message).toContain('exports no lower and convergeInProcess');
+    expect(failure.message).toContain(
+      'exports no lower, convergeInProcess, localTargetProviders, devState',
+    );
+  });
+
+  test("an entry that predates dev's exports is DEPS.CONVERGE_UNRESOLVABLE, naming what is missing", async () => {
+    const failure = await failureOf(
+      appWith({
+        exports: { './internal/converge': './dist/internal-converge.mjs' },
+        files: {
+          'dist/internal-converge.mjs':
+            "export const lower = () => {}; export const convergeInProcess = async () => ({ kind: 'applied' });",
+        },
+      }),
+    );
+
+    expect(failure.message).toContain('exports no localTargetProviders, devState');
   });
 
   const entry = {
     exports: { './internal/converge': './dist/internal-converge.mjs' },
     files: {
-      'dist/internal-converge.mjs':
-        "export const lower = () => {}; export const convergeInProcess = async () => ({ kind: 'applied' });",
+      'dist/internal-converge.mjs': FULL_ENTRY,
     },
   };
 

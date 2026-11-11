@@ -14,6 +14,7 @@ import type {
   PrismaAppConfig,
 } from '@internal/core/config';
 import { lower } from '@internal/core/deploy';
+import { devState, localTargetProviders } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok } from '@internal/foundation/result';
 import type { TestCli } from '@prisma/cli-engine/testing';
@@ -370,6 +371,8 @@ describe('a stored session', () => {
             runAssembler: async () => ({ dir: app.dir, entry: 'server.js' }),
             converge: {
               lower,
+              localTargetProviders,
+              devState,
               converge: async () => {
                 seen.envDuringApply.push(
                   Object.keys(process.env).filter((name) =>

@@ -16,7 +16,7 @@ import type {
   RunReporter,
 } from '@internal/core/config';
 import { containerEnv, preflightEnvVarName } from '@internal/core/config';
-import { nodeAddresses, secretsKeys } from '@internal/core/deploy';
+import { nodeAddresses } from '@internal/core/deploy';
 import { CliStructuredError, InternalError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
 import {
@@ -27,12 +27,7 @@ import {
 } from '../app-configuration-file.ts';
 import { type AppConverge, loadAppConverge } from '../app-converge.ts';
 import type { ComposerConfigSource } from '../composer-config.ts';
-import type {
-  ConvergeEvent,
-  ConvergeFailureReason,
-  ConvergeOutcome,
-  LoweredStack,
-} from '../converge-in-process.ts';
+import type { ConvergeOutcome, LoweredStack } from '../converge-in-process.ts';
 import {
   capFailureCause,
   DEPLOYMENT_RESULT_FILE_ENV,
@@ -73,11 +68,13 @@ import {
 } from './deploy.ts';
 import type { DestroyEvent, DestroyInput } from './destroy.ts';
 import {
+  convergeReasonsText,
   type ExtensionId,
   type OperationDeps,
   requireContainerForEnvironment,
   toStructured,
 } from './shared.ts';
+import { reportConvergeEvent, stepTracker } from './steps.ts';
 
 const ALCHEMY_STATE_DIR = '.alchemy';
 
@@ -87,58 +84,17 @@ function hasNoLocalDeployState(cwd: string): boolean {
   return !(fs.existsSync(stateDir) && fs.readdirSync(stateDir).length > 0);
 }
 
-/**
- * Times each deploy step for the host's `onEvent`. A step still open when the
- * run fails is closed as failed, innermost first. A host `onEvent` that throws
- * is the host's bug and cannot fail the deploy.
- */
+/** Times each deploy step for the host's `onEvent`. A step still open when the run fails is closed as failed, innermost first. */
 function deploySteps(onEvent: ((event: DeployEvent) => void) | undefined) {
-  const open = new Map<string, { readonly step: DeployStep; readonly startedAt: number }>();
-  const keyOf = (step: DeployStep): string =>
-    step.name === 'assemble-service'
-      ? `${step.name}:${step.address}`
-      : step.name === 'apply-resource'
-        ? `${step.name}:${step.fqn}`
-        : step.name;
-  const emit = (event: DeployEvent): void => {
-    try {
-      onEvent?.(event);
-    } catch {
-      // Rendering is the host's; its failures are not the deploy's.
-    }
-  };
-  const finish = (
-    step: DeployStep,
-    outcome: 'ok' | 'failed',
-    data?: Readonly<Record<string, string | number>>,
-  ): void => {
-    const entry = open.get(keyOf(step));
-    if (entry === undefined) return;
-    open.delete(keyOf(step));
-    const durationMs = Math.round(performance.now() - entry.startedAt);
-    emit({ kind: 'step-finished', step, outcome, durationMs, data });
-  };
-  return {
-    start(step: DeployStep): void {
-      open.set(keyOf(step), { step, startedAt: performance.now() });
-      emit({ kind: 'step-started', step });
-    },
-    finish(step: DeployStep, data?: Readonly<Record<string, string | number>>): void {
-      finish(step, 'ok', data);
-    },
-    fail(step: DeployStep): void {
-      finish(step, 'failed');
-    },
-    failOpen(): void {
-      for (const { step } of [...open.values()].reverse()) finish(step, 'failed');
-    },
-    isOpen(step: DeployStep): boolean {
-      return open.has(keyOf(step));
-    },
-    message(severity: 'info' | 'warn' | 'verbose', text: string): void {
-      emit({ kind: 'message', severity, text });
-    },
-  };
+  return stepTracker<DeployStep>(
+    (step) =>
+      step.name === 'assemble-service'
+        ? `${step.name}:${step.address}`
+        : step.name === 'apply-resource'
+          ? `${step.name}:${step.fqn}`
+          : step.name,
+    onEvent,
+  );
 }
 
 type DeploySteps = ReturnType<typeof deploySteps>;
@@ -352,7 +308,7 @@ async function runStackPipeline(
   try {
     outcome = await runStackPipelineInner(action, opts, reporters);
   } catch (error) {
-    opts.steps.failOpen();
+    opts.steps.closeOpen('failed');
     opts.steps.start({ name: 'record' });
     const thrown = redactThrown(error, opts.redaction);
     // A defect, not a structured failure — still the end of the run, and the
@@ -371,7 +327,7 @@ async function runStackPipeline(
     throw thrown;
   }
   if (!outcome.ok) outcome = notOk(redactError(outcome.failure, opts.redaction));
-  if (!outcome.ok) opts.steps.failOpen();
+  if (!outcome.ok) opts.steps.closeOpen('failed');
   opts.steps.start({ name: 'record' });
   await finishReporters(
     reporters,
@@ -652,7 +608,6 @@ async function runStackPipelineInner(
         file: deployAppConfigurationFile(cwd, randomUUID()),
         appConfigurationRead: pipeline.graph.appConfigurationRead,
         nodeAddresses: nodeAddresses(pipeline.graph),
-        secretsKeys: secretsKeys(pipeline.graph),
         knownSecrets: opts.redaction.knownSecrets,
       });
       stackPath = writeStackFile({
@@ -838,52 +793,6 @@ async function prepareConverge(
   }
 }
 
-/** One Alchemy progress event as the deploy's step events: each resource is a step inside `apply`. */
-function reportConvergeEvent(
-  steps: DeploySteps,
-  event: ConvergeEvent,
-  redact: (text: string) => string,
-): void {
-  if (event.kind === 'log') {
-    steps.message(event.severity, redact(withComposerAdvice(event.text)));
-    return;
-  }
-  const step: DeployStep = {
-    name: 'apply-resource',
-    fqn: event.fqn,
-    resourceType: event.resourceType,
-    status: event.status,
-  };
-  switch (event.phase) {
-    case 'running':
-      if (!steps.isOpen(step)) steps.start(step);
-      return;
-    case 'done':
-      if (!steps.isOpen(step)) steps.start(step);
-      steps.finish(step);
-      return;
-    case 'failed':
-      if (!steps.isOpen(step)) steps.start(step);
-      steps.fail(step);
-      if (event.message !== undefined) {
-        steps.message('warn', redact(`${event.fqn}: ${withComposerAdvice(event.message)}`));
-      }
-      return;
-    case 'pending':
-      return;
-  }
-}
-
-function reasonsText(reasons: readonly ConvergeFailureReason[]): string {
-  return reasons
-    .map(({ tag, message }) =>
-      tag === 'Error' || tag === 'Unknown' || message.startsWith(tag)
-        ? message
-        : `${tag}: ${message}`,
-    )
-    .join('\n');
-}
-
 /** The structured failure a converge that did not apply settles as. */
 function convergeFailure(
   outcome: Exclude<ConvergeOutcome, { readonly kind: 'applied' }>,
@@ -914,7 +823,9 @@ function convergeFailure(
             },
           );
     case 'failed': {
-      const cause = capFailureCause(redact(withComposerAdvice(reasonsText(outcome.reasons))));
+      const cause = capFailureCause(
+        redact(withComposerAdvice(convergeReasonsText(outcome.reasons))),
+      );
       return new CliStructuredError(
         'DEPLOY.ENGINE_FAILED',
         `Alchemy could not deploy the app.\n${cause}`,
@@ -994,7 +905,16 @@ async function convergeDeploy(
       cwd,
       env,
       signal: opts.signal,
-      onEvent: (event) => reportConvergeEvent(steps, event, redact),
+      onEvent: (event) =>
+        reportConvergeEvent(
+          steps,
+          event,
+          redact,
+          (resource): DeployStep => ({
+            name: 'apply-resource',
+            ...resource,
+          }),
+        ),
     });
   } catch (error) {
     return notOk(

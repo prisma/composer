@@ -335,7 +335,7 @@ function redactErrorChain(
   }
 }
 
-/** `event` with every value `redaction` hides removed from the text it carries: a message, or a dev server's output line. */
+/** `event` with every value `redaction` hides removed from the text it carries: a message, an Alchemy log line, a converge failure's reasons, or a dev server's output line. */
 export function redactDevEvent(event: DevEvent, redaction: SecretRedaction): DevEvent {
   switch (event.kind) {
     case 'target-warning':
@@ -343,6 +343,17 @@ export function redactDevEvent(event: DevEvent, redaction: SecretRedaction): Dev
     case 'watch-error':
     case 'stop-error':
       return { ...event, message: redaction.redact(event.message) };
+    case 'message':
+      return { ...event, text: redaction.redact(event.text) };
+    case 'converge-failed':
+      return {
+        ...event,
+        message: redaction.redact(event.message),
+        reasons: event.reasons.map(({ tag, message }) => ({
+          tag,
+          message: redaction.redact(message),
+        })),
+      };
     case 'dev-server-output':
       return { ...event, line: redaction.redact(event.line) };
     default:

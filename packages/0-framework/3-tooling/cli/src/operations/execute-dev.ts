@@ -1,31 +1,28 @@
 /**
- * The dev executor — run-dev.ts's pipeline (local-dev spec § 6) with console
- * and signal handling removed: events out through `onEvent`, lifetime owned by
- * the returned DevSession. The operation NEVER touches process signal
- * handlers — the host does (see run-dev.ts). Reached only by lazy import
- * from dev.ts — this module's static graph transitively loads alchemy's
+ * The dev executor (local-dev spec § 6): events out through `onEvent`,
+ * lifetime owned by the returned DevSession. Every converge lowers the app
+ * against the local target and runs Alchemy's plan and apply in this process,
+ * through the app's own install (`loadAppConverge`, ADR-0064). The operation
+ * NEVER touches process signal handlers; the host does. Reached only by lazy
+ * import from dev.ts: this module's static graph transitively loads alchemy's
  * provider tree, so the control entry must never import it statically.
  */
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import type { Graph, ServiceNode } from '@internal/core';
-import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
-import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
+import type { AppRootNode, Graph, ModuleNode, ServiceNode } from '@internal/core';
+import type { ContainerInstance, NamedSecrets, PrismaAppConfig } from '@internal/core/config';
 import type { DevServer } from '@internal/core/deploy';
-import { nodeAddresses, secretsKeys } from '@internal/core/deploy';
+import { secretsKeys } from '@internal/core/deploy';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import { devEnvironmentDir, resolveLocalTargets } from '@internal/core/local-target';
-import { CliStructuredError } from '@internal/foundation/errors';
+import { CliStructuredError, InternalError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
-import {
-  devAppConfigurationFile,
-  prepareSecondProcess,
-  removeLeftoverAppConfigurationFiles,
-  type SecondProcessHandover,
-} from '../app-configuration-file.ts';
-import { devStackRelativePath, writeDevStackFile } from '../dev/generate-dev-stack.ts';
+import { removeLeftoverAppConfigurationFiles } from '../app-configuration-file.ts';
+import { type AppConverge, loadAppConverge } from '../app-converge.ts';
+import type { ConvergeOutcome } from '../converge-in-process.ts';
+import { withComposerAdvice } from '../deployment-summary.ts';
 import {
   authoringModuleTargets,
   startWatch,
@@ -34,18 +31,12 @@ import {
 } from '../dev/watch.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
 import { redactDevEvent, redactError, redactThrown, SecretRedaction } from '../redaction.ts';
-import {
-  type AlchemyInvocation,
-  type AlchemyOutcome,
-  alchemyInvocation,
-  reproduceCommand,
-  spawnAlchemy,
-} from '../run-alchemy.ts';
 import { validateEnvironmentName } from '../validate-environment.ts';
-import type { DevEvent, DevInput, DevSession } from './dev.ts';
+import type { DevEvent, DevInput, DevSession, DevStep } from './dev.ts';
 import { claimDevEnvironmentName, requireDevEnvironmentName } from './dev-environment-name.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import {
+  convergeReasonsText,
   DEV_ENVIRONMENT,
   type ExtensionId,
   type OperationDeps,
@@ -53,6 +44,7 @@ import {
   type ServiceEndpoint,
   toStructured,
 } from './shared.ts';
+import { reportConvergeEvent, stepTracker } from './steps.ts';
 
 function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -132,7 +124,6 @@ function assertDevServersSupported(
   }
 }
 
-/** Runs the full dev pipeline; resolves to a running session or a structured failure. */
 /** The file's content hash; undefined when it cannot be read, which counts as a change. */
 function contentHash(file: string): string | undefined {
   try {
@@ -149,6 +140,72 @@ function sameValues(started: PipelineResult, now: PipelineResult): boolean {
   );
 }
 
+/** The app secrets the graph's `envSecret()`s name, for the local providers. In memory only. */
+function namedSecrets(current: PipelineResult): NamedSecrets {
+  const named: Record<string, string> = {};
+  for (const key of secretsKeys(current.graph)) {
+    const text = current.secrets[key];
+    if (text !== undefined && text !== '') named[key] = text;
+  }
+  return named;
+}
+
+type FailedConverge = Exclude<ConvergeOutcome, { readonly kind: 'applied' | 'interrupted' }>;
+
+/** The code and text a converge that failed or was refused settles as. */
+function convergeFailure(
+  outcome: FailedConverge,
+  redact: (text: string) => string,
+): {
+  readonly code: 'DEV.CONVERGE_FAILED' | 'DEV.CONVERGE_RUNNING' | 'DEV.WORKER_THREAD';
+  readonly message: string;
+  readonly reasons: readonly { readonly tag: string; readonly message: string }[];
+} {
+  if (outcome.kind === 'refused') {
+    return outcome.reason === 'already-running'
+      ? {
+          code: 'DEV.CONVERGE_RUNNING',
+          message: 'Another converge is already running in this process.',
+          reasons: [],
+        }
+      : {
+          code: 'DEV.WORKER_THREAD',
+          message:
+            'dev cannot converge in a worker thread when its cwd is not the process working directory.',
+          reasons: [],
+        };
+  }
+  return {
+    code: 'DEV.CONVERGE_FAILED',
+    message: redact(withComposerAdvice(convergeReasonsText(outcome.reasons))),
+    reasons: outcome.reasons.map(({ tag, message }) => ({ tag, message: redact(message) })),
+  };
+}
+
+const REFUSAL_HELP = {
+  'DEV.CONVERGE_RUNNING': {
+    why: "A converge sets the process's environment and working directory while Alchemy runs, so two cannot overlap.",
+    fix: 'Wait for the other converge to finish, or run dev in its own process.',
+  },
+  'DEV.WORKER_THREAD': {
+    why: 'Alchemy reads `.env` and keeps `.alchemy` in the working directory, and a worker thread cannot change it.',
+    fix: "Call dev from the main thread, or with the process's working directory as its cwd.",
+  },
+} as const;
+
+function thrownOutcome(error: unknown): ConvergeOutcome {
+  return {
+    kind: 'failed',
+    reasons: [
+      {
+        tag: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : String(error),
+      },
+    ],
+  };
+}
+
+/** Runs the full dev pipeline; resolves to a running session or a structured failure. */
 export async function executeDev(
   input: DevInput,
   deps: OperationDeps,
@@ -185,8 +242,12 @@ async function executeDevInner(
 
   let pipeline: Awaited<ReturnType<typeof runPipeline>>;
   let resolved: ReadonlyMap<string, LocalTargetDescriptor>;
+  let appConverge: AppConverge;
+  // The app definition files: every app file the entry import loaded, and
+  // each service's authoring module, hashed as they were when it loaded.
+  let startedDefinitions: ReadonlyMap<string, string | undefined>;
   const containers = new Map<ExtensionId, ContainerInstance>();
-  let preflightTransportEnv: Record<string, string> = {};
+  const preflightPayloads = new Map<ExtensionId, string>();
   // Each participating extension's view of the running app, made before the
   // first converge so a target that cannot run a dev server fails first.
   const attachmentsById = new Map<ExtensionId, LocalTargetAttachment>();
@@ -223,6 +284,19 @@ async function executeDevInner(
     );
     const { graph, name } = pipeline;
     const config = pipeline.configSource.value;
+    startedDefinitions = new Map(
+      [
+        ...pipeline.entryModule.files,
+        ...authoringModuleTargets(pipeline.entryModule.path, graph).flatMap(
+          (target) => target.paths,
+        ),
+      ].map((file) => [file, contentHash(file)]),
+    );
+
+    // Lowering and Alchemy run from the app's own install, found before
+    // anything local is created.
+    appConverge =
+      deps.converge ?? (await loadAppConverge(path.dirname(pipeline.configSource.file)));
 
     // Dev-capability check — resolve every non-build-only extension's lazy
     // `localTarget` thunk ONCE (ADR-0041's lazy reference); its pinned error
@@ -258,7 +332,6 @@ async function executeDevInner(
     }
 
     // Preflight — always (dev has no deploy/destroy split).
-    const preflightPayloads = new Map<ExtensionId, string>();
     for (const [id, dev] of resolved) {
       if (dev.preflight === undefined) continue;
       try {
@@ -274,16 +347,6 @@ async function executeDevInner(
       } catch (error) {
         throw toStructured('DEV.PREFLIGHT_FAILED', error);
       }
-    }
-    try {
-      preflightTransportEnv = preflightEnv(preflightPayloads);
-    } catch (error) {
-      throw toStructured('DEV.PREFLIGHT_FAILED', error);
-    }
-    // Blank every transport var this run did not fill, so a stale one in the
-    // shell cannot pass for this run's payload.
-    for (const extension of config.extensions) {
-      preflightTransportEnv[preflightEnvVarName(extension.id)] ??= '';
     }
 
     // Emulators — ensure the daemons this topology's node kinds need, and their per-node state.
@@ -318,70 +381,84 @@ async function executeDevInner(
     throw error;
   }
 
-  const invocationFor = (
-    p: PipelineResult,
-  ): { invocation: AlchemyInvocation; handover: SecondProcessHandover } => {
-    const handover = prepareSecondProcess({
-      file: devAppConfigurationFile(devDir),
-      appConfigurationRead: p.graph.appConfigurationRead,
-      nodeAddresses: nodeAddresses(p.graph),
-      secretsKeys: secretsKeys(p.graph),
-      knownSecrets: redaction.knownSecrets,
-      appSecrets: p.secrets,
-    });
-    const invocation = alchemyInvocation({
-      command: 'deploy',
-      stackFileRelativePath: devStackRelativePath(environment),
-      cwd,
-      stage: environment,
-      containerEnv: containerEnv(containers),
-      preflightEnv: preflightTransportEnv,
-      env: handover.env,
-      redactedValues: redaction.allValues(),
-    });
-    return { invocation, handover };
-  };
+  const config = pipeline.configSource.value;
+  const redact = (text: string): string => redaction.redact(text);
+  const steps = stepTracker<DevStep>(
+    (step) => (step.name === 'converge' ? step.id : `${step.converge}:${step.fqn}`),
+    emit,
+  );
 
+  /**
+   * Lowers `current` against the local target and plans and applies it in
+   * this process, as the step `id`. The plan's scope, and the state lease it
+   * holds, close before this returns, and so does every step it opened.
+   */
   const converge = async (
-    p: PipelineResult,
-  ): Promise<{ outcome: AlchemyOutcome; stackPath: string; invocation: AlchemyInvocation }> => {
-    const { invocation, handover } = invocationFor(p);
-    let stackPath: string;
+    current: PipelineResult,
+    signal: AbortSignal | undefined,
+    id: string,
+  ): Promise<ConvergeOutcome> => {
     try {
       claimDevEnvironmentName(devDir, environment);
-      stackPath = writeDevStackFile({
-        entryPath: p.entryModule.path,
-        cwd,
-        environment,
-        configFile: p.configSource.file,
-        name: p.name,
-        assembled: p.assembled,
-      });
-      handover.writeFile();
     } catch (error) {
-      // Stack-file write I/O is structured at the catch that knows (rule 6).
-      throw toStructured('DEV.STACK_WRITE_FAILED', error);
+      throw toStructured('DEV.ENVIRONMENT_WRITE_FAILED', error);
     }
-    let outcome: AlchemyOutcome;
+    const root = current.graph.root.node;
+    if (root.kind !== 'module') {
+      throw new InternalError('runPipeline admitted a root that is not a module');
+    }
+    steps.start({ name: 'converge', id });
+    const outcome = await lowerAndConverge(current, root, signal, id);
+    steps.closeOpen(outcome.kind === 'applied' ? 'ok' : 'failed');
+    return outcome;
+  };
+
+  const lowerAndConverge = async (
+    current: PipelineResult,
+    root: ModuleNode | AppRootNode,
+    signal: AbortSignal | undefined,
+    id: string,
+  ): Promise<ConvergeOutcome> => {
     try {
-      outcome = await (deps.alchemy ?? spawnAlchemy)(invocation);
-    } catch (error) {
-      if (CliStructuredError.is(error)) throw error;
-      throw new CliStructuredError('DEV.CONVERGE_FAILED', failureMessage(error), {
-        cause: error,
-        meta: {
-          diagnostics: {
-            exitCode: undefined,
-            stackFilePath: stackPath,
-            reproduceCommand: reproduceCommand(invocation),
-            cwd,
-          },
-        },
+      const stack = appConverge.lower(root, config, {
+        name: current.name,
+        environment,
+        appConfigurationRead: current.graph.appConfigurationRead,
+        bundles: current.assembled.bundles,
+        unassembled: Object.keys(current.assembled.devServers),
+        containers,
+        preflight: preflightPayloads,
+        providers: appConverge.localTargetProviders(
+          resolved,
+          containers,
+          devDir,
+          current.graph.appConfigurationRead.configurationKeyText,
+          namedSecrets(current),
+        ),
+        state: appConverge.devState(),
       });
-    } finally {
-      handover.removeFile();
+      return await appConverge.converge({
+        operation: 'deploy',
+        stack,
+        stage: environment,
+        cwd,
+        env: {},
+        signal,
+        onEvent: (event) =>
+          reportConvergeEvent(
+            steps,
+            event,
+            redact,
+            (resource): DevStep => ({
+              name: 'apply-resource',
+              converge: id,
+              ...resource,
+            }),
+          ),
+      });
+    } catch (error) {
+      return thrownOutcome(error);
     }
-    return { outcome, stackPath, invocation };
   };
 
   // A failed first converge can leave some services started; the session never began, so stop them.
@@ -433,41 +510,36 @@ async function executeDevInner(
     }
   };
 
-  // Write the dev stack file and converge. Inside the try: a stray
-  // `.prisma-composer` FILE, a full disk, or a spawn that throws must come
-  // back as a failure result, not a rejection out of dev().
-  let first: { outcome: AlchemyOutcome; stackPath: string; invocation: AlchemyInvocation };
+  // Inside the try: a stray `.prisma-composer` FILE must come back as a
+  // failure result, not a rejection out of dev().
+  let first: ConvergeOutcome;
   try {
-    first = await converge(pipeline);
+    first = await converge(pipeline, input.signal, 'dev.converge');
   } catch (error) {
     await stopStartedServices();
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;
   }
-  const firstStatus = first.outcome.signal !== null ? null : (first.outcome.exitCode ?? 1);
-  if (firstStatus !== 0) {
+  if (first.kind === 'interrupted') {
     await stopStartedServices();
     return notOk(
-      new CliStructuredError(
-        'DEV.CONVERGE_FAILED',
-        first.outcome.signal !== null
-          ? `alchemy deploy was interrupted by ${first.outcome.signal}.`
-          : `alchemy deploy exited with status ${String(firstStatus)}.`,
-        {
-          meta: {
-            ...(first.outcome.signal !== null
-              ? { signal: first.outcome.signal }
-              : { exitCode: firstStatus }),
-            diagnostics: {
-              exitCode: firstStatus ?? undefined,
-              ...(first.outcome.signal !== null ? { signal: first.outcome.signal } : {}),
-              stackFilePath: first.stackPath,
-              reproduceCommand: reproduceCommand(first.invocation, first.outcome),
-              cwd,
-            },
-          },
-        },
-      ),
+      new CliStructuredError('DEV.INTERRUPTED', 'dev was interrupted while it converged.', {
+        why: 'It stopped while Alchemy planned or applied the app. Resources it had already changed stay as they are.',
+        fix: 'Run dev again to finish.',
+      }),
+    );
+  }
+  if (first.kind !== 'applied') {
+    await stopStartedServices();
+    const failure = convergeFailure(first, redact);
+    return notOk(
+      failure.code === 'DEV.CONVERGE_FAILED'
+        ? new CliStructuredError(
+            failure.code,
+            `The app could not be converged.\n${failure.message}`,
+            { meta: { reasons: failure.reasons } },
+          )
+        : new CliStructuredError(failure.code, failure.message, REFUSAL_HELP[failure.code]),
     );
   }
 
@@ -484,6 +556,12 @@ async function executeDevInner(
   let configWatch: WatchHandle | undefined;
   // Ends the inline following of dev servers' output when the session stops.
   const following = new AbortController();
+  // Interrupts a rebuild's converge when the session stops.
+  const stopController = new AbortController();
+  const convergeSignal =
+    input.signal === undefined
+      ? stopController.signal
+      : AbortSignal.any([input.signal, stopController.signal]);
   try {
     for (const attachment of attachments) {
       // Recorded BEFORE the call: startServices can start some services and
@@ -535,17 +613,22 @@ async function executeDevInner(
 
     // Watch loop until the session is stopped: rebuild → re-assemble →
     // re-converge; a converge failure keeps the running app and keeps watching.
-    // Authoring modules are watched too, so an app whose services all run dev
-    // servers still reconverges on a topology edit (ADR-0056).
+    // The app definition files are watched too: the app was imported once, in
+    // this process, so an edit to one cannot reach the converge, and the
+    // session reports it and pauses instead (ADR-0064).
     const bundleWatch = watchTargetsFrom(pipeline.assembled.bundles);
+    const definitionFiles = [...startedDefinitions.keys()];
     const targets = [
       ...bundleWatch.targets,
-      ...authoringModuleTargets(pipeline.entryModule.path, pipeline.graph),
+      ...definitionFiles.map((file) => ({ address: pipeline.graph.root.id, paths: [file] })),
     ];
     for (const address of bundleWatch.unwatchable) {
       emit({ kind: 'unwatchable', address });
     }
 
+    let stopping = false;
+    let rebuilds = 0;
+    let converging: Promise<ConvergeOutcome> | undefined;
     const watchDeps: PipelineDeps = {
       runAssembler: deps.runAssembler,
       devServers: true,
@@ -559,13 +642,22 @@ async function executeDevInner(
     const startedConfig = contentHash(configFile);
     let configChanged = false;
     let valuesChanged = false;
+    let definitionChanged = false;
     // Read on every event, not only from the config watcher: a build watch
     // on a directory that contains the file can fire first.
     const paused = (): boolean => {
-      if (valuesChanged) return true;
-      if (!configChanged && contentHash(configFile) === startedConfig) return false;
-      configChanged = true;
-      emit({ kind: 'config-changed', file: configFile });
+      if (valuesChanged || definitionChanged) return true;
+      if (configChanged || contentHash(configFile) !== startedConfig) {
+        configChanged = true;
+        emit({ kind: 'config-changed', file: configFile });
+        return true;
+      }
+      const changed = definitionFiles.filter(
+        (file) => contentHash(file) !== startedDefinitions.get(file),
+      );
+      if (changed.length === 0) return false;
+      definitionChanged = true;
+      emit({ kind: 'definition-changed', files: changed });
       return true;
     };
     configWatch = watchFiles(
@@ -587,21 +679,23 @@ async function executeDevInner(
           input.config,
           watchDeps,
         );
+        if (stopping) return;
         if (!sameValues(pipeline, rePipeline)) {
           if (!valuesChanged) emit({ kind: 'values-changed' });
           valuesChanged = true;
           return;
         }
-        const { outcome, stackPath, invocation } = await converge(rePipeline);
-        if (outcome.signal !== null || outcome.exitCode !== 0) {
-          emit({
-            kind: 'converge-failed',
-            stackFilePath: stackPath,
-            reproduceCommand: reproduceCommand(invocation, outcome),
-            cwd,
-          });
+        rebuilds += 1;
+        converging = converge(rePipeline, convergeSignal, `dev.rebuild.${String(rebuilds)}`);
+        const outcome = await converging.finally(() => {
+          converging = undefined;
+        });
+        if (outcome.kind === 'interrupted') return;
+        if (outcome.kind !== 'applied') {
+          emit({ kind: 'converge-failed', ...convergeFailure(outcome, redact) });
           return;
         }
+        if (stopping) return;
         // A converge can move what a dev server's environment holds (a
         // dependency's port, a rotated key); the emulator restarts it then.
         await serveDevServers(
@@ -619,27 +713,27 @@ async function executeDevInner(
       }
     };
     // One rebuild at a time: a rebuild rewrites every service's artifact
-    // directory, which the previous rebuild's converge child may still be
-    // reading. Changes during a rebuild coalesce into one more after it.
-    let rebuilding = false;
+    // directory, which the previous rebuild's converge may still be reading,
+    // and one process runs one converge at a time. Changes during a rebuild
+    // coalesce into one more after it.
+    let rebuilding: Promise<void> | undefined;
     let changedDuringRebuild = false;
     const rebuildUntilSettled = async (): Promise<void> => {
-      rebuilding = true;
       do {
         changedDuringRebuild = false;
         await rebuild();
-      } while (changedDuringRebuild && !paused());
-      rebuilding = false;
+      } while (changedDuringRebuild && !stopping && !paused());
+      rebuilding = undefined;
     };
     watch = watchFiles(
       targets,
       () => {
-        if (paused()) return;
-        if (rebuilding) {
+        if (stopping || paused()) return;
+        if (rebuilding !== undefined) {
           changedDuringRebuild = true;
           return;
         }
-        void rebuildUntilSettled();
+        rebuilding = rebuildUntilSettled();
       },
       onWatchError,
     );
@@ -649,7 +743,6 @@ async function executeDevInner(
     const startedConfigWatch = configWatch;
     await Promise.all([watch.ready, configWatch.ready]);
 
-    let stopping = false;
     let resolveClosed: () => void = () => undefined;
     const closed = new Promise<void>((resolve) => {
       resolveClosed = resolve;
@@ -659,10 +752,15 @@ async function executeDevInner(
       if (!stopping) {
         stopping = true;
         emit({ kind: 'stopping' });
+        stopController.abort();
         following.abort();
         startedWatch.stop();
         startedConfigWatch.stop();
         void (async () => {
+          // A converge still running is interrupted above; its scope closes,
+          // releasing the state lease, before the services stop. A rebuild
+          // still in its pipeline returns before it converges.
+          await converging?.catch(() => undefined);
           // A service that refuses to stop is surfaced, not swallowed —
           // teardown continues, `stopped` still fires, `closed` still settles.
           for (const attachment of attachments) {

@@ -80,8 +80,8 @@ const listBranchResources = (
  * logicalId, but the rest of the state could not be rebuilt from them
  * (ADR-0057), so fail once, up front. A genuinely fresh deploy sees an empty
  * Branch and passes. Connections are not counted: they are children of databases, which
- * are. Local dev never reaches this — the dev stack pins
- * `state: localState()` (generate-dev-stack.ts).
+ * are. Local dev never reaches this: it lowers with
+ * `state: devState()`, Alchemy's local file store (execute-dev.ts).
  */
 export const failOnEmptyScopeWithLiveResources = (
   projectId: string,

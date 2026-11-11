@@ -10,6 +10,7 @@ import * as path from 'node:path';
 import { type Contract, module, resource } from '@internal/core';
 import type { ExtensionDescriptor, PrismaAppConfig } from '@internal/core/config';
 import { type DeploymentResult, type LowerOptions, lower } from '@internal/core/deploy';
+import { devState, localTargetProviders } from '@internal/core/local-target';
 import * as Alchemist from 'alchemy/Alchemist';
 import * as Interaction from 'alchemy/Interaction';
 import * as State from 'alchemy/State';
@@ -427,7 +428,7 @@ describe('deploy with the real in-process converge', () => {
       },
       {
         runAssembler: async () => ({ dir, entry: 'server.js' }),
-        converge: { lower, converge: convergeInProcess },
+        converge: { lower, converge: convergeInProcess, localTargetProviders, devState },
         credentials: { workspaceId: 'ws_1', client: {} },
       },
     );

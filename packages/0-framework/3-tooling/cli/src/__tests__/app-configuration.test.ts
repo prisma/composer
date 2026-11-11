@@ -211,9 +211,6 @@ describe('readAppConfiguration and readAppSecrets', () => {
 describe('where the readers are published', () => {
   test('the public config entry exports the adapters only, and the second process reads through the app configuration file entry', () => {
     expect(Object.keys(configEntry).sort()).toEqual(['dotenv', 'environmentVariables']);
-    expect(Object.keys(appConfigurationFileEntry).sort()).toEqual([
-      'namedSecretsFromEnvironment',
-      'readAppConfigurationFile',
-    ]);
+    expect(Object.keys(appConfigurationFileEntry).sort()).toEqual(['readAppConfigurationFile']);
   });
 });
