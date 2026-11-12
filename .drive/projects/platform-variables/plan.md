@@ -93,7 +93,7 @@ Each slice is one pull request, merged before the next starts. Slice 1 stands al
 
 **Checked on Prisma Cloud:** an app with a plain node, a secret node and a module that receives both through its input, deployed with the secret unset and required (preflight refuses), then set (the service boots with the value); a plain node in a per-key param; a fresh preview branch of that app; a nested module and a `module()` root's body failing to compile with `appRoot()` in the error; the same app under `prisma dev`; the planted-secret search with a secret node.
 
-**Spec:** [slices/3-a-platform-variable-is-a-node/spec.md](slices/3-a-platform-variable-is-a-node/spec.md), which holds every type, rule, message, file, record and test, and the alternatives considered.
+**Spec:** [slices/3-a-platform-variable-is-a-node/spec.md](slices/3-a-platform-variable-is-a-node/spec.md), which states every public type, rule, message, observable behaviour and record change, the acceptance items, and the alternatives considered.
 
 ## 4. A platform variable has a schema
 
