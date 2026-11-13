@@ -63,10 +63,8 @@ export interface CreateComposerFamilyOptions {
   readonly redirects?: readonly RedirectSpec[] | undefined;
 }
 
-const CLI_DOCS_URL = 'https://www.prisma.io/docs/cli';
-
 /** The `prisma` CLI's error reference; the engine appends `/<CODE>` to it for every error envelope. */
-const CLI_DOCS_BASE = `${CLI_DOCS_URL}/error-reference/`;
+const CLI_DOCS_BASE = 'https://www.prisma.io/docs/cli/error-reference/';
 
 /** Retires `--stage` on `command` in favour of `--environment`, so typing it fails with `CLI.COMMAND_MOVED`. */
 function retiredStageFlagRedirect(command: string): RedirectSpec {
@@ -99,10 +97,14 @@ function v7Flag(command: string, flag: string, entry: V7RedirectEntry): Redirect
   };
 }
 
+const ENVIRONMENT =
+  'environment (a separate local copy of the app: `dev` unless `--environment` names another)';
+
 const DEV_PORTS_REASON =
-  '`dev` takes no port options. Each environment of the app gets its own ports for its ' +
-  'services, databases and buckets, and keeps them between runs; `dev url` prints the local ' +
-  'URL of one of them while `dev` runs.';
+  `\`dev\` takes no port options. Each ${ENVIRONMENT} gets its own ports for its services, ` +
+  'databases and buckets and keeps them between runs. While `dev` runs, `dev url <address>` ' +
+  'prints where one service, database or bucket answers; its address is its path from the app ' +
+  'name, with dots between names, such as `shop.catalog.database`.';
 
 const V7_REDIRECTS: readonly RedirectSpec[] = [
   v7Command('dev ls', {
@@ -113,10 +115,12 @@ const V7_REDIRECTS: readonly RedirectSpec[] = [
       "run the app's services, databases and buckets, with every instance each one holds.",
   }),
   v7Command('dev rm', {
-    docsUrl: CLI_DOCS_URL,
+    replacement: '{bin} dev --fresh',
+    help: 'dev',
     reason:
-      "Prisma 8 keeps no named local servers to remove. `dev stop` stops the app's local copy: " +
-      'its service processes and local database servers.',
+      "`dev --fresh` deletes this app's local services, databases and buckets, and their data, " +
+      `in one ${ENVIRONMENT}, then starts the app again. \`dev stop\` only stops the ` +
+      "app's service processes and local database servers, and keeps their data.",
   }),
   v7Command('dev start', {
     replacement: '{bin} dev --detach',
