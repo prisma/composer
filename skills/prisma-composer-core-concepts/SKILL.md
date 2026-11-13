@@ -621,8 +621,9 @@ that surprise:
    `dev --fresh` (deletes the app's local services, databases and buckets in
    one environment, and their data) for `dev rm`; the flags point to the
    command's help. Each error also says how to keep using Prisma 7: install
-   its CLI with `npm install --save-dev @prisma/prisma7@7` and run the same
-   command as `prisma7 …` (e.g. `prisma7 dev ls`). Ports cannot be set; ask
+   its CLI with `npm install --save-dev @prisma/prisma7@7` and run the
+   Prisma 7 command as `prisma7 …`, with a placeholder for each value it
+   needs (e.g. `prisma7 dev rm <name>`). Ports cannot be set; ask
    `dev url` where a node answers.
    For agents, scripts and CI, `prisma dev --detach` runs the app in
    the background: it exits 0 once every service answers and prints the URLs,

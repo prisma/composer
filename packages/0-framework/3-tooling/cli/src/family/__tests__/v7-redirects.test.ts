@@ -31,6 +31,7 @@ function help(path: string): NextAction {
 
 interface Expected {
   readonly why: string;
+  readonly prisma7: string;
   readonly nextActions: readonly NextAction[];
 }
 
@@ -45,12 +46,14 @@ const PORTS_WHY =
 
 const PATHS: Readonly<Record<string, Expected>> = {
   'dev ls': {
+    prisma7: 'dev ls',
     why:
       '`emulator list` lists the local emulators on this machine, the programs `dev` starts to ' +
       "run the app's services, databases and buckets, with every instance each one holds.",
     nextActions: [step('Use the replacement', `${BIN} emulator list`), help('emulator list')],
   },
   'dev rm': {
+    prisma7: 'dev rm <name>',
     why:
       "`dev --fresh` deletes this app's local services, databases and buckets, and their data, " +
       `in one ${ENVIRONMENT}, then starts the app again. \`dev stop\` only stops the app's ` +
@@ -58,6 +61,7 @@ const PATHS: Readonly<Record<string, Expected>> = {
     nextActions: [step('Use the replacement', `${BIN} dev --fresh`), help('dev')],
   },
   'dev start': {
+    prisma7: 'dev start <name>',
     why:
       '`dev --detach` runs the app locally in the background: it returns once every service ' +
       'answers and leaves the app running, without watching for changes, until `dev stop`.',
@@ -66,16 +70,22 @@ const PATHS: Readonly<Record<string, Expected>> = {
 };
 
 const FLAGS: Readonly<Record<string, Expected>> = {
-  'dev --port': { why: PORTS_WHY, nextActions: [help('dev')] },
-  'dev --db-port': { why: PORTS_WHY, nextActions: [help('dev')] },
-  'dev --shadow-db-port': { why: PORTS_WHY, nextActions: [help('dev')] },
+  'dev --port': { why: PORTS_WHY, prisma7: 'dev --port <port>', nextActions: [help('dev')] },
+  'dev --db-port': { why: PORTS_WHY, prisma7: 'dev --db-port <port>', nextActions: [help('dev')] },
+  'dev --shadow-db-port': {
+    why: PORTS_WHY,
+    prisma7: 'dev --shadow-db-port <port>',
+    nextActions: [help('dev')],
+  },
   'dev --debug': {
+    prisma7: 'dev --debug',
     why:
       '`dev` has no debug output option. It shows the output of each service that runs a dev ' +
       "server, such as `next dev`, prefixed with the service's address.",
     nextActions: [help('dev')],
   },
   'dev stop --debug': {
+    prisma7: 'dev stop <name> --debug',
     why: '`dev stop` has no debug output option.',
     nextActions: [help('dev stop')],
   },
@@ -118,7 +128,7 @@ describe('Prisma 7 dev subcommands', () => {
 
   test.each(Object.entries(PATHS))(
     '`%s` settles as CLI.V7_COMMAND in --json output',
-    async (path, { why, nextActions }) => {
+    async (path, { why, prisma7: invocation, nextActions }) => {
       const { cli, calls } = composerCli();
 
       const result = await cli.run([...path.split(' '), '--json']);
@@ -130,7 +140,7 @@ describe('Prisma 7 dev subcommands', () => {
       expect(envelope.error.summary).toBe(
         `\`${BIN} ${path}\` is a Prisma 7 command and is not available in Prisma 8`,
       );
-      expect(envelope.error.why).toBe(`${why} ${prisma7(path)}`);
+      expect(envelope.error.why).toBe(`${why} ${prisma7(invocation)}`);
       expect(envelope.nextActions).toEqual(nextActions);
       expect(envelope.error.nextActions).toEqual(nextActions);
       expect(calls.dev).toEqual([]);
@@ -139,7 +149,7 @@ describe('Prisma 7 dev subcommands', () => {
 
   test.each(Object.entries(PATHS))(
     '`%s` settles as CLI.V7_COMMAND in human output',
-    async (path, { why, nextActions }) => {
+    async (path, { why, prisma7: invocation, nextActions }) => {
       const { cli } = composerCli();
 
       const result = await cli.run(path.split(' '), { isTty: { stdout: true, stderr: true } });
@@ -148,7 +158,7 @@ describe('Prisma 7 dev subcommands', () => {
       expect(result.stdout).toBe('');
       expect(humanLines(result.stderr)).toEqual([
         `✘ [CLI.V7_COMMAND] \`${BIN} ${path}\` is a Prisma 7 command and is not available in Prisma 8`,
-        `  why: ${why} ${prisma7(path)}`,
+        `  why: ${why} ${prisma7(invocation)}`,
         ...nextActions.map(actionLine),
       ]);
     },
@@ -170,7 +180,7 @@ describe('Prisma 7 flags on dev and dev stop', () => {
 
   test.each(Object.entries(FLAGS))(
     '`%s` settles as CLI.V7_FLAG in --json output',
-    async (invocation, { why, nextActions }) => {
+    async (invocation, { why, prisma7: prisma7Invocation, nextActions }) => {
       const { cli, calls } = composerCli();
       const { command, flag } = splitFlagCase(invocation);
 
@@ -183,7 +193,7 @@ describe('Prisma 7 flags on dev and dev stop', () => {
       expect(envelope.error.summary).toBe(
         `\`--${flag}\` on \`${BIN} ${command}\` is a Prisma 7 flag and is not available in Prisma 8`,
       );
-      expect(envelope.error.why).toBe(`${why} ${prisma7(invocation)}`);
+      expect(envelope.error.why).toBe(`${why} ${prisma7(prisma7Invocation)}`);
       expect(envelope.nextActions).toEqual(nextActions);
       expect(envelope.error.nextActions).toEqual(nextActions);
       expect(calls.dev).toEqual([]);
@@ -193,7 +203,7 @@ describe('Prisma 7 flags on dev and dev stop', () => {
 
   test.each(Object.entries(FLAGS))(
     '`%s` settles as CLI.V7_FLAG in human output',
-    async (invocation, { why, nextActions }) => {
+    async (invocation, { why, prisma7: prisma7Invocation, nextActions }) => {
       const { cli } = composerCli();
       const { command, flag } = splitFlagCase(invocation);
 
@@ -205,7 +215,7 @@ describe('Prisma 7 flags on dev and dev stop', () => {
       expect(result.stdout).toBe('');
       expect(humanLines(result.stderr)).toEqual([
         `✘ [CLI.V7_FLAG] \`--${flag}\` on \`${BIN} ${command}\` is a Prisma 7 flag and is not available in Prisma 8`,
-        `  why: ${why} ${prisma7(invocation)}`,
+        `  why: ${why} ${prisma7(prisma7Invocation)}`,
         ...nextActions.map(actionLine),
       ]);
     },
@@ -218,7 +228,7 @@ describe('Prisma 7 flags on dev and dev stop', () => {
 
     expect(failedEnvelope(result).error.why).toBe(
       '`dev stop` has no debug output option. To keep using Prisma 7, install its CLI with ' +
-        '`npm install --save-dev @prisma/prisma7@7` and run `prisma7 dev stop --debug`.',
+        '`npm install --save-dev @prisma/prisma7@7` and run `prisma7 dev stop <name> --debug`.',
     );
     expect(result.stdout).not.toContain('npx');
   });

@@ -78,6 +78,7 @@ function retiredStageFlagRedirect(command: string): RedirectSpec {
 
 type V7RedirectEntry = Omit<RedirectSpec, 'from' | 'flag' | 'code' | 'summary' | 'reason'> & {
   readonly reason: string;
+  readonly prisma7?: string;
 };
 
 function withPrisma7Cli(reason: string, invocation: string): string {
@@ -89,23 +90,25 @@ function kebabCase(flag: string): string {
 }
 
 function v7Command(from: string, entry: V7RedirectEntry): RedirectSpec {
+  const { prisma7 = from, ...rest } = entry;
   return {
     from,
     code: 'CLI.V7_COMMAND',
     summary: `\`{bin} ${from}\` is a Prisma 7 command and is not available in Prisma 8`,
-    ...entry,
-    reason: withPrisma7Cli(entry.reason, from),
+    ...rest,
+    reason: withPrisma7Cli(entry.reason, prisma7),
   };
 }
 
 function v7Flag(command: string, flag: string, entry: V7RedirectEntry): RedirectSpec {
+  const { prisma7 = `${command} --${kebabCase(flag)}`, ...rest } = entry;
   return {
     from: command,
     flag,
     code: 'CLI.V7_FLAG',
     summary: `\`--${kebabCase(flag)}\` on \`{bin} ${command}\` is a Prisma 7 flag and is not available in Prisma 8`,
-    ...entry,
-    reason: withPrisma7Cli(entry.reason, `${command} --${kebabCase(flag)}`),
+    ...rest,
+    reason: withPrisma7Cli(entry.reason, prisma7),
   };
 }
 
@@ -127,6 +130,7 @@ const V7_REDIRECTS: readonly RedirectSpec[] = [
       "run the app's services, databases and buckets, with every instance each one holds.",
   }),
   v7Command('dev rm', {
+    prisma7: 'dev rm <name>',
     replacement: '{bin} dev --fresh',
     help: 'dev',
     reason:
@@ -135,6 +139,7 @@ const V7_REDIRECTS: readonly RedirectSpec[] = [
       "app's service processes and local database servers, and keeps their data.",
   }),
   v7Command('dev start', {
+    prisma7: 'dev start <name>',
     replacement: '{bin} dev --detach',
     help: 'dev',
     reason:
@@ -142,7 +147,11 @@ const V7_REDIRECTS: readonly RedirectSpec[] = [
       'answers and leaves the app running, without watching for changes, until `dev stop`.',
   }),
   ...['port', 'dbPort', 'shadowDbPort'].map((flag) =>
-    v7Flag('dev', flag, { help: 'dev', reason: DEV_PORTS_REASON }),
+    v7Flag('dev', flag, {
+      prisma7: `dev --${kebabCase(flag)} <port>`,
+      help: 'dev',
+      reason: DEV_PORTS_REASON,
+    }),
   ),
   v7Flag('dev', 'debug', {
     help: 'dev',
@@ -151,6 +160,7 @@ const V7_REDIRECTS: readonly RedirectSpec[] = [
       "server, such as `next dev`, prefixed with the service's address.",
   }),
   v7Flag('dev stop', 'debug', {
+    prisma7: 'dev stop <name> --debug',
     help: 'dev stop',
     reason: '`dev stop` has no debug output option.',
   }),
