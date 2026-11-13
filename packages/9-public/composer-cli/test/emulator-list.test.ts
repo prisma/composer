@@ -41,15 +41,12 @@ const listing: EmulatorList = {
 
 function cliWith(list: Parameters<typeof createComposerFamily>[0]) {
   const family = createComposerFamily(list);
-  const { deploy, 'deploy list': deployList, 'emulator list': command } = family.commands;
-  if (command === undefined || deploy === undefined || deployList === undefined) {
-    throw new Error('no emulator list command');
-  }
   return createTestCli({
     commandFamilies: [family],
-    commands: { deploy, 'deploy list': deployList, 'emulator list': command },
+    commands: family.commands,
     groups: {
       deploy: { brief: 'Deploy the app.' },
+      dev: { brief: 'Run the app on this machine.' },
       emulator: { brief: 'The local emulators on this machine.' },
     },
   });

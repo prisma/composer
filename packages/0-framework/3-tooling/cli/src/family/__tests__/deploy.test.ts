@@ -13,8 +13,8 @@ import type { ScriptedChildProgram, TestCli } from '@prisma/cli-engine/testing';
 import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
 import { createOperationsDouble, type OperationsDouble } from '../../testing/operations-double.ts';
 import { createComposerFamily } from '../family.ts';
-import { commandAt } from './command-at.ts';
 import { validComposerSection } from './fixtures/composer-section.ts';
+import { mountAsHost } from './host-mount.ts';
 
 type Fixtures = Parameters<typeof createOperationsDouble>[0];
 
@@ -71,10 +71,7 @@ function composerCli(
   const family = createComposerFamily({ operations: double.operations });
   const cli = createTestCli({
     commandFamilies: [family],
-    // The two product verbs, at the root. `dev url` and `dev stop` mount
-    // beneath `dev`, which needs an engine that lets a command also be a
-    // group; their own tests mount them alone.
-    commands: { deploy: commandAt(family, 'deploy'), dev: commandAt(family, 'dev') },
+    ...mountAsHost(family),
     config: { composer: validComposerSection() },
     ...(spec.signedIn === false ? {} : { credential: activeCredential() }),
     ...(spec.spawnScript === undefined ? {} : { spawnScript: spec.spawnScript }),
