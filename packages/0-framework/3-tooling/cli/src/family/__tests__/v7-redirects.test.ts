@@ -35,7 +35,7 @@ interface Expected {
 }
 
 const ENVIRONMENT =
-  'environment (a separate local copy of the app: `dev` unless `--environment` names another)';
+  'environment (a separate local copy of the app: the one named dev unless `--environment` names another)';
 
 const PORTS_WHY =
   `\`dev\` takes no port options. Each ${ENVIRONMENT} gets its own ports for its services, ` +
