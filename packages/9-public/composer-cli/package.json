@@ -27,7 +27,7 @@
     "esbuild": "^0.28.1"
   },
   "peerDependencies": {
-    "@prisma/cli-engine": "0.9.0"
+    "@prisma/cli-engine": "0.10.0"
   },
   "devDependencies": {
     "@internal/cli": "workspace:0.38.0",
@@ -36,7 +36,7 @@
     "@internal/lowering": "workspace:0.38.0",
     "@internal/tsdown-config": "workspace:0.38.0",
     "@types/bun": "^1.3.13",
-    "@prisma/cli-engine": "0.9.0",
+    "@prisma/cli-engine": "0.10.0",
     "@types/node": "^26.0.1",
     "tsdown": "^0.22.7",
     "typescript": "^6.0.3"

@@ -38,7 +38,7 @@ describe('createComposerFamily()', () => {
       {
         from: 'deploy',
         flag: 'stage',
-        replacement: 'deploy --environment <name>',
+        replacement: ['deploy --environment <name>'],
         reason: 'A place the app runs is now called an environment.',
       },
     ]);
