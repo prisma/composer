@@ -614,6 +614,11 @@ that surprise:
    writes one tab-separated line per instance: emulator kind, instance id,
    URL, state, node address, directory, environment.
    `prisma emulator start` and `stop` are planned.
+   Prisma 7's `dev ls`, `dev rm` and `dev start` fail with `CLI.V7_COMMAND`,
+   and `--port`, `--db-port`, `--shadow-db-port` and `--debug` on `dev` (and
+   `--debug` on `dev stop`) with `CLI.V7_FLAG`, both exit 2: use
+   `emulator list` for `dev ls` and `dev --detach` for `dev start`. Ports
+   cannot be set; ask `dev url` where a node answers.
    For agents, scripts and CI, `prisma dev --detach` runs the app in
    the background: it exits 0 once every service answers and prints the URLs,
    does not watch for changes, and leaves the app running until

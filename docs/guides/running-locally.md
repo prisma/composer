@@ -312,6 +312,14 @@ a code a script can branch on:
 
 Each command's piped lines are listed in [Piped output](#piped-output).
 
+Prisma 7's `prisma dev ls`, `prisma dev rm` and `prisma dev start` fail with
+`CLI.V7_COMMAND`. Its `--port`, `--db-port`, `--shadow-db-port` and `--debug`
+on `prisma dev`, and `--debug` on `prisma dev stop`, fail with `CLI.V7_FLAG`.
+Both exit with status 2 and say what to run instead: `prisma emulator list`
+for `dev ls`, and `prisma dev --detach` for `dev start`. There is no port to
+pass: `prisma dev` gives each environment its own ports and keeps them between
+runs, and `prisma dev url` prints where a node answers.
+
 `--fresh` is also the fix when a framework upgrade leaves stale rows in this
 app's local dev state — the symptom is a plan-time error naming an
 unregistered resource type (for example
