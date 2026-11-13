@@ -146,14 +146,24 @@ export interface ParamBinding {
   readonly binding: unknown;
 }
 
-/** A secret source a binding in the graph names, wherever it sits (ADR-0029). Deploy preflight checks every one, including one in a module's input that no service receives. */
+/** A secret source a binding in the graph names, or a secret value resource, wherever it sits (ADR-0029). Deploy preflight checks every one, including one in a module's input that no service receives. */
 export interface SecretSourceUse {
   /** The source, as its target built it. Core never reads its payload. */
   readonly source: SecretSource;
-  /** A service whose final binding holds it, if one does. Otherwise the module whose input holds it. */
+  /** A service whose final binding holds it, if one does. Otherwise the secret value resource itself, or the module whose input holds it. */
   readonly address: NodeId;
   /** That node's kind. */
   readonly nodeKind: 'service' | 'module' | 'resource';
+}
+
+/** One service reading one value resource's value. */
+export interface ValueRead {
+  /** The service whose resolved binding holds the value. */
+  readonly reader: NodeId;
+  /** The address of the value resource. */
+  readonly resource: NodeId;
+  /** Where the service reads it: the dotted key path in its input binding, `''` for the whole binding, or the param's name. */
+  readonly site: { readonly kind: 'serviceInput' | 'param'; readonly path: string };
 }
 
 export interface Graph {
@@ -169,8 +179,10 @@ export interface Graph {
   readonly inputBindings: readonly InputBindingUse[];
   /** Every service param bound at provision — literal or source; unbound params are absent here and fall back to their `default` (see `buildConfig`). */
   readonly params: readonly ParamBinding[];
-  /** Every secret source a binding names, once each, in the order Load met them (ADR-0029). */
+  /** Every secret source a binding names, and every secret value resource, once each (ADR-0029). */
   readonly secretSources: readonly SecretSourceUse[];
+  /** Each service that reads a value resource's value, and where in its binding it reads it. */
+  readonly valueReads: readonly ValueRead[];
   /** What this Load read from the app configuration (ADR-0062). Empty when Load was given none. */
   readonly appConfigurationRead: AppConfigurationRead;
 }

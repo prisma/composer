@@ -24,15 +24,20 @@ import {
   type Deps,
   isConfigKeySegment,
   isNode,
+  isValueResource,
   type ModuleBuilder,
   type ModuleContext,
   type ModuleNode,
   type ProvisionedRef,
+  provisionedValue,
   type ResourceNode,
   type ResourceProps,
   type ServiceNode,
+  type SourceValue,
+  slotsOf,
+  sourceOriginOf,
 } from './node.ts';
-import { type ProvisionedModuleInput, resolveValues } from './resolve-values.ts';
+import { type ProvisionedModuleInput, resolveValues, valueReadsOf } from './resolve-values.ts';
 import { topoSort } from './toposort.ts';
 import { environmentFacts, isValue } from './value.ts';
 
@@ -116,6 +121,15 @@ function producerIdOf(ref: unknown): string | undefined {
  * identity the branding copy creates, never on reading this back.
  */
 const MODULE_INPUT_KEY = Symbol('prisma:module-input-key');
+
+/** How the duplicate-id error names the node already at an id: a value resource by its value's label. */
+function describeHolder(
+  node: ServiceNode | ResourceNode | ModuleNode,
+  value: SourceValue | undefined,
+): string {
+  const label = value === undefined ? undefined : sourceOriginOf(value)?.label;
+  return label ?? `${node.kind} "${node.name}"`;
+}
 
 /** Whether `ref` carries a callable `satisfies` that accepts `required` truthily. */
 function satisfiesRequired(ref: unknown, required: unknown): boolean {
@@ -274,12 +288,13 @@ function flatten(
   paramBindings: ParamBinding[],
   moduleInputs: ProvisionedModuleInput[],
   byId: Map<string, ServiceNode | ResourceNode | ModuleNode>,
+  valueResources: Map<NodeId, SourceValue>,
   ports: BoundaryPort[],
   authoredEdges: AuthoredEdge[],
   loading: { sealed: boolean },
 ): Record<string, unknown> {
   ports.push(...boundaryPortsOf(selfId, moduleNode));
-  const localIds = new Set<string>();
+  const localNodes = new Map<string, ServiceNode | ResourceNode | ModuleNode>();
   const used = new Set<string>();
 
   // Each ctx.deps entry gets its OWN object identity: a shallow copy of the
@@ -389,8 +404,12 @@ function flatten(
           '("_" collides with the key separator and "." with the address separator.)',
       );
     }
-    if (localIds.has(id)) {
-      throw new LoadError(`Duplicate provision id "${id}" in module "${moduleNode.name}".`);
+    const fullAddress = `${selfId}.${id}`;
+    const holder = localNodes.get(id);
+    if (holder !== undefined) {
+      throw new LoadError(
+        `Duplicate provision id "${id}" in module "${selfId}": "${fullAddress}" already holds ${describeHolder(holder, valueResources.get(fullAddress))}. Give one of them a different id with provision(node, { id: '…' }).`,
+      );
     }
     // Brand-check on a widened alias: predicate-narrowing the declared union
     // drops the `any`-instantiated ResourceNode member (the same quirk
@@ -415,8 +434,27 @@ function flatten(
           'entry and cannot be provisioned. Build the module with module() instead.',
       );
     }
-    localIds.add(id);
-    const fullAddress = `${selfId}.${id}`;
+    const candidate: unknown = child;
+    const valueNode = isValueResource(candidate) ? candidate : undefined;
+    if (valueNode !== undefined) {
+      if (typeof moduleNode.isRoot !== 'function' || !moduleNode.isRoot()) {
+        throw new LoadError(
+          `Module "${selfId}" provisions "${id}", a resource that is a value. Only the app root, built with appRoot(), can provision one. Provision it in the root and pass its value down through this module's input.`,
+        );
+      }
+      const also =
+        valueNode.provides !== undefined
+          ? 'provides a contract'
+          : Object.keys(slotsOf(valueNode)).length > 0
+            ? 'declares dependency slots'
+            : undefined;
+      if (also !== undefined) {
+        throw new LoadError(
+          `Resource "${fullAddress}" is a value and also ${also}. A resource that is a value provides no contract and has no dependencies.`,
+        );
+      }
+    }
+    localNodes.set(id, child);
 
     if (child.kind === 'resource') {
       if (provisionWiring !== undefined) {
@@ -467,6 +505,11 @@ function flatten(
         targetKind: 'resource',
         enclosingModuleName: moduleNode.name,
       });
+      if (valueNode !== undefined) {
+        const value = provisionedValue(valueNode, fullAddress);
+        valueResources.set(fullAddress, value);
+        return value;
+      }
       return refForResource(fullAddress, child);
     }
 
@@ -585,6 +628,7 @@ function flatten(
       paramBindings,
       moduleInputs,
       byId,
+      valueResources,
       ports,
       authoredEdges,
       loading,
@@ -718,6 +762,7 @@ export function loadModule(root: ModuleNode | AppRootNode, opts?: LoadOptions): 
   const inputBindings: InputBindingUse[] = [];
   const paramBindings: ParamBinding[] = [];
   const byId = new Map<string, ServiceNode | ResourceNode | ModuleNode>();
+  const valueResources = new Map<NodeId, SourceValue>();
   const ports: BoundaryPort[] = [];
   const authoredEdges: AuthoredEdge[] = [];
   const loading = { sealed: false };
@@ -734,6 +779,7 @@ export function loadModule(root: ModuleNode | AppRootNode, opts?: LoadOptions): 
       paramBindings,
       moduleInputs,
       byId,
+      valueResources,
       ports,
       authoredEdges,
       loading,
@@ -755,6 +801,7 @@ export function loadModule(root: ModuleNode | AppRootNode, opts?: LoadOptions): 
     params: paramBindings,
     moduleInputs,
     resources,
+    valueResources,
   });
   const resolvedNodes = nodes.map((entry): GraphNode => {
     const props = resolved.resourceProps.get(entry.id);
@@ -774,6 +821,7 @@ export function loadModule(root: ModuleNode | AppRootNode, opts?: LoadOptions): 
     inputBindings: resolved.inputBindings,
     params: resolved.params,
     secretSources: resolved.secretSources,
+    valueReads: valueReadsOf(resolved.inputBindings, resolved.params),
     appConfigurationRead: resolved.appConfigurationRead,
   };
 }

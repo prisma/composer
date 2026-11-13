@@ -3,12 +3,18 @@
  * data objects. A node's `extension` + `type` form its deploy-time registry key (ADR-0017).
  */
 import { blindCast } from '@internal/foundation/casts';
-import { POINTER, type Pointer, type PointerKind } from '@internal/foundation/pointer';
+import {
+  isPlainPointer,
+  isSecretPointer,
+  POINTER,
+  type Pointer,
+  type PointerKind,
+} from '@internal/foundation/pointer';
 import type { SecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { ConfigParam, Connection, Params } from './config.ts';
 import type { Contract } from './contract.ts';
-import { LoadError } from './graph-types.ts';
+import { LoadError, type NodeId } from './graph-types.ts';
 import { type ModuleInput, type NotModuleInput, primitiveMisuse } from './module-input.ts';
 import {
   type EnvironmentFacts,
@@ -16,9 +22,11 @@ import {
   isValue,
   originOf,
   type PlainData,
+  type RuntimeValue,
   type SourceOrigin,
   VALUE,
   VALUE_ORIGIN,
+  VALUE_RESOURCE,
   type Value,
 } from './value.ts';
 
@@ -81,7 +89,7 @@ export function secretSource<P, T = unknown>(
     buildSource(
       SECRET_SOURCE,
       payload,
-      { kind: 'source', sourceKind: 'secret', label, secretsKey },
+      { kind: 'source', sourceKind: 'secret', label, secretsKey, resource: undefined },
       'secret',
     ),
   );
@@ -172,7 +180,7 @@ export function paramSource<P, T = unknown>(
     buildSource(
       PARAM_SOURCE,
       payload,
-      { kind: 'source', sourceKind: 'param', label, configurationKey },
+      { kind: 'source', sourceKind: 'param', label, configurationKey, resource: undefined },
       configurationKey !== undefined ? undefined : redacted ? 'secret' : 'plain',
     ),
   );
@@ -197,6 +205,7 @@ function buildSource(
   payload: unknown,
   origin: SourceOriginWithoutSource,
   kind: PointerKind | undefined,
+  hidden: PropertyDescriptorMap = {},
 ): object {
   const source = {
     [VALUE]: true,
@@ -206,7 +215,7 @@ function buildSource(
     payload,
   };
   Object.defineProperty(origin, 'source', { value: source });
-  Object.defineProperties(source, coercions(origin));
+  Object.defineProperties(source, { ...coercions(origin), ...hidden });
   Object.freeze(origin);
   return Object.freeze(source);
 }
@@ -503,8 +512,8 @@ export interface AppRootContext<
   readonly input: I extends StandardSchemaV1 ? ModuleInput<I> : undefined;
   /** The deploy-time facts of the environment, each a value (ADR-0062). */
   readonly environment: EnvironmentFacts;
-  /** Registers an owned child (resource, service or module) under a stable id. */
-  readonly provision: ModuleBuilder['provision'];
+  /** Registers an owned child (resource, service, module or value resource) under a stable id. */
+  readonly provision: AppRootProvision;
 }
 
 /**
@@ -586,9 +595,10 @@ type ModuleProvisionArgs<
     ? [opts?: ModuleProvisionOptions<D, I>]
     : [opts: ModuleProvisionOptions<D, I>];
 
-/** The options `provision()` takes after a service or module node `N`. */
-type ProvisionArgs<N> =
-  N extends ServiceNode<infer D, infer P, Expose, infer I>
+/** The options `provision()` takes after a service, module or value resource node `N`. */
+type ProvisionArgs<N> = N extends ValueResourceNode
+  ? [opts?: { id?: string }]
+  : N extends ServiceNode<infer D, infer P, Expose, infer I>
     ? ServiceProvisionArgs<D, I, ParamBindings<P>>
     : N extends ModuleNode<infer D, Expose, infer I>
       ? ModuleProvisionArgs<D, I>
@@ -602,24 +612,24 @@ type ExposeOf<N> =
       ? E
       : never;
 
-export interface ModuleBuilder {
+/** The type error an author sees for a value resource provisioned in a `module()` body. */
+type OnlyInAppRoot =
+  "Only appRoot() can provision a resource that is a value, such as a platform variable. Provision it in the app root and pass its value down through this module's input.";
+
+/** The `provision()` overloads a `module()` body and an `appRoot()` body share. */
+interface SharedProvision {
   /** Provisions an owned resource; its id defaults to the node's `name`. */
-  provision<C extends AnyContract | undefined>(
-    resource: ResourceNode<C>,
+  <C extends AnyContract | undefined>(
+    resource: ResourceNode<C> & { readonly [VALUE_RESOURCE]?: undefined },
     opts?: { id?: string },
   ): { readonly id: string } & (C extends AnyContract ? RefPort<C> : Record<never, never>);
   /** Registers an owned service; its id defaults to the node's `name`; `deps`/`input` are required iff it declares them; a reserved param may be bound (literal or `ParamSource`), overriding its default. */
-  provision<
-    D extends Deps,
-    P extends Params,
-    E extends Expose,
-    I extends StandardSchemaV1 | undefined,
-  >(
+  <D extends Deps, P extends Params, E extends Expose, I extends StandardSchemaV1 | undefined>(
     service: ServiceNode<D, P, E, I>,
     ...args: ServiceProvisionArgs<D, I, ParamBindings<P>>
   ): ProvisionedRef<E>;
   /** Registers an owned child module; its id defaults to the node's `name`; `deps` and `input` are required iff it declares them. */
-  provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
+  <D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
     child: ModuleNode<D, E, I>,
     ...args: ModuleProvisionArgs<D, I>
   ): ProvisionedRef<E>;
@@ -630,12 +640,7 @@ export interface ModuleBuilder {
    * that call site resolves to this overload, or to the next one for a
    * service without an input schema.
    */
-  provision<
-    D extends Deps,
-    P extends Params,
-    E extends Expose,
-    I extends StandardSchemaV1 | undefined,
-  >(
+  <D extends Deps, P extends Params, E extends Expose, I extends StandardSchemaV1 | undefined>(
     service: ServiceNode<D, P, E, I>,
     opts: {
       id?: string;
@@ -644,29 +649,51 @@ export interface ModuleBuilder {
       params?: ParamBindings<P>;
     },
   ): ProvisionedRef<E>;
-  provision<D extends Deps, P extends Params, E extends Expose>(
+  <D extends Deps, P extends Params, E extends Expose>(
     service: ServiceNode<D, P, E, undefined>,
     opts: { id?: string; deps: DepBindings<D>; input?: never; params?: ParamBindings<P> },
   ): ProvisionedRef<E>;
   /** The child-module call with `deps` written out — the same generic-wrapper escape as the two service overloads above. */
-  provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
+  <D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
     child: ModuleNode<D, E, I>,
     opts: { id?: string; deps: DepBindings<D>; input: InputBindingOf<I> },
   ): ProvisionedRef<E>;
-  provision<D extends Deps, E extends Expose>(
+  <D extends Deps, E extends Expose>(
     child: ModuleNode<D, E, undefined>,
     opts: { id?: string; deps: DepBindings<D>; input?: never },
   ): ProvisionedRef<E>;
-  /**
-   * Any service or child module. Declared last, so a call no overload accepts
-   * reports this overload's error, which names the binding key that does not
-   * fit, or says a module's whole input is not a value.
-   */
-  provision<N extends ServiceNode | ModuleNode>(
-    node: N,
-    ...args: ProvisionArgs<N>
-  ): ProvisionedRef<ExposeOf<N>>;
 }
+
+/**
+ * Any service or child module; a value resource gets the type error that only
+ * `appRoot()` can provision it. Declared last, so a call no overload accepts
+ * reports this overload's error, which names the binding key that does not
+ * fit, says a module's whole input is not a value, or names `appRoot()`.
+ */
+type ProvisionInModule = <N extends ServiceNode | ModuleNode | ValueResourceNode>(
+  node: N extends ValueResourceNode ? OnlyInAppRoot : N,
+  ...args: ProvisionArgs<N>
+) => ProvisionedRef<ExposeOf<N>>;
+
+/** Provisions a value resource; returns a copy of its value with `id`, the node's address. */
+type ProvisionValue = <V extends SourceValue>(
+  node: ValueResourceNode<V>,
+  opts?: { readonly id?: string },
+) => V & { readonly id: string };
+
+/** Any service, child module or value resource. Declared last, so a call no overload accepts reports this overload's error, which names the option that does not fit. */
+type ProvisionInAppRoot = <N extends ServiceNode | ModuleNode | ValueResourceNode>(
+  node: N,
+  ...args: ProvisionArgs<N>
+) => ProvisionedRef<ExposeOf<N>>;
+
+export interface ModuleBuilder {
+  /** Registers an owned child (resource, service or module) under a stable id. */
+  readonly provision: SharedProvision & ProvisionInModule;
+}
+
+/** What `provision()` is in an `appRoot()` body: also takes a value resource, and returns its value. */
+type AppRootProvision = ProvisionValue & SharedProvision & ProvisionInAppRoot;
 
 /** Dependency map: name → the slot the service declares. Only declarations are admitted, never a concrete ResourceNode. */
 // biome-ignore lint/suspicious/noExplicitAny: `any` (not `unknown`) preserves loaded-dep inference from each entry's hydrate return.
@@ -951,6 +978,90 @@ export function resource<
   return new FrozenResourceNode(def);
 }
 
+/** What a value resource holds: a secret source or a param source, known only at boot. */
+export type SourceValue = (SecretSource | ParamSource) & RuntimeValue<unknown>;
+
+/** A resource node that is also a value. Only `provision()` in an app root's body takes its value out. It provides no contract and has no dependencies. */
+export type ValueResourceNode<V extends SourceValue = SourceValue> = ResourceNode<
+  undefined,
+  Record<never, never>
+> & { readonly [VALUE_RESOURCE]: V };
+
+function isSourceValue(value: unknown): value is SourceValue {
+  return (isSecretSource(value) || isParamSource(value)) && sourceOriginOf(value) !== undefined;
+}
+
+class FrozenValueResourceNode<V extends SourceValue> extends ResourceNodeBase<
+  undefined,
+  Record<never, never>,
+  ResourceProps
+> {
+  readonly [VALUE_RESOURCE]: V;
+
+  constructor(def: {
+    name: string;
+    extension: string;
+    type: string;
+    props?: ResourceProps;
+    value: V;
+  }) {
+    super(def);
+    this[VALUE_RESOURCE] = def.value;
+    freezeNode(this);
+  }
+}
+
+/** Builds a frozen resource node that is a value: `value`, a source built with `secretSource()` or `paramSource()`. It provides no contract and has no dependencies. */
+export function valueResource<V extends SourceValue>(def: {
+  readonly name: string;
+  readonly extension: string;
+  readonly type: string;
+  readonly props?: ResourceProps;
+  readonly value: V;
+}): ValueResourceNode<V> {
+  if (!isSourceValue(def.value)) {
+    throw new Error(
+      'valueResource() value must be a source, built with secretSource() or paramSource().',
+    );
+  }
+  return new FrozenValueResourceNode(def);
+}
+
+/** True for a resource node that is a value: one that holds a source under the value resource key. */
+export function isValueResource(node: unknown): node is ValueResourceNode {
+  return (
+    isNode(node) &&
+    node.kind === 'resource' &&
+    VALUE_RESOURCE in node &&
+    isSourceValue(node[VALUE_RESOURCE])
+  );
+}
+
+/** The copy of a value resource's value that `provision()` returns: its origin records `address`, and its `id`, not enumerable, is `address`. Internal to core. */
+export function provisionedValue<V extends SourceValue>(
+  node: ValueResourceNode<V>,
+  address: NodeId,
+): V & { readonly id: string } {
+  const value = node[VALUE_RESOURCE];
+  const origin = sourceOriginOf(value);
+  if (origin === undefined) {
+    throw new LoadError(`Resource "${address}" is a value whose source has no origin.`);
+  }
+  const { source, ...kept } = origin;
+  return blindCast<
+    V & { readonly id: string },
+    "the frozen copy carries the original source's brand, payload and pointer kind, an origin that adds the address, and the address as id, which is V's shape plus id"
+  >(
+    buildSource(
+      isSecretSource(source) ? SECRET_SOURCE : PARAM_SOURCE,
+      value.payload,
+      { ...kept, resource: address },
+      isSecretPointer(value) ? 'secret' : isPlainPointer(value) ? 'plain' : undefined,
+      { id: { value: address } },
+    ),
+  );
+}
+
 /**
  * Constructs a branded, frozen Service node — declarations only (inputs,
  * params, the input schema, build adapter, and the ports it exposes). Pure;
@@ -1183,6 +1294,8 @@ export function isNode(
 }
 
 /** A node's dependency slots. A resource node built by another installed copy of core may have no `inputs`; that means none. */
-export function slotsOf(node: ServiceNode | ResourceNode): ServiceNode['inputs'] {
+export function slotsOf(
+  node: ServiceNode | ResourceNode<AnyContract | undefined>,
+): ServiceNode['inputs'] {
   return node.kind === 'resource' ? (node.inputs ?? {}) : node.inputs;
 }

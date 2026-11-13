@@ -11,6 +11,7 @@ import {
   type ParamBinding,
   type RootInputField,
   type SecretSourceUse,
+  type ValueRead,
 } from './graph-types.ts';
 import { inputFieldLabel } from './module-input.ts';
 import {
@@ -21,6 +22,7 @@ import {
   type ResourceNode,
   type ResourceProps,
   type SecretSource,
+  type SourceValue,
   sourceOriginOf,
 } from './node.ts';
 import {
@@ -487,6 +489,8 @@ export function resolveValues(input: {
   readonly params: readonly ParamBinding[];
   readonly moduleInputs: readonly ProvisionedModuleInput[];
   readonly resources: ReadonlyMap<NodeId, ResourceNode>;
+  /** The copy each value resource's provision() returned, by the node's address. */
+  readonly valueResources: ReadonlyMap<NodeId, SourceValue>;
 }): {
   readonly inputBindings: readonly InputBindingUse[];
   readonly params: readonly ParamBinding[];
@@ -522,6 +526,11 @@ export function resolveValues(input: {
     return text;
   };
   const secretUses = new Map<SecretSource, SecretSourceUse>();
+  for (const [address, value] of input.valueResources) {
+    if (isSecretSource(value)) {
+      secretUses.set(value, { source: value, address, nodeKind: 'resource' });
+    }
+  }
   const recordSecret = (source: SecretSource, site: ValueBindingSite): void => {
     const canonical = canonicalSecret(source);
     if (secretUses.has(canonical)) return;
@@ -816,4 +825,41 @@ export function resolveValues(input: {
     secretSources,
     appConfigurationRead: appConfigurationReadOf(inputBindings, params, secretSources),
   };
+}
+
+/** Each read of a value resource's value in a service's resolved input binding or params, at any depth. */
+export function valueReadsOf(
+  inputBindings: readonly InputBindingUse[],
+  params: readonly ParamBinding[],
+): readonly ValueRead[] {
+  const reads: ValueRead[] = [];
+  const walk = (
+    value: unknown,
+    reader: NodeId,
+    site: ValueRead['site'],
+    seen: WeakSet<object>,
+  ): void => {
+    if (isSecretSource(value) || isParamSource(value)) {
+      const resource = sourceOriginOf(value)?.resource;
+      if (resource !== undefined) reads.push({ reader, resource, site });
+      return;
+    }
+    if (!Array.isArray(value) && !isPlainObject(value)) return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    const entries: [string | number, unknown][] = Array.isArray(value)
+      ? value.map((member, index) => [index, member])
+      : Object.entries(value);
+    for (const [key, member] of entries) {
+      const path = site.kind === 'param' ? site.path : joinPath(site.path, key);
+      walk(member, reader, { kind: site.kind, path }, seen);
+    }
+  };
+  for (const { serviceAddress, binding } of inputBindings) {
+    walk(binding, serviceAddress, { kind: 'serviceInput', path: '' }, new WeakSet());
+  }
+  for (const { serviceAddress, slot, binding } of params) {
+    walk(binding, serviceAddress, { kind: 'param', path: slot }, new WeakSet());
+  }
+  return reads;
 }
