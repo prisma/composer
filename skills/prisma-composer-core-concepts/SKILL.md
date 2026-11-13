@@ -614,6 +614,17 @@ that surprise:
    writes one tab-separated line per instance: emulator kind, instance id,
    URL, state, node address, directory, environment.
    `prisma emulator start` and `stop` are planned.
+   Prisma 7's `dev ls`, `dev rm` and `dev start` fail with `CLI.V7_COMMAND`,
+   and `--port`, `--db-port`, `--shadow-db-port` and `--debug` on `dev` (and
+   `--debug` on `dev stop`) with `CLI.V7_FLAG`, both exit 2 and say why:
+   use `emulator list` for `dev ls`, `dev --detach` for `dev start`, and
+   `dev --fresh` (deletes the app's local services, databases and buckets in
+   one environment, and their data) for `dev rm`; the flags point to the
+   command's help. Each error also says how to keep using Prisma 7: install
+   its CLI with `npm install --save-dev @prisma/prisma7@7` and run the
+   Prisma 7 command as `prisma7 …`, with a placeholder for each value it
+   needs (e.g. `prisma7 dev rm <name>`). Ports cannot be set; ask
+   `dev url` where a node answers.
    For agents, scripts and CI, `prisma dev --detach` runs the app in
    the background: it exits 0 once every service answers and prints the URLs,
    does not watch for changes, and leaves the app running until

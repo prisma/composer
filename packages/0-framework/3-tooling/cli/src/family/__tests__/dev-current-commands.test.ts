@@ -12,7 +12,7 @@ import {
   type OperationsDoubleFixtures,
 } from '../../testing/operations-double.ts';
 import { createComposerFamily } from '../family.ts';
-import { commandAt } from './command-at.ts';
+import { mountAsHost } from './host-mount.ts';
 
 function composerConfig() {
   return {
@@ -26,12 +26,7 @@ function cliWith(fixtures: OperationsDoubleFixtures = {}) {
   const family = createComposerFamily({ operations: double.operations });
   const cli = createTestCli({
     commandFamilies: [family],
-    commands: {
-      deploy: commandAt(family, 'deploy'),
-      'dev url': commandAt(family, 'dev url'),
-      'dev stop': commandAt(family, 'dev stop'),
-    },
-    groups: { dev: { brief: 'Run the app on this machine.' } },
+    ...mountAsHost(family),
     config: { composer: composerConfig() },
   });
   return { cli, calls: double.calls };

@@ -41,15 +41,12 @@ const listing: EmulatorList = {
 
 function cliWith(list: Parameters<typeof createComposerFamily>[0]) {
   const family = createComposerFamily(list);
-  const { deploy, 'deploy list': deployList, 'emulator list': command } = family.commands;
-  if (command === undefined || deploy === undefined || deployList === undefined) {
-    throw new Error('no emulator list command');
-  }
   return createTestCli({
     commandFamilies: [family],
-    commands: { deploy, 'deploy list': deployList, 'emulator list': command },
+    commands: family.commands,
     groups: {
       deploy: { brief: 'Deploy the app.' },
+      dev: { brief: 'Run the app on this machine.' },
       emulator: { brief: 'The local emulators on this machine.' },
     },
   });
@@ -65,6 +62,34 @@ describe('emulator list', () => {
       'dev url',
       'emulator list',
     ]);
+  });
+
+  test('the Prisma 7 `dev ls` points to it, and its help is mounted', async () => {
+    const cli = cliWith({ listEmulators: async () => ok(listing) });
+
+    const moved = await cli.run(['dev', 'ls', '--json']);
+
+    expect(moved.exitCode).toBe(2);
+    expect(moved.json.at(-1)).toMatchObject({
+      envelope: {
+        ok: false,
+        error: { code: 'CLI.V7_COMMAND' },
+        nextActions: [
+          {
+            kind: 'run-command',
+            label: 'Use the replacement',
+            command: 'prisma-test emulator list',
+          },
+          {
+            kind: 'run-command',
+            label: 'Read its help',
+            command: 'prisma-test emulator list --help',
+          },
+        ],
+      },
+    });
+    const help = await cli.run(['emulator', 'list', '--help']);
+    expect(help.exitCode).toBe(0);
   });
 
   test('returns every emulator and its instances as the JSON result, with no config', async () => {
