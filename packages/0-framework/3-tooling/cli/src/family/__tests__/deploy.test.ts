@@ -9,6 +9,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok } from '@internal/foundation/result';
+import type { NextAction } from '@prisma/cli-engine/protocol';
 import type { ScriptedChildProgram, TestCli } from '@prisma/cli-engine/testing';
 import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
 import { createOperationsDouble, type OperationsDouble } from '../../testing/operations-double.ts';
@@ -162,9 +163,16 @@ describe('argument validation', () => {
     if (last?.kind !== 'result' || last.envelope.ok) throw new Error('expected an errored result');
     expect(last.envelope.error.code).toBe('CLI.COMMAND_MOVED');
     expect(last.envelope.error.summary).toBe('`--stage` on `deploy` has been replaced');
-    expect(last.envelope.nextActions).toEqual([
-      expect.objectContaining({ command: expect.stringContaining('deploy --environment <name>') }),
-    ]);
+    expect(last.envelope.error.why).toBe('A place the app runs is now called an environment.');
+    const nextActions: NextAction[] = [
+      {
+        kind: 'run-command',
+        label: 'Use the replacement',
+        command: 'prisma-test deploy --environment <name>',
+      },
+    ];
+    expect(last.envelope.nextActions).toEqual(nextActions);
+    expect(last.envelope.error.nextActions).toEqual(nextActions);
     expect(double.calls.deploy).toEqual([]);
   });
 

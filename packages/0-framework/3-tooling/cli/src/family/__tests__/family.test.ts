@@ -33,15 +33,43 @@ describe('createComposerFamily()', () => {
     ).toEqual(['deploy', 'dev', 'dev stop', 'dev url', 'emulator list']);
   });
 
-  test('the family redirects only the retired --stage on deploy', () => {
-    expect(createComposerFamily().redirects).toEqual([
-      {
-        from: 'deploy',
-        flag: 'stage',
-        replacement: ['deploy --environment <name>'],
-        reason: 'A place the app runs is now called an environment.',
-      },
-    ]);
+  test('the family redirects the retired --stage on deploy and the Prisma 7 dev subcommands and flags', () => {
+    const redirects = createComposerFamily().redirects;
+    expect(redirects[0]).toEqual({
+      from: 'deploy',
+      flag: 'stage',
+      replacement: ['deploy --environment <name>'],
+      reason: 'A place the app runs is now called an environment.',
+      code: undefined,
+      summary: undefined,
+      help: undefined,
+      docsUrl: undefined,
+    });
+    expect(
+      redirects
+        .slice(1)
+        .map((redirect) => [redirect.code, redirect.from, redirect.flag])
+        .sort(),
+    ).toEqual(
+      [
+        ['CLI.V7_COMMAND', 'dev ls', undefined],
+        ['CLI.V7_COMMAND', 'dev rm', undefined],
+        ['CLI.V7_COMMAND', 'dev start', undefined],
+        ['CLI.V7_FLAG', 'dev', 'dbPort'],
+        ['CLI.V7_FLAG', 'dev', 'debug'],
+        ['CLI.V7_FLAG', 'dev', 'port'],
+        ['CLI.V7_FLAG', 'dev', 'shadowDbPort'],
+        ['CLI.V7_FLAG', 'dev stop', 'debug'],
+      ].sort(),
+    );
+  });
+
+  test('a host’s redirects follow the family’s own', () => {
+    const extra = { from: 'emulator ls', replacement: 'emulator list' };
+    expect(createComposerFamily({ redirects: [extra] }).redirects.at(-1)).toMatchObject({
+      from: 'emulator ls',
+      replacement: ['emulator list'],
+    });
   });
 
   test('the operations seam defaults to the real control operations', () => {

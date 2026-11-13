@@ -63,8 +63,10 @@ export interface CreateComposerFamilyOptions {
   readonly redirects?: readonly RedirectSpec[] | undefined;
 }
 
+const CLI_DOCS_URL = 'https://www.prisma.io/docs/cli';
+
 /** The `prisma` CLI's error reference; the engine appends `/<CODE>` to it for every error envelope. */
-const CLI_DOCS_BASE = 'https://www.prisma.io/docs/cli/error-reference/';
+const CLI_DOCS_BASE = `${CLI_DOCS_URL}/error-reference/`;
 
 /** Retires `--stage` on `command` in favour of `--environment`, so typing it fails with `CLI.COMMAND_MOVED`. */
 function retiredStageFlagRedirect(command: string): RedirectSpec {
@@ -75,6 +77,68 @@ function retiredStageFlagRedirect(command: string): RedirectSpec {
     reason: 'A place the app runs is now called an environment.',
   };
 }
+
+type V7RedirectEntry = Omit<RedirectSpec, 'from' | 'flag' | 'code' | 'summary'>;
+
+function v7Command(from: string, entry: V7RedirectEntry): RedirectSpec {
+  return {
+    from,
+    code: 'CLI.V7_COMMAND',
+    summary: `\`{bin} ${from}\` is a Prisma 7 command and is not available in Prisma 8`,
+    ...entry,
+  };
+}
+
+function v7Flag(command: string, flag: string, entry: V7RedirectEntry): RedirectSpec {
+  return {
+    from: command,
+    flag,
+    code: 'CLI.V7_FLAG',
+    summary: `\`--${flag.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}\` on \`{bin} ${command}\` is a Prisma 7 flag and is not available in Prisma 8`,
+    ...entry,
+  };
+}
+
+const DEV_PORTS_REASON =
+  '`dev` takes no port options. Each environment of the app gets its own ports for its ' +
+  'services, databases and buckets, and keeps them between runs; `dev url` prints the local ' +
+  'URL of one of them while `dev` runs.';
+
+const V7_REDIRECTS: readonly RedirectSpec[] = [
+  v7Command('dev ls', {
+    replacement: '{bin} emulator list',
+    help: 'emulator list',
+    reason:
+      '`emulator list` lists the local emulators on this machine, the programs `dev` starts to ' +
+      "run the app's services, databases and buckets, with every instance each one holds.",
+  }),
+  v7Command('dev rm', {
+    docsUrl: CLI_DOCS_URL,
+    reason:
+      "Prisma 8 keeps no named local servers to remove. `dev stop` stops the app's local copy: " +
+      'its service processes and local database servers.',
+  }),
+  v7Command('dev start', {
+    replacement: '{bin} dev --detach',
+    help: 'dev',
+    reason:
+      '`dev --detach` runs the app locally in the background: it returns once every service ' +
+      'answers and leaves the app running, without watching for changes, until `dev stop`.',
+  }),
+  ...['port', 'dbPort', 'shadowDbPort'].map((flag) =>
+    v7Flag('dev', flag, { help: 'dev', reason: DEV_PORTS_REASON }),
+  ),
+  v7Flag('dev', 'debug', {
+    help: 'dev',
+    reason:
+      '`dev` has no debug output option. It shows the output of each service that runs a dev ' +
+      "server, such as `next dev`, prefixed with the service's address.",
+  }),
+  v7Flag('dev stop', 'debug', {
+    help: 'dev stop',
+    reason: '`dev stop` has no debug output option.',
+  }),
+];
 
 export function createComposerFamily(options: CreateComposerFamilyOptions = {}): CommandFamily {
   const operations = options.operations ?? realOperations;
@@ -88,6 +152,6 @@ export function createComposerFamily(options: CreateComposerFamilyOptions = {}):
       ...options.commands,
     },
     docsBaseUrl: CLI_DOCS_BASE,
-    redirects: [retiredStageFlagRedirect('deploy'), ...(options.redirects ?? [])],
+    redirects: [retiredStageFlagRedirect('deploy'), ...V7_REDIRECTS, ...(options.redirects ?? [])],
   });
 }
