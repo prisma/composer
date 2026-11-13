@@ -616,9 +616,11 @@ that surprise:
    `prisma emulator start` and `stop` are planned.
    Prisma 7's `dev ls`, `dev rm` and `dev start` fail with `CLI.V7_COMMAND`,
    and `--port`, `--db-port`, `--shadow-db-port` and `--debug` on `dev` (and
-   `--debug` on `dev stop`) with `CLI.V7_FLAG`, both exit 2: use
-   `emulator list` for `dev ls` and `dev --detach` for `dev start`. Ports
-   cannot be set; ask `dev url` where a node answers.
+   `--debug` on `dev stop`) with `CLI.V7_FLAG`, both exit 2 and say why:
+   use `emulator list` for `dev ls`, `dev --detach` for `dev start`, and
+   `dev --fresh` (deletes the app's local services, databases and buckets in
+   one environment, and their data) for `dev rm`; the flags point to the
+   command's help. Ports cannot be set; ask `dev url` where a node answers.
    For agents, scripts and CI, `prisma dev --detach` runs the app in
    the background: it exits 0 once every service answers and prints the URLs,
    does not watch for changes, and leaves the app running until
