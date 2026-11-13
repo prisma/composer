@@ -14,6 +14,7 @@ import {
   type AppRootNode,
   type BuildAdapter,
   isParamSource,
+  isValueResource,
   type ModuleNode,
   type ProvisionNeed,
   type ResourceNode,
@@ -835,7 +836,7 @@ export function lowering(
       if (descriptor.kind === 'resource') {
         const result = yield* descriptor(ctx);
         lowered.set(id, result.outputs);
-        entries.push({ address: id, entities: result.entities });
+        if (!isValueResource(node)) entries.push({ address: id, entities: result.entities });
         continue;
       }
       if (descriptor.kind !== 'service') {

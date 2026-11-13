@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { blindCast } from '@internal/foundation/casts';
+import * as Alchemy from 'alchemy';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type { Config, Params } from '../config.ts';
@@ -33,6 +34,7 @@ import {
 } from '../control/deploy.ts';
 import { Load, nodeAddresses } from '../graph.ts';
 import {
+  appRoot,
   type BuildAdapter,
   type Deps,
   dependency,
@@ -45,7 +47,7 @@ import {
 } from '../node.ts';
 import { PREFLIGHT_FINDINGS_ENV_VAR } from '../preflight-transport.ts';
 import { resolve } from '../value.ts';
-import { anyInputSchema, conn, providerContract } from './helpers.ts';
+import { anyInputSchema, conn, plainValue, providerContract } from './helpers.ts';
 
 const dbResource = () =>
   resource({
@@ -1488,6 +1490,46 @@ describe('lowering() — the report path', () => {
     // would drag alchemy's Stack context into the requirements and runSync
     // would die. `run()` is Effect.runSync.
     expect(run(lowering(root, config, opts(svcBundles)))).toBeUndefined();
+  });
+
+  test('a value resource is lowered through its descriptor and adds no entry to the report', () => {
+    const { descriptor } = fakeExtension();
+    const loweredValues: string[] = [];
+    const lowerValue = Object.assign(
+      (ctx: LowerContext): Effect.Effect<LoweredResult, unknown, unknown> => {
+        loweredValues.push(ctx.id);
+        return Effect.succeed({ outputs: {}, entities: [] });
+      },
+      { kind: 'resource' as const },
+    );
+    const config: PrismaAppConfig = {
+      extensions: [{ ...descriptor, nodes: { ...descriptor.nodes, 'test-value': lowerValue } }],
+      state: { extension: descriptor.id, create: () => stateSentinel('config-default') },
+    };
+    const root = appRoot('hello', ({ provision }) => {
+      provision(plainValue('GREETING'));
+      provision(dbResource(), { id: 'db' });
+    });
+    const reports: unknown[] = [];
+    const stack: { actions: Record<string, Alchemy.Action>; resources: Record<string, unknown> } = {
+      actions: {},
+      resources: {},
+    };
+
+    Effect.runSync(
+      lowering(root, config, opts({ report: (result) => reports.push(result) })).pipe(
+        Effect.provideService(Alchemy.Stack, stack as never),
+        Effect.orDie,
+      ) as Effect.Effect<undefined>,
+    );
+    const action = stack.actions['composer-deployment-report'];
+    Effect.runSync(action?.Run(action.Input) as Effect.Effect<unknown>);
+
+    expect(loweredValues).toEqual(['hello.greeting']);
+    expect(reports).toHaveLength(1);
+    expect(
+      (reports[0] as { nodes: { address: string }[] }).nodes.map(({ address }) => address),
+    ).toEqual(['hello.db']);
   });
 
   test('findings that do not decode fail lowering before any node is lowered', () => {
