@@ -76,7 +76,17 @@ function retiredStageFlagRedirect(command: string): RedirectSpec {
   };
 }
 
-type V7RedirectEntry = Omit<RedirectSpec, 'from' | 'flag' | 'code' | 'summary'>;
+type V7RedirectEntry = Omit<RedirectSpec, 'from' | 'flag' | 'code' | 'summary' | 'reason'> & {
+  readonly reason: string;
+};
+
+function withPrisma7Cli(reason: string, invocation: string): string {
+  return `${reason} To keep using Prisma 7, install its CLI with \`npm install --save-dev @prisma/prisma7@7\` and run \`prisma7 ${invocation}\`.`;
+}
+
+function kebabCase(flag: string): string {
+  return flag.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+}
 
 function v7Command(from: string, entry: V7RedirectEntry): RedirectSpec {
   return {
@@ -84,6 +94,7 @@ function v7Command(from: string, entry: V7RedirectEntry): RedirectSpec {
     code: 'CLI.V7_COMMAND',
     summary: `\`{bin} ${from}\` is a Prisma 7 command and is not available in Prisma 8`,
     ...entry,
+    reason: withPrisma7Cli(entry.reason, from),
   };
 }
 
@@ -92,8 +103,9 @@ function v7Flag(command: string, flag: string, entry: V7RedirectEntry): Redirect
     from: command,
     flag,
     code: 'CLI.V7_FLAG',
-    summary: `\`--${flag.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}\` on \`{bin} ${command}\` is a Prisma 7 flag and is not available in Prisma 8`,
+    summary: `\`--${kebabCase(flag)}\` on \`{bin} ${command}\` is a Prisma 7 flag and is not available in Prisma 8`,
     ...entry,
+    reason: withPrisma7Cli(entry.reason, `${command} --${kebabCase(flag)}`),
   };
 }
 

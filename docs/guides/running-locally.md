@@ -322,6 +322,9 @@ environment, and their data, then starts the app again. The flags point to the
 command's help. There is no port to pass: `prisma dev` gives each environment
 its own ports and keeps them between runs, and `prisma dev url` prints where a
 node answers.
+Each error also says how to keep using Prisma 7: install its CLI with
+`npm install --save-dev @prisma/prisma7@7` and run the same command with
+`prisma7`, such as `prisma7 dev ls` or `prisma7 dev --port`.
 
 `--fresh` is also the fix when a framework upgrade leaves stale rows in this
 app's local dev state — the symptom is a plan-time error naming an

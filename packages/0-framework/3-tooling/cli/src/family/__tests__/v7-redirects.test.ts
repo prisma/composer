@@ -81,6 +81,10 @@ const FLAGS: Readonly<Record<string, Expected>> = {
   },
 };
 
+function prisma7(invocation: string): string {
+  return `To keep using Prisma 7, install its CLI with \`npm install --save-dev @prisma/prisma7@7\` and run \`prisma7 ${invocation}\`.`;
+}
+
 function humanLines(stderr: string): string[] {
   return stderr.replace(ANSI, '').trimEnd().split('\n');
 }
@@ -126,7 +130,7 @@ describe('Prisma 7 dev subcommands', () => {
       expect(envelope.error.summary).toBe(
         `\`${BIN} ${path}\` is a Prisma 7 command and is not available in Prisma 8`,
       );
-      expect(envelope.error.why).toBe(why);
+      expect(envelope.error.why).toBe(`${why} ${prisma7(path)}`);
       expect(envelope.nextActions).toEqual(nextActions);
       expect(envelope.error.nextActions).toEqual(nextActions);
       expect(calls.dev).toEqual([]);
@@ -144,7 +148,7 @@ describe('Prisma 7 dev subcommands', () => {
       expect(result.stdout).toBe('');
       expect(humanLines(result.stderr)).toEqual([
         `✘ [CLI.V7_COMMAND] \`${BIN} ${path}\` is a Prisma 7 command and is not available in Prisma 8`,
-        `  why: ${why}`,
+        `  why: ${why} ${prisma7(path)}`,
         ...nextActions.map(actionLine),
       ]);
     },
@@ -179,7 +183,7 @@ describe('Prisma 7 flags on dev and dev stop', () => {
       expect(envelope.error.summary).toBe(
         `\`--${flag}\` on \`${BIN} ${command}\` is a Prisma 7 flag and is not available in Prisma 8`,
       );
-      expect(envelope.error.why).toBe(why);
+      expect(envelope.error.why).toBe(`${why} ${prisma7(invocation)}`);
       expect(envelope.nextActions).toEqual(nextActions);
       expect(envelope.error.nextActions).toEqual(nextActions);
       expect(calls.dev).toEqual([]);
@@ -201,11 +205,23 @@ describe('Prisma 7 flags on dev and dev stop', () => {
       expect(result.stdout).toBe('');
       expect(humanLines(result.stderr)).toEqual([
         `✘ [CLI.V7_FLAG] \`--${flag}\` on \`${BIN} ${command}\` is a Prisma 7 flag and is not available in Prisma 8`,
-        `  why: ${why}`,
+        `  why: ${why} ${prisma7(invocation)}`,
         ...nextActions.map(actionLine),
       ]);
     },
   );
+
+  test('the Prisma 7 sentence names the flag and never suggests npx', async () => {
+    const { cli } = composerCli();
+
+    const result = await cli.run(['dev', 'stop', '--debug', '--json']);
+
+    expect(failedEnvelope(result).error.why).toBe(
+      '`dev stop` has no debug output option. To keep using Prisma 7, install its CLI with ' +
+        '`npm install --save-dev @prisma/prisma7@7` and run `prisma7 dev stop --debug`.',
+    );
+    expect(result.stdout).not.toContain('npx');
+  });
 
   test('a v7 flag that takes a value settles the same way when it is given one', async () => {
     const { cli } = composerCli();

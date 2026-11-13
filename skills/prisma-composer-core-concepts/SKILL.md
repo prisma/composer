@@ -620,7 +620,10 @@ that surprise:
    use `emulator list` for `dev ls`, `dev --detach` for `dev start`, and
    `dev --fresh` (deletes the app's local services, databases and buckets in
    one environment, and their data) for `dev rm`; the flags point to the
-   command's help. Ports cannot be set; ask `dev url` where a node answers.
+   command's help. Each error also says how to keep using Prisma 7: install
+   its CLI with `npm install --save-dev @prisma/prisma7@7` and run the same
+   command as `prisma7 …` (e.g. `prisma7 dev ls`). Ports cannot be set; ask
+   `dev url` where a node answers.
    For agents, scripts and CI, `prisma dev --detach` runs the app in
    the background: it exits 0 once every service answers and prints the URLs,
    does not watch for changes, and leaves the app running until
