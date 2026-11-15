@@ -165,7 +165,7 @@ The provision types change as follows.
 - The last overload, the catch-all, takes the refusal in its parameter type. This is the pattern of `NotDeployTime` in `value.ts` and `ModuleInputIsNotAValue` in `module-input.ts`:
 
   ```ts
-  type OnlyInAppRoot = "Only appRoot() can provision a resource that is a value, such as a platform variable. Provision it in the app root and pass its value down through this module's input.";
+  type OnlyInAppRoot = "Only appRoot() can provision a resource that is a value. Provision it in the app root and pass its value down through this module's input.";
 
   provision<N extends ServiceNode | ModuleNode | ValueResourceNode>(
     node: N extends ValueResourceNode ? OnlyInAppRoot : N,
@@ -202,12 +202,12 @@ Module "<module address>" provisions "<id>", a resource that is a value. Only th
 
 ### 4.4 Duplicate provision ids
 
-A platform variable's default id comes from its name (5.2), so two names can give one id. The user then sees a duplicate id that appears nowhere in their code. The error must name what already holds the id.
+A platform variable's default id comes from its name (5.2), so two names can give one id. The user then sees a duplicate id that appears nowhere in their code. The error must name both nodes: the one already at the id and the one that takes it too.
 
-The duplicate-id error changes for every node, because core cannot tell which nodes take a derived id. It names the node already at that id:
+The duplicate-id error changes for every node, because core cannot tell which nodes take a derived id. It names the node already at that id and the node being provisioned:
 
 ```text
-Duplicate provision id "<id>" in module "<module address>": "<address>" already holds <what>. Give one of them a different id with provision(node, { id: '…' }).
+Duplicate provision id "<id>" in module "<module address>": "<address>" already holds <what>, and <what of the second node> takes the same id. Give one of them a different id with provision(node, { id: '…' }).
 ```
 
 - `<what>` is the source's label for a value resource, such as `the platform variable "EMAIL_FROM"`.
@@ -232,7 +232,7 @@ Core's messages that name a removed function say instead:
 
 - the `resolve()` refusal of a returned source, which says "such as envSecret() or envParam()", names `generatedParam()`, `serviceOrigin()` and a platform variable node's value;
 - the refusal of `secrets` on a service's `provision()`, which says a service takes its secrets "as envSecret(...) leaves", says the service takes its secrets as values bound to `secretString()` fields of its `input` binding;
-- the unbound-param error at deploy, which suggests "e.g. envParam('NAME')", says "a literal value or a value such as a platform variable".
+- the unbound-param error at deploy, which suggests "e.g. envParam('NAME')", says "a literal value or a value known only at boot". Core's messages do not name a target's concept.
 
 No doc comment in core names either function after this slice.
 
@@ -637,7 +637,7 @@ provision(web, { params: { appOrigin } });
 **Other changes.**
 
 - **`secretName()` is removed.** No public replacement: the target reads a node's name itself. A test that used it to find which variable a binding reads finds the entry in `graph.valueReads`, takes the node at its `resource` from `graph.nodes`, and reads `props.name`.
-- **The duplicate-id error** names the node already at the id and says to pass `id`.
+- **The duplicate-id error** names both nodes that take the id and says to pass `id`.
 - **For extension authors:** core's `paramSource()` no longer takes `configurationKey`. Read a deploy-time value through a root input field. `AppConfigurationRead` has no `configurationKeyText`, `LocalTargetProvidersInput.configurationKeyText` is now `plainVariableText`, and `LocalTargetDescriptor.preflight` returns the new exported type `DevPreflightResult`, `{ payload, plainVariableText }`.
 
 **Follow-ups in other repositories.** These are not work in this slice. Each repository moves when it upgrades Composer:
