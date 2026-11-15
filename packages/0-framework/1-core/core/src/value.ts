@@ -13,7 +13,6 @@ const VALUE: unique symbol = blindCast<never, 'unique-symbol brand for a value'>
 const VALUE_ORIGIN: unique symbol = blindCast<never, 'unique-symbol key for a value origin'>(
   Symbol.for('prisma:value-origin'),
 );
-// Core-only: where a value resource holds its value. Only provision() reads it.
 const VALUE_RESOURCE: unique symbol = blindCast<never, 'unique-symbol key for a value resource'>(
   Symbol.for('prisma:value-resource'),
 );
@@ -49,7 +48,6 @@ export type ValueOrigin<T> =
       readonly label: string;
       /** The app configuration key whose text at deploy is the real value, as for `envParam()`. `undefined` for a value known only at boot, whose real value is `source`, a pointer. */
       readonly configurationKey: string | undefined;
-      /** The address of the value resource whose provision() returned this source; `undefined` for a source no node provisioned. */
       readonly resource: NodeId | undefined;
       /** The source itself. Not enumerable, so a copy's origin compares equal and the origin holds no cycle. */
       readonly source: ParamSource;
@@ -61,7 +59,6 @@ export type ValueOrigin<T> =
       readonly label: string;
       /** The app secrets key that holds the secret's value, as for `envSecret()`. `undefined` for a secret source built without one. */
       readonly secretsKey: string | undefined;
-      /** The address of the value resource whose provision() returned this source; `undefined` for a source no node provisioned. */
       readonly resource: NodeId | undefined;
       /** The source itself. Not enumerable, so a copy's origin compares equal and the origin holds no cycle. */
       readonly source: SecretSource;

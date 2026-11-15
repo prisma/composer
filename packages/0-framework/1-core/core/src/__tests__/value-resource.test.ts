@@ -3,7 +3,7 @@ import { secretString } from '@internal/foundation/arktype';
 import { isPlainPointer, isSecretPointer } from '@internal/foundation/pointer';
 import { type } from 'arktype';
 import { string } from '../config.ts';
-import { type Graph, Load, LoadError } from '../graph.ts';
+import { Load, LoadError } from '../graph.ts';
 import {
   type AnyContract,
   appRoot,
@@ -50,8 +50,6 @@ const loadError = (run: () => unknown): LoadError => {
   }
   throw new Error('expected a LoadError');
 };
-
-const readsOf = (graph: Graph) => graph.valueReads;
 
 describe('valueResource()', () => {
   test('builds a frozen resource node that is a value, with no contract and no dependencies', () => {
@@ -184,7 +182,7 @@ describe('provision() of a value resource in an appRoot() body', () => {
     );
 
     expect(copies[0]).not.toBe(copies[1]);
-    expect(readsOf(graph).map(({ resource }) => resource)).toEqual(['shop.first', 'shop.second']);
+    expect(graph.valueReads.map(({ resource }) => resource)).toEqual(['shop.first', 'shop.second']);
   });
 });
 
@@ -208,16 +206,13 @@ describe('the loaded graph', () => {
   });
 
   test('has no value reads when no service reads a value resource', () => {
-    expect(readsOf(Load(appRoot('shop', () => {})))).toEqual([]);
-    expect(
-      readsOf(
-        Load(
-          appRoot('shop', ({ provision }) => {
-            provision(plainValue('GREETING'));
-          }),
-        ),
-      ),
-    ).toEqual([]);
+    expect(Load(appRoot('shop', () => {})).valueReads).toEqual([]);
+    const unread = Load(
+      appRoot('shop', ({ provision }) => {
+        provision(plainValue('GREETING'));
+      }),
+    );
+    expect(unread.valueReads).toEqual([]);
     const lone = service({
       name: 'lone',
       extension: 'test/pack',
@@ -226,7 +221,7 @@ describe('the loaded graph', () => {
       params: {},
       build,
     });
-    expect(readsOf(Load(lone))).toEqual([]);
+    expect(Load(lone).valueReads).toEqual([]);
   });
 
   test('records a read at depth inside objects and arrays', () => {
@@ -238,7 +233,7 @@ describe('the loaded graph', () => {
       }),
     );
 
-    expect(readsOf(graph)).toEqual([
+    expect(graph.valueReads).toEqual([
       {
         reader: 'shop.echo',
         resource: 'shop.greeting',
@@ -252,6 +247,46 @@ describe('the loaded graph', () => {
     ]);
   });
 
+  test('records a read at each place one object is bound', () => {
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        const shared = { greeting: provision(plainValue('GREETING')) };
+        provision(echo(), { input: { a: shared, b: shared } });
+      }),
+    );
+
+    expect(graph.valueReads).toEqual([
+      {
+        reader: 'shop.echo',
+        resource: 'shop.greeting',
+        site: { kind: 'serviceInput', path: 'a.greeting' },
+      },
+      {
+        reader: 'shop.echo',
+        resource: 'shop.greeting',
+        site: { kind: 'serviceInput', path: 'b.greeting' },
+      },
+    ]);
+  });
+
+  test('records a read in a binding that holds a cycle', () => {
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        const cyclic: Record<string, unknown> = { greeting: provision(plainValue('GREETING')) };
+        cyclic['self'] = cyclic;
+        provision(echo(), { input: cyclic });
+      }),
+    );
+
+    expect(graph.valueReads).toEqual([
+      {
+        reader: 'shop.echo',
+        resource: 'shop.greeting',
+        site: { kind: 'serviceInput', path: 'greeting' },
+      },
+    ]);
+  });
+
   test('records a value bound as the whole input binding with the empty path', () => {
     const graph = Load(
       appRoot('shop', ({ provision }) => {
@@ -259,7 +294,7 @@ describe('the loaded graph', () => {
       }),
     );
 
-    expect(readsOf(graph)).toEqual([
+    expect(graph.valueReads).toEqual([
       { reader: 'shop.echo', resource: 'shop.greeting', site: { kind: 'serviceInput', path: '' } },
     ]);
   });
@@ -277,7 +312,7 @@ describe('the loaded graph', () => {
       }),
     );
 
-    expect(readsOf(graph)).toEqual([
+    expect(graph.valueReads).toEqual([
       {
         reader: 'shop.outer.inner.echo',
         resource: 'shop.greeting',
@@ -300,7 +335,7 @@ describe('the loaded graph', () => {
       }),
     );
 
-    expect(readsOf(graph)).toEqual([
+    expect(graph.valueReads).toEqual([
       {
         reader: 'shop.mailer.echo',
         resource: 'shop.apiKey',
@@ -320,7 +355,7 @@ describe('the loaded graph', () => {
       }),
     );
 
-    expect(readsOf(graph)).toEqual([
+    expect(graph.valueReads).toEqual([
       {
         reader: 'shop.mailer.echo',
         resource: 'shop.greeting',
@@ -337,7 +372,7 @@ describe('the loaded graph', () => {
       }),
     );
 
-    expect(readsOf(graph)).toEqual([
+    expect(graph.valueReads).toEqual([
       { reader: 'shop.echo', resource: 'shop.greeting', site: { kind: 'param', path: 'greeting' } },
     ]);
   });
@@ -349,7 +384,7 @@ describe('the loaded graph', () => {
       }),
     );
 
-    expect(readsOf(graph)).toEqual([]);
+    expect(graph.valueReads).toEqual([]);
   });
 });
 
@@ -361,7 +396,7 @@ describe('the duplicate-id error for a value resource', () => {
     });
 
     expect(() => Load(root)).toThrow(
-      'Duplicate provision id "sender" in module "shop": "shop.sender" already holds the test value "EMAIL_FROM". Give one of them a different id with provision(node, { id: \'…\' }).',
+      'Duplicate provision id "sender" in module "shop": "shop.sender" already holds the test value "EMAIL_FROM", and the test value "SENDER" takes the same id. Give one of them a different id with provision(node, { id: \'…\' }).',
     );
   });
 
@@ -373,7 +408,7 @@ describe('the duplicate-id error for a value resource', () => {
     });
 
     expect(() => Load(root)).toThrow(
-      'Duplicate provision id "apiKey" in module "shop": "shop.apiKey" already holds the test secret "API_KEY".',
+      'Duplicate provision id "apiKey" in module "shop": "shop.apiKey" already holds the test secret "API_KEY", and the test secret "API_KEY" takes the same id.',
     );
   });
 });

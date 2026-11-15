@@ -30,9 +30,8 @@ export const root = appRoot('shop', ({ provision }) => {
 `;
 
 const ONLY_IN_APP_ROOT =
-  "Only appRoot() can provision a resource that is a value, such as a platform variable. Provision it in the app root and pass its value down through this module's input.";
+  "Only appRoot() can provision a resource that is a value. Provision it in the app root and pass its value down through this module's input.";
 
-/** The compiler's diagnostic text for each line of the fixture that carries a `// <name>` marker. */
 function diagnosticsByMarker(): ReadonlyMap<string, string> {
   const fileName = join(import.meta.dir, 'value-resource-fixture.ts');
   const config = ts.getParsedCommandLineOfConfigFile(

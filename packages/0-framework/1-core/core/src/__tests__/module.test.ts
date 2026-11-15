@@ -128,7 +128,7 @@ describe('Load of a module root', () => {
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      'Duplicate provision id "auth" in module "shop": "shop.auth" already holds resource "db". Give one of them a different id with provision(node, { id: \'…\' }).',
+      'Duplicate provision id "auth" in module "shop": "shop.auth" already holds resource "db", and service "test-service" takes the same id. Give one of them a different id with provision(node, { id: \'…\' }).',
     );
   });
 
@@ -145,7 +145,7 @@ describe('Load of a module root', () => {
     });
 
     expect(() => Load(root)).toThrow(
-      'Duplicate provision id "store" in module "shop.auth": "shop.auth.store" already holds resource "db".',
+      'Duplicate provision id "store" in module "shop.auth": "shop.auth.store" already holds resource "db", and module "cache" takes the same id.',
     );
   });
 
@@ -158,7 +158,9 @@ describe('Load of a module root', () => {
       provision(dbResource(), { id: 'store' });
     });
 
-    expect(() => Load(root)).toThrow('"shop.store" already holds module "cache".');
+    expect(() => Load(root)).toThrow(
+      '"shop.store" already holds module "cache", and resource "db" takes the same id.',
+    );
   });
 
   test('a provision id containing "_" or "." is a LoadError naming the constraint', () => {

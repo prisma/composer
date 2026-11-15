@@ -24,7 +24,6 @@ import {
   type Deps,
   isConfigKeySegment,
   isNode,
-  isValueResource,
   type ModuleBuilder,
   type ModuleContext,
   type ModuleNode,
@@ -35,7 +34,7 @@ import {
   type ServiceNode,
   type SourceValue,
   slotsOf,
-  sourceOriginOf,
+  valueResourceOrigin,
 } from './node.ts';
 import { type ProvisionedModuleInput, resolveValues, valueReadsOf } from './resolve-values.ts';
 import { topoSort } from './toposort.ts';
@@ -122,13 +121,8 @@ function producerIdOf(ref: unknown): string | undefined {
  */
 const MODULE_INPUT_KEY = Symbol('prisma:module-input-key');
 
-/** How the duplicate-id error names the node already at an id: a value resource by its value's label. */
-function describeHolder(
-  node: ServiceNode | ResourceNode | ModuleNode,
-  value: SourceValue | undefined,
-): string {
-  const label = value === undefined ? undefined : sourceOriginOf(value)?.label;
-  return label ?? `${node.kind} "${node.name}"`;
+function describeNode(node: ServiceNode | ResourceNode | ModuleNode): string {
+  return valueResourceOrigin(node)?.label ?? `${node.kind} "${node.name}"`;
 }
 
 /** Whether `ref` carries a callable `satisfies` that accepts `required` truthily. */
@@ -405,12 +399,6 @@ function flatten(
       );
     }
     const fullAddress = `${selfId}.${id}`;
-    const holder = localNodes.get(id);
-    if (holder !== undefined) {
-      throw new LoadError(
-        `Duplicate provision id "${id}" in module "${selfId}": "${fullAddress}" already holds ${describeHolder(holder, valueResources.get(fullAddress))}. Give one of them a different id with provision(node, { id: '…' }).`,
-      );
-    }
     // Brand-check on a widened alias: predicate-narrowing the declared union
     // drops the `any`-instantiated ResourceNode member (the same quirk
     // slotNodesAndEdges sidesteps by widening `kind` to a plain string).
@@ -434,18 +422,23 @@ function flatten(
           'entry and cannot be provisioned. Build the module with module() instead.',
       );
     }
-    const candidate: unknown = child;
-    const valueNode = isValueResource(candidate) ? candidate : undefined;
-    if (valueNode !== undefined) {
+    const holder = localNodes.get(id);
+    if (holder !== undefined) {
+      throw new LoadError(
+        `Duplicate provision id "${id}" in module "${selfId}": "${fullAddress}" already holds ${describeNode(holder)}, and ${describeNode(child)} takes the same id. Give one of them a different id with provision(node, { id: '…' }).`,
+      );
+    }
+    const valueOrigin = child.kind === 'resource' ? valueResourceOrigin(child) : undefined;
+    if (valueOrigin !== undefined) {
       if (typeof moduleNode.isRoot !== 'function' || !moduleNode.isRoot()) {
         throw new LoadError(
           `Module "${selfId}" provisions "${id}", a resource that is a value. Only the app root, built with appRoot(), can provision one. Provision it in the root and pass its value down through this module's input.`,
         );
       }
       const also =
-        valueNode.provides !== undefined
+        child.kind === 'resource' && child.provides !== undefined
           ? 'provides a contract'
-          : Object.keys(slotsOf(valueNode)).length > 0
+          : child.kind === 'resource' && Object.keys(slotsOf(child)).length > 0
             ? 'declares dependency slots'
             : undefined;
       if (also !== undefined) {
@@ -505,8 +498,8 @@ function flatten(
         targetKind: 'resource',
         enclosingModuleName: moduleNode.name,
       });
-      if (valueNode !== undefined) {
-        const value = provisionedValue(valueNode, fullAddress);
+      if (valueOrigin !== undefined) {
+        const value = provisionedValue(valueOrigin, fullAddress);
         valueResources.set(fullAddress, value);
         return value;
       }
@@ -655,14 +648,14 @@ function flatten(
 
   const ctx = blindCast<
     ModuleContext<Deps>,
-    "ctxInputs holds one resolved ref per moduleNode.deps key (the shape a producer port carries), input is buildModuleInput(selfId) exactly when the node declares an input schema, and provision is exactly ModuleBuilder['provision'] — together they satisfy ModuleContext<D, I> structurally for whatever D/I this moduleNode declares"
+    "ctxInputs holds one resolved ref per moduleNode.deps key (the shape a producer port carries), input is buildModuleInput(selfId) exactly when the node declares an input schema, and provision is the one implementation behind both a module() body's and an appRoot() body's overloads — together they satisfy ModuleContext<D, I> structurally for whatever D/I this moduleNode declares"
   >({
     deps: ctxInputs,
     input: moduleNode.inputSchema === undefined ? undefined : buildModuleInput(selfId),
     environment: environmentFacts,
     provision: blindCast<
       ModuleBuilder['provision'],
-      'single implementation behind the provision() overloads — returns the contract-carrying ref for a resource, a ProvisionedRef for a service, and a ProvisionedRef for a nested module, exactly what each overload pins, but an object property cannot carry an overloaded implementation signature'
+      'single implementation behind the provision() overloads of a module() body and an appRoot() body — returns the contract-carrying ref for a resource, a ProvisionedRef for a service and for a nested module, and the copy of the value for a value resource, exactly what each overload pins, but an object property cannot carry an overloaded implementation signature'
     >(provision),
   });
 

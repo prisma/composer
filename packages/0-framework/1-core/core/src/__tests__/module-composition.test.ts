@@ -694,7 +694,7 @@ describe('provision() with an inferred id (the id-less overloads)', () => {
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      'Duplicate provision id "worker" in module "shop": "shop.worker" already holds service "worker". Give one of them a different id with provision(node, { id: \'…\' }).',
+      'Duplicate provision id "worker" in module "shop": "shop.worker" already holds service "worker", and service "worker" takes the same id. Give one of them a different id with provision(node, { id: \'…\' }).',
     );
   });
 

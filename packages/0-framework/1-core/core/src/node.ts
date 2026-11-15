@@ -595,7 +595,6 @@ type ModuleProvisionArgs<
     ? [opts?: ModuleProvisionOptions<D, I>]
     : [opts: ModuleProvisionOptions<D, I>];
 
-/** The options `provision()` takes after a service, module or value resource node `N`. */
 type ProvisionArgs<N> = N extends ValueResourceNode
   ? [opts?: { id?: string }]
   : N extends ServiceNode<infer D, infer P, Expose, infer I>
@@ -612,11 +611,9 @@ type ExposeOf<N> =
       ? E
       : never;
 
-/** The type error an author sees for a value resource provisioned in a `module()` body. */
 type OnlyInAppRoot =
-  "Only appRoot() can provision a resource that is a value, such as a platform variable. Provision it in the app root and pass its value down through this module's input.";
+  "Only appRoot() can provision a resource that is a value. Provision it in the app root and pass its value down through this module's input.";
 
-/** The `provision()` overloads a `module()` body and an `appRoot()` body share. */
 interface SharedProvision {
   /** Provisions an owned resource; its id defaults to the node's `name`. */
   <C extends AnyContract | undefined>(
@@ -664,24 +661,16 @@ interface SharedProvision {
   ): ProvisionedRef<E>;
 }
 
-/**
- * Any service or child module; a value resource gets the type error that only
- * `appRoot()` can provision it. Declared last, so a call no overload accepts
- * reports this overload's error, which names the binding key that does not
- * fit, says a module's whole input is not a value, or names `appRoot()`.
- */
 type ProvisionInModule = <N extends ServiceNode | ModuleNode | ValueResourceNode>(
   node: N extends ValueResourceNode ? OnlyInAppRoot : N,
   ...args: ProvisionArgs<N>
 ) => ProvisionedRef<ExposeOf<N>>;
 
-/** Provisions a value resource; returns a copy of its value with `id`, the node's address. */
 type ProvisionValue = <V extends SourceValue>(
   node: ValueResourceNode<V>,
   opts?: { readonly id?: string },
 ) => V & { readonly id: string };
 
-/** Any service, child module or value resource. Declared last, so a call no overload accepts reports this overload's error, which names the option that does not fit. */
 type ProvisionInAppRoot = <N extends ServiceNode | ModuleNode | ValueResourceNode>(
   node: N,
   ...args: ProvisionArgs<N>
@@ -689,10 +678,11 @@ type ProvisionInAppRoot = <N extends ServiceNode | ModuleNode | ValueResourceNod
 
 export interface ModuleBuilder {
   /** Registers an owned child (resource, service or module) under a stable id. */
+  // The catch-all goes last: TypeScript reports the last overload's error.
   readonly provision: SharedProvision & ProvisionInModule;
 }
 
-/** What `provision()` is in an `appRoot()` body: also takes a value resource, and returns its value. */
+// The catch-all goes last: TypeScript reports the last overload's error.
 type AppRootProvision = ProvisionValue & SharedProvision & ProvisionInAppRoot;
 
 /** Dependency map: name → the slot the service declares. Only declarations are admitted, never a concrete ResourceNode. */
@@ -1027,36 +1017,28 @@ export function valueResource<V extends SourceValue>(def: {
   return new FrozenValueResourceNode(def);
 }
 
-/** True for a resource node that is a value: one that holds a source under the value resource key. */
-export function isValueResource(node: unknown): node is ValueResourceNode {
-  return (
-    isNode(node) &&
-    node.kind === 'resource' &&
-    VALUE_RESOURCE in node &&
-    isSourceValue(node[VALUE_RESOURCE])
-  );
+export function valueResourceOrigin(node: unknown): SourceOrigin | undefined {
+  if (!isNode(node) || node.kind !== 'resource' || !(VALUE_RESOURCE in node)) return undefined;
+  const value = node[VALUE_RESOURCE];
+  return isSecretSource(value) || isParamSource(value) ? sourceOriginOf(value) : undefined;
 }
 
-/** The copy of a value resource's value that `provision()` returns: its origin records `address`, and its `id`, not enumerable, is `address`. Internal to core. */
-export function provisionedValue<V extends SourceValue>(
-  node: ValueResourceNode<V>,
-  address: NodeId,
-): V & { readonly id: string } {
-  const value = node[VALUE_RESOURCE];
-  const origin = sourceOriginOf(value);
-  if (origin === undefined) {
-    throw new LoadError(`Resource "${address}" is a value whose source has no origin.`);
-  }
+/** True for a resource node that is a value: one that holds a source under the value resource key. */
+export function isValueResource(node: unknown): node is ValueResourceNode {
+  return valueResourceOrigin(node) !== undefined;
+}
+
+export function provisionedValue(origin: SourceOrigin, address: NodeId): SourceValue {
   const { source, ...kept } = origin;
   return blindCast<
-    V & { readonly id: string },
-    "the frozen copy carries the original source's brand, payload and pointer kind, an origin that adds the address, and the address as id, which is V's shape plus id"
+    SourceValue,
+    "a new frozen source with the original source's brand, payload and pointer kind, and an origin that adds the address"
   >(
     buildSource(
       isSecretSource(source) ? SECRET_SOURCE : PARAM_SOURCE,
-      value.payload,
+      source.payload,
       { ...kept, resource: address },
-      isSecretPointer(value) ? 'secret' : isPlainPointer(value) ? 'plain' : undefined,
+      isSecretPointer(source) ? 'secret' : isPlainPointer(source) ? 'plain' : undefined,
       { id: { value: address } },
     ),
   );

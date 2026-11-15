@@ -181,8 +181,8 @@ function nodeKindOf(site: ValueBindingSite): SecretSourceUse['nodeKind'] {
   }
 }
 
-function pointersIn(values: unknown): ReadonlySet<object> {
-  const pointers = new Set<object>();
+function pointersIn(values: unknown): ReadonlySet<ParamSource | SecretSource> {
+  const pointers = new Set<ParamSource | SecretSource>();
   const seen = new WeakSet<object>();
   const walk = (value: unknown): void => {
     if (isSecretSource(value) || isParamSource(value)) {
@@ -376,18 +376,22 @@ function sourcesByPath(
   value: unknown,
   path = '',
   found = new Map<string, ParamSource | SecretSource>(),
+  ancestors = new Set<object>(),
 ) {
   if (isSecretSource(value) || isParamSource(value)) {
     found.set(path, sourceOriginOf(value)?.source ?? value);
-  } else if (Array.isArray(value)) {
-    for (const [index, member] of value.entries()) {
-      sourcesByPath(member, joinPath(path, index), found);
-    }
-  } else if (isPlainObject(value)) {
-    for (const [key, member] of Object.entries(value)) {
-      sourcesByPath(member, joinPath(path, key), found);
-    }
+    return found;
   }
+  if (!Array.isArray(value) && !isPlainObject(value)) return found;
+  if (ancestors.has(value)) return found;
+  ancestors.add(value);
+  const entries: [string | number, unknown][] = Array.isArray(value)
+    ? value.map((member, index) => [index, member])
+    : Object.entries(value);
+  for (const [key, member] of entries) {
+    sourcesByPath(member, joinPath(path, key), found, ancestors);
+  }
+  ancestors.delete(value);
   return found;
 }
 
@@ -489,7 +493,6 @@ export function resolveValues(input: {
   readonly params: readonly ParamBinding[];
   readonly moduleInputs: readonly ProvisionedModuleInput[];
   readonly resources: ReadonlyMap<NodeId, ResourceNode>;
-  /** The copy each value resource's provision() returned, by the node's address. */
   readonly valueResources: ReadonlyMap<NodeId, SourceValue>;
 }): {
   readonly inputBindings: readonly InputBindingUse[];
@@ -827,39 +830,24 @@ export function resolveValues(input: {
   };
 }
 
-/** Each read of a value resource's value in a service's resolved input binding or params, at any depth. */
 export function valueReadsOf(
   inputBindings: readonly InputBindingUse[],
   params: readonly ParamBinding[],
 ): readonly ValueRead[] {
   const reads: ValueRead[] = [];
-  const walk = (
-    value: unknown,
-    reader: NodeId,
-    site: ValueRead['site'],
-    seen: WeakSet<object>,
-  ): void => {
-    if (isSecretSource(value) || isParamSource(value)) {
-      const resource = sourceOriginOf(value)?.resource;
-      if (resource !== undefined) reads.push({ reader, resource, site });
-      return;
-    }
-    if (!Array.isArray(value) && !isPlainObject(value)) return;
-    if (seen.has(value)) return;
-    seen.add(value);
-    const entries: [string | number, unknown][] = Array.isArray(value)
-      ? value.map((member, index) => [index, member])
-      : Object.entries(value);
-    for (const [key, member] of entries) {
-      const path = site.kind === 'param' ? site.path : joinPath(site.path, key);
-      walk(member, reader, { kind: site.kind, path }, seen);
-    }
+  const record = (source: ParamSource | SecretSource, reader: NodeId, site: ValueRead['site']) => {
+    const resource = sourceOriginOf(source)?.resource;
+    if (resource !== undefined) reads.push({ reader, resource, site });
   };
   for (const { serviceAddress, binding } of inputBindings) {
-    walk(binding, serviceAddress, { kind: 'serviceInput', path: '' }, new WeakSet());
+    for (const [path, source] of sourcesByPath(binding)) {
+      record(source, serviceAddress, { kind: 'serviceInput', path });
+    }
   }
   for (const { serviceAddress, slot, binding } of params) {
-    walk(binding, serviceAddress, { kind: 'param', path: slot }, new WeakSet());
+    for (const source of pointersIn(binding)) {
+      record(source, serviceAddress, { kind: 'param', path: slot });
+    }
   }
   return reads;
 }
