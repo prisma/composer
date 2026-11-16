@@ -4,7 +4,7 @@ import * as RealAlchemyPrisma from '@alchemy.run/prisma';
 import type { Contract } from '@internal/core';
 import type { NodeDescriptor } from '@internal/core/config';
 import { type ContainerInstance, containerEnvVarName } from '@internal/core/config';
-import type { LowerContext, LoweredResult, Outputs } from '@internal/core/deploy';
+import type { DeploymentResult, LowerContext, LoweredResult, Outputs } from '@internal/core/deploy';
 // Import the REAL modules the mocks below stub, so each mock can spread them.
 // This matters beyond convenience: `bun test` runs every test file in ONE
 // process and `mock.module` is process-global. When the real module is already
@@ -17,6 +17,7 @@ import * as RealDevEmulators from '@internal/dev-emulators';
 import { field, secretString } from '@internal/foundation/arktype';
 import * as RealLocalTarget from '@internal/local-target';
 import * as RealPrismaAlchemy from '@internal/lowering';
+import * as Alchemy from 'alchemy';
 import { AdoptPolicy } from 'alchemy/AdoptPolicy';
 import * as RealOutput from 'alchemy/Output';
 import { type FormerId, RenamePolicy } from 'alchemy/Rename';
@@ -3850,6 +3851,11 @@ describe("prismaCloud().nodes['platform-variable'] — a platform variable node"
     withEnv(
       { ...containerEnv('shop-project#cloud-id'), EMAIL_KEY: 'sk_planted_should_not_leak' },
       () => {
+        const reports: DeploymentResult[] = [];
+        const stack: {
+          actions: Record<string, Alchemy.Action>;
+          resources: Record<string, unknown>;
+        } = { actions: {}, resources: {} };
         run<undefined>(
           lowering(shop, configFor(prismaCloud({ workspaceId: 'ws_1' })), {
             name: 'shop',
@@ -3858,10 +3864,25 @@ describe("prismaCloud().nodes['platform-variable'] — a platform variable node"
               'shop.mailer': { dir: 'modules/mailer/dist', entry: 'server.js' },
               'shop.web': { dir: 'modules/web/dist', entry: 'server.js' },
             },
-          }),
+            report: (result) => reports.push(result),
+          }).pipe(Effect.provideService(Alchemy.Stack, stack as never)),
         );
+        const action = stack.actions['composer-deployment-report'];
+        if (action === undefined) throw new Error('expected the deployment report action');
+        run<unknown>(action.Run(action.Input));
+        return reports;
       },
     );
+
+  test('the deploy report has a line for each service and none for a platform variable node', async () => {
+    const reports = await lowerShop();
+
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.nodes.map((node) => node.address).sort()).toEqual([
+      'shop.mailer',
+      'shop.web',
+    ]);
+  });
 
   test('its descriptor creates nothing and writes no row', () => {
     const graph = Load(shop);
@@ -3905,7 +3926,7 @@ describe("prismaCloud().nodes['platform-variable'] — a platform variable node"
     expect(JSON.stringify(writes)).not.toContain('sk_planted');
   });
 
-  test("a change to a node's row redeploys exactly the services that read it", async () => {
+  test("each deployment's triggers hold the rows of the nodes its service reads, and no others", async () => {
     const before = recorded.deploy.length;
 
     await lowerShop();
