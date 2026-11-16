@@ -40,7 +40,6 @@ function renderOptions(input: StackFileInput): string {
   lines.push(`  environment: ${quote(input.environment)},`);
   lines.push('  appConfigurationRead: file.appConfigurationRead,');
   lines.push('  firstProcessNodeAddresses: file.nodeAddresses,');
-  lines.push('  ...transportedLowerInputs(config),');
 
   lines.push('  bundles: {');
   for (const [id, bundle] of Object.entries(input.assembled.bundles)) {
@@ -75,7 +74,7 @@ export function renderStackFile(input: StackFileInput): string {
 //
 // bisects a CLI bug from an Alchemy bug (deploy-cli.md § Implementation decisions).
 // It runs no config adapter: it reads what the first process's Load read from the app configuration file named in PRISMA_COMPOSER_APP_CONFIGURATION_FILE.
-import { lower, transportedLowerInputs } from '@prisma/composer/deploy';
+import { lower } from '@prisma/composer/deploy';
 import * as report from '@prisma/composer/report';
 import { readAppConfigurationFile } from '@prisma/composer/internal/app-configuration-file';
 import prismaConfig from ${quote(configImport)};
