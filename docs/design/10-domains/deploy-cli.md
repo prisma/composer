@@ -291,7 +291,7 @@ them:
 | A platform variable the app reads is managed by Prisma Cloud (`DEPLOY.PREFLIGHT_FAILED`) | the variable, and to rename it in the app |
 | Root's input refused by its schema | the schema's messages, and that a root's input is the app configuration for the environment |
 | A config adapter throws or returns something other than an object (`CONFIG.ADAPTER_FAILED`, `CONFIG.ADAPTER_INVALID`) | which list and position, and the fix |
-| The app configuration file would hold a known secret (`CONFIG.SECRET_AS_PLAIN_VALUE`) | which root input field, or under `prisma dev` which plain platform variable, holds a known secret, and the secrets key whose value matched, never the value; a secret of eight characters or more counts anywhere in a value, a shorter one only as the whole value. The fix: provision `variable.secret({ name: 'NAME' })` in the app root and pass its value where it is used, or give the plain value text that does not contain it |
+| The app configuration file would hold a known secret (`CONFIG.SECRET_AS_PLAIN_VALUE`) | which root input field, or under `prisma dev` which plain platform variable, holds a known secret, and the secrets key whose value matched, never the value; a secret of eight characters or more counts anywhere in a value, a shorter one only as the whole value. The fix: `Pass the value of the platform secret "<name>" to where this value is used, or give this plain value text that does not contain the value of "<name>".` For a plain platform variable under `prisma dev`, the fix is to keep the secret's value out of the variable or give the variable a different value |
 
 ## Out of scope (designed around)
 

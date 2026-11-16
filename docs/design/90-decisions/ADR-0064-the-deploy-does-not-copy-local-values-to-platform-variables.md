@@ -91,7 +91,7 @@ Each place in a service's input document that reads a platform variable holds a 
 
 ### Per-key params
 
-A plain node's value in a service's per-key params writes a pointer row naming the variable, which the service reads at boot ([ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)). Deploy preflight checks that variable, and `prisma dev` fills it.
+A plain node's value in a service's per-key params writes a pointer row naming the variable, which the service reads at boot ([ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)). Deploy preflight checks that variable, and `prisma dev` fills it. A compute service declares one per-key param, the reserved `port`; every other value is a field of its `input`. Boot hands the variable's raw text to the param's schema, so a set variable bound to `port`, whose schema is a number, fails at boot today.
 
 ### Boot
 

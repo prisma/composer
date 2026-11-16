@@ -1,27 +1,35 @@
 # ADR-0032: Params bind at provision; env-sourcing is a target-owned source
 
 ```ts
-// 1. The service declares the param: a schema, no value, no platform name.
-const web = compute({ name: 'web', params: { appOrigin: string() }, build: /* … */ });
+// 1. The service declares its params. A compute service declares one, the reserved
+//    port, as { port: number({ default: 3000 }) }; every other value is a field of its input.
+const api = compute({ name: 'api', deps: {}, build });
+const web = compute({ name: 'web', deps: {}, build });
+const worker = compute({ name: 'worker', deps: {}, build });
 
-// 2. The app root binds it at provision: a literal, or a plain platform variable node's value.
-export default appRoot('app', ({ provision }) => {
-  const appOrigin = provision(variable({ name: 'APP_ORIGIN' }));
-  provision(web, { params: { appOrigin } });
-  // …or a literal: { params: { appOrigin: 'https://example.com' } }
+// 2. The app root binds each param at provision.
+export default appRoot('shop', { input: type({ WEB_PORT: 'string.integer.parse' }) }, ({ input, provision }) => {
+  provision(api, { params: { port: 8080 } });                  // a literal
+  provision(web, { params: { port: input.WEB_PORT } });        // a deploy-time value: a root input field
+  const workerPort = provision(variable({ name: 'WORKER_PORT' }));
+  provision(worker, { params: { port: workerPort } });         // a plain platform variable node's value
 });
 
-// 3. Inside the service, the value reads back like every other param.
-const { appOrigin } = web.config();   // string
+// 3. Inside the service, the value reads back through its accessor.
+const port = web.port();   // number
 ```
 
 ## Decision
 
-A service's per-key param can be bound at `provision()` to a literal, or to a target-owned source known only at boot, instead of only carrying an authoring-time `default`. On Prisma Cloud that source is a plain platform variable node's value, `provision(variable({ name: 'NAME' }))`, provisioned in the app root ([ADR-0064](ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)). A param bound to it is the plain sibling of [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md)'s secret: the same per-environment platform variable that the operator sets, the same preflight check, but read back unredacted and validated by the param's own schema.
+A service's per-key param can be bound at `provision()` instead of only carrying an authoring-time `default`. Core's per-key params mechanism is general: core's `service()` takes any `params` map, each param a schema plus facets ([ADR-0018](ADR-0018-config-params-carry-a-caller-owned-schema.md)). But a Prisma Cloud `compute()` service declares one per-key param only, the reserved `port`, read through `service.port()`. Every other value a compute service needs is a field of its `input` ([ADR-0042](ADR-0042-service-input-is-one-standard-schema.md)).
 
-- **The deploy writes a pointer row** naming the platform variable, which the operator sets on the platform. The service reads the variable at boot. A variable with no value gives the param its default, or leaves it out when the param is optional; boot fails only for a required param.
-- **A platform secret does not fit a per-key param.** `ParamBindings` admits no secret source, so binding a `variable.secret()` value there fails to compile. A secret goes in a `secretString()` field of the service's `input`.
-- **A value the deploy reads** is a root input field ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)), not a source. A per-key param also accepts a deploy-time value of its type, such as a root input field, and the deploy writes its real value as it writes a literal.
+A param takes one of three bindings:
+
+- **A literal**, schema-validated when config is built at deploy.
+- **A deploy-time value** of the param's type, such as a root input field ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). The deploy writes its real value as it writes a literal.
+- **A target-owned source known only at boot.** On Prisma Cloud that is a plain platform variable node's value, `provision(variable({ name: 'NAME' }))`, provisioned in the app root ([ADR-0064](ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)). The deploy writes a pointer row naming the platform variable, which the operator sets on the platform, and the service reads the variable at boot. A variable with no value gives the param its default, or leaves it out when the param is optional; boot fails only for a required param. Boot hands the variable's raw text to the param's schema. `port`'s schema is a number, so today a set `WORKER_PORT` fails `port`'s schema at boot; only an unset one, which gives the default, boots.
+
+A platform secret does not fit a per-key param: `ParamBindings` admits no secret source, so binding a `variable.secret()` value there fails to compile. A secret goes in a `secretString()` field of the service's `input`.
 
 Core knows a source only as an opaque payload; `paramSource(payload, { label, redacted })` is the constructor a target calls. A param source is always known only at boot: its real value at deploy is a pointer. `redacted` makes it a secret pointer rather than a plain one. Prisma Cloud's `variable({ name })` builds a plain one, labelled `the platform variable "NAME"`.
 
@@ -33,7 +41,7 @@ Core knows a source only as an opaque payload; `paramSource(payload, { label, re
 
 **The wire: a pointer, told apart by shape.** A pointed param's stored row carries the platform variable's name, not a value. It shares its key, `COMPOSER_<address>_<name>`, with a literal-bound param, so writer and reader tell them apart by the stored value. Literal values are JSON-encoded; a pointer row is `@composer-param-pointer:<NAME>`. No `JSON.stringify` output begins with `@`, so the two never collide.
 
-**Boot reads the pointer, then the variable, then runs the schema on the raw string.** Boot reads the pointer for the name, reads that platform variable, and hands the raw string to the param's own schema. A `number()` param bound to a platform variable fails at boot with the existing invalid-value error, because the variable is a string. A variable that is unset or empty has no value, as the platform cannot store an empty one: the param takes its default, or is left out when it is optional. A required param fails boot with `The param "<name>" of this service reads the platform variable "<NAME>", which has no value. Set it with prisma project env add.`
+**Boot reads the pointer, then the variable, then runs the schema on the raw string.** Boot reads the pointer for the name, reads that platform variable, and hands the raw string to the param's own schema. A `number()` param bound to a platform variable, such as `port`, fails at boot when the variable is set, because the variable's value is a string. A variable that is unset or empty has no value, as the platform cannot store an empty one: the param takes its default, or is left out when it is optional. A required param fails boot with `The param "<name>" of this service reads the platform variable "<NAME>", which has no value. Set it with prisma project env add.` A value the schema refuses fails boot with `The param "<name>" reads the platform variable "<NAME>", whose value is invalid: <the schema's message>`.
 
 **Preflight covers pointed params as it covers secrets, and only checks them.** Before Alchemy runs, deploy preflight checks whether each per-key param's platform variable has a row the environment sees. A missing variable fails the deploy when the param has no default and is not optional, naming the variable, the service, the param and the commands that set it. Otherwise it is listed and the deploy goes on ([ADR-0064](ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)). Under `prisma dev` the target's dev preflight reads the variable's text from the app configuration, and the local target gives the service that text, under the same rule ([ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-app-secrets-and-never-invents-them.md)).
 
@@ -48,6 +56,7 @@ Core knows a source only as an opaque payload; `paramSource(payload, { label, re
 
 ## Alternatives considered
 
+- **App-declared per-key params on a compute service**, such as `params: { appOrigin: string() }` read through `config()`. Replaced by one `input` schema read through `service.input()` ([ADR-0042](ADR-0042-service-input-is-one-standard-schema.md)); compute keeps only the reserved `port`.
 - **A fourth accessor (`env()` or `platformConfig()`).** Rejected: it keys the read on provenance, forcing consumers to know how the application bound the value.
 - **Restricting pointed params to string-output schemas at authoring.** Rejected: it needs schema inspection, which Standard Schema does not offer portably, to prevent a failure boot already reports.
 - **A separate pointer key per param.** Rejected: it doubles the rows and leaves the primary key's meaning ambiguous.

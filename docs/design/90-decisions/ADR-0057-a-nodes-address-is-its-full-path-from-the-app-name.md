@@ -10,7 +10,7 @@ export default appRoot('shop', ({ provision }) => {
   const auth = provision(authModule, { deps: { db: catalog } }); // module `auth`, containing compute service `api`
   provision(webService, {
     deps: { db: catalog, auth: auth.rpc },                      // compute service `web`
-    params: { authOrigin: serviceOrigin('shop.auth.api') },
+    input: { authOrigin: serviceOrigin('shop.auth.api') },     // a field wrapped with field()
   });
 });
 ```
