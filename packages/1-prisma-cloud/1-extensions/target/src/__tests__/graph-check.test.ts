@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { GraphCheckError, Load, module } from '@internal/core';
+import { appRoot, GraphCheckError, Load, module } from '@internal/core';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { prismaCloud } from '../exports/control.ts';
 import { compute } from '../exports/index.ts';
 import { checkGraph } from '../graph-check.ts';
 import { envParam } from '../param.ts';
+import { variable } from '../platform-variable.ts';
 import { envSecret } from '../secret.ts';
 
 const build = {
@@ -92,6 +93,153 @@ describe('the Prisma Cloud graph check', () => {
       provision(web(), { id: 'site', input: { from: input.FROM, origin: envParam('APP_ORIGIN') } });
     });
     const graph = Load(root, { configuration: { FROM: 'shop@example.com', APP_ORIGIN: 'x' } });
+
+    expect(() => checkGraph(graph)).not.toThrow();
+  });
+});
+
+const loadError = (run: () => void): string => {
+  try {
+    run();
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
+    return error.message;
+  }
+  throw new Error('expected Load to throw');
+};
+
+describe('the graph check of platform variable nodes', () => {
+  test('two nodes with one name and different ids fail, naming both', () => {
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        provision(variable({ name: 'EMAIL_FROM' }));
+        provision(variable({ name: 'EMAIL_FROM' }), { id: 'sender' });
+      }),
+    );
+
+    expect(thrown(() => checkGraph(graph))).toBe(
+      'The platform variable "EMAIL_FROM" is declared twice in the app root, by "shop.emailFrom" and "shop.sender". Declare each platform variable once and pass its value to every module that needs it.',
+    );
+  });
+
+  test('a plain node and a secret node with one name fail, saying which is which', () => {
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        provision(variable({ name: 'EMAIL_FROM' }));
+        provision(variable.secret({ name: 'EMAIL_FROM' }), { id: 'sender' });
+      }),
+    );
+
+    expect(thrown(() => checkGraph(graph))).toBe(
+      'The platform variable "EMAIL_FROM" is declared twice in the app root, by "shop.emailFrom" and "shop.sender". Declare each platform variable once and pass its value to every module that needs it. "shop.emailFrom" is plain and "shop.sender" is a secret.',
+    );
+  });
+
+  test('one node object provisioned with two ids is declared twice', () => {
+    const from = variable({ name: 'EMAIL_FROM' });
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        provision(from, { id: 'from' });
+        provision(from, { id: 'sender' });
+      }),
+    );
+
+    expect(thrown(() => checkGraph(graph))).toBe(
+      'The platform variable "EMAIL_FROM" is declared twice in the app root, by "shop.from" and "shop.sender". Declare each platform variable once and pass its value to every module that needs it.',
+    );
+  });
+
+  test('one node object provisioned twice with the default id fails Load with the duplicate-id error', () => {
+    const from = variable({ name: 'EMAIL_FROM' });
+
+    expect(
+      loadError(() =>
+        Load(
+          appRoot('shop', ({ provision }) => {
+            provision(from);
+            provision(from);
+          }),
+        ),
+      ),
+    ).toBe(
+      'Duplicate provision id "emailFrom" in module "shop": "shop.emailFrom" already holds the platform variable "EMAIL_FROM", and the platform variable "EMAIL_FROM" takes the same id. Give one of them a different id with provision(node, { id: \'…\' }).',
+    );
+  });
+
+  test('two names that give one default id fail Load with the duplicate-id error naming both', () => {
+    expect(
+      loadError(() =>
+        Load(
+          appRoot('shop', ({ provision }) => {
+            provision(variable({ name: 'A_B' }));
+            provision(variable.secret({ name: 'A__B' }));
+          }),
+        ),
+      ),
+    ).toBe(
+      'Duplicate provision id "aB" in module "shop": "shop.aB" already holds the platform variable "A_B", and the platform secret "A__B" takes the same id. Give one of them a different id with provision(node, { id: \'…\' }).',
+    );
+  });
+
+  test('a plain node and a root input field the body passes on, with one name, fail', () => {
+    const graph = Load(
+      appRoot('shop', { input: type({ EMAIL_FROM: 'string' }) }, ({ input, provision }) => {
+        const from = provision(variable({ name: 'EMAIL_FROM' }));
+        provision(web(), { id: 'site', input: { from, replyTo: input.EMAIL_FROM } });
+      }),
+      { configuration: { EMAIL_FROM: 'shop@example.com' } },
+    );
+
+    expect(thrown(() => checkGraph(graph))).toBe(
+      '"EMAIL_FROM" is used two ways: as the platform variable "shop.emailFrom", which services read at boot, and as input.EMAIL_FROM of root module "shop", which the deploy reads. A name has one meaning in an app. Use one of them, or give the other a different name.',
+    );
+  });
+
+  test.each([
+    ['read by a service', true],
+    ['read by no service', false],
+  ])('a secret node and a root input field with one name fail Load, when the node is %s', (_, read) => {
+    const message = loadError(() =>
+      Load(
+        appRoot('shop', { input: type({ EMAIL_KEY: 'string' }) }, ({ input, provision }) => {
+          const key = provision(variable.secret({ name: 'EMAIL_KEY' }));
+          provision(web(), {
+            id: 'site',
+            input: read ? { key, other: input.EMAIL_KEY } : { other: input.EMAIL_KEY },
+          });
+        }),
+        { configuration: { EMAIL_KEY: 'plain text' } },
+      ),
+    );
+
+    expect(message).toBe(
+      'input.EMAIL_KEY of root module "shop" reads "EMAIL_KEY" from the app configuration, and the platform secret "EMAIL_KEY" names "EMAIL_KEY" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy\'s second process every root input field the root\'s body passes on, in a file, and never writes a secret to a file. Read the secret with the platform secret "EMAIL_KEY" only, or give the plain value a different name.',
+    );
+  });
+
+  test('a node value bound as a service\'s whole input fails', () => {
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        const from = provision(variable({ name: 'EMAIL_FROM' }));
+        provision(web(), { id: 'site', input: from });
+      }),
+    );
+
+    expect(thrown(() => checkGraph(graph))).toBe(
+      'The platform variable "EMAIL_FROM" is bound as the whole input of service "shop.site". Bind it to one field of the input instead.',
+    );
+  });
+
+  test('one node read by two services, a root input field of another name, and an envSecret() pass', () => {
+    const graph = Load(
+      appRoot('shop', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {
+        const from = provision(variable({ name: 'EMAIL_FROM' }));
+        const key = provision(variable.secret({ name: 'EMAIL_KEY' }));
+        provision(web(), { id: 'site', input: { from, key, greeting: input.GREETING } });
+        provision(web(), { id: 'api', input: { from, other: envSecret('OTHER_KEY') } });
+      }),
+      { configuration: { GREETING: 'hello' } },
+    );
 
     expect(() => checkGraph(graph)).not.toThrow();
   });

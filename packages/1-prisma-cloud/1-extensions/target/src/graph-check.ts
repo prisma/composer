@@ -1,4 +1,10 @@
-import { type Graph, GraphCheckError, isParamSource, isSecretSource } from '@internal/core';
+import {
+  type Graph,
+  GraphCheckError,
+  isParamSource,
+  isSecretSource,
+  isValueResource,
+} from '@internal/core';
 import { isEnvParamSource } from './param.ts';
 
 interface EnvParamUse {
@@ -39,7 +45,68 @@ function envParamUses(graph: Graph): readonly EnvParamUse[] {
   return uses;
 }
 
+interface PlatformVariableNode {
+  readonly address: string;
+  readonly name: string;
+  readonly secret: boolean;
+}
+
+function platformVariableNodes(graph: Graph): readonly PlatformVariableNode[] {
+  return graph.nodes.flatMap(({ id, node }) => {
+    const candidate: unknown = node;
+    if (!isValueResource(candidate)) return [];
+    const { name, secret } = candidate.props;
+    return typeof name === 'string' ? [{ address: id, name, secret: secret === true }] : [];
+  });
+}
+
+const secrecy = (node: PlatformVariableNode): string => (node.secret ? 'a secret' : 'plain');
+
+function checkOneNodePerName(nodes: readonly PlatformVariableNode[]): void {
+  const byName = new Map<string, PlatformVariableNode>();
+  for (const node of nodes) {
+    const first = byName.get(node.name);
+    if (first === undefined) {
+      byName.set(node.name, node);
+      continue;
+    }
+    const kinds =
+      first.secret === node.secret
+        ? ''
+        : ` "${first.address}" is ${secrecy(first)} and "${node.address}" is ${secrecy(node)}.`;
+    throw new GraphCheckError(
+      `The platform variable "${node.name}" is declared twice in the app root, by "${first.address}" and "${node.address}". Declare each platform variable once and pass its value to every module that needs it.${kinds}`,
+    );
+  }
+}
+
+function checkNodeAgainstRootInput(graph: Graph, nodes: readonly PlatformVariableNode[]): void {
+  const rootFields = new Set(graph.appConfigurationRead.rootInput.map((field) => field.path[0]));
+  for (const node of nodes) {
+    if (node.secret || !rootFields.has(node.name)) continue;
+    throw new GraphCheckError(
+      `"${node.name}" is used two ways: as the platform variable "${node.address}", which services read at boot, and as input.${node.name} of root module "${graph.root.id}", which the deploy reads. A name has one meaning in an app. Use one of them, or give the other a different name.`,
+    );
+  }
+}
+
+function checkWholeInputReads(graph: Graph, nodes: readonly PlatformVariableNode[]): void {
+  const byAddress = new Map(nodes.map((node) => [node.address, node]));
+  for (const read of graph.valueReads) {
+    if (read.site.kind !== 'serviceInput' || read.site.path !== '') continue;
+    const node = byAddress.get(read.resource);
+    if (node === undefined) continue;
+    throw new GraphCheckError(
+      `The platform variable "${node.name}" is bound as the whole input of service "${read.reader}". Bind it to one field of the input instead.`,
+    );
+  }
+}
+
 export function checkGraph(graph: Graph): void {
+  const nodes = platformVariableNodes(graph);
+  checkOneNodePerName(nodes);
+  checkNodeAgainstRootInput(graph, nodes);
+  checkWholeInputReads(graph, nodes);
   const rootFields = new Map(
     graph.appConfigurationRead.rootInput.map((field) => [field.path[0], field]),
   );
