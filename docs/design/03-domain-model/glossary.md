@@ -408,7 +408,7 @@ to a plan.
 
 ### Converge
 
-Making an environment match the lowered stack: Alchemy plans what to create, update, replace and delete, then applies it. `prisma deploy` converges in its own process through Alchemy's programmatic API; `prisma dev` and `destroy` converge in an Alchemy child process. The *app converge* is the app install's `lower` and in-process converge, which `deploy` loads from `@prisma/composer/internal/converge` ([ADR-0065](../90-decisions/ADR-0065-deploy-runs-alchemy-in-process.md)). Codes: `DEV.CONVERGE_FAILED`, `DEPLOY.CONVERGE_RUNNING`, `DEPS.CONVERGE_UNRESOLVABLE`, `DEPS.CONVERGE_CONTRACT_MISMATCH`.
+Making an environment match the lowered stack: Alchemy plans what to create, update, replace and delete, then applies it. Converging is plan and apply only; lowering comes before it. `prisma deploy` converges in its own process through Alchemy's programmatic API; `prisma dev` and `destroy` converge in an Alchemy child process. The *app converge entry* is the app install's `lower` and its in-process converge, which `deploy` loads from `@prisma/composer/internal/converge` (in code: `AppConvergeEntry`) ([ADR-0065](../90-decisions/ADR-0065-deploy-runs-alchemy-in-process.md)). Codes: `DEV.CONVERGE_FAILED`, `DEPLOY.CONVERGE_RUNNING`, `DEPS.CONVERGE_UNRESOLVABLE`, `DEPS.CONVERGE_CONTRACT_MISMATCH`.
 
 ### Control plane / Execution plane
 

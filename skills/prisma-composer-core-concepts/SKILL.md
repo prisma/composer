@@ -157,7 +157,7 @@ The graph is the same in every environment; only configuration may differ.
 
 - A module declares `input` (one Standard Schema) as a service does; `provision(module, { input })` binds it, and the body receives `input`, a dictionary of values: it passes each field on by name into a binding or, for a plain field, lists it in `resolve()`. Passing the whole `input` on fails to compile, and the deploy refuses it. A root's `input` is the app configuration, and a module's `input` takes every source a service's does.
 - `field(inner)` from `@prisma/composer/arktype` or `@prisma/composer/zod` wraps one leaf field's schema (`field(type('string'))`, `field(z.string())`) so it also accepts a plain pointer, which is what a value known only at boot such as `serviceOrigin()` is at deploy. In the body the field is `Value<string | Pointer<string>>`: pass it into another wrapped field or a service's input, never a plain `string` field (compile error). Wrap leaves, not object schemas; an ArkType default goes outside: `field(type('string')).default('x')`. Other schema libraries: `Pointer`, `isPlainPointer()` and `isSecretPointer()` from `@prisma/composer`. Wrap every leaf of a reusable module's schema other than a `secretString()` field, unless a `resolve()` lists it; keep a root's fields plain. `field(secretString())` is wrong: it accepts a plain pointer into a secret field, and the service fails at boot.
-- `composer({ config: [...], secrets: [...] })` lists config adapters; each gets the environment's name and returns values, later wins by top-level key. Both default to `[environmentVariables()]` (the shell); a list you write replaces the default. `dotenv()` reads `.env`, `.env.local`, `.env.<environment>`, `.env.<environment>.local`, later wins. The app configuration is the root's input and what `envParam()` reads; pass the root's input fields on by name, as every module does; its whole `input` would be the whole app configuration, by default every shell variable. The app secrets give `prisma dev` its secrets; a deploy reads them only to redact. It does not fill a platform variable from them, and never reads them as the root's input. Both import from `@prisma/composer/config`. Credentials (`PRISMA_SERVICE_TOKEN`) still come from the shell. `dotenv()` reads `.env`, `.env.local`, `.env.<environment>`, `.env.<environment>.local` through `dotenv-flow` (no `.env.local` for `test`); remove `import 'dotenv/config'` when you list it. Composer redacts the values under the names an `envSecret()` reads, in either list; the lists' other values are not secrets and print as they are, apart from values that look like credentials. Under the CLI the deploy engine's own output is not redacted yet.
+- `composer({ config: [...], secrets: [...] })` lists config adapters; each gets the environment's name and returns values, later wins by top-level key. Both default to `[environmentVariables()]` (the shell); a list you write replaces the default. `dotenv()` reads `.env`, `.env.local`, `.env.<environment>`, `.env.<environment>.local`, later wins. The app configuration is the root's input and what `envParam()` reads; pass the root's input fields on by name, as every module does; its whole `input` would be the whole app configuration, by default every shell variable. The app secrets give `prisma dev` its secrets; a deploy reads them only to redact. It does not fill a platform variable from them, and never reads them as the root's input. Both import from `@prisma/composer/config`. Credentials (`PRISMA_SERVICE_TOKEN`) still come from the shell. `dotenv()` reads `.env`, `.env.local`, `.env.<environment>`, `.env.<environment>.local` through `dotenv-flow` (no `.env.local` for `test`); remove `import 'dotenv/config'` when you list it. Composer redacts the values under the names an `envSecret()` reads, in either list; the lists' other values are not secrets and print as they are, apart from values that look like credentials. Under `prisma deploy` the engine's output is redacted too; under `prisma dev` it is not yet.
 - A field exists only under a plain object: a path into a string, an array or a secret, such as `input.tags[0]`, fails the deploy naming the path.
 - A truthiness check such as `if (input.enabled)` is not caught: the field is an object, so the branch always runs, in every environment. A module's structure cannot depend on its input; to provision something only sometimes, let the parent decide whether to provision it.
 - The module body receives `environment`; `environment.name` is a value standing for the name `--environment` gave (`production` for `prisma deploy`, `dev` for `prisma dev` by default).
@@ -407,17 +407,7 @@ creates no platform rows. Changing a node's address (its name without an
 explicit `id`, its `id`, or its module) makes a new entity: the next deploy
 deletes the old rows, and a database's or bucket's data with them.
 
-**Progress.** `prisma deploy` prints each step as it starts and finishes, with
-its duration (`✔ assemble web (3m 42s)`), and ends with the real total
-(`Deployed <app> to <environment> in 5m 25s.`). Steps: load config and app, one
-assemble per service, connect to project and branch, check environment
-variables, plan and apply (one step: alchemy does both in one process), record
-result. A slow assemble is usually a Node service with
-`dependencies: 'external'`, whose runtime dependencies are being traced. With `--json`, each step is a `step-started`/`step-finished` line whose `data`
-holds `durationMs` plus whatever the build adapter or deploy target reported;
-those extra fields vary, so don't parse them as a stable format. The
-`deploy` operation's `onEvent` receives the same steps, and its result's
-`durationMs` is the total.
+**Progress.** `prisma deploy` prints each step as it starts and finishes, with its duration (`✔ assemble web (3m 42s)`), and ends with the real total (`Deployed <app> to <environment> in 5m 25s.`). Steps: load config and app, one assemble per service, connect to project and branch, check environment variables, plan and apply (one step: alchemy does both in one process), record result. A slow assemble is usually a Node service with `dependencies: 'external'`, whose runtime dependencies are being traced. With `--json`, each step is a `step-started`/`step-finished` line whose `data` holds `durationMs` plus whatever the build adapter or deploy target reported; those extra fields vary, so don't parse them as a stable format. The `deploy` operation's `onEvent` receives the same steps, its result's `durationMs` is the total, and its `summary.findings` lists the platform variables with no value.
 
 **Environments.** An environment is a named place the app runs, chosen with
 `--environment` at deploy time, never written in the topology. The identical
@@ -480,16 +470,7 @@ environment as production, so deploy and destroy refuse it with
 
 **The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.87 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
-`prisma deploy` runs alchemy inside the `prisma` process through alchemy's
-programmatic API: no generated file and no child process. Its progress prints
-as one step per resource, and a failure is `DEPLOY.ENGINE_FAILED` carrying the
-engine's own errors (credentials redacted, capped at 1000 characters), or
-`DEPLOY.INTERRUPTED` after Ctrl-C, which releases the environment's lease.
-For `prisma dev` and `destroy`, Composer runs the alchemy package installed beside the app's
-`@prisma/composer` and starts it with Node (the first `node` on PATH when `prisma` runs
-under Bun; `DEPLOY.NODE_MISSING` if none), so the app needs no direct
-`alchemy` dependency and no `.bin` link. No global Alchemy installation is
-needed.
+`prisma deploy` runs alchemy inside the `prisma` process through alchemy's programmatic API: no generated file and no child process. Its progress prints as one step per resource, and a failure is `DEPLOY.ENGINE_FAILED` carrying the engine's own errors (credentials redacted, capped at 1000 characters), or `DEPLOY.INTERRUPTED` after Ctrl-C, which releases the environment's lease. For `prisma dev` and `destroy`, Composer runs the alchemy package installed beside the app's `@prisma/composer` and starts it with Node (the first `node` on PATH when `prisma` runs under Bun; `DEPLOY.NODE_MISSING` if none), so the app needs no direct `alchemy` dependency and no `.bin` link. No global Alchemy installation is needed.
 
 1. The destroy operation writes the pipeline's results to a generated, gitignored
    stack file at `.prisma-composer/alchemy.run.ts`, then runs the alchemy CLI

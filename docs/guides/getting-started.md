@@ -50,7 +50,7 @@ You'll need:
 - [Bun](https://bun.sh) — Prisma Compute runs Bun, so that's what the server
   code targets (`Bun.serve`), and it's the fastest way to run things locally.
 - pnpm (or npm).
-- For the deploy at the end: a Prisma Cloud workspace and a service token for it.
+- For the deploy at the end: a Prisma Cloud workspace you can sign in to with `prisma auth login`.
   (Naming, once: **Prisma Cloud** is the platform; **Prisma Compute** runs
   your services on it, and **Prisma Postgres** hosts the databases.)
 
