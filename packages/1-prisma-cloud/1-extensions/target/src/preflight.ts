@@ -22,7 +22,12 @@ import { mapWithConcurrency } from './map-with-concurrency.ts';
 import { addReader, missingVariableNames, missingVariablesText } from './missing-variables-text.ts';
 import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
-import { envParamBindings, inputSecretNames } from './preflight-names.ts';
+import {
+  envParamBindings,
+  inputVariableNames,
+  perKeyVariableBindings,
+  unreadVariables,
+} from './preflight-names.ts';
 import { checkPublicUrls } from './public-url.ts';
 import {
   checkRequirements,
@@ -30,6 +35,7 @@ import {
   paramIsRequired,
   requiredParam,
 } from './required-variables.ts';
+import { isSecretVariableSource } from './platform-variable.ts';
 import { secretName } from './secret.ts';
 
 type EnvClass = 'production' | 'preview';
@@ -293,19 +299,25 @@ export async function runPreflight(
   const services = inputManifest(input.graph).map(({ serviceAddress, binding }) => ({
     serviceAddress,
     binding,
-    names: inputSecretNames(binding, serviceAddress),
+    names: inputVariableNames(binding, serviceAddress).map((variable) => variable.name),
   }));
-  const params = envParamBindings(input.graph);
-  const unread = secretSourceManifest(input.graph).flatMap((use) =>
-    use.nodeKind === 'service'
-      ? []
-      : [
-          {
-            name: secretName(use.source, `a secret source of ${use.nodeKind} "${use.address}"`),
-            reader: { kind: 'unread', node: use.address, nodeKind: use.nodeKind } as const,
-          },
-        ],
-  );
+  const params = [...envParamBindings(input.graph), ...perKeyVariableBindings(input.graph)];
+  const unread = [
+    ...secretSourceManifest(input.graph).flatMap((use) =>
+      use.nodeKind !== 'module' || isSecretVariableSource(use.source)
+        ? []
+        : [
+            {
+              name: secretName(use.source, `a secret source of module "${use.address}"`),
+              reader: { kind: 'unread', node: use.address, nodeKind: 'module' } as const,
+            },
+          ],
+    ),
+    ...unreadVariables(input.graph).map(({ name, node }) => ({
+      name,
+      reader: { kind: 'unread', node, nodeKind: 'resource' } as const,
+    })),
+  ];
   const names = [
     ...new Set([
       ...services.flatMap((service) => service.names),

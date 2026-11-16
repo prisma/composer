@@ -26,7 +26,7 @@ import {
 import { configurationText } from '../configuration-text.ts';
 import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
 import { addReader, missingVariablesText } from '../missing-variables-text.ts';
-import { envParamBindings, envParamNotTextError, inputSecretNames } from '../preflight-names.ts';
+import { envParamBindings, envParamNotTextError, inputVariableNames } from '../preflight-names.ts';
 import { checkPublicUrls, publicUrlStrategies } from '../public-url.ts';
 import {
   checkRequirements,
@@ -87,7 +87,9 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
   const readers = new Map<string, PlatformVariableReader[]>();
   const invalidInputs: string[] = [];
   for (const { serviceAddress, binding } of inputManifest(input.graph)) {
-    const names = inputSecretNames(binding, serviceAddress);
+    const names = inputVariableNames(binding, serviceAddress)
+      .filter((variable) => variable.secret)
+      .map((variable) => variable.name);
     const unset = names.filter((name) => !isSet(secretValue(name)));
     for (const name of names) {
       secretNames.add(name);

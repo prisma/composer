@@ -6,6 +6,7 @@ import {
   isOriginParamSource,
   paramName,
 } from './param.ts';
+import { isPlainVariableSource, platformVariableNodes } from './platform-variable.ts';
 import { secretName } from './secret.ts';
 
 export const envParamNotTextError = (name: string, address: string, kind: string): Error =>
@@ -16,27 +17,67 @@ export const envParamNotTextError = (name: string, address: string, kind: string
 const composerWritesItsValue = (binding: unknown): boolean =>
   isGeneratedParamSource(binding) || isOriginParamSource(binding);
 
-function collectSecretLeafNames(binding: unknown, serviceAddress: string, out: string[]): void {
+export interface VariableName {
+  readonly name: string;
+  readonly secret: boolean;
+}
+
+function collectVariableNames(
+  binding: unknown,
+  serviceAddress: string,
+  out: Map<string, VariableName>,
+): void {
   if (composerWritesItsValue(binding)) return;
   if (isSecretSource(binding)) {
-    out.push(secretName(binding, `a secret in the input of service "${serviceAddress}"`));
+    const name = secretName(binding, `a secret in the input of service "${serviceAddress}"`);
+    out.set(name, { name, secret: true });
+    return;
+  }
+  if (isPlainVariableSource(binding)) {
+    const { name } = binding.payload;
+    out.set(name, { name, secret: false });
     return;
   }
   if (typeof binding !== 'object' || binding === null) return;
   const members = Array.isArray(binding) ? binding : Object.values(binding);
-  for (const member of members) collectSecretLeafNames(member, serviceAddress, out);
+  for (const member of members) collectVariableNames(member, serviceAddress, out);
 }
 
-export function inputSecretNames(binding: unknown, serviceAddress: string): readonly string[] {
-  const leafNames: string[] = [];
-  collectSecretLeafNames(binding, serviceAddress, leafNames);
-  return [...new Set(leafNames)];
+export function inputVariableNames(
+  binding: unknown,
+  serviceAddress: string,
+): readonly VariableName[] {
+  const names = new Map<string, VariableName>();
+  collectVariableNames(binding, serviceAddress, names);
+  return [...names.values()];
+}
+
+export interface UnreadVariable {
+  readonly name: string;
+  readonly node: string;
+}
+
+export function unreadVariables(graph: Graph): readonly UnreadVariable[] {
+  const read = new Set(graph.valueReads.map((entry) => entry.resource));
+  return platformVariableNodes(graph)
+    .filter((node) => !read.has(node.address))
+    .map((node) => ({ name: node.name, node: node.address }));
 }
 
 export interface EnvParamBinding {
   readonly name: string;
   readonly serviceAddress: string;
   readonly param: string;
+}
+
+export function perKeyVariableBindings(graph: Graph): readonly EnvParamBinding[] {
+  return paramManifest(graph)
+    .filter((binding) => isPlainVariableSource(binding.binding))
+    .map((binding) => ({
+      name: paramName(binding),
+      serviceAddress: binding.serviceAddress,
+      param: binding.slot,
+    }));
 }
 
 export function envParamBindings(graph: Graph): readonly EnvParamBinding[] {

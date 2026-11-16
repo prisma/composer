@@ -3,9 +3,9 @@ import {
   GraphCheckError,
   isParamSource,
   isSecretSource,
-  isValueResource,
 } from '@internal/core';
 import { isEnvParamSource } from './param.ts';
+import { type PlatformVariableNode, platformVariableNodes } from './platform-variable.ts';
 
 interface EnvParamUse {
   readonly name: string;
@@ -43,21 +43,6 @@ function envParamUses(graph: Graph): readonly EnvParamUse[] {
     });
   }
   return uses;
-}
-
-interface PlatformVariableNode {
-  readonly address: string;
-  readonly name: string;
-  readonly secret: boolean;
-}
-
-function platformVariableNodes(graph: Graph): readonly PlatformVariableNode[] {
-  return graph.nodes.flatMap(({ id, node }) => {
-    const candidate: unknown = node;
-    if (!isValueResource(candidate)) return [];
-    const { name, secret } = candidate.props;
-    return typeof name === 'string' ? [{ address: id, name, secret: secret === true }] : [];
-  });
 }
 
 const secrecy = (node: PlatformVariableNode): string => (node.secret ? 'a secret' : 'plain');

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { isSecretPointer, Load, module, service, string } from '@internal/core';
+import { appRoot, isSecretPointer, Load, module, service, string } from '@internal/core';
+import { platformVariableReaderText } from '@internal/core/config';
 import type {
   AppConfiguration,
   AppSecrets,
@@ -15,7 +16,8 @@ import { PrismaCloudContainer } from '../container.ts';
 import { compute } from '../exports/index.ts';
 import { envParam, generatedParam } from '../param.ts';
 import { type PrismaCloudPreflightInput, runPreflight } from '../preflight.ts';
-import { inputSecretNames } from '../preflight-names.ts';
+import { variable } from '../platform-variable.ts';
+import { inputVariableNames } from '../preflight-names.ts';
 import { envSecret } from '../secret.ts';
 
 /** An ArkType copy of `value`: a transform elsewhere in the schema makes ArkType copy its whole input. */
@@ -1098,6 +1100,193 @@ describe('preflight names', () => {
   test('an envSecret() and its ArkType copy are one name to check', () => {
     const key = envSecret('STRIPE_SECRET_KEY');
 
-    expect(inputSecretNames({ a: key, b: copyOf(key) }, 'app.web')).toEqual(['STRIPE_SECRET_KEY']);
+    expect(inputVariableNames({ a: key, b: copyOf(key) }, 'app.web')).toEqual([
+      { name: 'STRIPE_SECRET_KEY', secret: true },
+    ]);
   });
 });
+
+describe('the deploy check of platform variable nodes', () => {
+  let state: FakeState;
+
+  beforeEach(() => {
+    state = { gets: [], posts: [], rows: [] };
+  });
+
+  const commands = (name: string) => [
+    `prisma project env add '${name}=<value>' --project 'proj' --role production`,
+  ];
+
+  const mailGraph = (schema: StandardSchemaV1<unknown, unknown>) =>
+    Load(
+      appRoot('shop', ({ provision }) => {
+        const from = provision(variable({ name: 'EMAIL_FROM' }));
+        const key = provision(variable.secret({ name: 'EMAIL_KEY' }));
+        provision(compute({ name: 'mail', deps: {}, input: schema, build }), {
+          input: { from, key },
+        });
+      }),
+    );
+
+  test('a required unset plain node fails the deploy, naming it and its reader', async () => {
+    state.rows = [{ projectId: 'proj', class: 'production', key: 'EMAIL_KEY', branchId: null }];
+
+    const message = await failureOf(
+      preflightWith(
+        { graph: mailGraph(requiresOneOf('from')), ...production },
+        { client: fakeClient(state) },
+      ),
+    );
+
+    expect(message).toContain('  - EMAIL_FROM  (read by service "shop.mail", field "from")');
+    expect(message).not.toContain('EMAIL_KEY');
+  });
+
+  test('a required unset secret node fails the deploy', async () => {
+    state.rows = [{ projectId: 'proj', class: 'production', key: 'EMAIL_FROM', branchId: null }];
+
+    const message = await failureOf(
+      preflightWith(
+        { graph: mailGraph(requiresSecrets('key')), ...production },
+        { client: fakeClient(state) },
+      ),
+    );
+
+    expect(message).toContain('  - EMAIL_KEY  (read by service "shop.mail", field "key")');
+  });
+
+  test('an optional unset node is reported, never required', async () => {
+    const result = await preflightWith(
+      { graph: mailGraph(anySchema), ...production },
+      { client: fakeClient(state) },
+    );
+
+    expect(result.findings.unset).toEqual([
+      {
+        name: 'EMAIL_FROM',
+        readers: [{ kind: 'field', service: 'shop.mail', path: 'from' }],
+        commands: commands('EMAIL_FROM'),
+      },
+      {
+        name: 'EMAIL_KEY',
+        readers: [{ kind: 'field', service: 'shop.mail', path: 'key' }],
+        commands: commands('EMAIL_KEY'),
+      },
+    ]);
+  });
+
+  test('a node with a row passes and its row time is handed back', async () => {
+    state.rows = [
+      { projectId: 'proj', class: 'production', key: 'EMAIL_FROM', branchId: null },
+      { projectId: 'proj', class: 'production', key: 'EMAIL_KEY', branchId: null },
+    ];
+
+    const result = await preflightWith(
+      { graph: mailGraph(requiresSecrets('key')), ...production },
+      { client: fakeClient(state) },
+    );
+
+    expect(result.findings.unset).toEqual([]);
+    expect([...result.updatedAt.keys()].sort()).toEqual(['EMAIL_FROM', 'EMAIL_KEY']);
+  });
+
+  test('a plain node in a per-key param with no default is required, and one with a default is reported', async () => {
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        const token = provision(variable({ name: 'API_TOKEN' }));
+        const port = provision(variable({ name: 'APP_PORT' }));
+        provision(
+          service({
+            name: 'web',
+            extension: '@prisma/composer-prisma-cloud',
+            type: 'compute',
+            inputs: {},
+            params: { token: string() },
+            build,
+          }),
+          { params: { token } },
+        );
+        provision(compute({ name: 'api', deps: {}, build }), { params: { port } });
+      }),
+    );
+
+    const message = await failureOf(
+      preflightWith({ graph, ...production }, { client: fakeClient(state) }),
+    );
+    state.rows = [{ projectId: 'proj', class: 'production', key: 'API_TOKEN', branchId: null }];
+    const result = await preflightWith({ graph, ...production }, { client: fakeClient(state) });
+
+    expect(message).toContain(
+      '  - API_TOKEN  (read by service "shop.web", per-key param "token")\n' +
+        '      required by service "shop.web": per-key param "token" has no default and is not optional',
+    );
+    expect(result.findings.unset).toEqual([
+      {
+        name: 'APP_PORT',
+        readers: [{ kind: 'param', service: 'shop.api', param: 'port' }],
+        commands: commands('APP_PORT'),
+      },
+    ]);
+  });
+
+  test('an unread plain node, an unread secret node and a secret node only a module receives are each listed once, named by their node', async () => {
+    const mail = module('mail', { input: type({ key: secretString() }) }, () => {});
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        provision(variable({ name: 'UNREAD_FROM' }));
+        provision(variable.secret({ name: 'UNREAD_KEY' }));
+        const key = provision(variable.secret({ name: 'MAIL_KEY' }));
+        provision(mail, { input: { key } });
+      }),
+    );
+
+    const result = await preflightWith({ graph, ...production }, { client: fakeClient(state) });
+
+    expect(result.findings.unset).toEqual([
+      {
+        name: 'MAIL_KEY',
+        readers: [{ kind: 'unread', node: 'shop.mailKey', nodeKind: 'resource' }],
+        commands: commands('MAIL_KEY'),
+      },
+      {
+        name: 'UNREAD_FROM',
+        readers: [{ kind: 'unread', node: 'shop.unreadFrom', nodeKind: 'resource' }],
+        commands: commands('UNREAD_FROM'),
+      },
+      {
+        name: 'UNREAD_KEY',
+        readers: [{ kind: 'unread', node: 'shop.unreadKey', nodeKind: 'resource' }],
+        commands: commands('UNREAD_KEY'),
+      },
+    ]);
+    expect(result.findings.unset[1]?.readers.map(platformVariableReaderText)).toEqual([
+      'named by resource "shop.unreadFrom", read by no service',
+    ]);
+  });
+
+  test('a planted secret under a secret node appears in neither the findings, their rendered readers, nor the error', async () => {
+    const planted = 'Zq7Xw9Vb3kLm2Rt';
+    const hold = { secrets: { EMAIL_KEY: planted }, configuration: { EMAIL_KEY: planted } };
+    const result = await withValues(hold, () =>
+      preflightWith({ graph: mailGraph(anySchema), ...production }, { client: fakeClient(state) }),
+    );
+    const message = await withValues(hold, () =>
+      failureOf(
+        preflightWith(
+          { graph: mailGraph(requiresSecrets('key')), ...production },
+          { client: fakeClient(state) },
+        ),
+      ),
+    );
+
+    const rendered = result.findings.unset
+      .flatMap((variable) => variable.readers.map(platformVariableReaderText))
+      .join('\n');
+    for (const text of [JSON.stringify(result.findings), rendered, message]) {
+      for (let start = 0; start + 4 <= planted.length; start += 1) {
+        expect(text).not.toContain(planted.slice(start, start + 4));
+      }
+    }
+  });
+});
+

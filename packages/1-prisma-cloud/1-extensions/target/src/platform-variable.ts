@@ -1,6 +1,8 @@
 import {
+  type Graph,
   isParamSource,
   isSecretSource,
+  isValueResource,
   type ParamSource,
   type Pointer,
   paramSource,
@@ -55,6 +57,21 @@ export function platformVariableName(source: SecretSource | ParamSource, where: 
     );
   }
   return source.payload.name;
+}
+
+export interface PlatformVariableNode {
+  readonly address: string;
+  readonly name: string;
+  readonly secret: boolean;
+}
+
+export function platformVariableNodes(graph: Graph): readonly PlatformVariableNode[] {
+  return graph.nodes.flatMap(({ id, node }) => {
+    const candidate: unknown = node;
+    if (!isValueResource(candidate)) return [];
+    const { name, secret } = candidate.props;
+    return typeof name === 'string' ? [{ address: id, name, secret: secret === true }] : [];
+  });
 }
 
 export function defaultProvisionId(name: string): string {
