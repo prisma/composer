@@ -18,7 +18,7 @@ import { assertVariableName } from './variable-name.ts';
 
 const PLATFORM_VARIABLE: unique symbol = Symbol.for('prisma:prisma-cloud-platform-variable');
 
-export const PLATFORM_VARIABLE_NODE_TYPE = 'platform-variable';
+const PLATFORM_VARIABLE_NODE_TYPE = 'platform-variable';
 
 /** The payload of every platform variable value: the variable's name, and whether it is a secret. */
 export interface PlatformVariablePayload {
@@ -70,13 +70,24 @@ export interface PlatformVariableNode {
 export function platformVariableNodes(graph: Graph): readonly PlatformVariableNode[] {
   return graph.nodes.flatMap(({ id, node }) => {
     const candidate: unknown = node;
-    if (!isValueResource(candidate)) return [];
+    if (
+      !isValueResource(candidate) ||
+      candidate.extension !== PRISMA_CLOUD_EXTENSION_ID ||
+      candidate.type !== PLATFORM_VARIABLE_NODE_TYPE
+    ) {
+      return [];
+    }
     const { name, secret } = candidate.props;
-    return typeof name === 'string' ? [{ address: id, name, secret: secret === true }] : [];
+    if (typeof name !== 'string') {
+      throw new Error(
+        `The platform variable node "${id}" has no name in its props, so Composer cannot tell which platform variable it declares. Build it with variable() or variable.secret().`,
+      );
+    }
+    return [{ address: id, name, secret: secret === true }];
   });
 }
 
-export function defaultProvisionId(name: string): string {
+function defaultProvisionId(name: string): string {
   return name
     .split('_')
     .filter((part) => part.length > 0)

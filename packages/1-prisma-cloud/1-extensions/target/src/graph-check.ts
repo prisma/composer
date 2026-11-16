@@ -40,22 +40,35 @@ function envParamUses(graph: Graph): readonly EnvParamUse[] {
   return uses;
 }
 
-const secrecy = (node: PlatformVariableNode): string => (node.secret ? 'a secret' : 'plain');
+const quotedList = (addresses: readonly string[]): string => {
+  const quoted = addresses.map((address) => `"${address}"`);
+  const last = quoted.pop();
+  return quoted.length === 0 ? `${last}` : `${quoted.join(', ')} and ${last}`;
+};
+
+function secrecyText(nodes: readonly PlatformVariableNode[]): string {
+  const plain = nodes.filter((node) => !node.secret).map((node) => node.address);
+  const secret = nodes.filter((node) => node.secret).map((node) => node.address);
+  if (plain.length === 0 || secret.length === 0) return '';
+  const plainText = `${quotedList(plain)} ${plain.length === 1 ? 'is' : 'are'} plain`;
+  const secretText = `${quotedList(secret)} ${secret.length === 1 ? 'is a secret' : 'are secrets'}`;
+  return nodes[0]?.secret === true
+    ? ` ${secretText} and ${plainText}.`
+    : ` ${plainText} and ${secretText}.`;
+}
 
 function checkOneNodePerName(nodes: readonly PlatformVariableNode[]): void {
-  const byName = new Map<string, PlatformVariableNode>();
+  const byName = new Map<string, PlatformVariableNode[]>();
   for (const node of nodes) {
-    const first = byName.get(node.name);
-    if (first === undefined) {
-      byName.set(node.name, node);
-      continue;
-    }
-    const kinds =
-      first.secret === node.secret
-        ? ''
-        : ` "${first.address}" is ${secrecy(first)} and "${node.address}" is ${secrecy(node)}.`;
+    const declared = byName.get(node.name);
+    if (declared === undefined) byName.set(node.name, [node]);
+    else declared.push(node);
+  }
+  for (const [name, declared] of byName) {
+    if (declared.length < 2) continue;
+    const times = declared.length === 2 ? 'twice' : `${declared.length} times`;
     throw new GraphCheckError(
-      `The platform variable "${node.name}" is declared twice in the app root, by "${first.address}" and "${node.address}". Declare each platform variable once and pass its value to every module that needs it.${kinds}`,
+      `The platform variable "${name}" is declared ${times} in the app root, by ${quotedList(declared.map((node) => node.address))}. Declare each platform variable once and pass its value to every module that needs it.${secrecyText(declared)}`,
     );
   }
 }

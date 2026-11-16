@@ -1,12 +1,21 @@
 import { describe, expect, test } from 'bun:test';
-import { appRoot, GraphCheckError, Load, module } from '@internal/core';
+import {
+  appRoot,
+  GraphCheckError,
+  Load,
+  module,
+  type Pointer,
+  paramSource,
+  valueResource,
+} from '@internal/core';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { prismaCloud } from '../exports/control.ts';
 import { compute } from '../exports/index.ts';
+import { PRISMA_CLOUD_EXTENSION_ID } from '../extension-id.ts';
 import { checkGraph } from '../graph-check.ts';
 import { envParam } from '../param.ts';
-import { variable } from '../platform-variable.ts';
+import { platformVariableNodes, variable } from '../platform-variable.ts';
 import { envSecret } from '../secret.ts';
 
 const build = {
@@ -132,6 +141,59 @@ describe('the graph check of platform variable nodes', () => {
 
     expect(thrown(() => checkGraph(graph))).toBe(
       'The platform variable "EMAIL_FROM" is declared twice in the app root, by "shop.emailFrom" and "shop.sender". Declare each platform variable once and pass its value to every module that needs it. "shop.emailFrom" is plain and "shop.sender" is a secret.',
+    );
+  });
+
+  test('three nodes with one name fail, naming every node and which are plain and which are secrets', () => {
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        provision(variable({ name: 'EMAIL_FROM' }), { id: 'a' });
+        provision(variable.secret({ name: 'EMAIL_FROM' }), { id: 'b' });
+        provision(variable({ name: 'EMAIL_FROM' }), { id: 'c' });
+      }),
+    );
+
+    expect(thrown(() => checkGraph(graph))).toBe(
+      'The platform variable "EMAIL_FROM" is declared 3 times in the app root, by "shop.a", "shop.b" and "shop.c". Declare each platform variable once and pass its value to every module that needs it. "shop.a" and "shop.c" are plain and "shop.b" is a secret.',
+    );
+  });
+
+  test('a value resource of another extension is not a platform variable node', () => {
+    const foreign = valueResource({
+      name: 'foreign',
+      extension: 'other/pack',
+      type: 'platform-variable',
+      props: { name: 'EMAIL_FROM' },
+      value: paramSource<{ readonly name: string }, Pointer<string>>({ name: 'EMAIL_FROM' }),
+    });
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        provision(variable({ name: 'EMAIL_FROM' }));
+        provision(foreign);
+      }),
+    );
+
+    expect(() => checkGraph(graph)).not.toThrow();
+    expect(platformVariableNodes(graph).map((node) => node.address)).toEqual(['shop.emailFrom']);
+  });
+
+  test('a platform variable node whose props hold no name is refused', () => {
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        provision(
+          valueResource({
+            name: 'broken',
+            extension: PRISMA_CLOUD_EXTENSION_ID,
+            type: 'platform-variable',
+            props: { name: 5 },
+            value: paramSource<{ readonly name: string }, Pointer<string>>({ name: 'X' }),
+          }),
+        );
+      }),
+    );
+
+    expect(() => checkGraph(graph)).toThrow(
+      'The platform variable node "shop.broken" has no name in its props, so Composer cannot tell which platform variable it declares. Build it with variable() or variable.secret().',
     );
   });
 
