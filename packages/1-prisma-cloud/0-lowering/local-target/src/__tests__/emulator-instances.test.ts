@@ -67,7 +67,6 @@ function artifactFor(address: string, version: string): string {
   return packageComputeArtifact({ id: address, bundleDir, appEntry: 'server.js', address }).path;
 }
 
-/** A packaged artifact whose service answers with the values of `names` in its environment, as JSON. */
 function envEchoArtifactFor(address: string, names: readonly string[]): string {
   const bundleDir = fs.mkdtempSync(path.join(root, `bundle-${address}-`));
   fs.writeFileSync(

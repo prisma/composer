@@ -62,7 +62,7 @@ describe('dev — changed adapter values', () => {
     expect(result.events).toContainEqual({ kind: 'message', severity: 'warn', text: WARNING });
   });
 
-  test('value-reads-changed renders as a warning that names each node in one clause', async () => {
+  test('a change in the platform variables the app reads is a warning that names each node in one clause', async () => {
     const expected =
       'The platform variables the app reads changed since dev started: reads of "shop.smtpPort" were added, reads of "shop.emailFrom" were removed, and "shop.sender" was changed. Restart dev to apply them; rebuilds are paused until then.';
 
@@ -79,7 +79,7 @@ describe('dev — changed adapter values', () => {
     expect(warnings).toEqual([{ kind: 'message', severity: 'warn', text: expected }]);
   });
 
-  test('value-reads-changed leaves out a clause with no nodes, and lists several nodes in one clause', async () => {
+  test('a change in the platform variables the app reads leaves out a clause with no nodes, and lists several nodes in one clause', async () => {
     const expected =
       'The platform variables the app reads changed since dev started: reads of "shop.a", "shop.b" and "shop.c" were added and "shop.d" and "shop.e" were changed. Restart dev to apply them; rebuilds are paused until then.';
 

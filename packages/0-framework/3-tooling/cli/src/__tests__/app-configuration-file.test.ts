@@ -72,7 +72,6 @@ function shopGraph(
   return Load(root, { configuration });
 }
 
-/** What `prepareSecondProcess` takes from `graph`, with the texts a dev preflight found. */
 const factsOf = (graph: Graph, plainVariableText: Record<string, string> = {}) => ({
   appConfigurationRead: graph.appConfigurationRead,
   plainVariableText,
@@ -249,7 +248,7 @@ describe('the app configuration file', () => {
       code: 'CONFIG.SECRET_AS_PLAIN_VALUE',
       message:
         'The platform variable "EMAIL_FROM", which prisma dev read from the `config` adapters, holds the value of the secret "EMAIL_DELIVERY_CREDENTIAL". Composer hands the second process every plain value in a file, and never writes a secret to a file.',
-      fix: 'keep the value of "EMAIL_DELIVERY_CREDENTIAL" out of the platform variable "EMAIL_FROM", or give "EMAIL_FROM" a different value.',
+      fix: 'Keep the value of "EMAIL_DELIVERY_CREDENTIAL" out of the platform variable "EMAIL_FROM", or give "EMAIL_FROM" a different value.',
     });
     expect(JSON.stringify({ ...error, message: error.message })).not.toContain('cred-77-secret');
   });

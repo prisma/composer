@@ -620,7 +620,6 @@ describe('prisma dev preflight', () => {
       '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },
     };
 
-    /** `shop.mail` reads EMAIL_FROM in its input field `from`; `shop.web` reads API_TOKEN in a per-key param of the given kind. */
     const plainGraph = (
       schema: StandardSchemaV1<unknown, unknown>,
       token = string({ default: 'local-token' }),

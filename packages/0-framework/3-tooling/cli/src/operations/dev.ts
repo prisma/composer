@@ -25,7 +25,7 @@ export type DevEvent =
   | { readonly kind: 'config-changed'; readonly file: string }
   /** What the `config` or `secrets` adapters return changed since the session started. The session keeps the values it started with and stops rebuilding until it is restarted. */
   | { readonly kind: 'values-changed' }
-  /** The value resources the app reads changed since the session started, named by address: reads only added, reads only removed, and changed otherwise. The session stops rebuilding until it is restarted. */
+  /** The value resources the app reads changed since the session started. `added` holds the nodes whose reads were only added, `removed` those whose reads were only removed, and `changed` every other changed node, each by address. The session stops rebuilding until it is restarted. */
   | {
       readonly kind: 'value-reads-changed';
       readonly added: readonly string[];
