@@ -230,7 +230,7 @@ What changes on core's public and extension-facing surface:
 
 Core's messages that name a removed function say instead:
 
-- the `resolve()` refusal of a returned source, which says "such as envSecret() or envParam()", names `generatedParam()`, `serviceOrigin()` and a platform variable node's value;
+- the `resolve()` refusal of a returned source, which says "such as envSecret() or envParam()", says the function returned a source, a value known only at boot, and names no function;
 - the refusal of `secrets` on a service's `provision()`, which says a service takes its secrets "as envSecret(...) leaves", says the service takes its secrets as values bound to `secretString()` fields of its `input` binding;
 - the unbound-param error at deploy, which suggests "e.g. envParam('NAME')", says "a literal value or a value known only at boot". Core's messages do not name a target's concept.
 
@@ -429,7 +429,7 @@ Slice 2's handling of a platform variable applies to a node's value, with these 
 - the message for an array position that reads a platform variable with no value, plain or secret, and its fallback for a value that should not be absent;
 - the refusal of a binding value that is not plain data, which says a binding's leaves are literals, `envParam(...)` or `envSecret(...)`, and to "bind envSecret('NAME') instead";
 - the schema-failure note, which says "envSecret() included";
-- the refusal of a `SecretBox` in a binding, in the target and in core;
+- the refusal of a `SecretBox` in a binding. The target's message says to provision `variable.secret({ name: 'NAME' })` in the app root and bind its value. Core's message says to bind a secret source or pass on an input field typed `secretString()`, and names no target concept;
 - the messages given where the serializer and preflight need a variable's name and the source has none, which become the message in 5.1;
 - the app configuration file's known-secret refusal in the CLI, which says "which an envSecret() in the graph reads" and whose fix says "Read the secret with envSecret('NAME')". It says "which a platform secret in the graph reads", and the fix says to provision `variable.secret({ name: 'NAME' })` in the app root;
 - the `prisma dev` advice on where to set a missing variable, which says "the `config` list for an env-sourced param". It says "the `config` list for a plain platform variable".
