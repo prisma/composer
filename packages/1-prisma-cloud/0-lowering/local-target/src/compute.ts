@@ -338,7 +338,7 @@ export function LocalDeploymentProvider(
             input.devDir,
             address,
             instance.port,
-            input.configurationKeyText,
+            { ...input.configurationKeyText, ...input.plainVariableText },
             input.namedSecrets,
           );
           try {

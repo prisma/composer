@@ -61,7 +61,13 @@ async function reconcileApp(container: ContainerInstance, address: string): Prom
   const provider = await Effect.runPromise(
     App.Provider.pipe(
       Effect.provide(
-        LocalAppProvider({ container, devDir, configurationKeyText: {}, namedSecrets: {} }),
+        LocalAppProvider({
+          container,
+          devDir,
+          configurationKeyText: {},
+          plainVariableText: {},
+          namedSecrets: {},
+        }),
       ),
     ),
   );
