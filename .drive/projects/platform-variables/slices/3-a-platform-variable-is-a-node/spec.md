@@ -499,6 +499,8 @@ The platform variables the app reads changed since dev started: reads of "shop.s
 
 Running the dev preflight on every rebuild, so a changed read needs no restart, is recorded in `deferred.md` (section 10).
 
+**Known limit: an edit to the app's own modules.** On a rebuild, `prisma dev`'s first process loads the entry again with `import()`, and the runtime returns the module it loaded at start. So after an edit to `module.ts` the first process still holds the graph from the start, and this check sees no change; the check fires when the graph the first process loads does change. The second process does load the edited code. An edit that adds or removes a node then fails the converge with the existing error that the two processes built different graphs, and an edit that changes a read without changing a node address converges with the values worked out at start. This is how `prisma dev` handles every edit to the graph today, not only platform variables. Making a rebuild load the edited modules is recorded in `deferred.md` (section 10).
+
 Load reads no platform variable's value, so the deploy reads none.
 
 ### 5.7 The deploy report and findings
@@ -722,6 +724,7 @@ Sections 4 to 8.
 
 ### Changes to `deferred.md`, made with this design
 
+- New: a rebuild under `prisma dev` loads the app's modules as they were at start, so an edit to the graph is not seen by the first process (5.6, "Known limit").
 - Remove "Removing `envSecret()` and `envParam()`": this slice does it.
 - Remove "A separate export for `envParam()` in per-key params": the function is gone.
 - Remove "The one-meaning-per-name check misses an `envParam()` passed indirectly": the function is gone, and a node and a root input field are both declared in the root, where the check sees them.
