@@ -111,26 +111,20 @@ function refuseSecretsIn(
   plainVariableText: Readonly<Record<string, string>>,
   knownSecrets: KnownSecrets,
 ): void {
-  const readPlaces = [
-    ...read.rootInput.flatMap((field) =>
-      textIn(field.value, field.path).map(({ at, text }) => ({
-        where: `Root input field input.${at.join('.')}`,
-        text,
-      })),
-    ),
-    ...Object.entries(read.configurationKeyText).map(([key, text]) => ({
-      where: `Configuration key "${key}"`,
+  const readPlaces = read.rootInput.flatMap((field) =>
+    textIn(field.value, field.path).map(({ at, text }) => ({
+      where: `Root input field input.${at.join('.')}`,
       text,
     })),
-  ];
+  );
   for (const { where, text } of readPlaces) {
     const name = knownSecrets.nameIn(text);
     if (name === undefined) continue;
     throw new CliStructuredError(
       'CONFIG.SECRET_AS_PLAIN_VALUE',
-      `${where} holds the value of the secret "${name}", which an envSecret() in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
+      `${where} holds the value of the secret "${name}", which a platform secret in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
       {
-        fix: `Read the secret with envSecret('${name}') where it is used, or give this plain value text that does not contain the value of "${name}".`,
+        fix: `Provision variable.secret({ name: '${name}' }) in the app root and pass its value to where it is used, or give this plain value text that does not contain the value of "${name}".`,
       },
     );
   }
@@ -282,10 +276,6 @@ export function readAppConfigurationFile(
   if (!isRecord(read)) throw notComposers('appConfigurationRead is not an object');
   const rootInput = rootFieldsOf(read['rootInput']);
   if (rootInput === undefined) throw notComposers('rootInput is not a list of fields');
-  const configurationKeyText = textByKeyOf(read['configurationKeyText']);
-  if (configurationKeyText === undefined) {
-    throw notComposers('configurationKeyText is not an object of text');
-  }
   const plainVariableText = textByKeyOf(parsed['plainVariableText']);
   if (plainVariableText === undefined) {
     throw notComposers('plainVariableText is not an object of text');
@@ -293,7 +283,7 @@ export function readAppConfigurationFile(
   const addresses = parsed['nodeAddresses'];
   if (!isTextList(addresses)) throw notComposers('nodeAddresses is not a list of node addresses');
   return {
-    appConfigurationRead: { rootInput, configurationKeyText },
+    appConfigurationRead: { rootInput },
     plainVariableText,
     nodeAddresses: addresses,
   };

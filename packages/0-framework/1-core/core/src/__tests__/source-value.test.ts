@@ -9,7 +9,7 @@ import {
   secretSource,
   service,
 } from '../node.ts';
-import { isValue } from '../value.ts';
+import { isValue, resolve } from '../value.ts';
 import { anyInputSchema } from './helpers.ts';
 
 const build = {
@@ -40,9 +40,8 @@ const loadError = (run: () => unknown): LoadError => {
   throw new Error('expected a LoadError');
 };
 
-const pointer = (name: string) => secretSource({ name }, { label: `envSecret('${name}')` });
-const variable = (name: string) =>
-  paramSource({ name }, { label: `envParam('${name}')`, configurationKey: name });
+const pointer = (name: string) => secretSource({ name }, { label: `the secret "${name}"` });
+const variable = (name: string) => paramSource({ name }, { label: `the variable "${name}"` });
 
 describe('building a source', () => {
   test('secretSource() and paramSource() return values that are also sources', () => {
@@ -71,18 +70,12 @@ describe('building a source', () => {
     expect(copy.payload).toEqual({ name: 'X' });
   });
 
-  test('paramSource() refuses a configuration key beside redacted, and an empty label or configuration key', () => {
-    expect(() => paramSource({}, { configurationKey: 'X', redacted: true })).toThrow(
-      'paramSource() takes configurationKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.',
-    );
+  test('paramSource() and secretSource() refuse an empty label', () => {
     expect(() => paramSource({}, { label: '' })).toThrow(
       'paramSource() label must be a non-empty string.',
     );
     expect(() => secretSource({}, { label: '' })).toThrow(
       'secretSource() label must be a non-empty string.',
-    );
-    expect(() => paramSource({}, { configurationKey: '' })).toThrow(
-      'paramSource() configurationKey must be a non-empty string.',
     );
   });
 });
@@ -91,7 +84,7 @@ describe('reading a source', () => {
   test('turning a pointer into text or a number fails naming it and saying it is known only at boot', () => {
     const s = pointer('X') as never as { toString(): string; valueOf(): unknown };
     const message = (what: string) =>
-      `envSecret('X') is known only at boot: the deploy holds a pointer to it, never its value, and ${what}. ` +
+      `the secret "X" is known only at boot: the deploy holds a pointer to it, never its value, and ${what}. ` +
       'A module body can only pass it on, into a provision() binding; to compute with the value, do it in the service that reads it.';
     const text = 'it was turned into text (a template literal or String())';
     const operations: [() => unknown, string][] = [
@@ -112,15 +105,27 @@ describe('reading a source', () => {
     }
   });
 
-  test('turning envParam() into text in a module body fails as a value', () => {
+  test('turning a param source into text in a module body fails saying it is known only at boot', () => {
     const root = module('shop', ({ provision }) => {
       provision(echoService(), { input: { greeting: `${variable('G')}` as never } });
     });
 
     expect(loadError(() => Load(root)).message).toBe(
-      "envParam('G') is a value, not its real value, and it was turned into text (a template " +
-        'literal or String()). A module body can only pass it on: into a provision() binding or ' +
-        "as a resolve() dependency. To compute with it, list it: resolve([envParam('G')], ([v]) => …).",
+      'the variable "G" is known only at boot: the deploy holds a pointer to it, never its value, ' +
+        'and it was turned into text (a template literal or String()). A module body can only pass ' +
+        'it on, into a provision() binding; to compute with the value, do it in the service that reads it.',
+    );
+  });
+
+  test('listing a param source in resolve() fails with the pointer refusal', () => {
+    const root = module('shop', ({ provision }) => {
+      provision(echoService(), {
+        input: { greeting: resolve([variable('G')], ([greeting]) => greeting) },
+      });
+    });
+
+    expect(loadError(() => Load(root)).message).toStartWith(
+      'The resolve() function for input key "greeting" of service "shop.echo" lists the variable "G"',
     );
   });
 });

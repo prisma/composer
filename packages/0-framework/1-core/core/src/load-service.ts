@@ -128,6 +128,6 @@ export function loadService(root: ServiceNode, rootId: NodeId): Graph {
     params: [],
     secretSources: [],
     valueReads: [],
-    appConfigurationRead: { rootInput: [], configurationKeyText: {} },
+    appConfigurationRead: { rootInput: [] },
   };
 }

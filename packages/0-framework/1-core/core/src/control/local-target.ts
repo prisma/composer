@@ -55,7 +55,6 @@ export function localTargetProviders(
   resolved: ReadonlyMap<string, LocalTargetDescriptor>,
   containers: ReadonlyMap<string, ContainerInstance>,
   devDir: string,
-  configurationKeyText: Readonly<Record<string, string>>,
   plainVariableText: Readonly<Record<string, string>>,
   namedSecrets: NamedSecrets,
 ): Layer.Layer<never> {
@@ -63,7 +62,6 @@ export function localTargetProviders(
     descriptor.providers({
       container: containers.get(id),
       devDir,
-      configurationKeyText,
       plainVariableText,
       namedSecrets,
     }),

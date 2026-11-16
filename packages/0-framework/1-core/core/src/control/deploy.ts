@@ -221,7 +221,7 @@ export interface LowerOptions {
   readonly name: string;
   /** The environment being deployed, as `--environment` gave it. Required by any value over `environment.name`; the generated stack files always pass it. */
   readonly environment?: string;
-  /** What the first process's Load read from the app configuration (ADR-0062), from the app configuration file. Load takes the root's input and every configuration key's text from it, and the Prisma Cloud serializer reads a service's `envParam()` leaves from its `configurationKeyText`. The generated stack files pass it. */
+  /** What the first process's Load read from the app configuration (ADR-0062), from the app configuration file. Load takes the root's input from it. The generated stack files pass it. */
   readonly appConfigurationRead?: AppConfigurationRead;
   /** The node addresses of the graph the first process built. When given, lowering refuses a graph whose addresses differ. The generated stack files pass them. */
   readonly firstProcessNodeAddresses?: readonly string[];
@@ -368,8 +368,8 @@ function resolveParam(
   if (param.optional === true) return undefined;
   throw new LowerError(
     `Param "${name}" of "${serviceId}" (service "${node.name}") has no default, is not optional, ` +
-      'and was not bound at provision — bind it with a literal value or a param source ' +
-      "(e.g. envParam('NAME')) on its provision() call, or give it a default.",
+      'and was not bound at provision — bind it on its provision() call with a literal value or a ' +
+      'value known only at boot, or give it a default.',
   );
 }
 

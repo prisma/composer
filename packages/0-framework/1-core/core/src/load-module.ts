@@ -428,28 +428,28 @@ function flatten(
         `Duplicate provision id "${id}" in module "${selfId}": "${fullAddress}" already holds ${describeNode(holder)}, and ${describeNode(child)} takes the same id. Give one of them a different id with provision(node, { id: '…' }).`,
       );
     }
-    const valueOrigin = child.kind === 'resource' ? valueResourceOrigin(child) : undefined;
-    if (valueOrigin !== undefined) {
-      if (typeof moduleNode.isRoot !== 'function' || !moduleNode.isRoot()) {
-        throw new LoadError(
-          `Module "${selfId}" provisions "${id}", a resource that is a value. Only the app root, built with appRoot(), can provision one. Provision it in the root and pass its value down through this module's input.`,
-        );
-      }
-      const also =
-        child.kind === 'resource' && child.provides !== undefined
-          ? 'provides a contract'
-          : child.kind === 'resource' && Object.keys(slotsOf(child)).length > 0
-            ? 'declares dependency slots'
-            : undefined;
-      if (also !== undefined) {
-        throw new LoadError(
-          `Resource "${fullAddress}" is a value and also ${also}. A resource that is a value provides no contract and has no dependencies.`,
-        );
-      }
-    }
     localNodes.set(id, child);
 
     if (child.kind === 'resource') {
+      const valueOrigin = valueResourceOrigin(child);
+      if (valueOrigin !== undefined) {
+        if (typeof moduleNode.isRoot !== 'function' || !moduleNode.isRoot()) {
+          throw new LoadError(
+            `Module "${selfId}" provisions "${id}", a resource that is a value. Only the app root, built with appRoot(), can provision one. Provision it in the root and pass its value down through this module's input.`,
+          );
+        }
+        const also =
+          child.provides !== undefined
+            ? 'provides a contract'
+            : Object.keys(slotsOf(child)).length > 0
+              ? 'declares dependency slots'
+              : undefined;
+        if (also !== undefined) {
+          throw new LoadError(
+            `Resource "${fullAddress}" is a value and also ${also}. A resource that is a value provides no contract and has no dependencies.`,
+          );
+        }
+      }
       if (provisionWiring !== undefined) {
         throw new LoadError(
           `provision("${id}") received deps for a resource — a resource's slots are wired when it is constructed, not at provision().`,
@@ -524,7 +524,7 @@ function flatten(
       if (provisionSecrets !== undefined) {
         throw new LoadError(
           `provision("${id}") received secrets for a service — a service takes its secrets as ` +
-            'envSecret(...) leaves of its `input` binding (ADR-0042), not a secrets map.',
+            'values bound to secretString() fields of its `input` binding (ADR-0042), not a secrets map.',
         );
       }
       // The input binding pairs 1:1 with a declared input schema — a schema
@@ -788,8 +788,6 @@ export function loadModule(root: ModuleNode | AppRootNode, opts?: LoadOptions): 
   }
   const resolved = resolveValues({
     environment: opts?.environment,
-    configuration: opts?.configuration,
-    appConfigurationRead: opts?.appConfigurationRead,
     inputBindings,
     params: paramBindings,
     moduleInputs,

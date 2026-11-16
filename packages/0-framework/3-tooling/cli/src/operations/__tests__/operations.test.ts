@@ -895,11 +895,11 @@ describe('deploy()', () => {
     expect(fs.existsSync(failureFile ?? '')).toBe(false);
   });
 
-  test('an engine failure cause never carries a known secret read from a dotenv file, and keeps a dotenv value no envSecret() names', async () => {
+  test('an engine failure cause never carries a known secret read from a dotenv file, and keeps a dotenv value no secret source names', async () => {
     const app = makeAppDir('fixture-app', 'WEBHOOK_SIG');
     const onlyInDotenvFile = 'dotenv-only-SENTINEL-4f1c';
     const inBothPools = 'shared-name-SENTINEL-77ab';
-    const secretNamedConfigValue = 'secret-named-SENTINEL-90cd';
+    const namedSecretConfigValue = 'secret-named-SENTINEL-90cd';
     fs.writeFileSync(
       path.join(app.dir, '.env.ci-7.local'),
       `SIGNING_SALT=${onlyInDotenvFile}\nWEBHOOK_SIG=${inBothPools}\n`,
@@ -914,7 +914,7 @@ describe('deploy()', () => {
           config: {
             value: {
               ...fakeConfig(),
-              config: [() => ({ WEBHOOK_SIG: inBothPools, STRIPE_KEY: secretNamedConfigValue })],
+              config: [() => ({ WEBHOOK_SIG: inBothPools, STRIPE_KEY: namedSecretConfigValue })],
               secrets: [dotenv()],
             },
             file: path.join(app.dir, 'prisma.config.ts'),
@@ -927,7 +927,7 @@ describe('deploy()', () => {
             if (resultFile === undefined) throw new Error('the result-file env var must be set');
             fs.writeFileSync(
               engineFailureFilePath(resultFile),
-              `error: rejected ${onlyInDotenvFile}, ${inBothPools} and ${secretNamedConfigValue}`,
+              `error: rejected ${onlyInDotenvFile}, ${inBothPools} and ${namedSecretConfigValue}`,
             );
             return { exitCode: 1, signal: null };
           },
@@ -941,7 +941,7 @@ describe('deploy()', () => {
       `error: rejected ${onlyInDotenvFile}, [redacted] and [redacted]`,
     );
     expect(JSON.stringify(result.failure)).not.toContain(inBothPools);
-    expect(JSON.stringify(result.failure)).not.toContain(secretNamedConfigValue);
+    expect(JSON.stringify(result.failure)).not.toContain(namedSecretConfigValue);
   });
 
   test('an engine failure with no recorded cause keeps the bare status sentence and no engineCause', async () => {
@@ -1912,10 +1912,10 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
 
   test("the dev preflight's payload reaches the alchemy process", async () => {
     const env = await childEnvOfDev(() =>
-      Promise.resolve({ payload: 'dev:{"absentSecrets":[]}', plainVariableText: {} }),
+      Promise.resolve({ payload: 'dev:{"absentVariables":[]}', plainVariableText: {} }),
     );
 
-    expect(env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_EXTENSION']).toBe('dev:{"absentSecrets":[]}');
+    expect(env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_EXTENSION']).toBe('dev:{"absentVariables":[]}');
   }, 15_000);
 
   test('a stale payload in the shell is blanked for every configured extension', async () => {
@@ -4259,16 +4259,15 @@ describe.skipIf(process.platform === 'win32')(
   },
 );
 
-/** An app whose root declares `input: type({ GREETING: 'string' })` and binds it, the configuration key `APP_ORIGIN` and the secrets key `secretsKey` into its service. */
+/** An app whose root declares `input: type({ GREETING: 'string' })` and binds it and the secrets key `secretsKey` into its service. */
 function makeSecondProcessAppDir(secretsKey = 'S13_SECRET'): { dir: string; entryPath: string } {
   const app = makeAppDir('hello-second');
   fs.writeFileSync(
     app.entryPath,
     [
-      `import { appRoot, paramSource, secretSource, service } from ${JSON.stringify(coreIndex)};`,
+      `import { appRoot, secretSource, service } from ${JSON.stringify(coreIndex)};`,
       `import { type } from ${JSON.stringify(arktypeEntry)};`,
       '',
-      'const configured = (key) => paramSource({ key }, { label: "configured(\'" + key + "\')", configurationKey: key });',
       'const secret = (key) => secretSource({ key }, { label: "secret(\'" + key + "\')", secretsKey: key });',
       '',
       'const app = service({',
@@ -4284,7 +4283,7 @@ function makeSecondProcessAppDir(secretsKey = 'S13_SECRET'): { dir: string; entr
       "export default appRoot('hello-second', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {",
       '  provision(app, {',
       "    id: 'app',",
-      `    input: { greeting: input.GREETING, origin: configured('APP_ORIGIN'), key: secret(${JSON.stringify(secretsKey)}) },`,
+      `    input: { greeting: input.GREETING, key: secret(${JSON.stringify(secretsKey)}) },`,
       '  });',
       '});',
       '',
@@ -4353,7 +4352,6 @@ describe('the second process reads what the first process read', () => {
         json: {
           appConfigurationRead: {
             rootInput: [{ path: ['GREETING'], value: 'hello' }],
-            configurationKeyText: { APP_ORIGIN: 'https://origin.example' },
           },
           plainVariableText: {},
           nodeAddresses: nodeAddresses(graph),
@@ -4398,7 +4396,6 @@ describe('the second process reads what the first process read', () => {
     expect(json).toEqual({
       appConfigurationRead: {
         rootInput: [{ path: ['GREETING'], value: 'hello' }],
-        configurationKeyText: { APP_ORIGIN: 'https://origin.example' },
       },
       plainVariableText: {},
       nodeAddresses: ['hello-second', 'hello-second.app'],
@@ -4481,12 +4478,6 @@ describe('the second process reads what the first process read', () => {
       secrets: { S13_SECRET: 'plain-SECRET-91' },
       where: 'Root input field input.GREETING',
     },
-    {
-      what: 'a configuration key holding the text under a secrets key',
-      configuration: { ...values(), APP_ORIGIN: 'plain-SECRET-91' },
-      secrets: { S13_SECRET: 'plain-SECRET-91' },
-      where: 'Configuration key "APP_ORIGIN"',
-    },
   ];
   for (const { what, configuration, secrets, where } of refusedPlainValues) {
     test(`deploy refuses ${what}, before writing any file or starting the second process`, async () => {
@@ -4518,7 +4509,7 @@ describe('the second process reads what the first process read', () => {
       if (result.ok) throw new Error('the deploy should fail');
       expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
       expect(result.failure.message).toBe(
-        `${where} holds the value of the secret "S13_SECRET", which an envSecret() in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
+        `${where} holds the value of the secret "S13_SECRET", which a platform secret in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
       );
       expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
       expect(started).toBe(false);
@@ -4528,7 +4519,7 @@ describe('the second process reads what the first process read', () => {
     });
   }
 
-  test('a known limit: an adapter failure before Load is not redacted by a value only an envSecret() names', async () => {
+  test('a known limit: an adapter failure before Load is not redacted by a value only a secret source names', async () => {
     const app = makeSecondProcessAppDir();
 
     const result = await silently(() =>
@@ -4696,7 +4687,7 @@ describe('no known secret is printed', () => {
     expect(failed.seen.stdout).toBe('[redacted] and more\n');
   }, 15_000);
 
-  test('with the default lists, a secret known only because an envSecret() names it reaches no file, report, reporter, error or output', async () => {
+  test('with the default lists, a secret known only because a secret source names it reaches no file, report, reporter, error or output', async () => {
     const sentinel = 'default-SENTINEL-7c1e';
     const app = makeSecondProcessAppDir('MAILER_X');
     const finished: string[] = [];
@@ -4779,7 +4770,7 @@ describe('no known secret is printed', () => {
     expect(seen.stdout).toBe('printed [redacted]\n');
   }, 15_000);
 
-  test('with dotenv() and environmentVariables() in both lists, only the value an envSecret() names is redacted', async () => {
+  test('with dotenv() and environmentVariables() in both lists, only the value a secret source names is redacted', async () => {
     const app = makeAppDir('hello-email');
     fs.writeFileSync(
       app.entryPath,
@@ -4803,7 +4794,7 @@ describe('no known secret is printed', () => {
         '    input: {',
         '      mode: input.EMAIL_DELIVERY_MODE,',
         '      from: input.EMAIL_FROM,',
-        "      credential: secretSource({ key: 'EMAIL_DELIVERY_CREDENTIAL' }, { label: \"envSecret('EMAIL_DELIVERY_CREDENTIAL')\", secretsKey: 'EMAIL_DELIVERY_CREDENTIAL' }),",
+        "      credential: secretSource({ key: 'EMAIL_DELIVERY_CREDENTIAL' }, { label: \"secret('EMAIL_DELIVERY_CREDENTIAL')\", secretsKey: 'EMAIL_DELIVERY_CREDENTIAL' }),",
         '    },',
         '  });',
         '});',

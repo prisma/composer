@@ -1,6 +1,6 @@
 /**
- * Type-level rules for provision-time param binding (env-sourced config
- * params): `paramSource()` is a `ParamSource`, and `provision()` accepts a
+ * Type-level rules for provision-time param binding: `paramSource()` is a
+ * `ParamSource`, and `provision()` accepts a
  * literal typed by the param's own schema OR a `ParamSource` — never a value
  * the schema doesn't produce. Type-only (vitest `--typecheck`, never executed).
  */

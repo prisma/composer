@@ -7,8 +7,8 @@
  * and reversing it (see core-model.md § Runtime). Core never stringifies and
  * never touches an environment.
  *
- * Secrets are NOT params — they ride the service's input binding as
- * `envSecret(...)` leaves (ADR-0042). A param is never secret.
+ * Secrets are NOT params — they ride the service's input binding as secret
+ * sources (ADR-0042). A param is never secret.
  */
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { Graph, InputBindingUse, ParamBinding, SecretSourceUse } from './graph-types.ts';
@@ -63,7 +63,7 @@ export interface Connection<P extends Params = Params, C = unknown> {
  * absent). `schema` is a data-only projection of the param's Standard Schema
  * (JSON Schema when the vendor supports the optional conversion, a `{ vendor }`
  * tag otherwise) — never the param's functions. Physical locations are the
- * target pack's business. Secrets are not here: they are `secretString()` fields of a service's input, bound with `envSecret()`.
+ * target pack's business. Secrets are not here: they are `secretString()` fields of a service's input, bound to secret sources.
  */
 export interface ConfigDeclaration {
   readonly owner: 'service' | { readonly input: string };
@@ -142,8 +142,8 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
  * The app's input manifest: every service input binding a `provision()` call
  * supplied (ADR-0042). Pure graph introspection, TARGET-AGNOSTIC — a deploy
  * target's recursive descent classifies the binding's leaves (its preflight
- * verifies each `envSecret` leaf's platform var exists before deploy; the
- * values are provisioned out-of-band).
+ * can check, before deploy, that each value a source names exists; the
+ * values are set out-of-band).
  */
 export function inputManifest(graph: Graph): readonly InputBindingUse[] {
   return graph.inputBindings;

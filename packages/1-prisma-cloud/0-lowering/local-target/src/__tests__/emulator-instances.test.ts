@@ -118,7 +118,6 @@ async function deploy(
         LocalDeploymentProvider({
           container: forContainer,
           devDir,
-          configurationKeyText: {},
           plainVariableText: {},
           namedSecrets: {},
         }),
@@ -142,7 +141,6 @@ async function deploymentDiff(devDir: string, output: Deployment['Attributes']):
         LocalDeploymentProvider({
           container,
           devDir,
-          configurationKeyText: {},
           plainVariableText: {},
           namedSecrets: {},
         }),
@@ -161,7 +159,6 @@ async function appProvider(devDir: string) {
         LocalAppProvider({
           container,
           devDir,
-          configurationKeyText: {},
           plainVariableText: {},
           namedSecrets: {},
         }),
@@ -327,7 +324,6 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
             LocalDeploymentProvider({
               container,
               devDir,
-              configurationKeyText: {},
               plainVariableText: {
                 EMAIL_FROM: 'shop@example.com',
                 GREETING: 'hello',

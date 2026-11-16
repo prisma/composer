@@ -44,10 +44,8 @@ export type ValueOrigin<T> =
   | {
       readonly kind: 'source';
       readonly sourceKind: 'param';
-      /** How an error names the source, e.g. `envParam('REGION')`. */
+      /** How an error names the source. */
       readonly label: string;
-      /** The app configuration key whose text at deploy is the real value, as for `envParam()`. `undefined` for a value known only at boot, whose real value is `source`, a pointer. */
-      readonly configurationKey: string | undefined;
       readonly resource: NodeId | undefined;
       /** The source itself. Not enumerable, so a copy's origin compares equal and the origin holds no cycle. */
       readonly source: ParamSource;
@@ -55,9 +53,9 @@ export type ValueOrigin<T> =
   | {
       readonly kind: 'source';
       readonly sourceKind: 'secret';
-      /** How an error names the source, e.g. `envSecret('STRIPE_KEY')`. */
+      /** How an error names the source. */
       readonly label: string;
-      /** The app secrets key that holds the secret's value, as for `envSecret()`. `undefined` for a secret source built without one. */
+      /** The app secrets key that holds the secret's value. `undefined` for a secret source built without one. */
       readonly secretsKey: string | undefined;
       readonly resource: NodeId | undefined;
       /** The source itself. Not enumerable, so a copy's origin compares equal and the origin holds no cycle. */
@@ -73,8 +71,8 @@ export type SourceOrigin = Extract<ValueOrigin<unknown>, { readonly kind: 'sourc
 /**
  * An opaque stand-in a module body can pass wherever a `T` is accepted
  * (ADR-0062). `environment.name` is one; each field of a module's `input` is
- * one; `resolve()` returns one computed from others; a deploy target's source,
- * such as `envParam()` or `envSecret()`, is one too. A deploy-time value's real
+ * one; `resolve()` returns one computed from others; a deploy target's source
+ * is one too. A deploy-time value's real
  * value is known by the end of Load; a runtime value's real value at deploy is a pointer.
  */
 export interface Value<T> {
@@ -83,7 +81,7 @@ export interface Value<T> {
   readonly [VALUE_ORIGIN]: ValueOrigin<T>;
 }
 
-/** A value known only at boot (ADR-0062): its real value at deploy is a `Pointer<T>`, which names the platform variable the service reads at boot. */
+/** A value known only at boot (ADR-0062): its real value at deploy is a `Pointer<T>`, which names the variable on the platform that the service reads at boot. */
 export type RuntimeValue<T> = Value<Pointer<T>>;
 
 /** The tuple of real-value types a dependency tuple stands for: what `resolve()`'s `fn` receives. */

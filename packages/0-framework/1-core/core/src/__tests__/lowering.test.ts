@@ -622,8 +622,8 @@ describe('lowering a module root — a single service', () => {
       const label = (input as never as { label: never }).label;
       provision(app('fake/compute', {}, { label: string() }), { id: 'svc', params: { label } });
     });
-    const root = module('hello', ({ provision }) => {
-      provision(relay, { input: { label: paramSource({ name: 'X' }, { configurationKey: 'X' }) } });
+    const root = module('hello', { input: anyInputSchema }, ({ input, provision }) => {
+      provision(relay, { input: { label: (input as never as { LABEL: never }).LABEL } });
     });
     const bundles = { 'hello.relay.svc': { dir: 'dist/bundle', entry: 'server.js' } };
 
@@ -633,7 +633,7 @@ describe('lowering a module root — a single service', () => {
         config,
         opts({
           bundles,
-          appConfigurationRead: { rootInput: [], configurationKeyText: { X: 'probe' } },
+          appConfigurationRead: { rootInput: [{ path: ['LABEL'], value: 'probe' }] },
         }),
       ),
     );

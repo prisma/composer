@@ -212,7 +212,7 @@ function checkResult(result: unknown, fnLabel: string): void {
     }
     if (isSecretSource(value) || isParamSource(value)) {
       throw new LoadError(
-        `${fnLabel} returned a source${atPath}, such as envSecret() or envParam() called inside the function. resolve() returns plain data; bind a source directly.`,
+        `${fnLabel} returned a source${atPath}, such as generatedParam(), serviceOrigin() or a platform variable node's value. resolve() returns plain data; bind a source directly.`,
       );
     }
     if (isValue(value)) {
@@ -355,7 +355,7 @@ function refuseSecretBoxes(address: NodeId, value: unknown, path: string): void 
   if (isSecretSource(value) || isParamSource(value)) return;
   if (isSecretString(value)) {
     throw new LoadError(
-      `${describeSite({ address, kind: 'moduleInput', path })} is bound to a SecretString. A secret's value never appears in the code; bind envSecret('NAME'), or pass on an input field typed secretString().`,
+      `${describeSite({ address, kind: 'moduleInput', path })} is bound to a SecretString. A secret's value never appears in the code; bind a secret source, such as a platform secret node's value, or pass on an input field typed secretString().`,
     );
   }
   if (Array.isArray(value)) {
@@ -487,8 +487,6 @@ function refusePointersInProps(address: NodeId, props: unknown): void {
  */
 export function resolveValues(input: {
   readonly environment: EnvironmentRealValues | undefined;
-  readonly configuration: Readonly<Record<string, unknown>> | undefined;
-  readonly appConfigurationRead: AppConfigurationRead | undefined;
   readonly inputBindings: readonly InputBindingUse[];
   readonly params: readonly ParamBinding[];
   readonly moduleInputs: readonly ProvisionedModuleInput[];
@@ -503,31 +501,6 @@ export function resolveValues(input: {
 } {
   const { environment } = input;
   const rootFields = new Map<string, RootInputField>();
-  const keysRead = new Map<string, { readonly label: string; readonly text: string | undefined }>();
-  /** The text the app configuration holds for `key`, recorded; `undefined` when it holds none or `''`. */
-  const configurationText = (
-    key: string,
-    label: string,
-    site: ValueBindingSite,
-  ): string | undefined => {
-    let raw: unknown;
-    if (input.appConfigurationRead !== undefined)
-      raw = input.appConfigurationRead.configurationKeyText[key];
-    else if (input.configuration !== undefined) raw = input.configuration[key];
-    else {
-      throw new LoadError(
-        `${describeSite(site)} depends on ${label}, but Load was given no app configuration to read "${key}" from. Pass { configuration } to Load; the deploy and dev commands pass the values the \`config\` adapters return.`,
-      );
-    }
-    if (raw !== undefined && raw !== '' && typeof raw !== 'string') {
-      throw new LoadError(
-        `${describeSite(site)} depends on ${label}, which reads "${key}" from the values the \`config\` adapters return, but they return ${describeKind(raw)} for it, not text. ${label} reads text; to pass other data, declare it in the root module's input.`,
-      );
-    }
-    const text = raw === undefined || raw === '' ? undefined : raw;
-    keysRead.set(key, { label, text });
-    return text;
-  };
   const secretUses = new Map<SecretSource, SecretSourceUse>();
   for (const [address, value] of input.valueResources) {
     if (isSecretSource(value)) {
@@ -611,22 +584,12 @@ export function resolveValues(input: {
         break;
       case 'source': {
         if (isSecretSource(origin.source)) recordSecret(origin.source, site);
-        if (origin.sourceKind === 'secret' || origin.configurationKey === undefined) {
-          result = origin.source;
-        } else {
-          result = configurationText(origin.configurationKey, origin.label, site);
-        }
+        result = origin.source;
         break;
       }
       case 'computed': {
         const args = origin.dependencies.map((dependency) => {
           const real = resolveOne(dependency, site);
-          const source = originOf(dependency);
-          if (real === undefined && source.kind === 'source' && source.sourceKind === 'param') {
-            throw new LoadError(
-              `${fnLabelFor(site)} lists ${source.label}, but "${source.configurationKey}" is unset or empty, so it has no real value. Set "${source.configurationKey}", or bind ${source.label} directly into an input binding, where an absent value leaves the key out and the schema decides.`,
-            );
-          }
           refusePointerDependency(fnLabelFor(site), dependency, real);
           return real;
         });
@@ -706,41 +669,12 @@ export function resolveValues(input: {
     input.moduleInputs.find((entry) => entry.isLoadRoot)?.moduleAddress ?? '';
 
   const appConfigurationReadOf = (
-    inputBindings: readonly InputBindingUse[],
-    params: readonly ParamBinding[],
     secretSources: readonly SecretSourceUse[],
   ): AppConfigurationRead => {
-    if (input.configuration !== undefined || input.appConfigurationRead !== undefined) {
-      const kept: { readonly binding: unknown; readonly site: ValueBindingSite }[] = [
-        ...inputBindings.map(({ serviceAddress, binding }) => ({
-          binding,
-          site: { address: serviceAddress, kind: 'serviceInput' as const, path: '' },
-        })),
-        ...params.map(({ serviceAddress, slot, binding }) => ({
-          binding,
-          site: { address: serviceAddress, kind: 'param' as const, path: slot },
-        })),
-      ];
-      for (const { binding, site } of kept) {
-        for (const pointer of pointersIn(binding)) {
-          if (!isParamSource(pointer)) continue;
-          const origin = sourceOriginOf(pointer);
-          if (origin?.sourceKind === 'param' && origin.configurationKey !== undefined) {
-            configurationText(origin.configurationKey, origin.label, site);
-          }
-        }
-      }
-    }
     for (const use of secretSources) {
       const origin = sourceOriginOf(use.source);
       if (origin?.sourceKind !== 'secret') continue;
       const key = origin.secretsKey;
-      const read = key === undefined ? undefined : keysRead.get(key);
-      if (key !== undefined && read !== undefined) {
-        throw new LoadError(
-          `${read.label} reads "${key}" from the app configuration, and ${origin.label} names "${key}" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every plain value it reads, in a file, and never writes a secret to a file. Give the plain value and the secret different names.`,
-        );
-      }
       const field = [...rootFields.values()].find((candidate) => candidate.path[0] === key);
       if (key !== undefined && field !== undefined) {
         const label = inputFieldLabel({
@@ -761,10 +695,7 @@ export function resolveValues(input: {
         );
       }
     }
-    const configurationKeyText: Record<string, string> = {};
-    for (const [key, { text }] of keysRead)
-      if (text !== undefined) configurationKeyText[key] = text;
-    return { rootInput: [...rootFields.values()], configurationKeyText };
+    return { rootInput: [...rootFields.values()] };
   };
 
   for (const entry of input.moduleInputs) validatedInputOf(entry);
@@ -781,11 +712,7 @@ export function resolveValues(input: {
       params: input.params,
       resourceProps: authoredProps,
       secretSources,
-      appConfigurationRead: appConfigurationReadOf(
-        input.inputBindings,
-        input.params,
-        secretSources,
-      ),
+      appConfigurationRead: appConfigurationReadOf(secretSources),
     };
   }
 
@@ -826,7 +753,7 @@ export function resolveValues(input: {
     inputBindings,
     params,
     secretSources,
-    appConfigurationRead: appConfigurationReadOf(inputBindings, params, secretSources),
+    appConfigurationRead: appConfigurationReadOf(secretSources),
   };
 }
 

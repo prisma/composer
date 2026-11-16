@@ -72,7 +72,7 @@ function renderOptions(input: DevStackFileInput): string {
   }
 
   lines.push(
-    '  providers: localTargetProviders(resolved, containers, devDir, file.appConfigurationRead.configurationKeyText, file.plainVariableText, namedSecrets),',
+    '  providers: localTargetProviders(resolved, containers, devDir, file.plainVariableText, namedSecrets),',
   );
   lines.push('  state: devState(),');
 

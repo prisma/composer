@@ -5,7 +5,7 @@ import { type } from 'arktype';
 import { string } from '../config.ts';
 import { type Graph, Load, LoadError } from '../graph.ts';
 import type { LoadOptions } from '../graph-types.ts';
-import { module, paramSource, service } from '../node.ts';
+import { module, service } from '../node.ts';
 import { resolve } from '../value.ts';
 import { anyInputSchema } from './helpers.ts';
 
@@ -53,9 +53,6 @@ const recording = (seen: unknown[]): StandardSchemaV1 => ({
 const refusing = (message: string): StandardSchemaV1 => ({
   '~standard': { version: 1, vendor: 'test', validate: () => ({ issues: [{ message }] }) },
 });
-
-const variable = (name: string) =>
-  paramSource({ name }, { label: `envParam('${name}')`, configurationKey: name });
 
 const bindingOf = (graph: Graph, index = 0): Record<string, unknown> =>
   graph.inputBindings[index]?.binding as unknown as Record<string, unknown>;
@@ -252,21 +249,6 @@ describe("the root's whole input never reaches a binding", () => {
   });
 });
 
-describe('a source with a configuration key reads text', () => {
-  test('a source with a configuration key whose app configuration value is not text fails naming its kind', () => {
-    const email = module('email', { input: anyInputSchema }, () => {});
-    const root = module('shop', ({ provision }) => {
-      provision(email as never, { input: { n: variable('N') } } as never);
-    });
-
-    expect(loadError(() => Load(root, { configuration: { N: 4 } })).message).toBe(
-      'input key "n" of module "shop.email" depends on envParam(\'N\'), which reads "N" from the ' +
-        'values the `config` adapters return, but they return a number for it, not text. ' +
-        "envParam('N') reads text; to pass other data, declare it in the root module's input.",
-    );
-  });
-});
-
 describe('what Load reads from the app configuration', () => {
   const schema = type({ A: 'string', 'B?': 'string', C: 'string.integer.parse', D: 'string' });
   const rootOf = (rootSchema: StandardSchemaV1) =>
@@ -331,7 +313,6 @@ describe('what Load reads from the app configuration', () => {
           { path: ['B'] },
           { path: ['C'], value: 4 },
         ],
-        configurationKeyText: {},
       },
     });
 
@@ -344,7 +325,6 @@ describe('what Load reads from the app configuration', () => {
       Load(rootOf(schema), {
         appConfigurationRead: {
           rootInput: [{ path: ['A'], value: 'a' }],
-          configurationKeyText: {},
         },
       });
 
@@ -356,7 +336,7 @@ describe('what Load reads from the app configuration', () => {
   test('Load refuses configuration and appConfigurationRead together, which a caller without type checks can pass', () => {
     const both = {
       configuration,
-      appConfigurationRead: { rootInput: [], configurationKeyText: {} },
+      appConfigurationRead: { rootInput: [] },
     } as unknown as LoadOptions;
 
     expect(loadError(() => Load(rootOf(schema), both)).message).toBe(
@@ -371,7 +351,6 @@ describe('what Load reads from the app configuration', () => {
 
     expect(Load(root, { configuration: {} }).appConfigurationRead).toEqual({
       rootInput: [],
-      configurationKeyText: {},
     });
   });
 });

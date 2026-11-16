@@ -29,8 +29,6 @@ export interface RootInputField {
 export interface AppConfigurationRead {
   /** Each field of the root's input that its body names, as the root's schema produced it. Empty when the root declares no input. */
   readonly rootInput: readonly RootInputField[];
-  /** The text the app configuration holds for each configuration key a source reads, such as `envParam('NAME')`'s `NAME`. A key the app configuration does not hold, or holds as `''`, is absent. */
-  readonly configurationKeyText: Readonly<Record<string, string>>;
 }
 
 interface CommonLoadOptions {
@@ -42,7 +40,7 @@ interface CommonLoadOptions {
 
 /** Load's options in the first process, or wherever the app configuration is at hand. */
 export interface FirstProcessLoadOptions extends CommonLoadOptions {
-  /** The app configuration (ADR-0062): what the `config` adapters return. It is the root's input, which the root's schema checks, and what a source with a configuration key, such as `envParam('NAME')`, reads. */
+  /** The app configuration (ADR-0062): what the `config` adapters return. It is the root's input, which the root's schema checks. */
   readonly configuration?: Readonly<Record<string, unknown>>;
   readonly appConfigurationRead?: never;
 }

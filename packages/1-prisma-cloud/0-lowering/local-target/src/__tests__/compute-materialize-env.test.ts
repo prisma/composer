@@ -96,7 +96,7 @@ test('a pointed variable that is unset or empty is not given to the service', as
   expect('MAILER_KEY' in billing).toBe(false);
 });
 
-test('a local deployment takes its secrets from the app secrets and its param pointers from the app configuration, never the shell', async () => {
+test('a local deployment takes its secrets from the app secrets and its param pointers from the plain platform variable texts, never the shell', async () => {
   await writeRows({
     COMPOSER_BILLING_INPUT: JSON.stringify({
       stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },

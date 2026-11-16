@@ -64,7 +64,6 @@ async function reconcileApp(container: ContainerInstance, address: string): Prom
         LocalAppProvider({
           container,
           devDir,
-          configurationKeyText: {},
           plainVariableText: {},
           namedSecrets: {},
         }),
