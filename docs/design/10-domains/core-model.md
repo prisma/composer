@@ -226,8 +226,8 @@ interface ExtensionAuthoredNode extends NodeBase {
 // (ADR-0018) plus a few framework facets. The pack validates raw values
 // against `schema` at boot, and TypeScript infers the hydrate/load input types
 // from it — there is no framework enum of permitted types. A param is never
-// secret: a secret is a secretString() field of an input schema, bound with
-// envSecret() (ADR-0029, ADR-0042).
+// secret: a secret is a secretString() field of an input schema, bound to a
+// platform secret's value (ADR-0029, ADR-0042).
 interface ConfigParam<S extends StandardSchemaV1 = StandardSchemaV1> {
   readonly schema: S
   readonly optional?: boolean
@@ -433,7 +433,7 @@ interface CommonLoadOptions {
 }
 interface FirstProcessLoadOptions extends CommonLoadOptions {
   readonly configuration?: Readonly<Record<string, unknown>>
-      // the root's input, and what a source's configuration key reads; the first process passes what the config adapters return
+      // the root's input; the first process passes what the config adapters return
   readonly appConfigurationRead?: never
 }
 interface SecondProcessLoadOptions extends CommonLoadOptions {
@@ -492,7 +492,9 @@ entry, or a value that is not a source as a module's `secrets` or `params`
 binding, is a LoadError too. A source is a value too. Load leaves one in place
 in a service's input binding and params, and computes its real value only
 where a module's input, a resolve() function or a resource's props needs it.
-The graph lists every secret source it names in `secretSources`.
+The graph lists every secret source it names, and every secret value resource, in `secretSources`.
+
+A **value resource** is a resource node that is also a value, built with `valueResource({ name, extension, type, props, value })`: it provides no contract, has no dependency slots, and holds its source under a core-only key. Only an `appRoot()` body can provision one; in a `module()` body the call fails to compile, with an error that names `appRoot()`, and a cast past the types fails Load. `provision()` returns a frozen copy of the value with the node's address as its non-enumerable `id`, and the copy's origin records the address as `resource`. After resolving values, Load records in `graph.valueReads` each service that reads a value resource's value, as `{ reader, resource, site }`, at any depth and through any number of module inputs. The deploy report and the application topology skip a value resource, using `isValueResource()` ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). A duplicate provision id names the node already at the id and the node that takes it too.
 
 Load executes nothing of the user's beyond module bodies and `resolve()` functions — the graph is data
 in memory to inspect or hand to `lower` (or the node's `run`). A **topology view** — nodes as `{ id, kind, type }`

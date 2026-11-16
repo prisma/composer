@@ -108,7 +108,7 @@ service does, and whoever provisions it binds that input
 ```ts
 import { appRoot, module, resolve } from '@prisma/composer';
 import { secretString } from '@prisma/composer/arktype';
-import { envSecret } from '@prisma/composer-prisma-cloud';
+import { variable } from '@prisma/composer-prisma-cloud';
 import { type } from 'arktype';
 
 const email = module(
@@ -125,18 +125,22 @@ const email = module(
 );
 
 export default appRoot('shop', ({ provision }) => {
-  provision(email, {
-    input: { from: 'shop@example.com', deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') },
-  });
+  const deliveryCredential = provision(variable.secret({ name: 'EMAIL_DELIVERY_CREDENTIAL' }));
+  provision(email, { input: { from: 'shop@example.com', deliveryCredential } });
 });
 ```
 
 `prisma deploy --environment staging` gives `shop.email.service` the input
-binding `{ from: 'staging+shop@example.com', deliveryCredential:
-envSecret('EMAIL_DELIVERY_CREDENTIAL') }`. The binding has no `replyTo` key,
-because the root left that optional field out.
+binding `{ from: 'staging+shop@example.com', deliveryCredential }`, where
+`deliveryCredential` is the value of the platform secret node `shop.emailDeliveryCredential`.
+The binding has no `replyTo` key, because the root left that optional field out.
+Only the app root can provision the node: in the `email` module's body,
+`provision(variable.secret(…))` fails to compile, with an error that names
+`appRoot()`. A variable's name is one space per deployed app, and the root is
+the app, so the module declares the field in its input and the root wires the
+value down.
 
-The body holds `input`, a dictionary with one value for each key of the schema, such as `input.from` or `input.smtp.host`. Each is a [value](../03-domain-model/glossary.md#value), the same kind as `environment.name` and a `resolve()` result, and a provided one: the body is handed it. Its real value is the data at that key path in the module's validated input, which is the module's binding with its values replaced by their real values and passed through the module's schema. A real value is the schema's output, so a field typed `number` by a `string.integer.parse` schema receives `4`, not `'4'`. An input field bound to a deploy-time value is deploy-time: its real value is known by the end of Load. A field bound to `envSecret()`, `generatedParam()` or `serviceOrigin()` is a runtime value: the data is known only at boot, so its real value is a pointer, and its type says so: a wrapped field's type includes `Pointer<In>`, and a `secretString()` field's includes `Pointer<SecretString>`.
+The body holds `input`, a dictionary with one value for each key of the schema, such as `input.from` or `input.smtp.host`. Each is a [value](../03-domain-model/glossary.md#value), the same kind as `environment.name` and a `resolve()` result, and a provided one: the body is handed it. Its real value is the data at that key path in the module's validated input, which is the module's binding with its values replaced by their real values and passed through the module's schema. A real value is the schema's output, so a field typed `number` by a `string.integer.parse` schema receives `4`, not `'4'`. An input field bound to a deploy-time value is deploy-time: its real value is known by the end of Load. A field bound to a platform variable node's value, `generatedParam()` or `serviceOrigin()` is a runtime value: the data is known only at boot, so its real value is a pointer, and its type says so: a wrapped field's type includes `Pointer<In>`, and a `secretString()` field's includes `Pointer<SecretString>`.
 
 `input` itself is not a value. Its type, `ModuleInput<S>`, carries a brand that every binding type refuses, so passing the whole `input` into a child module's or a service's `input`, a service param, a resource's props or a `resolve()` dependency fails to compile, for every module, the root included. A cast gets past the compiler, so Load refuses it too, naming where it was passed and saying to pass its fields on by name. A binding slot typed `unknown` accepts anything, so there only Load refuses it. A module receives the input it needs and no more: its body names each field it passes on.
 

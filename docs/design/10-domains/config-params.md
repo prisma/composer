@@ -17,7 +17,7 @@ deploy target owns serialization),
 [ADR-0029](../90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) (a secret
 is carried by name only, never by value), and
 [ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)
-(a param binds at provision — a literal or an env source).
+(a param binds at provision — a literal or a platform variable node's value).
 
 ## The problem in one example
 
@@ -78,9 +78,11 @@ the composition decision is made — the `provision()` call — as either a
 // A literal — per-application configuration without touching the service:
 provision(web, { params: { appOrigin: 'https://example.com' } });
 
-// An env source — the value lives in a platform env var, per environment
-// (envParam is the TARGET's, from @prisma/composer-prisma-cloud):
-provision(web, { params: { appOrigin: envParam('APP_ORIGIN') } });
+// A platform variable — the value lives in a variable on the platform, per
+// environment. The app root provisions the node (variable is the TARGET's,
+// from @prisma/composer-prisma-cloud) and binds its value:
+const appOrigin = provision(variable({ name: 'APP_ORIGIN' }));
+provision(web, { params: { appOrigin } });
 ```
 
 Both bindings suit an origin the operator genuinely knows — a custom domain
@@ -92,16 +94,17 @@ Resolution order per param: binding, else `default`, else absent (only legal
 for an `optional` param) — a required param nothing binds fails the deploy
 loudly, naming the param and the service.
 
-An **env-sourced** param is stored like a secret (§ Secrets). Its stored row holds the name of the platform variable, not a value. A `@composer-param-pointer:` prefix marks the row as a name; no JSON-encoded literal can start with that prefix. The operator sets the variable on the platform. The deploy checks whether the variable has a value in the environment, and does not set it. At boot, the service reads the row to find the variable's name, then reads that variable. A variable with no value gives the param its default, or leaves it out when the param is optional. The deploy check and boot fail only for a required param ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)). Three things differ from a secret on purpose. The value reads back **unredacted**. The param's own schema receives the variable's **raw text**, with no decoding, so a `number()` param bound to `envParam` fails at boot. An empty string means unset, because the platform cannot store one. A module passes a binding down to a child as a field of its own `input`. A changed value needs a redeploy, as a rotated secret does.
+A param bound to a **platform variable** is stored like a secret (§ Secrets). Its stored row holds the name of the platform variable, not a value. A `@composer-param-pointer:` prefix marks the row as a name; no JSON-encoded literal can start with that prefix. The operator sets the variable on the platform. The deploy checks whether the variable has a value in the environment, and does not set it. At boot, the service reads the row to find the variable's name, then reads that variable. A variable with no value gives the param its default, or leaves it out when the param is optional. The deploy check and boot fail only for a required param ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)). Three things differ from a secret on purpose. The value reads back **unredacted**. The param's own schema receives the variable's **raw text**, with no decoding, so a `number()` param bound to a platform variable fails at boot. An empty string means unset, because the platform cannot store one. A module passes a binding down to a child as a field of its own `input`. A changed value needs a redeploy, as a rotated secret does.
 
 **One concept, a param, bound to a source** (the glossary's *params and their
 sources* is the canonical statement). Four sources, by where the value comes
-from: a **literal** (in the binding); an **`envParam`**
-([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md),
-operator-supplied per environment, read at boot, **never in deploy state**); an
-**`envSecret`**
-([ADR-0029](../90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md), the
-platform secret store, redacted, **never in deploy state** — the only secret);
+from: a **literal** (in the binding); a **root input field** (read from the app
+configuration by the deploy, [ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md));
+a **platform variable node**'s value
+([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md),
+operator-supplied per environment, read at boot, **never in deploy state**; a
+**platform secret**, built with `variable.secret()`, is also redacted,
+[ADR-0029](../90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md));
 and a **generated param**
 ([ADR-0042](../90-decisions/ADR-0042-service-input-is-one-standard-schema.md) §
 Generated sources — the target generates it at deploy and **keeps it in deploy
@@ -124,41 +127,23 @@ a loud lowering error.
 
 ## Sources are values
 
-`envParam()`, `envSecret()`, `generatedParam()` and `serviceOrigin()` each
-return one object that is both the target's source and a
-[value](../03-domain-model/glossary.md#value). Where a source is accepted:
+A platform variable node's value, `generatedParam()` and `serviceOrigin()` are each one object that is both the target's source and a [value](../03-domain-model/glossary.md#value). The app root gets a platform variable's value from `provision(variable({ name }))` or `provision(variable.secret({ name }))`; only an `appRoot()` body can provision the node. A value the deploy reads is a root input field, not a source. Where each is accepted:
 
-| Where | `envParam()` | `envSecret()` | `generatedParam()` | `serviceOrigin()` |
+| Where | Plain platform variable | Platform secret | `generatedParam()` | `serviceOrigin()` |
 | --- | --- | --- | --- | --- |
-| A service's `input` binding | its string, read at serialize from the app configuration; unset or empty leaves the key out | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
-| A service's `params` | kept; pointer row, as today | kept (fails at deploy, as today) | kept (fails at deploy, as today) | kept (fails at deploy, as today) |
-| A module's `input` binding | its string; unset or empty leaves the key out | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
-| A `resolve()` dependency | its string; unset or empty fails | refused | refused | refused |
-| A resource's `props` | its string; unset or empty leaves the key out | refused by the type | refused by the type | refused at Load |
+| A service's `input` binding | its pointer, which a wrapped field accepts | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
+| A service's `params` | a pointer row, read at boot | refused by the type | kept (fails at deploy, as today) | kept (fails at deploy, as today) |
+| A module's `input` binding | its pointer, which a wrapped field accepts | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
+| A `resolve()` dependency | refused | refused | refused | refused |
+| A resource's `props` | refused at Load | refused by the type | refused by the type | refused at Load |
 
-In a service's and a module's input, the schema checks each of the three runtime sources as its pointer. A plain field refuses a pointer, so a field bound to `generatedParam()` or `serviceOrigin()` is wrapped with `field()`, or is a `secretString()` field for a redacted `generatedParam()` ([glossary](../03-domain-model/glossary.md#field)). Both bindings are typed from the schema, so a source bound to a field that refuses it fails to compile, and so does an `envParam()` bound to a field narrower than text. The deploy check catches what the compiler cannot see: a refinement the type does not carry, such as a URL format, a schema without type information, or a cast.
+In a service's and a module's input, the schema checks each runtime source as its pointer. A plain field refuses a pointer, so a field bound to one is wrapped with `field()`, or is a `secretString()` field for a secret ([glossary](../03-domain-model/glossary.md#field)). Both bindings are typed from the schema, so a source bound to a field that refuses it fails to compile. The deploy check catches what the compiler cannot see: a refinement the type does not carry, such as a URL format, a schema without type information, or a cast. A schema failure on a field that reads a platform variable ends with the variable's name.
 
-A service's input binding and a service's params receive the source itself,
-the same object they received before
-sources were values. So the target reads the same leaves, writes the same
-pointer rows and checks the same names, and the rest of this document holds
-unchanged.
+A service's input binding and a service's params receive the source itself. So the target reads the leaves, writes the pointer rows and checks the names from the source's payload.
 
-Where core needs a source's real value, in a module's input, a `resolve()`
-dependency or a resource's props, the source decides what that is.
-`envParam('NAME')` is deploy-time: its real value is the value of the variable
-`NAME` at deploy, read from the app configuration Load is given, which the `config` adapters fill, by default from the process environment; an unset or empty variable
-gives no real value. `envSecret('NAME')` is runtime: the deploy never holds the
-secret, so its real value at deploy is a pointer, the source itself, which the
-service dereferences at boot. `generatedParam()` and `serviceOrigin()` are
-runtime too, because the deploy creates their values after Load; their real
-value at deploy is also the pointer. A pointer cannot be read: turning it into
-text or a number throws an error that names the source. A `resolve()` cannot
-list any of the three: listing one fails to compile, and Load refuses a
-dependency whose real value is a pointer or holds one.
+Every source is runtime: the deploy never holds its data, so its real value at deploy is a pointer, which the service dereferences at boot. A platform variable's data is on the platform; `generatedParam()` and `serviceOrigin()` are runtime because the deploy creates their values after Load. A pointer cannot be read: turning it into text or a number throws an error that names the source. A `resolve()` cannot list a source: listing one fails to compile, and Load refuses a dependency whose real value is a pointer or holds one.
 
-Deploy preflight checks every `envSecret()` the graph names, including one in a
-module's input that no service receives.
+The provisioned value records the node's address, so Load lists in `graph.valueReads` each service that reads each platform variable node, and where. Deploy preflight checks every platform variable a service reads, and every node no service reads, including a secret that a module receives and passes to no service.
 
 ## Serialization belongs to the target
 
@@ -248,8 +233,8 @@ Job[] → Config (structured) → target serialize (its medium) → stored confi
 A secret is **not** a param (ADR-0029). The value is provisioned out-of-band on
 the platform; the framework carries only the NAME. A service types the field
 `secretString()` in its input schema; a module declares the same field in its
-own `input` and passes it on; the root binds it to a platform variable with
-`envSecret('NAME')`. The service reads it back through `service.input()` as a
+own `input` and passes it on; the app root provisions a platform secret node,
+`variable.secret({ name: 'NAME' })`, and binds its value. The service reads it back through `service.input()` as a
 redacting `SecretString`:
 
 ```ts
@@ -261,9 +246,12 @@ module('auth', { input: type({ signingKey: secretString() }), expose: … }, ({ 
   provision(inner, { input: { signingKey: input.signingKey } }),
 );
 
-// Only the ROOT names the platform variable (envSecret is the TARGET's, from
+// Only the app ROOT names the platform variable (variable is the TARGET's, from
 // @prisma/composer-prisma-cloud; secretString() is core's, from @prisma/composer/arktype):
-provision(auth, { input: { signingKey: envSecret('AUTH_SIGNING_KEY') } });
+export default appRoot('shop', ({ provision }) => {
+  const signingKey = provision(variable.secret({ name: 'AUTH_SIGNING_KEY' }));
+  provision(auth, { input: { signingKey } });
+});
 
 // Read at the point of use — expose() is the sole reader:
 const { signingKey } = service.input(); // SecretString
@@ -273,14 +261,14 @@ signingKey.expose();                     // the one door to the value
 `service.input()` returns the whole validated input. A `SecretString` redacts
 under `toString`/`toJSON`/`valueOf`/`inspect`, so a stray log or serialization
 prints `[REDACTED]`; only `expose()` returns the value. `secretString()` and the
-opaque `SecretSource` are core (`@prisma/composer`); `envSecret('NAME')`, the
-source constructor that names and validates a platform variable, is the
+opaque `SecretSource` are core (`@prisma/composer`); `variable.secret()`, the
+node constructor that names and validates a platform variable, is the
 target's, from `@prisma/composer-prisma-cloud` (ADR-0018/0019 applied to
 secrets).
 
 The round trip carries only the name, never the value:
 
-1. **Bind.** The root binds each secret field to a platform name, and each module on the way passes it on as a field of its input. Load records each service's input binding, and preflight collects every `envSecret()` it names.
+1. **Bind.** The app root provisions a platform secret node and binds its value, and each module on the way passes it on as a field of its input. Load records each service's input binding and each read in `valueReads`, and preflight collects every platform secret, also one no service reads.
 2. **Set.** The operator sets the variable on the platform with `prisma project env add`, for production, for every preview environment, or for one. The deploy does not copy a value from the app secrets to the platform.
 3. **Preflight.** Before Alchemy runs, the deploy checks whether each name has a row the environment sees, and writes none. A missing name that a service's schema requires fails the deploy, with its readers and the command that sets it; a missing name nothing requires is listed and the deploy goes on.
 4. **Marker.** The target writes the service's input document with a marker in place of each secret field, naming the variable, not its value:
@@ -291,7 +279,7 @@ The round trip carries only the name, never the value:
 
 The `COMPOSER_` prefix reserves the framework's generated keys into their own
 namespace, so a generated key never collides with — and silently overwrites — a
-user-provisioned platform variable.
+platform variable the operator sets.
 
 **Rotation is PATCH + redeploy.** A compute version snapshots its whole env map
 at creation and never re-resolves it, so changing a secret's value is the
