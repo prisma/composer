@@ -1069,6 +1069,12 @@ describe('platform variable nodes in a service binding', () => {
     );
   });
 
+  test('a schema failure on a node in an array position names the field as the serializer writes array positions', () => {
+    expect(() =>
+      serializeInput(svc(type({ list: 'number[]' })), 'shop.web', { list: ['x', from] }),
+    ).toThrow(/\nThe field "list\[1\]" reads the platform variable "EMAIL_FROM"\.$/);
+  });
+
   test("a schema failure on a field under a node's path also ends with its name, and a failure elsewhere does not", () => {
     const nested = type({ from: { address: 'string' }, count: 'number' });
 

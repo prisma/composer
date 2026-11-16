@@ -192,14 +192,7 @@ export function isOriginParamSource(value: unknown): value is ParamSource<Origin
   );
 }
 
-/**
- * Reads the Prisma Cloud env-var name back out of a param binding's opaque
- * source. A source not built by `envParam` (a raw `paramSource(...)` or
- * another target's source) carries no name — reject it here. `paramName` runs
- * in preflight and at serialize before any value ever crosses the wire, so a
- * foreign source fails early and clearly rather than producing a broken
- * deploy with an undefined name.
- */
+/** The name of the platform variable a per-key param is bound to: a plain `variable()` node's value or an `envParam()`. Throws for any other source. */
 export function paramName(binding: ParamBinding): string {
   const { binding: bound } = binding;
   if (isPlainVariableSource(bound)) return bound.payload.name;

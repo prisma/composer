@@ -1264,6 +1264,55 @@ describe('the deploy check of platform variable nodes', () => {
     ]);
   });
 
+  test('a node bound to a plain field through a cast fails as an invalid input that names the variable', async () => {
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        const from = provision(variable({ name: 'EMAIL_FROM' }));
+        const key = provision(variable.secret({ name: 'EMAIL_KEY' }));
+        provision(
+          compute({
+            name: 'mail',
+            deps: {},
+            input: type({ from: 'string', key: secretString() }),
+            build,
+          }),
+          { input: { from: from as unknown as string, key } },
+        );
+      }),
+    );
+
+    const message = await failureOf(
+      preflightWith({ graph, ...production }, { client: fakeClient(state) }),
+    );
+
+    expect(message).toStartWith('invalid input for service "shop.mail": ');
+    expect(message).toEndWith('\nThe field "from" reads the platform variable "EMAIL_FROM".');
+  });
+
+  test('the text listing the variables a service needs does not say which field reads each one', async () => {
+    const needsOne: StandardSchemaV1<unknown, unknown> = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate: (value) => {
+          const record = typeof value === 'object' && value !== null ? value : {};
+          return 'from' in record || 'key' in record
+            ? { value }
+            : { issues: [{ message: 'need from or key', path: ['from'] }] };
+        },
+      },
+    };
+
+    const message = await failureOf(
+      preflightWith({ graph: mailGraph(needsOne), ...production }, { client: fakeClient(state) }),
+    );
+
+    expect(message).toContain(
+      '  - at least one of EMAIL_FROM, EMAIL_KEY  (service "shop.mail" needs at least one of them: need from or key)',
+    );
+    expect(message).not.toContain('reads the platform variable');
+  });
+
   test('a planted secret under a secret node appears in neither the findings, their rendered readers, nor the error', async () => {
     const planted = 'Zq7Xw9Vb3kLm2Rt';
     const hold = { secrets: { EMAIL_KEY: planted }, configuration: { EMAIL_KEY: planted } };

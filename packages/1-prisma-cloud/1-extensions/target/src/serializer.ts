@@ -286,13 +286,13 @@ export interface ResolvedInputBinding {
   readonly resolved: unknown;
   /** Every generated leaf — provisioned by the descriptor, substituted to a `$generated` pointer by path. */
   readonly generated: readonly GeneratedLeaf[];
-  /** Dot-joined binding paths whose env-bound leaf resolved absent (unset/empty deploy-shell var, or a secret `prisma dev` found unset) — deploy-report fodder. */
   readonly absent: readonly string[];
   readonly variables: readonly VariableRead[];
 }
 
 interface VariableRead {
   readonly path: string;
+  readonly field: string;
   readonly name: string;
 }
 
@@ -324,7 +324,6 @@ function absentArrayPositionError(member: unknown, position: string, address: st
 export interface SerializeInputOptions {
   /** Where `envParam` leaves are read: the app configuration, or in the second process the configuration key text from the app configuration file. The process environment when not given. */
   readonly env?: Readonly<Record<string, unknown>>;
-  /** Names of the secrets and plain platform variables to leave out of the document; only `prisma dev` and preflight's requirement check pass any. */
   readonly absentSecrets?: ReadonlySet<string>;
 }
 
@@ -354,16 +353,6 @@ export function assertDistinctPointerNames(
   }
 }
 
-/**
- * Deploy: recursive descent over the provision-time binding (plain data).
- * `envSecret`, `generatedParam` and `serviceOrigin` leaves stay in place as
- * their pointers (the value never enters the deploy); `envParam` leaves read
- * the app configuration — unset or empty means the enclosing object key is
- * OMITTED, and the schema arbitrates whether that absence is legal
- * (ADR-0042). An `envSecret` leaf named in `absentSecrets` is omitted the
- * same way; only `prisma dev` passes any. Everything non-plain (a class
- * instance, a function, a raw SecretBox holding a value) is rejected loudly.
- */
 export function resolveInputBinding(
   binding: unknown,
   address = '',
@@ -375,7 +364,7 @@ export function resolveInputBinding(
   const absent: string[] = [];
   const variables: VariableRead[] = [];
 
-  const walk = (value: unknown, path: string): unknown => {
+  const walk = (value: unknown, path: string, field: string): unknown => {
     // A generated leaf is a ParamSource too, so it MUST be recognized before
     // the param branch. It stays in place as its pointer, which the schema
     // checks; serializing swaps it for a `{ "$generated": VAR, "redacted": <bool> }`
@@ -398,7 +387,7 @@ export function resolveInputBinding(
         value,
         path === '' ? 'the input binding root' : `input key "${path}"`,
       );
-      if (isSecretVariableSource(value)) variables.push({ path, name });
+      if (isSecretVariableSource(value)) variables.push({ path, field, name });
       if (absentSecrets.has(name)) {
         absent.push(path === '' ? `(root) → ${name}` : `${path} → ${name}`);
         return ABSENT;
@@ -407,7 +396,7 @@ export function resolveInputBinding(
     }
     if (isPlainVariableSource(value)) {
       const name = value.payload.name;
-      variables.push({ path, name });
+      variables.push({ path, field, name });
       if (absentSecrets.has(name)) {
         absent.push(path === '' ? `(root) → ${name}` : `${path} → ${name}`);
         return ABSENT;
@@ -441,7 +430,11 @@ export function resolveInputBinding(
     }
     if (Array.isArray(value)) {
       return value.map((member, index) => {
-        const resolvedMember = walk(member, path === '' ? String(index) : `${path}.${index}`);
+        const resolvedMember = walk(
+          member,
+          path === '' ? String(index) : `${path}.${index}`,
+          `${field}[${index}]`,
+        );
         if (resolvedMember === ABSENT) {
           throw absentArrayPositionError(member, `${path}[${index}]`, address);
         }
@@ -451,7 +444,11 @@ export function resolveInputBinding(
     if (isPlainObject(value)) {
       const out: Record<string, unknown> = {};
       for (const [key, member] of Object.entries(value)) {
-        const resolvedMember = walk(member, path === '' ? key : `${path}.${key}`);
+        const resolvedMember = walk(
+          member,
+          path === '' ? key : `${path}.${key}`,
+          field === '' ? key : `${field}.${key}`,
+        );
         if (resolvedMember === ABSENT) continue; // key omitted — the schema arbitrates absence
         out[key] = resolvedMember;
       }
@@ -473,7 +470,7 @@ export function resolveInputBinding(
     );
   };
 
-  const resolved = walk(binding, '');
+  const resolved = walk(binding, '', '');
   assertDistinctPointerNames(pointers, address);
   return {
     resolved: resolved === ABSENT ? undefined : resolved,
@@ -627,7 +624,7 @@ function variableNote(variables: readonly VariableRead[], issuePaths: readonly s
     ),
   );
   return read
-    .map(({ path, name }) => `\nThe field "${path}" reads the platform variable "${name}".`)
+    .map(({ field, name }) => `\nThe field "${field}" reads the platform variable "${name}".`)
     .join('');
 }
 
@@ -674,33 +671,23 @@ function judgeInput(
     : { ok: true, validated: result.value, ...resolved };
 }
 
-/**
- * The schema's message when the service's input, with each `envSecret` leaf
- * in `absentSecrets` left out, fails validation; undefined when it passes or
- * the service has no input schema. Used by the `prisma dev` preflight.
- */
+export interface InputValidationFailure {
+  readonly message: string;
+  readonly variableNote: string;
+}
+
 export function inputValidationFailure(
   node: ServiceNode,
   address: string,
   binding: unknown,
   options: SerializeInputOptions = {},
-): string | undefined {
+): InputValidationFailure | undefined {
   const judged = judgeInput(node, address, binding, options);
   if (judged === undefined || judged.ok) return undefined;
   if (judged.thrown) throw new Error(`invalid input for service "${address}": ${judged.message}`);
-  return `${judged.message}${judged.variableNote}`;
+  return { message: judged.message, variableNote: judged.variableNote };
 }
 
-/**
- * Walks the VALIDATED output and writes each pointer as its document marker:
- * an `envSecret` pointer as a `$platform` marker with `secret: true`, and a `generatedParam` or
- * `serviceOrigin` pointer as `{ "$generated": VAR, "redacted": <bool> }`, found
- * by the input path its binding put it at. A pointer is recognised by its
- * brands, never by identity, so a copy the schema made still counts. Escapes
- * any user key that matches a reserved marker. A `SecretString` in the output
- * came from the schema itself (a default or transform minting a box): no
- * platform var stands behind it, so it is rejected rather than serialized.
- */
 function substitutePointers(
   value: unknown,
   generated: readonly GeneratedLeaf[],
