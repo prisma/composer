@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { format } from 'node:util';
 import { CliStructuredError } from '@internal/foundation/errors';
 import type { DeploymentSummary } from '../deployment-summary.ts';
 import type { DevEvent } from '../operations/dev.ts';
@@ -73,6 +74,29 @@ describe('SecretRedaction', () => {
     redaction.addKnownSecrets([{ name: 'LATER', value: 'later-secret' }]);
 
     expect(redaction.redact('first-secret later-secret')).toBe('[redacted] [redacted]');
+  });
+
+  const multiLine = '-----BEGIN KEY-----\nabc"def\\ghi\n-----END KEY-----';
+
+  test('SecretRedaction removes a multi-line secret from the JSON of a thrown plain object', () => {
+    const text = JSON.stringify({ status: 500, body: { key: multiLine } });
+
+    expect(knowing(multiLine).redact(text)).toBe('{"status":500,"body":{"key":"[redacted]"}}');
+  });
+
+  test('SecretRedaction removes a multi-line secret from what util.format prints for an object', () => {
+    const text = format('failed: %o', { key: multiLine });
+
+    expect(text).not.toContain(multiLine);
+    expect(knowing(multiLine).redact(text)).not.toContain('abc');
+    expect(knowing(multiLine).redact(format({ key: multiLine }))).toBe("{ key: '[redacted]' }");
+  });
+
+  test('SecretRedaction still redacts a plain secret once, in plain text and in JSON', () => {
+    expect(knowing('plain-secret-1').redact('x plain-secret-1 y')).toBe('x [redacted] y');
+    expect(knowing('plain-secret-1').redact(JSON.stringify({ k: 'plain-secret-1' }))).toBe(
+      '{"k":"[redacted]"}',
+    );
   });
 });
 

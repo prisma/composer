@@ -258,6 +258,7 @@ describe('credentials', () => {
   });
 
   test("a provider's console output during the operation goes to stderr, redacted like the deploy's own, and console is restored after", async () => {
+    const multiLine = '-----BEGIN KEY-----\nabc"def\\ghi\n-----END KEY-----';
     const log = console.log;
     const stdoutWrite = spyOn(process.stdout, 'write');
     const consoleError = spyOn(console, 'error').mockImplementation(() => {});
@@ -268,10 +269,11 @@ describe('credentials', () => {
         operations: {
           ...operations.operations,
           deploy: async (input, deps) => {
-            deps.redaction?.addCredentialLookingValues(['provider-secret-91']);
+            deps.redaction?.addCredentialLookingValues(['provider-secret-91', multiLine]);
             console.log('provider chatter');
             console.table([{ a: 1 }]);
             console.warn('token %s', 'provider-secret-91');
+            console.error({ key: multiLine });
             return deploy(input, deps);
           },
         },
@@ -287,7 +289,9 @@ describe('credentials', () => {
       const printed = consoleError.mock.calls.map((call) => call[0]);
       expect(printed).toContain('provider chatter');
       expect(printed).toContain('token [redacted]');
+      expect(printed).toContain("{ key: '[redacted]' }");
       expect(JSON.stringify(printed)).not.toContain('provider-secret-91');
+      expect(JSON.stringify(printed)).not.toContain('BEGIN KEY');
     } finally {
       stdoutWrite.mockRestore();
       consoleError.mockRestore();

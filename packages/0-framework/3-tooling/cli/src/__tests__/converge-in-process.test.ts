@@ -36,6 +36,7 @@ import {
   toConvergeEvent,
 } from '../converge-in-process.ts';
 import { deployWithDeps } from '../operations/deploy.ts';
+import { SecretRedaction } from '../redaction.ts';
 
 const thingContract: Contract<'fake/thing', unknown> = Object.freeze({
   kind: 'fake/thing',
@@ -563,6 +564,18 @@ describe('failureReasons', () => {
     expect(failureReasons(Cause.fail({ status: 503 }))).toEqual([
       { tag: 'Unknown', message: '{"status":503}' },
     ]);
+  });
+
+  test("a multi-line secret in an object's JSON is redacted by the host's redaction", () => {
+    const secret = '-----BEGIN KEY-----\nabc"def\\ghi\n-----END KEY-----';
+    const redaction = new SecretRedaction({});
+    redaction.addKnownSecrets([{ name: 'KEY', value: secret }]);
+
+    const [reason] = failureReasons(Cause.fail({ status: 500, body: { key: secret } }));
+
+    expect(redaction.redact(reason?.message ?? '')).toBe(
+      '{"status":500,"body":{"key":"[redacted]"}}',
+    );
   });
 
   test('a wrapped provider failure reports the error it wraps, never the wrapper', () => {
