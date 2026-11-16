@@ -40,7 +40,7 @@ function envParamUses(graph: Graph): readonly EnvParamUse[] {
   return uses;
 }
 
-const quotedList = (addresses: readonly string[]): string => {
+export const quotedList = (addresses: readonly string[]): string => {
   const quoted = addresses.map((address) => `"${address}"`);
   const last = quoted.pop();
   return quoted.length === 0 ? `${last}` : `${quoted.join(', ')} and ${last}`;

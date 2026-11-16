@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
+  appRoot,
   isSecretPointer,
   Load,
   module,
@@ -18,7 +19,7 @@ import { rawHttpContract } from '@internal/http';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
 import { decodePreflightPayload, transportedPreflight } from '../control/preflight-payload.ts';
-import { compute, publicUrl } from '../exports/index.ts';
+import { compute, publicUrl, variable } from '../exports/index.ts';
 import { runDevPreflight } from '../local-target/preflight.ts';
 import { envParam } from '../param.ts';
 import { envSecret } from '../secret.ts';
@@ -187,7 +188,7 @@ const devPreflightWarnings = async (graph: ReturnType<typeof Load>, environment:
 let secrets: Record<string, string> = {};
 let configuration: Record<string, unknown> = {};
 
-const preflight = (graph: ReturnType<typeof Load>, environment = 'dev') =>
+const devPreflight = (graph: ReturnType<typeof Load>, environment = 'dev') =>
   runDevPreflight({
     graph,
     container: fakeContainer(environment),
@@ -195,6 +196,9 @@ const preflight = (graph: ReturnType<typeof Load>, environment = 'dev') =>
     configuration,
     secrets,
   });
+
+const preflight = async (graph: ReturnType<typeof Load>, environment = 'dev') =>
+  (await devPreflight(graph, environment)).payload;
 
 /** The folder `prisma dev --environment <name>` keeps its local copy in. */
 const environmentDir = (cwd: string, folder = 'dev') =>
@@ -609,5 +613,183 @@ describe('prisma dev preflight', () => {
       'shop.site and shop.www both name the hostname shop.com. One hostname serves one public URL.',
     );
     expect(fs.existsSync(path.join(cwd, '.prisma-composer'))).toBe(false);
+  });
+
+  describe('plain platform variable nodes', () => {
+    const acceptsAnything: StandardSchemaV1<unknown, unknown> = {
+      '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },
+    };
+
+    /** `shop.mail` reads EMAIL_FROM in its input field `from`; `shop.web` reads API_TOKEN in a per-key param of the given kind. */
+    const plainGraph = (
+      schema: StandardSchemaV1<unknown, unknown>,
+      token = string({ default: 'local-token' }),
+    ) =>
+      Load(
+        appRoot('shop', ({ provision }) => {
+          const from = provision(variable({ name: 'EMAIL_FROM' }));
+          const apiToken = provision(variable({ name: 'API_TOKEN' }));
+          provision(compute({ name: 'mail', deps: {}, input: schema, build }), {
+            input: { from },
+          });
+          provision(tokenService(token), { id: 'web', params: { token: apiToken } });
+        }),
+      );
+
+    function documentOf(
+      graph: ReturnType<typeof Load>,
+      address: string,
+      childEnv: Record<string, string>,
+    ): unknown {
+      const node = graph.nodes.find((entry) => entry.id === address)?.node as ServiceNode;
+      const binding = graph.inputBindings.find((b) => b.serviceAddress === address)?.binding;
+      const { absentSecrets } = transportedPreflight(() => undefined, childEnv);
+      const row = serializeInput(node, address, binding, { env: {}, absentSecrets });
+      return JSON.parse(row?.value ?? 'null');
+    }
+
+    test('a plain node is filled from the app configuration, in an input field and in a per-key param', async () => {
+      configuration['EMAIL_FROM'] = 'shop@example.com';
+      configuration['API_TOKEN'] = 'tok_1';
+      const graph = plainGraph(acceptsAnything, string());
+
+      const result = await devPreflight(graph);
+
+      expect(result.plainVariableText).toEqual({
+        EMAIL_FROM: 'shop@example.com',
+        API_TOKEN: 'tok_1',
+      });
+      const payload = devPayload(transported(result.payload));
+      expect([...payload.pointerVersions.keys()].sort()).toEqual(['API_TOKEN', 'EMAIL_FROM']);
+      expect([...payload.absentSecrets]).toEqual([]);
+      expect(documentOf(graph, 'shop.mail', transported(result.payload))).toEqual({
+        from: { $platform: { name: 'EMAIL_FROM' } },
+      });
+      expect(JSON.stringify(result.payload)).not.toContain('shop@example.com');
+    });
+
+    test('a plain node no service reads is not read from the app configuration', async () => {
+      configuration['UNREAD_FROM'] = { not: 'text' };
+      const graph = Load(
+        appRoot('shop', ({ provision }) => {
+          provision(variable({ name: 'UNREAD_FROM' }));
+        }),
+      );
+
+      expect((await devPreflight(graph)).plainVariableText).toEqual({});
+    });
+
+    test('a required per-key param bound to an unset plain node stops dev, naming the variable, the service and the param', async () => {
+      configuration['EMAIL_FROM'] = 'shop@example.com';
+
+      const message = await preflightError(plainGraph(acceptsAnything, string()));
+
+      expect(message).toContain(
+        '1 platform variable a service needs has no value:\n  - API_TOKEN  (read by service "shop.web", per-key param "token")\n      required by service "shop.web": per-key param "token" has no default and is not optional',
+      );
+    });
+
+    test('an unset per-key param with a default, or an optional one, does not stop dev and gets no text, so it takes its default or is left out', async () => {
+      configuration['EMAIL_FROM'] = 'shop@example.com';
+      configuration['API_TOKEN'] = '';
+
+      for (const token of [string({ default: 'local-token' }), string({ optional: true })]) {
+        const result = await devPreflight(plainGraph(acceptsAnything, token));
+
+        expect(result.plainVariableText).toEqual({ EMAIL_FROM: 'shop@example.com' });
+        const payload = devPayload(transported(result.payload));
+        expect([...payload.pointerVersions.keys()]).toEqual(['EMAIL_FROM']);
+        expect([...payload.absentSecrets]).toEqual([]);
+      }
+    });
+
+    test('an unset optional input field is left out of the input document', async () => {
+      const graph = plainGraph(acceptsAnything);
+
+      const result = await devPreflight(graph);
+
+      expect(result.plainVariableText).toEqual({});
+      expect([...devPayload(transported(result.payload)).absentSecrets]).toEqual(['EMAIL_FROM']);
+      expect(documentOf(graph, 'shop.mail', transported(result.payload))).toEqual({});
+    });
+
+    test('a required unset input field stops dev, naming the variable, the service and the field', async () => {
+      configuration['EMAIL_FROM'] = '';
+
+      const message = await preflightError(plainGraph(requiresOneOf('from')));
+
+      expect(message).toContain(
+        '1 platform variable a service needs has no value:\n  - EMAIL_FROM  (read by service "shop.mail", field "from")',
+      );
+    });
+
+    test('a name only a per-key param reads is not left out of any input document, and one an input field also reads is', async () => {
+      const graph = Load(
+        appRoot('shop', ({ provision }) => {
+          const apiToken = provision(variable({ name: 'API_TOKEN' }));
+          provision(tokenService(string({ optional: true })), {
+            id: 'web',
+            params: { token: apiToken },
+          });
+          provision(compute({ name: 'mail', deps: {}, input: acceptsAnything, build }), {
+            input: { token: apiToken },
+          });
+        }),
+      );
+      const paramOnly = Load(
+        appRoot('shop', ({ provision }) => {
+          const apiToken = provision(variable({ name: 'API_TOKEN' }));
+          provision(tokenService(string({ optional: true })), {
+            id: 'web',
+            params: { token: apiToken },
+          });
+        }),
+      );
+
+      expect([...devPayload(transported(await preflight(graph))).absentSecrets]).toEqual([
+        'API_TOKEN',
+      ]);
+      expect(await preflight(paramOnly)).toBeUndefined();
+    });
+
+    test('a value that is not text stops dev before any service starts, naming the variable, the node and its reader', async () => {
+      configuration['EMAIL_FROM'] = 42;
+
+      expect(await preflightError(plainGraph(acceptsAnything))).toBe(
+        'The `config` adapters return a number for "EMAIL_FROM", not text. prisma dev cannot start, because the platform variable "shop.emailFrom", which service "shop.mail" reads, takes text. Make the adapter return a string.',
+      );
+    });
+
+    test('the not-text message names every service that reads the node, each once', async () => {
+      configuration['SMTP_PORT'] = 25;
+      const graph = Load(
+        appRoot('shop', ({ provision }) => {
+          const smtpPort = provision(variable({ name: 'SMTP_PORT' }));
+          provision(compute({ name: 'mail', deps: {}, input: acceptsAnything, build }), {
+            input: { port: smtpPort, again: smtpPort },
+          });
+          provision(tokenService(), { id: 'digest', params: { token: smtpPort } });
+        }),
+      );
+
+      expect(await preflightError(graph)).toBe(
+        'The `config` adapters return a number for "SMTP_PORT", not text. prisma dev cannot start, because the platform variable "shop.smtpPort", which services "shop.mail" and "shop.digest" read, takes text. Make the adapter return a string.',
+      );
+    });
+
+    test("a changed value changes only that variable's fingerprint", async () => {
+      configuration['API_TOKEN'] = 'tok_1';
+      const graph = plainGraph(acceptsAnything);
+      const versionsFor = async (from: string) => {
+        configuration['EMAIL_FROM'] = from;
+        return devPayload(transported(await preflight(graph))).pointerVersions;
+      };
+
+      const first = await versionsFor('a@example.com');
+      const second = await versionsFor('b@example.com');
+
+      expect(second.get('EMAIL_FROM')).not.toBe(first.get('EMAIL_FROM'));
+      expect(second.get('API_TOKEN')).toBe(first.get('API_TOKEN'));
+    });
   });
 });
