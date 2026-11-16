@@ -1,14 +1,4 @@
 /**
- * Dev preflight (local-dev spec § 5, ADR-0041): the same name walk deploy's
- * preflight uses (`preflight-names.ts`), with dev's value-sourcing policy.
- * Every value comes from what the command read: secrets from the app secrets,
- * plain platform variables and env-sourced params from the app configuration.
- * An unset or empty variable that an input field reads is left out of the
- * service's input; it is an error only when the service's schema rejects its
- * absence or an array position reads it. An unset or empty per-key param takes
- * its default or is left out when optional; it is an error only when it is
- * required.
- *
  * Control-plane only, runs in the CLI parent (no CliError import — see
  * container.ts). Reads no Management API — dev is credential-free.
  */
@@ -21,6 +11,7 @@ import type {
   PreflightInput,
 } from '@internal/core/config';
 import { DEV_DIR, devEnvironmentDir } from '@internal/core/config';
+import { quotedList } from '@internal/foundation/errors';
 import {
   movePreEnvironmentDevState,
   readOrCreateFingerprintKey,
@@ -28,7 +19,6 @@ import {
 } from '@internal/local-target';
 import { configurationText } from '../configuration-text.ts';
 import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
-import { quotedList } from '../graph-check.ts';
 import { addReader, missingVariablesText } from '../missing-variables-text.ts';
 import { platformVariableNodes } from '../platform-variable.ts';
 import {

@@ -14,6 +14,7 @@
  * `dev` is credential-free: everything it starts runs on this machine.
  */
 import * as path from 'node:path';
+import { quotedList } from '@internal/foundation/errors';
 import type { ChildResult, EngineEvent } from '@prisma/cli-engine';
 import { defineSessionCommand, flag } from '@prisma/cli-engine';
 import { ok } from '@prisma/cli-engine/protocol';
@@ -26,23 +27,24 @@ import { composerSection } from '../section.ts';
 
 const STOP_STEP = "Stopping the app's services — emulators and data stay up";
 
-const andList = (items: readonly string[], comma = ''): string => {
-  const last = items.at(-1) ?? '';
-  return items.length < 2 ? last : `${items.slice(0, -1).join(', ')}${comma} and ${last}`;
-};
-
 function valueReadsChangedText(
   change: Extract<DevEvent, { readonly kind: 'value-reads-changed' }>,
 ): string {
-  const quoted = (addresses: readonly string[]) => andList(addresses.map((a) => `"${a}"`));
   const clauses = [
-    ...(change.added.length > 0 ? [`reads of ${quoted(change.added)} were added`] : []),
-    ...(change.removed.length > 0 ? [`reads of ${quoted(change.removed)} were removed`] : []),
+    ...(change.added.length > 0 ? [`reads of ${quotedList(change.added)} were added`] : []),
+    ...(change.removed.length > 0 ? [`reads of ${quotedList(change.removed)} were removed`] : []),
     ...(change.changed.length > 0
-      ? [`${quoted(change.changed)} ${change.changed.length === 1 ? 'was' : 'were'} changed`]
+      ? [`${quotedList(change.changed)} ${change.changed.length === 1 ? 'was' : 'were'} changed`]
       : []),
   ];
-  return `The platform variables the app reads changed since dev started: ${andList(clauses, clauses.length > 2 ? ',' : '')}. Restart dev to apply them; rebuilds are paused until then.`;
+  const [first, second, third] = clauses;
+  const joined =
+    third !== undefined
+      ? `${first}, ${second}, and ${third}`
+      : second !== undefined
+        ? `${first} and ${second}`
+        : first;
+  return `The platform variables the app reads changed since dev started: ${joined}. Restart dev to apply them; rebuilds are paused until then.`;
 }
 
 /** Resolves when the run is asked to stop. */
