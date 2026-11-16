@@ -2,10 +2,10 @@ import type * as Provider from 'alchemy/Provider';
 import * as Data from 'effect/Data';
 import * as Predicate from 'effect/Predicate';
 
-export const PROVIDER_FAILURE_TAG = 'ProviderFailure';
+const PROVIDER_FAILURE_TAG = 'ProviderFailure';
 
 /** A provider operation failed with an error that carries no `_tag` of its own; `cause` is that error. */
-export class ProviderFailure extends Data.TaggedError(PROVIDER_FAILURE_TAG)<{
+class ProviderFailure extends Data.TaggedError(PROVIDER_FAILURE_TAG)<{
   readonly message: string;
   readonly cause: unknown;
 }> {}
@@ -21,4 +21,11 @@ export function toProviderError(cause: unknown): Provider.ProviderError {
     message: cause instanceof Error ? cause.message : String(cause),
     cause,
   });
+}
+
+/** The original error of a provider failure `toProviderError` wrapped, or `undefined` for any other error. */
+export function wrappedProviderError(error: unknown): unknown {
+  return Predicate.isTagged(error, PROVIDER_FAILURE_TAG) && 'cause' in error
+    ? error.cause
+    : undefined;
 }

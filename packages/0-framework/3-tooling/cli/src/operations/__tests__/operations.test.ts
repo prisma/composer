@@ -844,7 +844,7 @@ function stepLine(event: DeployEvent): string {
   return event.kind === 'step-started' ? `started ${name}` : `finished ${name} ${event.outcome}`;
 }
 
-describe('deploy() credentials, app converge and redaction', () => {
+describe('deploy() credentials, the app converge entry and redaction', () => {
   const deployWith = (
     app: { dir: string; entryPath: string },
     deps: Parameters<typeof deployWithDeps>[1],
@@ -940,29 +940,58 @@ describe('deploy() credentials, app converge and redaction', () => {
     expect(result.failure.message).toBe('two hosts');
   });
 
-  test('what Alchemy writes to the terminal itself reaches stderr redacted, even when a secret is split across writes', async () => {
+  test('what Alchemy writes to the terminal itself becomes one redacted message per line, even when a secret is split across writes, and the operation prints nothing', async () => {
     const app = makeAppDir();
     const token = 'tok-terminal-secret-91';
     const redaction = new SecretRedaction({});
     redaction.addCredentialLookingValues([token]);
-    const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
-    let printed = '';
+    const events: DeployEvent[] = [];
+    const stderr = spyOn(process.stderr, 'write');
+    const stdout = spyOn(process.stdout, 'write');
     try {
-      const result = await deployWith(app, {
-        appConvergeEntry: appConvergeEntry(async (request) => {
-          request.output?.(`bearer ${token.slice(0, 8)}`);
-          request.output?.(`${token.slice(8)} done\n`);
-          return APPLIED;
-        }),
-        redaction,
-      });
+      const result = await deployWith(
+        app,
+        {
+          appConvergeEntry: appConvergeEntry(async (request) => {
+            request.output?.(`first ${token.slice(0, 8)}`);
+            request.output?.(`${token.slice(8)} done\nsecond`);
+            request.output?.(' line\nno line break');
+            return APPLIED;
+          }),
+          redaction,
+        },
+        fakeConfig(),
+        (event) => events.push(event),
+      );
       if (!result.ok) throw result.failure;
-      printed = stderr.mock.calls.map(([chunk]) => String(chunk)).join('');
+      expect(stderr).not.toHaveBeenCalled();
+      expect(stdout).not.toHaveBeenCalled();
     } finally {
       stderr.mockRestore();
+      stdout.mockRestore();
     }
-    expect(printed).toContain('bearer [redacted] done');
-    expect(printed).not.toContain(token);
+    const messages = events.flatMap((event) => (event.kind === 'message' ? [event.text] : []));
+    expect(messages).toEqual(['first [redacted] done', 'second line', 'no line break']);
+  });
+
+  test('the last line of terminal text is sent when the converge fails', async () => {
+    const app = makeAppDir();
+    const events: DeployEvent[] = [];
+
+    const result = await deployWith(
+      app,
+      {
+        appConvergeEntry: appConvergeEntry(async (request) => {
+          request.output?.('half a line');
+          throw new Error('engine gone');
+        }),
+      },
+      fakeConfig(),
+      (event) => events.push(event),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(events).toContainEqual({ kind: 'message', severity: 'info', text: 'half a line' });
   });
 
   test('an app with no installed @prisma/composer fails with DEPS.CONVERGE_UNRESOLVABLE before any container is ensured', async () => {

@@ -25,7 +25,6 @@ import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
 import {
   deployAppConfigurationFile,
   prepareSecondProcess,
-  refuseSecretsIn,
   removeLeftoverAppConfigurationFiles,
   type SecondProcessHandover,
 } from '../app-configuration-file.ts';
@@ -69,6 +68,7 @@ import {
   toRunReport,
   writeRunReport,
 } from '../run-report.ts';
+import { refuseSecretsIn } from '../secret-as-plain-value.ts';
 import { validateEnvironmentName } from '../validate-environment.ts';
 import {
   DEFAULT_DEPLOY_ENVIRONMENT,
@@ -505,7 +505,11 @@ async function runStackPipelineInner(
     const { graph, name: resolvedName } = pipeline;
     const config = pipeline.configSource.value;
     if (action === 'deploy') {
-      refuseSecretsIn(graph.appConfigurationRead, opts.redaction.knownSecrets, 'deploy');
+      refuseSecretsIn(
+        graph.appConfigurationRead,
+        opts.redaction.knownSecrets,
+        'A deploy sends every plain value Load read to the platform as plain configuration, and never sends a secret that way.',
+      );
     }
 
     steps.start({ name: 'connect' });
@@ -946,6 +950,27 @@ function convergeFailure(
 }
 
 /**
+ * Alchemy's terminal text as `info` messages, one per complete line, redacted. A secret split
+ * across writes or lines is still found, because the text passes through a `StreamRedactor`
+ * before it is cut into lines. `end` sends the last line that has no line break.
+ */
+function interactionMessages(steps: DeploySteps, redaction: SecretRedaction) {
+  const stream = new StreamRedactor(redaction.allValues());
+  let partial = '';
+  const send = (text: string, last: boolean): void => {
+    const lines = (partial + text).split('\n');
+    partial = last ? '' : (lines.pop() ?? '');
+    for (const line of lines) {
+      if (line.trim() !== '') steps.message('info', redaction.redact(line));
+    }
+  };
+  return {
+    push: (text: string): void => send(stream.push(text), false),
+    end: (): void => send(stream.end(), true),
+  };
+}
+
+/**
  * Deploy's converge: lowers the app with the containers and preflight
  * payloads this run resolved, then plans and applies it in this process.
  * The report hook runs inside the apply, here, so the summary comes back as
@@ -1001,10 +1026,7 @@ async function convergeDeploy(
       ),
     );
   }
-  const output = new StreamRedactor(opts.redaction.allValues());
-  const toStderr = (text: string): void => {
-    if (text !== '') process.stderr.write(text);
-  };
+  const output = interactionMessages(steps, opts.redaction);
   let outcome: ConvergeOutcome;
   try {
     outcome = await entry.converge({
@@ -1015,7 +1037,7 @@ async function convergeDeploy(
       env,
       signal: opts.signal,
       onEvent: (event) => reportConvergeEvent(steps, event, redact),
-      output: (text) => toStderr(output.push(text)),
+      output: (text) => output.push(text),
     });
   } catch (error) {
     return notOk(
@@ -1027,7 +1049,7 @@ async function convergeDeploy(
       ),
     );
   } finally {
-    toStderr(output.end());
+    output.end();
   }
   if (outcome.kind !== 'applied') return notOk(convergeFailure(outcome, redact));
   steps.finish({ name: 'apply' });

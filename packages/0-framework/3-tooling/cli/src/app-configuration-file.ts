@@ -2,8 +2,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AppConfigurationRead, RootInputField } from '@internal/core';
 import { type AppSecrets, DEV_DIR, type NamedSecrets } from '@internal/core/config';
-import { CliStructuredError } from '@internal/foundation/errors';
 import type { KnownSecrets } from './redaction.ts';
+import { refuseSecretsIn } from './secret-as-plain-value.ts';
 
 /** Names the app configuration file the first process wrote for this run (ADR-0062). */
 export const APP_CONFIGURATION_FILE_ENV = 'PRISMA_COMPOSER_APP_CONFIGURATION_FILE';
@@ -86,61 +86,6 @@ export function removeLeftoverAppConfigurationFiles(cwd: string): void {
   }
 }
 
-function textIn(value: unknown, at: readonly string[]): { at: readonly string[]; text: string }[] {
-  if (typeof value === 'string') return [{ at, text: value }];
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-    return [{ at, text: String(value) }];
-  }
-  if (Array.isArray(value)) {
-    return value.flatMap((member, index) => textIn(member, [...at, String(index)]));
-  }
-  if (typeof value === 'object' && value !== null) {
-    return Object.entries(value).flatMap(([key, member]) => textIn(member, [...at, key]));
-  }
-  return [];
-}
-
-const PLAIN_VALUE_CARRIERS = {
-  deploy:
-    'A deploy sends every plain value Load read to the platform as plain configuration, and never sends a secret that way.',
-  file: 'Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.',
-} as const;
-
-/**
- * Throws `CONFIG.SECRET_AS_PLAIN_VALUE` when a plain value Load read holds a known secret, a
- * number or a boolean compared as its text (`KnownSecrets.nameIn`). The message names where and
- * the secrets key, never the value.
- */
-export function refuseSecretsIn(
-  read: AppConfigurationRead,
-  knownSecrets: KnownSecrets,
-  carrier: keyof typeof PLAIN_VALUE_CARRIERS,
-): void {
-  const places = [
-    ...read.rootInput.flatMap((field) =>
-      textIn(field.value, field.path).map(({ at, text }) => ({
-        where: `Root input field input.${at.join('.')}`,
-        text,
-      })),
-    ),
-    ...Object.entries(read.configurationKeyText).map(([key, text]) => ({
-      where: `Configuration key "${key}"`,
-      text,
-    })),
-  ];
-  for (const { where, text } of places) {
-    const name = knownSecrets.nameIn(text);
-    if (name === undefined) continue;
-    throw new CliStructuredError(
-      'CONFIG.SECRET_AS_PLAIN_VALUE',
-      `${where} holds the value of the secret "${name}", which an envSecret() in the graph reads. ${PLAIN_VALUE_CARRIERS[carrier]}`,
-      {
-        fix: `Read the secret with envSecret('${name}') where it is used, or give this plain value text that does not contain the value of "${name}".`,
-      },
-    );
-  }
-}
-
 /** What the first process hands the second: the app configuration file, and the environment that names it. */
 export interface SecondProcessHandover {
   /** What the first process adds to the second process's environment. */
@@ -170,7 +115,11 @@ export function prepareSecondProcess(input: {
   readonly appSecrets?: AppSecrets;
 }): SecondProcessHandover {
   const { file, appSecrets } = input;
-  refuseSecretsIn(input.appConfigurationRead, input.knownSecrets, 'file');
+  refuseSecretsIn(
+    input.appConfigurationRead,
+    input.knownSecrets,
+    'Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.',
+  );
   const contents: AppConfigurationFile = {
     appConfigurationRead: input.appConfigurationRead,
     nodeAddresses: input.nodeAddresses,

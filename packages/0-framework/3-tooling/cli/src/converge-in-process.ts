@@ -9,8 +9,9 @@
  * the app's install, so it runs on the app's copy of alchemy and effect.
  */
 import { isMainThread } from 'node:worker_threads';
-import { type lower, PROVIDER_FAILURE_TAG } from '@internal/core/deploy';
+import { type lower, wrappedProviderError } from '@internal/core/deploy';
 import { blindCast } from '@internal/foundation/casts';
+import { CliStructuredError } from '@internal/foundation/errors';
 import * as Alchemist from 'alchemy/Alchemist';
 import * as Interaction from 'alchemy/Interaction';
 import { recordOf } from 'alchemy/Util/LogRecord';
@@ -51,7 +52,7 @@ export interface ConvergeRequest {
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly signal?: AbortSignal | undefined;
   readonly onEvent?: ((event: ConvergeEvent) => void) | undefined;
-  /** Receives what Alchemy writes to the terminal itself. Absent means stderr. */
+  /** Receives what Alchemy writes to the terminal itself. A throw from it is ignored. Absent means stderr. */
   readonly output?: ((text: string) => void) | undefined;
 }
 
@@ -150,19 +151,19 @@ function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-/** One error as a reason. A `ProviderFailure` reports the error it wraps, and a structured error reports its code as its tag. */
+/** One error as a reason. A wrapped provider failure reports the error it wraps, and a structured error reports its code as its tag. */
 function reasonOf(error: unknown): ConvergeFailureReason {
   if (!isRecord(error)) return { tag: 'Unknown', message: textOf(error) };
-  if (error['_tag'] === PROVIDER_FAILURE_TAG && 'cause' in error) return reasonOf(error['cause']);
+  const wrapped = wrappedProviderError(error);
+  if (wrapped !== undefined) return reasonOf(wrapped);
   const message = typeof error['message'] === 'string' ? error['message'] : undefined;
-  const tag =
-    error['name'] === 'CliStructuredError' && typeof error['code'] === 'string'
-      ? error['code']
-      : typeof error['_tag'] === 'string'
-        ? error['_tag']
-        : error instanceof Error
-          ? error.name
-          : 'Unknown';
+  const tag = CliStructuredError.is(error)
+    ? error.code
+    : typeof error['_tag'] === 'string'
+      ? error['_tag']
+      : error instanceof Error
+        ? error.name
+        : 'Unknown';
   return { tag, message: message ?? textOf(error) };
 }
 
@@ -229,7 +230,11 @@ async function withProcessState<T>(
 function writingTo(write: (text: string) => void): NodeJS.WriteStream {
   const stream: NodeJS.WriteStream = Object.create(process.stderr);
   stream.write = (chunk: string | Uint8Array) => {
-    write(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+    try {
+      write(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+    } catch {
+      // Rendering is the caller's; its failures are not the deploy's.
+    }
     return true;
   };
   return stream;

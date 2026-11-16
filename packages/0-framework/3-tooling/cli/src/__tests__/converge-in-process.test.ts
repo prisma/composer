@@ -268,6 +268,37 @@ describe('convergeInProcess', () => {
     }
   });
 
+  test("a throw from the request's output does not fail the apply", async () => {
+    const { config } = fixture(
+      Object.assign(
+        () =>
+          Effect.gen(function* () {
+            const interaction = yield* Interaction.Interaction;
+            yield* interaction.output.info('state store bootstrapped');
+            return { outputs: {}, entities: [] };
+          }),
+        { kind: 'resource' as const },
+      ),
+    );
+    let calls = 0;
+
+    const outcome = await convergeInProcess(
+      request(
+        config,
+        {},
+        {
+          output: () => {
+            calls += 1;
+            throw new Error('closed pipe');
+          },
+        },
+      ),
+    );
+
+    expect(outcome).toEqual({ kind: 'applied' });
+    expect(calls).toBeGreaterThan(0);
+  });
+
   test('one converge per process holds across two copies of the module', async () => {
     const copy: typeof import('../converge-in-process.ts') = await import(
       `../converge-in-process.ts?copy=${String(Date.now())}`
