@@ -1,4 +1,5 @@
 import {
+  appRoot,
   module,
   type ParamSource,
   type RuntimeValue,
@@ -10,7 +11,7 @@ import {
 import { field, secretString } from '@internal/foundation/arktype';
 import { type } from 'arktype';
 import { expectTypeOf, test } from 'vitest';
-import { compute } from '../exports/index.ts';
+import { compute, variable } from '../exports/index.ts';
 import {
   type EnvParamPayload,
   envParam,
@@ -149,5 +150,42 @@ test("a service's binding refuses a wrong literal, a runtime value in a plain fi
     provision(relay, { input: { host: 'h', from: envSecret('FROM'), key: envSecret('KEY') } });
     // @ts-expect-error serviceOrigin() is a plain runtime value; a secretString() field takes a secret only
     provision(relay, { input: { host: 'h', from: 'x', key: serviceOrigin('shop.web') } });
+  });
+});
+
+test('a plain node value fits a field() field and a per-key param, and a secret node value fits a secretString() field', () => {
+  const relay = compute({
+    name: 'relay',
+    deps: {},
+    build,
+    input: type({ from: field(type('string')), key: secretString() }),
+  });
+  appRoot('shop', ({ provision }) => {
+    const from = provision(variable({ name: 'EMAIL_FROM' }));
+    const key = provision(variable.secret({ name: 'EMAIL_KEY' }));
+    provision(relay, { input: { from, key } });
+    provision(compute({ name: 'web', deps: {}, build }), { id: 'web', params: { port: from } });
+  });
+});
+
+test('a plain node value does not fit a secret field, a secret one does not fit a field() field, and a secret one does not fit a per-key param', () => {
+  const relay = compute({
+    name: 'relay',
+    deps: {},
+    build,
+    input: type({ from: field(type('string')), key: secretString() }),
+  });
+  appRoot('shop', ({ provision }) => {
+    const from = provision(variable({ name: 'EMAIL_FROM' }));
+    const key = provision(variable.secret({ name: 'EMAIL_KEY' }));
+    // @ts-expect-error a plain platform variable is a plain pointer; a secretString() field takes a secret only
+    provision(relay, { input: { from, key: from } });
+    // @ts-expect-error a platform secret is a secret pointer; a field() field takes a plain pointer only
+    provision(relay, { input: { from: key, key } });
+    provision(compute({ name: 'web', deps: {}, build }), {
+      id: 'web',
+      // @ts-expect-error a per-key param takes no secret source
+      params: { port: key },
+    });
   });
 });

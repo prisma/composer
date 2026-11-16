@@ -1,6 +1,7 @@
 import { type Pointer, type RuntimeValue, type SecretSource, secretSource } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import type { SecretString } from '@internal/foundation/secret';
+import { isPlatformVariablePayload } from './platform-variable.ts';
 import { assertVariableName } from './variable-name.ts';
 
 /**
@@ -31,7 +32,7 @@ export interface EnvSecretPayload {
 export function envSecret(
   name: string,
 ): SecretSource<EnvSecretPayload> & RuntimeValue<SecretString> {
-  assertVariableName(name, 'envSecret');
+  assertVariableName(name, 'envSecret', "envSecret('API_KEY')");
   return secretSource<EnvSecretPayload, Pointer<SecretString>>(
     { [PRISMA_CLOUD_SECRET_SOURCE]: true, name },
     { label: `envSecret('${name}')`, secretsKey: name },
@@ -60,6 +61,7 @@ function isEnvSecretPayload(payload: unknown): payload is EnvSecretPayload {
  */
 export function secretName(source: SecretSource, where: string): string {
   const payload = source.payload;
+  if (isPlatformVariablePayload(payload)) return payload.name;
   if (!isEnvSecretPayload(payload)) {
     throw new Error(
       `${where} is bound to a secret source not created by envSecret() — bind secrets with ` +

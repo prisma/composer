@@ -9,6 +9,7 @@ import {
 } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import type { SecretString } from '@internal/foundation/secret';
+import { isPlainVariableSource } from './platform-variable.ts';
 import { assertVariableName } from './variable-name.ts';
 
 /**
@@ -42,7 +43,7 @@ export interface EnvParamPayload {
  * @deprecated Only in a module or service `input` binding, where a root input field replaces it. Binding a per-key param with envParam() is not deprecated.
  */
 export function envParam(name: string): ParamSource<EnvParamPayload> & Value<string> {
-  assertVariableName(name, 'envParam');
+  assertVariableName(name, 'envParam', "envParam('API_KEY')");
   return paramSource<EnvParamPayload, string>(
     { [PRISMA_CLOUD_PARAM_SOURCE]: true, name },
     { label: `envParam('${name}')`, configurationKey: name },
@@ -201,6 +202,7 @@ export function isOriginParamSource(value: unknown): value is ParamSource<Origin
  */
 export function paramName(binding: ParamBinding): string {
   const { binding: bound } = binding;
+  if (isPlainVariableSource(bound)) return bound.payload.name;
   if (!isEnvParamSource(bound)) {
     throw new Error(
       `param slot "${binding.slot}" of service "${binding.serviceAddress}" is bound to a source ` +

@@ -18,6 +18,8 @@ export {
   paramName,
   serviceOrigin,
 } from '../param.ts';
+export type { PlatformVariablePayload } from '../platform-variable.ts';
+export { variable } from '../platform-variable.ts';
 export type { ProvisionedEdge } from '../provisioned-edges.ts';
 export { provisionedEdges } from '../provisioned-edges.ts';
 export type {
