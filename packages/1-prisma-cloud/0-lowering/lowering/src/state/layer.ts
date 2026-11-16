@@ -16,7 +16,7 @@ import { BUILD_ID_ENV } from '../builds/resources.ts';
 import { withResourceReporting } from '../builds/state-store.ts';
 import * as client from '../client.ts';
 import { resolveDefaultBranchId } from '../container.ts';
-import { managementApiOrigin } from '../credentials.ts';
+import { suppliedClientOrigin, tokenClientOrigin } from '../credentials.ts';
 import { managementApiHttpClientLayer } from '../management-api-http-client.ts';
 import { failOnEmptyScopeWithLiveResources, scopeOccupied } from './empty-scope.ts';
 import { hostedStateBootstrapError } from './errors.ts';
@@ -58,12 +58,14 @@ export const prismaStateLayer = (
     readonly defaultBranchId?: string;
   },
   supplied?: client.ManagementApiClient,
-): Layer.Layer<State, never, StackServices> =>
-  Layer.unwrap(
-    managementApiOrigin(supplied !== undefined).pipe(
+): Layer.Layer<State, never, StackServices> => {
+  const suppliedOrigin = supplied === undefined ? undefined : suppliedClientOrigin(process.env);
+  return Layer.unwrap(
+    (suppliedOrigin === undefined ? tokenClientOrigin() : Effect.succeed(suppliedOrigin)).pipe(
       Effect.map((origin) => stateLayerAgainst(origin, ids, supplied)),
     ),
   ).pipe(Layer.orDie);
+};
 
 /**
  * The stock service with legacy Composer resource rows rewritten to the

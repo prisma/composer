@@ -121,17 +121,3 @@ export const suppliedClientOrigin = (env: Readonly<Record<string, string | undef
   }
   return origin;
 };
-
-/**
- * The origin Management API requests go to: {@link suppliedClientOrigin} when the
- * caller supplied a client, else {@link tokenClientOrigin}. With a supplied client
- * it reads the environment when it is called, so `DEPLOY.MANAGEMENT_API_URL_CONFLICT`
- * is thrown to the caller as a structured error, never inside a layer.
- */
-export const managementApiOrigin = (
-  clientSupplied: boolean,
-): Effect.Effect<string, Config.ConfigError | Error> => {
-  if (!clientSupplied) return tokenClientOrigin();
-  const origin = suppliedClientOrigin(process.env);
-  return Effect.succeed(origin);
-};
