@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { containerEnvVarName } from '../container-transport.ts';
-import { preflightEnv, preflightEnvVarName, readPreflightPayload } from '../preflight-transport.ts';
+import {
+  PREFLIGHT_FINDINGS_ENV_VAR,
+  preflightEnv,
+  preflightEnvVarName,
+  readPreflightFindings,
+  readPreflightPayload,
+  type UnsetPlatformVariable,
+} from '../preflight-transport.ts';
 
 describe('preflightEnvVarName()', () => {
   test('the documented mangling — the exact @prisma/composer-prisma-cloud expectation', () => {
@@ -47,6 +54,12 @@ describe('preflightEnv()', () => {
       ),
     ).toThrow(/"acme\.widgets" and "acme\/widgets" both use the environment variable/);
   });
+
+  test('an extension whose variable would be the findings variable is refused, naming the reserved variable', () => {
+    expect(() => preflightEnv(new Map([['findings', 'a']]))).toThrow(
+      'Extension id "findings" uses the environment variable "PRISMA_COMPOSER_PREFLIGHT_FINDINGS", which Composer reserves. Rename the extension.',
+    );
+  });
 });
 
 describe('readPreflightPayload()', () => {
@@ -68,5 +81,33 @@ describe('readPreflightPayload()', () => {
     expect(
       readPreflightPayload('acme.widgets', { PRISMA_COMPOSER_PREFLIGHT_ACME_WIDGETS: '' }),
     ).toBeUndefined();
+  });
+});
+
+describe('readPreflightFindings()', () => {
+  const unset: UnsetPlatformVariable = {
+    name: 'MAIL_KEY',
+    readers: [{ kind: 'unread', node: 'app.mail', nodeKind: 'module' }],
+    commands: ["prisma project env add 'MAIL_KEY=<value>' --project 'proj' --role production"],
+  };
+
+  test('reads the findings a 0.39.0 host wrote', () => {
+    expect(
+      readPreflightFindings({ [PREFLIGHT_FINDINGS_ENV_VAR]: JSON.stringify({ unset: [unset] }) }),
+    ).toEqual({ unset: [unset] });
+  });
+
+  test('reads none from an empty or absent variable', () => {
+    expect(readPreflightFindings({ [PREFLIGHT_FINDINGS_ENV_VAR]: '' })).toEqual({ unset: [] });
+    expect(readPreflightFindings({})).toEqual({ unset: [] });
+  });
+
+  test('fails on findings that do not decode, rather than print a partial report', () => {
+    expect(() => readPreflightFindings({ [PREFLIGHT_FINDINGS_ENV_VAR]: 'not json' })).toThrow(
+      /could not be read in the second process/,
+    );
+    expect(() =>
+      readPreflightFindings({ [PREFLIGHT_FINDINGS_ENV_VAR]: '{"unset":[{"name":"A_KEY"}]}' }),
+    ).toThrow(/could not be read in the second process/);
   });
 });

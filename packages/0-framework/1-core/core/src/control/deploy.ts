@@ -23,6 +23,7 @@ import {
 import {
   type PreflightFindings,
   type PreflightPayload,
+  readPreflightFindings,
   readPreflightPayload,
 } from '../preflight-transport.ts';
 import type {
@@ -247,11 +248,11 @@ export interface LowerOptions {
   readonly report?: (result: DeploymentResult) => void;
   /** Addresses lowered without an artifact: `package` and `deploy` are skipped and `reserve` runs instead (ADR-0056). Only the dev stack file sets it. */
   readonly unassembled?: readonly string[];
-  /** Each extension's resolved container, by extension id. When this or `preflightPayloads` is absent, both are read from the environment the CLI wrote for a stack file it runs as a child (`transportedLowerInputs`). */
+  /** Each extension's resolved container, by extension id. Pass both `containers` and `preflightPayloads`, or neither. When both are absent, `lower()` reads both, and the preflight findings, from the environment transports through `transportedLowerInputs(config)`. When exactly one is passed, `lower()` throws. */
   readonly containers?: ReadonlyMap<string, ContainerInstance> | undefined;
   /** What each extension's preflight returned, by extension id. Each lowering context gets its own extension's entry as `LowerContext.preflight`. */
   readonly preflightPayloads?: ReadonlyMap<string, string> | undefined;
-  /** The platform variables with no value that the deploy preflight found. The deploy report carries them. Absent means none. */
+  /** The platform variables with no value that the deploy preflight found. The deploy report carries them. Absent means none, unless `containers` and `preflightPayloads` are absent too. */
   readonly findings?: PreflightFindings;
   /** What the caller already authenticated, handed to every extension's `providers()` and to the state descriptor's `create()`. Absent means each extension falls back to its own credential protocol. */
   readonly credentials?: CallerCredentials | undefined;
@@ -714,10 +715,9 @@ export function lowering(
       assertSameNodeAddresses(nodeAddresses(graph), opts.firstProcessNodeAddresses);
     }
     const extensions = yield* extensionsById(config);
-    const { containers, preflightPayloads } = lowerInputs(config, opts);
+    const { containers, preflightPayloads, findings } = lowerInputs(config, opts);
     const preflightOf = (extensionId: string): PreflightPayload =>
       preflightPayloads.get(extensionId);
-    const findings = opts.findings ?? { unset: [] };
     const lowered = new Map<NodeId, Outputs>();
     // Each node's reported entities, in topo order — the loop is the only
     // party that holds both the node's identity and what it became. Collected
@@ -934,9 +934,10 @@ export function lowering(
 interface LowerInputs {
   readonly containers: ReadonlyMap<string, ContainerInstance>;
   readonly preflightPayloads: ReadonlyMap<string, string>;
+  readonly findings: PreflightFindings;
 }
 
-/** The containers and preflight payloads the CLI wrote into the environment of a stack file it runs as a child. */
+/** The containers, preflight payloads and preflight findings a host wrote into the environment of a stack file it runs as a child. */
 export function transportedLowerInputs(config: PrismaAppConfig): LowerInputs {
   const env = process.env;
   const preflightPayloads = new Map<string, string>();
@@ -944,18 +945,25 @@ export function transportedLowerInputs(config: PrismaAppConfig): LowerInputs {
     const payload = readPreflightPayload(id, env);
     if (payload !== undefined) preflightPayloads.set(id, payload);
   }
-  return { containers: deserializeContainers(config.extensions, env), preflightPayloads };
+  return {
+    containers: deserializeContainers(config.extensions, env),
+    preflightPayloads,
+    findings: readPreflightFindings(env),
+  };
 }
 
 function lowerInputs(config: PrismaAppConfig, opts: LowerOptions): LowerInputs {
-  if (opts.containers !== undefined && opts.preflightPayloads !== undefined) {
-    return { containers: opts.containers, preflightPayloads: opts.preflightPayloads };
+  const { containers, preflightPayloads } = opts;
+  if (containers !== undefined && preflightPayloads !== undefined) {
+    return { containers, preflightPayloads, findings: opts.findings ?? { unset: [] } };
   }
-  const transported = transportedLowerInputs(config);
-  return {
-    containers: opts.containers ?? transported.containers,
-    preflightPayloads: opts.preflightPayloads ?? transported.preflightPayloads,
-  };
+  if (containers === undefined && preflightPayloads === undefined) {
+    return transportedLowerInputs(config);
+  }
+  const missing = containers === undefined ? 'containers' : 'preflightPayloads';
+  throw new Error(
+    `lower() was passed ${missing === 'containers' ? 'preflightPayloads' : 'containers'} without ${missing}. Pass both, or neither to read both from the environment.`,
+  );
 }
 
 /**
