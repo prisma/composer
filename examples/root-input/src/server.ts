@@ -17,8 +17,6 @@ const logo = Bun.file(new URL('./assets/logo.svg', import.meta.url));
 
 const handler = async (request: Request): Promise<Response> => {
   if (new URL(request.url).pathname !== '/logo.svg') {
-    // The live proof for the input: the root input field's value, read through
-    // input() at runtime — schema-validated, unredacted.
     return Response.json({ greeting, environment });
   }
   // The live proof for the build: a file that only exists here if the whole

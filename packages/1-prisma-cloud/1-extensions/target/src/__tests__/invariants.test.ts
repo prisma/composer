@@ -125,13 +125,6 @@ describe('invariant 2: authoring imports stay lean (core + pack)', () => {
 });
 
 describe('invariant 4: environment touches are confined to the config serializer, the control factory, and the container lifecycle', () => {
-  // Why each file reads the environment: serializer.ts (params and the
-  // input document at boot), control/extension.ts
-  // (optional PRISMA_WORKSPACE_ID and PRISMA_REGION, and the preflight
-  // transport), container.ts (PRISMA_WORKSPACE_ID, PRISMA_SERVICE_TOKEN),
-  // preflight.ts (PRISMA_SERVICE_TOKEN; values come from the app configuration and the app secrets), local-target/attach.ts (the shell environment a dev
-  // server keeps under its Composer rows, ADR-0056), compute.ts (run()
-  // applies stashRows to the environment), testing.ts (bootstrapService).
   test('the environment is read only in the files listed below', () => {
     const sources = shippedSources();
     expect(sources.length).toBeGreaterThan(0);

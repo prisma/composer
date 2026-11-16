@@ -1,11 +1,6 @@
 /**
- * The plan-S5 proving script for acceptance criteria 4 and 5 (spec's
- * acceptance criteria list): drives the installed `prisma` host's `dev`
- * against the S4 fixture (`test/fixtures/local-dev/`), extended for this
- * proof with a bucket consumer flow on `web` and two platform secrets and a
- * plain platform variable read by `bkg` (module.ts's binding). Same pattern as
- * `local-dev-store.integration.ts` — a real child process, teed output,
- * bounded waits.
+ * Drives the installed `prisma dev` against `test/fixtures/local-dev/`, as a
+ * real child process with teed output and bounded waits.
  *
  * Criterion 4 (bucket round-trip): PUT an object through the app's own
  * `/blobs/:key` route, confirm it lands as a plain file under

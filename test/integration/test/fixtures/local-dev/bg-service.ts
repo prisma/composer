@@ -3,10 +3,6 @@
  * "a changed artifact restarts exactly one service" (S4 proof): only
  * `web-service.ts`'s artifact changes between converges, so this one's pid
  * must stay stable across both the no-op and the changed-artifact converge.
- *
- * Also reads the fixture's platform variables: a required `apiKey` and an
- * optional `webhookSecret`, bound in module.ts, and a plain variable on the
- * reserved `port` param.
  */
 import { secretString } from '@prisma/composer/arktype';
 import node from '@prisma/composer/node';

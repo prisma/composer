@@ -7,8 +7,8 @@
  * and reversing it (see core-model.md § Runtime). Core never stringifies and
  * never touches an environment.
  *
- * Secrets are NOT params — they ride the service's input binding as secret
- * sources (ADR-0042). A param is never secret.
+ * Secrets are NOT params: a service takes its secrets as secret sources in its
+ * input binding. A param is never secret.
  */
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { Graph, InputBindingUse, ParamBinding, SecretSourceUse } from './graph-types.ts';
@@ -140,10 +140,7 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
 
 /**
  * The app's input manifest: every service input binding a `provision()` call
- * supplied (ADR-0042). Pure graph introspection, TARGET-AGNOSTIC — a deploy
- * target's recursive descent classifies the binding's leaves (its preflight
- * can check, before deploy, that each value a source names exists; the
- * values are set out-of-band).
+ * supplied (ADR-0042).
  */
 export function inputManifest(graph: Graph): readonly InputBindingUse[] {
   return graph.inputBindings;

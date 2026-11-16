@@ -253,8 +253,7 @@ describe("Load's second pass", () => {
 
     expect(loadError(() => Load(returning(secretSource({ name: 'X' })), staging)).message).toBe(
       'The resolve() function for input key "greeting" of service "shop.echo" returned a source, ' +
-        "such as generatedParam(), serviceOrigin() or a platform variable node's value. resolve() " +
-        'returns plain data; bind a source directly.',
+        'a value known only at boot. resolve() returns plain data; bind the source directly.',
     );
     expect(
       loadError(() =>

@@ -173,7 +173,7 @@ describe('renderDeployment', () => {
           },
           {
             name: 'AUDIT_TOKEN',
-            readers: [{ kind: 'unread', node: 'shop.audit', nodeKind: 'module' }],
+            readers: [{ kind: 'unread', node: 'shop.auditToken', nodeKind: 'resource' }],
             commands: [
               "prisma project env add 'AUDIT_TOKEN=<value>' --project 'proj_1' --role production",
             ],
@@ -191,7 +191,7 @@ describe('renderDeployment', () => {
         '  - EMAIL_API_KEY  (read by service "shop.email", field "apiKey"; read by service "shop.email", per-key param "key")',
         "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview",
         "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview --branch 'staging'",
-        '  - AUDIT_TOKEN  (named by module "shop.audit", read by no service)',
+        '  - AUDIT_TOKEN  (named by resource "shop.auditToken", read by no service)',
         "    prisma project env add 'AUDIT_TOKEN=<value>' --project 'proj_1' --role production",
       ].join('\n'),
     );

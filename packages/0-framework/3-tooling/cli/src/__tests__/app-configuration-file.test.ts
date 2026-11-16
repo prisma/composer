@@ -45,7 +45,6 @@ const echo = service({
   build: { extension: 'test/build', type: 'node', module: 'file:///echo.ts', entry: 'e.js' },
 });
 
-/** A root `shop` that passes on `EMAIL_FROM` and names `STRIPE_KEY` as a secret. */
 function shopGraph(
   configuration: Record<string, unknown>,
   transform: (input: Record<string, unknown>) => Record<string, unknown> = (input) => input,
@@ -178,7 +177,7 @@ describe('the app configuration file', () => {
     expect(refusal(graph, 'secret-text-77')).toMatchObject({
       code: 'CONFIG.SECRET_AS_PLAIN_VALUE',
       message: refusedBecause('Root input field input.EMAIL_FROM'),
-      fix: `Provision variable.secret({ name: 'SHOP_SECRET' }) in the app root and pass its value to where it is used, or give this plain value text that does not contain the value of "SHOP_SECRET".`,
+      fix: 'Pass the value of the platform secret "SHOP_SECRET" to where this value is used, or give this plain value text that does not contain the value of "SHOP_SECRET".',
     });
   });
 

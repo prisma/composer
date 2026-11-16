@@ -524,7 +524,7 @@ function flatten(
       if (provisionSecrets !== undefined) {
         throw new LoadError(
           `provision("${id}") received secrets for a service — a service takes its secrets as ` +
-            'values bound to secretString() fields of its `input` binding (ADR-0042), not a secrets map.',
+            'values bound to secretString() fields of its `input` binding, not a secrets map.',
         );
       }
       // The input binding pairs 1:1 with a declared input schema — a schema

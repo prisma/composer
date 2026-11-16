@@ -1,7 +1,6 @@
 import {
   type Graph,
   isParamSource,
-  isSecretSource,
   isValueResource,
   type ParamSource,
   type Pointer,
@@ -46,11 +45,8 @@ export function isPlainVariableSource(
   return isParamSource(value) && isPlatformVariablePayload(value.payload);
 }
 
-export function isSecretVariableSource(
-  value: unknown,
-): value is SecretSource<PlatformVariablePayload> {
-  return isSecretSource(value) && isPlatformVariablePayload(value.payload);
-}
+export const bindingPlace = (path: string, address: string): string =>
+  path === '' ? `the input of service "${address}"` : `input key "${path}" of service "${address}"`;
 
 export const notAPlatformVariable = (where: string): string =>
   `${where} is bound to a source that is not a platform variable. Provision variable() or variable.secret() from @prisma/composer-prisma-cloud in the app root and pass its value down.`;

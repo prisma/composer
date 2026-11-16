@@ -212,7 +212,7 @@ function checkResult(result: unknown, fnLabel: string): void {
     }
     if (isSecretSource(value) || isParamSource(value)) {
       throw new LoadError(
-        `${fnLabel} returned a source${atPath}, such as generatedParam(), serviceOrigin() or a platform variable node's value. resolve() returns plain data; bind a source directly.`,
+        `${fnLabel} returned a source${atPath}, a value known only at boot. resolve() returns plain data; bind the source directly.`,
       );
     }
     if (isValue(value)) {
@@ -355,7 +355,7 @@ function refuseSecretBoxes(address: NodeId, value: unknown, path: string): void 
   if (isSecretSource(value) || isParamSource(value)) return;
   if (isSecretString(value)) {
     throw new LoadError(
-      `${describeSite({ address, kind: 'moduleInput', path })} is bound to a SecretString. A secret's value never appears in the code; bind a secret source, such as a platform secret node's value, or pass on an input field typed secretString().`,
+      `${describeSite({ address, kind: 'moduleInput', path })} is bound to a SecretString. A secret's value never appears in the code; bind a secret source, or pass on an input field typed secretString().`,
     );
   }
   if (Array.isArray(value)) {

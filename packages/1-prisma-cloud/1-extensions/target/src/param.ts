@@ -1,5 +1,6 @@
 import {
   isParamSource,
+  isSecretSource,
   type ParamBinding,
   type ParamSource,
   type Pointer,
@@ -8,7 +9,11 @@ import {
 } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import type { SecretString } from '@internal/foundation/secret';
-import { isPlainVariableSource, notAPlatformVariable } from './platform-variable.ts';
+import {
+  isPlainVariableSource,
+  isPlatformVariablePayload,
+  notAPlatformVariable,
+} from './platform-variable.ts';
 
 const PRISMA_CLOUD_GENERATED_PARAM_SOURCE: unique symbol = blindCast<
   never,
@@ -132,6 +137,11 @@ export function isOriginParamSource(value: unknown): value is ParamSource<Origin
 export function paramName(binding: ParamBinding): string {
   const { binding: bound } = binding;
   const where = `param slot "${binding.slot}" of service "${binding.serviceAddress}"`;
+  if (isSecretSource(bound) && isPlatformVariablePayload(bound.payload)) {
+    throw new Error(
+      `${where} is bound to the platform secret "${bound.payload.name}", and a per-key param takes a plain platform variable.`,
+    );
+  }
   if (!isPlainVariableSource(bound)) throw new Error(notAPlatformVariable(where));
   return bound.payload.name;
 }

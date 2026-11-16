@@ -1,4 +1,4 @@
-/** A pointer: what a value known only at boot holds at deploy. It names the platform variable the service reads at boot, and records whether that variable holds a secret. */
+/** A pointer: what a value known only at boot holds at deploy. It names the variable on the platform that the service reads at boot, and records whether that variable holds a secret. */
 import { blindCast } from './casts.ts';
 import type { SecretString } from './secret.ts';
 
@@ -20,7 +20,7 @@ interface PointerWithKind<T, K extends PointerKind> {
   readonly [POINTER_TYPE]?: T;
 }
 
-/** The real value at deploy of a value known only at boot: it names the platform variable that holds the text of a `T`. Its kind is `'secret'` when `T` is a `SecretString` and `'plain'` otherwise. */
+/** The real value at deploy of a value known only at boot: it names the variable on the platform that holds the text of a `T`. Its kind is `'secret'` when `T` is a `SecretString` and `'plain'` otherwise. */
 export type Pointer<T> = PointerWithKind<
   T,
   unknown extends T ? PointerKind : T extends SecretString ? 'secret' : 'plain'

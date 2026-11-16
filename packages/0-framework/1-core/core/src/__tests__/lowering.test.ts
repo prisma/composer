@@ -426,6 +426,19 @@ describe('buildConfig — provision-time param binding', () => {
     });
   });
 
+  test('an unbound required param fails, saying to bind a literal value or a value known only at boot', () => {
+    const auth = app('fake/compute', {}, { token: string() });
+    const root = module('shop', {}, (h) => {
+      h.provision(auth, { id: 'auth' });
+      return {};
+    });
+    const graph = Load(root);
+
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(
+      'Param "token" of "shop.auth" (service "test-service") has no default, is not optional, and was not bound at provision — bind it on its provision() call with a literal value or a value known only at boot, or give it a default.',
+    );
+  });
+
   test('an unbound param falls back to its default', () => {
     const auth = app('fake/compute', {}, { port: number({ default: 3000 }) });
     const root = module('shop', {}, (h) => {
@@ -1467,7 +1480,7 @@ describe('deploymentResult', () => {
     });
     const unset = {
       name: 'MAIL_KEY',
-      readers: [{ kind: 'unread', node: 'shop.mail', nodeKind: 'module' }] as const,
+      readers: [{ kind: 'unread', node: 'shop.mailKey', nodeKind: 'resource' }] as const,
       commands: ["prisma project env add 'MAIL_KEY=<value>' --project 'proj' --role production"],
     };
 

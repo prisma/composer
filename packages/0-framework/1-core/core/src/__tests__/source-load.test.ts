@@ -112,8 +112,7 @@ describe('real values', () => {
 
     expect(loadError(() => Load(root, staging)).message).toBe(
       'The resolve() function for input key "key" of service "shop.echo" returned a source at ' +
-        '"a", such as generatedParam(), serviceOrigin() or a platform variable node\'s value. ' +
-        'resolve() returns plain data; bind a source directly.',
+        '"a", a value known only at boot. resolve() returns plain data; bind the source directly.',
     );
   });
 });

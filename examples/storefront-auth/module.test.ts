@@ -4,10 +4,8 @@ import root from './module.ts';
 
 describe('storefront-auth root graph', () => {
   test('the auth secret forwards from the root binding into the inner service input binding', () => {
-    // Loads the REAL app graph: dropping the module→service forward, renaming
-    // the input key, or removing the root's platform secret all break this —
-    // none of which typecheck catches, and the only other graph-Loading check
-    // is CI E2E.
+    // Typecheck catches none of a dropped forward, a renamed key or a removed
+    // platform secret; this Load of the real graph does.
     const graph = Load(root);
     expect(graph.inputBindings.length).toBe(1);
     const recorded = graph.inputBindings[0];

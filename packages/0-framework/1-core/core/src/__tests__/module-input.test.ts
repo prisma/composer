@@ -497,8 +497,8 @@ describe('errors', () => {
 
     expect(loadError(() => Load(shopWith(email, { key: new SecretBox('x') }))).message).toBe(
       'input key "key" of module "shop.email" is bound to a SecretString. A secret\'s value ' +
-        "never appears in the code; bind a secret source, such as a platform secret node's value, " +
-        'or pass on an input field typed secretString().',
+        'never appears in the code; bind a secret source, or pass on an input field typed ' +
+        'secretString().',
     );
   });
 

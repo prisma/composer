@@ -1,10 +1,5 @@
-/**
- * Compiled by this example's typecheck against the built public packages, never
- * run. A platform secret from `@prisma/composer-prisma-cloud` must fit a service's
- * `secretString()` field from `@prisma/composer/arktype`, which holds only while
- * the cloud package's declarations import `SecretBox` from `@prisma/composer`
- * instead of carrying their own copy.
- */
+// Compiled by the typecheck, never run: a platform secret fits `secretString()` only while the
+// cloud package's declarations import `SecretBox` from `@prisma/composer` rather than copy it.
 import { appRoot } from '@prisma/composer';
 import { secretString } from '@prisma/composer/arktype';
 import node from '@prisma/composer/node';

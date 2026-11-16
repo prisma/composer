@@ -53,3 +53,17 @@ describe('the kind of pointer each source is', () => {
     expect(isSecretPointer(generatedParam())).toBe(true);
   });
 });
+
+describe('paramName and a platform secret', () => {
+  test('refuses a slot a cast bound to a platform secret, saying a per-key param takes a plain platform variable', () => {
+    let key: unknown;
+    Load(
+      appRoot('shop', ({ provision }) => {
+        key = provision(variable.secret({ name: 'API_KEY' }));
+      }),
+    );
+    expect(() => paramName({ serviceAddress: 'web', slot: 'token', binding: key })).toThrow(
+      'param slot "token" of service "web" is bound to the platform secret "API_KEY", and a per-key param takes a plain platform variable.',
+    );
+  });
+});

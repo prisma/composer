@@ -1,15 +1,5 @@
-/**
- * What this extension's preflight hands the alchemy process, which re-imports
- * the config from scratch, in one environment variable that carries either kind:
- *
- * - deploy: a JSON object holding `updatedAt`, which maps each platform
- *   variable a service reads to the `updatedAt` of the row the platform resolves;
- * - `prisma dev`: `dev:` followed by JSON naming the unset platform variables and an
- *   HMAC-SHA256 of the current value of each variable a service points at.
- *
- * A deploy payload always starts with `{`, so the prefix tells them apart.
- * Names, times and keyed hashes only, never a value.
- */
+// A deploy payload is JSON `{ updatedAt }`; a `prisma dev` payload is `dev:` then JSON
+// `{ absentVariables, pointerVersions }`. Names, times and keyed hashes only, never a value.
 import { readPreflightPayload } from '@internal/core/config';
 import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
 
@@ -19,7 +9,6 @@ export type PointerVersion = (name: string) => string | undefined;
 /** What the preflight of this run sent, as the lowering reads it. */
 export interface TransportedPreflight {
   readonly pointerVersion: PointerVersion;
-  /** The platform variables `prisma dev` found unset; their fields are left out of the input document. Always empty for a deploy. */
   readonly absentVariables: ReadonlySet<string>;
 }
 

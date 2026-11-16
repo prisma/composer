@@ -124,7 +124,7 @@ function refuseSecretsIn(
       'CONFIG.SECRET_AS_PLAIN_VALUE',
       `${where} holds the value of the secret "${name}", which a platform secret in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
       {
-        fix: `Provision variable.secret({ name: '${name}' }) in the app root and pass its value to where it is used, or give this plain value text that does not contain the value of "${name}".`,
+        fix: `Pass the value of the platform secret "${name}" to where this value is used, or give this plain value text that does not contain the value of "${name}".`,
       },
     );
   }

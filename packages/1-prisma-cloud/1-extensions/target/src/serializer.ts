@@ -43,7 +43,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { configKey, ORIGIN_KEY_NAME } from './config-key.ts';
 import { isGeneratedParamSource, isOriginParamSource } from './param.ts';
-import { isPlainVariableSource, platformVariableName } from './platform-variable.ts';
+import { bindingPlace, isPlainVariableSource, platformVariableName } from './platform-variable.ts';
 import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
 
 // The ambient environment of whatever runtime hosts the bundle. Declared
@@ -241,14 +241,7 @@ export function stashRows(node: ServiceNode, address: string, env: Env): Record<
 export const inputKey = (address: string): string =>
   configKey(address, { owner: 'service', name: INPUT_KEY_NAME });
 
-/**
- * The platform var the deploy provisions for a generated input leaf's value:
- * COMPOSER_<addr>_<KEY>_GENERATED, where <KEY> is the leaf's input-document
- * path normalized the way `configKey` normalizes its keys (segments joined
- * with "_", uppercased). Lives in the framework's reserved COMPOSER_ namespace
- * (variable() and variable.secret() refuse COMPOSER_ names), so it can never
- * collide with a user-provisioned var.
- */
+// COMPOSER_<ADDRESS>_<PATH>_GENERATED, the path's segments joined with "_" and upper-cased.
 export const generatedParamVarName = (address: string, path: string): string => {
   const segments = addressKeySegments(address);
   const pathSegments = path.split('.').filter((s) => s.length > 0);
@@ -296,15 +289,15 @@ interface VariableRead {
 
 const NO_ABSENT_VARIABLES: ReadonlySet<string> = new Set();
 
-function absentArrayPositionError(member: unknown, position: string, address: string): Error {
-  const key = `input binding key "${position}" of service "${address}"`;
+function absentArrayPositionError(member: unknown, path: string, address: string): Error {
+  const place = bindingPlace(path, address);
   if (isSecretSource(member) || isParamSource(member)) {
     return new Error(
-      `${key} reads the platform variable "${platformVariableName(member, key)}", which has no value. An array position cannot be left out: set the variable, or bind a literal.`,
+      `${place} reads the platform variable "${platformVariableName(member, place)}", which has no value. An array position cannot be left out: set the variable, or bind a literal.`,
     );
   }
   return new Error(
-    `${key} resolved to no value, but only the value of a platform variable node can have none. This is a framework bug.`,
+    `${place} resolved to no value, but only the value of a platform variable node can have none. This is a framework bug.`,
   );
 }
 
@@ -331,15 +324,9 @@ export function assertDistinctPointerNames(
   }
 }
 
-function bindingPlace(path: string, address: string): string {
-  return path === ''
-    ? `the input of service "${address}"`
-    : `input key "${path}" of service "${address}"`;
-}
-
 export function resolveInputBinding(
   binding: unknown,
-  address = '',
+  address: string,
   options: SerializeInputOptions = {},
 ): ResolvedInputBinding {
   const absentVariables = options.absentVariables ?? NO_ABSENT_VARIABLES;
@@ -377,13 +364,10 @@ export function resolveInputBinding(
     }
     if (Array.isArray(value)) {
       return value.map((member, index) => {
-        const resolvedMember = walk(
-          member,
-          path === '' ? String(index) : `${path}.${index}`,
-          `${field}[${index}]`,
-        );
+        const memberPath = path === '' ? String(index) : `${path}.${index}`;
+        const resolvedMember = walk(member, memberPath, `${field}[${index}]`);
         if (resolvedMember === ABSENT) {
-          throw absentArrayPositionError(member, `${path}[${index}]`, address);
+          throw absentArrayPositionError(member, memberPath, address);
         }
         return resolvedMember;
       });
@@ -410,9 +394,9 @@ export function resolveInputBinding(
       return value;
     }
     throw new Error(
-      `input binding${path === '' ? '' : ` key "${path}"`} holds a value that is not plain data ` +
-        `(${typeof value === 'object' ? 'a non-plain object' : `a ${typeof value}`}). A binding's ` +
-        "leaves are literals or values known only at boot, such as a platform variable node's value. " +
+      `${bindingPlace(path, address)} holds a value that is not plain data ` +
+        `(${typeof value === 'object' ? 'a non-plain object' : `a ${typeof value}`}). A binding ` +
+        "holds literals and values known only at boot, such as a platform variable node's value. " +
         "A secret's value, such as a SecretBox, never belongs in a binding: provision " +
         "variable.secret({ name: 'NAME' }) in the app root and bind its value instead.",
     );
@@ -433,7 +417,7 @@ export interface InputDocumentRow {
   readonly key: string;
   /** The JSON document: defaults applied, each secret leaf a `$platform` marker, each generated leaf a `$generated` marker, never a secret's value. */
   readonly value: string;
-  /** Dot-joined binding paths whose env-bound leaf resolved absent — deploy-report fodder. */
+  /** Binding paths whose platform variable `prisma dev` found unset. */
   readonly absent: readonly string[];
   /** Generated leaves the descriptor must provision (a `GeneratedParam` resource + env row each). */
   readonly generated: readonly GeneratedLeaf[];
@@ -466,9 +450,9 @@ export function serializeInput(
     throw new Error(
       `invalid input for service "${address}": ${judged.thrown ? '' : 'config param validation failed: '}${judged.message}\n` +
         '(Deploy-time validation sees each value known only at boot, a platform secret included, as a ' +
-        'pointer to a variable on the platform, never its value. ' +
-        'A failure naming a secret field means the binding and schema disagree about its ' +
-        `secretness, or the schema refines on secret content — which ADR-0042 forbids.)${judged.variableNote}`,
+        'pointer to a variable on the platform, never its value. A failure that names a secret field ' +
+        'means the binding and the schema disagree on whether it is a secret, or the schema checks ' +
+        `the secret's content, which it cannot see at deploy.)${judged.variableNote}`,
     );
   }
   const { validated, generated, absent, resolved } = judged;

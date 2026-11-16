@@ -1,7 +1,3 @@
-/**
- * The pointer row of a per-key param bound to a plain platform variable:
- * encode/decode, and the lookup and schema validation `deserialize` runs at boot.
- */
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { type ConfigParam, number, param, service, string } from '@internal/core';
 import {
@@ -39,10 +35,6 @@ const nonEmptyString: StandardSchemaV1<string, string> = {
   },
 };
 
-// Raw core service(): the pointer row is now exercised only by
-// extension-RESERVED params (ADR-0042 removed user params from compute()),
-// but the serializer machinery is param-name-agnostic — a plain node with a
-// declared param proves it.
 const svc = (extra: Record<string, ConfigParam> = {}) =>
   service({
     name: 'web',

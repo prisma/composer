@@ -2,6 +2,7 @@ import type { Graph } from '@internal/core';
 import { isParamSource, isSecretSource, paramManifest } from '@internal/core';
 import { isGeneratedParamSource, isOriginParamSource, paramName } from './param.ts';
 import {
+  bindingPlace,
   isPlainVariableSource,
   platformVariableName,
   platformVariableNodes,
@@ -23,11 +24,7 @@ function collectVariableNames(
 ): void {
   if (composerWritesItsValue(binding)) return;
   if (isSecretSource(binding) || isParamSource(binding)) {
-    const where =
-      path === ''
-        ? `the input of service "${serviceAddress}"`
-        : `input key "${path}" of service "${serviceAddress}"`;
-    const name = platformVariableName(binding, where);
+    const name = platformVariableName(binding, bindingPlace(path, serviceAddress));
     out.set(name, { name, secret: isSecretSource(binding) });
     return;
   }

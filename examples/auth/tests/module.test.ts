@@ -12,7 +12,6 @@ function bindingOf(graph: ReturnType<typeof Load>, address: string): Record<stri
   return binding as Record<string, unknown>;
 }
 
-/** The name of the platform variable a service's input field reads, found through the graph. */
 function variableReadAt(graph: ReturnType<typeof Load>, reader: string, path: string): unknown {
   const read = graph.valueReads.find(
     (entry) =>
@@ -25,7 +24,7 @@ function variableReadAt(graph: ReturnType<typeof Load>, reader: string, path: st
 describe('auth example root graph', () => {
   test("the root binds the email module's delivery mode from the app configuration, its sender and credential to platform variables, and auth's baseUrl to the api's origin", () => {
     const graph = Load(root, {
-      configuration: { EMAIL_DELIVERY_MODE: 'none', EMAIL_FROM: 'dev@example.com' },
+      configuration: { EMAIL_DELIVERY_MODE: 'none' },
     });
 
     const mail = bindingOf(graph, 'auth-example.mail.service');

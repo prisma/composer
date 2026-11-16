@@ -67,14 +67,17 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
   test('classifies literals and platform variable leaves, nested objects and arrays included', () => {
     const fromShell = plainVariable('SHELL_VALUE');
     const secretly = secretVariable('STRIPE_SECRET_KEY');
-    const { resolved, absent } = resolveInputBinding({
-      plain: 'value',
-      count: 3,
-      enabled: true,
-      nothing: null,
-      list: ['a', 'b'],
-      nested: { fromShell, secretly },
-    });
+    const { resolved, absent } = resolveInputBinding(
+      {
+        plain: 'value',
+        count: 3,
+        enabled: true,
+        nothing: null,
+        list: ['a', 'b'],
+        nested: { fromShell, secretly },
+      },
+      'shop.web',
+    );
 
     const out = resolved as Record<string, unknown>;
     expect(out['plain']).toBe('value');
@@ -110,13 +113,16 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
         absentVariables: new Set(['UNSET_SECRET']),
       }),
     ).toThrow(
-      'input binding key "list[0]" of service "shop.web" reads the platform variable "UNSET_SECRET", which has no value. An array position cannot be left out: set the variable, or bind a literal.',
+      'input key "list.0" of service "shop.web" reads the platform variable "UNSET_SECRET", which has no value. An array position cannot be left out: set the variable, or bind a literal.',
     );
   });
 
-  test('a raw SecretBox (a secret VALUE) in the binding is rejected loudly', () => {
-    expect(() => resolveInputBinding({ key: new SecretBox('sk_live_oops') }, '')).toThrow(
-      /never belongs in a binding/,
+  test("a SecretBox in the binding is refused, naming the place and the service and never the secret's text", () => {
+    expect(() => resolveInputBinding({ key: new SecretBox('sk_live_oops') }, 'shop.web')).toThrow(
+      'input key "key" of service "shop.web" holds a value that is not plain data (a non-plain object). ' +
+        "A binding holds literals and values known only at boot, such as a platform variable node's value. " +
+        "A secret's value, such as a SecretBox, never belongs in a binding: provision " +
+        "variable.secret({ name: 'NAME' }) in the app root and bind its value instead.",
     );
   });
 });
@@ -181,14 +187,20 @@ describe('serializeInput — validate with pointers in place, serialize the vali
     );
   });
 
-  test('misclassification — a literal where the schema wants a SecretString — fails at deploy, with the ADR-0042 note', () => {
-    const attempt = () =>
+  test('a literal where the schema wants a SecretString fails at deploy, with the note on values known only at boot', () => {
+    let message = '';
+    try {
       serializeInput(svc(conditional), 'web', {
         stripeEnabled: true,
         stripeKey: 'sk_live_in_plain_config',
       });
-    expect(attempt).toThrow(/invalid input for service "web"/);
-    expect(attempt).toThrow(/secretness, or the schema refines on secret content/);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toBe(
+      'invalid input for service "web": config param validation failed: stripeKey must be a SecretString box — bind this field to a secret (was a string)\n' +
+        "(Deploy-time validation sees each value known only at boot, a platform secret included, as a pointer to a variable on the platform, never its value. A failure that names a secret field means the binding and the schema disagree on whether it is a secret, or the schema checks the secret's content, which it cannot see at deploy.)",
+    );
   });
 
   test('a secret node where the schema wants a plain string fails the same way', () => {
@@ -205,15 +217,6 @@ describe('serializeInput — validate with pointers in place, serialize the vali
     }));
     const row = serializeInput(svc(schema), 'web', { greeting: 'hello' });
     expect(JSON.parse(row?.value ?? '')).toEqual({ greeting: 'hello', retries: 1 });
-  });
-
-  test('secret values never appear in the document, even when the deploy shell holds them', () => {
-    const row = serializeInput(svc(conditional), 'web', {
-      stripeEnabled: true,
-      stripeKey: secretVariable('STRIPE_SECRET_KEY'),
-    });
-    expect(row?.value).not.toContain('sk_live');
-    expect(row?.value).toContain('"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}');
   });
 
   test('a planted secret under a secret node never appears in the document, even when the deploy shell holds it', async () => {
@@ -234,7 +237,7 @@ describe('serializeInput — validate with pointers in place, serialize the vali
       injected: new SecretBox('made-up'),
     }));
     expect(() => serializeInput(svc(schema), 'web', { greeting: 'hi' })).toThrow(
-      /must not mint secret boxes/,
+      'input key "injected" of service "web" validated to a SecretString the binding did not supply — a schema must not mint secret boxes (a default/transform cannot name a platform variable); provision variable.secret({ name: \'NAME\' }) in the app root and bind its value to the field instead.',
     );
   });
 
@@ -912,7 +915,7 @@ describe('platform variable nodes in a service binding', () => {
         absentVariables: new Set(['EMAIL_FROM']),
       }),
     ).toThrow(
-      'input binding key "senders[0]" of service "shop.web" reads the platform variable "EMAIL_FROM", which has no value. An array position cannot be left out: set the variable, or bind a literal.',
+      'input key "senders.0" of service "shop.web" reads the platform variable "EMAIL_FROM", which has no value. An array position cannot be left out: set the variable, or bind a literal.',
     );
   });
 
@@ -941,6 +944,6 @@ describe('platform variable nodes in a service binding', () => {
         from,
         count: 'x',
       }),
-    ).toThrow(/forbids\.\)$/);
+    ).toThrow(/cannot see at deploy\.\)$/);
   });
 });

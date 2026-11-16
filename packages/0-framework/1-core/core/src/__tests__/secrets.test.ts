@@ -127,7 +127,9 @@ describe('Load validates input bindings and secret forwarding', () => {
           );
         }),
       ),
-    ).toThrow(/received secrets for a service/);
+    ).toThrow(
+      'provision("auth") received secrets for a service — a service takes its secrets as values bound to secretString() fields of its `input` binding, not a secrets map.',
+    );
   });
 
   test('a resource may not receive an input binding', () => {

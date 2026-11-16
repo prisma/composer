@@ -205,8 +205,6 @@ export function computeDescriptor(
           // Mirrors stash(), keeping writer and reader consistent.
           if (value === undefined) continue;
           const key = configKey(address, d);
-          // A service's own param bound to a plain platform variable writes a
-          // pointer row holding the variable's name, never its value.
           const rowValue =
             d.owner === 'service' && isParamSource(value)
               ? encodeParamPointer(paramName(paramBindingFor(graph.params, address, d.name)))

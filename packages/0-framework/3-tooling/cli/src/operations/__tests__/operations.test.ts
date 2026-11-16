@@ -4259,7 +4259,6 @@ describe.skipIf(process.platform === 'win32')(
   },
 );
 
-/** An app whose root declares `input: type({ GREETING: 'string' })` and binds it and the secrets key `secretsKey` into its service. */
 function makeSecondProcessAppDir(secretsKey = 'S13_SECRET'): { dir: string; entryPath: string } {
   const app = makeAppDir('hello-second');
   fs.writeFileSync(
