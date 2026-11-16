@@ -271,8 +271,8 @@ export interface LocalTargetDescriptor {
   providers(input: LocalTargetProvidersInput): Layer.Layer<never>;
   /** A stable local identity — resolved without any platform call. */
   readonly container: ContainerDescriptor;
-  /** Value sourcing (secrets/env-params) — runs where deploy's preflight runs. What it returns reaches the alchemy process the same way deploy's preflight payload does. */
-  preflight?(input: PreflightInput): Promise<PreflightPayload>;
+  /** Works out the platform variables' values, where deploy's preflight runs. Its payload reaches the alchemy process the same way deploy's preflight payload does. */
+  preflight?(input: PreflightInput): Promise<DevPreflightResult>;
   /** Ensure the emulator daemons this topology's node kinds need are running, plus any per-node emulator state that must exist before converge (idempotent; daemons persist across sessions). */
   emulators?(input: LocalTargetEmulatorsInput): Promise<void>;
   /** The dev session's view of the running app. Core renders it and never learns an emulator's API. */
@@ -286,6 +286,13 @@ export interface LocalTargetDescriptor {
    * Undefined when this extension recorded nothing for the app there.
    */
   current?(input: LocalTargetCurrentInput): Promise<LocalTargetCurrentApp | undefined>;
+}
+
+/** What a local target's preflight found. */
+export interface DevPreflightResult {
+  readonly payload: PreflightPayload;
+  /** The text of each plain platform variable a service reads, by name. Never a secret. */
+  readonly plainVariableText: Readonly<Record<string, string>>;
 }
 
 export interface LocalTargetCurrentInput {
@@ -349,7 +356,9 @@ export interface LocalTargetProvidersInput {
   readonly devDir: string;
   /** The text of each configuration key the graph reads, from the app configuration file. A local deployment takes the text its param rows point at from it. */
   readonly configurationKeyText: Readonly<Record<string, string>>;
-  /** The app secrets the graph's `envSecret()`s name, which the first process handed the second. A local deployment takes the text its `$platform` markers name from it. */
+  /** The text of each plain platform variable a service reads, by name. Never a secret. */
+  readonly plainVariableText: Readonly<Record<string, string>>;
+  /** The app secrets the graph's `envSecret()`s name, which the first process handed the second. A local deployment takes the text its secret `$platform` markers name from it. */
   readonly namedSecrets: NamedSecrets;
 }
 
