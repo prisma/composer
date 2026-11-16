@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { appRoot, Load, paramSource, valueResource } from '@internal/core';
 import type { ExtensionDescriptor, PrismaAppConfig } from '@internal/core/config';
 import type { Pointer } from '@internal/foundation/pointer';
+import * as Effect from 'effect/Effect';
 import { validateRegistryCoverage } from '../validate-coverage.ts';
 import fixtureRoot from './fixtures/valid-root.ts';
 
@@ -30,7 +31,9 @@ describe('validateRegistryCoverage()', () => {
     ({ extensions: [{ id: 'test/pack', nodes }], state: {} }) as unknown as PrismaAppConfig;
 
   test('a value resource is looked up in its extension like every other resource', () => {
-    const lowering = Object.assign(() => undefined, { kind: 'resource' as const });
+    const lowering = Object.assign(() => Effect.succeed({ outputs: {}, entities: [] }), {
+      kind: 'resource' as const,
+    });
 
     expect(() =>
       validateRegistryCoverage(Load(greetingRoot), configWith({ 'test-value': lowering })),
