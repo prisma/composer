@@ -38,7 +38,7 @@ import type {
 import { createManagementApiClient } from '@prisma/management-api-sdk';
 import * as Effect from 'effect/Effect';
 import type { ManagementApiClient } from '../client.ts';
-import { managementApiBaseUrl } from '../credentials.ts';
+import { tokenClientOrigin } from '../credentials.ts';
 import { type BuildsApi, buildsApi, type UpdateBuildBody } from './api.ts';
 import {
   type ApplicationTopologyApi,
@@ -132,7 +132,7 @@ async function beginSession(
       injected ??
       createManagementApiClient({
         token: token ?? '',
-        baseUrl: options.origin ?? Effect.runSync(managementApiBaseUrl(options.env)),
+        baseUrl: options.origin ?? Effect.runSync(tokenClientOrigin(options.env)),
       }));
   const api = options.api ?? buildsApi({ client: clientOf(), warn });
   const topologyApi = options.topology ?? applicationTopologyApi({ client: clientOf(), warn });

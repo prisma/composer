@@ -82,14 +82,14 @@ const fetchThrough = (client: ManagementApiClient): typeof globalThis.fetch => {
 };
 
 /**
- * The deploy's `HttpClient`, for every host. Requests to the Management API
+ * An `HttpClient` for every host. Requests to the Management API
  * `origin` go through `client`, which alone authenticates them: their own
  * `Authorization` header is removed first. Every other host, such as a
  * presigned artifact upload URL, goes to node's transport unauthenticated,
  * because those uploads need node's explicit Content-Length. Every request
  * carries the deploy-source headers.
  */
-export const deployHttpClientLayer = (
+export const managementApiHttpClientLayer = (
   client: ManagementApiClient,
   origin: string,
 ): Layer.Layer<HttpClient.HttpClient> =>

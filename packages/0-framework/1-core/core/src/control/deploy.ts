@@ -146,10 +146,9 @@ export interface LowerContext {
    */
   readonly application: unknown;
   /**
-   * The owning extension's resolved container, deserialized from the
-   * framework transport; core never reads it — the extension narrows it
-   * with its own type guard. `undefined` when the extension declares no
-   * container descriptor.
+   * The owning extension's resolved container; core never reads it — the
+   * extension narrows it with its own type guard. `undefined` when the
+   * extension declares no container descriptor.
    */
   readonly container: ContainerInstance | undefined;
   /** What the owning extension's preflight handed back this run; `undefined` when it returned nothing or ran no preflight. Core never reads it. */
@@ -227,9 +226,9 @@ export interface LowerOptions {
   readonly name: string;
   /** The environment being deployed, as `--environment` gave it. Required by any value over `environment.name`; the generated stack files always pass it. */
   readonly environment?: string;
-  /** What the first process's Load read from the app configuration (ADR-0062), from the app configuration file. Load takes the root's input and every configuration key's text from it, and the Prisma Cloud serializer reads a service's `envParam()` leaves from its `configurationKeyText`. The generated stack files pass it. */
+  /** What the caller's Load read from the app configuration (ADR-0062). Load takes the root's input and every configuration key's text from it, and the Prisma Cloud serializer reads a service's `envParam()` leaves from its `configurationKeyText`. */
   readonly appConfigurationRead?: AppConfigurationRead;
-  /** The node addresses of the graph the first process built. When given, lowering refuses a graph whose addresses differ. The generated stack files pass them. */
+  /** The node addresses of the graph the caller built. When given, lowering refuses a graph whose addresses differ. */
   readonly firstProcessNodeAddresses?: readonly string[];
   // One assembled bundle per provisioned service, keyed by the service's
   // full hierarchical address (its graph id).
@@ -248,10 +247,10 @@ export interface LowerOptions {
   readonly report?: (result: DeploymentResult) => void;
   /** Addresses lowered without an artifact: `package` and `deploy` are skipped and `reserve` runs instead (ADR-0056). Only the dev stack file sets it. */
   readonly unassembled?: readonly string[];
-  /** Each extension's resolved container, by extension id. A generated stack file reads them with `transportedLowerInputs`. */
-  readonly containers: ReadonlyMap<string, ContainerInstance>;
-  /** Each extension's preflight payload, by extension id. A generated stack file reads them with `transportedLowerInputs`. */
-  readonly preflight: ReadonlyMap<string, string>;
+  /** Each extension's resolved container, by extension id. When this or `preflightPayloads` is absent, both are read from the environment the CLI wrote for a stack file it runs as a child (`transportedLowerInputs`). */
+  readonly containers?: ReadonlyMap<string, ContainerInstance> | undefined;
+  /** What each extension's preflight returned, by extension id. Each lowering context gets its own extension's entry as `LowerContext.preflight`. */
+  readonly preflightPayloads?: ReadonlyMap<string, string> | undefined;
   /** The platform variables with no value that the deploy preflight found. The deploy report carries them. Absent means none. */
   readonly findings?: PreflightFindings;
   /** What the caller already authenticated, handed to every extension's `providers()` and to the state descriptor's `create()`. Absent means each extension falls back to its own credential protocol. */
@@ -715,8 +714,9 @@ export function lowering(
       assertSameNodeAddresses(nodeAddresses(graph), opts.firstProcessNodeAddresses);
     }
     const extensions = yield* extensionsById(config);
-    const containers = opts.containers;
-    const preflightOf = (extensionId: string): PreflightPayload => opts.preflight.get(extensionId);
+    const { containers, preflightPayloads } = lowerInputs(config, opts);
+    const preflightOf = (extensionId: string): PreflightPayload =>
+      preflightPayloads.get(extensionId);
     const findings = opts.findings ?? { unset: [] };
     const lowered = new Map<NodeId, Outputs>();
     // Each node's reported entities, in topo order — the loop is the only
@@ -931,21 +931,31 @@ export function lowering(
   >(program);
 }
 
-/**
- * The containers and preflight payloads the CLI wrote into a generated stack
- * file's environment, for `lower()`. Only the generated stack files that
- * `destroy` and `prisma dev` run in an Alchemy child call it.
- */
-export function transportedLowerInputs(
-  config: PrismaAppConfig,
-): Pick<LowerOptions, 'containers' | 'preflight'> {
+interface LowerInputs {
+  readonly containers: ReadonlyMap<string, ContainerInstance>;
+  readonly preflightPayloads: ReadonlyMap<string, string>;
+}
+
+/** The containers and preflight payloads the CLI wrote into the environment of a stack file it runs as a child. */
+export function transportedLowerInputs(config: PrismaAppConfig): LowerInputs {
   const env = process.env;
-  const preflight = new Map<string, string>();
+  const preflightPayloads = new Map<string, string>();
   for (const { id } of config.extensions) {
     const payload = readPreflightPayload(id, env);
-    if (payload !== undefined) preflight.set(id, payload);
+    if (payload !== undefined) preflightPayloads.set(id, payload);
   }
-  return { containers: deserializeContainers(config.extensions, env), preflight };
+  return { containers: deserializeContainers(config.extensions, env), preflightPayloads };
+}
+
+function lowerInputs(config: PrismaAppConfig, opts: LowerOptions): LowerInputs {
+  if (opts.containers !== undefined && opts.preflightPayloads !== undefined) {
+    return { containers: opts.containers, preflightPayloads: opts.preflightPayloads };
+  }
+  const transported = transportedLowerInputs(config);
+  return {
+    containers: opts.containers ?? transported.containers,
+    preflightPayloads: opts.preflightPayloads ?? transported.preflightPayloads,
+  };
 }
 
 /**
@@ -964,7 +974,7 @@ export function lower(root: ModuleNode | AppRootNode, config: PrismaAppConfig, o
 
   return Alchemy.Stack(
     opts.name,
-    { providers, state: resolveStateLayer(opts, config, opts.containers) },
+    { providers, state: resolveStateLayer(opts, config, lowerInputs(config, opts).containers) },
     stackEffect,
   );
 }

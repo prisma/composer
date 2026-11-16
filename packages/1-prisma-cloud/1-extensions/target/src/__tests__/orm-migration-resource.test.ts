@@ -315,7 +315,7 @@ describe.skipIf(pg === undefined)('OrmMigration reconcile routes through applyOr
     );
 
     // Target a DIFFERENT contract (gadget) with no authored migration path. The
-    // provider's `catch: providerFailure` must route the thrown OrmMigrationError into
+    // provider's `catch: toProviderError` must route the thrown OrmMigrationError into
     // the Effect's error channel — so the reconcile FAILS, not succeeds.
     const outcome = await matchFailure(
       reconcile({

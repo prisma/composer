@@ -20,6 +20,9 @@ describe('renderDevStackFile()', () => {
     });
 
     expect(content).toContain("import { lower } from '@prisma/composer/deploy';");
+    // Only `lower`, so the file runs against an app on an older or newer Composer.
+    expect(content).not.toContain('transportedLowerInputs');
+    expect(content).not.toMatch(/containers:|preflightPayloads:/);
     expect(content).toContain("import { deserializeContainers } from '@prisma/composer/config';");
     expect(content).toContain(
       "import { namedSecretsFromEnvironment, readAppConfigurationFile } from '@prisma/composer/internal/app-configuration-file';",

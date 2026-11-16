@@ -397,6 +397,11 @@ export function redactSummary(
   if (summary === undefined) return undefined;
   return {
     app: summary.app,
+    findings: {
+      unset: summary.findings.unset.map((variable) =>
+        redactUnsetPlatformVariable(variable, redaction),
+      ),
+    },
     nodes: summary.nodes.map((node) => ({
       address: node.address,
       entities: node.entities.map((entity) => ({

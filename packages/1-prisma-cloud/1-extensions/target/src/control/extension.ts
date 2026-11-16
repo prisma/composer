@@ -352,11 +352,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         ),
       ),
 
-    // Deploy-time check (ADR-0064): every platform variable a service needs has
-    // a value, before Alchemy runs. The timestamps reach the lowering as its
-    // `preflight` payload. The parameter
-    // annotation is what recovers this extension's own client type from the
-    // framework's erased one; without it `input.credentials` arrives as `unknown`.
+    // The annotation recovers this extension's client type from the framework's erased one.
     preflight: (input: PrismaCloudPreflightInput) =>
       runPreflight(input).then(serializeDeployPreflightPayload),
 

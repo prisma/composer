@@ -21,7 +21,7 @@ import type {
   RunOutcome,
   UnsetPlatformVariable,
 } from '@internal/core/config';
-import { type LowerOptions, lower } from '@internal/core/deploy';
+import { type LowerOptions, lower, nodeAddresses } from '@internal/core/deploy';
 import type {
   LocalTargetAttachment,
   LocalTargetCurrentApp,
@@ -34,13 +34,14 @@ import {
   LEFTOVER_APP_CONFIGURATION_FILE_AGE_MS,
   NAMED_SECRETS_ENV,
 } from '../../app-configuration-file.ts';
-import { type AppConverge, HOST_COMPOSER_VERSION } from '../../app-converge.ts';
+import { type AppConvergeEntry, HOST_COMPOSER_VERSION } from '../../app-converge.ts';
 import type { ComposerConfigSource } from '../../composer-config.ts';
 import { dotenv, environmentVariables } from '../../config-adapters.ts';
 import { CONVERGE_CONTRACT } from '../../converge-contract.ts';
 import type { Converge, ConvergeOutcome, ConvergeRequest } from '../../converge-in-process.ts';
 import { DEPLOYMENT_RESULT_FILE_ENV, engineFailureFilePath } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
+import { SecretRedaction } from '../../redaction.ts';
 import { renderDeployment } from '../../render-deployment.ts';
 import { RUN_REPORT_VERSION } from '../../run-report.ts';
 import { unsetPlatformVariablesText } from '../../unset-platform-variables.ts';
@@ -224,7 +225,7 @@ const fakeAssembler = async (node: ServiceNode) => ({
 const APPLIED: ConvergeOutcome = { kind: 'applied' };
 
 /** Core's own `lower` with a stand-in for Alchemy's plan and apply: deploy tests never run the real Alchemy here. */
-function appConverge(converge: Converge): AppConverge {
+function appConvergeEntry(converge: Converge): AppConvergeEntry {
   return { lower, converge };
 }
 
@@ -267,7 +268,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(recordingConverge(requests)),
+          appConvergeEntry: appConvergeEntry(recordingConverge(requests)),
           alchemy: async () => {
             spawned = true;
             return { exitCode: 0, signal: null };
@@ -304,7 +305,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(recordingConverge(requests)),
+          appConvergeEntry: appConvergeEntry(recordingConverge(requests)),
           credentials: { workspaceId: 'ws_handler', client: {} },
         },
       ),
@@ -336,7 +337,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             ran = true;
             return APPLIED;
           }),
@@ -365,7 +366,7 @@ describe('deploy()', () => {
             ...(input.entry === undefined ? {} : { entry: input.entry }),
             cwd: app.dir,
           },
-          { runAssembler: fakeAssembler, converge: appConverge(applied) },
+          { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
         ),
       );
 
@@ -397,7 +398,7 @@ describe('deploy()', () => {
         { config: composerConfig(fakeConfig()), cwd: app.dir },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             ran = true;
             return APPLIED;
           }),
@@ -427,7 +428,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(recordingConverge(requests)),
+          appConvergeEntry: appConvergeEntry(recordingConverge(requests)),
         },
       ),
     );
@@ -454,7 +455,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -485,7 +486,7 @@ describe('deploy()', () => {
             assembled = true;
             return fakeAssembler(node);
           },
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             convergeRan = true;
             return APPLIED;
           }),
@@ -512,7 +513,7 @@ describe('deploy()', () => {
           { config, entry: app.entryPath, cwd: app.dir },
           {
             runAssembler: fakeAssembler,
-            converge: appConverge(async () => {
+            appConvergeEntry: appConvergeEntry(async () => {
               convergeRan = true;
               return APPLIED;
             }),
@@ -631,7 +632,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             convergeRan = true;
             return APPLIED;
           }),
@@ -659,7 +660,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => ({
+          appConvergeEntry: appConvergeEntry(async () => ({
             kind: 'failed',
             reasons: [
               {
@@ -709,7 +710,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => ({
+          appConvergeEntry: appConvergeEntry(async () => ({
             kind: 'failed',
             reasons: [
               {
@@ -749,7 +750,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(recordingConverge(requests, { kind: 'interrupted' })),
+          appConvergeEntry: appConvergeEntry(recordingConverge(requests, { kind: 'interrupted' })),
         },
       ),
     );
@@ -838,7 +839,7 @@ function stepLine(event: DeployEvent): string {
     event.step.name === 'assemble-service'
       ? `assemble-service:${event.step.address}`
       : event.step.name === 'apply-resource'
-        ? `apply-resource:${event.step.fqn}`
+        ? `apply-resource:${event.step.resourceId}`
         : event.step.name;
   return event.kind === 'step-started' ? `started ${name}` : `finished ${name} ${event.outcome}`;
 }
@@ -873,7 +874,7 @@ describe('deploy() credentials, app converge and redaction', () => {
     const result = await deployWith(
       app,
       {
-        converge: {
+        appConvergeEntry: {
           lower: (root, config, opts) => {
             lowered.push(opts);
             return lower(root, config, opts);
@@ -889,6 +890,79 @@ describe('deploy() credentials, app converge and redaction', () => {
     expect(containerCalls.map((call) => call.op)).toEqual(['ensure']);
     expect(lowered[0]?.credentials).toBe(credentials);
     expect(requests[0]?.env).toEqual({});
+  });
+
+  test('deploy passes the containers, preflight payloads and node addresses it resolved to lower(), so lower() never reads them from the environment', async () => {
+    const app = makeAppDir();
+    const lowered: LowerOptions[] = [];
+    let graph: Graph | undefined;
+
+    const result = await deployWith(
+      app,
+      {
+        appConvergeEntry: {
+          lower: (root, config, opts) => {
+            lowered.push(opts);
+            return lower(root, config, opts);
+          },
+          converge: applied,
+        },
+      },
+      fakeConfig({
+        preflight: async (input) => {
+          graph = input.graph;
+          return 'payload';
+        },
+      }),
+    );
+
+    if (!result.ok) throw result.failure;
+    if (graph === undefined) throw new Error('the preflight did not run');
+    expect(lowered[0]?.containers?.get('fixture-extension')).toBeDefined();
+    expect([...(lowered[0]?.preflightPayloads ?? [])]).toEqual([['fixture-extension', 'payload']]);
+    expect(lowered[0]?.firstProcessNodeAddresses).toEqual(nodeAddresses(graph));
+  });
+
+  test('a structured error that lower() throws keeps its code', async () => {
+    const app = makeAppDir();
+
+    const result = await deployWith(app, {
+      appConvergeEntry: {
+        lower: () => {
+          throw new CliStructuredError('DEPLOY.MANAGEMENT_API_URL_CONFLICT', 'two hosts');
+        },
+        converge: applied,
+      },
+    });
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure.code).toBe('DEPLOY.MANAGEMENT_API_URL_CONFLICT');
+    expect(result.failure.message).toBe('two hosts');
+  });
+
+  test('what Alchemy writes to the terminal itself reaches stderr redacted, even when a secret is split across writes', async () => {
+    const app = makeAppDir();
+    const token = 'tok-terminal-secret-91';
+    const redaction = new SecretRedaction({});
+    redaction.addCredentialLookingValues([token]);
+    const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+    let printed = '';
+    try {
+      const result = await deployWith(app, {
+        appConvergeEntry: appConvergeEntry(async (request) => {
+          request.output?.(`bearer ${token.slice(0, 8)}`);
+          request.output?.(`${token.slice(8)} done\n`);
+          return APPLIED;
+        }),
+        redaction,
+      });
+      if (!result.ok) throw result.failure;
+      printed = stderr.mock.calls.map(([chunk]) => String(chunk)).join('');
+    } finally {
+      stderr.mockRestore();
+    }
+    expect(printed).toContain('bearer [redacted] done');
+    expect(printed).not.toContain(token);
   });
 
   test('an app with no installed @prisma/composer fails with DEPS.CONVERGE_UNRESOLVABLE before any container is ensured', async () => {
@@ -951,7 +1025,7 @@ describe('deploy() credentials, app converge and redaction', () => {
     const app = makeAppDir();
 
     const result = await deployWith(app, {
-      converge: appConverge(async () => {
+      appConvergeEntry: appConvergeEntry(async () => {
         throw new TypeError('outcome.reasons is not iterable');
       }),
     });
@@ -974,7 +1048,7 @@ describe('deploy() credentials, app converge and redaction', () => {
         app,
         {
           credentials,
-          converge: appConverge(async (request) => {
+          appConvergeEntry: appConvergeEntry(async (request) => {
             request.onEvent?.({ kind: 'log', severity: 'warn', text: `retrying with ${token}` });
             request.onEvent?.({
               kind: 'resource',
@@ -998,7 +1072,7 @@ describe('deploy() credentials, app converge and redaction', () => {
         app,
         {
           credentials,
-          converge: {
+          appConvergeEntry: {
             lower: () => {
               throw new Error(`state store refused ${token}`);
             },
@@ -1022,7 +1096,9 @@ describe('deploy() credentials, app converge and redaction', () => {
   test('a refused converge is DEPLOY.CONVERGE_RUNNING or DEPLOY.WORKER_THREAD', async () => {
     const app = makeAppDir();
     const refused = (reason: 'already-running' | 'worker-thread') =>
-      deployWith(app, { converge: appConverge(async () => ({ kind: 'refused', reason })) });
+      deployWith(app, {
+        appConvergeEntry: appConvergeEntry(async () => ({ kind: 'refused', reason })),
+      });
 
     const running = await refused('already-running');
     const worker = await refused('worker-thread');
@@ -1066,7 +1142,7 @@ describe('deploy() step events', () => {
             report?.({ bytes: 4096 });
             return fakeAssembler(node);
           },
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -1106,42 +1182,6 @@ describe('deploy() step events', () => {
     expect(result.value.durationMs).toBeGreaterThanOrEqual(0);
   });
 
-  test("the deploy preflight's findings reach the lowering as a value", async () => {
-    const app = makeAppDir('hello-findings');
-    const lowered: LowerOptions[] = [];
-
-    const result = await silently(() =>
-      deployWithDeps(
-        {
-          config: composerConfig(
-            fakeConfig({
-              preflight: async (input) => {
-                input.report?.({ checked: 1, unset: [EMAIL_API_KEY_UNSET] });
-                return undefined;
-              },
-            }),
-          ),
-          entry: app.entryPath,
-          environment: 'ci-7',
-          cwd: app.dir,
-        },
-        {
-          runAssembler: fakeAssembler,
-          converge: {
-            lower: (root, config, opts) => {
-              lowered.push(opts);
-              return lower(root, config, opts);
-            },
-            converge: applied,
-          },
-        },
-      ),
-    );
-
-    expect(result.ok).toBe(true);
-    expect(lowered[0]?.findings).toEqual({ unset: [EMAIL_API_KEY_UNSET] });
-  });
-
   test("Alchemy's progress becomes one step per resource inside apply, and its log lines become messages", async () => {
     const app = makeAppDir('hello-resources');
     const events: DeployEvent[] = [];
@@ -1165,7 +1205,7 @@ describe('deploy() step events', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async (request) => {
+          appConvergeEntry: appConvergeEntry(async (request) => {
             request.onEvent?.(resource('pending', 'pending'));
             request.onEvent?.(resource('creating', 'running'));
             request.onEvent?.({ kind: 'log', severity: 'info', text: 'uploading 3 files' });
@@ -1187,7 +1227,9 @@ describe('deploy() step events', () => {
       'finished apply-resource:hello-resources.app ok',
       'finished apply ok',
     ]);
-    expect(applyEvents[1]).toMatchObject({ step: { status: 'creating' } });
+    expect(applyEvents[1]).toMatchObject({
+      step: { resourceId: 'hello-resources.app', status: 'creating' },
+    });
     expect(applyEvents[3]).toMatchObject({ step: { status: 'created' } });
   });
 
@@ -1206,7 +1248,7 @@ describe('deploy() step events', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async (request) => {
+          appConvergeEntry: appConvergeEntry(async (request) => {
             request.onEvent?.({
               kind: 'resource',
               fqn: 'site',
@@ -1265,7 +1307,7 @@ describe('deploy() step events', () => {
           cwd: app.dir,
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       ).catch((error: unknown) => error),
     );
 
@@ -1298,7 +1340,7 @@ describe('deploy() step events', () => {
           onEvent: (event) => events.push(event),
         },
         {
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
           runAssembler: async () => {
             throw new Error('no built entry');
           },
@@ -1335,7 +1377,7 @@ describe('deploy() step events', () => {
           reportPath: path.join(app.dir, 'package.json', 'report.json'),
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       );
     } finally {
       warnSpy.mockRestore();
@@ -1359,7 +1401,7 @@ describe('deploy() step events', () => {
             throw new Error('renderer bug');
           },
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       ),
     );
 
@@ -1566,7 +1608,7 @@ describe('destroy()', () => {
         ran.push('alchemy');
         return { exitCode: 0, signal: null };
       },
-      converge: appConverge(async () => {
+      appConvergeEntry: appConvergeEntry(async () => {
         ran.push('alchemy');
         return APPLIED;
       }),
@@ -3103,7 +3145,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(recordingConverge(requests)),
+          appConvergeEntry: appConvergeEntry(recordingConverge(requests)),
         },
       ),
     );
@@ -3132,7 +3174,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
           credentials: { workspaceId: 'ws-1', client: {} },
         },
       ),
@@ -3171,7 +3213,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -3197,7 +3239,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => ({ kind: 'interrupted' })),
+          appConvergeEntry: appConvergeEntry(async () => ({ kind: 'interrupted' })),
         },
       ),
     );
@@ -3226,7 +3268,7 @@ describe('deploy-run reporting', () => {
         { entry: app.entryPath, environment: 'ci-6', cwd: app.dir, config: composerConfig(config) },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => ({
+          appConvergeEntry: appConvergeEntry(async () => ({
             kind: 'failed',
             reasons: [{ tag: 'PrismaApiError', message: '409 Conflict' }],
           })),
@@ -3256,7 +3298,7 @@ describe('deploy-run reporting', () => {
           },
           {
             runAssembler: fakeAssembler,
-            converge: appConverge(applied),
+            appConvergeEntry: appConvergeEntry(applied),
           },
         ),
       );
@@ -3303,7 +3345,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -3331,7 +3373,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -3680,7 +3722,7 @@ describe('the operations read the app configuration and the app secrets from the
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -3710,7 +3752,7 @@ describe('the operations read the app configuration and the app secrets from the
           environment: 'staging',
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       ),
     );
 
@@ -3784,7 +3826,7 @@ describe('the operations read the app configuration and the app secrets from the
           reportPath,
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       ),
     );
 
@@ -3820,7 +3862,7 @@ describe('the operations read the app configuration and the app secrets from the
           environment: 'staging',
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       ),
     );
 
@@ -4076,7 +4118,7 @@ describe('the second process reads what the first process read', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: {
+          appConvergeEntry: {
             lower: (root, config, options) => {
               lowered.push(options);
               return lower(root, config, options);
@@ -4171,7 +4213,7 @@ describe('the second process reads what the first process read', () => {
             environment: 'staging',
             cwd: dir,
           },
-          { runAssembler: fakeAssembler, converge: appConverge(applied) },
+          { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
         ),
       destroy: (dir: string) =>
         destroyWithDeps(
@@ -4227,6 +4269,48 @@ describe('the second process reads what the first process read', () => {
     },
   ];
   for (const { what, configuration, secrets, where } of refusedPlainValues) {
+    test(`deploy refuses ${what}, before creating anything or running the converge`, async () => {
+      const app = makeSecondProcessAppDir();
+      const containerCalls: ContainerCall[] = [];
+      let converged = false;
+
+      const result = await silently(() =>
+        deployWithDeps(
+          {
+            config: composerConfig({
+              ...fakeConfig({}, { calls: containerCalls }),
+              config: [() => configuration],
+              secrets: [() => secrets],
+            }),
+            entry: app.entryPath,
+            environment: 'staging',
+            cwd: app.dir,
+          },
+          {
+            runAssembler: fakeAssembler,
+            appConvergeEntry: {
+              lower: () => {
+                throw new Error('lower() must not run');
+              },
+              converge: async () => {
+                converged = true;
+                return APPLIED;
+              },
+            },
+          },
+        ),
+      );
+
+      if (result.ok) throw new Error('the deploy should fail');
+      expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
+      expect(result.failure.message).toBe(
+        `${where} holds the value of the secret "S13_SECRET", which an envSecret() in the graph reads. A deploy sends every plain value Load read to the platform as plain configuration, and never sends a secret that way.`,
+      );
+      expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
+      expect(containerCalls).toEqual([]);
+      expect(converged).toBe(false);
+    });
+
     test.skipIf(process.platform === 'win32')(
       `dev refuses ${what}, before writing any file or starting the second process`,
       async () => {
@@ -4291,7 +4375,7 @@ describe('the second process reads what the first process read', () => {
           environment: 'staging',
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       ),
     );
 
@@ -4390,7 +4474,7 @@ describe('no known secret is printed', () => {
           },
           {
             runAssembler: fakeAssembler,
-            converge: {
+            appConvergeEntry: {
               lower: (root, config, options) => {
                 lowered = options;
                 return lower(root, config, options);
@@ -4484,7 +4568,7 @@ describe('no known secret is printed', () => {
           },
           {
             runAssembler: fakeAssembler,
-            converge: appConverge(async (request) => {
+            appConvergeEntry: appConvergeEntry(async (request) => {
               request.onEvent?.({ kind: 'log', severity: 'info', text: `printed ${sentinel}` });
               return {
                 kind: 'failed',
@@ -4576,7 +4660,7 @@ describe('no known secret is printed', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: {
+          appConvergeEntry: {
             lower: (root, config, options) => {
               lowered.push(options);
               return lower(root, config, options);
@@ -4647,7 +4731,7 @@ describe('no known secret is printed', () => {
           environment: 'staging',
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       ),
     ).catch((error: unknown) => error);
 

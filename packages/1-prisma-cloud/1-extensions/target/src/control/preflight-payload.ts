@@ -14,8 +14,8 @@
 /** A value that changes when the pointed variable's value changes: the platform `updatedAt` on deploy, an HMAC of the value under `prisma dev`. Undefined when unknown. */
 export type PointerVersion = (name: string) => string | undefined;
 
-/** What the preflight of this run sent, as the lowering reads it. */
-export interface TransportedPreflight {
+/** What this run's preflight returned, decoded for the lowering. */
+export interface PreflightView {
   readonly pointerVersion: PointerVersion;
   /** The `envSecret` names `prisma dev` found unset; their leaves are left out of the input document. Always empty for a deploy. */
   readonly absentSecrets: ReadonlySet<string>;
@@ -108,18 +108,18 @@ export function decodePreflightPayload(payload: string | undefined): DecodedPref
 
 const deployPayloadError = (reason: string): Error =>
   new Error(
-    `prisma-cloud: the deploy check's payload could not be read in the second process: ${reason}. ` +
+    `prisma-cloud: the deploy check's payload could not be read: ${reason}. ` +
       'This is a Composer bug; deploying again will not fix it.',
   );
 
 const devPayloadError = (reason: string): Error =>
   new Error(
-    `prisma-cloud: the \`prisma dev\` check's payload could not be read in the second process: ${reason}. ` +
+    `prisma-cloud: the \`prisma dev\` check's payload could not be read: ${reason}. ` +
       'This is a Composer bug; running `prisma dev` again will not fix it.',
   );
 
-/** The lowering's view of what this run's preflight sent (`LowerContext.preflight`), decoded once on first use. */
-export function transportedPreflight(payload: string | undefined): TransportedPreflight {
+/** The lowering's view of `LowerContext.preflight`, decoded once on first use. */
+export function preflightView(payload: string | undefined): PreflightView {
   let decoded: DecodedPreflightPayload | undefined;
   const decode = () => (decoded ??= decodePreflightPayload(payload));
   const noSecrets: ReadonlySet<string> = new Set();

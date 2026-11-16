@@ -6,9 +6,9 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
 import {
   decodePreflightPayload,
+  preflightView,
   serializeDeployPreflightPayload,
   serializeDevPreflightPayload,
-  transportedPreflight,
 } from '../control/preflight-payload.ts';
 import { compute } from '../exports/index.ts';
 import { runPreflight } from '../preflight.ts';
@@ -88,9 +88,7 @@ async function cliProcess(updatedAt: string | undefined): Promise<Record<string,
  * fingerprint moves on.
  */
 function alchemyProcessPointerTriggers(env: Record<string, string>): Record<string, string> {
-  const { pointerVersion } = transportedPreflight(
-    readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, env),
-  );
+  const { pointerVersion } = preflightView(readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, env));
   return Object.fromEntries(
     pointers.map((name) => [`${name}:updatedAt`, pointerVersion(name) ?? '?']),
   );
@@ -181,9 +179,7 @@ describe('what the payload may contain', () => {
   });
 
   test('a payload that is present but unreadable fails loudly rather than losing the signal', () => {
-    expect(() => decodePreflightPayload('not json')).toThrow(
-      /could not be read in the second process/,
-    );
+    expect(() => decodePreflightPayload('not json')).toThrow(/payload could not be read: /);
     expect(() => decodePreflightPayload('"a string"')).toThrow(/not a JSON object/);
     expect(() => decodePreflightPayload('{"updatedAt":{"A_KEY":42}}')).toThrow(
       /"updatedAt" is not an object of string timestamps/,
@@ -194,7 +190,7 @@ describe('what the payload may contain', () => {
 describe("each run's own preflight", () => {
   test('a variable deleted since the last check is treated as having no value', async () => {
     const versionAfter = async (updatedAt: string | undefined) =>
-      transportedPreflight(
+      preflightView(
         serializeDeployPreflightPayload(await preflightAgainst(updatedAt)),
       ).pointerVersion('STRIPE_SECRET_KEY');
 
@@ -210,7 +206,7 @@ describe('one transport variable, two kinds of payload', () => {
     );
 
   test('a deploy payload names no absent secret and reads as timestamps', () => {
-    const preflight = transportedPreflight(
+    const preflight = preflightView(
       readPreflightPayload(
         PRISMA_CLOUD_EXTENSION_ID,
         childEnv(
@@ -226,7 +222,7 @@ describe('one transport variable, two kinds of payload', () => {
   });
 
   test('a dev payload carries the absent secrets and the value versions', () => {
-    const preflight = transportedPreflight(
+    const preflight = preflightView(
       readPreflightPayload(
         PRISMA_CLOUD_EXTENSION_ID,
         childEnv(
@@ -243,7 +239,7 @@ describe('one transport variable, two kinds of payload', () => {
   });
 
   test('with no payload nothing is absent and every version is unknown', () => {
-    const preflight = transportedPreflight(
+    const preflight = preflightView(
       readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv(undefined)),
     );
 

@@ -25,10 +25,11 @@ import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
 import {
   deployAppConfigurationFile,
   prepareSecondProcess,
+  refuseSecretsIn,
   removeLeftoverAppConfigurationFiles,
   type SecondProcessHandover,
 } from '../app-configuration-file.ts';
-import { type AppConverge, loadAppConverge } from '../app-converge.ts';
+import { type AppConvergeEntry, loadAppConvergeEntry } from '../app-converge.ts';
 import type { ComposerConfigSource } from '../composer-config.ts';
 import type {
   ConvergeEvent,
@@ -54,6 +55,7 @@ import {
   redactThrown,
   redactUnsetPlatformVariable,
   SecretRedaction,
+  StreamRedactor,
 } from '../redaction.ts';
 import {
   type AlchemyOutcome,
@@ -102,7 +104,7 @@ function deploySteps(onEvent: ((event: DeployEvent) => void) | undefined) {
     step.name === 'assemble-service'
       ? `${step.name}:${step.address}`
       : step.name === 'apply-resource'
-        ? `${step.name}:${step.fqn}`
+        ? `${step.name}:${step.resourceId}`
         : step.name;
   const emit = (event: DeployEvent): void => {
     try {
@@ -183,7 +185,7 @@ export async function executeDeploy(
     reportPath: resolveRunReportPath(input.reportPath, process.env[RUN_REPORT_FILE_ENV], cwd),
     steps: deploySteps(input.onEvent),
     signal: input.signal,
-    redaction: new SecretRedaction(process.env),
+    redaction: deps.redaction ?? new SecretRedaction(process.env),
   });
   if (!outcome.ok) return outcome;
   return ok({ summary: outcome.value });
@@ -275,7 +277,7 @@ async function attachReporters(
 }
 
 /** Every session's contribution to the apply's environment, so reporting that happens inside the apply can find the run. */
-function reporterChildEnv(
+function reporterEnv(
   reporters: readonly ExtensionReporter[],
   redaction: SecretRedaction,
 ): Record<string, string> {
@@ -430,11 +432,14 @@ async function runStackPipelineInner(
     throw error;
   }
 
-  let converge: ConvergeSetup | undefined;
+  let appConvergeEntry: AppConvergeEntry | undefined;
   if (action === 'deploy') {
-    const setup = await prepareConverge(deps, path.dirname(path.resolve(cwd, composerConfig.file)));
-    if (!setup.ok) return setup;
-    converge = setup.value;
+    const loaded = await prepareAppConvergeEntry(
+      deps,
+      path.dirname(path.resolve(cwd, composerConfig.file)),
+    );
+    if (!loaded.ok) return loaded;
+    appConvergeEntry = loaded.value;
   }
   const platformCredentials = deps.credentials;
 
@@ -499,6 +504,9 @@ async function runStackPipelineInner(
     steps.finish({ name: 'assemble' });
     const { graph, name: resolvedName } = pipeline;
     const config = pipeline.configSource.value;
+    if (action === 'deploy') {
+      refuseSecretsIn(graph.appConfigurationRead, opts.redaction.knownSecrets, 'deploy');
+    }
 
     steps.start({ name: 'connect' });
     // Open reporting BEFORE containers are resolved: creating them is the
@@ -615,21 +623,23 @@ async function runStackPipelineInner(
     // preflight, so every transport var is blanked — a stale value exported
     // into the shell must not read as this run's payload. The reader treats
     // an empty var as absent.
-    for (const extension of config.extensions) {
-      preflightTransportEnv[preflightEnvVarName(extension.id)] ??= '';
+    if (action === 'destroy') {
+      for (const extension of config.extensions) {
+        preflightTransportEnv[preflightEnvVarName(extension.id)] = '';
+      }
     }
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;
   }
 
-  if (converge !== undefined) {
-    return convergeDeploy(opts, pipeline, converge, {
+  if (appConvergeEntry !== undefined) {
+    return convergeDeploy(opts, pipeline, appConvergeEntry, {
       containers,
       stage: alchemyStage,
-      preflight: preflightPayloads,
+      preflightPayloads,
       findings: { unset },
-      env: reporterChildEnv(reporters, opts.redaction),
+      env: reporterEnv(reporters, opts.redaction),
     });
   }
 
@@ -684,7 +694,7 @@ async function runStackPipelineInner(
       containerEnv: containerEnv(containers),
       preflightEnv: preflightTransportEnv,
       env: {
-        ...reporterChildEnv(reporters, opts.redaction),
+        ...reporterEnv(reporters, opts.redaction),
         ...handover.env,
         [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath,
       },
@@ -827,17 +837,13 @@ async function runStackPipelineInner(
   }
 }
 
-interface ConvergeSetup {
-  readonly appConverge: AppConverge;
-}
-
-/** What deploy's converge needs before anything is created: the app's own install of the converge. */
-async function prepareConverge(
+/** Loaded before anything is created, so a missing or incompatible install fails first. */
+async function prepareAppConvergeEntry(
   deps: OperationDeps,
   appDir: string,
-): Promise<Result<ConvergeSetup, CliStructuredError>> {
+): Promise<Result<AppConvergeEntry, CliStructuredError>> {
   try {
-    return ok({ appConverge: deps.converge ?? (await loadAppConverge(appDir)) });
+    return ok(deps.appConvergeEntry ?? (await loadAppConvergeEntry(appDir)));
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;
@@ -856,7 +862,7 @@ function reportConvergeEvent(
   }
   const step: DeployStep = {
     name: 'apply-resource',
-    fqn: event.fqn,
+    resourceId: event.fqn,
     resourceType: event.resourceType,
     status: event.status,
   };
@@ -948,11 +954,11 @@ function convergeFailure(
 async function convergeDeploy(
   opts: StackPipelineOptions,
   pipeline: PipelineResult,
-  setup: ConvergeSetup,
+  entry: AppConvergeEntry,
   resolved: {
     readonly containers: ReadonlyMap<ExtensionId, ContainerInstance>;
     readonly stage: string;
-    readonly preflight: ReadonlyMap<ExtensionId, string>;
+    readonly preflightPayloads: ReadonlyMap<ExtensionId, string>;
     readonly findings: PreflightFindings;
     readonly env: Readonly<Record<string, string>>;
   },
@@ -971,13 +977,14 @@ async function convergeDeploy(
   steps.start({ name: 'apply' });
   let stack: LoweredStack;
   try {
-    stack = setup.appConverge.lower(root, config, {
+    stack = entry.lower(root, config, {
       name: pipeline.name,
       environment,
       appConfigurationRead: pipeline.graph.appConfigurationRead,
+      firstProcessNodeAddresses: nodeAddresses(pipeline.graph),
       bundles: pipeline.assembled.bundles,
       containers: resolved.containers,
-      preflight: resolved.preflight,
+      preflightPayloads: resolved.preflightPayloads,
       findings: resolved.findings,
       credentials: opts.deps.credentials,
       report: (result) => {
@@ -986,6 +993,7 @@ async function convergeDeploy(
     });
   } catch (error) {
     // An extension's state or providers factory threw while the stack was built.
+    if (CliStructuredError.is(error)) return notOk(error);
     return notOk(
       new CliStructuredError(
         'DEPLOY.ENGINE_FAILED',
@@ -993,9 +1001,13 @@ async function convergeDeploy(
       ),
     );
   }
+  const output = new StreamRedactor(opts.redaction.allValues());
+  const toStderr = (text: string): void => {
+    if (text !== '') process.stderr.write(text);
+  };
   let outcome: ConvergeOutcome;
   try {
-    outcome = await setup.appConverge.converge({
+    outcome = await entry.converge({
       operation: 'deploy',
       stack,
       stage: resolved.stage,
@@ -1003,6 +1015,7 @@ async function convergeDeploy(
       env,
       signal: opts.signal,
       onEvent: (event) => reportConvergeEvent(steps, event, redact),
+      output: (text) => toStderr(output.push(text)),
     });
   } catch (error) {
     return notOk(
@@ -1013,6 +1026,8 @@ async function convergeDeploy(
         ),
       ),
     );
+  } finally {
+    toStderr(output.end());
   }
   if (outcome.kind !== 'applied') return notOk(convergeFailure(outcome, redact));
   steps.finish({ name: 'apply' });

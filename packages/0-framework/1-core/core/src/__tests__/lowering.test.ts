@@ -96,7 +96,7 @@ const opts = (extra: Partial<LowerOptions> = {}): LowerOptions => ({
   name: 'hello',
   bundles: {},
   containers: new Map(),
-  preflight: new Map(),
+  preflightPayloads: new Map(),
   ...extra,
 });
 
@@ -1699,7 +1699,9 @@ describe('container threading through lowering() (the parent→child transport r
     const root = module('shop', {}, () => ({}));
 
     withEnv({ [preflightEnvVarName(descriptor.id)]: 'from-env' }, () => {
-      run(lowering(root, config, opts({ preflight: new Map([[descriptor.id, 'passed']]) })));
+      run(
+        lowering(root, config, opts({ preflightPayloads: new Map([[descriptor.id, 'passed']]) })),
+      );
       run(lowering(root, config, opts()));
     });
 
@@ -1723,9 +1725,45 @@ describe('container threading through lowering() (the parent→child transport r
     );
 
     expect(inputs.containers.get(descriptor.id)).toEqual(new FakeContainerInstance(instanceInput));
-    expect([...inputs.preflight]).toEqual([[descriptor.id, 'payload']]);
+    expect([...inputs.preflightPayloads]).toEqual([[descriptor.id, 'payload']]);
     expect(blanked.containers.size).toBe(0);
-    expect(blanked.preflight.size).toBe(0);
+    expect(blanked.preflightPayloads.size).toBe(0);
+  });
+
+  test('a caller that passes no containers or preflight payloads, such as a stack file an older CLI generated, gets both from the environment', () => {
+    const { descriptor, config, seen } = fakeExtensionWithContainer();
+    const instanceInput = { appName: 'shop', environment: 'staging' };
+    const payloads: unknown[] = [];
+    const recording: PrismaAppConfig = {
+      ...config,
+      extensions: [
+        {
+          ...descriptor,
+          application: {
+            provision: (ctx) => {
+              payloads.push(ctx.preflight);
+              return descriptor.application?.provision(ctx) ?? Effect.succeed(undefined);
+            },
+          },
+        },
+      ],
+    };
+
+    withEnv(
+      {
+        [containerEnvVarName(descriptor.id)]: JSON.stringify(instanceInput),
+        [preflightEnvVarName(descriptor.id)]: 'from-env',
+      },
+      () => {
+        run(lowering(dbModule(), recording, { name: 'hello', bundles: {} }));
+      },
+    );
+
+    expect(seen).toEqual([
+      { phase: 'application', container: new FakeContainerInstance(instanceInput) },
+      { phase: 'resource', container: new FakeContainerInstance(instanceInput) },
+    ]);
+    expect(payloads).toEqual(['from-env']);
   });
 
   test('an extension declaring no container descriptor at all sees ctx.container as undefined', () => {

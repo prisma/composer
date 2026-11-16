@@ -12,8 +12,9 @@ import type {
 } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
-import type { AppConverge } from '../app-converge.ts';
+import type { AppConvergeEntry } from '../app-converge.ts';
 import type { startWatch } from '../dev/watch.ts';
+import type { SecretRedaction } from '../redaction.ts';
 import type { RunAlchemy } from '../run-alchemy.ts';
 
 /** The `id` of an ExtensionDescriptor — what keys the executors' per-extension maps. */
@@ -45,8 +46,10 @@ export interface OperationDeps {
    * natively and the engine owns signal policy; hosts get the default `spawnAlchemy`.
    */
   readonly alchemy?: RunAlchemy | undefined;
-  /** Lowers and converges `deploy`'s stack; defaults to the app's own install (`loadAppConverge`). Tests substitute it. */
-  readonly converge?: AppConverge | undefined;
+  /** The `lower` and converge `deploy` runs; defaults to the app's own install (`loadAppConvergeEntry`). Tests substitute it. */
+  readonly appConvergeEntry?: AppConvergeEntry | undefined;
+  /** What `deploy` redacts from everything it reports. Defaults to one built from `process.env`; the CLI passes its own so its console redirect redacts the same values. */
+  readonly redaction?: SecretRedaction | undefined;
   /** Starts a file watch for `dev`; defaults to chokidar-backed `startWatch`. Tests substitute it to drive changes directly. */
   readonly watch?: typeof startWatch | undefined;
   /**

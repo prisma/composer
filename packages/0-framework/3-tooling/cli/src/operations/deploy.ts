@@ -19,10 +19,10 @@ export type DeployStep =
   | { readonly name: 'assemble-service'; readonly address: string }
   | {
       readonly name: 'apply-resource';
-      /** The resource's id in the stack. */
-      readonly fqn: string;
+      /** The resource's ID (ADR-0057): its node's address, or the address and the resource's role in that node. */
+      readonly resourceId: string;
       readonly resourceType: string;
-      /** Alchemy's status word for what is happening to it, such as `creating` or `created`. */
+      /** Alchemy's word for what is happening to the resource, such as `creating` or `created`, for people to read. It changes between a step's start and finish, and its values are Alchemy's, so do not branch on it. */
       readonly status: string;
     };
 

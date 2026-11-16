@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CliStructuredError } from '@internal/foundation/errors';
-import { HOST_COMPOSER_VERSION, loadAppConverge } from '../app-converge.ts';
+import { HOST_COMPOSER_VERSION, loadAppConvergeEntry } from '../app-converge.ts';
 import { CONVERGE_CONTRACT } from '../converge-contract.ts';
 
 const dirs: string[] = [];
@@ -60,15 +60,15 @@ function appWith(
 
 async function failureOf(dir: string): Promise<CliStructuredError> {
   try {
-    await loadAppConverge(dir);
+    await loadAppConvergeEntry(dir);
   } catch (error) {
     if (CliStructuredError.is(error)) return error;
     throw error;
   }
-  throw new Error('expected loadAppConverge to fail');
+  throw new Error('expected loadAppConvergeEntry to fail');
 }
 
-describe('loadAppConverge', () => {
+describe('loadAppConvergeEntry', () => {
   test("loads lower and convergeInProcess from the app's own @prisma/composer", async () => {
     const dir = appWith({
       exports: { './internal/converge': './dist/internal-converge.mjs' },
@@ -78,7 +78,7 @@ describe('loadAppConverge', () => {
       },
     });
 
-    const engine = await loadAppConverge(dir);
+    const engine = await loadAppConvergeEntry(dir);
     const stub = await import(
       pathToFileURL(path.join(dir, 'node_modules/@prisma/composer/dist/internal-converge.mjs')).href
     );
@@ -122,7 +122,7 @@ describe('loadAppConverge', () => {
   };
 
   test("an app's @prisma/composer at another version that speaks the same contract loads", async () => {
-    const engine = await loadAppConverge(appWith({ ...entry, version: '0.0.1' }));
+    const engine = await loadAppConvergeEntry(appWith({ ...entry, version: '0.0.1' }));
 
     expect(typeof engine.converge).toBe('function');
   });

@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import * as Prisma from '@alchemy.run/prisma';
 import type { Credentials, Retry } from '@distilled.cloud/prisma';
 import { getWorkspaces } from '@distilled.cloud/prisma/management';
+import { CliStructuredError } from '@internal/foundation/errors';
 import { createManagementApiClient } from '@prisma/management-api-sdk';
 import * as ConfigProvider from 'effect/ConfigProvider';
 import * as Effect from 'effect/Effect';
@@ -16,8 +17,9 @@ import * as HttpClientRequest from 'effect/http/HttpClientRequest';
 import type * as Layer from 'effect/Layer';
 import * as Stream from 'effect/Stream';
 import type { ManagementApiClient } from '../client.ts';
-import { deployHttpClientLayer } from '../deploy-http-client.ts';
+import { managementApiHttpClientLayer } from '../management-api-http-client.ts';
 import { providers } from '../providers.ts';
+import { prismaStateLayer } from '../state/layer.ts';
 import { refreshingEngineClient } from './fixtures/refreshing-engine-client.ts';
 
 const ORIGIN = 'https://api.prisma.test';
@@ -54,10 +56,10 @@ const run = <A, E>(
   effect: Effect.Effect<A, E, HttpClient.HttpClient>,
 ) =>
   Effect.runPromise(
-    effect.pipe(Effect.scoped, Effect.provide(deployHttpClientLayer(client, ORIGIN))),
+    effect.pipe(Effect.scoped, Effect.provide(managementApiHttpClientLayer(client, ORIGIN))),
   );
 
-describe('deployHttpClientLayer', () => {
+describe('managementApiHttpClientLayer', () => {
   test('a Management API request goes through the client with its body, query and headers intact and no Authorization', async () => {
     const { client, requests } = fakeEngineClient(() =>
       Response.json({ data: { id: 'proj_1' } }, { status: 201, headers: { 'x-request-id': 'r1' } }),
@@ -476,16 +478,33 @@ describe('providers() with no client', () => {
 });
 
 describe('providers({ client }) and the host settings', () => {
-  const runWith = (env: Record<string, string>) => {
+  const HOST_VARIABLES = ['PRISMA_MANAGEMENT_API_URL', 'PRISMA_API_URL'] as const;
+  const withHostVariables = <T>(
+    env: Partial<Record<(typeof HOST_VARIABLES)[number], string>>,
+    run: () => T,
+  ): T => {
+    const previous = HOST_VARIABLES.map((name) => [name, process.env[name]] as const);
+    for (const name of HOST_VARIABLES) {
+      const value = env[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    try {
+      return run();
+    } finally {
+      for (const [name, value] of previous) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  };
+  const runWith = (env: Partial<Record<(typeof HOST_VARIABLES)[number], string>>) => {
     const { client, requests } = fakeEngineClient(() => Response.json({ data: { id: 'proj_1' } }));
+    const layer = withHostVariables(env, () => bundle(client));
     return Effect.runPromiseExit(
       Effect.gen(function* () {
         return yield* (yield* Prisma.PrismaClient).getProject('proj_1');
-      }).pipe(
-        Effect.scoped,
-        Effect.provide(bundle(client)),
-        Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromEnvRecord(env)),
-      ),
+      }).pipe(Effect.scoped, Effect.provide(layer)),
     ).then((exit) => ({ exit, requests }));
   };
 
@@ -505,16 +524,30 @@ describe('providers({ client }) and the host settings', () => {
     expect(Exit.isSuccess(exit)).toBe(true);
   });
 
-  test('PRISMA_API_URL naming another origin fails, naming both values', async () => {
-    const { exit, requests } = await runWith({
+  test('PRISMA_API_URL naming another origin is the structured DEPLOY.MANAGEMENT_API_URL_CONFLICT, thrown when the bundle and the state store are built', () => {
+    const { client } = fakeEngineClient(() => Response.json({}));
+    const conflicting = {
       PRISMA_MANAGEMENT_API_URL: ORIGIN,
       PRISMA_API_URL: 'https://api.prisma.io',
-    });
+    };
+    const thrownBy = (build: () => unknown): unknown => {
+      try {
+        withHostVariables(conflicting, build);
+      } catch (error) {
+        return error;
+      }
+      throw new Error('expected a throw');
+    };
 
-    expect(Exit.isFailure(exit)).toBe(true);
-    expect(String(Exit.isFailure(exit) ? exit.cause : '')).toContain(
-      'PRISMA_API_URL is https://api.prisma.io',
-    );
-    expect(requests).toEqual([]);
+    for (const error of [
+      thrownBy(() => providers({ client })),
+      thrownBy(() => prismaStateLayer({ projectId: 'proj_1' }, client)),
+    ]) {
+      expect(CliStructuredError.is(error)).toBe(true);
+      expect(CliStructuredError.is(error) && error.code).toBe('DEPLOY.MANAGEMENT_API_URL_CONFLICT');
+      expect(error instanceof Error && error.message).toContain(
+        'PRISMA_API_URL is https://api.prisma.io',
+      );
+    }
   });
 });

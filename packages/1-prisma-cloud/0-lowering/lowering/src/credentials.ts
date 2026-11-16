@@ -78,14 +78,12 @@ export const deploySourceHeaders = (): Record<string, string> => ({
 });
 
 /**
- * The Management API origin when no client is supplied: `PRISMA_API_URL`, then
+ * The origin of a client built from `PRISMA_SERVICE_TOKEN`: `PRISMA_API_URL`, then
  * `PRISMA_MANAGEMENT_API_URL`, then the public origin, normalized and validated
- * as upstream alchemy's `PrismaEnvironment` does. Composer's client built from
- * `PRISMA_SERVICE_TOKEN` and upstream's providers both use it, so they always
- * address the same host. A supplied client decides its own host; see
- * {@link suppliedClientOrigin}.
+ * as upstream alchemy's `PrismaEnvironment` does, so Composer's client and
+ * upstream's providers always address the same host.
  */
-export const managementApiBaseUrl = (
+export const tokenClientOrigin = (
   env?: Readonly<Record<string, string | undefined>>,
 ): Effect.Effect<string, Config.ConfigError | Error> =>
   env !== undefined
@@ -122,4 +120,18 @@ export const suppliedClientOrigin = (env: Readonly<Record<string, string | undef
     );
   }
   return origin;
+};
+
+/**
+ * The origin Management API requests go to: {@link suppliedClientOrigin} when the
+ * caller supplied a client, else {@link tokenClientOrigin}. With a supplied client
+ * it reads the environment when it is called, so `DEPLOY.MANAGEMENT_API_URL_CONFLICT`
+ * is thrown to the caller as a structured error, never inside a layer.
+ */
+export const managementApiOrigin = (
+  clientSupplied: boolean,
+): Effect.Effect<string, Config.ConfigError | Error> => {
+  if (!clientSupplied) return tokenClientOrigin();
+  const origin = suppliedClientOrigin(process.env);
+  return Effect.succeed(origin);
 };

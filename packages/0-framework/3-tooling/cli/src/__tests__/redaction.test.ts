@@ -298,7 +298,7 @@ describe('redacting what a command returns', () => {
     expect(redactDevEvent(untouched, known)).toBe(untouched);
   });
 
-  test('redactSummary redacts entity ids, urls and details', () => {
+  test('redactSummary redacts entity ids, urls, details and findings', () => {
     const summary: DeploymentSummary = {
       app: 'shop',
       nodes: [
@@ -315,6 +315,15 @@ describe('redacting what a command returns', () => {
           ],
         },
       ],
+      findings: {
+        unset: [
+          {
+            name: 'MAIL_KEY',
+            readers: [{ kind: 'unread', node: 'shop.mail', nodeKind: 'module' }],
+            commands: ["prisma project env add 'MAIL_KEY=hunter2'"],
+          },
+        ],
+      },
     };
 
     expect(redactSummary(summary, knowing('hunter2'))).toEqual({
@@ -333,6 +342,15 @@ describe('redacting what a command returns', () => {
           ],
         },
       ],
+      findings: {
+        unset: [
+          {
+            name: 'MAIL_KEY',
+            readers: [{ kind: 'unread', node: 'shop.mail', nodeKind: 'module' }],
+            commands: ["prisma project env add 'MAIL_KEY=[redacted]'"],
+          },
+        ],
+      },
     });
     expect(redactSummary(undefined, knowing('hunter2'))).toBeUndefined();
   });

@@ -13,6 +13,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { App, Deployment, EnvironmentVariable, Project } from '@alchemy.run/prisma';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
+import { toProviderError } from '@internal/core/deploy';
 import { computeClient } from '@internal/dev-emulators';
 import {
   collectPlatformMarkers,
@@ -22,7 +23,6 @@ import {
   isParamPointerRow,
   ownKeyPrefix,
 } from '@internal/input-document';
-import { providerFailure } from '@internal/lowering';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
@@ -239,7 +239,7 @@ export function LocalAppProvider(
             logicalId: null,
           } satisfies App['Attributes'];
         },
-        catch: providerFailure,
+        catch: toProviderError,
       }),
     diff: ({ output }) =>
       Effect.tryPromise({
@@ -249,12 +249,12 @@ export function LocalAppProvider(
           if (live?.url === output.appEndpointDomain) return undefined;
           return { action: 'update' as const };
         },
-        catch: providerFailure,
+        catch: toProviderError,
       }),
     delete: ({ output }) =>
       Effect.tryPromise({
         try: () => deleteNodeInstance(appScopeOf(input), output.name),
-        catch: providerFailure,
+        catch: toProviderError,
       }),
     read: ({ output }) => Effect.succeed(output),
   };
@@ -287,7 +287,7 @@ export function LocalEnvironmentVariableProvider(
             updatedAt: DEV_TIMESTAMP,
           } satisfies EnvironmentVariable['Attributes'];
         },
-        catch: providerFailure,
+        catch: toProviderError,
       }),
     delete: ({ output }) =>
       Effect.tryPromise({
@@ -298,7 +298,7 @@ export function LocalEnvironmentVariableProvider(
             return next;
           });
         },
-        catch: providerFailure,
+        catch: toProviderError,
       }),
   };
   return Provider.effect(EnvironmentVariable, Effect.succeed(service));
@@ -368,7 +368,7 @@ export function LocalDeploymentProvider(
             createdAt: DEV_TIMESTAMP,
           } satisfies Deployment['Attributes'];
         },
-        catch: providerFailure,
+        catch: toProviderError,
       }),
     // An instance that no longer runs this deployment — re-created after the
     // emulator lost it, or never deployed — needs the deployment again, even
@@ -385,7 +385,7 @@ export function LocalDeploymentProvider(
             artifactHash === undefined || fs.existsSync(artifactDirOf(input.devDir, artifactHash));
           return unpacked ? undefined : { action: 'update' as const };
         },
-        catch: providerFailure,
+        catch: toProviderError,
       }),
     // Content-addressed, cheap to leave unpacked; `--fresh` removes the whole
     // dev dir, and deleting the App deletes the emulator's instance.

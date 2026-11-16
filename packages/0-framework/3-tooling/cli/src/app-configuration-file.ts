@@ -100,12 +100,22 @@ function textIn(value: unknown, at: readonly string[]): { at: readonly string[];
   return [];
 }
 
+const PLAIN_VALUE_CARRIERS = {
+  deploy:
+    'A deploy sends every plain value Load read to the platform as plain configuration, and never sends a secret that way.',
+  file: 'Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.',
+} as const;
+
 /**
- * Refuses when the file would hold a known secret in a plain value, a number or a boolean
- * compared as its text (`KnownSecrets.nameIn`). The message names where and the secrets key,
- * never the value.
+ * Throws `CONFIG.SECRET_AS_PLAIN_VALUE` when a plain value Load read holds a known secret, a
+ * number or a boolean compared as its text (`KnownSecrets.nameIn`). The message names where and
+ * the secrets key, never the value.
  */
-function refuseSecretsIn(read: AppConfigurationRead, knownSecrets: KnownSecrets): void {
+export function refuseSecretsIn(
+  read: AppConfigurationRead,
+  knownSecrets: KnownSecrets,
+  carrier: keyof typeof PLAIN_VALUE_CARRIERS,
+): void {
   const places = [
     ...read.rootInput.flatMap((field) =>
       textIn(field.value, field.path).map(({ at, text }) => ({
@@ -123,7 +133,7 @@ function refuseSecretsIn(read: AppConfigurationRead, knownSecrets: KnownSecrets)
     if (name === undefined) continue;
     throw new CliStructuredError(
       'CONFIG.SECRET_AS_PLAIN_VALUE',
-      `${where} holds the value of the secret "${name}", which an envSecret() in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
+      `${where} holds the value of the secret "${name}", which an envSecret() in the graph reads. ${PLAIN_VALUE_CARRIERS[carrier]}`,
       {
         fix: `Read the secret with envSecret('${name}') where it is used, or give this plain value text that does not contain the value of "${name}".`,
       },
@@ -160,7 +170,7 @@ export function prepareSecondProcess(input: {
   readonly appSecrets?: AppSecrets;
 }): SecondProcessHandover {
   const { file, appSecrets } = input;
-  refuseSecretsIn(input.appConfigurationRead, input.knownSecrets);
+  refuseSecretsIn(input.appConfigurationRead, input.knownSecrets, 'file');
   const contents: AppConfigurationFile = {
     appConfigurationRead: input.appConfigurationRead,
     nodeAddresses: input.nodeAddresses,

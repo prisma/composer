@@ -13,6 +13,7 @@ const summary = {
       entities: [{ kind: 'compute-service', id: 'app_1', url: 'https://web.example' }],
     },
   ],
+  findings: { unset: [] },
 } satisfies DeploymentSummary;
 
 const tempDirs: string[] = [];

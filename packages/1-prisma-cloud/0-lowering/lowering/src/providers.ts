@@ -5,7 +5,8 @@ import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type { ManagementApiClient } from './client.ts';
 import * as client from './client.ts';
-import { deployHttpClientLayer } from './deploy-http-client.ts';
+import { managementApiOrigin } from './credentials.ts';
+import { managementApiHttpClientLayer } from './management-api-http-client.ts';
 
 /** The collection of Prisma resource providers. */
 export class Providers extends Provider.ProviderCollection<Providers>()('PrismaComposer') {}
@@ -36,11 +37,11 @@ const prismaEnvironment = (baseUrl: string, clientSupplied: boolean) =>
 const operationCredentials = (apiBaseUrl: string) =>
   Layer.succeed(Credentials, Effect.succeed({ apiBaseUrl }));
 
-/** The bundle's `HttpClient`, over `ManagementClient` (see `deployHttpClientLayer`). */
-const prismaDeployHttpLayer = (origin: string) =>
+/** The bundle's `HttpClient`, over `ManagementClient` (see `managementApiHttpClientLayer`). */
+const managementApiHttpLayer = (origin: string) =>
   Layer.unwrap(
     Effect.gen(function* () {
-      return deployHttpClientLayer(yield* client.ManagementClient, origin);
+      return managementApiHttpClientLayer(yield* client.ManagementClient, origin);
     }),
   );
 
@@ -75,23 +76,17 @@ const upstreamPrismaProviders = (baseUrl: string, clientSupplied: boolean) =>
 
 /**
  * The Prisma provider bundle: every resource provider and the Management API
- * client. Plug into a stack with `{ providers: Prisma.providers() }`.
+ * client. `options.client` is the caller's authenticated client; without one,
+ * the bundle builds its own from `PRISMA_SERVICE_TOKEN`. With a client, it
+ * throws `DEPLOY.MANAGEMENT_API_URL_CONFLICT` when called (`managementApiOrigin`).
  *
- * `options.client` is the caller's authenticated Management API client; without
- * one, the bundle builds its own from `PRISMA_SERVICE_TOKEN`. Either way, every
- * Management API request, upstream's and Composer's, goes through that client,
- * at the origin `client.managementApiOrigin` resolves.
- *
- * The bundle's ambient `HttpClient` is {@link prismaDeployHttpLayer}:
- * upstream's operations resolve it when they run. Upstream's providers run
- * their operations against this bundle's output, so their credentials are
- * merged into it. Invariant: no Composer provider may resolve the ambient
- * `HttpClient` — each carries its own client — or it would silently get this
- * override.
+ * The bundle overrides the ambient `HttpClient` with
+ * {@link managementApiHttpLayer}, so no Composer provider may resolve it; each
+ * carries its own client.
  */
 export const providers = (options?: { readonly client?: ManagementApiClient | undefined }) =>
   Layer.unwrap(
-    Effect.map(client.managementApiOrigin(options?.client), (origin) =>
+    Effect.map(managementApiOrigin(options?.client !== undefined), (origin) =>
       Layer.effect(
         Providers,
         Provider.collection([
@@ -107,7 +102,7 @@ export const providers = (options?: { readonly client?: ManagementApiClient | un
         ]),
       ).pipe(
         Layer.provideMerge(upstreamPrismaProviders(origin, options?.client !== undefined)),
-        Layer.provideMerge(prismaDeployHttpLayer(origin)),
+        Layer.provideMerge(managementApiHttpLayer(origin)),
         Layer.provideMerge(client.suppliedOrFromEnv(options?.client, origin)),
       ),
     ),

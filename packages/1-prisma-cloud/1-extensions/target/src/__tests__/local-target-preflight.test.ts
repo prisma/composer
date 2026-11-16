@@ -17,7 +17,7 @@ import { isSecretString } from '@internal/foundation/secret';
 import { rawHttpContract } from '@internal/http';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
-import { decodePreflightPayload, transportedPreflight } from '../control/preflight-payload.ts';
+import { decodePreflightPayload, preflightView } from '../control/preflight-payload.ts';
 import { compute, publicUrl } from '../exports/index.ts';
 import { runDevPreflight } from '../local-target/preflight.ts';
 import { envParam } from '../param.ts';
@@ -219,7 +219,7 @@ function billingDocument(
 ): unknown {
   const node = graph.nodes.find((entry) => entry.id === 'app.billing')?.node as ServiceNode;
   const binding = graph.inputBindings.find((b) => b.serviceAddress === 'app.billing')?.binding;
-  const { absentSecrets } = transportedPreflight(
+  const { absentSecrets } = preflightView(
     readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv),
   );
   const row = serializeInput(node, 'app.billing', binding, { env: {}, absentSecrets });
@@ -337,7 +337,7 @@ describe('prisma dev preflight', () => {
     const graph = billingGraph(requiresSecrets('stripeKey'));
     const memberFor = async (value: string) => {
       secrets['STRIPE_SECRET_KEY'] = value;
-      const { pointerVersion } = transportedPreflight(
+      const { pointerVersion } = preflightView(
         readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, transported(await preflight(graph))),
       );
       return pointerVersion('STRIPE_SECRET_KEY');
@@ -355,9 +355,9 @@ describe('prisma dev preflight', () => {
     const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
 
     expect(
-      transportedPreflight(
-        readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv),
-      ).pointerVersion('STRIPE_WEBHOOK_SECRET'),
+      preflightView(readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv)).pointerVersion(
+        'STRIPE_WEBHOOK_SECRET',
+      ),
     ).toBeUndefined();
   });
 
