@@ -198,26 +198,29 @@ describe('the graph check of platform variable nodes', () => {
   test.each([
     ['read by a service', true],
     ['read by no service', false],
-  ])('a secret node and a root input field with one name fail Load, when the node is %s', (_, read) => {
-    const message = loadError(() =>
-      Load(
-        appRoot('shop', { input: type({ EMAIL_KEY: 'string' }) }, ({ input, provision }) => {
-          const key = provision(variable.secret({ name: 'EMAIL_KEY' }));
-          provision(web(), {
-            id: 'site',
-            input: read ? { key, other: input.EMAIL_KEY } : { other: input.EMAIL_KEY },
-          });
-        }),
-        { configuration: { EMAIL_KEY: 'plain text' } },
-      ),
-    );
+  ])(
+    'a secret node and a root input field with one name fail Load, when the node is %s',
+    (_, read) => {
+      const message = loadError(() =>
+        Load(
+          appRoot('shop', { input: type({ EMAIL_KEY: 'string' }) }, ({ input, provision }) => {
+            const key = provision(variable.secret({ name: 'EMAIL_KEY' }));
+            provision(web(), {
+              id: 'site',
+              input: read ? { key, other: input.EMAIL_KEY } : { other: input.EMAIL_KEY },
+            });
+          }),
+          { configuration: { EMAIL_KEY: 'plain text' } },
+        ),
+      );
 
-    expect(message).toBe(
-      'input.EMAIL_KEY of root module "shop" reads "EMAIL_KEY" from the app configuration, and the platform secret "EMAIL_KEY" names "EMAIL_KEY" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy\'s second process every root input field the root\'s body passes on, in a file, and never writes a secret to a file. Read the secret with the platform secret "EMAIL_KEY" only, or give the plain value a different name.',
-    );
-  });
+      expect(message).toBe(
+        'input.EMAIL_KEY of root module "shop" reads "EMAIL_KEY" from the app configuration, and the platform secret "EMAIL_KEY" names "EMAIL_KEY" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy\'s second process every root input field the root\'s body passes on, in a file, and never writes a secret to a file. Read the secret with the platform secret "EMAIL_KEY" only, or give the plain value a different name.',
+      );
+    },
+  );
 
-  test('a node value bound as a service\'s whole input fails', () => {
+  test("a node value bound as a service's whole input fails", () => {
     const graph = Load(
       appRoot('shop', ({ provision }) => {
         const from = provision(variable({ name: 'EMAIL_FROM' }));

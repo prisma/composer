@@ -40,7 +40,9 @@ export function isPlatformVariablePayload(payload: unknown): payload is Platform
   );
 }
 
-export function isPlainVariableSource(value: unknown): value is ParamSource<PlatformVariablePayload> {
+export function isPlainVariableSource(
+  value: unknown,
+): value is ParamSource<PlatformVariablePayload> {
   return isParamSource(value) && isPlatformVariablePayload(value.payload);
 }
 

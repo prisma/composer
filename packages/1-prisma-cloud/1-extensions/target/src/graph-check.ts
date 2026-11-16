@@ -1,9 +1,4 @@
-import {
-  type Graph,
-  GraphCheckError,
-  isParamSource,
-  isSecretSource,
-} from '@internal/core';
+import { type Graph, GraphCheckError, isParamSource, isSecretSource } from '@internal/core';
 import { isEnvParamSource } from './param.ts';
 import { type PlatformVariableNode, platformVariableNodes } from './platform-variable.ts';
 

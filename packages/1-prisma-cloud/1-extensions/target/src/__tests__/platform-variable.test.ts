@@ -57,17 +57,20 @@ describe('variable() and variable.secret()', () => {
   test.each([
     ['variable', variable],
     ['variable.secret', variable.secret],
-  ] as const)('%s() refuses a name that is not upper case, when the root body runs', (factory, build) => {
-    expect(() =>
-      Load(
-        appRoot('shop', ({ provision }) => {
-          provision(build({ name: 'email_from' }));
-        }),
-      ),
-    ).toThrow(
-      `${factory} name "email_from" is not a platform variable name: it must be an upper-case letter followed by upper-case letters, digits and underscores, for example API_KEY.`,
-    );
-  });
+  ] as const)(
+    '%s() refuses a name that is not upper case, when the root body runs',
+    (factory, build) => {
+      expect(() =>
+        Load(
+          appRoot('shop', ({ provision }) => {
+            provision(build({ name: 'email_from' }));
+          }),
+        ),
+      ).toThrow(
+        `${factory} name "email_from" is not a platform variable name: it must be an upper-case letter followed by upper-case letters, digits and underscores, for example API_KEY.`,
+      );
+    },
+  );
 
   test.each([
     ['variable', variable],

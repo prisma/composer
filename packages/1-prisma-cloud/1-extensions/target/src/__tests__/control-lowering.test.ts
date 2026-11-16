@@ -3910,14 +3910,10 @@ describe("prismaCloud().nodes['platform-variable'] — a platform variable node"
 
     await lowerShop();
 
-    const triggersOf = (id: string) =>
-      Object.keys(
-        (
-          recorded.deploy.slice(before).find(([deployment]) => deployment === id)?.[1] as {
-            triggers: Record<string, unknown>;
-          }
-        ).triggers,
-      );
+    const triggersOf = (id: string) => {
+      const props = recorded.deploy.slice(before).find(([deployment]) => deployment === id)?.[1];
+      return Object.keys((props as { triggers: Record<string, unknown> }).triggers);
+    };
     expect(triggersOf('shop.mailer.deployment')).toContain('EMAIL_FROM:updatedAt');
     expect(triggersOf('shop.mailer.deployment')).toContain('EMAIL_KEY:updatedAt');
     expect(triggersOf('shop.mailer.deployment')).not.toContain('PLATFORM_PORT:updatedAt');

@@ -22,6 +22,7 @@ import { mapWithConcurrency } from './map-with-concurrency.ts';
 import { addReader, missingVariableNames, missingVariablesText } from './missing-variables-text.ts';
 import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
+import { isSecretVariableSource } from './platform-variable.ts';
 import {
   envParamBindings,
   inputVariableNames,
@@ -35,7 +36,6 @@ import {
   paramIsRequired,
   requiredParam,
 } from './required-variables.ts';
-import { isSecretVariableSource } from './platform-variable.ts';
 import { secretName } from './secret.ts';
 
 type EnvClass = 'production' | 'preview';

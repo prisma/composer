@@ -48,9 +48,9 @@ const svc = (schema: StandardSchemaV1) =>
     build,
   });
 
-function provisioned<N extends Record<string, ReturnType<typeof variable | typeof variable.secret>>>(
-  nodes: N,
-): Record<keyof N, unknown> {
+function provisioned<
+  N extends Record<string, ReturnType<typeof variable | typeof variable.secret>>,
+>(nodes: N): Record<keyof N, unknown> {
   const values: Record<string, unknown> = {};
   Load(
     appRoot('shop', ({ provision }) => {
@@ -1061,7 +1061,7 @@ describe('platform variable nodes in a service binding', () => {
     );
   });
 
-  test('a schema failure on a field that reads a node ends with the variable\'s name', () => {
+  test("a schema failure on a field that reads a node ends with the variable's name", () => {
     const plainField = type({ from: 'string', key: secretString() });
 
     expect(() => serializeInput(svc(plainField), 'shop.web', { from, key })).toThrow(
@@ -1069,7 +1069,7 @@ describe('platform variable nodes in a service binding', () => {
     );
   });
 
-  test('a schema failure on a field under a node\'s path also ends with its name, and a failure elsewhere does not', () => {
+  test("a schema failure on a field under a node's path also ends with its name, and a failure elsewhere does not", () => {
     const nested = type({ from: { address: 'string' }, count: 'number' });
 
     expect(() => serializeInput(svc(nested), 'shop.web', { from, count: 1 })).toThrow(

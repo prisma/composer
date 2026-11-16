@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { appRoot, isSecretPointer, Load, module, service, string } from '@internal/core';
-import { platformVariableReaderText } from '@internal/core/config';
 import type {
   AppConfiguration,
   AppSecrets,
   PlatformVariableCheck,
   PreflightFindings,
 } from '@internal/core/config';
+import { platformVariableReaderText } from '@internal/core/config';
 import { secretString } from '@internal/foundation/arktype';
 import { isSecretString } from '@internal/foundation/secret';
 import type { ManagementApiClient } from '@internal/lowering';
@@ -15,8 +15,8 @@ import { type } from 'arktype';
 import { PrismaCloudContainer } from '../container.ts';
 import { compute } from '../exports/index.ts';
 import { envParam, generatedParam } from '../param.ts';
-import { type PrismaCloudPreflightInput, runPreflight } from '../preflight.ts';
 import { variable } from '../platform-variable.ts';
+import { type PrismaCloudPreflightInput, runPreflight } from '../preflight.ts';
 import { inputVariableNames } from '../preflight-names.ts';
 import { envSecret } from '../secret.ts';
 
@@ -1289,4 +1289,3 @@ describe('the deploy check of platform variable nodes', () => {
     }
   });
 });
-
