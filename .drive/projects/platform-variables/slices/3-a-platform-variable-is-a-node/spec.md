@@ -347,7 +347,7 @@ These rules span more than one node, so they run in the graph check, not in a co
 - Each runs on the loaded graph, after Load, in `deploy`, `destroy` and `prisma dev`.
 - Each fails with `GraphCheckError` (`COMPOSE.GRAPH_INVALID`).
 - Each error names the variable and every address involved.
-- The platform variable nodes are the value resources in `graph.nodes`. Each node's name is `props.name`.
+- The platform variable nodes are the value resources in `graph.nodes` whose extension is the Prisma Cloud extension and whose type is `platform-variable`. A value resource of another extension is not one. Each node's name is `props.name`.
 
 The target's graph check holds the three rules below. Slice 2's rule, which refused an `envParam()` and a root input field with one name, goes with `envParam()`; rule 2 takes its place.
 
@@ -359,7 +359,7 @@ Two platform variable nodes with one variable name fail, whatever their ids, and
 The platform variable "EMAIL_FROM" is declared twice in the app root, by "shop.emailFrom" and "shop.sender". Declare each platform variable once and pass its value to every module that needs it.
 ```
 
-When one node is plain and the other secret, the message adds: `"shop.emailFrom" is plain and "shop.sender" is a secret.`
+With three or more nodes for one name the message says `is declared 3 times in the app root, by "shop.a", "shop.b" and "shop.c"`, naming every one. When the nodes are not all plain or all secret, the message adds which are plain and which are secrets: `"shop.emailFrom" is plain and "shop.sender" is a secret.`
 
 - Two nodes with one name and the default id get the same id. So Load's duplicate-id error (4.4) fires first, and this rule does not run.
 - The same node object provisioned twice with two explicit ids is two declarations, and fails here.
