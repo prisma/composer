@@ -44,7 +44,11 @@ import {
   resource,
   service,
 } from '../node.ts';
-import { PREFLIGHT_FINDINGS_ENV_VAR, preflightEnvVarName } from '../preflight-transport.ts';
+import {
+  PREFLIGHT_FINDINGS_ENV_VAR,
+  type PreflightFindings,
+  preflightEnvVarName,
+} from '../preflight-transport.ts';
 import { resolve } from '../value.ts';
 import { anyInputSchema, conn, providerContract } from './helpers.ts';
 
@@ -1711,7 +1715,7 @@ describe('container threading through lowering() (the parent→child transport r
   test('transportedLowerInputs reads the three transports a generated stack file was given', () => {
     const { descriptor, config } = fakeExtensionWithContainer();
     const instanceInput = { appName: 'shop', environment: 'production' };
-    const findings = {
+    const findings: PreflightFindings = {
       unset: [
         {
           name: 'MAIL_KEY',
