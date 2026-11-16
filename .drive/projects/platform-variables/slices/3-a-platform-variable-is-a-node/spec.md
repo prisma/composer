@@ -431,7 +431,7 @@ Slice 2's handling of a platform variable applies to a node's value, with these 
 - the schema-failure note, which says "envSecret() included";
 - the refusal of a `SecretBox` in a binding. The target's message says to provision `variable.secret({ name: 'NAME' })` in the app root and bind its value. Core's message says to bind a secret source or pass on an input field typed `secretString()`, and names no target concept;
 - the messages given where the serializer and preflight need a variable's name and the source has none, which become the message in 5.1;
-- the app configuration file's known-secret refusal in the CLI, which says "which an envSecret() in the graph reads" and whose fix says "Read the secret with envSecret('NAME')". It says "which a platform secret in the graph reads", and the fix says to provision `variable.secret({ name: 'NAME' })` in the app root;
+- the app configuration file's known-secret refusal in the CLI, which says "which an envSecret() in the graph reads" and whose fix says "Read the secret with envSecret('NAME')". It says "which a platform secret in the graph reads". The fix says to pass the value of the platform secret "NAME" to where the value is used, or to give the plain value a text that does not hold the secret's value. It does not say to provision the node, because the secret is known only when a node with that name is already in the graph;
 - the `prisma dev` advice on where to set a missing variable, which says "the `config` list for an env-sourced param". It says "the `config` list for a plain platform variable".
 
 No doc comment in the target or the shared modules names either function after this slice.
@@ -541,7 +541,7 @@ Each record is rewritten in place as the current statement, with no history and 
 
   The table of runtime-value origins gains a third origin, a value resource given by `provision()`, and loses `envSecret()`. The list of deploy-time values loses `envParam('NAME')` in a binding. The list of sources becomes `generatedParam()`, `serviceOrigin()` and a platform variable node's value. The app configuration file holds the root's input, and under `prisma dev` the platform variable texts. The check "a name that both an `envParam()` and an `envSecret()` read" goes; the check of a root input field against a secret stays. The code sample at the top uses a node. Its alternatives gain design section 15's rejection of a new node kind, with the reason that still holds: it changes core's node union. Its line in the ADR index changes with it.
 - **ADR-0064** (the deploy does not copy local values to platform variables). Gains the Prisma Cloud use: the constructors, the default id, the graph check's rules, the per-key params rule, the serializer, preflight and dev handling of plain values, and design section 15's other alternatives. "The shortcuts" section is replaced by the two ways to get a value. "Names" says `variable()` and `variable.secret()` check the name. "One name has one meaning" lists the node and the root input field. The code sample uses a node. Its title stays. Its line in the ADR index changes with it.
-- **ADR-0032** (params bind at provision; a platform variable is a target-owned source). A per-key param takes a literal or a plain platform variable node's value. The node's value writes a pointer row that the service reads at boot. The code sample provisions `variable({ name: 'APP_ORIGIN' })` in the root and binds it. The title stays. Its line in the ADR index changes with it.
+- **ADR-0032** (params bind at provision; a platform variable is a target-owned source). A per-key param takes a literal or a plain platform variable node's value. The node's value writes a pointer row that the service reads at boot. The code sample binds a compute service's reserved `port`, the one per-key param a compute service declares, to `variable({ name: 'WEB_PORT' })` provisioned in the root. The title stays. Its line in the ADR index changes with it.
 - **ADR-0029** (a secret is a value the framework never stores). A secret is any value handled as one. A platform secret, built with `variable.secret()`, is the kind Composer never sees during a deploy. Its ADR index line changes with it.
 - **ADR-0058** (`prisma dev` reads secrets from the app secrets). The named secrets are the values under the secrets keys of the graph's secret sources, which are the platform secret nodes. The app configuration file it describes holds, under `prisma dev`, the text of each plain platform variable a service reads, in `plainVariableText`, checked against the known secrets like every other plain value. Its line in the ADR index changes with it.
 - **ADR-0042, ADR-0039 and ADR-0061.** Every mention of `envSecret()` or `envParam()` becomes the node or a root input field. ADR-0042's marker says `secret: true` for a platform secret. Their lines in the ADR index change with them.
@@ -623,15 +623,15 @@ An `envParam('X')` written in a module below the root moves the same way: the mo
 
 An `envParam('X')` was a value known at deploy, so it was also valid as a `resolve()` dependency and in a resource's props. There, use the root input field: `resolve([input.X], …)` or `props: { x: input.X }`. A platform variable node cannot go in either place, because its value is known only at boot.
 
-**3. `envParam('X')` in a service's per-key params becomes a plain node.** The value still comes from the platform at boot, through the same pointer row.
+**3. `envParam('X')` in a service's per-key params becomes a plain node.** A compute service has one per-key param, the reserved `port`; every other value is a field of its `input`. The value still comes from the platform at boot, through the same pointer row.
 
 ```ts
 // before
-provision(web, { params: { appOrigin: envParam('APP_ORIGIN') } });
+provision(web, { params: { port: envParam('WEB_PORT') } });
 
 // after
-const appOrigin = provision(variable({ name: 'APP_ORIGIN' }));
-provision(web, { params: { appOrigin } });
+const port = provision(variable({ name: 'WEB_PORT' }));
+provision(web, { params: { port } });
 ```
 
 **4. A root built with `module()` becomes `appRoot()`.** Only `appRoot()` can provision a node. An entry that is still `module('shop', …)` and names a platform variable must change to `appRoot('shop', …)`. `appRoot()` takes no `deps` and no `expose`, and its body receives `{ input, environment, provision }`. A `module()` root that declares either drops them: nothing provisions the root, so nothing wires its dependencies or reads what it exposes.
