@@ -1,6 +1,6 @@
 // Hand-written "built output" for web-service.ts (S4 fixture). A real build
 // would bundle web-service.ts's declaration directly into this file (as
-// examples/env-param's server.ts does via a real `bun build`); this fixture
+// examples/root-input's server.ts does via a real `bun build`); this fixture
 // has no bundler, so the SAME compute() shape is declared again here instead
 // of importing the sibling .ts source — a relative import to a file outside
 // this artifact's own copied bundle would break once the artifact is

@@ -673,7 +673,7 @@ boot. The deploy checks for this and refuses such a schema, naming the
 secret field. Do the transform in the service code instead. A Zod schema
 keeps the secret box when it transforms, so it can do both.
 
-**`envParam('NAME')`** is for plain values the code *can't* know. An app origin is the canonical case: it's different on production and on every preview environment. The deploy reads the variable from the app configuration: by default the shell that runs `prisma deploy` or `prisma dev`, or the `config` adapters you list ([Values from outside the code](#values-from-outside-the-code)), and writes its value into the service's input. So set it in that shell for every deploy; in CI, export it per environment. An unset or empty variable leaves the key out, and the schema decides ([below](#absence-is-the-schemas-call)). The value is text, so bind `envParam` to text fields. Binding it to a field of a narrower type, such as `'resend' | 'smtp' | 'none'`, fails to compile, because the variable may hold any text: declare that field in your root's `input` with the same type instead (for `email()`, build it from the exported `emailDeliveryModes`), and the root's schema checks the variable before anything is created. To change the value, deploy again with the new value. [`examples/env-param`](../../examples/env-param/) is the minimal working version, including a smoke script that proves the per-environment split.
+**`envParam('NAME')`** is for plain values the code *can't* know. An app origin is the canonical case: it's different on production and on every preview environment. The deploy reads the variable from the app configuration: by default the shell that runs `prisma deploy` or `prisma dev`, or the `config` adapters you list ([Values from outside the code](#values-from-outside-the-code)), and writes its value into the service's input. So set it in that shell for every deploy; in CI, export it per environment. An unset or empty variable leaves the key out, and the schema decides ([below](#absence-is-the-schemas-call)). The value is text, so bind `envParam` to text fields. Binding it to a field of a narrower type, such as `'resend' | 'smtp' | 'none'`, fails to compile, because the variable may hold any text: declare that field in your root's `input` with the same type instead (for `email()`, build it from the exported `emailDeliveryModes`), and the root's schema checks the variable before anything is created. To change the value, deploy again with the new value. [`examples/env-param`](../../examples/root-input/) is the minimal working version, including a smoke script that proves the per-environment split.
 
 **`envParam()` in an input binding is deprecated.** Declare the value as a field of your root's `input` instead and pass the field on by name ([Values from outside the code](#values-from-outside-the-code)): the root's schema then checks it before anything is created. It still works. Only `envParam()` in an input binding is deprecated; `envParam()` in a service's per-key params is not. Editors strike through every `envParam()` call, including in per-key params, because one function serves both uses. The deprecation applies only to an input binding.
 
@@ -782,7 +782,7 @@ the platform, with a message that names the binding the value sits in, such as
 
 When a dependency's `fn` is the one that failed, the message says so: it
 starts `A resolve() function that … depends on`.
-[`examples/env-param`](../../examples/env-param/) serves a value computed
+[`examples/env-param`](../../examples/root-input/) serves a value computed
 from the environment's name.
 
 ### Sources in resolve()
@@ -1069,7 +1069,7 @@ in the app. Today the platform still gives every service a `prisma.build`
 hostname, so such a service is reachable there. When the platform makes that
 hostname opt-in, your code does not change.
 
-[`examples/env-param`](../../examples/env-param/) makes its service public at
+[`examples/env-param`](../../examples/root-input/) makes its service public at
 its `prisma.build` hostname.
 
 ## Builds
