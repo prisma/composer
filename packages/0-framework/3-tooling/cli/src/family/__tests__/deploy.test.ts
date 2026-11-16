@@ -757,6 +757,35 @@ describe('step events', () => {
     });
   });
 
+  test('the closing list of platform variables comes from the summary, not from the preflight event', async () => {
+    const fromSummary: PreflightFindings = {
+      unset: [
+        {
+          name: 'MAIL_FROM',
+          readers: [{ kind: 'unread', node: 'shop.mail', nodeKind: 'module' }],
+          commands: ["prisma project env add 'MAIL_FROM=<value>' --project 'proj_1'"],
+        },
+      ],
+    };
+    const { cli } = composerCli({
+      fixtures: {
+        deploy: ok({ summary: { app: 'shop', nodes: [], findings: fromSummary }, durationMs: 0 }),
+        deployEvents: [{ kind: 'preflight-findings', findings }],
+      },
+    });
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
+
+    const lines = plain(result.stderr).split('\n');
+    const deployed = lines.findIndex((line) => line.includes('Deployed shop'));
+    const before = lines.slice(0, deployed).join('\n');
+    const after = lines.slice(deployed).join('\n');
+    expect(deployed).toBeGreaterThan(-1);
+    expect(before).toContain('EMAIL_API_KEY');
+    expect(before).not.toContain('MAIL_FROM');
+    expect(after).toContain('  - MAIL_FROM  (named by module "shop.mail", read by no service)');
+    expect(after).not.toContain('EMAIL_API_KEY');
+  });
+
   test('nothing prints for findings that list no variable', async () => {
     const { cli } = composerCli({
       fixtures: {

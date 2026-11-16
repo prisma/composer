@@ -1,18 +1,8 @@
-/**
- * The shapes converge contract 2 covers, as they were when it was set. A change
- * to any of them fails here. If the other side can still read the new shape,
- * update the copy below; if it cannot, also bump `CONVERGE_CONTRACT`.
- */
+// Contract 2's shapes, opaque ones by reference: on a failure update the copy, and bump CONVERGE_CONTRACT if the other side cannot read the new shape.
 import { expectTypeOf, test } from 'bun:test';
-import type { AppConfigurationRead } from '@internal/core';
-import type {
-  CallerCredentials,
-  ContainerInstance,
-  PreflightFindings,
-} from '@internal/core/config';
+import type { CallerCredentials, ContainerInstance } from '@internal/core/config';
 import type {
   AlchemyStateLayer,
-  Bundle,
   DeployedNode,
   DeploymentResult,
   LowerOptions,
@@ -28,19 +18,60 @@ import type {
   ResourcePhase,
 } from '../converge-in-process.ts';
 
+interface AppConfigurationReadAt2 {
+  readonly rootInput: readonly { readonly path: readonly string[]; readonly value?: unknown }[];
+  readonly configurationKeyText: Readonly<Record<string, string>>;
+}
+
+interface BundleAt2 {
+  readonly dir: string;
+  readonly entry: string;
+  readonly watch?: readonly string[];
+}
+
+type PlatformVariableReaderAt2 =
+  | { readonly kind: 'field'; readonly service: string; readonly path: string }
+  | { readonly kind: 'param'; readonly service: string; readonly param: string }
+  | { readonly kind: 'unread'; readonly node: string; readonly nodeKind: 'module' | 'resource' };
+
+interface PreflightFindingsAt2 {
+  readonly unset: readonly {
+    readonly name: string;
+    readonly readers: readonly PlatformVariableReaderAt2[];
+    readonly commands: readonly string[];
+  }[];
+}
+
+interface DeployedNodeAt2 {
+  readonly address: string;
+  readonly node: DeployedNode['node'];
+  readonly entities: readonly {
+    readonly kind: string;
+    readonly id: string;
+    readonly url?: string;
+    readonly details?: Readonly<Record<string, string>>;
+  }[];
+}
+
+interface DeploymentResultAt2 {
+  readonly app: string;
+  readonly nodes: readonly DeployedNodeAt2[];
+  readonly findings: PreflightFindingsAt2;
+}
+
 interface LowerOptionsAt2 {
   readonly name: string;
   readonly environment?: string;
-  readonly appConfigurationRead?: AppConfigurationRead;
+  readonly appConfigurationRead?: AppConfigurationReadAt2;
   readonly firstProcessNodeAddresses?: readonly string[];
-  readonly bundles: Record<string, Bundle>;
+  readonly bundles: Record<string, BundleAt2>;
   readonly state?: AlchemyStateLayer;
   readonly providers?: Layer.Layer<never>;
-  readonly report?: (result: DeploymentResult) => void;
+  readonly report?: (result: DeploymentResultAt2) => void;
   readonly unassembled?: readonly string[];
   readonly containers?: ReadonlyMap<string, ContainerInstance> | undefined;
   readonly preflightPayloads?: ReadonlyMap<string, string> | undefined;
-  readonly findings?: PreflightFindings;
+  readonly findings?: PreflightFindingsAt2;
   readonly credentials?: CallerCredentials | undefined;
 }
 
@@ -75,12 +106,6 @@ type ConvergeEventAt2 =
       readonly severity: 'info' | 'warn' | 'verbose';
       readonly text: string;
     };
-
-interface DeploymentResultAt2 {
-  readonly app: string;
-  readonly nodes: readonly DeployedNode[];
-  readonly findings: PreflightFindings;
-}
 
 test('converge contract 2 covers these shapes, unchanged', () => {
   expectTypeOf<typeof CONVERGE_CONTRACT>().toEqualTypeOf<2>();
