@@ -19,6 +19,8 @@ export default module('auth', { deps: { db: rawPostgres() }, expose: { verify: a
   });
 ```
 
+A service also **reads** a platform variable, a third relationship that is not a connection. A platform variable node exposes no interface, and the service has no dependency slot for it: the app root provisions the node and binds its value into the service's input or per-key params. Load records each read in the graph's `valueReads` list, with the service, the node and where in the binding the service reads it, and not as an edge ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md), [ADR-0064](ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)).
+
 "Input" keeps its one other meaning, the configuration document a service or module declares as `input` ([ADR-0042](ADR-0042-service-input-is-one-standard-schema.md), [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md)). That is not an end of a connection.
 
 The application topology keeps `in` and `out` as the port field on the wire (pdp-control-plane's `projects/branch-topology/spec.md`; Composer writes it in `packages/1-prisma-cloud/0-lowering/lowering/src/builds/application-topology.ts`): `in` is the dependency end and `out` is the exposed end. The Console draws them as it does today.

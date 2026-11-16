@@ -36,8 +36,8 @@ export interface LocalTargetDescriptor {
   providers(input: LocalTargetProvidersInput): Layer.Layer<never>;
   /** A stable local identity — resolved without any platform call. */
   readonly container: ContainerDescriptor;
-  /** Value sourcing (secrets/env-params) — runs where deploy's preflight runs. What it returns reaches the alchemy process the same way deploy's preflight payload does. */
-  preflight?(input: PreflightInput): Promise<PreflightPayload>;
+  /** Value sourcing (platform variables) — runs where deploy's preflight runs. Its `payload` reaches the alchemy process the same way deploy's preflight payload does; its `plainVariableText` reaches it in the app configuration file. */
+  preflight?(input: PreflightInput): Promise<DevPreflightResult>;
   /** Ensure the emulator daemons this topology's node kinds need are running (idempotent — they persist across sessions). */
   emulators?(input: LocalTargetEmulatorsInput): Promise<void>;
   /** The dev session's view of the running app: endpoints, merged logs, and the stop control. */

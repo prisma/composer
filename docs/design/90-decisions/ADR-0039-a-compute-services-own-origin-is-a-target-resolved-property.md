@@ -24,18 +24,19 @@ boot loop stashing it address-free. `origin()` is a memoized method on the
 accessor, because the origin is neither a dep, a param, nor a secret
 (ADR-0021). It never appears in `config()`.
 
-`envParam(…)` remains the right shape for a *genuinely operator-known* origin
-— a custom domain the operator provisioned themselves. This ADR covers only
+A plain platform variable node, or a root input field, remains the right shape
+for a *genuinely operator-known* origin — a custom domain the operator
+provisioned themselves. This ADR covers only
 the origin the platform assigns.
 
 ## Reasoning
 
 **Operator input was a category error.** The first port that needed its own
-URL at boot (Better Auth `baseURL`, Stripe redirects) modelled it as
-`envParam('APP_ORIGIN')`. But no operator knows this value — the platform
+URL at boot (Better Auth `baseURL`, Stripe redirects) modelled it as an
+operator-set platform variable, `APP_ORIGIN`. But no operator knows this value — the platform
 assigns it at deploy. Putting a platform output in an operator-input slot
 forced a five-step manual loop: deploy with a placeholder, read the assigned
-URL from the deploy report, PATCH the platform variable, force an artifact-hash
+URL from the deploy report, PATCH the variable on the platform, force an artifact-hash
 change so the redeploy isn't a no-op, revert. The manual PATCH also wrote a
 bare string where the deserializer expects JSON, crash-looping the service.
 
@@ -77,7 +78,7 @@ services that never read it are unaffected.
 
 ## Alternatives considered
 
-- **Keep `envParam('APP_ORIGIN')` + manual correction** — every step of the
+- **Keep an operator-set `APP_ORIGIN` variable (then `envParam('APP_ORIGIN')`) + manual correction** — every step of the
   workaround was self-inflicted by the wrong category, and the manual PATCH
   crash-looped the service.
 - **Framework builds the URL from a region→subdomain map** — guessing
