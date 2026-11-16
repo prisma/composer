@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { appRoot, isSecretPointer, Load, module, service, string } from '@internal/core';
+import {
+  appRoot,
+  isSecretPointer,
+  Load,
+  module,
+  secretSource,
+  service,
+  string,
+} from '@internal/core';
 import type {
   AppConfiguration,
   AppSecrets,
@@ -14,11 +22,11 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { PrismaCloudContainer } from '../container.ts';
 import { compute } from '../exports/index.ts';
-import { envParam, generatedParam } from '../param.ts';
+import { generatedParam } from '../param.ts';
 import { variable } from '../platform-variable.ts';
 import { type PrismaCloudPreflightInput, runPreflight } from '../preflight.ts';
 import { inputVariableNames } from '../preflight-names.ts';
-import { envSecret } from '../secret.ts';
+import { secretVariable } from './variable-values.ts';
 
 /** An ArkType copy of `value`: a transform elsewhere in the schema makes ArkType copy its whole input. */
 const copyOf = <T>(value: T): T => {
@@ -155,10 +163,10 @@ const neverSchema: StandardSchemaV1<unknown, unknown> = {
 
 const secretGraph = (schema: StandardSchemaV1<unknown, unknown> = anySchema) =>
   Load(
-    module('app', ({ provision }) => {
+    appRoot('app', ({ provision }) => {
       provision(compute({ name: 'ingest', deps: {}, input: schema, build }), {
         id: 'ingest',
-        input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+        input: { stripeKey: provision(variable.secret({ name: 'STRIPE_SECRET_KEY' })) },
       });
     }),
   );
@@ -185,7 +193,8 @@ const generatedGraph = () =>
 /** Two services binding the SAME platform name; `web` requires it when `webRequires` is set. */
 const sharedNestedSecretGraph = (webRequires = false) =>
   Load(
-    module('app', ({ provision }) => {
+    appRoot('app', ({ provision }) => {
+      const stripeKey = provision(variable.secret({ name: 'STRIPE_SECRET_KEY' }));
       provision(
         compute({
           name: 'web',
@@ -193,21 +202,21 @@ const sharedNestedSecretGraph = (webRequires = false) =>
           input: webRequires ? requiresSecrets('stripe') : anySchema,
           build,
         }),
-        { id: 'web', input: { stripe: envSecret('STRIPE_SECRET_KEY') } },
+        { id: 'web', input: { stripe: stripeKey } },
       );
       provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
         id: 'ingest',
-        input: { stripe: { key: envSecret('STRIPE_SECRET_KEY') } },
+        input: { stripe: { key: stripeKey } },
       });
     }),
   );
 
 const defaultedParamGraph = () =>
   Load(
-    module('app', ({ provision }) => {
+    appRoot('app', ({ provision }) => {
       provision(compute({ name: 'web', deps: {}, build }), {
         id: 'web',
-        params: { port: envParam('APP_PORT') },
+        params: { port: provision(variable({ name: 'APP_PORT' })) },
       });
     }),
   );
@@ -215,7 +224,7 @@ const defaultedParamGraph = () =>
 /** A per-key param with no default that is not optional: boot fails without its variable. */
 const requiredParamGraph = () =>
   Load(
-    module('app', ({ provision }) => {
+    appRoot('app', ({ provision }) => {
       provision(
         service({
           name: 'web',
@@ -225,7 +234,7 @@ const requiredParamGraph = () =>
           params: { token: string() },
           build,
         }),
-        { id: 'web', params: { token: envParam('API_TOKEN') } },
+        { id: 'web', params: { token: provision(variable({ name: 'API_TOKEN' })) } },
       );
     }),
   );
@@ -539,10 +548,12 @@ describe('the deploy check reads which variables exist and sets none', () => {
   test('at most eight list calls run at once', async () => {
     const names = Array.from({ length: 20 }, (_, index) => `KEY_${index}`);
     const graph = Load(
-      module('app', ({ provision }) => {
+      appRoot('app', ({ provision }) => {
         provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
           id: 'ingest',
-          input: Object.fromEntries(names.map((name) => [name.toLowerCase(), envSecret(name)])),
+          input: Object.fromEntries(
+            names.map((name) => [name.toLowerCase(), provision(variable.secret({ name }))]),
+          ),
         });
       }),
     );
@@ -598,10 +609,13 @@ describe('the deploy check reads which variables exist and sets none', () => {
 
   test('when the schema needs at least one of several unset variables but none alone, the error says so', async () => {
     const graph = Load(
-      module('app', ({ provision }) => {
+      appRoot('app', ({ provision }) => {
         provision(compute({ name: 'billing', deps: {}, input: requiresOneOf('a', 'b'), build }), {
           id: 'billing',
-          input: { a: envSecret('KEY_A'), b: envSecret('KEY_B') },
+          input: {
+            a: provision(variable.secret({ name: 'KEY_A' })),
+            b: provision(variable.secret({ name: 'KEY_B' })),
+          },
         });
       }),
     );
@@ -619,14 +633,14 @@ describe('the deploy check reads which variables exist and sets none', () => {
 
   test('only the variables whose absence alone fails the schema are required', async () => {
     const graph = Load(
-      module('app', ({ provision }) => {
+      appRoot('app', ({ provision }) => {
         provision(
           compute({ name: 'billing', deps: {}, input: requiresSecrets('stripeKey'), build }),
           {
             id: 'billing',
             input: {
-              stripeKey: envSecret('STRIPE_SECRET_KEY'),
-              webhookSecret: envSecret('STRIPE_WEBHOOK_SECRET'),
+              stripeKey: provision(variable.secret({ name: 'STRIPE_SECRET_KEY' })),
+              webhookSecret: provision(variable.secret({ name: 'STRIPE_WEBHOOK_SECRET' })),
             },
           },
         );
@@ -643,10 +657,10 @@ describe('the deploy check reads which variables exist and sets none', () => {
 
   test('a variable in an array position with no row is required, whatever the schema says', async () => {
     const graph = Load(
-      module('app', ({ provision }) => {
+      appRoot('app', ({ provision }) => {
         provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
           id: 'ingest',
-          input: { keys: [envSecret('KEY_A')] },
+          input: { keys: [provision(variable.secret({ name: 'KEY_A' }))] },
         });
       }),
     );
@@ -708,7 +722,7 @@ describe('the deploy check reads which variables exist and sets none', () => {
     await preflightWith({ graph: secretGraph(), ...preview }, { client: fakeClient(state) });
   });
 
-  test('a per-key envParam() with a default is reported, never required', async () => {
+  test('a per-key param bound to a plain node with a default is reported, never required', async () => {
     const result = await preflightWith(
       { graph: defaultedParamGraph(), ...production },
       { client: fakeClient(state) },
@@ -723,7 +737,7 @@ describe('the deploy check reads which variables exist and sets none', () => {
     ]);
   });
 
-  test('a per-key envParam() with no default that is not optional is required', async () => {
+  test('a per-key param bound to a plain node with no default that is not optional is required', async () => {
     const message = await failureOf(
       preflightWith({ graph: requiredParamGraph(), ...production }, { client: fakeClient(state) }),
     );
@@ -734,7 +748,7 @@ describe('the deploy check reads which variables exist and sets none', () => {
     );
   });
 
-  test('a per-key envParam() with a row passes', async () => {
+  test('a per-key param bound to a plain node with a row passes', async () => {
     state.rows = [{ projectId: 'proj', class: 'production', key: 'API_TOKEN', branchId: null }];
 
     await preflightWith(
@@ -752,25 +766,6 @@ describe('the deploy check reads which variables exist and sets none', () => {
     expect(state.gets).toEqual([]);
   });
 
-  test("a secret in a module's input that no service receives is reported, never required", async () => {
-    const mail = module('mail', { input: type({ key: secretString() }) }, () => {});
-    const graph = Load(
-      module('app', ({ provision }) => {
-        provision(mail, { input: { key: envSecret('MAIL_KEY') } });
-      }),
-    );
-
-    const result = await preflightWith({ graph, ...production }, { client: fakeClient(state) });
-
-    expect(result.findings.unset).toEqual([
-      {
-        name: 'MAIL_KEY',
-        readers: [{ kind: 'unread', node: 'app.mail', nodeKind: 'module' }],
-        commands: ["prisma project env add 'MAIL_KEY=<value>' --project 'proj' --role production"],
-      },
-    ]);
-  });
-
   test("a secret a service receives through a module's input is named as read by the service", async () => {
     const mail = module(
       'mail',
@@ -783,8 +778,8 @@ describe('the deploy check reads which variables exist and sets none', () => {
       },
     );
     const graph = Load(
-      module('app', ({ provision }) => {
-        provision(mail, { input: { key: envSecret('MAIL_KEY') } });
+      appRoot('app', ({ provision }) => {
+        provision(mail, { input: { key: provision(variable.secret({ name: 'MAIL_KEY' })) } });
       }),
     );
 
@@ -1097,8 +1092,30 @@ describe('runPreflight — a chain of COMPOSER_ keys that change owner', () => {
 });
 
 describe('preflight names', () => {
-  test('an envSecret() and its ArkType copy are one name to check', () => {
-    const key = envSecret('STRIPE_SECRET_KEY');
+  test('a secret source that is not a platform variable fails preflight, naming the place and the service', async () => {
+    const graph = Load(
+      module('app', ({ provision }) => {
+        provision(compute({ name: 'web', deps: {}, input: anySchema, build }), {
+          id: 'web',
+          input: { stripe: { key: secretSource('STRIPE_SECRET_KEY') } },
+        });
+      }),
+    );
+
+    expect(
+      await failureOf(
+        preflightWith(
+          { graph, ...production },
+          { client: fakeClient({ gets: [], posts: [], rows: [] }) },
+        ),
+      ),
+    ).toBe(
+      'input key "stripe.key" of service "app.web" is bound to a source that is not a platform variable. Provision variable() or variable.secret() from @prisma/composer-prisma-cloud in the app root and pass its value down.',
+    );
+  });
+
+  test("a secret node's value and its ArkType copy are one name to check", () => {
+    const key = secretVariable('STRIPE_SECRET_KEY');
 
     expect(inputVariableNames({ a: key, b: copyOf(key) }, 'app.web')).toEqual([
       { name: 'STRIPE_SECRET_KEY', secret: true },

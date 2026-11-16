@@ -321,11 +321,10 @@ mock.module('@internal/local-target', () => ({
 
 const { prismaCloud } = await import('../exports/control.ts');
 const { runDevEmulators } = await import('../local-target/emulators.ts');
+const { plainVariable, secretVariable } = await import('./variable-values.ts');
 const {
   compute,
-  envParam,
   bucket,
-  envSecret,
   generatedParam,
   publicUrl,
   rawPostgres,
@@ -1226,7 +1225,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           inputBindings: [
             {
               serviceAddress: 'shop.ingest',
-              binding: { stripeEnabled: true, stripeKey: envSecret('STRIPE_SECRET_KEY') },
+              binding: { stripeEnabled: true, stripeKey: secretVariable('STRIPE_SECRET_KEY') },
             },
           ],
           edges: [],
@@ -1498,114 +1497,13 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     });
   });
 
-  test('serialize records every env-bound input key that resolved absent — deploy-report fodder (ADR-0042)', async () => {
-    await withEnv({ NOT_SET_GREETING_VAR: undefined }, () => {
-      const target = prismaCloud({ workspaceId: 'ws_1' });
-      const node = compute({
-        name: 'ingest',
-        deps: {},
-        input: type({ 'greeting?': 'string' }),
-        build: {
-          extension: '@prisma/composer/node',
-          type: 'node',
-          module: 'file:///test/service.ts',
-          entry: 'server.js',
-        },
-      });
-      const graph = {
-        root: { id: 'shop' },
-        inputBindings: [
-          {
-            serviceAddress: 'shop.ingest',
-            binding: { greeting: envParam('NOT_SET_GREETING_VAR') },
-          },
-        ],
-        edges: [],
-      };
-      const ctx = {
-        address: 'shop.ingest',
-        node,
-        graph,
-        application: {
-          projectId: 'shop-project#cloud-id',
-          branchId: undefined,
-          defaultBranchId: undefined,
-          branchless: false,
-        },
-        opts: {},
-      } as unknown as LowerContext;
-      const provisioned = {
-        projectId: 'shop-project#cloud-id',
-        endpointDomain: 'https://svc.example',
-      };
-      const config = { service: { port: 3000 }, inputs: {} };
-
-      const result = run<MockedSerialized>(
-        serviceDescriptorOf(target, 'compute').serialize(ctx, provisioned, config),
-      );
-
-      expect(result.input).toEqual({
-        key: 'COMPOSER_SHOP_INGEST_INPUT',
-        value: '{}',
-        absent: ['greeting → NOT_SET_GREETING_VAR'],
-        generated: [],
-        markers: [],
-      });
-    });
-  });
-
-  test('the input document reads envParam() leaves from LowerOptions.appConfigurationRead', async () => {
-    await withEnv({ G: 'shell' }, () => {
-      const target = prismaCloud({ workspaceId: 'ws_1' });
-      const node = compute({
-        name: 'ingest',
-        deps: {},
-        input: type({ greeting: 'string' }),
-        build: {
-          extension: '@prisma/composer/node',
-          type: 'node',
-          module: 'file:///test/service.ts',
-          entry: 'server.js',
-        },
-      });
-      const ctx = {
-        address: 'shop.ingest',
-        node,
-        graph: {
-          root: { id: 'shop' },
-          inputBindings: [{ serviceAddress: 'shop.ingest', binding: { greeting: envParam('G') } }],
-          edges: [],
-        },
-        application: {
-          projectId: 'shop-project#cloud-id',
-          branchId: undefined,
-          defaultBranchId: undefined,
-          branchless: false,
-        },
-        opts: { appConfigurationRead: { rootInput: [], configurationKeyText: { G: 'pool' } } },
-      } as unknown as LowerContext;
-      const provisioned = {
-        projectId: 'shop-project#cloud-id',
-        endpointDomain: 'https://svc.example',
-      };
-
-      const result = run<MockedSerialized>(
-        serviceDescriptorOf(target, 'compute').serialize(ctx, provisioned, {
-          service: { port: 3000 },
-          inputs: {},
-        }),
-      );
-
-      expect(result.input?.value).toBe('{"greeting":"pool"}');
-    });
-  });
-
-  test('an env-sourced reserved param serializes a POINTER row — value is the bound platform NAME, never a value', async () => {
+  test('a reserved param bound to a plain node serializes a pointer row holding the variable name, never a value', async () => {
     await withEnv(
       // The real value is present in the deploy shell, proving it still cannot
       // reach the serialized row — buildConfig never resolved a source's value.
       { PLATFORM_PORT: '8443' },
       () => {
+        const platformPort = plainVariable('PLATFORM_PORT');
         const target = prismaCloud({ workspaceId: 'ws_1' });
         const node = compute({
           name: 'web',
@@ -1621,9 +1519,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         const graph = {
           root: { id: 'shop' },
           inputBindings: [],
-          params: [
-            { serviceAddress: 'shop.web', slot: 'port', binding: envParam('PLATFORM_PORT') },
-          ],
+          params: [{ serviceAddress: 'shop.web', slot: 'port', binding: platformPort }],
           edges: [],
         };
         const ctx = {
@@ -1644,7 +1540,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         };
         // buildConfig resolved the param to the opaque ParamSource, unvalidated — exactly what
         // deploy.ts's resolveParam does for a source-bound param.
-        const config = { service: { port: envParam('PLATFORM_PORT') }, inputs: {} };
+        const config = { service: { port: platformPort }, inputs: {} };
         const before = recorded.envVar.length;
 
         const result = run<MockedSerialized>(
@@ -2739,7 +2635,7 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
         providerParams,
         preflight: {
           pointerVersion: () => undefined,
-          absentSecrets: new Set(),
+          absentVariables: new Set(),
         },
       };
       const node = compute({ name: 'multi', deps: {}, build, expose: { any: anyContract } });
@@ -2791,14 +2687,14 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
   });
 });
 
-describe('a secret the prisma dev preflight found unset', () => {
+describe('a platform variable the prisma dev preflight found unset', () => {
   test('is left out of the input document the compute service writes', () => {
     const o: ResolvedCloudOptions = {
       workspaceId: 'ws_1',
       providerParams: new Map(),
       preflight: {
         pointerVersion: () => undefined,
-        absentSecrets: new Set(['STRIPE_WEBHOOK_SECRET']),
+        absentVariables: new Set(['STRIPE_WEBHOOK_SECRET']),
       },
     };
     const node = compute({
@@ -2821,8 +2717,8 @@ describe('a secret the prisma dev preflight found unset', () => {
           {
             serviceAddress: 'shop.billing',
             binding: {
-              stripeKey: envSecret('STRIPE_SECRET_KEY'),
-              webhookSecret: envSecret('STRIPE_WEBHOOK_SECRET'),
+              stripeKey: secretVariable('STRIPE_SECRET_KEY'),
+              webhookSecret: secretVariable('STRIPE_WEBHOOK_SECRET'),
             },
           },
         ],

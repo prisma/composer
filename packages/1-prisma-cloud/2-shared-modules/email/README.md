@@ -45,19 +45,25 @@ its two ports:
 // module.ts — the deploy root
 import { appRoot } from '@prisma/composer';
 import { email, emailDeliveryModes } from '@prisma/composer-prisma-cloud/email';
-import { envParam, envSecret } from '@prisma/composer-prisma-cloud';
+import { variable } from '@prisma/composer-prisma-cloud';
 import { type } from 'arktype';
 
 export default appRoot(
   'app',
-  { input: type({ EMAIL_DELIVERY_MODE: type.enumerated(...emailDeliveryModes) }) },
+  {
+    input: type({
+      EMAIL_DELIVERY_MODE: type.enumerated(...emailDeliveryModes),
+      EMAIL_FROM: 'string',
+    }),
+  },
   ({ input, provision }) => {
+    const deliveryCredential = provision(variable.secret({ name: 'EMAIL_DELIVERY_CREDENTIAL' }));
     const mail = provision(email(), {
       id: 'email',
       input: {
         deliveryMode: input.EMAIL_DELIVERY_MODE,
-        from: envParam('EMAIL_FROM'),
-        deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
+        from: input.EMAIL_FROM,
+        deliveryCredential,
       },
     });
     provision(appService, { deps: { email: mail.send } });
@@ -162,7 +168,7 @@ does (see the matching `gotchas.md` entry).
 
 ## Platform env vars (per environment)
 
-`deliveryMode`, `from` and `deliveryCredential` are the module's `input`. `deliveryMode` is `resend`, `smtp` or `none`, exported as `emailDeliveryModes` (and the type `EmailDeliveryMode`): bind it to one of those literals, or to a field of your root's input declared from `emailDeliveryModes`, as above, so the root's schema checks it before anything is created. With Zod, declare the field as `z.enum(emailDeliveryModes)`. An `envParam(...)` may hold any text, so binding it to `deliveryMode` fails to compile. Bind `from` to a literal, an `envParam(...)` or a field of your root's input, so it can vary per environment. `deliveryCredential` is a `secretString()` field: bind it with `envSecret(...)`. `deliveryMode` and `from` are wrapped fields (`field()`), so a module that passes its own wrapped field of the same type on can bind them too. `deliveryUrl` is a factory option (`email({ deliveryUrl })`), static per app: it defaults to `https://api.resend.com` and follows the mode.
+`deliveryMode`, `from` and `deliveryCredential` are the module's `input`. `deliveryMode` is `resend`, `smtp` or `none`, exported as `emailDeliveryModes` (and the type `EmailDeliveryMode`): bind it to one of those literals, or to a field of your root's input declared from `emailDeliveryModes`, as above, so the root's schema checks it before anything is created. With Zod, declare the field as `z.enum(emailDeliveryModes)`. A plain platform variable may hold any text, so binding its value to `deliveryMode` fails to compile. Bind `from` to a literal, a field of your root's input or the value of a `variable(...)` node, so it can vary per environment. `deliveryCredential` is a `secretString()` field: bind it to the value of a `variable.secret(...)` node the app root provisions. `deliveryMode` and `from` are wrapped fields (`field()`), so a module that passes its own wrapped field of the same type on can bind them too. `deliveryUrl` is a factory option (`email({ deliveryUrl })`), static per app: it defaults to `https://api.resend.com` and follows the mode.
 
 | Var | Production | Preview |
 | --- | --- | --- |

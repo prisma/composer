@@ -42,11 +42,9 @@ import {
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { configKey, ORIGIN_KEY_NAME } from './config-key.ts';
-import { configurationText } from './configuration-text.ts';
-import { isEnvParamSource, isGeneratedParamSource, isOriginParamSource } from './param.ts';
-import { isPlainVariableSource, isSecretVariableSource } from './platform-variable.ts';
+import { isGeneratedParamSource, isOriginParamSource } from './param.ts';
+import { isPlainVariableSource, platformVariableName } from './platform-variable.ts';
 import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
-import { secretName } from './secret.ts';
 
 // The ambient environment of whatever runtime hosts the bundle. Declared
 // structurally so this entry imports no runtime's types. Writable: run()
@@ -118,7 +116,7 @@ function coerce(raw: string | undefined, d: ParamEntry, key: string, env: Env): 
     throw new Error(`missing required config param "${d.name}" (env ${key})`);
   }
   if (d.owner === 'service' && isParamPointerRow(raw)) {
-    return coerceEnvSourcedParam(raw, d, env);
+    return coercePointedParam(raw, d, env);
   }
   try {
     return standardValidateSync(d.param.schema, decode(d.owner, raw));
@@ -128,7 +126,7 @@ function coerce(raw: string | undefined, d: ParamEntry, key: string, env: Env): 
   }
 }
 
-function coerceEnvSourcedParam(raw: string, d: ParamEntry, env: Env): unknown {
+function coercePointedParam(raw: string, d: ParamEntry, env: Env): unknown {
   const platformVar = decodeParamPointer(raw);
   const value = env[platformVar];
   if (value === undefined || value === '') {
@@ -248,8 +246,8 @@ export const inputKey = (address: string): string =>
  * COMPOSER_<addr>_<KEY>_GENERATED, where <KEY> is the leaf's input-document
  * path normalized the way `configKey` normalizes its keys (segments joined
  * with "_", uppercased). Lives in the framework's reserved COMPOSER_ namespace
- * (envParam/envSecret reject COMPOSER_ names), so it can never collide with a
- * user-provisioned var.
+ * (variable() and variable.secret() refuse COMPOSER_ names), so it can never
+ * collide with a user-provisioned var.
  */
 export const generatedParamVarName = (address: string, path: string): string => {
   const segments = addressKeySegments(address);
@@ -296,42 +294,22 @@ interface VariableRead {
   readonly name: string;
 }
 
-const NO_ABSENT_SECRETS: ReadonlySet<string> = new Set();
+const NO_ABSENT_VARIABLES: ReadonlySet<string> = new Set();
 
 function absentArrayPositionError(member: unknown, position: string, address: string): Error {
   const key = `input binding key "${position}" of service "${address}"`;
-  if (isSecretSource(member)) {
+  if (isSecretSource(member) || isParamSource(member)) {
     return new Error(
-      `${key} reads the platform variable "${secretName(member, 'an array position')}", which has no value. An array position cannot be left out: set the variable, or bind a literal.`,
-    );
-  }
-  if (isPlainVariableSource(member)) {
-    return new Error(
-      `${key} reads the platform variable "${member.payload.name}", which has no value. An array position cannot be left out: set the variable, or bind a literal.`,
-    );
-  }
-  if (isEnvParamSource(member)) {
-    return new Error(
-      `${key} reads "${member.payload.name}" from the app configuration, which has no value for it. An array position cannot be left out: set it where a \`config\` adapter reads it, or bind a literal.`,
+      `${key} reads the platform variable "${platformVariableName(member, key)}", which has no value. An array position cannot be left out: set the variable, or bind a literal.`,
     );
   }
   return new Error(
-    `${key} resolved to no value, but only envSecret() and envParam() can. This is a framework bug.`,
+    `${key} resolved to no value, but only the value of a platform variable node can have none. This is a framework bug.`,
   );
 }
 
-/** How `resolveInputBinding`, `serializeInput` and `inputValidationFailure` read the environment and which secrets they leave out. */
 export interface SerializeInputOptions {
-  /** Where `envParam` leaves are read: the app configuration, or in the second process the configuration key text from the app configuration file. The process environment when not given. */
-  readonly env?: Readonly<Record<string, unknown>>;
-  readonly absentSecrets?: ReadonlySet<string>;
-}
-
-function withDefaults(options: SerializeInputOptions): Required<SerializeInputOptions> {
-  return {
-    env: options.env ?? process.env,
-    absentSecrets: options.absentSecrets ?? NO_ABSENT_SECRETS,
-  };
+  readonly absentVariables?: ReadonlySet<string>;
 }
 
 export function assertDistinctPointerNames(
@@ -353,12 +331,18 @@ export function assertDistinctPointerNames(
   }
 }
 
+function bindingPlace(path: string, address: string): string {
+  return path === ''
+    ? `the input of service "${address}"`
+    : `input key "${path}" of service "${address}"`;
+}
+
 export function resolveInputBinding(
   binding: unknown,
   address = '',
   options: SerializeInputOptions = {},
 ): ResolvedInputBinding {
-  const { env, absentSecrets } = withDefaults(options);
+  const absentVariables = options.absentVariables ?? NO_ABSENT_VARIABLES;
   const generated: GeneratedLeaf[] = [];
   const pointers: PointerName[] = [];
   const absent: string[] = [];
@@ -382,51 +366,14 @@ export function resolveInputBinding(
       pointers.push({ path, varName });
       return value;
     }
-    if (isSecretSource(value)) {
-      const name = secretName(
-        value,
-        path === '' ? 'the input binding root' : `input key "${path}"`,
-      );
-      if (isSecretVariableSource(value)) variables.push({ path, field, name });
-      if (absentSecrets.has(name)) {
-        absent.push(path === '' ? `(root) → ${name}` : `${path} → ${name}`);
-        return ABSENT;
-      }
-      return value;
-    }
-    if (isPlainVariableSource(value)) {
-      const name = value.payload.name;
+    if (isSecretSource(value) || isParamSource(value)) {
+      const name = platformVariableName(value, bindingPlace(path, address));
       variables.push({ path, field, name });
-      if (absentSecrets.has(name)) {
+      if (absentVariables.has(name)) {
         absent.push(path === '' ? `(root) → ${name}` : `${path} → ${name}`);
         return ABSENT;
       }
       return value;
-    }
-    if (isParamSource(value)) {
-      if (!isEnvParamSource(value)) {
-        throw new Error(
-          `input binding${path === '' ? '' : ` key "${path}"`} is bound to a param source not ` +
-            "created by envParam() — bind env-sourced input values with envParam('NAME') from " +
-            '@prisma/composer-prisma-cloud.',
-        );
-      }
-      const name = value.payload.name;
-      const raw = configurationText(
-        env,
-        name,
-        (kind) =>
-          new Error(
-            `input binding${path === '' ? '' : ` key "${path}"`} is bound to envParam('${name}'), but the \`config\` adapters return ${kind} for "${name}", not text. envParam() reads text; to pass other data, declare it in the root module's input.`,
-          ),
-      );
-      if (raw === undefined) {
-        absent.push(
-          path === '' ? `(root) → ${value.payload.name}` : `${path} → ${value.payload.name}`,
-        );
-        return ABSENT;
-      }
-      return raw;
     }
     if (Array.isArray(value)) {
       return value.map((member, index) => {
@@ -464,9 +411,10 @@ export function resolveInputBinding(
     }
     throw new Error(
       `input binding${path === '' ? '' : ` key "${path}"`} holds a value that is not plain data ` +
-        `(${typeof value === 'object' ? 'a non-plain object' : `a ${typeof value}`}) — a binding's ` +
-        'leaves are literals, envParam(...), or envSecret(...) (ADR-0042). A secret VALUE ' +
-        "(e.g. a SecretBox) never belongs in a binding — bind envSecret('NAME') instead.",
+        `(${typeof value === 'object' ? 'a non-plain object' : `a ${typeof value}`}). A binding's ` +
+        "leaves are literals or values known only at boot, such as a platform variable node's value. " +
+        "A secret's value, such as a SecretBox, never belongs in a binding: provision " +
+        "variable.secret({ name: 'NAME' }) in the app root and bind its value instead.",
     );
   };
 
@@ -517,8 +465,8 @@ export function serializeInput(
   if (!judged.ok) {
     throw new Error(
       `invalid input for service "${address}": ${judged.thrown ? '' : 'config param validation failed: '}${judged.message}\n` +
-        '(Deploy-time validation sees each value known only at boot, envSecret() included, as a pointer ' +
-        'to its platform variable, never its value. ' +
+        '(Deploy-time validation sees each value known only at boot, a platform secret included, as a ' +
+        'pointer to a variable on the platform, never its value. ' +
         'A failure naming a secret field means the binding and schema disagree about its ' +
         `secretness, or the schema refines on secret content — which ADR-0042 forbids.)${judged.variableNote}`,
     );
@@ -697,15 +645,11 @@ function substitutePointers(
   const generatedByPath = new Map(generated.map((leaf) => [leaf.path, leaf]));
   const walk = (v: unknown, path: string, inArray = false): unknown => {
     const leaf = generatedByPath.get(path);
-    if (isSecretSource(v)) {
-      const name = secretName(v, path === '' ? 'the input binding root' : `input key "${path}"`);
-      markers.push({ name, path, secret: true, inArray });
-      return platformMarker(name, true);
-    }
-    if (isPlainVariableSource(v)) {
-      const { name } = v.payload;
-      markers.push({ name, path, secret: false, inArray });
-      return platformMarker(name, false);
+    if (isSecretSource(v) || isPlainVariableSource(v)) {
+      const secret = isSecretSource(v);
+      const name = platformVariableName(v, bindingPlace(path, address));
+      markers.push({ name, path, secret, inArray });
+      return platformMarker(name, secret);
     }
     if (isParamSource(v)) {
       if (leaf === undefined) {
@@ -726,7 +670,8 @@ function substitutePointers(
       throw new Error(
         `input key "${path}" of service "${address}" validated to a SecretString the binding did ` +
           'not supply — a schema must not mint secret boxes (a default/transform cannot name a ' +
-          "platform variable); bind the field with envSecret('NAME') instead.",
+          "platform variable); provision variable.secret({ name: 'NAME' }) in the app root and bind " +
+          'its value to the field instead.',
       );
     }
     if (Array.isArray(v)) {

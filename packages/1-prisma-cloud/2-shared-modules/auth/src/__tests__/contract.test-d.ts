@@ -6,15 +6,16 @@
  * module.test-d.ts.
  */
 import type { DependencyEnd, ModuleNode, Pointer, RefPort } from '@internal/core';
-import { module } from '@internal/core';
+import { appRoot, module } from '@internal/core';
 import { emailSendContract, type emailSender } from '@internal/email';
 import { type RawHttpClient, rawHttp, type rawHttpContract } from '@internal/http';
 import node from '@internal/node';
-import { compute, envParam, type rawPostgresContract, serviceOrigin } from '@internal/prisma-cloud';
+import { compute, type rawPostgresContract, serviceOrigin } from '@internal/prisma-cloud';
 import type { PostgresContract } from '@internal/prisma-cloud/orm';
 import { dataContract, postgres } from '@internal/prisma-cloud/orm';
 import { type Client, rpc } from '@internal/service-rpc';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import { type } from 'arktype';
 import { expectTypeOf, test } from 'vitest';
 import { auth } from '../auth-module.ts';
 import {
@@ -140,8 +141,8 @@ test("auth() accepts signUp: 'open' | 'closed' and nothing else", () => {
   auth({ signUp: 'invite-only' });
 });
 
-test('auth() takes baseUrl as serviceOrigin(), envParam() or a literal, and nothing else', () => {
-  module('root', {}, ({ provision }) => {
+test('auth() takes baseUrl as serviceOrigin(), a root input field or a literal, and nothing else', () => {
+  appRoot('root', { input: type({ AUTH_BASE_URL: 'string' }) }, ({ input, provision }) => {
     const db = provision(
       postgres({
         name: 'database',
@@ -153,7 +154,7 @@ test('auth() takes baseUrl as serviceOrigin(), envParam() or a literal, and noth
     const mail = provision(mailProvider(), { id: 'mail' });
     const deps = { db, email: mail.send };
     provision(auth(), { id: 'origin', deps, input: { baseUrl: serviceOrigin('root.app') } });
-    provision(auth(), { id: 'variable', deps, input: { baseUrl: envParam('AUTH_BASE_URL') } });
+    provision(auth(), { id: 'rootInput', deps, input: { baseUrl: input.AUTH_BASE_URL } });
     provision(auth(), { id: 'literal', deps, input: { baseUrl: 'https://app.example' } });
     // @ts-expect-error baseUrl is a string
     provision(auth(), { id: 'number', deps, input: { baseUrl: 4 } });
@@ -162,8 +163,7 @@ test('auth() takes baseUrl as serviceOrigin(), envParam() or a literal, and noth
       deps,
       input: { baseUrl: 'https://app.example' },
       // @ts-expect-error a module takes no params map
-      params: { baseUrl: envParam('AUTH_BASE_URL') },
+      params: { baseUrl: input.AUTH_BASE_URL },
     });
-    return {};
   });
 });

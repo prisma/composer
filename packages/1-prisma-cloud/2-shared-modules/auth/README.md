@@ -101,7 +101,7 @@ const proxy = authProxy(authApi);
 The database is a BOUNDARY dependency: the root decides dedicated vs shared.
 `baseUrl` is the public origin browsers see (scheme+host, no trailing slash,
 no path) — bind it with `serviceOrigin('<app>.<service>')`, the service's
-full address, so each environment trusts its own URL, or `envParam('AUTH_BASE_URL')` for a custom domain. The
+full address, so each environment trusts its own URL, or a field of the root's input, such as `input.AUTH_BASE_URL`, for a custom domain. The
 instance secret is platform-minted inside the module; rotation is unsupported
 in v1 (rotating would invalidate every session and the encrypted jwks rows).
 
@@ -289,7 +289,7 @@ const mail = provision(email(), { id: 'mail', input: { /* deliveryMode, from, de
 const identity = provision(auth(), {
   id: 'auth',
   deps: { db, email: mail.send },
-  input: { baseUrl: envParam('AUTH_BASE_URL') },
+  input: { baseUrl: serviceOrigin('shop.web') },
 });
 ```
 

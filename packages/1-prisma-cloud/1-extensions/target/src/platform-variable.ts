@@ -52,12 +52,11 @@ export function isSecretVariableSource(
   return isSecretSource(value) && isPlatformVariablePayload(value.payload);
 }
 
+export const notAPlatformVariable = (where: string): string =>
+  `${where} is bound to a source that is not a platform variable. Provision variable() or variable.secret() from @prisma/composer-prisma-cloud in the app root and pass its value down.`;
+
 export function platformVariableName(source: SecretSource | ParamSource, where: string): string {
-  if (!isPlatformVariablePayload(source.payload)) {
-    throw new Error(
-      `${where} is bound to a source that is not a platform variable. Provision variable() or variable.secret() from @prisma/composer-prisma-cloud in the app root and pass its value down.`,
-    );
-  }
+  if (!isPlatformVariablePayload(source.payload)) throw new Error(notAPlatformVariable(where));
   return source.payload.name;
 }
 

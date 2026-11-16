@@ -26,7 +26,7 @@ export function assertVariableName(name: string, factory: string, example: strin
   }
   if (name.startsWith('COMPOSER_')) {
     throw new Error(
-      `${factory} name "${name}" is reserved: names starting with COMPOSER_ are Composer's own platform variables.`,
+      `${factory} name "${name}" is reserved: names starting with COMPOSER_ are Composer's own variables on the platform.`,
     );
   }
   const reason = RESERVED_NAMES.get(name);

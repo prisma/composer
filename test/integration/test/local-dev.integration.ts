@@ -468,7 +468,7 @@ async function main(): Promise<void> {
     // 4. Assemble both services (real build adapter, hand-written "built" entries).
     const bundles = await assembleFixture();
 
-    // 5. Preflight — the fixture's secret/env-param proof lives in the
+    // 5. Preflight — the fixture's platform variable proof lives in the
     // dedicated S5 script (local-dev-criteria-4-5.integration.ts), which
     // deliberately runs WITHOUT these set; this script sets both in step 3 so its own
     // (unrelated) proofs keep passing regardless of shell state.

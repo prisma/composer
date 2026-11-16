@@ -7,10 +7,10 @@
  * Type-only (vitest --typecheck, never executed) — mirrors
  * serve-schedule.test-d.ts.
  */
-import type { ModuleNode } from '@internal/core';
+import { appRoot, type ModuleNode } from '@internal/core';
 import { secretString } from '@internal/foundation/arktype';
 import node from '@internal/node';
-import { compute, envSecret } from '@internal/prisma-cloud';
+import { compute, variable } from '@internal/prisma-cloud';
 import { contract, rpc } from '@internal/service-rpc';
 import { type } from 'arktype';
 import { test } from 'vitest';
@@ -71,8 +71,11 @@ test('a runner that does not expose { trigger: triggerContract } is rejected', (
   cron({ schedule, runner: notARunner });
 });
 
-test('a runner with an input schema requires its binding on cron(), and accepts envSecret leaves', () => {
-  cron({ schedule, runner: runnerWithInput, input: { token: envSecret('INGEST_TOKEN') } });
+test('a runner with an input schema requires its binding on cron(), and accepts a secret node value', () => {
+  appRoot('shop', ({ provision }) => {
+    const token = provision(variable.secret({ name: 'INGEST_TOKEN' }));
+    cron({ schedule, runner: runnerWithInput, input: { token } });
+  });
   // @ts-expect-error the runner declares an input schema, so `input` is required
   cron({ schedule, runner: runnerWithInput });
 });

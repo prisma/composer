@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { Load, LoadError, module } from '@internal/core';
+import { appRoot, Load, LoadError, module } from '@internal/core';
 import { secretString } from '@internal/foundation/arktype';
 import node from '@internal/node';
-import { compute, envSecret } from '@internal/prisma-cloud';
+import { compute, variable } from '@internal/prisma-cloud';
 import { contract, rpc } from '@internal/service-rpc';
 import { type } from 'arktype';
 import { triggerContract } from '../contract.ts';
@@ -73,14 +73,15 @@ describe('cron()', () => {
       build,
       expose: { trigger: triggerContract },
     });
-    const token = envSecret('INGEST_TOKEN');
-    const root = module('root', {}, ({ provision }) => {
+    let token: unknown;
+    const root = appRoot('root', ({ provision }) => {
+      const tokenValue = provision(variable.secret({ name: 'INGEST_TOKEN' }));
+      token = tokenValue;
       const w = provision(worker(), { id: 'worker' });
-      provision(cron({ schedule, runner: runnerWithInput, input: { token } }), {
+      provision(cron({ schedule, runner: runnerWithInput, input: { token: tokenValue } }), {
         id: 'cron',
         deps: { worker: w.work },
       });
-      return {};
     });
 
     const graph = Load(root);

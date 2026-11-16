@@ -1,7 +1,6 @@
 /**
- * The env-sourced param wire: pointer-row encode/decode, and the boot-side
- * double-lookup + schema validation `deserialize`/`coerce` runs for a param
- * bound to `envParam(...)` (as opposed to a literal, unchanged, param).
+ * The pointer row of a per-key param bound to a plain platform variable:
+ * encode/decode, and the lookup and schema validation `deserialize` runs at boot.
  */
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { type ConfigParam, number, param, service, string } from '@internal/core';
@@ -40,7 +39,7 @@ const nonEmptyString: StandardSchemaV1<string, string> = {
   },
 };
 
-// Raw core service(): the env-sourced param wire is now exercised only by
+// Raw core service(): the pointer row is now exercised only by
 // extension-RESERVED params (ADR-0042 removed user params from compute()),
 // but the serializer machinery is param-name-agnostic — a plain node with a
 // declared param proves it.
@@ -85,7 +84,7 @@ describe('param pointer rows', () => {
   });
 });
 
-describe('deserialize — env-sourced param boot resolution', () => {
+describe('deserialize — a per-key param read through its pointer row at boot', () => {
   const address = 'web';
   const key = configKey(address, { owner: 'service', name: 'appOrigin' });
   const portKey = configKey(address, { owner: 'service', name: 'port' });

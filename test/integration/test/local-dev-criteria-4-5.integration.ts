@@ -2,8 +2,8 @@
  * The plan-S5 proving script for acceptance criteria 4 and 5 (spec's
  * acceptance criteria list): drives the installed `prisma` host's `dev`
  * against the S4 fixture (`test/fixtures/local-dev/`), extended for this
- * proof with a bucket consumer flow on `web` and secrets and an env-sourced
- * param on `bkg` (module.ts's binding). Same pattern as
+ * proof with a bucket consumer flow on `web` and two platform secrets and a
+ * plain platform variable read by `bkg` (module.ts's binding). Same pattern as
  * `local-dev-store.integration.ts` — a real child process, teed output,
  * bounded waits.
  *

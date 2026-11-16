@@ -26,16 +26,12 @@ export function checkRequirements(
   serviceAddress: string,
   binding: unknown,
   unset: readonly string[],
-  env: Readonly<Record<string, unknown>>,
 ): RequirementCheck {
-  const invalid = inputValidationFailure(node, serviceAddress, binding, {
-    env,
-    absentSecrets: new Set(),
-  });
+  const invalid = inputValidationFailure(node, serviceAddress, binding);
   if (invalid !== undefined) {
     return { kind: 'invalid', message: `${invalid.message}${invalid.variableNote}` };
   }
-  const markers = serializeInput(node, serviceAddress, binding, { env })?.markers ?? [];
+  const markers = serializeInput(node, serviceAddress, binding)?.markers ?? [];
   const unsetNames = new Set(unset);
   const inArray = new Set(
     markers.filter((marker) => marker.inArray && unsetNames.has(marker.name)).map((m) => m.name),
@@ -54,15 +50,13 @@ export function checkRequirements(
   });
   if (rest.length === 0) return checked([]);
   const withoutAll = inputValidationFailure(node, serviceAddress, binding, {
-    env,
-    absentSecrets: new Set(rest),
+    absentVariables: new Set(rest),
   });
   if (withoutAll === undefined) return checked([]);
   const alone: MissingVariables[] = [];
   for (const name of rest) {
     const failure = inputValidationFailure(node, serviceAddress, binding, {
-      env,
-      absentSecrets: new Set([name]),
+      absentVariables: new Set([name]),
     });
     if (failure !== undefined) {
       alone.push({ names: [name], serviceAddress, message: failure.message, decidedBy: 'schema' });

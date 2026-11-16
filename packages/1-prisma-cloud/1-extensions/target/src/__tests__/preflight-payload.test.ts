@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { Load, module } from '@internal/core';
+import { appRoot, Load } from '@internal/core';
 import { preflightEnv } from '@internal/core/config';
 import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
@@ -10,9 +10,8 @@ import {
   serializeDevPreflightPayload,
   transportedPreflight,
 } from '../control/preflight-payload.ts';
-import { compute } from '../exports/index.ts';
+import { compute, variable } from '../exports/index.ts';
 import { runPreflight } from '../preflight.ts';
-import { envSecret } from '../secret.ts';
 
 const build = {
   extension: '@prisma/composer/node',
@@ -28,10 +27,10 @@ const anySchema: StandardSchemaV1<unknown, unknown> = {
 
 const graph = () =>
   Load(
-    module('app', ({ provision }) => {
+    appRoot('app', ({ provision }) => {
       provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
         id: 'ingest',
-        input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+        input: { stripeKey: provision(variable.secret({ name: 'STRIPE_SECRET_KEY' })) },
       });
     }),
   );
@@ -221,34 +220,34 @@ describe('one transport variable, two kinds of payload', () => {
       ),
     );
 
-    expect([...preflight.absentSecrets]).toEqual([]);
+    expect([...preflight.absentVariables]).toEqual([]);
     expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBe('2026-10-01T00:00:00Z');
   });
 
-  test('a dev payload carries the absent secrets and the value versions', () => {
+  test('a dev payload carries the absent variables and the value versions', () => {
     const preflight = transportedPreflight(
       () => undefined,
       childEnv(
         serializeDevPreflightPayload({
-          absentSecrets: ['STRIPE_WEBHOOK_SECRET'],
+          absentVariables: ['STRIPE_WEBHOOK_SECRET'],
           pointerVersions: { STRIPE_SECRET_KEY: 'hmac-of-value' },
         }),
       ),
     );
 
-    expect([...preflight.absentSecrets]).toEqual(['STRIPE_WEBHOOK_SECRET']);
+    expect([...preflight.absentVariables]).toEqual(['STRIPE_WEBHOOK_SECRET']);
     expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBe('hmac-of-value');
   });
 
   test('with no payload nothing is absent and every version is unknown', () => {
     const preflight = transportedPreflight(() => undefined, childEnv(undefined));
 
-    expect([...preflight.absentSecrets]).toEqual([]);
+    expect([...preflight.absentVariables]).toEqual([]);
     expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBeUndefined();
   });
 
   test('a dev payload that does not parse fails loudly', () => {
     expect(() => decodePreflightPayload('dev:not json')).toThrow(/prisma dev/);
-    expect(() => decodePreflightPayload('dev:{"absentSecrets":[]}')).toThrow(/expected shape/);
+    expect(() => decodePreflightPayload('dev:{"absentVariables":[]}')).toThrow(/expected shape/);
   });
 });

@@ -2,7 +2,7 @@
  * The `auth()` module: Better Auth in one service. The database and the email
  * sender are dependencies the parent wires. Its input is `baseUrl`, the public
  * origin of the consumer app (scheme and host, no trailing slash, no path),
- * bound with `serviceOrigin('<app>.<service>')`, `envParam(...)` or a literal.
+ * bound with `serviceOrigin('<app>.<service>')`, a root input field or a literal.
  * The instance secret is a `generatedParam()` the module binds itself; `signUp`
  * is a factory option.
  */

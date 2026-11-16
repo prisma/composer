@@ -5,16 +5,17 @@ import {
   isSecretString,
   Load,
   module,
+  paramSource,
   SecretBox,
   type ServiceNode,
+  secretSource,
   service,
 } from '@internal/core';
 import { field, secretString } from '@internal/foundation/arktype';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
-import { envParam, generatedParam, serviceOrigin } from '../param.ts';
+import { generatedParam, serviceOrigin } from '../param.ts';
 import { variable } from '../platform-variable.ts';
-import { envSecret } from '../secret.ts';
 import {
   assertDistinctPointerNames,
   inputKey,
@@ -22,6 +23,7 @@ import {
   resolveInputBinding,
   serializeInput,
 } from '../serializer.ts';
+import { plainVariable, secretVariable } from './variable-values.ts';
 
 /** An ArkType copy of `value`: a transform elsewhere in the schema makes ArkType copy its whole input. */
 const copyOf = <T>(value: T): T => {
@@ -48,18 +50,6 @@ const svc = (schema: StandardSchemaV1) =>
     build,
   });
 
-function provisioned<
-  N extends Record<string, ReturnType<typeof variable | typeof variable.secret>>,
->(nodes: N): Record<keyof N, unknown> {
-  const values: Record<string, unknown> = {};
-  Load(
-    appRoot('shop', ({ provision }) => {
-      for (const [name, node] of Object.entries(nodes)) values[name] = provision(node);
-    }),
-  );
-  return values as Record<keyof N, unknown>;
-}
-
 async function withEnv<T>(values: Record<string, string>, fn: () => Promise<T> | T): Promise<T> {
   const previous = new Map(Object.keys(values).map((k) => [k, process.env[k]]));
   for (const [k, v] of Object.entries(values)) process.env[k] = v;
@@ -74,23 +64,17 @@ async function withEnv<T>(values: Record<string, string>, fn: () => Promise<T> |
 }
 
 describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
-  test('classifies literals, envParam, and envSecret leaves, nested objects and arrays included', () => {
-    const secretly = envSecret('STRIPE_SECRET_KEY');
-    const { resolved, absent } = resolveInputBinding(
-      {
-        plain: 'value',
-        count: 3,
-        enabled: true,
-        nothing: null,
-        list: ['a', 'b'],
-        nested: {
-          fromShell: envParam('SHELL_VALUE'),
-          secretly,
-        },
-      },
-      '',
-      { env: { SHELL_VALUE: 'from-the-shell' } },
-    );
+  test('classifies literals and platform variable leaves, nested objects and arrays included', () => {
+    const fromShell = plainVariable('SHELL_VALUE');
+    const secretly = secretVariable('STRIPE_SECRET_KEY');
+    const { resolved, absent } = resolveInputBinding({
+      plain: 'value',
+      count: 3,
+      enabled: true,
+      nothing: null,
+      list: ['a', 'b'],
+      nested: { fromShell, secretly },
+    });
 
     const out = resolved as Record<string, unknown>;
     expect(out['plain']).toBe('value');
@@ -99,37 +83,31 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
     expect(out['nothing']).toBeNull();
     expect(out['list']).toEqual(['a', 'b']);
     const nested = out['nested'] as Record<string, unknown>;
-    expect(nested['fromShell']).toBe('from-the-shell');
-    // The secret leaf stays in place as its pointer.
+    expect(nested['fromShell']).toBe(fromShell);
     expect(nested['secretly']).toBe(secretly);
     expect(absent).toEqual([]);
   });
 
-  test('an unset deploy-shell var omits the key; an empty one too — the schema arbitrates absence', () => {
-    const { resolved, absent } = resolveInputBinding(
-      { unset: envParam('NOT_SET_ANYWHERE_XYZ'), empty: envParam('EMPTY_VALUE'), kept: 'yes' },
-      '',
-      { env: { EMPTY_VALUE: '' } },
+  test('a param source that is not a platform variable is refused, naming the place and the service', () => {
+    expect(() =>
+      resolveInputBinding({ nested: { greeting: paramSource('G') } }, 'shop.web'),
+    ).toThrow(
+      'input key "nested.greeting" of service "shop.web" is bound to a source that is not a platform variable. Provision variable() or variable.secret() from @prisma/composer-prisma-cloud in the app root and pass its value down.',
     );
-    expect(resolved).toEqual({ kept: 'yes' });
-    expect(absent).toEqual(['unset → NOT_SET_ANYWHERE_XYZ', 'empty → EMPTY_VALUE']);
   });
 
-  test('an array position whose app configuration value is unset fails, sending the user to the app configuration', () => {
+  test('a secret source that is not a platform variable is refused when the document is written', () => {
     expect(() =>
-      resolveInputBinding({ list: ['a', envParam('NOT_SET_ANYWHERE_XYZ')] }, 'shop.web', {
-        env: {},
-      }),
+      serializeInput(svc(type({ key: secretString() })), 'shop.web', { key: secretSource('KEY') }),
     ).toThrow(
-      'input binding key "list[1]" of service "shop.web" reads "NOT_SET_ANYWHERE_XYZ" from the app configuration, which has no value for it. An array position cannot be left out: set it where a `config` adapter reads it, or bind a literal.',
+      'input key "key" of service "shop.web" is bound to a source that is not a platform variable.',
     );
   });
 
   test('an array position whose platform variable has no value fails, naming the variable', () => {
     expect(() =>
-      resolveInputBinding({ list: [envSecret('UNSET_SECRET')] }, 'shop.web', {
-        env: {},
-        absentSecrets: new Set(['UNSET_SECRET']),
+      resolveInputBinding({ list: [secretVariable('UNSET_SECRET')] }, 'shop.web', {
+        absentVariables: new Set(['UNSET_SECRET']),
       }),
     ).toThrow(
       'input binding key "list[0]" of service "shop.web" reads the platform variable "UNSET_SECRET", which has no value. An array position cannot be left out: set the variable, or bind a literal.',
@@ -137,34 +115,8 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
   });
 
   test('a raw SecretBox (a secret VALUE) in the binding is rejected loudly', () => {
-    expect(() =>
-      resolveInputBinding({ key: new SecretBox('sk_live_oops') }, '', { env: {} }),
-    ).toThrow(/never belongs in a binding/);
-  });
-});
-
-describe('resolveInputBinding — envParam() reads the app configuration', () => {
-  test('an envParam() leaf reads the env it is given', async () => {
-    const row = await withEnv({ G: 'shell' }, () =>
-      serializeInput(
-        svc(type({ greeting: 'string' })),
-        'web',
-        { greeting: envParam('G') },
-        { env: { G: 'pool' } },
-      ),
-    );
-
-    expect(JSON.parse(row?.value ?? 'null')).toEqual({ greeting: 'pool' });
-  });
-
-  test('an envParam() leaf whose value is not text fails naming the key and its kind', () => {
-    expect(() =>
-      resolveInputBinding({ nested: { greeting: envParam('G') } }, 'web', { env: { G: 4 } }),
-    ).toThrow(
-      'input binding key "nested.greeting" is bound to envParam(\'G\'), but the `config` adapters return a number for "G", not text. envParam() reads text; to pass other data, declare it in the root module\'s input.',
-    );
-    expect(() => resolveInputBinding(envParam('G'), 'web', { env: { G: ['x'] } })).toThrow(
-      'input binding is bound to envParam(\'G\'), but the `config` adapters return an array for "G", not text.',
+    expect(() => resolveInputBinding({ key: new SecretBox('sk_live_oops') }, '')).toThrow(
+      /never belongs in a binding/,
     );
   });
 });
@@ -176,12 +128,10 @@ describe('serializeInput — validate with pointers in place, serialize the vali
   });
 
   test('discriminated-union conditionality passes with the satisfied arm (secret pointers in place)', () => {
-    const row = serializeInput(
-      svc(conditional),
-      'web',
-      { stripeEnabled: true, stripeKey: envSecret('STRIPE_SECRET_KEY') },
-      { env: {} },
-    );
+    const row = serializeInput(svc(conditional), 'web', {
+      stripeEnabled: true,
+      stripeKey: secretVariable('STRIPE_SECRET_KEY'),
+    });
     expect(row?.key).toBe('COMPOSER_WEB_INPUT');
     expect(JSON.parse(row?.value ?? '')).toEqual({
       stripeEnabled: true,
@@ -190,12 +140,10 @@ describe('serializeInput — validate with pointers in place, serialize the vali
   });
 
   test('the deploy writes a marker for a secret whose variable is unset', () => {
-    const row = serializeInput(
-      svc(conditional),
-      'web',
-      { stripeEnabled: true, stripeKey: envSecret('STRIPE_SECRET_KEY') },
-      { env: {} },
-    );
+    const row = serializeInput(svc(conditional), 'web', {
+      stripeEnabled: true,
+      stripeKey: secretVariable('STRIPE_SECRET_KEY'),
+    });
     expect(JSON.parse(row?.value ?? '')).toEqual({
       stripeEnabled: true,
       stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
@@ -207,14 +155,14 @@ describe('serializeInput — validate with pointers in place, serialize the vali
     const row = serializeInput(
       svc(optional),
       'web',
-      { stripeKey: envSecret('STRIPE_SECRET_KEY') },
-      { env: {}, absentSecrets: new Set(['STRIPE_SECRET_KEY']) },
+      { stripeKey: secretVariable('STRIPE_SECRET_KEY') },
+      { absentVariables: new Set(['STRIPE_SECRET_KEY']) },
     );
     expect(JSON.parse(row?.value ?? '')).toEqual({});
   });
 
   test('the off arm needs no secret — the key is simply not bound', () => {
-    const row = serializeInput(svc(conditional), 'web', { stripeEnabled: false }, { env: {} });
+    const row = serializeInput(svc(conditional), 'web', { stripeEnabled: false });
     expect(JSON.parse(row?.value ?? '')).toEqual({ stripeEnabled: false });
   });
 
@@ -222,33 +170,31 @@ describe('serializeInput — validate with pointers in place, serialize the vali
     const asyncSchema: StandardSchemaV1 = {
       '~standard': { version: 1, vendor: 'test', validate: async (value) => ({ value }) },
     };
-    expect(() => serializeInput(svc(asyncSchema), 'web', {}, { env: {} })).toThrow(
+    expect(() => serializeInput(svc(asyncSchema), 'web', {})).toThrow(
       /^invalid input for service "web": config param schema validation must be synchronous/,
     );
   });
 
   test('the on arm with a MISSING secret fails at deploy with the schema library’s own error', () => {
-    expect(() =>
-      serializeInput(svc(conditional), 'web', { stripeEnabled: true }, { env: {} }),
-    ).toThrow(/invalid input for service "web"/);
+    expect(() => serializeInput(svc(conditional), 'web', { stripeEnabled: true })).toThrow(
+      /invalid input for service "web"/,
+    );
   });
 
   test('misclassification — a literal where the schema wants a SecretString — fails at deploy, with the ADR-0042 note', () => {
     const attempt = () =>
-      serializeInput(
-        svc(conditional),
-        'web',
-        { stripeEnabled: true, stripeKey: 'sk_live_in_plain_config' },
-        { env: {} },
-      );
+      serializeInput(svc(conditional), 'web', {
+        stripeEnabled: true,
+        stripeKey: 'sk_live_in_plain_config',
+      });
     expect(attempt).toThrow(/invalid input for service "web"/);
     expect(attempt).toThrow(/secretness, or the schema refines on secret content/);
   });
 
-  test('envSecret where the schema wants a plain string fails the same way', () => {
+  test('a secret node where the schema wants a plain string fails the same way', () => {
     const schema = type({ url: 'string' });
     expect(() =>
-      serializeInput(svc(schema), 'web', { url: envSecret('NOT_ACTUALLY_SECRET') }, { env: {} }),
+      serializeInput(svc(schema), 'web', { url: secretVariable('NOT_ACTUALLY_SECRET') }),
     ).toThrow(/invalid input for service "web"/);
   });
 
@@ -257,31 +203,24 @@ describe('serializeInput — validate with pointers in place, serialize the vali
       retries: 1,
       ...v,
     }));
-    const row = serializeInput(svc(schema), 'web', { greeting: 'hello' }, { env: {} });
+    const row = serializeInput(svc(schema), 'web', { greeting: 'hello' });
     expect(JSON.parse(row?.value ?? '')).toEqual({ greeting: 'hello', retries: 1 });
   });
 
   test('secret values never appear in the document, even when the deploy shell holds them', () => {
-    const row = serializeInput(
-      svc(conditional),
-      'web',
-      { stripeEnabled: true, stripeKey: envSecret('STRIPE_SECRET_KEY') },
-      { env: { STRIPE_SECRET_KEY: 'sk_live_should_not_leak' } },
-    );
+    const row = serializeInput(svc(conditional), 'web', {
+      stripeEnabled: true,
+      stripeKey: secretVariable('STRIPE_SECRET_KEY'),
+    });
     expect(row?.value).not.toContain('sk_live');
     expect(row?.value).toContain('"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}');
   });
 
-  test('a planted secret under a secret node never appears in the document, even when the deploy shell holds it', () => {
+  test('a planted secret under a secret node never appears in the document, even when the deploy shell holds it', async () => {
     const planted = 'Zq7Xw9Vb3kLm2Rt';
-    const { STRIPE_SECRET_KEY: stripeKey } = provisioned({
-      STRIPE_SECRET_KEY: variable.secret({ name: 'STRIPE_SECRET_KEY' }),
-    });
-    const row = serializeInput(
-      svc(conditional),
-      'web',
-      { stripeEnabled: true, stripeKey },
-      { env: { STRIPE_SECRET_KEY: planted } },
+    const stripeKey = secretVariable('STRIPE_SECRET_KEY');
+    const row = await withEnv({ STRIPE_SECRET_KEY: planted }, () =>
+      serializeInput(svc(conditional), 'web', { stripeEnabled: true, stripeKey }),
     );
     for (let start = 0; start + 4 <= planted.length; start += 1) {
       expect(JSON.stringify(row)).not.toContain(planted.slice(start, start + 4));
@@ -294,7 +233,7 @@ describe('serializeInput — validate with pointers in place, serialize the vali
       ...v,
       injected: new SecretBox('made-up'),
     }));
-    expect(() => serializeInput(svc(schema), 'web', { greeting: 'hi' }, { env: {} })).toThrow(
+    expect(() => serializeInput(svc(schema), 'web', { greeting: 'hi' })).toThrow(
       /must not mint secret boxes/,
     );
   });
@@ -308,14 +247,12 @@ describe('serializeInput — validate with pointers in place, serialize the vali
       params: {},
       build,
     });
-    expect(serializeInput(plain, 'plain', undefined, { env: {} })).toBeUndefined();
-    expect(() => serializeInput(plain, 'plain', {}, { env: {} })).toThrow(
-      /declares no input schema/,
-    );
+    expect(serializeInput(plain, 'plain', undefined)).toBeUndefined();
+    expect(() => serializeInput(plain, 'plain', {})).toThrow(/declares no input schema/);
   });
 
   test('a declared schema with no recorded binding is a loud invariant error', () => {
-    expect(() => serializeInput(svc(conditional), 'web', undefined, { env: {} })).toThrow(
+    expect(() => serializeInput(svc(conditional), 'web', undefined)).toThrow(
       /no recorded input binding/,
     );
   });
@@ -328,12 +265,12 @@ describe('user keys spelled like a marker round-trip (ADR-0042)', () => {
 
   test('a user key "$platform" or "$$platform" gains one "$" on write and loses it on read, and "$secret" is written as it is', async () => {
     const binding = {
-      real: envSecret('REAL_SECRET'),
+      real: secretVariable('REAL_SECRET'),
       forged: { $platform: { name: 'NOT_A_MARKER', secret: true } },
       doubled: { $$platform: 'ALSO_NOT' },
       old: { $secret: 'OLD_USER_KEY' },
     };
-    const row = serializeInput(svc(anySchema), 'web', binding, { env: {} });
+    const row = serializeInput(svc(anySchema), 'web', binding);
     expect(row?.value).toContain('"$$platform":{"name":"NOT_A_MARKER","secret":true}');
     expect(row?.value).toContain('"$$$platform":"ALSO_NOT"');
     expect(row?.value).toContain('"$secret":"OLD_USER_KEY"');
@@ -362,12 +299,10 @@ describe('readInput — the boot half', () => {
 
   test('deploy → boot round trip: document → boxes → validated object', async () => {
     const node = svc(conditional);
-    const row = serializeInput(
-      node,
-      'web',
-      { stripeEnabled: true, stripeKey: envSecret('STRIPE_SECRET_KEY') },
-      { env: {} },
-    );
+    const row = serializeInput(node, 'web', {
+      stripeEnabled: true,
+      stripeKey: secretVariable('STRIPE_SECRET_KEY'),
+    });
     const value = await withEnv(
       { [inputKey('')]: row?.value ?? '', STRIPE_SECRET_KEY: 'sk_live_boot' },
       () => readInput(node, '') as { stripeEnabled: boolean; stripeKey?: SecretBox<unknown> },
@@ -478,7 +413,7 @@ describe('readInput — the boot half', () => {
 describe('resolveInputBinding — generated leaves (ADR-0041)', () => {
   test('a redacted generated leaf stays in place as its pointer and records the generated list', () => {
     const secret = generatedParam();
-    const { resolved, generated } = resolveInputBinding({ secret }, 'web', { env: {} });
+    const { resolved, generated } = resolveInputBinding({ secret }, 'web');
     expect((resolved as Record<string, unknown>)['secret']).toBe(secret);
     expect(generated).toEqual([
       { varName: 'COMPOSER_WEB_SECRET_GENERATED', bytes: 32, redacted: true, path: 'secret' },
@@ -487,7 +422,7 @@ describe('resolveInputBinding — generated leaves (ADR-0041)', () => {
 
   test('a non-redacted generated leaf stays in place as its pointer', () => {
     const token = generatedParam({ redacted: false, bytes: 16 });
-    const { resolved, generated } = resolveInputBinding({ token }, 'web', { env: {} });
+    const { resolved, generated } = resolveInputBinding({ token }, 'web');
     expect((resolved as Record<string, unknown>)['token']).toBe(token);
     expect(generated).toEqual([
       { varName: 'COMPOSER_WEB_TOKEN_GENERATED', bytes: 16, redacted: false, path: 'token' },
@@ -495,9 +430,7 @@ describe('resolveInputBinding — generated leaves (ADR-0041)', () => {
   });
 
   test('the var name is address- and path-scoped, even for a nested leaf', () => {
-    const { generated } = resolveInputBinding({ auth: { signing: generatedParam() } }, 'api', {
-      env: {},
-    });
+    const { generated } = resolveInputBinding({ auth: { signing: generatedParam() } }, 'api');
     expect(generated[0]?.varName).toBe('COMPOSER_API_AUTH_SIGNING_GENERATED');
     expect(generated[0]?.path).toBe('auth.signing');
   });
@@ -505,12 +438,9 @@ describe('resolveInputBinding — generated leaves (ADR-0041)', () => {
 
 describe('serializeInput — generated leaves become $generated pointers (ADR-0041)', () => {
   test('a redacted leaf (secretString schema) serializes to a $generated pointer + records the leaf', () => {
-    const row = serializeInput(
-      svc(type({ secret: secretString() })),
-      'web',
-      { secret: generatedParam() },
-      { env: {} },
-    );
+    const row = serializeInput(svc(type({ secret: secretString() })), 'web', {
+      secret: generatedParam(),
+    });
     expect(JSON.parse(row?.value ?? '')).toEqual({
       secret: { $generated: 'COMPOSER_WEB_SECRET_GENERATED', redacted: true },
     });
@@ -520,12 +450,9 @@ describe('serializeInput — generated leaves become $generated pointers (ADR-00
   });
 
   test('a non-redacted leaf (wrapped string field) also serializes to a $generated pointer', () => {
-    const row = serializeInput(
-      svc(type({ token: field(type('string')) })),
-      'web',
-      { token: generatedParam({ redacted: false, bytes: 16 }) },
-      { env: {} },
-    );
+    const row = serializeInput(svc(type({ token: field(type('string')) })), 'web', {
+      token: generatedParam({ redacted: false, bytes: 16 }),
+    });
     expect(JSON.parse(row?.value ?? '')).toEqual({
       token: { $generated: 'COMPOSER_WEB_TOKEN_GENERATED', redacted: false },
     });
@@ -533,18 +460,15 @@ describe('serializeInput — generated leaves become $generated pointers (ADR-00
   });
 
   test('the pointer prints; the value lives in state, never in the document', () => {
-    const row = serializeInput(
-      svc(type({ secret: secretString() })),
-      'web',
-      { secret: generatedParam() },
-      { env: {} },
-    );
+    const row = serializeInput(svc(type({ secret: secretString() })), 'web', {
+      secret: generatedParam(),
+    });
     expect(row?.value).toContain('"$generated":"COMPOSER_WEB_SECRET_GENERATED"');
   });
 
   test('deploy → boot round trip: a redacted generated leaf hydrates to a box exposing the provisioned value', async () => {
     const node = svc(type({ secret: secretString() }));
-    const row = serializeInput(node, 'web', { secret: generatedParam() }, { env: {} });
+    const row = serializeInput(node, 'web', { secret: generatedParam() });
     const value = await withEnv(
       { [inputKey('')]: row?.value ?? '', COMPOSER_WEB_SECRET_GENERATED: 'generated-value-xyz' },
       () => readInput(node, '') as { secret: SecretBox<string> },
@@ -555,12 +479,7 @@ describe('serializeInput — generated leaves become $generated pointers (ADR-00
 
   test('deploy → boot round trip: a non-redacted generated leaf hydrates to a PLAIN STRING, not a box', async () => {
     const node = svc(type({ token: field(type('string')) }));
-    const row = serializeInput(
-      node,
-      'web',
-      { token: generatedParam({ redacted: false }) },
-      { env: {} },
-    );
+    const row = serializeInput(node, 'web', { token: generatedParam({ redacted: false }) });
     const value = await withEnv(
       { [inputKey('')]: row?.value ?? '', COMPOSER_WEB_TOKEN_GENERATED: 'plain-generated-value' },
       () => readInput(node, '') as { token: string },
@@ -579,7 +498,7 @@ describe('serializeInput — generated leaves become $generated pointers (ADR-00
       },
       () => {
         expect(() => readInput(node, '')).toThrow(
-          /"COMPOSER_WEB_SECRET_GENERATED", which the deploy writes, has no value. Deploy again./,
+          /The variable "COMPOSER_WEB_SECRET_GENERATED" on the platform, which the deploy writes, has no value. Deploy again./,
         );
       },
     );
@@ -597,7 +516,7 @@ describe('the reserved $generated key — user data round-trips (ADR-0041)', () 
       forged: { $generated: 'NOT_A_POINTER' },
       doubled: { $$generated: 'ALSO_NOT' },
     };
-    const row = serializeInput(svc(anySchema), 'web', binding, { env: {} });
+    const row = serializeInput(svc(anySchema), 'web', binding);
     // On the wire the user keys carry one extra "$"; only the framework's own
     // pointer keeps the single-"$" marker.
     expect(row?.value).toContain('"$$generated":"NOT_A_POINTER"');
@@ -619,12 +538,10 @@ describe('the reserved $generated key — user data round-trips (ADR-0041)', () 
 
 describe('distinct names for generated variables only (ADR-0041)', () => {
   test('two fields that read the same platform variable are two reads of one variable', () => {
-    const row = serializeInput(
-      svc(type({ a: secretString(), b: secretString() })),
-      'web',
-      { a: envSecret('SHARED'), b: envSecret('SHARED') },
-      { env: {} },
-    );
+    const row = serializeInput(svc(type({ a: secretString(), b: secretString() })), 'web', {
+      a: secretVariable('SHARED'),
+      b: secretVariable('SHARED'),
+    });
     expect(JSON.parse(row?.value ?? '')).toEqual({
       a: { $platform: { name: 'SHARED', secret: true } },
       b: { $platform: { name: 'SHARED', secret: true } },
@@ -637,7 +554,7 @@ describe('distinct names for generated variables only (ADR-0041)', () => {
 
   test('two generated leaves whose paths normalize to the same var collide (generated/generated)', () => {
     expect(() =>
-      resolveInputBinding({ token: generatedParam(), Token: generatedParam() }, 'web', { env: {} }),
+      resolveInputBinding({ token: generatedParam(), Token: generatedParam() }, 'web'),
     ).toThrow(/both resolve to the generated variable "COMPOSER_WEB_TOKEN_GENERATED"/);
   });
 
@@ -654,10 +571,8 @@ describe('distinct names for generated variables only (ADR-0041)', () => {
   });
 
   test('a secret leaf and a generated leaf with distinct names do NOT collide', () => {
-    const sec = envSecret('MY_SECRET');
-    const { resolved, generated } = resolveInputBinding({ sec, gen: generatedParam() }, 'web', {
-      env: {},
-    });
+    const sec = secretVariable('MY_SECRET');
+    const { resolved, generated } = resolveInputBinding({ sec, gen: generatedParam() }, 'web');
     expect(generated).toHaveLength(1);
     expect((resolved as Record<string, unknown>)['sec']).toBe(sec);
   });
@@ -675,14 +590,15 @@ describe('a secret forwarded through a module input', () => {
       },
     );
     const graph = Load(
-      module('shop', ({ provision }) => {
-        provision(email, { input: { from: 'shop@example.com', key: envSecret('EMAIL_KEY') } });
+      appRoot('shop', ({ provision }) => {
+        const key = provision(variable.secret({ name: 'EMAIL_KEY' }));
+        provision(email, { input: { from: 'shop@example.com', key } });
       }),
     );
     const address = graph.inputBindings[0]?.serviceAddress ?? '';
     const node = graph.nodes.find((entry) => entry.id === address)?.node as ServiceNode;
 
-    const row = serializeInput(node, address, graph.inputBindings[0]?.binding, { env: {} });
+    const row = serializeInput(node, address, graph.inputBindings[0]?.binding);
 
     expect(JSON.parse(row?.value ?? '')).toEqual({
       from: 'shop@example.com',
@@ -696,19 +612,14 @@ describe('a secret forwarded through a module input', () => {
       provision(svc(smtp), { input: input.smtp });
     });
     const graph = Load(
-      module('shop', ({ provision }) => {
-        provision(email, {
-          input: {
-            smtp: { user: serviceOrigin('shop.web'), password: envSecret('SMTP_PASSWORD') },
-          },
-        });
+      appRoot('shop', ({ provision }) => {
+        const password = provision(variable.secret({ name: 'SMTP_PASSWORD' }));
+        provision(email, { input: { smtp: { user: serviceOrigin('shop.web'), password } } });
       }),
     );
     const node = graph.nodes.find((entry) => entry.id === 'shop.email.web')?.node as ServiceNode;
 
-    const row = serializeInput(node, 'shop.email.web', graph.inputBindings[0]?.binding, {
-      env: {},
-    });
+    const row = serializeInput(node, 'shop.email.web', graph.inputBindings[0]?.binding);
 
     expect(JSON.parse(row?.value ?? '')).toEqual({
       user: { $generated: 'COMPOSER_SHOP_EMAIL_WEB_USER_GENERATED', redacted: false },
@@ -720,12 +631,10 @@ describe('a secret forwarded through a module input', () => {
 describe('an ArkType schema with a morph', () => {
   test('a secret field beside an ArkType morph is refused at deploy, naming the copied secret', () => {
     expect(() =>
-      serializeInput(
-        svc(type({ key: secretString(), name: 'string.trim' })),
-        'web',
-        { key: envSecret('KEY'), name: ' shop ' },
-        { env: {} },
-      ),
+      serializeInput(svc(type({ key: secretString(), name: 'string.trim' })), 'web', {
+        key: secretVariable('KEY'),
+        name: ' shop ',
+      }),
     ).toThrow(
       'input key "key" of service "web" validated to a copy of its secret, and the copy has lost ' +
         "the secret's value: the schema copies its input (for example an ArkType morph elsewhere " +
@@ -749,7 +658,7 @@ describe('a source forwarded through a module input', () => {
       }),
     );
     const node = graph.nodes.find((entry) => entry.id === 'shop.login.web')?.node as ServiceNode;
-    return serializeInput(node, 'shop.login.web', graph.inputBindings[0]?.binding, { env: {} });
+    return serializeInput(node, 'shop.login.web', graph.inputBindings[0]?.binding);
   };
 
   test("serviceOrigin() forwarded through a module's input serializes to its origin pointer", () => {
@@ -773,13 +682,10 @@ describe('a source forwarded through a module input', () => {
 });
 
 describe('an ArkType copy of a source', () => {
-  test('a copy of envSecret() serializes to its $platform marker', () => {
-    const row = serializeInput(
-      svc(type({ key: secretString() })),
-      'web',
-      { key: copyOf(envSecret('STRIPE_SECRET_KEY')) },
-      { env: {} },
-    );
+  test("a copy of a secret node's value serializes to its $platform marker", () => {
+    const row = serializeInput(svc(type({ key: secretString() })), 'web', {
+      key: copyOf(secretVariable('STRIPE_SECRET_KEY')),
+    });
 
     expect(JSON.parse(row?.value ?? '')).toEqual({
       key: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
@@ -787,12 +693,9 @@ describe('an ArkType copy of a source', () => {
   });
 
   test('a copy of serviceOrigin() serializes to its $generated pointer', () => {
-    const row = serializeInput(
-      svc(type({ base: field(type('string')) })),
-      'web',
-      { base: copyOf(serviceOrigin('shop.web')) },
-      { env: {} },
-    );
+    const row = serializeInput(svc(type({ base: field(type('string')) })), 'web', {
+      base: copyOf(serviceOrigin('shop.web')),
+    });
 
     expect(JSON.parse(row?.value ?? '')).toEqual({
       base: { $generated: 'COMPOSER_WEB_BASE_GENERATED', redacted: false },
@@ -801,12 +704,9 @@ describe('an ArkType copy of a source', () => {
   });
 
   test('a copy of a redacted generatedParam() serializes to its $generated pointer', () => {
-    const row = serializeInput(
-      svc(type({ secret: secretString() })),
-      'web',
-      { secret: copyOf(generatedParam()) },
-      { env: {} },
-    );
+    const row = serializeInput(svc(type({ secret: secretString() })), 'web', {
+      secret: copyOf(generatedParam()),
+    });
 
     expect(JSON.parse(row?.value ?? '')).toEqual({
       secret: { $generated: 'COMPOSER_WEB_SECRET_GENERATED', redacted: true },
@@ -835,29 +735,17 @@ describe('schemas see pointers at deploy', () => {
 
   test("a plain field bound to serviceOrigin() fails at deploy with the plain field's message", () => {
     expect(() =>
-      serializeInput(
-        svc(type({ base: 'string' })),
-        'web',
-        { base: serviceOrigin('shop.web') },
-        {
-          env: {},
-        },
-      ),
+      serializeInput(svc(type({ base: 'string' })), 'web', { base: serviceOrigin('shop.web') }),
     ).toThrow(
       'invalid input for service "web": config param validation failed: base must be a string (was an object)',
     );
   });
 
-  test('envSecret() bound to a wrapped text field fails at deploy', () => {
+  test('a secret node bound to a wrapped text field fails at deploy', () => {
     expect(() =>
-      serializeInput(
-        svc(type({ from: field(type('string')) })),
-        'web',
-        { from: envSecret('KEY') },
-        {
-          env: {},
-        },
-      ),
+      serializeInput(svc(type({ from: field(type('string')) })), 'web', {
+        from: secretVariable('KEY'),
+      }),
     ).toThrow(
       'invalid input for service "web": config param validation failed: from must be a string (was an object)',
     );
@@ -865,12 +753,9 @@ describe('schemas see pointers at deploy', () => {
 
   test('a plain generatedParam() bound to a secretString() field fails, saying it is not a secret', () => {
     expect(() =>
-      serializeInput(
-        svc(type({ secret: secretString() })),
-        'web',
-        { secret: generatedParam({ redacted: false }) },
-        { env: {} },
-      ),
+      serializeInput(svc(type({ secret: secretString() })), 'web', {
+        secret: generatedParam({ redacted: false }),
+      }),
     ).toThrow(
       'invalid input for service "web": config param validation failed: secret must be a SecretString box — bind this field to a secret (was a value known only at boot that is not a secret)',
     );
@@ -881,7 +766,6 @@ describe('schemas see pointers at deploy', () => {
       svc(type({ base: field(type('string')), n: 'string.integer.parse' })),
       'web',
       { base: serviceOrigin('shop.web'), n: '1' },
-      { env: {} },
     );
 
     expect(JSON.parse(row?.value ?? '')).toEqual({
@@ -893,28 +777,19 @@ describe('schemas see pointers at deploy', () => {
   test('a service whose binding holds no secret pointer is checked once', () => {
     const seen: unknown[] = [];
 
-    serializeInput(
-      svc(recording(seen)),
-      'web',
-      { greeting: 'hi', base: serviceOrigin('shop.web') },
-      { env: {} },
-    );
+    serializeInput(svc(recording(seen)), 'web', {
+      greeting: 'hi',
+      base: serviceOrigin('shop.web'),
+    });
 
     expect(seen).toHaveLength(1);
   });
 
   test('a service whose binding holds a secret pointer is checked again with a stand-in box, which never reaches the document', () => {
     const seen: unknown[] = [];
-    const key = envSecret('KEY');
+    const key = secretVariable('KEY');
 
-    const row = serializeInput(
-      svc(recording(seen)),
-      'web',
-      { key, token: generatedParam() },
-      {
-        env: {},
-      },
-    );
+    const row = serializeInput(svc(recording(seen)), 'web', { key, token: generatedParam() });
 
     expect(seen).toHaveLength(2);
     const [first, second] = seen as Record<string, unknown>[];
@@ -931,14 +806,9 @@ describe('schemas see pointers at deploy', () => {
 
   test('an ArkType schema that deletes undeclared keys loses a secret box, and the deploy refuses it naming the field', () => {
     expect(() =>
-      serializeInput(
-        svc(type({ '+': 'delete', key: secretString() })),
-        'web',
-        { key: envSecret('KEY') },
-        {
-          env: {},
-        },
-      ),
+      serializeInput(svc(type({ '+': 'delete', key: secretString() })), 'web', {
+        key: secretVariable('KEY'),
+      }),
     ).toThrow('input key "key" of service "web" validated to a copy of its secret');
   });
 
@@ -947,20 +817,17 @@ describe('schemas see pointers at deploy', () => {
       serializeInput(
         svc(type({ key: secretString(), port: field(type('string.integer.parse')) })),
         'web',
-        { key: envSecret('KEY'), port: '4' },
-        { env: {} },
+        { key: secretVariable('KEY'), port: '4' },
       ),
     ).toThrow('input key "key" of service "web" validated to a copy of its secret');
   });
 
   test('a redacted generatedParam() copied with the input is refused the same way', () => {
     expect(() =>
-      serializeInput(
-        svc(type({ secret: secretString(), name: 'string.trim' })),
-        'web',
-        { secret: generatedParam(), name: ' shop ' },
-        { env: {} },
-      ),
+      serializeInput(svc(type({ secret: secretString(), name: 'string.trim' })), 'web', {
+        secret: generatedParam(),
+        name: ' shop ',
+      }),
     ).toThrow('input key "secret" of service "web" validated to a copy of its secret');
   });
 
@@ -976,23 +843,16 @@ describe('schemas see pointers at deploy', () => {
       },
     };
 
-    expect(() =>
-      serializeInput(svc(pointerOnly), 'web', { key: envSecret('KEY') }, { env: {} }),
-    ).toThrow(
+    expect(() => serializeInput(svc(pointerOnly), 'web', { key: secretVariable('KEY') })).toThrow(
       'invalid input for service "web": the schema accepts each secret\'s pointer but refuses a secret box in its place: key must be a pointer',
     );
   });
 
   test('a schema that replaces a field bound to a value known only at boot is refused', () => {
     expect(() =>
-      serializeInput(
-        svc(returning(() => ({ base: 'x' }))),
-        'web',
-        { base: serviceOrigin('shop.web') },
-        {
-          env: {},
-        },
-      ),
+      serializeInput(svc(returning(() => ({ base: 'x' }))), 'web', {
+        base: serviceOrigin('shop.web'),
+      }),
     ).toThrow(
       'input key "base" of service "web" is bound to a value known only at boot, but the schema replaced it. A schema may check such a field, never move or transform it.',
     );
@@ -1000,12 +860,9 @@ describe('schemas see pointers at deploy', () => {
 
   test('a schema that moves a pointer to another key is refused', () => {
     expect(() =>
-      serializeInput(
-        svc(returning((value) => ({ other: value['base'] }))),
-        'web',
-        { base: serviceOrigin('shop.web') },
-        { env: {} },
-      ),
+      serializeInput(svc(returning((value) => ({ other: value['base'] }))), 'web', {
+        base: serviceOrigin('shop.web'),
+      }),
     ).toThrow(
       'input key "other" of service "web" validated to a value known only at boot that its binding did not put there: the schema moved it. A schema may check such a field, never move or transform it.',
     );
@@ -1013,17 +870,15 @@ describe('schemas see pointers at deploy', () => {
 
   test('a schema that mints its own secret box beside a secret pointer is refused for minting, not for copying', () => {
     const minting = svc(returning((value) => ({ ...value, other: new SecretBox('minted') })));
-    expect(() => serializeInput(minting, 'web', { key: envSecret('KEY') }, { env: {} })).toThrow(
+    expect(() => serializeInput(minting, 'web', { key: secretVariable('KEY') })).toThrow(
       'input key "other" of service "web" validated to a SecretString the binding did not supply',
     );
   });
 });
 
 describe('platform variable nodes in a service binding', () => {
-  const { EMAIL_FROM: from, EMAIL_KEY: key } = provisioned({
-    EMAIL_FROM: variable({ name: 'EMAIL_FROM' }),
-    EMAIL_KEY: variable.secret({ name: 'EMAIL_KEY' }),
-  });
+  const from = plainVariable('EMAIL_FROM');
+  const key = secretVariable('EMAIL_KEY');
   const schema = type({ from: field(type('string')), key: secretString() });
 
   test('a plain node and a secret node stay in place and are written as $platform markers', () => {
@@ -1044,7 +899,7 @@ describe('platform variable nodes in a service binding', () => {
       svc(optional),
       'shop.web',
       { from, key },
-      { absentSecrets: new Set(['EMAIL_FROM']) },
+      { absentVariables: new Set(['EMAIL_FROM']) },
     );
 
     expect(row?.value).toBe('{"key":{"$platform":{"name":"EMAIL_KEY","secret":true}}}');
@@ -1054,7 +909,7 @@ describe('platform variable nodes in a service binding', () => {
   test('an array position that reads a plain node named absent fails, naming the variable', () => {
     expect(() =>
       resolveInputBinding({ senders: [from] }, 'shop.web', {
-        absentSecrets: new Set(['EMAIL_FROM']),
+        absentVariables: new Set(['EMAIL_FROM']),
       }),
     ).toThrow(
       'input binding key "senders[0]" of service "shop.web" reads the platform variable "EMAIL_FROM", which has no value. An array position cannot be left out: set the variable, or bind a literal.',

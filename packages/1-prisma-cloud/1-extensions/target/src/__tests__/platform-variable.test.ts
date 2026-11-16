@@ -81,6 +81,42 @@ describe('variable() and variable.secret()', () => {
     );
   });
 
+  test.each(['api_key', 'Api_Key', '_TOKEN', '1TOKEN', 'API-KEY'])(
+    'refuses %s, which is not an upper-case platform variable name',
+    (name) => {
+      expect(() => variable.secret({ name })).toThrow(
+        `variable.secret name "${name}" is not a platform variable name: it must be an upper-case letter followed by upper-case letters, digits and underscores, for example API_KEY.`,
+      );
+    },
+  );
+
+  test.each([
+    ['COMPOSER_X', "names starting with COMPOSER_ are Composer's own variables on the platform."],
+    [
+      'DATABASE_URL',
+      'Prisma Cloud sets and manages DATABASE_URL and DATABASE_URL_POOLED itself. Declare the database your service uses and read its url from that connection.',
+    ],
+    [
+      'DATABASE_URL_POOLED',
+      'Prisma Cloud sets and manages DATABASE_URL and DATABASE_URL_POOLED itself. Declare the database your service uses and read its url from that connection.',
+    ],
+    [
+      'PATH',
+      'under prisma dev the local target sets PATH and HOME from your shell, so a value on the platform would never be seen locally.',
+    ],
+    [
+      'HOME',
+      'under prisma dev the local target sets PATH and HOME from your shell, so a value on the platform would never be seen locally.',
+    ],
+  ])('refuses the reserved name %s, saying why', (name, reason) => {
+    expect(() => variable({ name })).toThrow(`variable name "${name}" is reserved: ${reason}`);
+  });
+
+  test('accepts HOST and a name with digits and underscores', () => {
+    expect(() => variable.secret({ name: 'HOST' })).not.toThrow();
+    expect(() => variable({ name: 'STRIPE_KEY_2' })).not.toThrow();
+  });
+
   test('the empty-name message shows the call with an options object', () => {
     expect(() => variable({ name: '' })).toThrow(
       "variable() requires a non-empty platform variable name, for example variable({ name: 'API_KEY' }).",

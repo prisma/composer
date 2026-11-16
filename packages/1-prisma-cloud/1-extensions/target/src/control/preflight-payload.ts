@@ -4,7 +4,7 @@
  *
  * - deploy: a JSON object holding `updatedAt`, which maps each platform
  *   variable a service reads to the `updatedAt` of the row the platform resolves;
- * - `prisma dev`: `dev:` followed by JSON naming the unset secrets and an
+ * - `prisma dev`: `dev:` followed by JSON naming the unset platform variables and an
  *   HMAC-SHA256 of the current value of each variable a service points at.
  *
  * A deploy payload always starts with `{`, so the prefix tells them apart.
@@ -19,8 +19,8 @@ export type PointerVersion = (name: string) => string | undefined;
 /** What the preflight of this run sent, as the lowering reads it. */
 export interface TransportedPreflight {
   readonly pointerVersion: PointerVersion;
-  /** The `envSecret` names `prisma dev` found unset; their leaves are left out of the input document. Always empty for a deploy. */
-  readonly absentSecrets: ReadonlySet<string>;
+  /** The platform variables `prisma dev` found unset; their fields are left out of the input document. Always empty for a deploy. */
+  readonly absentVariables: ReadonlySet<string>;
 }
 
 export interface DeployPreflightPayload {
@@ -28,7 +28,7 @@ export interface DeployPreflightPayload {
 }
 
 export interface DevPreflightPayload {
-  readonly absentSecrets: readonly string[];
+  readonly absentVariables: readonly string[];
   readonly pointerVersions: Readonly<Record<string, string>>;
 }
 
@@ -37,7 +37,7 @@ export type DecodedPreflightPayload =
   | ({ readonly kind: 'deploy' } & DeployPreflightPayload)
   | {
       readonly kind: 'dev';
-      readonly absentSecrets: ReadonlySet<string>;
+      readonly absentVariables: ReadonlySet<string>;
       readonly pointerVersions: ReadonlyMap<string, string>;
     };
 
@@ -54,7 +54,7 @@ export function serializeDeployPreflightPayload(
 
 export function serializeDevPreflightPayload(payload: DevPreflightPayload): string {
   return `${DEV_PAYLOAD_PREFIX}${JSON.stringify({
-    absentSecrets: [...new Set(payload.absentSecrets)].sort(),
+    absentVariables: [...new Set(payload.absentVariables)].sort(),
     pointerVersions: Object.fromEntries(Object.entries(payload.pointerVersions).sort(byName)),
   })}`;
 }
@@ -84,9 +84,9 @@ export function decodePreflightPayload(payload: string | undefined): DecodedPref
     if (
       typeof parsed !== 'object' ||
       parsed === null ||
-      !('absentSecrets' in parsed) ||
-      !Array.isArray(parsed.absentSecrets) ||
-      !parsed.absentSecrets.every((name: unknown) => typeof name === 'string') ||
+      !('absentVariables' in parsed) ||
+      !Array.isArray(parsed.absentVariables) ||
+      !parsed.absentVariables.every((name: unknown) => typeof name === 'string') ||
       !('pointerVersions' in parsed) ||
       !isStringRecord(parsed.pointerVersions)
     ) {
@@ -94,7 +94,7 @@ export function decodePreflightPayload(payload: string | undefined): DecodedPref
     }
     return {
       kind: 'dev',
-      absentSecrets: new Set<string>(parsed.absentSecrets),
+      absentVariables: new Set<string>(parsed.absentVariables),
       pointerVersions: new Map(Object.entries(parsed.pointerVersions)),
     };
   }
@@ -127,7 +127,7 @@ export function transportedPreflight(
   let decoded: DecodedPreflightPayload | undefined;
   const decode = () =>
     (decoded ??= decodePreflightPayload(readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, env)));
-  const noSecrets: ReadonlySet<string> = new Set();
+  const noVariables: ReadonlySet<string> = new Set();
   return {
     pointerVersion: (name) => {
       const snapshot = own();
@@ -137,9 +137,9 @@ export function transportedPreflight(
       if (payload.kind === 'dev') return payload.pointerVersions.get(name);
       return undefined;
     },
-    get absentSecrets() {
+    get absentVariables() {
       const payload = decode();
-      return payload.kind === 'dev' ? payload.absentSecrets : noSecrets;
+      return payload.kind === 'dev' ? payload.absentVariables : noVariables;
     },
   };
 }

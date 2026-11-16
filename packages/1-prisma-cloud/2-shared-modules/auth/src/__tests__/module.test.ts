@@ -8,19 +8,19 @@
  * (least-privilege by wiring).
  */
 import { describe, expect, test } from 'bun:test';
-import { Load, module, type Pointer, type Value } from '@internal/core';
+import { appRoot, Load, module, type Pointer, type Value } from '@internal/core';
 import { emailSendContract } from '@internal/email';
 import { rawHttp } from '@internal/http';
 import node from '@internal/node';
 import {
   compute,
-  envParam,
   isGeneratedParamSource,
   isOriginParamSource,
   serviceOrigin,
 } from '@internal/prisma-cloud';
 import { dataContract, postgres } from '@internal/prisma-cloud/orm';
 import { rpc } from '@internal/service-rpc';
+import { type } from 'arktype';
 import { auth } from '../auth-module.ts';
 import { authAdminContract, authSessionContract, jwtVerifier } from '../contract.ts';
 import packContractJson from '../pack/contract.json' with { type: 'json' };
@@ -114,10 +114,21 @@ describe('auth()', () => {
     expect(isOriginParamSource(binding['baseUrl'])).toBe(true);
   });
 
-  test('an envParam() baseUrl reaches the service as its value at deploy', () => {
-    const graph = Load(rootWithAuth(envParam('AUTH_BASE_URL')), {
-      configuration: { AUTH_BASE_URL: 'https://app.example' },
-    });
+  test("a baseUrl bound to a root input field reaches the service as the field's value at deploy", () => {
+    const root = appRoot(
+      'root',
+      { input: type({ AUTH_BASE_URL: 'string' }) },
+      ({ input, provision }) => {
+        const db = provision(database(), { id: 'database' });
+        const mail = provision(mailProvider(), { id: 'mail' });
+        provision(auth(), {
+          id: 'auth',
+          deps: { db, email: mail.send },
+          input: { baseUrl: input.AUTH_BASE_URL },
+        });
+      },
+    );
+    const graph = Load(root, { configuration: { AUTH_BASE_URL: 'https://app.example' } });
     expect(serviceBindingOf(graph.inputBindings)['baseUrl']).toBe('https://app.example');
   });
 

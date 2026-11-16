@@ -4,8 +4,8 @@ import { encodeParamPointer } from '@internal/input-document';
 import { pointedVariables } from '@internal/local-target';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { configKey } from '../config-key.ts';
-import { envSecret } from '../secret.ts';
 import { serializeInput } from '../serializer.ts';
+import { secretVariable } from './variable-values.ts';
 
 const anySchema: StandardSchemaV1<unknown, unknown> = {
   '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },
@@ -27,16 +27,11 @@ const billing = service({
 });
 
 test('the local provider finds exactly the variables the serializer writes markers for', () => {
-  const input = serializeInput(
-    billing,
-    'shop.billing',
-    {
-      stripeKey: envSecret('STRIPE_SECRET_KEY'),
-      nested: [{ webhook: envSecret('STRIPE_WEBHOOK_SECRET') }],
-      userData: { $platform: { name: 'NOT_A_MARKER', secret: true }, $secret: 'OLD_USER_KEY' },
-    },
-    { env: {} },
-  );
+  const input = serializeInput(billing, 'shop.billing', {
+    stripeKey: secretVariable('STRIPE_SECRET_KEY'),
+    nested: [{ webhook: secretVariable('STRIPE_WEBHOOK_SECRET') }],
+    userData: { $platform: { name: 'NOT_A_MARKER', secret: true }, $secret: 'OLD_USER_KEY' },
+  });
   if (input === undefined) throw new Error('expected an input row');
   const rows = {
     [input.key]: input.value,

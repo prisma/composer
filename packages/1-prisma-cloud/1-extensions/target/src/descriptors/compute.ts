@@ -205,10 +205,8 @@ export function computeDescriptor(
           // Mirrors stash(), keeping writer and reader consistent.
           if (value === undefined) continue;
           const key = configKey(address, d);
-          // A service's own param resolved (buildConfig) to an opaque
-          // ParamSource — env-sourced (ADR-0029's param sibling) — writes a
-          // POINTER row (the bound platform NAME), never a value; everything
-          // else (literals; dependency-input provisioning refs) is unchanged.
+          // A service's own param bound to a plain platform variable writes a
+          // pointer row holding the variable's name, never its value.
           const rowValue =
             d.owner === 'service' && isParamSource(value)
               ? encodeParamPointer(paramName(paramBindingFor(graph.params, address, d.name)))
@@ -239,12 +237,7 @@ export function computeDescriptor(
           svc,
           address,
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
-          {
-            absentSecrets: o().preflight.absentSecrets,
-            ...(ctx.opts.appConfigurationRead !== undefined
-              ? { env: ctx.opts.appConfigurationRead.configurationKeyText }
-              : {}),
-          },
+          { absentVariables: o().preflight.absentVariables },
         );
         if (inputRow !== undefined) {
           const inputValue = envValue(inputRow.value);

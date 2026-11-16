@@ -5,73 +5,11 @@ import {
   type Pointer,
   paramSource,
   type RuntimeValue,
-  type Value,
 } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import type { SecretString } from '@internal/foundation/secret';
-import { isPlainVariableSource } from './platform-variable.ts';
-import { assertVariableName } from './variable-name.ts';
+import { isPlainVariableSource, notAPlatformVariable } from './platform-variable.ts';
 
-/**
- * Brands the payload `envParam` builds. Core's `paramSource()` is a public
- * SPI, so a user could bypass `envParam` and bind a raw `paramSource('x')`;
- * the brand lets `paramName` reject such a source (or another target's) with
- * a clear error instead of reading an absent `.name`.
- */
-const PRISMA_CLOUD_PARAM_SOURCE: unique symbol = blindCast<
-  never,
-  'unique-symbol brand for the prisma-cloud envParam payload'
->(Symbol.for('prisma:prisma-cloud-param-source'));
-
-/** The Prisma Cloud param source payload: the platform env-var name the slot resolves to, under a brand only `envParam` sets. */
-export interface EnvParamPayload {
-  readonly [PRISMA_CLOUD_PARAM_SOURCE]: true;
-  readonly name: string;
-}
-
-/**
- * Binds a param slot to a named Prisma Cloud platform env var — the non-secret
- * sibling of `envSecret` (spec: env-sourced config params). The platform
- * injects the value into the running instance per environment; the param's own
- * schema validates it at boot, unredacted. The name is an upper-case letter,
- * then upper-case letters, digits and underscores. It returns a
- * value known at deploy: where a module's input or a resolve() function needs
- * its real value, that is the variable's value in the app configuration: what the
- * `config` adapters in prisma.config.ts return, by default the process
- * environment.
- *
- * @deprecated Only in a module or service `input` binding, where a root input field replaces it. Binding a per-key param with envParam() is not deprecated.
- */
-export function envParam(name: string): ParamSource<EnvParamPayload> & Value<string> {
-  assertVariableName(name, 'envParam', "envParam('API_KEY')");
-  return paramSource<EnvParamPayload, string>(
-    { [PRISMA_CLOUD_PARAM_SOURCE]: true, name },
-    { label: `envParam('${name}')`, configurationKey: name },
-  );
-}
-
-/** True only for a payload that `envParam` built — i.e. one carrying the brand. */
-function isEnvParamPayload(payload: unknown): payload is EnvParamPayload {
-  return (
-    typeof payload === 'object' &&
-    payload !== null &&
-    blindCast<
-      Record<PropertyKey, unknown>,
-      'reading the prisma-cloud envParam brand off an unknown payload'
-    >(payload)[PRISMA_CLOUD_PARAM_SOURCE] === true
-  );
-}
-
-/** True iff a resolved param value is an env-sourced pointer this target built (as opposed to a literal, or a foreign/raw `ParamSource`). */
-export function isEnvParamSource(value: unknown): value is ParamSource<EnvParamPayload> {
-  return isParamSource(value) && isEnvParamPayload(value.payload);
-}
-
-/**
- * Brands the payload `generatedParam` builds — a distinct brand from
- * `envParam`'s, so `isGeneratedParamSource` and `isEnvParamSource` are mutually
- * exclusive even though both are `ParamSource`s.
- */
 const PRISMA_CLOUD_GENERATED_PARAM_SOURCE: unique symbol = blindCast<
   never,
   'unique-symbol brand for the prisma-cloud generatedParam payload'
@@ -97,10 +35,9 @@ const GENERATED_PARAM_MIN_BYTES = 16;
 const GENERATED_PARAM_MAX_BYTES = 1024;
 
 /**
- * Binds an input leaf to a value the target GENERATES at deploy — the sibling
- * of `envParam` whose value comes from deploy-time generation instead of the
- * environment. The generated value is produced once and persisted in deploy
- * state, so it is stable across redeploys (rotation is destroy/recreate). It is
+ * Binds an input leaf to a value the target GENERATES at deploy. The
+ * generated value is produced once and persisted in deploy state, so it is
+ * stable across redeploys (rotation is destroy/recreate). It is
  * config, not a secret; `redacted` is an orthogonal facet (default `true`).
  * `bytes` must be an integer between 16 and 1024 (default 32).
  */
@@ -134,7 +71,6 @@ export function generatedParam(
   );
 }
 
-/** True only for a payload that `generatedParam` built — i.e. one carrying the brand. */
 function isGeneratedParamPayload(payload: unknown): payload is GeneratedParamPayload {
   return (
     typeof payload === 'object' &&
@@ -146,7 +82,7 @@ function isGeneratedParamPayload(payload: unknown): payload is GeneratedParamPay
   );
 }
 
-/** True iff a resolved value is a generated-param source this target built (as opposed to a literal, an `envParam` source, or a foreign/raw `ParamSource`). */
+/** True iff `value` was built by `generatedParam`. */
 export function isGeneratedParamSource(
   value: unknown,
 ): value is ParamSource<GeneratedParamPayload> {
@@ -192,17 +128,11 @@ export function isOriginParamSource(value: unknown): value is ParamSource<Origin
   );
 }
 
-/** The name of the platform variable a per-key param is bound to: a plain `variable()` node's value or an `envParam()`. Throws for any other source. */
+/** The name of the plain platform variable a per-key param is bound to. Throws for any other bound source. */
 export function paramName(binding: ParamBinding): string {
   const { binding: bound } = binding;
-  if (isPlainVariableSource(bound)) return bound.payload.name;
-  if (!isEnvParamSource(bound)) {
-    throw new Error(
-      `param slot "${binding.slot}" of service "${binding.serviceAddress}" is bound to a source ` +
-        "not created by envParam() — bind env-sourced params with envParam('NAME') from " +
-        '@prisma/composer-prisma-cloud.',
-    );
-  }
+  const where = `param slot "${binding.slot}" of service "${binding.serviceAddress}"`;
+  if (!isPlainVariableSource(bound)) throw new Error(notAPlatformVariable(where));
   return bound.payload.name;
 }
 
