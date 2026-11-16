@@ -627,8 +627,8 @@ Because the input is a real schema, legality can be conditional — "no
 and `service.input()` narrows it like any other TypeScript union:
 
 ```ts
-const chatInput = type({ stripeEnabled: 'false', appOrigin: 'string' }).or(
-  type({ stripeEnabled: 'true', appOrigin: 'string', stripeSecretKey: secretString() }),
+const chatInput = type({ stripeEnabled: 'false', appOrigin: field(type('string')) }).or(
+  type({ stripeEnabled: 'true', appOrigin: field(type('string')), stripeSecretKey: secretString() }),
 );
 
 const chat = compute({ name: 'chat', input: chatInput, /* ... */ });
@@ -701,7 +701,7 @@ The deploy reads `GREETING` from the app configuration ([Values from outside the
 
 #### Platform variables
 
-A platform variable is a variable on the platform that a service reads by name at boot. You declare it with a node in your app root: a name, the services that read it, and where the operator sets it.
+A platform variable is a variable on the platform that a service reads by name at boot. It comes down to three things: its name, the services that read it, and the place the operator sets its value. You declare it with a node in your app root. The node holds the name, the graph records which services read it, and preflight prints the command that sets its value when it has none.
 
 ```ts
 import { appRoot } from '@prisma/composer';
