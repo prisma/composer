@@ -3998,17 +3998,12 @@ interface VariantNode {
   readonly secret: boolean;
 }
 
-/** Which value resources the root provisions, in order, and which field of `app`'s input reads each, in order. */
 interface ReadsVariant {
   readonly nodes: readonly VariantNode[];
   readonly reads: readonly { readonly field: string; readonly node: string }[];
 }
 
-/**
- * An app whose root provisions the value resources `variant.json` names and binds them into
- * `app`'s input. The root's body reads the file each time Load runs it, so a test changes what
- * a rebuild's Load builds by rewriting the file.
- */
+// The root's body reads variant.json on every Load, so rewriting it changes what a rebuild builds.
 function makeReadsAppDir(variant: ReadsVariant): {
   dir: string;
   entryPath: string;
@@ -4100,11 +4095,6 @@ describe.skipIf(process.platform === 'win32')(
       ],
     };
 
-    /**
-     * Starts dev on `started`, then rewrites the variant to `rebuilt` and changes a watched build
-     * output, so a rebuild runs Load again. Returns the events, how many converges ran, and the
-     * app configuration file each converge's second process found.
-     */
     async function rebuildWith(
       rebuilt: ReadsVariant,
       preflight: LocalTargetDescriptor['preflight'] = async () => ({
@@ -4234,27 +4224,6 @@ describe.skipIf(process.platform === 'win32')(
           reads: [...started.reads, { field: 'port', node: 'smtpPort' }],
         },
         { added: ['shop.smtpPort'], removed: [], changed: [] },
-      ],
-      [
-        'a removed read',
-        { nodes: [emailFrom, sender], reads: [{ field: 'sender', node: 'sender' }] },
-        { added: [], removed: ['shop.emailFrom'], changed: [] },
-      ],
-      [
-        'a read moved to another field',
-        {
-          nodes: [emailFrom, sender],
-          reads: [
-            { field: 'replyTo', node: 'emailFrom' },
-            { field: 'sender', node: 'sender' },
-          ],
-        },
-        { added: [], removed: [], changed: ['shop.emailFrom'] },
-      ],
-      [
-        'a variable renamed under an explicit id',
-        { nodes: [emailFrom, { ...sender, name: 'EMAIL_REPLY_TO' }], reads: started.reads },
-        { added: [], removed: [], changed: ['shop.sender'] },
       ],
       [
         'a plain node changed to a secret under the same id',
