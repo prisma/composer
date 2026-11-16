@@ -39,3 +39,43 @@ Upstream's `PrismaEnvironment` only allows `type: 'serviceToken'`, and `source.t
 Wanted: upstream adds a variant for a caller-authenticated HTTP client (for example `type: 'transport'` with no token), on alchemy-run/alchemy#3101 or a follow-up.
 
 Origin: slice 4 review (S05).
+
+## Log tailing cannot authenticate through a supplied client
+
+Alchemy's Prisma log tailing (`tailDeploymentLogs`) opens a WebSocket outside `HttpClient`. A caller that supplies a client and no token gets a socket with no authentication. Composer never tails, so nothing breaks today.
+
+Wanted: a CLI mechanism for WebSockets equivalent to the one `ctx.api` gives HTTP, then an upstream change so the socket uses it.
+
+Origin: Sam Goodwin's review of alchemy-run/alchemy#3101, 2026-11-07.
+
+## An interrupted create leaves an unfinished service version
+
+After Ctrl-C during a deploy that was creating a compute deployment, the next deploy prints Alchemy's "Skipping recovery … must be identified and cleaned up manually" and a service version stays in status `new` until the service is destroyed. Not compared with `main`'s child-process path.
+
+Wanted: find out whether the child path did the same; if the in-process interruption is what skips Alchemy's recovery, let the interrupted apply finish its recovery step before the scope closes.
+
+Origin: manual QA of #405, 2026-11-17.
+
+## A redeploy with no changes reports "updated" steps
+
+A second `prisma deploy` with nothing changed still reports six `updated …env.COMPOSER_…` steps and `updated …deployment`, though no resource or service version changes. Not compared with `main`.
+
+Origin: manual QA of #405, 2026-11-17.
+
+## `PrismaEnvironment` is evaluated per request since alchemy 2.0.0-beta.87
+
+Upstream now holds `PrismaEnvironment` as an Effect that runs on every request, and has `fromEnvironment()` in `@alchemy.run/prisma/internal/Credentials`. Composer still builds Distilled `Credentials` by hand and routes requests through its own HTTP client over `ctx.api`. The `ctx.api` design stays (decided with Will, 2026-11-07); this only notes that the hand-built `Credentials` could go if upstream makes `fromEnvironment()` public.
+
+Origin: the move to alchemy 2.0.0-beta.87 on #405.
+
+## Names that still describe two processes
+
+`RunReporter.childEnv()` and `LowerOptions.firstProcessNodeAddresses` are named after the child-process design. The second cannot be renamed while `destroy` and `prisma dev` call `lower()` from a generated stack file with no contract check (ADR-0065).
+
+Origin: consolidation review of #405 (S08, S13).
+
+## `prisma dev` in process: reload design is open
+
+#411 is paused. Its recorded plan, loading the app definition in a child process that hands the graph back, cannot work: the graph holds functions. A test on Node 24.13 and Bun 1.3.13 showed both runtimes can reload the app's own files in process (Bun by deleting them from `require.cache`, Node by a resolve hook that adds a generation number to app file URLs). ADR-0064's dev amendment on this branch says neither runtime can; that is wrong for both. Will has not decided. The in-process ADR is ADR-0065 on #405 since `main` took ADR-0064; this branch must follow when #405 is merged in.
+
+Origin: dante-73, verification of the handover brief, 2026-11-11.
