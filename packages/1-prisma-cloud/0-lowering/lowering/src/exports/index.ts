@@ -17,5 +17,6 @@ export * from '../container.ts';
 export * from '../credentials.ts';
 export * from '../database-url-claim.ts';
 export * from '../pagination.ts';
+export * from '../provider-failure.ts';
 export * from '../providers.ts';
 export * from './compute.ts';

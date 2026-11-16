@@ -7,26 +7,26 @@ settings:
 catalogs:
   default:
     '@alchemy.run/prisma':
-      specifier: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95
-      version: 2.0.0-beta.85
+      specifier: 2.0.0-beta.87
+      version: 2.0.0-beta.87
     '@distilled.cloud/prisma':
-      specifier: https://pkg.alchemy.run/@distilled.cloud/prisma/-/9af912743056174c99bfc63a4702e5c09d6e5d718057b81e8964ffde4f87408b.tgz
-      version: 1.0.0-rc.18
+      specifier: 1.0.0-rc.20
+      version: 1.0.0-rc.20
     '@effect/platform-bun':
-      specifier: 4.1.2
-      version: 4.1.2
+      specifier: 4.1.4
+      version: 4.1.4
     '@effect/platform-node':
-      specifier: 4.1.2
-      version: 4.1.2
+      specifier: 4.1.4
+      version: 4.1.4
     '@effect/platform-node-shared':
-      specifier: 4.1.2
-      version: 4.1.2
+      specifier: 4.1.4
+      version: 4.1.4
     alchemy:
-      specifier: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz
-      version: 2.0.0-beta.85
+      specifier: 2.0.0-beta.87
+      version: 2.0.0-beta.87
     effect:
-      specifier: 4.1.2
-      version: 4.1.2
+      specifier: 4.1.4
+      version: 4.1.4
     prisma:
       specifier: 8.0.0-rc.32
       version: 8.0.0-rc.32
@@ -123,10 +123,10 @@ importers:
         version: link:../../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       effect:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 4.1.4
     devDependencies:
       '@types/bun':
         specifier: ^1.3.13
@@ -142,7 +142,7 @@ importers:
     dependencies:
       '@effect/platform-bun':
         specifier: 'catalog:'
-        version: 4.1.2(effect@4.1.2)
+        version: 4.1.4(effect@4.1.4)
       '@prisma/composer':
         specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer
@@ -151,13 +151,13 @@ importers:
         version: link:../../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       arktype:
         specifier: ^2.2.3
         version: 2.2.7
       effect:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 4.1.4
     devDependencies:
       '@prisma/composer-cli':
         specifier: workspace:*
@@ -256,7 +256,7 @@ importers:
         version: 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       effect:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 4.1.4
       pg:
         specifier: 8.22.0
         version: 8.22.0
@@ -290,10 +290,10 @@ importers:
         version: link:../../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       effect:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 4.1.4
     devDependencies:
       '@prisma/composer-cli':
         specifier: workspace:*
@@ -312,7 +312,7 @@ importers:
     dependencies:
       '@effect/platform-bun':
         specifier: 'catalog:'
-        version: 4.1.2(effect@4.1.2)
+        version: 4.1.4(effect@4.1.4)
       '@prisma/composer':
         specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer
@@ -336,13 +336,13 @@ importers:
         version: link:modules/storefront
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       arktype:
         specifier: ^2.2.3
         version: 2.2.7
       effect:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 4.1.4
     devDependencies:
       '@types/bun':
         specifier: ^1.3.13
@@ -485,7 +485,7 @@ importers:
     dependencies:
       '@effect/platform-bun':
         specifier: 'catalog:'
-        version: 4.1.2(effect@4.1.2)
+        version: 4.1.4(effect@4.1.4)
       '@prisma/composer':
         specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer
@@ -500,13 +500,13 @@ importers:
         version: link:modules/storefront
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       arktype:
         specifier: ^2.2.3
         version: 2.2.7
       effect:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 4.1.4
     devDependencies:
       '@prisma/composer-cli':
         specifier: workspace:*
@@ -648,10 +648,10 @@ importers:
         version: 1.1.0
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       effect:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 4.1.4
     devDependencies:
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
@@ -850,7 +850,7 @@ importers:
     devDependencies:
       '@alchemy.run/prisma':
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.4)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
         version: link:../../0-foundation/tsdown-config
@@ -865,10 +865,10 @@ importers:
         version: 26.1.1
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       effect:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 4.1.4
       tsdown:
         specifier: ^0.22.7
         version: 0.22.12(typescript@6.0.3)
@@ -944,7 +944,7 @@ importers:
     dependencies:
       '@alchemy.run/prisma':
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.4)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       '@internal/bundle-paths':
         specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/bundle-paths
@@ -968,10 +968,10 @@ importers:
         version: 0.25.2(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       effect:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 4.1.4
       tar:
         specifier: ^7.5.21
         version: 7.5.21
@@ -1008,13 +1008,13 @@ importers:
     dependencies:
       '@alchemy.run/prisma':
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.4)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       '@distilled.cloud/prisma':
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/@distilled.cloud/prisma/-/9af912743056174c99bfc63a4702e5c09d6e5d718057b81e8964ffde4f87408b.tgz(effect@4.1.2)
+        version: 1.0.0-rc.20(effect@4.1.4)
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.1.2(effect@4.1.2)(redis@6.2.1)
+        version: 4.1.4(effect@4.1.4)(redis@6.2.1)
       '@internal/bundle-paths':
         specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/bundle-paths
@@ -1029,10 +1029,10 @@ importers:
         version: 1.80.0
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       effect:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 4.1.4
     devDependencies:
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
@@ -1078,7 +1078,7 @@ importers:
     dependencies:
       '@alchemy.run/prisma':
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.4)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       '@internal/core':
         specifier: workspace:0.39.0
         version: link:../../../0-framework/1-core/core
@@ -1120,13 +1120,13 @@ importers:
         version: 1.1.0
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       arktype:
         specifier: ^2.2.3
         version: 2.2.7
       effect:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 4.1.4
       pathe:
         specifier: ^2.0.3
         version: 2.0.3
@@ -1139,7 +1139,7 @@ importers:
         version: 3.1087.0
       '@distilled.cloud/prisma':
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/@distilled.cloud/prisma/-/9af912743056174c99bfc63a4702e5c09d6e5d718057b81e8964ffde4f87408b.tgz(effect@4.1.2)
+        version: 1.0.0-rc.20(effect@4.1.4)
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
@@ -1399,7 +1399,7 @@ importers:
         version: 1.1.0
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       cross-spawn:
         specifier: ^7.0.6
         version: 7.0.6
@@ -1408,7 +1408,7 @@ importers:
         version: 4.1.0
       effect:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 4.1.4
       esbuild:
         specifier: ^0.28.1
         version: 0.28.2
@@ -1469,13 +1469,13 @@ importers:
         version: 1.80.0
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       cross-spawn:
         specifier: ^7.0.6
         version: 7.0.6
       effect:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 4.1.4
       esbuild:
         specifier: ^0.28.1
         version: 0.28.2
@@ -1515,19 +1515,19 @@ importers:
     dependencies:
       '@alchemy.run/prisma':
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.4)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       '@distilled.cloud/prisma':
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/@distilled.cloud/prisma/-/9af912743056174c99bfc63a4702e5c09d6e5d718057b81e8964ffde4f87408b.tgz(effect@4.1.2)
+        version: 1.0.0-rc.20(effect@4.1.4)
       '@effect/platform-bun':
         specifier: 'catalog:'
-        version: 4.1.2(effect@4.1.2)
+        version: 4.1.4(effect@4.1.4)
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.1.2(effect@4.1.2)(redis@6.2.1)
+        version: 4.1.4(effect@4.1.4)(redis@6.2.1)
       '@effect/platform-node-shared':
         specifier: 'catalog:'
-        version: 4.1.2(effect@4.1.2)
+        version: 4.1.4(effect@4.1.4)
       '@prisma/composer':
         specifier: workspace:0.39.0
         version: link:../composer
@@ -1545,13 +1545,13 @@ importers:
         version: 1.1.0
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       arktype:
         specifier: ^2.2.3
         version: 2.2.7
       effect:
         specifier: 'catalog:'
-        version: 4.1.2
+        version: 4.1.4
       jose:
         specifier: ^6.1.3
         version: 6.2.4
@@ -1657,7 +1657,7 @@ importers:
         version: 26.1.1
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       arktype:
         specifier: ^2.2.3
         version: 2.2.7
@@ -1681,7 +1681,7 @@ importers:
         version: link:../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
     devDependencies:
       '@prisma/composer-cli':
         specifier: workspace:*
@@ -1710,20 +1710,18 @@ importers:
 
 packages:
 
-  '@alchemy.run/node-utils@https://pkg.alchemy.run/@alchemy.run/node-utils/-/7ca778b6ff66b8a15b532535f1227c058382469f80ed51008909ddadfef5d42f.tgz':
-    resolution: {tarball: https://pkg.alchemy.run/@alchemy.run/node-utils/-/7ca778b6ff66b8a15b532535f1227c058382469f80ed51008909ddadfef5d42f.tgz}
-    version: 2.0.0-beta.85
+  '@alchemy.run/node-utils@2.0.0-beta.87':
+    resolution: {integrity: sha512-GhQSAY89Sz0P046tuHnLqoCUj79PMu1WUAOnIRLCwO4E4yPZ76IkEDrdl3hjCb7YHuqYA1Da6ZfV59TIQgGkSg==}
 
-  '@alchemy.run/prisma@https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95':
-    resolution: {tarball: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95}
-    version: 2.0.0-beta.85
+  '@alchemy.run/prisma@2.0.0-beta.87':
+    resolution: {integrity: sha512-jD1i9ehu+YP7ikXK0rh21+h8JWqnW0ImGQ81gdhTbBJVxPCWvdLnQPQ+Xb6qAp7PAdPYGnGWVN5+7k7f6uAY5g==}
     peerDependencies:
-      '@effect/platform-bun': ^4.1.0
-      '@effect/platform-node': ^4.1.0
+      '@effect/platform-bun': ^4.1.4
+      '@effect/platform-node': ^4.1.4
       '@prisma/orm-postgres': ^8.0.0-rc.11
       '@vercel/nft': ^1.10.2
-      alchemy: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz
-      effect: ^4.1.0
+      alchemy: 2.0.0-beta.87
+      effect: ^4.1.4
       prisma: ^8.0.0-rc.15
       ws: ^8.21.0
     peerDependenciesMeta:
@@ -1740,8 +1738,8 @@ packages:
       ws:
         optional: true
 
-  '@alchemy.run/sigil@0.1.0-alpha.3':
-    resolution: {integrity: sha512-NBhQRjbeFp4jPYDGqlXSoUlT45QyNc/6DGQWmkXUnS9nHKjHa5eIRZChdnCDYHYvmgFJWNaRfPFGwxrCWmlLzw==}
+  '@alchemy.run/sigil@0.1.0-alpha.4':
+    resolution: {integrity: sha512-d6Uo16C2P6Wk7TNoYt4qzjjNGyjsrJLjq8bBotl86Nmcp/U6+R34/n4CZomqFERF2wMinut2DBqWNeUQPTBtFQ==}
     engines: {node: '>=22'}
     peerDependencies:
       '@types/react': '>=19.2.0'
@@ -2018,33 +2016,28 @@ packages:
   '@cloudflare/workers-types@5.20261013.1':
     resolution: {integrity: sha512-0SfkM/MA+oSIAzFFmjr0wZLH54oeCtugaOn8GpJDBnerQiML+rOPq2W6j6bBGE51o+N4DOd0tvMruLmkAQzlpw==}
 
-  '@distilled.cloud/aws4signer@https://pkg.alchemy.run/@distilled.cloud/aws4signer/-/335d948c83041df357777a81805526c7da93c6907d9d38b7891d4fca7b7174d9.tgz':
-    resolution: {tarball: https://pkg.alchemy.run/@distilled.cloud/aws4signer/-/335d948c83041df357777a81805526c7da93c6907d9d38b7891d4fca7b7174d9.tgz}
-    version: 1.0.0-rc.18
+  '@distilled.cloud/aws4signer@1.0.0-rc.20':
+    resolution: {integrity: sha512-7lYmG5Pj7/hqEhygqMmkeb4eph0Z8BEJFDlGDrNrHNxa03F39JqmZpp+YXO8v85Jx0O5G92Fl9UnfwHxvY4D1w==}
     peerDependencies:
       effect: ^4.1.2
 
-  '@distilled.cloud/aws@https://pkg.alchemy.run/@distilled.cloud/aws/-/37a325c303a79aba416da30d03a972ef34263967530c1112de9c432bfbd2c29c.tgz':
-    resolution: {tarball: https://pkg.alchemy.run/@distilled.cloud/aws/-/37a325c303a79aba416da30d03a972ef34263967530c1112de9c432bfbd2c29c.tgz}
-    version: 1.0.0-rc.18
+  '@distilled.cloud/aws@1.0.0-rc.20':
+    resolution: {integrity: sha512-fRh8t95wyYVGPxLVJld0k9NLA9Dt8lb+Juvo6ky9HqOxQ/QfwX8FzONkxEVZy+RnVb5HhHoz19eOtOXvRMpMBw==}
     peerDependencies:
       effect: ^4.1.2
 
-  '@distilled.cloud/core@https://pkg.alchemy.run/@distilled.cloud/core/-/f73c71a235264d43ff37cac60da3e699ba6d89d06d8cf6ca9a4322d1cc5f9fd5.tgz':
-    resolution: {tarball: https://pkg.alchemy.run/@distilled.cloud/core/-/f73c71a235264d43ff37cac60da3e699ba6d89d06d8cf6ca9a4322d1cc5f9fd5.tgz}
-    version: 1.0.0-rc.18
+  '@distilled.cloud/core@1.0.0-rc.20':
+    resolution: {integrity: sha512-uoZ8W5QhxcSyyM6/XZzRJCKc55FC4fZfXWX2ypx8AOIC4PTOtdyDZ3fswGpVp/SRiC4ua0HYGhAgFA8Ub7Ot5Q==}
     peerDependencies:
       effect: ^4.1.2
 
-  '@distilled.cloud/prisma@https://pkg.alchemy.run/@distilled.cloud/prisma/-/9af912743056174c99bfc63a4702e5c09d6e5d718057b81e8964ffde4f87408b.tgz':
-    resolution: {tarball: https://pkg.alchemy.run/@distilled.cloud/prisma/-/9af912743056174c99bfc63a4702e5c09d6e5d718057b81e8964ffde4f87408b.tgz}
-    version: 1.0.0-rc.18
+  '@distilled.cloud/prisma@1.0.0-rc.20':
+    resolution: {integrity: sha512-cFeRXIQTayAhaJiBFjyT0/vvGSH0ffkJQGI9O16xkec2yXrfj2/r9xjTA+WrEXa4beIC7EmYG9z94bUIh0qLew==}
     peerDependencies:
       effect: ^4.1.2
 
-  '@distilled.cloud/s3@https://pkg.alchemy.run/@distilled.cloud/s3/-/1cecfb055ecd0cae8fcae21b4269af5bca8b9421ad1da52561234e7158ad1e86.tgz':
-    resolution: {tarball: https://pkg.alchemy.run/@distilled.cloud/s3/-/1cecfb055ecd0cae8fcae21b4269af5bca8b9421ad1da52561234e7158ad1e86.tgz}
-    version: 1.0.0-rc.18
+  '@distilled.cloud/s3@1.0.0-rc.20':
+    resolution: {integrity: sha512-MqJlG+CVCgkIX7iPDo8hb4YlcEELYTlJFLg2Whp8TjBPieViNiiRAJR/5TtDApa38dzrTsMc69ul965Myagrdg==}
     peerDependencies:
       effect: ^4.1.2
 
@@ -2063,22 +2056,22 @@ packages:
     engines: {node: '>=18.0.0'}
     hasBin: true
 
-  '@effect/platform-bun@4.1.2':
-    resolution: {integrity: sha512-waEAa84CITqjctgw9VdhlL9PyXRHICG3KAWTFRDPUE2XL/pfMPhO7V9oFdfx22dbAhhUzV+MHs0d9hnmy/DQ7w==}
+  '@effect/platform-bun@4.1.4':
+    resolution: {integrity: sha512-Vdq82GOrD5HVF43aXVwHeX+4uIOrgAnjju9MEyizzFZ3yt3A6x9prtmHej1q/zAOaeNddtkpPr2ExHEvZ13S6Q==}
     peerDependencies:
-      effect: ^4.1.2
+      effect: ^4.1.4
 
-  '@effect/platform-node-shared@4.1.2':
-    resolution: {integrity: sha512-wSwl9A/G1hcVvF8nLI+YfB3EyOIDvWS6+lsTZBkmgDnPBL7m8YWZF+1HD+mdEsb52SUGfukip46Q3gRwSdk3QA==}
+  '@effect/platform-node-shared@4.1.4':
+    resolution: {integrity: sha512-DWdfphHGOFJNj/mYadgpT3jIm8aRXDcPrQiGXFBH4p2H4XmA7iYMrPsI8NxVgZ7kNX0q1+FGJZJama0tINHRAg==}
     engines: {node: '>=22.19.0'}
     peerDependencies:
-      effect: ^4.1.2
+      effect: ^4.1.4
 
-  '@effect/platform-node@4.1.2':
-    resolution: {integrity: sha512-ye0UjxORdd5Qu3paZ1LljgGOALWHt7muP9VTpjUSCNfcesiB/Hm7wPJIvZeu4gnwpTe5BtEnO1VHngWqjJp8mA==}
+  '@effect/platform-node@4.1.4':
+    resolution: {integrity: sha512-h7QExTPq/RfYtHP/8tMlgfBvqYsuJKhxfkU6w0+NaF/ihqQ8Y3GH9t28ltupQjoqMM7P6W5gy8rOji7F0qVrmg==}
     engines: {node: '>=22.19.0'}
     peerDependencies:
-      effect: ^4.1.2
+      effect: ^4.1.4
       redis: '>=5.1.0 <7.0.0'
 
   '@electric-sql/pglite-socket@0.1.3':
@@ -3680,15 +3673,14 @@ packages:
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
 
-  alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz:
-    resolution: {tarball: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz}
-    version: 2.0.0-beta.85
+  alchemy@2.0.0-beta.87:
+    resolution: {integrity: sha512-6UOKPvqIZnycx916MDVlmwcrVJVPlI1Tcpk6Azn4uyvokXaA6fccVdRpRmDHsVkpjRxJrL8/Zqtjl0ZVAI2opQ==}
     hasBin: true
     peerDependencies:
-      '@alchemy.run/frontend-frameworks': https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/-/46b0dbaae9d92ac368f1723a6ec79141e7a7ac5776644a098cb136fc57175986.tgz
-      '@effect/platform-bun': ^4.1.0
-      '@effect/platform-node': ^4.1.0
-      effect: ^4.1.0
+      '@alchemy.run/frontend-frameworks': 2.0.0-beta.87
+      '@effect/platform-bun': ^4.1.4
+      '@effect/platform-node': ^4.1.4
+      effect: ^4.1.4
       vite: ^7.0.0 || ^8.0.0
       ws: ^8.21.0
     peerDependenciesMeta:
@@ -4149,8 +4141,8 @@ packages:
   effect@3.20.0:
     resolution: {integrity: sha512-qMLfDJscrNG8p/aw+IkT9W7fgj50Z4wG5bLBy0Txsxz8iUHjDIkOgO3SV0WZfnQbNG2VJYb0b+rDLMrhM4+Krw==}
 
-  effect@4.1.2:
-    resolution: {integrity: sha512-d3Oah1WyKxFLFh19yWheS5IXIVaITzxZ71JkE1rkUozq/6EcJSU5nPk5bF2QrSygZ3SQoiNQB8TsxFriyMeMaQ==}
+  effect@4.1.4:
+    resolution: {integrity: sha512-Tgrv/9FN+TZYyOn8XSli+fVqAfwDrDAkiX5Uu9vztINb675VTQdhD0gWI5Kzvhlh9QqzjZvw72iugqw5pwoghQ==}
 
   elkjs@0.11.1:
     resolution: {integrity: sha512-zxxR9k+rx5ktMwT/FwyLdPCrq7xN6e4VGGHH8hA01vVYKjTFik7nHOxBnAYtrgYUB1RpAiLvA1/U2YraWxyKKg==}
@@ -5716,23 +5708,23 @@ packages:
 
 snapshots:
 
-  '@alchemy.run/node-utils@https://pkg.alchemy.run/@alchemy.run/node-utils/-/7ca778b6ff66b8a15b532535f1227c058382469f80ed51008909ddadfef5d42f.tgz':
+  '@alchemy.run/node-utils@2.0.0-beta.87':
     dependencies:
       chokidar: 5.0.0
       rolldown: 1.2.16
 
-  ? '@alchemy.run/prisma@https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)'
-  : dependencies:
-      '@distilled.cloud/aws': https://pkg.alchemy.run/@distilled.cloud/aws/-/37a325c303a79aba416da30d03a972ef34263967530c1112de9c432bfbd2c29c.tgz(effect@4.1.2)
-      '@distilled.cloud/core': https://pkg.alchemy.run/@distilled.cloud/core/-/f73c71a235264d43ff37cac60da3e699ba6d89d06d8cf6ca9a4322d1cc5f9fd5.tgz(effect@4.1.2)
-      '@distilled.cloud/prisma': https://pkg.alchemy.run/@distilled.cloud/prisma/-/9af912743056174c99bfc63a4702e5c09d6e5d718057b81e8964ffde4f87408b.tgz(effect@4.1.2)
+  '@alchemy.run/prisma@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.4)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)':
+    dependencies:
+      '@distilled.cloud/aws': 1.0.0-rc.20(effect@4.1.4)
+      '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
+      '@distilled.cloud/prisma': 1.0.0-rc.20(effect@4.1.4)
       '@prisma/dev': 0.25.2(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
-      alchemy: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
-      effect: 4.1.2
+      alchemy: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+      effect: 4.1.4
       rolldown: 1.2.16
     optionalDependencies:
-      '@effect/platform-bun': 4.1.2(effect@4.1.2)
-      '@effect/platform-node': 4.1.2(effect@4.1.2)(redis@6.2.1)
+      '@effect/platform-bun': 4.1.4(effect@4.1.4)
+      '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.2.1)
       '@prisma/orm-postgres': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@vercel/nft': 1.10.2
       prisma: 8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
@@ -5741,18 +5733,18 @@ snapshots:
       - typescript
       - vite
 
-  ? '@alchemy.run/prisma@https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)'
-  : dependencies:
-      '@distilled.cloud/aws': https://pkg.alchemy.run/@distilled.cloud/aws/-/37a325c303a79aba416da30d03a972ef34263967530c1112de9c432bfbd2c29c.tgz(effect@4.1.2)
-      '@distilled.cloud/core': https://pkg.alchemy.run/@distilled.cloud/core/-/f73c71a235264d43ff37cac60da3e699ba6d89d06d8cf6ca9a4322d1cc5f9fd5.tgz(effect@4.1.2)
-      '@distilled.cloud/prisma': https://pkg.alchemy.run/@distilled.cloud/prisma/-/9af912743056174c99bfc63a4702e5c09d6e5d718057b81e8964ffde4f87408b.tgz(effect@4.1.2)
+  '@alchemy.run/prisma@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.4)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)':
+    dependencies:
+      '@distilled.cloud/aws': 1.0.0-rc.20(effect@4.1.4)
+      '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
+      '@distilled.cloud/prisma': 1.0.0-rc.20(effect@4.1.4)
       '@prisma/dev': 0.25.2(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
-      alchemy: https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
-      effect: 4.1.2
+      alchemy: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+      effect: 4.1.4
       rolldown: 1.2.16
     optionalDependencies:
-      '@effect/platform-bun': 4.1.2(effect@4.1.2)
-      '@effect/platform-node': 4.1.2(effect@4.1.2)(redis@6.2.1)
+      '@effect/platform-bun': 4.1.4(effect@4.1.4)
+      '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.2.1)
       '@prisma/orm-postgres': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@vercel/nft': 1.10.2
       prisma: 8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
@@ -5761,7 +5753,7 @@ snapshots:
       - typescript
       - vite
 
-  '@alchemy.run/sigil@0.1.0-alpha.3(@types/react@19.2.17)':
+  '@alchemy.run/sigil@0.1.0-alpha.4(@types/react@19.2.17)':
     optionalDependencies:
       '@types/react': 19.2.17
 
@@ -6125,32 +6117,32 @@ snapshots:
   '@cloudflare/workers-types@5.20261013.1':
     optional: true
 
-  '@distilled.cloud/aws4signer@https://pkg.alchemy.run/@distilled.cloud/aws4signer/-/335d948c83041df357777a81805526c7da93c6907d9d38b7891d4fca7b7174d9.tgz(effect@4.1.2)':
+  '@distilled.cloud/aws4signer@1.0.0-rc.20(effect@4.1.4)':
     dependencies:
-      '@distilled.cloud/core': https://pkg.alchemy.run/@distilled.cloud/core/-/f73c71a235264d43ff37cac60da3e699ba6d89d06d8cf6ca9a4322d1cc5f9fd5.tgz(effect@4.1.2)
-      effect: 4.1.2
+      '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
+      effect: 4.1.4
 
-  '@distilled.cloud/aws@https://pkg.alchemy.run/@distilled.cloud/aws/-/37a325c303a79aba416da30d03a972ef34263967530c1112de9c432bfbd2c29c.tgz(effect@4.1.2)':
+  '@distilled.cloud/aws@1.0.0-rc.20(effect@4.1.4)':
     dependencies:
-      '@distilled.cloud/core': https://pkg.alchemy.run/@distilled.cloud/core/-/f73c71a235264d43ff37cac60da3e699ba6d89d06d8cf6ca9a4322d1cc5f9fd5.tgz(effect@4.1.2)
-      '@distilled.cloud/s3': https://pkg.alchemy.run/@distilled.cloud/s3/-/1cecfb055ecd0cae8fcae21b4269af5bca8b9421ad1da52561234e7158ad1e86.tgz(effect@4.1.2)
-      effect: 4.1.2
+      '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
+      '@distilled.cloud/s3': 1.0.0-rc.20(effect@4.1.4)
+      effect: 4.1.4
 
-  '@distilled.cloud/core@https://pkg.alchemy.run/@distilled.cloud/core/-/f73c71a235264d43ff37cac60da3e699ba6d89d06d8cf6ca9a4322d1cc5f9fd5.tgz(effect@4.1.2)':
+  '@distilled.cloud/core@1.0.0-rc.20(effect@4.1.4)':
     dependencies:
-      effect: 4.1.2
+      effect: 4.1.4
 
-  '@distilled.cloud/prisma@https://pkg.alchemy.run/@distilled.cloud/prisma/-/9af912743056174c99bfc63a4702e5c09d6e5d718057b81e8964ffde4f87408b.tgz(effect@4.1.2)':
+  '@distilled.cloud/prisma@1.0.0-rc.20(effect@4.1.4)':
     dependencies:
-      '@distilled.cloud/core': https://pkg.alchemy.run/@distilled.cloud/core/-/f73c71a235264d43ff37cac60da3e699ba6d89d06d8cf6ca9a4322d1cc5f9fd5.tgz(effect@4.1.2)
-      '@distilled.cloud/s3': https://pkg.alchemy.run/@distilled.cloud/s3/-/1cecfb055ecd0cae8fcae21b4269af5bca8b9421ad1da52561234e7158ad1e86.tgz(effect@4.1.2)
-      effect: 4.1.2
+      '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
+      '@distilled.cloud/s3': 1.0.0-rc.20(effect@4.1.4)
+      effect: 4.1.4
 
-  '@distilled.cloud/s3@https://pkg.alchemy.run/@distilled.cloud/s3/-/1cecfb055ecd0cae8fcae21b4269af5bca8b9421ad1da52561234e7158ad1e86.tgz(effect@4.1.2)':
+  '@distilled.cloud/s3@1.0.0-rc.20(effect@4.1.4)':
     dependencies:
-      '@distilled.cloud/aws4signer': https://pkg.alchemy.run/@distilled.cloud/aws4signer/-/335d948c83041df357777a81805526c7da93c6907d9d38b7891d4fca7b7174d9.tgz(effect@4.1.2)
-      '@distilled.cloud/core': https://pkg.alchemy.run/@distilled.cloud/core/-/f73c71a235264d43ff37cac60da3e699ba6d89d06d8cf6ca9a4322d1cc5f9fd5.tgz(effect@4.1.2)
-      effect: 4.1.2
+      '@distilled.cloud/aws4signer': 1.0.0-rc.20(effect@4.1.4)
+      '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
+      effect: 4.1.4
 
   '@durable-streams/client@0.2.3':
     dependencies:
@@ -6182,27 +6174,27 @@ snapshots:
       - msw
       - vite
 
-  '@effect/platform-bun@4.1.2(effect@4.1.2)':
+  '@effect/platform-bun@4.1.4(effect@4.1.4)':
     dependencies:
-      '@effect/platform-node-shared': 4.1.2(effect@4.1.2)
-      effect: 4.1.2
+      '@effect/platform-node-shared': 4.1.4(effect@4.1.4)
+      effect: 4.1.4
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node-shared@4.1.2(effect@4.1.2)':
+  '@effect/platform-node-shared@4.1.4(effect@4.1.4)':
     dependencies:
       '@types/ws': 8.18.2
-      effect: 4.1.2
+      effect: 4.1.4
       ws: 8.22.2
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1)':
+  '@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1)':
     dependencies:
-      '@effect/platform-node-shared': 4.1.2(effect@4.1.2)
-      effect: 4.1.2
+      '@effect/platform-node-shared': 4.1.4(effect@4.1.4)
+      effect: 4.1.4
       redis: 6.2.1
       undici: 8.12.4
     transitivePeerDependencies:
@@ -7850,12 +7842,12 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
-  alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2):
+  alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2):
     dependencies:
-      '@alchemy.run/node-utils': https://pkg.alchemy.run/@alchemy.run/node-utils/-/7ca778b6ff66b8a15b532535f1227c058382469f80ed51008909ddadfef5d42f.tgz
-      '@alchemy.run/sigil': 0.1.0-alpha.3(@types/react@19.2.17)
+      '@alchemy.run/node-utils': 2.0.0-beta.87
+      '@alchemy.run/sigil': 0.1.0-alpha.4(@types/react@19.2.17)
       capnweb: 0.12.0
-      effect: 4.1.2
+      effect: 4.1.4
       fflate: 0.8.3
       pathe: 2.0.3
       picomatch: 4.0.7
@@ -7863,20 +7855,20 @@ snapshots:
       tinyglobby: 0.2.17
       yaml: 2.9.1
     optionalDependencies:
-      '@effect/platform-bun': 4.1.2(effect@4.1.2)
-      '@effect/platform-node': 4.1.2(effect@4.1.2)(redis@6.2.1)
+      '@effect/platform-bun': 4.1.4(effect@4.1.4)
+      '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.2.1)
       vite: 8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)
       ws: 8.22.2
     transitivePeerDependencies:
       - '@types/react'
       - react-devtools-core
 
-  alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2):
+  alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.4)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2):
     dependencies:
-      '@alchemy.run/node-utils': https://pkg.alchemy.run/@alchemy.run/node-utils/-/7ca778b6ff66b8a15b532535f1227c058382469f80ed51008909ddadfef5d42f.tgz
-      '@alchemy.run/sigil': 0.1.0-alpha.3(@types/react@19.2.17)
+      '@alchemy.run/node-utils': 2.0.0-beta.87
+      '@alchemy.run/sigil': 0.1.0-alpha.4(@types/react@19.2.17)
       capnweb: 0.12.0
-      effect: 4.1.2
+      effect: 4.1.4
       fflate: 0.8.3
       pathe: 2.0.3
       picomatch: 4.0.7
@@ -7884,8 +7876,8 @@ snapshots:
       tinyglobby: 0.2.17
       yaml: 2.9.1
     optionalDependencies:
-      '@effect/platform-bun': 4.1.2(effect@4.1.2)
-      '@effect/platform-node': 4.1.2(effect@4.1.2)(redis@6.2.1)
+      '@effect/platform-bun': 4.1.4(effect@4.1.4)
+      '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.2.1)
       vite: 8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)
       ws: 8.22.2
     transitivePeerDependencies:
@@ -8273,7 +8265,7 @@ snapshots:
       fast-check: 3.23.2
     optional: true
 
-  effect@4.1.2: {}
+  effect@4.1.4: {}
 
   elkjs@0.11.1:
     optional: true

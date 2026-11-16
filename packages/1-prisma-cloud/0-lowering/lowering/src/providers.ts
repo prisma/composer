@@ -18,17 +18,20 @@ export class Providers extends Provider.ProviderCollection<Providers>()('PrismaC
  * where the credential really is.
  */
 const prismaEnvironment = (baseUrl: string, clientSupplied: boolean) =>
-  Layer.succeed(Prisma.PrismaEnvironment, {
-    type: 'serviceToken' as const,
-    source: clientSupplied
-      ? {
-          type: 'stored' as const,
-          details:
-            "held by the caller's Management API client (for `prisma deploy`, the `prisma` CLI's signed-in credential), which authenticates each request",
-        }
-      : { type: 'env' as const, details: 'PRISMA_SERVICE_TOKEN' },
-    baseUrl,
-  });
+  Layer.succeed(
+    Prisma.PrismaEnvironment,
+    Effect.succeed({
+      type: 'serviceToken' as const,
+      source: clientSupplied
+        ? {
+            type: 'stored' as const,
+            details:
+              "held by the caller's Management API client (for `prisma deploy`, the `prisma` CLI's signed-in credential), which authenticates each request",
+          }
+        : { type: 'env' as const, details: 'PRISMA_SERVICE_TOKEN' },
+      baseUrl,
+    }),
+  );
 
 const operationCredentials = (apiBaseUrl: string) =>
   Layer.succeed(Credentials, Effect.succeed({ apiBaseUrl }));

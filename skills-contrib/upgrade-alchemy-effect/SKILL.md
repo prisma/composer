@@ -122,7 +122,7 @@ install never gets there.
 
 ## Pinning an unreleased alchemy build
 
-The repo is on a preview of alchemy-run/alchemy#3101 at `ab55f95` (`https://pkg.alchemy.run/<package>/pr:3101:ab55f95`): `@alchemy.run/prisma` at that URL, `alchemy` at the tarball URL `@alchemy.run/prisma` names as its `alchemy` peer, `@distilled.cloud/prisma` at the tarball URL `@alchemy.run/prisma` depends on, and `effect` with its companions at 4.1.2, the floor of that Distilled build's `effect` peer. The preview lets `PrismaEnvironment` and Distilled's `Credentials` omit the token (alchemy-run/alchemy#3101, alchemy-run/distilled#1076), which `prisma deploy` needs to send every request through the engine's client. Move back to a registry release once one contains both changes. Before this, the repo was on 2.0.0-beta.85 and `@distilled.cloud/prisma` 1.0.0-rc.18. Use a preview only when you need a fix that no release contains yet.
+The repo is on registry releases: `alchemy` and `@alchemy.run/prisma` 2.0.0-beta.87, `@distilled.cloud/prisma` 1.0.0-rc.20, and `effect` with its companions at 4.1.4. History: Composer pinned a preview of alchemy-run/alchemy#3101 until beta.87 released it together with alchemy-run/distilled#1076. Those two changes let `PrismaEnvironment` and Distilled's `Credentials` omit the token, which `prisma deploy` needs to send every request through the engine's client. Use a preview only when you need a fix that no release contains yet.
 
 alchemy publishes a preview of every commit on `main`, and of each pull request's head as `pr:<number>:<short sha>`. Pin it by commit, never by branch, in the `catalog:` block of `pnpm-workspace.yaml`:
 
@@ -171,6 +171,8 @@ History: beta.83 listed `@effect/sql-d1` and `@effect/sql-sqlite-do` as regular 
 - **`alchemy/Test/Core` is gone (2.0.0-beta.84).** It moved to `@alchemy.run/test`, which is not published. Provider tests use `scratchStack` and `runScratch` from `@internal/lowering/scratch-stack`, a port of the parts we used.
 - **Real network calls in provider tests.** At the 2.0.0-beta.84 preview, `Prisma.CustomDomain` waits for the hostname's CNAME on its authoritative nameservers before it registers a domain. Tests stub `node:dns/promises` so the wait is skipped.
 - **New adoption advice in engine or provider messages.** `withComposerAdvice` in the CLI rewrites Alchemy's `--adopt` and "explicit adoption" advice; its tests read every such message from the installed `alchemy` (`Plan.ts`, `Apply.ts`) and `@alchemy.run/prisma` sources and fail on one it does not rewrite. Add the new message to the rewrite list.
+- **Typed provider errors (2.0.0-beta.87).** Every lifecycle method of a `ProviderService` must fail with `Provider.ProviderError` (`{ _tag: string; message?: string }`), not `unknown`. `Effect.tryPromise` sites pass `catch: providerFailure` from `@internal/lowering`, which keeps an error that already has a `_tag` and wraps any other in a `ProviderFailure` with the same message.
+- **`PrismaEnvironment` holds an Effect (2.0.0-beta.87).** Alchemy runs it on every Management API request. Provide `Layer.succeed(Prisma.PrismaEnvironment, Effect.succeed({ ... }))`.
 - **New required fields on alchemy's resource-handler context** (e.g. `fqn`).
   These surface only in the test fixtures that build the context by hand.
 - **`exactOptionalPropertyTypes` vs alchemy's types.** See the patch section.

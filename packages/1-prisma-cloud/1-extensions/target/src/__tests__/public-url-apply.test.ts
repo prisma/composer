@@ -142,12 +142,15 @@ function fakePlatform(refuse: readonly string[]) {
     Layer.provideMerge(Prisma.CustomDomainProvider()),
     Layer.provideMerge(Prisma.PrismaClientLive),
     Layer.provideMerge(
-      Layer.succeed(Prisma.PrismaEnvironment, {
-        type: 'serviceToken',
-        serviceToken: Redacted.make('fake-token'),
-        source: { type: 'env' },
-        baseUrl: 'https://api.prisma.test',
-      }),
+      Layer.succeed(
+        Prisma.PrismaEnvironment,
+        Effect.succeed({
+          type: 'serviceToken' as const,
+          serviceToken: Redacted.make('fake-token'),
+          source: { type: 'env' as const },
+          baseUrl: 'https://api.prisma.test',
+        }),
+      ),
     ),
     Layer.provideMerge(Layer.succeed(HttpClient.HttpClient, http)),
   );

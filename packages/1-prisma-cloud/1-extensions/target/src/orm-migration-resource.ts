@@ -18,6 +18,7 @@
  * `alchemy`. Imported by `control.ts` and tests, never by `index.ts` / the
  * `./orm` authoring entry — index isolation holds.
  */
+import { providerFailure } from '@internal/lowering';
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
@@ -132,7 +133,7 @@ export const ormMigrationProviderService: Provider.ProviderService<OrmMigration>
       },
       // Surface OrmMigrationError (no-path / runner) as-is — it fails the
       // deploy with its clear message; nothing is swallowed.
-      catch: (error) => error,
+      catch: providerFailure,
     }).pipe(
       Effect.map((outcome) => ({ storageHash: outcome.targetHash, invariants: news.invariants })),
     ),
@@ -166,7 +167,7 @@ export const LocalOrmMigrationProvider = () =>
             }).catch(() => false);
             return atTarget ? undefined : { action: 'update' as const };
           },
-          catch: (cause) => cause,
+          catch: providerFailure,
         }),
     } satisfies Provider.ProviderService<OrmMigration>),
   );

@@ -84,6 +84,7 @@ export type OrmMigrationFailureCode =
 
 /** A deploy-failing migration error — surfaced, never swallowed. */
 export class OrmMigrationError extends Error {
+  readonly _tag = 'OrmMigrationError';
   readonly code: OrmMigrationFailureCode;
   /** PN's structured explanation, when present. */
   readonly why: string | undefined;
