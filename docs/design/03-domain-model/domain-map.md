@@ -67,11 +67,17 @@ flowchart TB
   the top-level Module-to-Module wiring and any shared Resources. *Who owns the
   wiring owns the migration:* a shared database is owned and migrated by the
   outermost Module; a private one by its Module.
-- **Every node carries a managed lifecycle** — Services (your code) and Resources
-  (managed dependencies). That's what lets the whole topology be recreated in a new
-  environment and reproduced in the local emulator.
-- **Configuration is not a node.** Keys, URLs, and secrets parameterise Services
-  and Resources and are injected per environment. An external service you don't
+- **Every node carries a managed lifecycle, or names a value the operator sets.**
+  Services (your code) and Resources (managed dependencies) have a managed
+  lifecycle. That's what lets the whole topology be recreated in a new
+  environment and reproduced in the local emulator. A platform variable node,
+  provisioned in the app root, names a variable the operator sets on the
+  platform: Composer lists it and checks that it has a value, and never
+  creates it, so a new environment needs it set first.
+- **The rest of configuration is not a node.** A value the service reads at boot
+  by name is a platform variable node. Other keys and URLs parameterise Services
+  and Resources through their input and are injected per environment; a value the
+  deploy reads comes from a root input field. An external service you don't
   provision lives here — surfaced as a Service's **egress** (an outbound dependency
   plus its config), never an edge to a node. Provision it (a Resource) or wrap it
   in a Service to bring it into the graph.
