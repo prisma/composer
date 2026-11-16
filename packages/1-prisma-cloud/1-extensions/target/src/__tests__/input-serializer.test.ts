@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  appRoot,
   isSecretPointer,
   isSecretString,
   Load,
@@ -12,6 +13,7 @@ import { field, secretString } from '@internal/foundation/arktype';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { envParam, generatedParam, serviceOrigin } from '../param.ts';
+import { variable } from '../platform-variable.ts';
 import { envSecret } from '../secret.ts';
 import {
   assertDistinctPointerNames,
@@ -45,6 +47,18 @@ const svc = (schema: StandardSchemaV1) =>
     input: schema,
     build,
   });
+
+function provisioned<N extends Record<string, ReturnType<typeof variable | typeof variable.secret>>>(
+  nodes: N,
+): Record<keyof N, unknown> {
+  const values: Record<string, unknown> = {};
+  Load(
+    appRoot('shop', ({ provision }) => {
+      for (const [name, node] of Object.entries(nodes)) values[name] = provision(node);
+    }),
+  );
+  return values as Record<keyof N, unknown>;
+}
 
 async function withEnv<T>(values: Record<string, string>, fn: () => Promise<T> | T): Promise<T> {
   const previous = new Map(Object.keys(values).map((k) => [k, process.env[k]]));
@@ -255,6 +269,23 @@ describe('serializeInput — validate with pointers in place, serialize the vali
       { env: { STRIPE_SECRET_KEY: 'sk_live_should_not_leak' } },
     );
     expect(row?.value).not.toContain('sk_live');
+    expect(row?.value).toContain('"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}');
+  });
+
+  test('a planted secret under a secret node never appears in the document, even when the deploy shell holds it', () => {
+    const planted = 'Zq7Xw9Vb3kLm2Rt';
+    const { STRIPE_SECRET_KEY: stripeKey } = provisioned({
+      STRIPE_SECRET_KEY: variable.secret({ name: 'STRIPE_SECRET_KEY' }),
+    });
+    const row = serializeInput(
+      svc(conditional),
+      'web',
+      { stripeEnabled: true, stripeKey },
+      { env: { STRIPE_SECRET_KEY: planted } },
+    );
+    for (let start = 0; start + 4 <= planted.length; start += 1) {
+      expect(JSON.stringify(row)).not.toContain(planted.slice(start, start + 4));
+    }
     expect(row?.value).toContain('"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}');
   });
 
@@ -985,5 +1016,70 @@ describe('schemas see pointers at deploy', () => {
     expect(() => serializeInput(minting, 'web', { key: envSecret('KEY') }, { env: {} })).toThrow(
       'input key "other" of service "web" validated to a SecretString the binding did not supply',
     );
+  });
+});
+
+describe('platform variable nodes in a service binding', () => {
+  const { EMAIL_FROM: from, EMAIL_KEY: key } = provisioned({
+    EMAIL_FROM: variable({ name: 'EMAIL_FROM' }),
+    EMAIL_KEY: variable.secret({ name: 'EMAIL_KEY' }),
+  });
+  const schema = type({ from: field(type('string')), key: secretString() });
+
+  test('a plain node and a secret node stay in place and are written as $platform markers', () => {
+    const row = serializeInput(svc(schema), 'shop.web', { from, key });
+
+    expect(row?.value).toBe(
+      '{"from":{"$platform":{"name":"EMAIL_FROM"}},"key":{"$platform":{"name":"EMAIL_KEY","secret":true}}}',
+    );
+    expect(row?.markers).toEqual([
+      { name: 'EMAIL_FROM', path: 'from', secret: false, inArray: false },
+      { name: 'EMAIL_KEY', path: 'key', secret: true, inArray: false },
+    ]);
+  });
+
+  test('a plain node named absent is left out of the document', () => {
+    const optional = type({ 'from?': field(type('string')), key: secretString() });
+    const row = serializeInput(
+      svc(optional),
+      'shop.web',
+      { from, key },
+      { absentSecrets: new Set(['EMAIL_FROM']) },
+    );
+
+    expect(row?.value).toBe('{"key":{"$platform":{"name":"EMAIL_KEY","secret":true}}}');
+    expect(row?.absent).toEqual(['from → EMAIL_FROM']);
+  });
+
+  test('an array position that reads a plain node named absent fails, naming the variable', () => {
+    expect(() =>
+      resolveInputBinding({ senders: [from] }, 'shop.web', {
+        absentSecrets: new Set(['EMAIL_FROM']),
+      }),
+    ).toThrow(
+      'input binding key "senders[0]" of service "shop.web" reads the platform variable "EMAIL_FROM", which has no value. An array position cannot be left out: set the variable, or bind a literal.',
+    );
+  });
+
+  test('a schema failure on a field that reads a node ends with the variable\'s name', () => {
+    const plainField = type({ from: 'string', key: secretString() });
+
+    expect(() => serializeInput(svc(plainField), 'shop.web', { from, key })).toThrow(
+      /\nThe field "from" reads the platform variable "EMAIL_FROM"\.$/,
+    );
+  });
+
+  test('a schema failure on a field under a node\'s path also ends with its name, and a failure elsewhere does not', () => {
+    const nested = type({ from: { address: 'string' }, count: 'number' });
+
+    expect(() => serializeInput(svc(nested), 'shop.web', { from, count: 1 })).toThrow(
+      /\nThe field "from" reads the platform variable "EMAIL_FROM"\.$/,
+    );
+    expect(() =>
+      serializeInput(svc(type({ from: field(type('string')), count: 'number' })), 'shop.web', {
+        from,
+        count: 'x',
+      }),
+    ).toThrow(/forbids\.\)$/);
   });
 });

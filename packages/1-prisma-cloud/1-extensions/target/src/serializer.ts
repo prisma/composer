@@ -44,6 +44,7 @@ import { type } from 'arktype';
 import { configKey, ORIGIN_KEY_NAME } from './config-key.ts';
 import { configurationText } from './configuration-text.ts';
 import { isEnvParamSource, isGeneratedParamSource, isOriginParamSource } from './param.ts';
+import { isPlainVariableSource, isSecretVariableSource } from './platform-variable.ts';
 import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
 import { secretName } from './secret.ts';
 
@@ -287,6 +288,12 @@ export interface ResolvedInputBinding {
   readonly generated: readonly GeneratedLeaf[];
   /** Dot-joined binding paths whose env-bound leaf resolved absent (unset/empty deploy-shell var, or a secret `prisma dev` found unset) — deploy-report fodder. */
   readonly absent: readonly string[];
+  readonly variables: readonly VariableRead[];
+}
+
+interface VariableRead {
+  readonly path: string;
+  readonly name: string;
 }
 
 const NO_ABSENT_SECRETS: ReadonlySet<string> = new Set();
@@ -296,6 +303,11 @@ function absentArrayPositionError(member: unknown, position: string, address: st
   if (isSecretSource(member)) {
     return new Error(
       `${key} reads the platform variable "${secretName(member, 'an array position')}", which has no value. An array position cannot be left out: set the variable, or bind a literal.`,
+    );
+  }
+  if (isPlainVariableSource(member)) {
+    return new Error(
+      `${key} reads the platform variable "${member.payload.name}", which has no value. An array position cannot be left out: set the variable, or bind a literal.`,
     );
   }
   if (isEnvParamSource(member)) {
@@ -312,7 +324,7 @@ function absentArrayPositionError(member: unknown, position: string, address: st
 export interface SerializeInputOptions {
   /** Where `envParam` leaves are read: the app configuration, or in the second process the configuration key text from the app configuration file. The process environment when not given. */
   readonly env?: Readonly<Record<string, unknown>>;
-  /** `envSecret` names to leave out of the document; only `prisma dev` passes any. */
+  /** Names of the secrets and plain platform variables to leave out of the document; only `prisma dev` and preflight's requirement check pass any. */
   readonly absentSecrets?: ReadonlySet<string>;
 }
 
@@ -361,6 +373,7 @@ export function resolveInputBinding(
   const generated: GeneratedLeaf[] = [];
   const pointers: PointerName[] = [];
   const absent: string[] = [];
+  const variables: VariableRead[] = [];
 
   const walk = (value: unknown, path: string): unknown => {
     // A generated leaf is a ParamSource too, so it MUST be recognized before
@@ -385,6 +398,16 @@ export function resolveInputBinding(
         value,
         path === '' ? 'the input binding root' : `input key "${path}"`,
       );
+      if (isSecretVariableSource(value)) variables.push({ path, name });
+      if (absentSecrets.has(name)) {
+        absent.push(path === '' ? `(root) → ${name}` : `${path} → ${name}`);
+        return ABSENT;
+      }
+      return value;
+    }
+    if (isPlainVariableSource(value)) {
+      const name = value.payload.name;
+      variables.push({ path, name });
       if (absentSecrets.has(name)) {
         absent.push(path === '' ? `(root) → ${name}` : `${path} → ${name}`);
         return ABSENT;
@@ -456,6 +479,7 @@ export function resolveInputBinding(
     resolved: resolved === ABSENT ? undefined : resolved,
     generated,
     absent,
+    variables,
   };
 }
 
@@ -499,7 +523,7 @@ export function serializeInput(
         '(Deploy-time validation sees each value known only at boot, envSecret() included, as a pointer ' +
         'to its platform variable, never its value. ' +
         'A failure naming a secret field means the binding and schema disagree about its ' +
-        'secretness, or the schema refines on secret content — which ADR-0042 forbids.)',
+        `secretness, or the schema refines on secret content — which ADR-0042 forbids.)${judged.variableNote}`,
     );
   }
   const { validated, generated, absent, resolved } = judged;
@@ -590,7 +614,22 @@ type InputJudgement =
       readonly message: string;
       /** True when the validator threw (an async or broken schema) rather than reporting issues. */
       readonly thrown: boolean;
+      readonly variableNote: string;
     };
+
+function variableNote(variables: readonly VariableRead[], issuePaths: readonly string[]): string {
+  const read = variables.filter((variable) =>
+    issuePaths.some(
+      (issuePath) =>
+        issuePath === variable.path ||
+        variable.path === '' ||
+        issuePath.startsWith(`${variable.path}.`),
+    ),
+  );
+  return read
+    .map(({ path, name }) => `\nThe field "${path}" reads the platform variable "${name}".`)
+    .join('');
+}
 
 /** Resolves the binding and validates it with the service's schema; undefined for a service with no input schema. */
 function judgeInput(
@@ -622,10 +661,16 @@ function judgeInput(
       ok: false,
       message: cause instanceof Error ? cause.message : String(cause),
       thrown: true,
+      variableNote: '',
     };
   }
   return 'issues' in result
-    ? { ok: false, message: result.issues, thrown: false }
+    ? {
+        ok: false,
+        message: result.issues,
+        thrown: false,
+        variableNote: variableNote(resolved.variables, result.issuePaths),
+      }
     : { ok: true, validated: result.value, ...resolved };
 }
 
@@ -643,7 +688,7 @@ export function inputValidationFailure(
   const judged = judgeInput(node, address, binding, options);
   if (judged === undefined || judged.ok) return undefined;
   if (judged.thrown) throw new Error(`invalid input for service "${address}": ${judged.message}`);
-  return judged.message;
+  return `${judged.message}${judged.variableNote}`;
 }
 
 /**
@@ -669,6 +714,11 @@ function substitutePointers(
       const name = secretName(v, path === '' ? 'the input binding root' : `input key "${path}"`);
       markers.push({ name, path, secret: true, inArray });
       return platformMarker(name, true);
+    }
+    if (isPlainVariableSource(v)) {
+      const { name } = v.payload;
+      markers.push({ name, path, secret: false, inArray });
+      return platformMarker(name, false);
     }
     if (isParamSource(v)) {
       if (leaf === undefined) {
@@ -830,7 +880,9 @@ function standardValidateSync<S extends StandardSchemaV1>(
 function standardValidate<S extends StandardSchemaV1>(
   schema: S,
   value: unknown,
-): { readonly value: StandardSchemaV1.InferOutput<S> } | { readonly issues: string } {
+):
+  | { readonly value: StandardSchemaV1.InferOutput<S> }
+  | { readonly issues: string; readonly issuePaths: readonly string[] } {
   const result = schema['~standard'].validate(value);
   if (result instanceof Promise) {
     throw new Error(
@@ -838,7 +890,14 @@ function standardValidate<S extends StandardSchemaV1>(
     );
   }
   if (result.issues !== undefined) {
-    return { issues: result.issues.map((issue) => issue.message).join('; ') };
+    return {
+      issues: result.issues.map((issue) => issue.message).join('; '),
+      issuePaths: result.issues.map((issue) =>
+        (issue.path ?? [])
+          .map((segment) => String(typeof segment === 'object' ? segment.key : segment))
+          .join('.'),
+      ),
+    };
   }
   return { value: result.value };
 }

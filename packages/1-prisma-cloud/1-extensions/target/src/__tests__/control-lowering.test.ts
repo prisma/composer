@@ -331,8 +331,11 @@ const {
   rawPostgresContract,
   s3StoreService,
   serviceOrigin,
+  variable,
 } = await import('../exports/index.ts');
-const { dependency, Load, module, provisionNeed, resolve, string } = await import('@internal/core');
+const { appRoot, dependency, Load, module, provisionNeed, resolve, string } = await import(
+  '@internal/core'
+);
 const { rawHttpContract } = await import('@internal/http');
 const { composeApplicationTopology } = await import('@internal/lowering/builds');
 const { lowering } = await import('@internal/core/deploy');
@@ -3816,5 +3819,110 @@ describe("prismaCloud().nodes['public-url'] — the public URL descriptor", () =
         { app: 'deployment-app-of:shop.storefront.web.deployment', hostname: 'shop.com' },
       ],
     ]);
+  });
+});
+
+describe("prismaCloud().nodes['platform-variable'] — a platform variable node", () => {
+  const build = {
+    extension: '@prisma/composer/node',
+    type: 'node',
+    module: 'file:///test/service.ts',
+    entry: 'server.js',
+  };
+  const mailer = compute({
+    name: 'mailer',
+    deps: {},
+    build,
+    input: type({ from: field(type('string')), key: secretString() }),
+  });
+  const web = compute({ name: 'web', deps: {}, build });
+
+  const shop = appRoot('shop', ({ provision }) => {
+    const from = provision(variable({ name: 'EMAIL_FROM' }));
+    const key = provision(variable.secret({ name: 'EMAIL_KEY' }));
+    provision(variable({ name: 'UNREAD_NAME' }));
+    const port = provision(variable({ name: 'PLATFORM_PORT' }));
+    provision(mailer, { input: { from, key } });
+    provision(web, { params: { port } });
+  });
+
+  const lowerShop = () =>
+    withEnv(
+      { ...containerEnv('shop-project#cloud-id'), EMAIL_KEY: 'sk_planted_should_not_leak' },
+      () => {
+        run<undefined>(
+          lowering(shop, configFor(prismaCloud({ workspaceId: 'ws_1' })), {
+            name: 'shop',
+            environment: 'production',
+            bundles: {
+              'shop.mailer': { dir: 'modules/mailer/dist', entry: 'server.js' },
+              'shop.web': { dir: 'modules/web/dist', entry: 'server.js' },
+            },
+          }),
+        );
+      },
+    );
+
+  test('its descriptor creates nothing and writes no row', () => {
+    const graph = Load(shop);
+    const node = graph.nodes.find((entry) => entry.id === 'shop.emailFrom')?.node;
+    const ctx = { id: 'shop.emailFrom', address: 'shop.emailFrom', node, graph, opts: {} };
+    const before = recorded.envVar.length;
+
+    const result = run<LoweredResult>(
+      resourceDescriptorOf(
+        prismaCloud({ workspaceId: 'ws_1' }),
+        'platform-variable',
+      )(ctx as unknown as LowerContext),
+    );
+
+    expect(result).toEqual({ outputs: {}, entities: [] });
+    expect(recorded.envVar.length).toBe(before);
+  });
+
+  test('a deploy writes a $platform marker for a plain and a secret node, and a pointer row for a plain node in a per-key param', async () => {
+    const before = recorded.envVar.length;
+
+    await lowerShop();
+
+    const writes = recorded.envVar.slice(before).map(([, props]) => props);
+    expect(writes).toContainEqual({
+      project: 'shop-project#cloud-id',
+      key: 'COMPOSER_SHOP_MAILER_INPUT',
+      value:
+        '{"from":{"$platform":{"name":"EMAIL_FROM"}},"key":{"$platform":{"name":"EMAIL_KEY","secret":true}}}',
+      class: 'production',
+    });
+    expect(writes).toContainEqual({
+      project: 'shop-project#cloud-id',
+      key: 'COMPOSER_SHOP_WEB_PORT',
+      value: '@composer-param-pointer:PLATFORM_PORT',
+      class: 'production',
+    });
+    const keys = writes.map((props) => (props as { key: string }).key);
+    expect(keys).not.toContain('EMAIL_FROM');
+    expect(keys).not.toContain('UNREAD_NAME');
+    expect(JSON.stringify(writes)).not.toContain('sk_planted');
+  });
+
+  test("a change to a node's row redeploys exactly the services that read it", async () => {
+    const before = recorded.deploy.length;
+
+    await lowerShop();
+
+    const triggersOf = (id: string) =>
+      Object.keys(
+        (
+          recorded.deploy.slice(before).find(([deployment]) => deployment === id)?.[1] as {
+            triggers: Record<string, unknown>;
+          }
+        ).triggers,
+      );
+    expect(triggersOf('shop.mailer.deployment')).toContain('EMAIL_FROM:updatedAt');
+    expect(triggersOf('shop.mailer.deployment')).toContain('EMAIL_KEY:updatedAt');
+    expect(triggersOf('shop.mailer.deployment')).not.toContain('PLATFORM_PORT:updatedAt');
+    expect(triggersOf('shop.web.deployment')).toContain('PLATFORM_PORT:updatedAt');
+    expect(triggersOf('shop.web.deployment')).not.toContain('EMAIL_FROM:updatedAt');
+    expect(JSON.stringify(recorded.deploy.slice(before))).not.toContain('UNREAD_NAME');
   });
 });
