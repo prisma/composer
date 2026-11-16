@@ -26,6 +26,25 @@ import { composerSection } from '../section.ts';
 
 const STOP_STEP = "Stopping the app's services — emulators and data stay up";
 
+const andList = (items: readonly string[], comma = ''): string => {
+  const last = items.at(-1) ?? '';
+  return items.length < 2 ? last : `${items.slice(0, -1).join(', ')}${comma} and ${last}`;
+};
+
+function valueReadsChangedText(
+  change: Extract<DevEvent, { readonly kind: 'value-reads-changed' }>,
+): string {
+  const quoted = (addresses: readonly string[]) => andList(addresses.map((a) => `"${a}"`));
+  const clauses = [
+    ...(change.added.length > 0 ? [`reads of ${quoted(change.added)} were added`] : []),
+    ...(change.removed.length > 0 ? [`reads of ${quoted(change.removed)} were removed`] : []),
+    ...(change.changed.length > 0
+      ? [`${quoted(change.changed)} ${change.changed.length === 1 ? 'was' : 'were'} changed`]
+      : []),
+  ];
+  return `The platform variables the app reads changed since dev started: ${andList(clauses, clauses.length > 2 ? ',' : '')}. Restart dev to apply them; rebuilds are paused until then.`;
+}
+
 /** Resolves when the run is asked to stop. */
 function stopRequested(signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve();
@@ -159,6 +178,10 @@ function reportDevEvent(
           severity: 'warn',
           text: 'The values the config or secrets adapters return changed since dev started. Restart dev to apply them; rebuilds are paused until then.',
         });
+        return;
+
+      case 'value-reads-changed':
+        report({ kind: 'message', severity: 'warn', text: valueReadsChangedText(event) });
         return;
 
       case 'watch-error':
