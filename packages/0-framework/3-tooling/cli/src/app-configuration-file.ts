@@ -10,9 +10,10 @@ export const APP_CONFIGURATION_FILE_ENV = 'PRISMA_COMPOSER_APP_CONFIGURATION_FIL
 /** `prisma dev` only: the named secrets, as a JSON object. */
 export const NAMED_SECRETS_ENV = 'PRISMA_COMPOSER_NAMED_SECRETS';
 
-/** What the app configuration file holds: what the first process's Load read from the app configuration, and the node addresses of the graph it built. */
+/** What the app configuration file holds: what the first process's Load read from the app configuration, the text of each plain platform variable a service reads under `prisma dev`, and the node addresses of the graph it built. */
 export interface AppConfigurationFile {
   readonly appConfigurationRead: AppConfigurationRead;
+  readonly plainVariableText: Readonly<Record<string, string>>;
   readonly nodeAddresses: readonly string[];
 }
 
@@ -105,8 +106,12 @@ function textIn(value: unknown, at: readonly string[]): { at: readonly string[];
  * compared as its text (`KnownSecrets.nameIn`). The message names where and the secrets key,
  * never the value.
  */
-function refuseSecretsIn(read: AppConfigurationRead, knownSecrets: KnownSecrets): void {
-  const places = [
+function refuseSecretsIn(
+  read: AppConfigurationRead,
+  plainVariableText: Readonly<Record<string, string>>,
+  knownSecrets: KnownSecrets,
+): void {
+  const readPlaces = [
     ...read.rootInput.flatMap((field) =>
       textIn(field.value, field.path).map(({ at, text }) => ({
         where: `Root input field input.${at.join('.')}`,
@@ -118,7 +123,7 @@ function refuseSecretsIn(read: AppConfigurationRead, knownSecrets: KnownSecrets)
       text,
     })),
   ];
-  for (const { where, text } of places) {
+  for (const { where, text } of readPlaces) {
     const name = knownSecrets.nameIn(text);
     if (name === undefined) continue;
     throw new CliStructuredError(
@@ -126,6 +131,17 @@ function refuseSecretsIn(read: AppConfigurationRead, knownSecrets: KnownSecrets)
       `${where} holds the value of the secret "${name}", which an envSecret() in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
       {
         fix: `Read the secret with envSecret('${name}') where it is used, or give this plain value text that does not contain the value of "${name}".`,
+      },
+    );
+  }
+  for (const [variable, text] of Object.entries(plainVariableText)) {
+    const name = knownSecrets.nameIn(text);
+    if (name === undefined) continue;
+    throw new CliStructuredError(
+      'CONFIG.SECRET_AS_PLAIN_VALUE',
+      `The platform variable "${variable}", which prisma dev read from the \`config\` adapters, holds the value of the secret "${name}". Composer hands the second process every plain value in a file, and never writes a secret to a file.`,
+      {
+        fix: `keep the value of "${name}" out of the platform variable "${variable}", or give "${variable}" a different value.`,
       },
     );
   }
@@ -143,10 +159,10 @@ export interface SecondProcessHandover {
 
 /**
  * First process: the handover to the second process (ADR-0062). The app configuration file at
- * `file` holds what Load read and the graph's node addresses. With `appSecrets`, which only
- * `prisma dev` passes, the environment also carries the named secrets: the app secrets under
- * the graph's secrets keys, each with text. Refuses when the file would hold any of
- * `knownSecrets`. Every other input is plain data from the graph, such as
+ * `file` holds what Load read, the text of each plain platform variable, and the graph's node
+ * addresses. With `appSecrets`, which only `prisma dev` passes, the environment also carries the
+ * named secrets: the app secrets under the graph's secrets keys, each with text. Refuses when the
+ * file would hold any of `knownSecrets`. Every other input is plain data, such as
  * `graph.appConfigurationRead`, `nodeAddresses(graph)` and `secretsKeys(graph)`, so a caller with
  * its own copy of Composer's core can pass them. The exception is `knownSecrets`, a
  * `KnownSecrets`, which such a caller builds from the testing entry.
@@ -154,15 +170,17 @@ export interface SecondProcessHandover {
 export function prepareSecondProcess(input: {
   readonly file: string;
   readonly appConfigurationRead: AppConfigurationRead;
+  readonly plainVariableText: Readonly<Record<string, string>>;
   readonly nodeAddresses: readonly string[];
   readonly secretsKeys: readonly string[];
   readonly knownSecrets: KnownSecrets;
   readonly appSecrets?: AppSecrets;
 }): SecondProcessHandover {
   const { file, appSecrets } = input;
-  refuseSecretsIn(input.appConfigurationRead, input.knownSecrets);
+  refuseSecretsIn(input.appConfigurationRead, input.plainVariableText, input.knownSecrets);
   const contents: AppConfigurationFile = {
     appConfigurationRead: input.appConfigurationRead,
+    plainVariableText: input.plainVariableText,
     nodeAddresses: input.nodeAddresses,
   };
   const env: Record<string, string> = { [APP_CONFIGURATION_FILE_ENV]: file };
@@ -272,9 +290,17 @@ export function readAppConfigurationFile(
   if (configurationKeyText === undefined) {
     throw notComposers('configurationKeyText is not an object of text');
   }
+  const plainVariableText = textByKeyOf(parsed['plainVariableText']);
+  if (plainVariableText === undefined) {
+    throw notComposers('plainVariableText is not an object of text');
+  }
   const addresses = parsed['nodeAddresses'];
   if (!isTextList(addresses)) throw notComposers('nodeAddresses is not a list of node addresses');
-  return { appConfigurationRead: { rootInput, configurationKeyText }, nodeAddresses: addresses };
+  return {
+    appConfigurationRead: { rootInput, configurationKeyText },
+    plainVariableText,
+    nodeAddresses: addresses,
+  };
 }
 
 /** Second process, under `prisma dev`: the named secrets the first process handed it. */

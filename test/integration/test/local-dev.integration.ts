@@ -472,10 +472,11 @@ async function main(): Promise<void> {
     // dedicated S5 script (local-dev-criteria-4-5.integration.ts), which
     // deliberately runs WITHOUT these set; this script sets both in step 3 so its own
     // (unrelated) proofs keep passing regardless of shell state.
-    const preflightPayload =
+    const preflightResult =
       dev.preflight === undefined
         ? undefined
         : await dev.preflight({ graph, container: devContainer, environment: 'dev', ...read });
+    const preflightPayload = preflightResult?.payload;
     process.chdir(originalCwd);
 
     // 6. Emulators — ensures compute always, buckets because the graph has
@@ -506,6 +507,7 @@ async function main(): Promise<void> {
     const handover = prepareSecondProcess({
       file: path.join(devDir, 'app-configuration.json'),
       appConfigurationRead: graph.appConfigurationRead,
+      plainVariableText: preflightResult?.plainVariableText ?? {},
       nodeAddresses: nodeAddresses(graph),
       secretsKeys: secretsKeys(graph),
       knownSecrets: new KnownSecrets(),

@@ -28,13 +28,13 @@ plugin({
     build.module(
       '@prisma/composer/internal/app-configuration-file',
       js(
-        "export const readAppConfigurationFile = () => ({ appConfigurationRead: { rootInput: [], configurationKeyText: { read: 'from-file' } }, nodeAddresses: ['stub-address'] }); export const namedSecretsFromEnvironment = () => ({ read: 'secrets' });",
+        "export const readAppConfigurationFile = () => ({ appConfigurationRead: { rootInput: [], configurationKeyText: { read: 'from-file' } }, plainVariableText: { PLAIN: 'plain-from-file' }, nodeAddresses: ['stub-address'] }); export const namedSecretsFromEnvironment = () => ({ read: 'secrets' });",
       ),
     );
     build.module(
       '@prisma/composer/local-target',
       js(
-        "export const devEnvironmentDir = (environment) => '.dev/' + environment; export const devState = () => ({}); export const localTargetProviders = (resolved, containers, devDir, configurationKeyText, namedSecrets) => { globalThis.stubLocal = { configurationKeyText, namedSecrets }; return {}; }; export const resolveLocalTargets = async () => new Map();",
+        "export const devEnvironmentDir = (environment) => '.dev/' + environment; export const devState = () => ({}); export const localTargetProviders = (resolved, containers, devDir, configurationKeyText, plainVariableText, namedSecrets) => { globalThis.stubLocal = { configurationKeyText, plainVariableText, namedSecrets }; return {}; }; export const resolveLocalTargets = async () => new Map();",
       ),
     );
   },

@@ -72,7 +72,7 @@ function renderOptions(input: DevStackFileInput): string {
   }
 
   lines.push(
-    '  providers: localTargetProviders(resolved, containers, devDir, file.appConfigurationRead.configurationKeyText, namedSecrets),',
+    '  providers: localTargetProviders(resolved, containers, devDir, file.appConfigurationRead.configurationKeyText, file.plainVariableText, namedSecrets),',
   );
   lines.push('  state: devState(),');
 
@@ -104,7 +104,7 @@ export function renderDevStackFile(input: DevStackFileInput): string {
 //   <node> <bin of the alchemy @prisma/composer depends on> deploy ${devStackRelativePath(input.environment)} --yes --stage ${input.environment}
 //
 // bisects a CLI bug from an Alchemy bug (deploy-cli.md § Implementation decisions).
-// It runs no config or secrets adapter: it reads what the first process's Load read from the app configuration file named in PRISMA_COMPOSER_APP_CONFIGURATION_FILE, and the named secrets from PRISMA_COMPOSER_NAMED_SECRETS.
+// It runs no config or secrets adapter: it reads what the first process's Load read, and the text of each plain platform variable, from the app configuration file named in PRISMA_COMPOSER_APP_CONFIGURATION_FILE, and the named secrets from PRISMA_COMPOSER_NAMED_SECRETS.
 ${imports}
 
 const config = prismaConfig.composer;

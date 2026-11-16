@@ -72,9 +72,10 @@ function shopGraph(
   return Load(root, { configuration });
 }
 
-/** What `prepareSecondProcess` takes from `graph`. */
-const factsOf = (graph: Graph) => ({
+/** What `prepareSecondProcess` takes from `graph`, with the texts a dev preflight found. */
+const factsOf = (graph: Graph, plainVariableText: Record<string, string> = {}) => ({
   appConfigurationRead: graph.appConfigurationRead,
+  plainVariableText,
   nodeAddresses: nodeAddresses(graph),
   secretsKeys: secretsKeys(graph),
 });
@@ -91,12 +92,12 @@ const errorOf = (run: () => unknown): Error => {
 };
 
 describe('the app configuration file', () => {
-  test('the file holds what Load read and the node addresses, as JSON readable only by its owner', () => {
+  test('the file holds what Load read, the plain platform variable texts and the node addresses, as JSON readable only by its owner', () => {
     const file = freshFile();
 
     prepareSecondProcess({
       file,
-      ...factsOf(shopGraph(configuration)),
+      ...factsOf(shopGraph(configuration), { SMTP_HOST: 'smtp.example' }),
       knownSecrets: new KnownSecrets(),
     }).writeFile();
 
@@ -106,6 +107,7 @@ describe('the app configuration file', () => {
         rootInput: [{ path: ['EMAIL_FROM'], value: 'shop@example.com' }],
         configurationKeyText: { APP_ORIGIN: 'https://origin.example' },
       },
+      plainVariableText: { SMTP_HOST: 'smtp.example' },
       nodeAddresses: ['shop', 'shop.echo'],
     });
   });
@@ -232,6 +234,26 @@ describe('the app configuration file', () => {
     );
   });
 
+  test('prepareSecondProcess refuses a plain platform variable text that holds a known secret, naming the variable and the secret, never the value', () => {
+    const error = errorOf(() =>
+      prepareSecondProcess({
+        file: freshFile(),
+        ...factsOf(shopGraph(configuration), { EMAIL_FROM: 'Shop <cred-77-secret>' }),
+        knownSecrets: new KnownSecrets([
+          { name: 'EMAIL_DELIVERY_CREDENTIAL', value: 'cred-77-secret' },
+        ]),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      code: 'CONFIG.SECRET_AS_PLAIN_VALUE',
+      message:
+        'The platform variable "EMAIL_FROM", which prisma dev read from the `config` adapters, holds the value of the secret "EMAIL_DELIVERY_CREDENTIAL". Composer hands the second process every plain value in a file, and never writes a secret to a file.',
+      fix: 'keep the value of "EMAIL_DELIVERY_CREDENTIAL" out of the platform variable "EMAIL_FROM", or give "EMAIL_FROM" a different value.',
+    });
+    expect(JSON.stringify({ ...error, message: error.message })).not.toContain('cred-77-secret');
+  });
+
   test('writeFile deletes the file when the process exits, and removeFile stops that', () => {
     const file = freshFile();
     const handover = prepareSecondProcess({
@@ -255,10 +277,15 @@ describe('the app configuration file', () => {
   test('readAppConfigurationFile reads back what was written', () => {
     const file = freshFile();
     const graph = shopGraph(configuration);
-    prepareSecondProcess({ file, ...factsOf(graph), knownSecrets: new KnownSecrets() }).writeFile();
+    prepareSecondProcess({
+      file,
+      ...factsOf(graph, { SMTP_HOST: 'smtp.example' }),
+      knownSecrets: new KnownSecrets(),
+    }).writeFile();
 
     expect(readAppConfigurationFile({ [APP_CONFIGURATION_FILE_ENV]: file })).toEqual({
       appConfigurationRead: graph.appConfigurationRead,
+      plainVariableText: { SMTP_HOST: 'smtp.example' },
       nodeAddresses: ['shop', 'shop.echo'],
     });
   });
@@ -287,9 +314,15 @@ describe('the app configuration file', () => {
       fs.writeFileSync(file, contents);
       return errorOf(() => readAppConfigurationFile(env)).message;
     };
-    const read = (rootInput: unknown, configurationKeyText: unknown, addresses: unknown) =>
+    const read = (
+      rootInput: unknown,
+      configurationKeyText: unknown,
+      addresses: unknown,
+      plainVariableText: unknown = {},
+    ) =>
       JSON.stringify({
         appConfigurationRead: { rootInput, configurationKeyText },
+        plainVariableText,
         nodeAddresses: addresses,
       });
     const prefix = `The app configuration file ${file} is not one Composer wrote: `;
@@ -300,6 +333,14 @@ describe('the app configuration file', () => {
     expect(refused(read([], { A: 1 }, []))).toBe(
       `${prefix}configurationKeyText is not an object of text.`,
     );
+    expect(refused(read([], {}, [], { A: 1 }))).toBe(
+      `${prefix}plainVariableText is not an object of text.`,
+    );
+    expect(
+      refused(
+        JSON.stringify({ appConfigurationRead: { rootInput: [], configurationKeyText: {} } }),
+      ),
+    ).toBe(`${prefix}plainVariableText is not an object of text.`);
     expect(refused(read([], {}, {}))).toBe(
       `${prefix}nodeAddresses is not a list of node addresses.`,
     );

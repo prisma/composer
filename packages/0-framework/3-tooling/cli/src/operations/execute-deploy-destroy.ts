@@ -629,6 +629,7 @@ async function runStackPipelineInner(
       handover = prepareSecondProcess({
         file: deployAppConfigurationFile(cwd, randomUUID()),
         appConfigurationRead: pipeline.graph.appConfigurationRead,
+        plainVariableText: {},
         nodeAddresses: nodeAddresses(pipeline.graph),
         secretsKeys: secretsKeys(pipeline.graph),
         knownSecrets: opts.redaction.knownSecrets,

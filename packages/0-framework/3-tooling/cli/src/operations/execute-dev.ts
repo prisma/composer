@@ -31,6 +31,7 @@ import {
   type SecondProcessHandover,
 } from '../app-configuration-file.ts';
 import { devStackRelativePath, writeDevStackFile } from '../dev/generate-dev-stack.ts';
+import { valueReadsChange } from '../dev/value-reads-change.ts';
 import {
   authoringModuleTargets,
   startWatch,
@@ -192,6 +193,7 @@ async function executeDevInner(
   let resolved: ReadonlyMap<string, LocalTargetDescriptor>;
   const containers = new Map<ExtensionId, ContainerInstance>();
   let preflightTransportEnv: Record<string, string> = {};
+  const plainVariableText: Record<string, string> = {};
   // Each participating extension's view of the running app, made before the
   // first converge so a target that cannot run a dev server fails first.
   const attachmentsById = new Map<ExtensionId, LocalTargetAttachment>();
@@ -267,7 +269,7 @@ async function executeDevInner(
     for (const [id, dev] of resolved) {
       if (dev.preflight === undefined) continue;
       try {
-        const payload = await dev.preflight({
+        const found = await dev.preflight({
           graph,
           container: containers.get(id),
           environment,
@@ -275,7 +277,8 @@ async function executeDevInner(
           secrets: pipeline.secrets,
           warn: (message) => emit({ kind: 'target-warning', message }),
         });
-        if (payload !== undefined) preflightPayloads.set(id, payload);
+        if (found.payload !== undefined) preflightPayloads.set(id, found.payload);
+        Object.assign(plainVariableText, found.plainVariableText);
       } catch (error) {
         throw toStructured('DEV.PREFLIGHT_FAILED', error);
       }
@@ -330,6 +333,7 @@ async function executeDevInner(
     const handover = prepareSecondProcess({
       file: devAppConfigurationFile(devDir),
       appConfigurationRead: p.graph.appConfigurationRead,
+      plainVariableText,
       nodeAddresses: nodeAddresses(p.graph),
       secretsKeys: secretsKeys(p.graph),
       knownSecrets: redaction.knownSecrets,
@@ -572,10 +576,11 @@ async function executeDevInner(
     const startedConfig = contentHash(configFile);
     let configChanged = false;
     let valuesChanged = false;
+    let readsChanged = false;
     // Read on every event, not only from the config watcher: a build watch
     // on a directory that contains the file can fire first.
     const paused = (): boolean => {
-      if (valuesChanged) return true;
+      if (valuesChanged || readsChanged) return true;
       if (!configChanged && contentHash(configFile) === startedConfig) return false;
       configChanged = true;
       emit({ kind: 'config-changed', file: configFile });
@@ -603,6 +608,12 @@ async function executeDevInner(
         if (!sameValues(pipeline, rePipeline)) {
           if (!valuesChanged) emit({ kind: 'values-changed' });
           valuesChanged = true;
+          return;
+        }
+        const change = valueReadsChange(pipeline.graph, rePipeline.graph);
+        if (change !== undefined) {
+          if (!readsChanged) emit({ kind: 'value-reads-changed', ...change });
+          readsChanged = true;
           return;
         }
         const { outcome, stackPath, invocation } = await converge(rePipeline);

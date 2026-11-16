@@ -513,6 +513,7 @@ async function secondProcessHandover() {
   return prepareSecondProcess({
     file: APP_CONFIGURATION_FILE,
     appConfigurationRead: graph.appConfigurationRead,
+    plainVariableText: {},
     nodeAddresses: nodeAddresses(graph),
     secretsKeys: secretsKeys(graph),
     knownSecrets: new KnownSecrets(),

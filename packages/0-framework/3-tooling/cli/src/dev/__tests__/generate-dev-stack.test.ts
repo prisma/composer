@@ -45,7 +45,7 @@ describe('renderDevStackFile()', () => {
     expect(content).toContain('lower(app, config, {');
     expect(content).toContain('name: "app"');
     expect(content).toContain(
-      'providers: localTargetProviders(resolved, containers, devDir, file.appConfigurationRead.configurationKeyText, namedSecrets)',
+      'providers: localTargetProviders(resolved, containers, devDir, file.appConfigurationRead.configurationKeyText, file.plainVariableText, namedSecrets)',
     );
     expect(content).toContain('state: devState()');
     expect(content).not.toContain('dev: true');
@@ -107,7 +107,7 @@ describe('renderDevStackFile() — the environment', () => {
       '  environment: "test",\n  appConfigurationRead: file.appConfigurationRead,\n  firstProcessNodeAddresses: file.nodeAddresses,',
     );
     expect(content).toContain(
-      '  providers: localTargetProviders(resolved, containers, devDir, file.appConfigurationRead.configurationKeyText, namedSecrets),',
+      '  providers: localTargetProviders(resolved, containers, devDir, file.appConfigurationRead.configurationKeyText, file.plainVariableText, namedSecrets),',
     );
   });
 
