@@ -21,6 +21,7 @@ import {
 import { bucketDescriptor } from '../descriptors/bucket.ts';
 import { computeDescriptor } from '../descriptors/compute.ts';
 import { postgresDescriptor } from '../descriptors/orm-postgres.ts';
+import { platformVariableDescriptor } from '../descriptors/platform-variable.ts';
 import { publicUrlDescriptor } from '../descriptors/public-url.ts';
 import { rawPostgresDescriptor } from '../descriptors/raw-postgres.ts';
 import { s3CredentialsDescriptor } from '../descriptors/s3-credentials.ts';
@@ -405,6 +406,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
       // bucket descriptor registers under 's3', not 'bucket'.
       s3: bucketDescriptor(o),
       'public-url': publicUrlDescriptor(),
+      'platform-variable': platformVariableDescriptor(),
     },
 
     // A lazy reference, not the descriptor (ADR-0041, operator directive):
