@@ -14,7 +14,9 @@ import {
   materializeEnv,
   movePreEnvironmentDevState,
   nodeInstancesOf,
+  resolvePackageEntry,
   stopAppInstances,
+  stopAppInstancesBeforeExit,
   withServiceAddresses,
 } from '@internal/local-target';
 import { prismaCloudContainerOf } from '../container.ts';
@@ -186,6 +188,12 @@ export async function devAttach(input: LocalTargetAttachInput): Promise<LocalTar
     // Service processes and database servers; their data and ports are kept.
     stopApp: async () => {
       await stopAppInstances(scope);
+    },
+    stopAppBeforeExit: () => {
+      stopAppInstancesBeforeExit(
+        scope,
+        resolvePackageEntry('@prisma/composer-prisma-cloud/local-target/stop-app-main'),
+      );
     },
   };
 }

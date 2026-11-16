@@ -14,6 +14,7 @@ import {
   type DeployEvent,
   type DeployStep,
 } from '../../operations/deploy.ts';
+import { unsetPlatformVariablesText } from '../../unset-platform-variables.ts';
 import { withConsoleOnStderr } from '../console-to-stderr.ts';
 import { dataLine } from '../data-lines.ts';
 import type { ComposerOperations } from '../family.ts';
@@ -70,10 +71,16 @@ function formatDuration(ms: number): string {
   return `${String(Math.floor(seconds / 60))}m ${String(seconds % 60)}s`;
 }
 
-/** The operation's step events as engine events. The engine prints only `step`, so a finished step carries its duration in the text too. */
-function toEngineEvent(event: DeployEvent): EngineEvent {
+/** The operation's events as engine events. The engine prints only `step`, so a finished step carries its duration in the text too. */
+function toEngineEvent(event: DeployEvent): EngineEvent | undefined {
   if (event.kind === 'message') {
     return { kind: 'message', severity: event.severity, text: event.text };
+  }
+  if (event.kind === 'preflight-findings') {
+    const text = unsetPlatformVariablesText(event.findings.unset);
+    return text === undefined
+      ? undefined
+      : { kind: 'message', severity: 'warn', text, data: event.findings };
   }
   const id = stepId(event.step);
   if (event.kind === 'step-started') {
@@ -153,6 +160,7 @@ export const createDeployCommand = (operations: ComposerOperations) =>
       // which authenticates and refreshes; the workspace is the same
       // credential's.
       const credential = await ctx.activeCredential();
+      let unsetText: string | undefined;
       const result = await withConsoleOnStderr(() =>
         operations.deploy(
           {
@@ -163,7 +171,13 @@ export const createDeployCommand = (operations: ComposerOperations) =>
             cwd: ctx.cwd,
             reportPath: args.flags.report,
             reportId: args.flags.buildId,
-            onEvent: (event) => ctx.report(toEngineEvent(event)),
+            onEvent: (event) => {
+              if (event.kind === 'preflight-findings') {
+                unsetText = unsetPlatformVariablesText(event.findings.unset);
+              }
+              const engineEvent = toEngineEvent(event);
+              if (engineEvent !== undefined) ctx.report(engineEvent);
+            },
             signal: ctx.signal,
           },
           {
@@ -204,15 +218,15 @@ export const createDeployCommand = (operations: ComposerOperations) =>
         ctx.present(
           { data: { summary: summary ?? null, durationMs } },
           {
-            human: (ui) =>
-              summary === undefined
-                ? [{ kind: 'summary', status: 'ok', text: `Deployed ${target}.` }]
+            human: (ui) => [
+              ...(summary === undefined
+                ? [{ kind: 'summary', status: 'ok', text: `Deployed ${target}.` } as const]
                 : [
                     {
                       kind: 'summary',
                       status: 'ok',
                       text: `Deployed ${ui.emphasize(summary.app)} ${target}.`,
-                    },
+                    } as const,
                     {
                       kind: 'table',
                       columns: ['Address', 'Deployed'],
@@ -220,8 +234,12 @@ export const createDeployCommand = (operations: ComposerOperations) =>
                         node.address,
                         node.entities.map((entity) => `${entity.kind} ${entity.id}`).join(', '),
                       ]),
-                    },
-                  ],
+                    } as const,
+                  ]),
+              ...(unsetText === undefined
+                ? []
+                : [{ kind: 'drawing', lines: unsetText.split('\n') } as const]),
+            ],
             stdout: () =>
               (summary?.nodes ?? []).flatMap((node) =>
                 node.entities.map((entity) =>

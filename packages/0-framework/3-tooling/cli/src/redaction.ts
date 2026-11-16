@@ -1,4 +1,9 @@
-import type { AppConfiguration, AppSecrets } from '@internal/core/config';
+import type {
+  AppConfiguration,
+  AppSecrets,
+  PlatformVariableReader,
+  UnsetPlatformVariable,
+} from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import type { DeploymentSummary } from './deployment-summary.ts';
 import type { DevEvent } from './operations/dev.ts';
@@ -87,14 +92,14 @@ export function redactValues(text: string, values: Iterable<string>): string {
   return new SecretMatcher(values).redact(text);
 }
 
-/** `text` with bearer and basic tokens, JWTs, the password in a URL, and `token=…`-style pairs replaced by `[redacted]`. */
+/** `text` with bearer and basic tokens, JWTs, the password in a URL, and `token=…`-style pairs replaced by `[redacted]`. The `<value>` placeholder in a printed command is kept. */
 function redactShapes(text: string): string {
   return text
     .replace(/\b(Bearer|Basic)\s+[\w.~+/=-]+/gi, `$1 ${REDACTED}`)
     .replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]*/g, REDACTED)
     .replace(/(\b[a-z][\w+.-]*:\/\/[^\s:/@]*:)[^\s/@]+@/gi, `$1${REDACTED}@`)
     .replace(
-      /\b((?:[\w-]*[_-])?(?:token|secret|password|passwd|api[_-]?key|access[_-]?key|private[_-]?key)["']?\s*[:=]\s*["']?)[^\s"',;&]+/gi,
+      /\b((?:[\w-]*[_-])?(?:token|secret|password|passwd|api[_-]?key|access[_-]?key|private[_-]?key)["']?\s*[:=]\s*["']?)(?!<value>(?:[\s"',;&]|$))[^\s"',;&]+/gi,
       `$1${REDACTED}`,
     );
 }
@@ -213,6 +218,40 @@ export function valuesUnderSecretsKeys(
       typeof value === 'string' ? [{ name, value }] : [],
     ),
   );
+}
+
+function redactReader(
+  reader: PlatformVariableReader,
+  redaction: SecretRedaction,
+): PlatformVariableReader {
+  switch (reader.kind) {
+    case 'field':
+      return {
+        kind: 'field',
+        service: redaction.redact(reader.service),
+        path: redaction.redact(reader.path),
+      };
+    case 'param':
+      return {
+        kind: 'param',
+        service: redaction.redact(reader.service),
+        param: redaction.redact(reader.param),
+      };
+    case 'unread':
+      return { kind: 'unread', node: redaction.redact(reader.node), nodeKind: reader.nodeKind };
+  }
+}
+
+/** `variable` with every text in it redacted: its name, each reader's names and each command. */
+export function redactUnsetPlatformVariable(
+  variable: UnsetPlatformVariable,
+  redaction: SecretRedaction,
+): UnsetPlatformVariable {
+  return {
+    name: redaction.redact(variable.name),
+    readers: variable.readers.map((reader) => redactReader(reader, redaction)),
+    commands: variable.commands.map((command) => redaction.redact(command)),
+  };
 }
 
 function redactData(value: unknown, redaction: SecretRedaction): unknown {

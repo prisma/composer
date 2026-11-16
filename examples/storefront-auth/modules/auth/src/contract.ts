@@ -8,7 +8,5 @@ import { type } from 'arktype';
 
 export const authContract = contract({
   verify: rpc({ input: type({ token: 'string' }), output: type({ ok: 'boolean' }) }),
-  // Non-leaking proof that auth received its injected `AUTH_SIGNING_SECRET`
-  // (ADR-0029): returns ONLY a boolean, never the secret value.
-  secretCheck: rpc({ input: type({}), output: type({ ok: 'boolean' }) }),
+  keyCheck: rpc({ input: type({}), output: type({ value: 'string' }) }),
 });

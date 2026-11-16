@@ -24,7 +24,7 @@ export type {
   RootInputField,
   SecretSourceUse,
 } from './graph-types.ts';
-export { LoadError, RESOURCE_OUT_PORT } from './graph-types.ts';
+export { GraphCheckError, LoadError, RESOURCE_OUT_PORT } from './graph-types.ts';
 
 const APP_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 

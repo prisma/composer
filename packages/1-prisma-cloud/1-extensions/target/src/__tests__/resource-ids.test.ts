@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { RenamePolicy } from 'alchemy/Rename';
 import * as Effect from 'effect/Effect';
 import * as Option from 'effect/Option';
+import { configKey } from '../config-key.ts';
 import {
   addressBelowApp,
   fromLegacyId,
@@ -15,7 +16,6 @@ import {
   legacyStreamsKeyId,
 } from '../legacy-resource-ids.ts';
 import { resourceId } from '../resource-ids.ts';
-import { configKey } from '../serializer.ts';
 
 describe('resourceId', () => {
   test("is the address for a node's main resource", () => {

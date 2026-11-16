@@ -44,6 +44,7 @@ export type {
 } from '../graph.ts';
 export {
   assertAppName,
+  GraphCheckError,
   Load,
   LoadError,
   RESOURCE_OUT_PORT,

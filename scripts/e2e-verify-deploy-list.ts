@@ -6,8 +6,10 @@
  *
  * The installed `prisma` does not mount `deploy list` yet, so this mounts
  * Composer's command family itself, the way the `prisma` host does, with a
- * service-token credential and no OAuth login. It mounts `deploy` too, because
- * the family retires `--stage` on it and a redirect must name a mounted command. It also declares the ORM's config
+ * service-token credential and no OAuth login. It mounts every command of the
+ * family with the `deploy`, `dev` and `emulator` groups, because the family's flag
+ * redirects name `deploy`, `dev` and `dev stop`, and the engine refuses a flag
+ * redirect whose command is not mounted. It also declares the ORM's config
  * section, so a config with an `orm` section loads.
  *
  * Env: STACK_NAME (the `prisma deploy --name` value), PRISMA_SERVICE_TOKEN,
@@ -37,10 +39,8 @@ const apiBaseUrl = process.env['PRISMA_MANAGEMENT_API_URL']?.trim() || 'https://
 
 async function runDeployList(args: readonly string[]): Promise<string> {
   const family = createComposerFamily();
-  const command = family.commands['deploy list'];
-  const deploy = family.commands['deploy'];
-  if (command === undefined || deploy === undefined) {
-    throw new Error('the Composer command family has no deploy or deploy list');
+  if (family.commands['deploy list'] === undefined) {
+    throw new Error('the Composer command family has no deploy list');
   }
   const cli = createCli({
     name: 'prisma',
@@ -49,8 +49,12 @@ async function runDeployList(args: readonly string[]): Promise<string> {
       family,
       defineCommandFamily({ configSection: ormConfigSection, commands: {} }),
     ],
-    groups: { deploy: { brief: 'Deploy the app.' } },
-    commands: { deploy, 'deploy list': command },
+    groups: {
+      deploy: { brief: 'Deploy the app.' },
+      dev: { brief: 'Run the app on this machine.' },
+      emulator: { brief: 'The local emulators on this machine.' },
+    },
+    commands: family.commands,
   });
 
   let stdout = '';

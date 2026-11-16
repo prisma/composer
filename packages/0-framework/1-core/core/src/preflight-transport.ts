@@ -28,8 +28,7 @@ export function preflightEnv(payloads: ReadonlyMap<string, string>): Record<stri
     const owner = ownerByVarName.get(varName);
     if (owner !== undefined) {
       throw new Error(
-        `Extension ids "${owner}" and "${extensionId}" both map to the preflight transport ` +
-          `variable "${varName}" — rename one of the extensions.`,
+        `Extension ids "${owner}" and "${extensionId}" both use the environment variable "${varName}". Rename one of the extensions.`,
       );
     }
     ownerByVarName.set(varName, extensionId);
@@ -45,4 +44,35 @@ export function readPreflightPayload(
 ): PreflightPayload {
   const payload = env[preflightEnvVarName(extensionId)];
   return payload === undefined || payload.length === 0 ? undefined : payload;
+}
+
+/** Where a platform variable is named: a service's input field, a service's per-key param, or the input of a module or resource that passes it to no service. */
+export type PlatformVariableReader =
+  | { readonly kind: 'field'; readonly service: string; readonly path: string }
+  | { readonly kind: 'param'; readonly service: string; readonly param: string }
+  | { readonly kind: 'unread'; readonly node: string; readonly nodeKind: 'module' | 'resource' };
+
+/** A platform variable with no value that nothing requires, with its readers and the commands that set it. */
+export interface UnsetPlatformVariable {
+  readonly name: string;
+  readonly readers: readonly PlatformVariableReader[];
+  /** Shell commands that each set it, in the order to offer them. */
+  readonly commands: readonly string[];
+}
+
+/** What a deploy preflight found that does not stop the deploy. Names and readers only, never a value. */
+export interface PreflightFindings {
+  readonly unset: readonly UnsetPlatformVariable[];
+}
+
+/** One reader as the deploy prints it, for example `read by service "shop.email", field "apiKey"`. */
+export function platformVariableReaderText(reader: PlatformVariableReader): string {
+  switch (reader.kind) {
+    case 'field':
+      return `read by service "${reader.service}", field "${reader.path === '' ? '(root)' : reader.path}"`;
+    case 'param':
+      return `read by service "${reader.service}", per-key param "${reader.param}"`;
+    case 'unread':
+      return `named by ${reader.nodeKind} "${reader.node}", read by no service`;
+  }
 }

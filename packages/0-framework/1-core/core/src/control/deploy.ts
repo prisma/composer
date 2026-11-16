@@ -20,7 +20,11 @@ import {
   type ServiceNode,
   slotsOf,
 } from '../node.ts';
-import { type PreflightPayload, readPreflightPayload } from '../preflight-transport.ts';
+import {
+  type PreflightFindings,
+  type PreflightPayload,
+  readPreflightPayload,
+} from '../preflight-transport.ts';
 import type {
   CallerCredentials,
   ContainerInstance,
@@ -214,6 +218,8 @@ export interface DeployedNode {
 export interface DeploymentResult {
   readonly app: string;
   readonly nodes: readonly DeployedNode[];
+  /** What every extension's deploy preflight found that did not stop the deploy. */
+  readonly findings: PreflightFindings;
 }
 
 export interface LowerOptions {
@@ -246,6 +252,8 @@ export interface LowerOptions {
   readonly containers: ReadonlyMap<string, ContainerInstance>;
   /** Each extension's preflight payload, by extension id. A generated stack file reads them with `transportedLowerInputs`. */
   readonly preflight: ReadonlyMap<string, string>;
+  /** The platform variables with no value that the deploy preflight found. The deploy report carries them. Absent means none. */
+  readonly findings?: PreflightFindings;
   /** What the caller already authenticated, handed to every extension's `providers()` and to the state descriptor's `create()`. Absent means each extension falls back to its own credential protocol. */
   readonly credentials?: CallerCredentials | undefined;
 }
@@ -505,6 +513,16 @@ export function joinDeployment(
   return nodes;
 }
 
+/** The deploy report: every deployed node joined with its graph node, and the deploy preflight's findings. */
+export function deploymentResult(
+  app: string,
+  graph: Graph,
+  entries: readonly { address: string; entities: readonly DeployedEntity[] }[],
+  findings: PreflightFindings,
+): DeploymentResult {
+  return { app, nodes: joinDeployment(graph, entries), findings };
+}
+
 function missingBundleError(id: NodeId): LowerError {
   return new LowerError(
     `No bundle provided for service "${id}" (opts.bundles["${id}"] is required).`,
@@ -699,6 +717,7 @@ export function lowering(
     const extensions = yield* extensionsById(config);
     const containers = opts.containers;
     const preflightOf = (extensionId: string): PreflightPayload => opts.preflight.get(extensionId);
+    const findings = opts.findings ?? { unset: [] };
     const lowered = new Map<NodeId, Outputs>();
     // Each node's reported entities, in topo order — the loop is the only
     // party that holds both the node's identity and what it became. Collected
@@ -893,7 +912,7 @@ export function lowering(
           // strings here. The graph rides in on the closure, never in the
           // input: the plan hashes the resolved input, and a node carries
           // functions and Standard Schemas.
-          report({ app: opts.name, nodes: joinDeployment(graph, input.entries) });
+          report(deploymentResult(opts.name, graph, input.entries, findings));
         }),
       );
       // `Date.now()` forces the report to run on an otherwise unchanged

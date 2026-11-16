@@ -65,6 +65,7 @@ const storageDist = '../../1-prisma-cloud/2-shared-modules/storage/dist';
 const emailDist = '../../1-prisma-cloud/2-shared-modules/email/dist';
 const streamsDist = '../../1-prisma-cloud/2-shared-modules/streams/dist';
 const devEmulatorsDist = '../../1-prisma-cloud/0-lowering/dev-emulators/dist';
+const localTargetDist = '../../1-prisma-cloud/0-lowering/local-target/dist';
 export default defineConfig([
   {
     ...baseConfig,
@@ -106,10 +107,11 @@ export default defineConfig([
     plugins: [externalizeFramework],
   },
   {
-    // Re-emitted from @internal/dev-emulators' dist (spec § 2's publish
-    // note): the daemon programs `ensureDaemon` spawns need a resolvable
-    // entry inside a PUBLISHED install's own dependency tree — the private
-    // `@internal/dev-emulators` package is never installed standalone.
+    // Re-emitted from @internal/dev-emulators' and @internal/local-target's
+    // dist (spec § 2's publish note): the daemon programs `ensureDaemon`
+    // spawns, and the program that stops an app as `prisma dev` exits, need a
+    // resolvable entry inside a PUBLISHED install's own dependency tree — the
+    // private `@internal/*` packages are never installed standalone.
     // outDir is the DEFAULT `dist` (not a subdirectory): `readOwnVersion()`
     // (baked into every one of these programs AND into this package's own
     // `local-target.mjs`, which calls `ensureDaemon`) resolves
@@ -123,6 +125,7 @@ export default defineConfig([
       'compute-main': `${devEmulatorsDist}/compute-main.mjs`,
       'buckets-main': `${devEmulatorsDist}/buckets-main.mjs`,
       'postgres-main': `${devEmulatorsDist}/postgres-main.mjs`,
+      'stop-app-main': `${localTargetDist}/stop-app-main.mjs`,
     },
     exports: false,
     clean: false,

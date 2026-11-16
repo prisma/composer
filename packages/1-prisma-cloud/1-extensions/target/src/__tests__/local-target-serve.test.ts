@@ -60,7 +60,7 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
     fs.writeFileSync(
       path.join(devDir, 'env.json'),
       JSON.stringify({
-        COMPOSER_GATEWAY_INPUT: '{"apiKey":{"$secret":"STRIPE_KEY"}}',
+        COMPOSER_GATEWAY_INPUT: '{"apiKey":{"$platform":{"name":"STRIPE_KEY","secret":true}}}',
         COMPOSER_OTHER_ROW: 'a sibling service row',
       }),
     );
@@ -115,7 +115,7 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
       PORT: String(instance.port),
       HOST: '0.0.0.0',
       COMPOSER_PORT: String(instance.port),
-      COMPOSER_INPUT: '{"apiKey":{"$secret":"STRIPE_KEY"}}',
+      COMPOSER_INPUT: '{"apiKey":{"$platform":{"name":"STRIPE_KEY","secret":true}}}',
       STRIPE_KEY: 'sk_real',
       // A sibling's row is not this service's to see (scopedEnvRows).
       COMPOSER_OTHER_ROW: null,

@@ -223,7 +223,9 @@ describe('upstream Deployment.diff while the new variable is still unresolved', 
  */
 const envTriggers = (port: string, updatedAt = '2026-01-02T00:00:00.000Z') => ({
   COMPOSER_AUTH_PORT: Redacted.make(port),
-  COMPOSER_AUTH_INPUT: Redacted.make('{"apiKey":{"$secret":"STRIPE_KEY"}}'),
+  COMPOSER_AUTH_INPUT: Redacted.make(
+    '{"apiKey":{"$platform":{"name":"STRIPE_KEY","secret":true}}}',
+  ),
   'STRIPE_KEY:updatedAt': updatedAt,
 });
 

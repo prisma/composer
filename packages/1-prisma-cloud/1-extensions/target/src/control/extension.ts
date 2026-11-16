@@ -37,6 +37,7 @@ import type {
   ServiceProviderParam,
 } from '../descriptors/shared.ts';
 import { GeneratedParamProvider } from '../generated-param-resource.ts';
+import { checkGraph } from '../graph-check.ts';
 import { fromLegacyId, legacyServiceKeyId, legacyStreamsKeyId } from '../legacy-resource-ids.ts';
 import { SELF_ORIGIN } from '../origin-key.ts';
 import { OrmMigrationProvider } from '../orm-migration-resource.ts';
@@ -337,6 +338,8 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
 
     container: containerDescriptor({ region: () => o().region }),
 
+    checkGraph,
+
     providers: ({ credentials }: ProvidersInput<Prisma.ManagementApiClient>) =>
       asProvidersLayer(
         Layer.mergeAll(
@@ -349,10 +352,9 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         ),
       ),
 
-    // Deploy-time prerequisite check (ADR-0029): verify every pointer secret in
-    // the provision manifest exists for the resolved environment, filling absent-but-
-    // in-shell names via a direct API POST — before Alchemy runs. The
-    // timestamps reach the lowering as its `preflight` payload. The parameter
+    // Deploy-time check (ADR-0064): every platform variable a service needs has
+    // a value, before Alchemy runs. The timestamps reach the lowering as its
+    // `preflight` payload. The parameter
     // annotation is what recovers this extension's own client type from the
     // framework's erased one; without it `input.credentials` arrives as `unknown`.
     preflight: (input: PrismaCloudPreflightInput) =>

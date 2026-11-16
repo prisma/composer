@@ -8,6 +8,7 @@
 export type { BucketConfig } from '../bucket.ts';
 export { bucket, bucketContract } from '../bucket.ts';
 export { ComputeService, compute } from '../compute.ts';
+export { configKey } from '../config-key.ts';
 export type { GeneratedParamOptions } from '../param.ts';
 export {
   envParam,
@@ -35,5 +36,4 @@ export type { CredentialsConfig, CredentialsContract } from '../s3-credentials.t
 export { credentialsContract, s3Credentials } from '../s3-credentials.ts';
 export { s3StoreService } from '../s3-store.ts';
 export { envSecret, secretName } from '../secret.ts';
-export { configKey } from '../serializer.ts';
 export { STREAMS_API_KEY, STREAMS_API_KEY_ENV, streamsApiKeyNeed } from '../streams-keys.ts';

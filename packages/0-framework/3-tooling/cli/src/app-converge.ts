@@ -3,7 +3,7 @@
  * the one the app installs, found from the directory of the app's
  * `prisma.config.ts`, the file its extensions are imported from. The stack,
  * Alchemy and the providers then share one copy of `alchemy` and `effect`
- * even when the `prisma` host pins another Composer (ADR-0050, ADR-0064).
+ * even when the `prisma` host pins another Composer (ADR-0050, ADR-0065).
  * The host calls that copy across a version boundary, so the two must speak
  * the same converge contract (`CONVERGE_CONTRACT`); their package versions
  * may differ.

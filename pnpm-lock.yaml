@@ -33,7 +33,7 @@ catalogs:
 
 overrides:
   '@prisma/composer-cli': workspace:*
-  '@prisma/cli-engine': 0.9.0
+  '@prisma/cli-engine': 0.10.0
 
 importers:
 
@@ -46,7 +46,7 @@ importers:
         specifier: ^1.7.0
         version: 1.7.0
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:packages/9-public/composer
       '@prisma/composer-cli':
         specifier: workspace:*
@@ -79,17 +79,17 @@ importers:
   examples/auth:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-cli':
         specifier: workspace:*
         version: link:../../packages/9-public/composer-cli
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer-prisma-cloud
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.23
-        version: 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+        version: 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       arktype:
         specifier: ^2.2.3
         version: 2.2.7
@@ -113,13 +113,13 @@ importers:
         specifier: ^3.1085.0
         version: 3.1087.0
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-cli':
         specifier: workspace:*
         version: link:../../packages/9-public/composer-cli
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 'catalog:'
@@ -144,10 +144,10 @@ importers:
         specifier: 'catalog:'
         version: 4.1.2(effect@4.1.2)
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 'catalog:'
@@ -175,10 +175,10 @@ importers:
   examples/email:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer-prisma-cloud
       '@react-email/components':
         specifier: ^1.0.12
@@ -221,13 +221,13 @@ importers:
   examples/env-param:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-cli':
         specifier: workspace:*
         version: link:../../packages/9-public/composer-cli
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer-prisma-cloud
       arktype:
         specifier: ^2.2.3
@@ -246,14 +246,14 @@ importers:
   examples/orm-demo:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer-prisma-cloud
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.23
-        version: 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+        version: 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       effect:
         specifier: 'catalog:'
         version: 4.1.2
@@ -283,10 +283,10 @@ importers:
         specifier: ^3.1085.0
         version: 3.1087.0
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 'catalog:'
@@ -314,25 +314,25 @@ importers:
         specifier: 'catalog:'
         version: 4.1.2(effect@4.1.2)
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-cli':
         specifier: workspace:*
         version: link:../../packages/9-public/composer-cli
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer-prisma-cloud
       '@store/catalog':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:modules/catalog
       '@store/orders':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:modules/orders
       '@store/promotions':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:modules/promotions
       '@store/storefront':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:modules/storefront
       alchemy:
         specifier: 'catalog:'
@@ -358,7 +358,7 @@ importers:
     dependencies:
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.23
-        version: 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+        version: 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       arktype:
         specifier: ^2.2.3
         version: 2.2.7
@@ -367,10 +367,10 @@ importers:
         version: 8.22.0
     devDependencies:
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../../packages/9-public/composer-prisma-cloud
       '@types/bun':
         specifier: ^1.3.13
@@ -386,9 +386,9 @@ importers:
     dependencies:
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.23
-        version: 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+        version: 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@store/catalog':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../catalog
       arktype:
         specifier: ^2.2.3
@@ -398,10 +398,10 @@ importers:
         version: 8.22.0
     devDependencies:
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../../packages/9-public/composer-prisma-cloud
       '@types/bun':
         specifier: ^1.3.13
@@ -416,17 +416,17 @@ importers:
   examples/store/modules/promotions:
     dependencies:
       '@store/catalog':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../catalog
       arktype:
         specifier: ^2.2.3
         version: 2.2.7
     devDependencies:
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../../packages/9-public/composer-prisma-cloud
       '@types/bun':
         specifier: ^1.3.13
@@ -438,16 +438,16 @@ importers:
   examples/store/modules/storefront:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../../packages/9-public/composer-prisma-cloud
       '@store/catalog':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../catalog
       '@store/orders':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../orders
       arktype:
         specifier: ^2.2.3
@@ -487,16 +487,16 @@ importers:
         specifier: 'catalog:'
         version: 4.1.2(effect@4.1.2)
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer-prisma-cloud
       '@storefront-auth/auth':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:modules/auth
       '@storefront-auth/storefront':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:modules/storefront
       alchemy:
         specifier: 'catalog:'
@@ -531,10 +531,10 @@ importers:
         version: 2.2.7
     devDependencies:
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../../packages/9-public/composer-prisma-cloud
       '@types/bun':
         specifier: ^1.3.13
@@ -546,13 +546,13 @@ importers:
   examples/storefront-auth/modules/storefront:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../../packages/9-public/composer-prisma-cloud
       '@storefront-auth/auth':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../auth
       arktype:
         specifier: ^2.2.3
@@ -589,10 +589,10 @@ importers:
   examples/streams:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer-prisma-cloud
     devDependencies:
       '@prisma/composer-cli':
@@ -614,7 +614,7 @@ importers:
   packages/0-framework/0-foundation/foundation:
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../tsdown-config
       arktype:
         specifier: ^2.2.3
@@ -641,7 +641,7 @@ importers:
   packages/0-framework/1-core/core:
     dependencies:
       '@internal/foundation':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-foundation/foundation
       '@standard-schema/spec':
         specifier: ^1.1.0
@@ -654,7 +654,7 @@ importers:
         version: 4.1.2
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -678,7 +678,7 @@ importers:
   packages/0-framework/2-authoring/bundle-paths:
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-foundation/tsdown-config
       tsdown:
         specifier: ^0.22.7
@@ -690,11 +690,11 @@ importers:
   packages/0-framework/2-authoring/http:
     dependencies:
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-core/core
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -712,17 +712,17 @@ importers:
   packages/0-framework/2-authoring/nextjs:
     dependencies:
       '@internal/bundle-paths':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../bundle-paths
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-core/core
       esbuild:
         specifier: ^0.28.1
         version: 0.28.2
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -740,10 +740,10 @@ importers:
   packages/0-framework/2-authoring/node:
     dependencies:
       '@internal/bundle-paths':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../bundle-paths
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-core/core
       '@vercel/nft':
         specifier: ^1.10.2
@@ -753,7 +753,7 @@ importers:
         version: 0.28.2
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -771,10 +771,10 @@ importers:
   packages/0-framework/2-authoring/service-rpc:
     dependencies:
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-core/core
       '@internal/foundation':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-foundation/foundation
       '@standard-schema/spec':
         specifier: ^1.1.0
@@ -784,7 +784,7 @@ importers:
         version: 2.2.7
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -802,14 +802,14 @@ importers:
   packages/0-framework/3-tooling/assemble:
     dependencies:
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-core/core
       '@internal/foundation':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-foundation/foundation
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -827,17 +827,17 @@ importers:
   packages/0-framework/3-tooling/cli:
     dependencies:
       '@internal/assemble':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../assemble
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-core/core
       '@internal/foundation':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-foundation/foundation
       '@prisma/cli-engine':
-        specifier: 0.9.0
-        version: 0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
+        specifier: 0.10.0
+        version: 0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
       chokidar:
         specifier: ^4.0.3
         version: 4.0.3
@@ -850,9 +850,9 @@ importers:
     devDependencies:
       '@alchemy.run/prisma':
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -879,10 +879,10 @@ importers:
   packages/1-prisma-cloud/0-lowering/dev-emulators:
     dependencies:
       '@internal/foundation':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/foundation
       '@internal/s3-protocol':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../s3-protocol
       get-port:
         specifier: ^7.2.0
@@ -898,7 +898,7 @@ importers:
         specifier: ^3.1085.0
         version: 3.1087.0
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@prisma/dev':
         specifier: ^0.25.2
@@ -925,25 +925,43 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/1-prisma-cloud/0-lowering/input-document:
+    devDependencies:
+      '@internal/tsdown-config':
+        specifier: workspace:0.39.0
+        version: link:../../../0-framework/0-foundation/tsdown-config
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      tsdown:
+        specifier: ^0.22.7
+        version: 0.22.12(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/1-prisma-cloud/0-lowering/local-target:
     dependencies:
       '@alchemy.run/prisma':
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       '@internal/bundle-paths':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/bundle-paths
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/1-core/core
       '@internal/dev-emulators':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../dev-emulators
+      '@internal/input-document':
+        specifier: workspace:0.39.0
+        version: link:../input-document
       '@internal/lowering':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../lowering
       '@internal/s3-protocol':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../s3-protocol
       '@prisma/dev':
         specifier: ^0.25.2
@@ -962,10 +980,10 @@ importers:
         specifier: ^3.1085.0
         version: 3.1087.0
       '@internal/foundation':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/foundation
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -990,7 +1008,7 @@ importers:
     dependencies:
       '@alchemy.run/prisma':
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       '@distilled.cloud/prisma':
         specifier: 'catalog:'
         version: https://pkg.alchemy.run/@distilled.cloud/prisma/-/9af912743056174c99bfc63a4702e5c09d6e5d718057b81e8964ffde4f87408b.tgz(effect@4.1.2)
@@ -998,13 +1016,13 @@ importers:
         specifier: 'catalog:'
         version: 4.1.2(effect@4.1.2)(redis@6.2.1)
       '@internal/bundle-paths':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/bundle-paths
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/1-core/core
       '@internal/foundation':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/foundation
       '@prisma/management-api-sdk':
         specifier: ^1.80.0
@@ -1017,7 +1035,7 @@ importers:
         version: 4.1.2
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -1041,7 +1059,7 @@ importers:
         specifier: ^3.1085.0
         version: 3.1087.0
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -1060,40 +1078,43 @@ importers:
     dependencies:
       '@alchemy.run/prisma':
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/1-core/core
       '@internal/dev-emulators':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-lowering/dev-emulators
       '@internal/foundation':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/foundation
       '@internal/http':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/http
+      '@internal/input-document':
+        specifier: workspace:0.39.0
+        version: link:../../0-lowering/input-document
       '@internal/local-target':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-lowering/local-target
       '@internal/lowering':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-lowering/lowering
       '@internal/node':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/node
       '@internal/s3-protocol':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-lowering/s3-protocol
       '@internal/service-rpc':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/service-rpc
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.23
-        version: 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+        version: 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@prisma/orm-toolchain':
         specifier: 8.0.0-rc.23
-        version: 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+        version: 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@standard-schema/spec':
         specifier: ^1.1.0
         version: 1.1.0
@@ -1120,11 +1141,11 @@ importers:
         specifier: 'catalog:'
         version: https://pkg.alchemy.run/@distilled.cloud/prisma/-/9af912743056174c99bfc63a4702e5c09d6e5d718057b81e8964ffde4f87408b.tgz(effect@4.1.2)
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@prisma/cli-engine':
-        specifier: 0.9.0
-        version: 0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
+        specifier: 0.10.0
+        version: 0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
@@ -1141,32 +1162,32 @@ importers:
   packages/1-prisma-cloud/2-shared-modules/auth:
     dependencies:
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/1-core/core
       '@internal/email':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../email
       '@internal/foundation':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/foundation
       '@internal/http':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/http
       '@internal/node':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/node
       '@internal/prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-extensions/target
       '@internal/service-rpc':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/service-rpc
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.23
-        version: 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+        version: 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@prisma/orm-toolchain':
         specifier: 8.0.0-rc.23
-        version: 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+        version: 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       arktype:
         specifier: ^2.2.3
         version: 2.2.7
@@ -1181,7 +1202,7 @@ importers:
         version: 8.22.0
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@prisma/dev':
         specifier: ^0.25.2
@@ -1202,19 +1223,19 @@ importers:
   packages/1-prisma-cloud/2-shared-modules/cron:
     dependencies:
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/1-core/core
       '@internal/foundation':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/foundation
       '@internal/node':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/node
       '@internal/prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-extensions/target
       '@internal/service-rpc':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/service-rpc
       '@prisma/compute':
         specifier: 0.1.0-beta.0
@@ -1224,7 +1245,7 @@ importers:
         version: 2.2.7
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -1242,19 +1263,19 @@ importers:
   packages/1-prisma-cloud/2-shared-modules/email:
     dependencies:
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/1-core/core
       '@internal/foundation':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/foundation
       '@internal/node':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/node
       '@internal/prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-extensions/target
       '@internal/service-rpc':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/service-rpc
       arktype:
         specifier: ^2.2.3
@@ -1264,7 +1285,7 @@ importers:
         version: 9.0.3
     devDependencies:
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@prisma/dev':
         specifier: ^0.25.2
@@ -1288,16 +1309,16 @@ importers:
   packages/1-prisma-cloud/2-shared-modules/storage:
     dependencies:
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/1-core/core
       '@internal/node':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/node
       '@internal/prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-extensions/target
       '@internal/s3-protocol':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-lowering/s3-protocol
     devDependencies:
       '@aws-sdk/client-s3':
@@ -1307,7 +1328,7 @@ importers:
         specifier: ^3.1085.0
         version: 3.1087.0
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@prisma/dev':
         specifier: ^0.25.2
@@ -1331,16 +1352,16 @@ importers:
         specifier: 0.2.6
         version: 0.2.6
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/1-core/core
       '@internal/node':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/2-authoring/node
       '@internal/prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-extensions/target
       '@internal/storage':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../storage
       '@prisma/streams-local':
         specifier: 0.1.11
@@ -1353,7 +1374,7 @@ importers:
         specifier: 0.2.3
         version: 0.2.3(@types/node@26.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
       '@types/bun':
         specifier: ^1.3.13
@@ -1393,34 +1414,34 @@ importers:
         version: 0.28.2
     devDependencies:
       '@internal/assemble':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/3-tooling/assemble
       '@internal/cli':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/3-tooling/cli
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/1-core/core
       '@internal/foundation':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/0-foundation/foundation
       '@internal/http':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/2-authoring/http
       '@internal/lowering':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-prisma-cloud/0-lowering/lowering
       '@internal/nextjs':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/2-authoring/nextjs
       '@internal/node':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/2-authoring/node
       '@internal/service-rpc':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/2-authoring/service-rpc
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/0-foundation/tsdown-config
       '@types/node':
         specifier: ^26.0.1
@@ -1441,7 +1462,7 @@ importers:
   packages/9-public/composer-cli:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../composer
       '@prisma/management-api-sdk':
         specifier: ^1.80.0
@@ -1460,23 +1481,23 @@ importers:
         version: 0.28.2
     devDependencies:
       '@internal/cli':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/3-tooling/cli
       '@internal/dev-emulators':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-prisma-cloud/0-lowering/dev-emulators
       '@internal/foundation':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/0-foundation/foundation
       '@internal/lowering':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-prisma-cloud/0-lowering/lowering
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/0-foundation/tsdown-config
       '@prisma/cli-engine':
-        specifier: 0.9.0
-        version: 0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
+        specifier: 0.10.0
+        version: 0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
@@ -1494,7 +1515,7 @@ importers:
     dependencies:
       '@alchemy.run/prisma':
         specifier: 'catalog:'
-        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
+        version: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)
       '@distilled.cloud/prisma':
         specifier: 'catalog:'
         version: https://pkg.alchemy.run/@distilled.cloud/prisma/-/9af912743056174c99bfc63a4702e5c09d6e5d718057b81e8964ffde4f87408b.tgz(effect@4.1.2)
@@ -1508,7 +1529,7 @@ importers:
         specifier: 'catalog:'
         version: 4.1.2(effect@4.1.2)
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../composer
       '@prisma/dev':
         specifier: ^0.25.2
@@ -1518,7 +1539,7 @@ importers:
         version: 1.80.0
       '@prisma/orm-toolchain':
         specifier: 8.0.0-rc.23
-        version: 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+        version: 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@standard-schema/spec':
         specifier: ^1.1.0
         version: 1.1.0
@@ -1545,59 +1566,62 @@ importers:
         version: 0.22.12(typescript@6.0.3)
     devDependencies:
       '@internal/auth':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-prisma-cloud/2-shared-modules/auth
       '@internal/core':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/1-core/core
       '@internal/cron':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-prisma-cloud/2-shared-modules/cron
       '@internal/dev-emulators':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-prisma-cloud/0-lowering/dev-emulators
       '@internal/email':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-prisma-cloud/2-shared-modules/email
       '@internal/foundation':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/0-foundation/foundation
       '@internal/http':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/2-authoring/http
+      '@internal/input-document':
+        specifier: workspace:0.39.0
+        version: link:../../1-prisma-cloud/0-lowering/input-document
       '@internal/local-target':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-prisma-cloud/0-lowering/local-target
       '@internal/lowering':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-prisma-cloud/0-lowering/lowering
       '@internal/nextjs':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/2-authoring/nextjs
       '@internal/node':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/2-authoring/node
       '@internal/prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-prisma-cloud/1-extensions/target
       '@internal/s3-protocol':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-prisma-cloud/0-lowering/s3-protocol
       '@internal/service-rpc':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/2-authoring/service-rpc
       '@internal/storage':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-prisma-cloud/2-shared-modules/storage
       '@internal/streams':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../1-prisma-cloud/2-shared-modules/streams
       '@internal/tsdown-config':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../0-framework/0-foundation/tsdown-config
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.23
-        version: 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+        version: 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@types/node':
         specifier: ^26.0.1
         version: 26.1.1
@@ -1611,16 +1635,16 @@ importers:
         specifier: ^3.1085.0
         version: 3.1087.0
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer
       '@prisma/composer-cli':
         specifier: workspace:*
         version: link:../../packages/9-public/composer-cli
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../packages/9-public/composer-prisma-cloud
       '@prisma/example-store':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../../examples/store
       '@types/bun':
         specifier: ^1.3.13
@@ -1650,10 +1674,10 @@ importers:
   website:
     dependencies:
       '@prisma/composer':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../packages/9-public/composer
       '@prisma/composer-prisma-cloud':
-        specifier: workspace:0.38.0
+        specifier: workspace:0.39.0
         version: link:../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 'catalog:'
@@ -1691,7 +1715,7 @@ packages:
     version: 2.0.0-beta.85
 
   '@alchemy.run/prisma@https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95':
-    resolution: {tarball: https://pkg.alchemy.run/@alchemy.run/prisma/-/04b1f57d7e5a865ec59a96ad6ec57c7a97bcd8cb7f6085763737f8ec835dc024.tgz}
+    resolution: {tarball: https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95}
     version: 2.0.0-beta.85
     peerDependencies:
       '@effect/platform-bun': ^4.1.0
@@ -2489,8 +2513,8 @@ packages:
   '@oxc-project/types@0.156.0':
     resolution: {integrity: sha512-1Duyg48TdJNdyhEB8Xn1L36bT9Pv6GUtlKjHxOys8xkaF/rQq3XJE+bAurSK/AgIz5mGFsb77cn9Pb20+WCScw==}
 
-  '@prisma/cli-engine@0.9.0':
-    resolution: {integrity: sha512-M53Xx/KiPQ02iT8FXT2c9X+3fVgMVfWK/emf/tq+jRNFi7b0Ffwaeo1yz8XS4UKOza5DaKRwMs+K8U44z9corg==}
+  '@prisma/cli-engine@0.10.0':
+    resolution: {integrity: sha512-GdeeXQg5dmlY5aBX+coqtO8AbUwszGL/Sa9z5NcRQkUKIS7hk4EBG8mhwZFN9dKOVwahw7e9dWfpM7skl2MyGg==}
     engines: {node: '>=22.12.0'}
     peerDependencies:
       '@prisma/management-api-sdk': ^1.55.0
@@ -2580,7 +2604,7 @@ packages:
   '@prisma/orm-toolchain@8.0.0-rc.23':
     resolution: {integrity: sha512-mctCtrOZbT/xHjtHSGA+dNOpzJeAgtcwbJsz7NuGdxHRy2gy5x1eOG0dekAdi/ij2JVZ8EwlXQDBNRPKrgQqeA==}
     peerDependencies:
-      '@prisma/cli-engine': 0.9.0
+      '@prisma/cli-engine': 0.10.0
       typescript: '>=5.9'
       vite: ^7.0.0 || ^8.0.0
     peerDependenciesMeta:
@@ -5697,7 +5721,7 @@ snapshots:
       chokidar: 5.0.0
       rolldown: 1.2.16
 
-  ? '@alchemy.run/prisma@https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)'
+  ? '@alchemy.run/prisma@https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)'
   : dependencies:
       '@distilled.cloud/aws': https://pkg.alchemy.run/@distilled.cloud/aws/-/37a325c303a79aba416da30d03a972ef34263967530c1112de9c432bfbd2c29c.tgz(effect@4.1.2)
       '@distilled.cloud/core': https://pkg.alchemy.run/@distilled.cloud/core/-/f73c71a235264d43ff37cac60da3e699ba6d89d06d8cf6ca9a4322d1cc5f9fd5.tgz(effect@4.1.2)
@@ -5709,7 +5733,7 @@ snapshots:
     optionalDependencies:
       '@effect/platform-bun': 4.1.2(effect@4.1.2)
       '@effect/platform-node': 4.1.2(effect@4.1.2)(redis@6.2.1)
-      '@prisma/orm-postgres': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-postgres': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@vercel/nft': 1.10.2
       prisma: 8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       ws: 8.22.2
@@ -5717,7 +5741,7 @@ snapshots:
       - typescript
       - vite
 
-  ? '@alchemy.run/prisma@https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)'
+  ? '@alchemy.run/prisma@https://pkg.alchemy.run/@alchemy.run/prisma/pr:3101:ab55f95(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(@vercel/nft@1.10.2)(alchemy@https://pkg.alchemy.run/alchemy/-/04fc54f0946f311b795967f90aedfe0f1c15a2ccccb1bb7079434518e35c0f71.tgz(@effect/platform-bun@4.1.2(effect@4.1.2))(@effect/platform-node@4.1.2(effect@4.1.2)(redis@6.2.1))(@types/react@19.2.17)(effect@4.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2))(effect@4.1.2)(prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(ws@8.22.2)'
   : dependencies:
       '@distilled.cloud/aws': https://pkg.alchemy.run/@distilled.cloud/aws/-/37a325c303a79aba416da30d03a972ef34263967530c1112de9c432bfbd2c29c.tgz(effect@4.1.2)
       '@distilled.cloud/core': https://pkg.alchemy.run/@distilled.cloud/core/-/f73c71a235264d43ff37cac60da3e699ba6d89d06d8cf6ca9a4322d1cc5f9fd5.tgz(effect@4.1.2)
@@ -5729,7 +5753,7 @@ snapshots:
     optionalDependencies:
       '@effect/platform-bun': 4.1.2(effect@4.1.2)
       '@effect/platform-node': 4.1.2(effect@4.1.2)(redis@6.2.1)
-      '@prisma/orm-postgres': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-postgres': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@vercel/nft': 1.10.2
       prisma: 8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       ws: 8.22.2
@@ -6490,7 +6514,7 @@ snapshots:
 
   '@oxc-project/types@0.156.0': {}
 
-  '@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)':
+  '@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)':
     dependencies:
       '@clack/prompts': 1.5.0
       '@prisma/management-api-sdk': 1.80.0
@@ -6638,10 +6662,10 @@ snapshots:
     dependencies:
       openapi-fetch: 0.14.0
 
-  '@prisma/orm-family-sql@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
+  '@prisma/orm-family-sql@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
       '@prisma/orm-framework': 8.0.0-rc.23(typescript@6.0.3)
-      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@standard-schema/spec': 1.1.0
       arktype: 2.2.7
       pathe: 2.0.3
@@ -6656,10 +6680,10 @@ snapshots:
       - typanion
       - vite
 
-  '@prisma/orm-family-sql@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
+  '@prisma/orm-family-sql@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
       '@prisma/orm-framework': 8.0.0-rc.23(typescript@6.0.3)
-      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@standard-schema/spec': 1.1.0
       arktype: 2.2.7
       pathe: 2.0.3
@@ -6685,12 +6709,12 @@ snapshots:
     optionalDependencies:
       typescript: 6.0.3
 
-  '@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
+  '@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
-      '@prisma/orm-family-sql': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-family-sql': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@prisma/orm-framework': 8.0.0-rc.23(typescript@6.0.3)
-      '@prisma/orm-target-postgres': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
-      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-target-postgres': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@types/node': 26.1.2
       '@types/pg': 8.20.4
       arktype: 2.2.7
@@ -6708,12 +6732,12 @@ snapshots:
       - typanion
       - vite
 
-  '@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
+  '@prisma/orm-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
-      '@prisma/orm-family-sql': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-family-sql': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@prisma/orm-framework': 8.0.0-rc.23(typescript@6.0.3)
-      '@prisma/orm-target-postgres': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
-      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-target-postgres': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@types/node': 26.1.2
       '@types/pg': 8.20.4
       arktype: 2.2.7
@@ -6731,11 +6755,11 @@ snapshots:
       - typanion
       - vite
 
-  '@prisma/orm-target-postgres@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
+  '@prisma/orm-target-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
-      '@prisma/orm-family-sql': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-family-sql': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@prisma/orm-framework': 8.0.0-rc.23(typescript@6.0.3)
-      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@standard-schema/spec': 1.1.0
       '@types/node': 26.1.2
       '@types/pg': 8.20.4
@@ -6756,11 +6780,11 @@ snapshots:
       - typanion
       - vite
 
-  '@prisma/orm-target-postgres@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
+  '@prisma/orm-target-postgres@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
-      '@prisma/orm-family-sql': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-family-sql': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@prisma/orm-framework': 8.0.0-rc.23(typescript@6.0.3)
-      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@standard-schema/spec': 1.1.0
       '@types/node': 26.1.2
       '@types/pg': 8.20.4
@@ -6781,9 +6805,9 @@ snapshots:
       - typanion
       - vite
 
-  '@prisma/orm-toolchain@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
+  '@prisma/orm-toolchain@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
-      '@prisma/cli-engine': 0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
+      '@prisma/cli-engine': 0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
       '@prisma/orm-framework': 8.0.0-rc.23(typescript@6.0.3)
       '@vercel/detect-agent': 1.2.5
       arktype: 2.2.7
@@ -6810,9 +6834,9 @@ snapshots:
       - magicast
       - typanion
 
-  '@prisma/orm-toolchain@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
+  '@prisma/orm-toolchain@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
-      '@prisma/cli-engine': 0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
+      '@prisma/cli-engine': 0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
       '@prisma/orm-framework': 8.0.0-rc.23(typescript@6.0.3)
       '@vercel/detect-agent': 1.2.5
       arktype: 2.2.7
@@ -6839,9 +6863,9 @@ snapshots:
       - magicast
       - typanion
 
-  '@prisma/orm-toolchain@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
+  '@prisma/orm-toolchain@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
-      '@prisma/cli-engine': 0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
+      '@prisma/cli-engine': 0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
       '@prisma/orm-framework': 8.0.0-rc.23(typescript@6.0.3)
       '@vercel/detect-agent': 1.2.5
       arktype: 2.2.7
@@ -6868,9 +6892,9 @@ snapshots:
       - magicast
       - typanion
 
-  '@prisma/orm-toolchain@8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
+  '@prisma/orm-toolchain@8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
-      '@prisma/cli-engine': 0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
+      '@prisma/cli-engine': 0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
       '@prisma/orm-framework': 8.0.0-rc.23(typescript@6.0.3)
       '@vercel/detect-agent': 1.2.5
       arktype: 2.2.7
@@ -9028,11 +9052,11 @@ snapshots:
   prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)):
     dependencies:
       '@manypkg/tools': 2.1.2
-      '@prisma/cli-engine': 0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
+      '@prisma/cli-engine': 0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
       '@prisma/composer-cli': link:packages/9-public/composer-cli
       '@prisma/compute-sdk': 0.43.0(@prisma/management-api-sdk@1.80.0)
       '@prisma/management-api-sdk': 1.80.0
-      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@vercel/detect-agent': 1.2.5
       better-result: 2.9.2
       cross-spawn: 7.0.6
@@ -9057,11 +9081,11 @@ snapshots:
   prisma@8.0.0-rc.32(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)):
     dependencies:
       '@manypkg/tools': 2.1.2
-      '@prisma/cli-engine': 0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
+      '@prisma/cli-engine': 0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
       '@prisma/composer-cli': link:packages/9-public/composer-cli
       '@prisma/compute-sdk': 0.43.0(@prisma/management-api-sdk@1.80.0)
       '@prisma/management-api-sdk': 1.80.0
-      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@vercel/detect-agent': 1.2.5
       better-result: 2.9.2
       cross-spawn: 7.0.6
@@ -9085,11 +9109,11 @@ snapshots:
   prisma@8.0.0-rc.32(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)):
     dependencies:
       '@manypkg/tools': 2.1.2
-      '@prisma/cli-engine': 0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
+      '@prisma/cli-engine': 0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
       '@prisma/composer-cli': link:packages/9-public/composer-cli
       '@prisma/compute-sdk': 0.43.0(@prisma/management-api-sdk@1.80.0)
       '@prisma/management-api-sdk': 1.80.0
-      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@vercel/detect-agent': 1.2.5
       better-result: 2.9.2
       cross-spawn: 7.0.6
@@ -9113,11 +9137,11 @@ snapshots:
   prisma@8.0.0-rc.32(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)):
     dependencies:
       '@manypkg/tools': 2.1.2
-      '@prisma/cli-engine': 0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
+      '@prisma/cli-engine': 0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
       '@prisma/composer-cli': link:packages/9-public/composer-cli
       '@prisma/compute-sdk': 0.43.0(@prisma/management-api-sdk@1.80.0)
       '@prisma/management-api-sdk': 1.80.0
-      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@prisma/orm-toolchain': 8.0.0-rc.23(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0))(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@vercel/detect-agent': 1.2.5
       better-result: 2.9.2
       cross-spawn: 7.0.6

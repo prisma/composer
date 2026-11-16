@@ -12,8 +12,11 @@ import type { Graph } from '@internal/core';
 import type {
   CallerCredentials,
   ContainerInstance,
+  PlatformVariableCheck,
+  PreflightFindings,
   ReporterDescriptor,
   RunReporter,
+  UnsetPlatformVariable,
 } from '@internal/core/config';
 import { containerEnv, preflightEnvVarName } from '@internal/core/config';
 import { nodeAddresses, secretsKeys } from '@internal/core/deploy';
@@ -49,6 +52,7 @@ import {
   redactError,
   redactSummary,
   redactThrown,
+  redactUnsetPlatformVariable,
   SecretRedaction,
 } from '../redaction.ts';
 import {
@@ -138,6 +142,7 @@ function deploySteps(onEvent: ((event: DeployEvent) => void) | undefined) {
     message(severity: 'info' | 'warn' | 'verbose', text: string): void {
       emit({ kind: 'message', severity, text });
     },
+    emit,
   };
 }
 
@@ -446,6 +451,7 @@ async function runStackPipelineInner(
   let alchemyStage: string;
   // What each deploy preflight hands back, for the lowering.
   const preflightPayloads = new Map<string, string>();
+  const unset: UnsetPlatformVariable[] = [];
   const preflightTransportEnv: Record<string, string> = {};
 
   try {
@@ -574,18 +580,16 @@ async function runStackPipelineInner(
     alchemyStage = containers.get(config.state.extension)?.alchemyStage ?? environment;
     steps.finish({ name: 'connect' });
 
-    // Preflight (deploy only): each extension verifies its platform
-    // prerequisites — e.g. that every secret env var in the provision manifest
-    // exists for the resolved environment (ADR-0029) — BEFORE Alchemy runs, so
-    // a missing secret fails fast with nothing side-effected.
     if (action === 'deploy') {
       steps.start({ name: 'preflight' });
-      // Summed across extensions: each reports counts of its own checks.
-      const counts: Record<string, number> = {};
-      const report = (reported: Readonly<Record<string, number>>): void => {
-        for (const [key, value] of Object.entries(reported)) {
-          counts[key] = (counts[key] ?? 0) + value;
-        }
+      let checked = 0;
+      const report = (reported: PlatformVariableCheck): void => {
+        checked += reported.checked;
+        unset.push(
+          ...reported.unset.map((variable) =>
+            redactUnsetPlatformVariable(variable, opts.redaction),
+          ),
+        );
       };
       for (const extension of config.extensions) {
         if (extension.preflight === undefined) continue;
@@ -604,7 +608,8 @@ async function runStackPipelineInner(
           throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
         }
       }
-      steps.finish({ name: 'preflight' }, counts);
+      steps.finish({ name: 'preflight' }, { checked, unset: unset.length });
+      if (unset.length > 0) steps.emit({ kind: 'preflight-findings', findings: { unset } });
     }
     // Destroy's child inherits this process's environment and runs no
     // preflight, so every transport var is blanked — a stale value exported
@@ -623,6 +628,7 @@ async function runStackPipelineInner(
       containers,
       stage: alchemyStage,
       preflight: preflightPayloads,
+      findings: { unset },
       env: reporterChildEnv(reporters, opts.redaction),
     });
   }
@@ -947,6 +953,7 @@ async function convergeDeploy(
     readonly containers: ReadonlyMap<ExtensionId, ContainerInstance>;
     readonly stage: string;
     readonly preflight: ReadonlyMap<ExtensionId, string>;
+    readonly findings: PreflightFindings;
     readonly env: Readonly<Record<string, string>>;
   },
 ): Promise<Result<DeploymentSummary | undefined, CliStructuredError>> {
@@ -971,6 +978,7 @@ async function convergeDeploy(
       bundles: pipeline.assembled.bundles,
       containers: resolved.containers,
       preflight: resolved.preflight,
+      findings: resolved.findings,
       credentials: opts.deps.credentials,
       report: (result) => {
         summary = toDeploymentSummary(result);

@@ -92,7 +92,9 @@ describe('bootstrapService', () => {
           },
         ),
     );
-    expect(rowAtBoot).toBe('{"greeting":"hello","apiKey":{"$secret":"TEST_BOOTSTRAP_API_KEY"}}');
+    expect(rowAtBoot).toBe(
+      '{"greeting":"hello","apiKey":{"$platform":{"name":"TEST_BOOTSTRAP_API_KEY","secret":true}}}',
+    );
     expect(readBack?.greeting).toBe('hello');
     expect(readBack?.apiKey.expose()).toBe('sk_test_boot');
   });

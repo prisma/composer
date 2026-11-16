@@ -147,7 +147,7 @@ describe('invariant 4: environment touches are confined to the config serializer
       { file: 'control/extension.ts', count: 2 },
       { file: 'local-target/attach.ts', count: 1 },
       { file: 'preflight.ts', count: 1 },
-      { file: 'serializer.ts', count: 9 },
+      { file: 'serializer.ts', count: 8 },
       { file: 'testing.ts', count: 5 },
     ]);
   });

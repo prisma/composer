@@ -29,8 +29,9 @@ type ReservedParams = typeof reservedParams;
  *     process-local stash keys, then call boot() to start the app's entry.
  *   · load() / input() — called from inside the app's entry: read the stash;
  *     load() hydrates + memoizes the deps, input() parses the input document,
- *     replaces each `$secret` pointer with a redacting box over the named
- *     platform var, validates with the declared schema, and memoizes (ADR-0042).
+ *     replaces each marker with its platform variable's value (a secret in a
+ *     redacting box, an unset one left out), validates with the declared
+ *     schema, and memoizes (ADR-0042).
  *   · origin() — this service's platform-assigned public origin, read from the
  *     stash `run()` populates; memoized per process.
  *   · port() — this service's resolved reserved port (the value `run()` routes

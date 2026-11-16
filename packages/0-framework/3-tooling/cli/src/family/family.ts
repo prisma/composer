@@ -76,6 +76,96 @@ function retiredStageFlagRedirect(command: string): RedirectSpec {
   };
 }
 
+type V7RedirectEntry = Omit<RedirectSpec, 'from' | 'flag' | 'code' | 'summary' | 'reason'> & {
+  readonly reason: string;
+  readonly prisma7?: string;
+};
+
+function withPrisma7Cli(reason: string, invocation: string): string {
+  return `${reason} To keep using Prisma 7, install its CLI with \`npm install --save-dev @prisma/prisma7@7\` and run \`prisma7 ${invocation}\`.`;
+}
+
+function kebabCase(flag: string): string {
+  return flag.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+}
+
+function v7Command(from: string, entry: V7RedirectEntry): RedirectSpec {
+  const { prisma7 = from, ...rest } = entry;
+  return {
+    from,
+    code: 'CLI.V7_COMMAND',
+    summary: `\`{bin} ${from}\` is a Prisma 7 command and is not available in Prisma 8`,
+    ...rest,
+    reason: withPrisma7Cli(entry.reason, prisma7),
+  };
+}
+
+function v7Flag(command: string, flag: string, entry: V7RedirectEntry): RedirectSpec {
+  const { prisma7 = `${command} --${kebabCase(flag)}`, ...rest } = entry;
+  return {
+    from: command,
+    flag,
+    code: 'CLI.V7_FLAG',
+    summary: `\`--${kebabCase(flag)}\` on \`{bin} ${command}\` is a Prisma 7 flag and is not available in Prisma 8`,
+    ...rest,
+    reason: withPrisma7Cli(entry.reason, prisma7),
+  };
+}
+
+const ENVIRONMENT =
+  'environment (a separate local copy of the app: the one named dev unless `--environment` names another)';
+
+const DEV_PORTS_REASON =
+  `\`dev\` takes no port options. Each ${ENVIRONMENT} gets its own ports for its services, ` +
+  'databases and buckets and keeps them between runs. While `dev` runs, `dev url <address>` ' +
+  'prints where one service, database or bucket answers; its address is its path from the app ' +
+  'name, with dots between names, such as `shop.catalog.database`.';
+
+const V7_REDIRECTS: readonly RedirectSpec[] = [
+  v7Command('dev ls', {
+    replacement: '{bin} emulator list',
+    help: 'emulator list',
+    reason:
+      '`emulator list` lists the local emulators on this machine, the programs `dev` starts to ' +
+      "run the app's services, databases and buckets, with every instance each one holds.",
+  }),
+  v7Command('dev rm', {
+    prisma7: 'dev rm <name>',
+    replacement: '{bin} dev --fresh',
+    help: 'dev',
+    reason:
+      "`dev --fresh` deletes this app's local services, databases and buckets, and their data, " +
+      `in one ${ENVIRONMENT}, then starts the app again. \`dev stop\` only stops the ` +
+      "app's service processes and local database servers, and keeps their data.",
+  }),
+  v7Command('dev start', {
+    prisma7: 'dev start <name>',
+    replacement: '{bin} dev --detach',
+    help: 'dev',
+    reason:
+      '`dev --detach` runs the app locally in the background: it returns once every service ' +
+      'answers and leaves the app running, without watching for changes, until `dev stop`.',
+  }),
+  ...['port', 'dbPort', 'shadowDbPort'].map((flag) =>
+    v7Flag('dev', flag, {
+      prisma7: `dev --${kebabCase(flag)} <port>`,
+      help: 'dev',
+      reason: DEV_PORTS_REASON,
+    }),
+  ),
+  v7Flag('dev', 'debug', {
+    help: 'dev',
+    reason:
+      '`dev` has no debug output option. It shows the output of each service that runs a dev ' +
+      "server, such as `next dev`, prefixed with the service's address.",
+  }),
+  v7Flag('dev stop', 'debug', {
+    prisma7: 'dev stop <name> --debug',
+    help: 'dev stop',
+    reason: '`dev stop` has no debug output option.',
+  }),
+];
+
 export function createComposerFamily(options: CreateComposerFamilyOptions = {}): CommandFamily {
   const operations = options.operations ?? realOperations;
   return defineCommandFamily({
@@ -88,6 +178,6 @@ export function createComposerFamily(options: CreateComposerFamilyOptions = {}):
       ...options.commands,
     },
     docsBaseUrl: CLI_DOCS_BASE,
-    redirects: [retiredStageFlagRedirect('deploy'), ...(options.redirects ?? [])],
+    redirects: [retiredStageFlagRedirect('deploy'), ...V7_REDIRECTS, ...(options.redirects ?? [])],
   });
 }

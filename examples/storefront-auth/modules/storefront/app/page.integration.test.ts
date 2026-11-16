@@ -46,7 +46,7 @@ function bootStandaloneNext(build: NextjsBuildAdapter): () => Promise<void> {
 }
 
 describe('storefront -> auth round trip, driven over real HTTP (bootstrapService)', () => {
-  it('renders auth.verify() -> { ok: true } served by the fake auth on a loopback port', async () => {
+  it('renders auth.verify() and auth.keyCheck() served by the fake auth on a loopback port', async () => {
     if (!isNextjsBuild(storefrontService.build)) {
       throw new Error('expected the storefront service to use the nextjs build adapter');
     }
@@ -60,11 +60,11 @@ describe('storefront -> auth round trip, driven over real HTTP (bootstrapService
     );
 
     const res = await app.fetch(new Request(app.url));
-    // React separates the static text from the {String(ok)} expression with an
-    // empty `<!-- -->` comment; assert around it rather than stripping HTML.
+    // React separates the static text from each expression with an empty
+    // `<!-- -->` comment; assert around it rather than stripping HTML.
     const html = await res.text();
 
     expect(html).toContain('Auth /verify says: <!-- -->true');
-    expect(html).toContain('Secret /check says: <!-- -->true');
+    expect(html).toContain('Auth /keyCheck says: <!-- -->fake-key-check');
   });
 });

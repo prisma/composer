@@ -2,8 +2,8 @@
  * What this extension's preflight hands the lowering, which reads it as
  * `LowerContext.preflight`. One payload carries either kind:
  *
- * - deploy: a JSON object mapping each pointed platform variable to its
- *   `updatedAt`, as read from the Management API;
+ * - deploy: a JSON object holding `updatedAt`, which maps each platform
+ *   variable a service reads to the `updatedAt` of the row the platform resolves;
  * - `prisma dev`: `dev:` followed by JSON naming the unset secrets and an
  *   HMAC-SHA256 of the current value of each variable a service points at.
  *
@@ -21,6 +21,10 @@ export interface TransportedPreflight {
   readonly absentSecrets: ReadonlySet<string>;
 }
 
+export interface DeployPreflightPayload {
+  readonly updatedAt: ReadonlyMap<string, string>;
+}
+
 export interface DevPreflightPayload {
   readonly absentSecrets: readonly string[];
   readonly pointerVersions: Readonly<Record<string, string>>;
@@ -28,7 +32,7 @@ export interface DevPreflightPayload {
 
 export type DecodedPreflightPayload =
   | { readonly kind: 'none' }
-  | { readonly kind: 'deploy'; readonly updatedAt: ReadonlyMap<string, string> }
+  | ({ readonly kind: 'deploy' } & DeployPreflightPayload)
   | {
       readonly kind: 'dev';
       readonly absentSecrets: ReadonlySet<string>;
@@ -39,12 +43,11 @@ const DEV_PAYLOAD_PREFIX = 'dev:';
 
 const byName = ([a]: [string, unknown], [b]: [string, unknown]) => (a < b ? -1 : 1);
 
-/** The deploy preflight's payload, or undefined when it read no pointed variable. */
 export function serializeDeployPreflightPayload(
-  updatedAt: ReadonlyMap<string, string>,
+  payload: DeployPreflightPayload,
 ): string | undefined {
-  if (updatedAt.size === 0) return undefined;
-  return JSON.stringify(Object.fromEntries([...updatedAt].sort(byName)));
+  if (payload.updatedAt.size === 0) return undefined;
+  return JSON.stringify({ updatedAt: Object.fromEntries([...payload.updatedAt].sort(byName)) });
 }
 
 export function serializeDevPreflightPayload(payload: DevPreflightPayload): string {
@@ -97,25 +100,22 @@ export function decodePreflightPayload(payload: string | undefined): DecodedPref
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw deployPayloadError('it is not a JSON object');
   }
-  const updatedAt = new Map<string, string>();
-  for (const [name, value] of Object.entries(parsed)) {
-    if (typeof value !== 'string') throw deployPayloadError(`"${name}" is not a string timestamp`);
-    updatedAt.set(name, value);
+  if (!('updatedAt' in parsed) || !isStringRecord(parsed.updatedAt)) {
+    throw deployPayloadError('its "updatedAt" is not an object of string timestamps');
   }
-  return { kind: 'deploy', updatedAt };
+  return { kind: 'deploy', updatedAt: new Map(Object.entries(parsed.updatedAt)) };
 }
 
 const deployPayloadError = (reason: string): Error =>
   new Error(
-    "prisma-cloud: the deploy preflight's rotation timestamps did not survive the transport " +
-      `into the alchemy process — ${reason}. This is a framework bug; re-running the deploy ` +
-      'will not fix it.',
+    `prisma-cloud: the deploy check's payload could not be read in the second process: ${reason}. ` +
+      'This is a Composer bug; deploying again will not fix it.',
   );
 
 const devPayloadError = (reason: string): Error =>
   new Error(
-    "prisma-cloud: the `prisma dev` preflight's payload did not survive the transport into the " +
-      `alchemy process — ${reason}. This is a framework bug; re-running \`prisma dev\` will not fix it.`,
+    `prisma-cloud: the \`prisma dev\` check's payload could not be read in the second process: ${reason}. ` +
+      'This is a Composer bug; running `prisma dev` again will not fix it.',
   );
 
 /** The lowering's view of what this run's preflight sent (`LowerContext.preflight`), decoded once on first use. */

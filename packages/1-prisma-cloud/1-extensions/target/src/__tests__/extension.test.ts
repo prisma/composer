@@ -4,9 +4,10 @@ import { configOf, hydrateSync, isNode, number, param, service, string } from '@
 import { secretString } from '@internal/foundation/arktype';
 import { RPC_ACCEPTED_KEYS_ENV } from '@internal/service-rpc';
 import { type } from 'arktype';
+import { configKey } from '../config-key.ts';
 import { compute, rawPostgres, rawPostgresContract } from '../exports/index.ts';
 import { bootstrapService } from '../exports/testing.ts';
-import { configKey, deserialize, encode } from '../serializer.ts';
+import { deserialize, encode } from '../serializer.ts';
 import { RPC_ACCEPTED_KEYS_PARAM } from '../service-keys.ts';
 import { STREAMS_API_KEY_ENV, STREAMS_API_KEY_PARAM } from '../streams-keys.ts';
 
@@ -789,7 +790,8 @@ describe('the input document — run() re-stash → input() (ADR-0042)', () => {
     await withEnv(
       {
         // deploy-shaped document row (address-keyed) + the user-provisioned platform var:
-        COMPOSER_INGEST_INPUT: '{"stripeEnabled":true,"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+        COMPOSER_INGEST_INPUT:
+          '{"stripeEnabled":true,"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
         STRIPE_SECRET_KEY: 'sk_live_trap',
         COMPOSER_INGEST_PORT: '',
         // address-free keys the stash (over)writes — tracked so withEnv restores them:

@@ -11,8 +11,6 @@ import storefrontService from '@storefront-auth/storefront';
  * that contract.
  */
 export default appRoot('storefront-auth', ({ provision }) => {
-  // The root binds the auth module's signingKey to the platform variable
-  // AUTH_SIGNING_SECRET; preflight fills it from the app secrets when missing.
   const auth = provision(authModule, {
     input: { signingKey: envSecret('AUTH_SIGNING_SECRET') },
   });

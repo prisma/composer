@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { Load, module } from '@internal/core';
-import type { AppConfiguration, AppSecrets } from '@internal/core/config';
+import { isSecretPointer, Load, module, service, string } from '@internal/core';
+import type {
+  AppConfiguration,
+  AppSecrets,
+  PlatformVariableCheck,
+  PreflightFindings,
+} from '@internal/core/config';
 import { secretString } from '@internal/foundation/arktype';
+import { isSecretString } from '@internal/foundation/secret';
 import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
@@ -37,19 +43,16 @@ interface Row {
   branchId: string | null;
   /** Defaulted by the fake client — only the rotation tests below care what it is. */
   updatedAt?: string;
+  isManagedBySystem?: boolean;
 }
 
 /** What a row the test did not date reads as. */
 const DEFAULT_UPDATED_AT = '2026-01-01T00:00:00.000Z';
 
-/** What the fake platform stamps on a row preflight creates from the app configuration or the app secrets. */
-const CREATED_UPDATED_AT = '2026-03-03T00:00:00.000Z';
-
 interface FakeState {
   gets: Record<string, string>[];
   posts: Record<string, unknown>[];
   rows: Row[];
-  postStatus: number;
   /** Page size for the env-var listing — unset serves everything in one page. */
   pageSize?: number;
   /** When set, the listing reports hasMore with a nextCursor equal to the request's cursor — a broken, non-advancing pagination. */
@@ -93,46 +96,72 @@ const fakeClient = (state: FakeState): ManagementApiClient =>
         response: new Response(null, { status: 200 }),
       };
     },
-    POST: async (_path: string, init: { body: Record<string, unknown> }) => {
-      state.posts.push(init.body);
-      if (state.postStatus === 500) {
-        return {
-          data: undefined,
-          error: { code: 'internal', message: 'boom' },
-          response: new Response(null, { status: 500 }),
-        };
-      }
-      if (state.postStatus === 409) {
-        return {
-          data: undefined,
-          error: { code: 'conflict', message: 'already exists' },
-          response: new Response(null, { status: 409 }),
-        };
-      }
+    POST: async (path: string, init: { body: Record<string, unknown> }) => {
+      state.posts.push({ path, ...init.body });
       return {
-        data: {
-          data: { id: 'ev-new', key: init.body['key'], updatedAt: CREATED_UPDATED_AT },
-        },
+        data: { data: { id: 'ev-new', key: init.body['key'] } },
         error: undefined,
         response: new Response(null, { status: 201 }),
       };
     },
   }) as unknown as ManagementApiClient;
 
-/** Load never validates a binding, so a pass-anything schema is enough here. */
 const anySchema: StandardSchemaV1<unknown, unknown> = {
   '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },
 };
 
-const secretGraph = () =>
+/** Passes when every field named in `required` holds a secret: a secret box or a secret pointer. */
+const requiresSecrets = (...required: string[]): StandardSchemaV1<unknown, unknown> => ({
+  '~standard': {
+    version: 1,
+    vendor: 'test',
+    validate: (value) => {
+      const record = typeof value === 'object' && value !== null ? value : {};
+      const missing = required.filter((key) => {
+        const field = Object.getOwnPropertyDescriptor(record, key)?.value;
+        return !(isSecretString(field) || isSecretPointer(field));
+      });
+      return missing.length === 0
+        ? { value }
+        : { issues: missing.map((key) => ({ message: `${key} is required` })) };
+    },
+  },
+});
+
+/** Passes when at least one of `keys` is present. */
+const requiresOneOf = (...keys: string[]): StandardSchemaV1<unknown, unknown> => ({
+  '~standard': {
+    version: 1,
+    vendor: 'test',
+    validate: (value) => {
+      const record = typeof value === 'object' && value !== null ? value : {};
+      return keys.some((key) => key in record)
+        ? { value }
+        : { issues: [{ message: `one of ${keys.join(', ')} is required` }] };
+    },
+  },
+});
+
+/** Fails whatever it is given. */
+const neverSchema: StandardSchemaV1<unknown, unknown> = {
+  '~standard': {
+    version: 1,
+    vendor: 'test',
+    validate: () => ({ issues: [{ message: 'region is required' }] }),
+  },
+};
+
+const secretGraph = (schema: StandardSchemaV1<unknown, unknown> = anySchema) =>
   Load(
     module('app', ({ provision }) => {
-      provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
+      provision(compute({ name: 'ingest', deps: {}, input: schema, build }), {
         id: 'ingest',
         input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
       });
     }),
   );
+
+const requiredSecretGraph = () => secretGraph(requiresSecrets('stripeKey'));
 
 const noSecretGraph = () =>
   Load(
@@ -141,7 +170,6 @@ const noSecretGraph = () =>
     }),
   );
 
-/** Only a generated leaf — the deploy provisions its var; nothing for an operator to seed. */
 const generatedGraph = () =>
   Load(
     module('app', ({ provision }) => {
@@ -152,31 +180,51 @@ const generatedGraph = () =>
     }),
   );
 
-/** Two services binding the SAME platform name — the manifest dedups it. */
-const sharedSecretGraph = () =>
+/** Two services binding the SAME platform name; `web` requires it when `webRequires` is set. */
+const sharedNestedSecretGraph = (webRequires = false) =>
   Load(
     module('app', ({ provision }) => {
-      provision(compute({ name: 'web', deps: {}, input: anySchema, build }), {
-        id: 'web',
-        // Nested on purpose — preflight's walk must find a leaf at any depth.
-        input: { stripe: { key: envSecret('STRIPE_SECRET_KEY') } },
-      });
+      provision(
+        compute({
+          name: 'web',
+          deps: {},
+          input: webRequires ? requiresSecrets('stripe') : anySchema,
+          build,
+        }),
+        { id: 'web', input: { stripe: envSecret('STRIPE_SECRET_KEY') } },
+      );
       provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
         id: 'ingest',
-        input: { key: envSecret('STRIPE_SECRET_KEY') },
+        input: { stripe: { key: envSecret('STRIPE_SECRET_KEY') } },
       });
     }),
   );
 
-// The reserved `port` param keeps the env-sourced param channel (ADR-0042):
-// binding it to envParam(...) still writes a pointer row the platform must back.
-const paramGraph = () =>
+const defaultedParamGraph = () =>
   Load(
     module('app', ({ provision }) => {
       provision(compute({ name: 'web', deps: {}, build }), {
         id: 'web',
-        params: { port: envParam('APP_ORIGIN') },
+        params: { port: envParam('APP_PORT') },
       });
+    }),
+  );
+
+/** A per-key param with no default that is not optional: boot fails without its variable. */
+const requiredParamGraph = () =>
+  Load(
+    module('app', ({ provision }) => {
+      provision(
+        service({
+          name: 'web',
+          extension: '@prisma/composer-prisma-cloud',
+          type: 'compute',
+          inputs: {},
+          params: { token: string() },
+          build,
+        }),
+        { id: 'web', params: { token: envParam('API_TOKEN') } },
+      );
     }),
   );
 
@@ -200,10 +248,24 @@ const NO_VALUES: ReadValues = { configuration: {}, secrets: {} };
 let read: ReadValues = NO_VALUES;
 
 /** Runs preflight with the app configuration and the app secrets `withValues` set, or empty ones. */
-const preflightWith = (
+const preflightWith = async (
   input: Omit<PrismaCloudPreflightInput, 'configuration' | 'secrets'>,
   deps?: Parameters<typeof runPreflight>[1],
-) => runPreflight({ ...input, ...read }, deps);
+) => {
+  let findings: PreflightFindings = { unset: [] };
+  const payload = await runPreflight(
+    {
+      ...input,
+      ...read,
+      report: (check) => {
+        findings = { unset: check.unset };
+        input.report?.(check);
+      },
+    },
+    deps,
+  );
+  return { ...payload, findings };
+};
 
 /** Sets the app configuration and the app secrets preflight reads for the duration of `fn`. */
 async function withValues<T>(
@@ -218,286 +280,224 @@ async function withValues<T>(
   }
 }
 
-describe('runPreflight — secret manifest verification (ADR-0029)', () => {
+const production = { container: fakeContainer('proj', undefined), environment: 'production' };
+const preview = { container: fakeContainer('proj', 'br-1'), environment: 'pr-1' };
+
+const failureOf = async (run: Promise<unknown>): Promise<string> => {
+  const error = await run.then(
+    () => undefined,
+    (e: unknown) => e,
+  );
+  if (!(error instanceof Error)) throw new Error('expected preflight to fail');
+  return error.message;
+};
+
+describe('the deploy check reads which variables exist and sets none', () => {
   let state: FakeState;
 
   beforeEach(() => {
-    state = { gets: [], posts: [], rows: [], postStatus: 201 };
+    state = { gets: [], posts: [], rows: [] };
   });
 
-  test('production: checks the production class; all-present passes with no writes', async () => {
+  test('in production, a variable with a production row passes', async () => {
     state.rows = [
       { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
 
     await preflightWith(
-      {
-        graph: secretGraph(),
-        container: fakeContainer('proj', undefined),
-        environment: 'production',
-      },
+      { graph: requiredSecretGraph(), ...production },
       { client: fakeClient(state) },
     );
 
     expect(state.gets).toEqual([
       { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY' },
     ]);
-    expect(state.posts).toEqual([]);
   });
 
-  test('named environment: a preview TEMPLATE (branchId null) counts as present', async () => {
+  test('in a named environment, a preview-wide row counts as a value', async () => {
     state.rows = [
       { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
 
     await preflightWith(
-      { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
+      { graph: requiredSecretGraph(), ...preview },
       { client: fakeClient(state) },
     );
 
     expect(state.gets[0]?.['class']).toBe('preview');
-    expect(state.posts).toEqual([]);
   });
 
-  test("named environment: this branch's own OVERRIDE counts as present", async () => {
+  test("in a named environment, this branch's own row counts as a value", async () => {
     state.rows = [
       { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: 'br-1' },
     ];
 
     await preflightWith(
-      { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
+      { graph: requiredSecretGraph(), ...preview },
       { client: fakeClient(state) },
     );
-
-    expect(state.posts).toEqual([]);
   });
 
-  test("named environment: another branch's override does NOT count — absent from both fails", async () => {
+  test("in a named environment, another branch's row does not count", async () => {
     state.rows = [
       { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: 'br-2' },
     ];
 
-    const error: unknown = await preflightWith(
-      { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
-      { client: fakeClient(state) },
-    ).catch((e: unknown) => e);
+    const message = await failureOf(
+      preflightWith({ graph: requiredSecretGraph(), ...preview }, { client: fakeClient(state) }),
+    );
 
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain('STRIPE_SECRET_KEY');
+    expect(message).toContain('STRIPE_SECRET_KEY');
+  });
+
+  test('in production, a production row with a branch does not count', async () => {
+    state.rows = [
+      { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: 'br-2' },
+    ];
+
+    const message = await failureOf(
+      preflightWith({ graph: requiredSecretGraph(), ...production }, { client: fakeClient(state) }),
+    );
+
+    expect(message).toContain('STRIPE_SECRET_KEY');
+  });
+
+  test('sets no platform variable, even when the app secrets hold a value for a missing name', async () => {
+    await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, async () => {
+      await preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) });
+      await preflightWith(
+        { graph: requiredSecretGraph(), ...preview },
+        { client: fakeClient(state) },
+      ).catch(() => undefined);
+    });
+    await withValues({ configuration: { APP_PORT: '3100', API_TOKEN: 'tok' } }, async () => {
+      await preflightWith(
+        { graph: defaultedParamGraph(), ...production },
+        { client: fakeClient(state) },
+      );
+      await preflightWith(
+        { graph: requiredParamGraph(), ...production },
+        { client: fakeClient(state) },
+      ).catch(() => undefined);
+    });
+
+    expect(state.gets.length).toBeGreaterThan(0);
     expect(state.posts).toEqual([]);
   });
 
-  test('fill-missing (named environment): absent-but-in-the-app-secrets is POSTed as a preview branch override', async () => {
-    state.rows = [];
-
-    await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
-      preflightWith(
-        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
-        { client: fakeClient(state) },
-      ),
+  test('a required variable with no row fails in production, naming the reader and the one command', async () => {
+    const message = await failureOf(
+      preflightWith({ graph: requiredSecretGraph(), ...production }, { client: fakeClient(state) }),
     );
 
-    expect(state.posts).toEqual([
-      {
-        projectId: 'proj',
-        class: 'preview',
-        key: 'STRIPE_SECRET_KEY',
-        value: 'sk_live_fill',
-        branchId: 'br-1',
-      },
-    ]);
+    expect(message).toBe(
+      'Deploy failed. 1 platform variable a service needs has no value:\n' +
+        '  - STRIPE_SECRET_KEY  (read by service "app.ingest", field "stripeKey")\n\n' +
+        'Set it on the platform, then deploy again:\n' +
+        "  - prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role production",
+    );
   });
 
-  test('fill-missing (production): POSTed as a production template, no branchId', async () => {
-    state.rows = [];
-
-    await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
+  test('in any other environment the preview-wide command comes first and the branch command second, quoted to paste', async () => {
+    const message = await failureOf(
       preflightWith(
         {
-          graph: secretGraph(),
-          container: fakeContainer('proj', undefined),
-          environment: 'production',
+          graph: requiredSecretGraph(),
+          container: fakeContainer('proj', 'br_1'),
+          environment: `it's "$HOME" x`,
         },
         { client: fakeClient(state) },
       ),
     );
 
-    expect(state.posts).toEqual([
-      { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', value: 'sk_live_fill' },
-    ]);
+    expect(message).toEndWith(
+      'Set it on the platform, then deploy again:\n' +
+        "  - prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role preview\n" +
+        `  - prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role preview --branch 'it'\\''s "$HOME" x'`,
+    );
   });
 
-  test('present on the platform is never overwritten, even when also in the app secrets', async () => {
+  test('a variable with no row that nothing requires passes and is reported with its reader and commands', async () => {
+    const result = await preflightWith(
+      { graph: secretGraph(), ...preview },
+      { client: fakeClient(state) },
+    );
+
+    expect(result.findings).toEqual({
+      unset: [
+        {
+          name: 'STRIPE_SECRET_KEY',
+          readers: [{ kind: 'field', service: 'app.ingest', path: 'stripeKey' }],
+          commands: [
+            "prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role preview",
+            "prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role preview --branch 'pr-1'",
+          ],
+        },
+      ],
+    });
+    expect(result.updatedAt.size).toBe(0);
+  });
+
+  test('a variable with a row is not a finding', async () => {
     state.rows = [
       { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
 
-    await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_ignored' } }, () =>
-      preflightWith(
-        {
-          graph: secretGraph(),
-          container: fakeContainer('proj', undefined),
-          environment: 'production',
-        },
-        { client: fakeClient(state) },
-      ),
-    );
-
-    expect(state.posts).toEqual([]);
-  });
-
-  test('absent from both platform and the app secrets fails, naming the missing name, service, and scope', async () => {
-    state.rows = [];
-
-    const error: unknown = await preflightWith(
-      {
-        graph: secretGraph(),
-        container: fakeContainer('proj', undefined),
-        environment: 'production',
-      },
+    const result = await preflightWith(
+      { graph: secretGraph(), ...production },
       { client: fakeClient(state) },
-    ).catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(Error);
-    const message = (error as Error).message;
-    expect(message).toContain('STRIPE_SECRET_KEY');
-    expect(message).toContain('service "app.ingest"');
-    expect(message).toContain('production');
-    expect(message).toContain(
-      "prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role production",
     );
-    expect(state.posts).toEqual([]);
+
+    expect(result.findings).toEqual({ unset: [] });
   });
 
-  test('quotes the environment in the printed add command so it is safe to paste', async () => {
-    state.rows = [];
-
-    const error = await preflightWith(
-      {
-        graph: secretGraph(),
-        container: fakeContainer('proj', 'br_1'),
-        environment: `it's "$HOME" x`,
-      },
-      { client: fakeClient(state) },
-    ).catch((e: unknown) => e);
-
-    expect(String(error)).toContain(
-      `prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --branch 'it'\\''s "$HOME" x'`,
-    );
-  });
-
-  test('reports how many names it checked, filled from the app configuration and the app secrets, and found missing', async () => {
-    const reports: Readonly<Record<string, number>>[] = [];
-    const run = () =>
+  test('reports how many names it checked with its findings, and nothing when it fails', async () => {
+    const reports: PlatformVariableCheck[] = [];
+    const run = (graph: ReturnType<typeof secretGraph>) =>
       preflightWith(
-        {
-          graph: secretGraph(),
-          container: fakeContainer('proj', undefined),
-          environment: 'production',
-          report: (counts) => reports.push(counts),
-        },
+        { graph, ...production, report: (report) => reports.push(report) },
         { client: fakeClient(state) },
       );
 
-    await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, run);
+    const first = await run(secretGraph());
+    await run(requiredSecretGraph()).catch(() => undefined);
     state.rows = [
       { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
     ];
-    await run();
-    state.rows = [];
-    await run().catch(() => undefined);
+    await run(secretGraph());
 
+    expect(first.findings.unset.map((variable) => variable.name)).toEqual(['STRIPE_SECRET_KEY']);
     expect(reports).toEqual([
-      { checked: 1, filled: 1, missing: 0 },
-      { checked: 1, filled: 0, missing: 0 },
-      { checked: 1, filled: 0, missing: 1 },
+      { checked: 1, ...first.findings },
+      { checked: 1, unset: [] },
     ]);
   });
 
-  test('a graph with no pointer secrets is a pass-through — no platform calls at all', async () => {
-    await preflightWith(
-      {
-        graph: noSecretGraph(),
-        container: fakeContainer('proj', undefined),
-        environment: 'production',
-      },
+  test('a graph with no platform variable makes no platform call and returns nothing', async () => {
+    const result = await preflightWith(
+      { graph: noSecretGraph(), ...production },
       { client: fakeClient(state) },
     );
 
     expect(state.gets).toEqual([]);
-    expect(state.posts).toEqual([]);
+    expect(result).toEqual({ updatedAt: new Map(), findings: { unset: [] } });
   });
 
-  test('a generated leaf is skipped — nothing to seed, no platform calls at all', async () => {
-    await preflightWith(
-      {
-        graph: generatedGraph(),
-        container: fakeContainer('proj', undefined),
-        environment: 'production',
-      },
-      { client: fakeClient(state) },
-    );
+  test('a value Composer generates needs no platform check', async () => {
+    await preflightWith({ graph: generatedGraph(), ...production }, { client: fakeClient(state) });
 
     expect(state.gets).toEqual([]);
-    expect(state.posts).toEqual([]);
-  });
-
-  test('a race 409 on fill-missing is tolerated as already-provisioned', async () => {
-    state.rows = [];
-    state.postStatus = 409;
-
-    const reports: Readonly<Record<string, number>>[] = [];
-
-    await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_race' } }, () =>
-      preflightWith(
-        {
-          graph: secretGraph(),
-          container: fakeContainer('proj', undefined),
-          environment: 'production',
-          report: (counts) => reports.push(counts),
-        },
-        { client: fakeClient(state) },
-      ),
-    );
-
-    expect(state.posts).toHaveLength(1);
-    // The other deploy's row won, so this run filled nothing.
-    expect(reports).toEqual([{ checked: 1, filled: 0, missing: 0 }]);
-  });
-
-  test('a failed fill names the key and the list it came from, never the value', async () => {
-    state.postStatus = 500;
-
-    const run = withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_SENTINEL' } }, () =>
-      preflightWith(
-        {
-          graph: secretGraph(),
-          container: fakeContainer('proj', undefined),
-          environment: 'production',
-          report: () => {},
-        },
-        { client: fakeClient(state) },
-      ),
-    );
-
-    await expect(run).rejects.toThrow(
-      'deploy preflight: failed to set "STRIPE_SECRET_KEY" on the platform from the app secrets: ' +
-        '{"code":"internal","message":"boom"}.',
-    );
   });
 
   test('follows pagination — a present name on a later page is not reported missing', async () => {
     const pages = [
       { data: [], pagination: { nextCursor: 'c1', hasMore: true } },
       {
-        data: [
-          { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
-        ],
+        data: [{ branchId: null, updatedAt: DEFAULT_UPDATED_AT }],
         pagination: { nextCursor: null, hasMore: false },
       },
     ];
     const queries: Record<string, string>[] = [];
-    const posts: unknown[] = [];
     let call = 0;
     const client = {
       GET: async (_path: string, init: { params: { query: Record<string, string> } }) => {
@@ -508,144 +508,273 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
           response: new Response(null, { status: 200 }),
         };
       },
-      POST: async (_path: string, init: { body: Record<string, unknown> }) => {
-        posts.push(init.body);
+    } as unknown as ManagementApiClient;
+
+    await preflightWith({ graph: requiredSecretGraph(), ...production }, { client });
+
+    expect(call).toBe(2);
+    expect(queries[1]?.['cursor']).toBe('c1');
+  });
+
+  test('a failed list call fails the deploy, naming the variable', async () => {
+    const client = {
+      GET: async () => ({
+        data: undefined,
+        error: { code: 'internal', message: 'boom' },
+        response: new Response(null, { status: 500 }),
+      }),
+    } as unknown as ManagementApiClient;
+
+    const message = await failureOf(
+      preflightWith({ graph: secretGraph(), ...production }, { client }),
+    );
+
+    expect(message).toBe(
+      'deploy preflight: Prisma Management API error listing "STRIPE_SECRET_KEY": {"code":"internal","message":"boom"}.',
+    );
+  });
+
+  test('at most eight list calls run at once', async () => {
+    const names = Array.from({ length: 20 }, (_, index) => `KEY_${index}`);
+    const graph = Load(
+      module('app', ({ provision }) => {
+        provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
+          id: 'ingest',
+          input: Object.fromEntries(names.map((name) => [name.toLowerCase(), envSecret(name)])),
+        });
+      }),
+    );
+    let running = 0;
+    let most = 0;
+    const listed: string[] = [];
+    const client = {
+      GET: async (_path: string, init: { params: { query: Record<string, string> } }) => {
+        running += 1;
+        most = Math.max(most, running);
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        running -= 1;
+        listed.push(init.params.query['key'] ?? '');
         return {
-          data: { data: { id: 'ev-new', key: init.body['key'] } },
+          data: { data: [], pagination: { nextCursor: null, hasMore: false } },
           error: undefined,
-          response: new Response(null, { status: 201 }),
+          response: new Response(null, { status: 200 }),
         };
       },
     } as unknown as ManagementApiClient;
 
-    await preflightWith(
-      {
-        graph: secretGraph(),
-        container: fakeContainer('proj', undefined),
-        environment: 'production',
-      },
-      { client },
+    await preflightWith({ graph, ...production }, { client });
+
+    expect(most).toBe(8);
+    expect(listed.sort()).toEqual([...names].sort());
+  });
+
+  test('the same platform name bound by two services is listed once, and the finding names both readers', async () => {
+    const result = await preflightWith(
+      { graph: sharedNestedSecretGraph(), ...production },
+      { client: fakeClient(state) },
     );
 
-    expect(call).toBe(2); // followed to the second page
-    expect(queries[1]?.['cursor']).toBe('c1'); // carried the cursor forward
-    expect(posts).toEqual([]); // found present → no fill
-  });
-
-  test('the same platform name bound by two services is checked once and named in the failure', async () => {
-    state.rows = [];
-
-    const error: unknown = await preflightWith(
-      {
-        graph: sharedSecretGraph(),
-        container: fakeContainer('proj', undefined),
-        environment: 'production',
-      },
-      { client: fakeClient(state) },
-    ).catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain('STRIPE_SECRET_KEY');
-    expect((error as Error).message).toMatch(/service "app\.(web|ingest)"/);
-    // The shared name is deduped to a single platform existence check.
     expect(state.gets).toHaveLength(1);
+    expect(result.findings.unset[0]?.readers).toEqual([
+      { kind: 'field', service: 'app.web', path: 'stripe' },
+      { kind: 'field', service: 'app.ingest', path: 'stripe.key' },
+    ]);
   });
 
-  test('env-sourced param: missing on the platform and absent from the app configuration fails, naming the platform var', async () => {
-    state.rows = [];
-
-    const error: unknown = await preflightWith(
-      {
-        graph: paramGraph(),
-        container: fakeContainer('proj', undefined),
-        environment: 'production',
-      },
-      { client: fakeClient(state) },
-    ).catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(Error);
-    const message = (error as Error).message;
-    expect(message).toContain('APP_ORIGIN');
-    expect(message).toContain('service "app.web"');
-    expect(state.posts).toEqual([]);
-  });
-
-  test('env-sourced param: absent on the platform but present in the app configuration is filled from it', async () => {
-    state.rows = [];
-
-    await withValues({ configuration: { APP_ORIGIN: 'https://preview.example.com' } }, () =>
+  test('a name one of two readers requires fails, and the error names both readers', async () => {
+    const message = await failureOf(
       preflightWith(
-        {
-          graph: paramGraph(),
-          container: fakeContainer('proj', undefined),
-          environment: 'production',
-        },
+        { graph: sharedNestedSecretGraph(true), ...production },
         { client: fakeClient(state) },
       ),
     );
 
-    expect(state.posts).toEqual([
+    expect(message).toContain(
+      '  - STRIPE_SECRET_KEY  (read by service "app.web", field "stripe"; read by service "app.ingest", field "stripe.key")',
+    );
+  });
+
+  test('when the schema needs at least one of several unset variables but none alone, the error says so', async () => {
+    const graph = Load(
+      module('app', ({ provision }) => {
+        provision(compute({ name: 'billing', deps: {}, input: requiresOneOf('a', 'b'), build }), {
+          id: 'billing',
+          input: { a: envSecret('KEY_A'), b: envSecret('KEY_B') },
+        });
+      }),
+    );
+
+    const message = await failureOf(
+      preflightWith({ graph, ...production }, { client: fakeClient(state) }),
+    );
+
+    expect(message).toStartWith(
+      'Deploy failed. 2 platform variables a service needs have no value:\n' +
+        '  - at least one of KEY_A, KEY_B  (service "app.billing" needs at least one of them: one of a, b is required)\n\n' +
+        'Set them on the platform, then deploy again:\n',
+    );
+  });
+
+  test('only the variables whose absence alone fails the schema are required', async () => {
+    const graph = Load(
+      module('app', ({ provision }) => {
+        provision(
+          compute({ name: 'billing', deps: {}, input: requiresSecrets('stripeKey'), build }),
+          {
+            id: 'billing',
+            input: {
+              stripeKey: envSecret('STRIPE_SECRET_KEY'),
+              webhookSecret: envSecret('STRIPE_WEBHOOK_SECRET'),
+            },
+          },
+        );
+      }),
+    );
+
+    const message = await failureOf(
+      preflightWith({ graph, ...production }, { client: fakeClient(state) }),
+    );
+
+    expect(message).toContain('STRIPE_SECRET_KEY');
+    expect(message).not.toContain('STRIPE_WEBHOOK_SECRET');
+  });
+
+  test('a variable in an array position with no row is required, whatever the schema says', async () => {
+    const graph = Load(
+      module('app', ({ provision }) => {
+        provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
+          id: 'ingest',
+          input: { keys: [envSecret('KEY_A')] },
+        });
+      }),
+    );
+
+    const message = await failureOf(
+      preflightWith({ graph, ...production }, { client: fakeClient(state) }),
+    );
+
+    expect(message).toContain(
+      '  - KEY_A  (read by service "app.ingest", field "keys.0")\n' +
+        '      required by service "app.ingest": an array position reads it, and an array position cannot be left out\n',
+    );
+  });
+
+  test('an input that fails with every variable present is an invalid input, never blamed on a variable', async () => {
+    const message = await failureOf(
+      preflightWith(
+        { graph: secretGraph(neverSchema), ...production },
+        { client: fakeClient(state) },
+      ),
+    );
+
+    expect(message).toStartWith('invalid input for service "app.ingest"');
+    expect(message).toContain('region is required');
+    expect(message).not.toContain('platform variable a service needs');
+  });
+
+  test('a row the environment sees that the platform manages itself fails, naming the variable', async () => {
+    state.rows = [
       {
         projectId: 'proj',
-        class: 'production',
-        key: 'APP_ORIGIN',
-        value: 'https://preview.example.com',
+        class: 'preview',
+        key: 'STRIPE_SECRET_KEY',
+        branchId: null,
+        isManagedBySystem: true,
+      },
+    ];
+
+    const message = await failureOf(
+      preflightWith({ graph: secretGraph(), ...preview }, { client: fakeClient(state) }),
+    );
+
+    expect(message).toContain(
+      '"STRIPE_SECRET_KEY" is a platform variable that Prisma Cloud manages itself',
+    );
+  });
+
+  test("another branch's row that the platform manages is not seen", async () => {
+    state.rows = [
+      {
+        projectId: 'proj',
+        class: 'preview',
+        key: 'STRIPE_SECRET_KEY',
+        branchId: 'br-2',
+        isManagedBySystem: true,
+      },
+    ];
+
+    await preflightWith({ graph: secretGraph(), ...preview }, { client: fakeClient(state) });
+  });
+
+  test('a per-key envParam() with a default is reported, never required', async () => {
+    const result = await preflightWith(
+      { graph: defaultedParamGraph(), ...production },
+      { client: fakeClient(state) },
+    );
+
+    expect(result.findings.unset).toEqual([
+      {
+        name: 'APP_PORT',
+        readers: [{ kind: 'param', service: 'app.web', param: 'port' }],
+        commands: ["prisma project env add 'APP_PORT=<value>' --project 'proj' --role production"],
       },
     ]);
   });
 
-  test('env-sourced param: present on the platform passes with no writes', async () => {
-    state.rows = [{ projectId: 'proj', class: 'production', key: 'APP_ORIGIN', branchId: null }];
-
-    await preflightWith(
-      {
-        graph: paramGraph(),
-        container: fakeContainer('proj', undefined),
-        environment: 'production',
-      },
-      { client: fakeClient(state) },
+  test('a per-key envParam() with no default that is not optional is required', async () => {
+    const message = await failureOf(
+      preflightWith({ graph: requiredParamGraph(), ...production }, { client: fakeClient(state) }),
     );
 
-    expect(state.posts).toEqual([]);
+    expect(message).toContain(
+      '  - API_TOKEN  (read by service "app.web", per-key param "token")\n' +
+        '      required by service "app.web": per-key param "token" has no default and is not optional\n',
+    );
+  });
+
+  test('a per-key envParam() with a row passes', async () => {
+    state.rows = [{ projectId: 'proj', class: 'production', key: 'API_TOKEN', branchId: null }];
+
+    await preflightWith(
+      { graph: requiredParamGraph(), ...production },
+      { client: fakeClient(state) },
+    );
   });
 
   test('a literal-bound param never reaches the platform — no calls at all', async () => {
     await preflightWith(
-      {
-        graph: literalParamGraph(),
-        container: fakeContainer('proj', undefined),
-        environment: 'production',
-      },
+      { graph: literalParamGraph(), ...production },
       { client: fakeClient(state) },
     );
 
     expect(state.gets).toEqual([]);
-    expect(state.posts).toEqual([]);
   });
 
-  test("a secret in a module's input that no service receives is checked, named as used by the module", async () => {
-    const mail = module('mail', { input: type({ 'key?': secretString() }) }, () => {});
+  test("a secret in a module's input that no service receives is reported, never required", async () => {
+    const mail = module('mail', { input: type({ key: secretString() }) }, () => {});
     const graph = Load(
       module('app', ({ provision }) => {
         provision(mail, { input: { key: envSecret('MAIL_KEY') } });
       }),
     );
 
-    const error: unknown = await preflightWith(
-      { graph, container: fakeContainer('proj', undefined), environment: 'production' },
-      { client: fakeClient(state) },
-    ).catch((e: unknown) => e);
+    const result = await preflightWith({ graph, ...production }, { client: fakeClient(state) });
 
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain('  - MAIL_KEY  (used by module "app.mail")');
+    expect(result.findings.unset).toEqual([
+      {
+        name: 'MAIL_KEY',
+        readers: [{ kind: 'unread', node: 'app.mail', nodeKind: 'module' }],
+        commands: ["prisma project env add 'MAIL_KEY=<value>' --project 'proj' --role production"],
+      },
+    ]);
   });
 
-  test("a secret a service receives through a module's input is named as used by the service", async () => {
+  test("a secret a service receives through a module's input is named as read by the service", async () => {
     const mail = module(
       'mail',
       { input: type({ key: secretString() }) },
       ({ input, provision }) => {
-        provision(compute({ name: 'sender', deps: {}, input: anySchema, build }), {
+        provision(compute({ name: 'sender', deps: {}, input: requiresSecrets('key'), build }), {
           id: 'sender',
           input: { key: input.key },
         });
@@ -657,13 +786,45 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       }),
     );
 
-    const error: unknown = await preflightWith(
-      { graph, container: fakeContainer('proj', undefined), environment: 'production' },
-      { client: fakeClient(state) },
-    ).catch((e: unknown) => e);
+    const message = await failureOf(
+      preflightWith({ graph, ...production }, { client: fakeClient(state) }),
+    );
 
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain('  - MAIL_KEY  (used by service "app.mail.sender")');
+    expect(message).toContain('  - MAIL_KEY  (read by service "app.mail.sender", field "key")');
+  });
+
+  test('a value in the app secrets or the shell does not satisfy a required variable', async () => {
+    process.env['STRIPE_SECRET_KEY'] = 'shell';
+    try {
+      const message = await withValues({ secrets: { STRIPE_SECRET_KEY: 'pool' } }, () =>
+        failureOf(
+          preflightWith(
+            { graph: requiredSecretGraph(), ...production },
+            { client: fakeClient(state) },
+          ),
+        ),
+      );
+      expect(message).toStartWith(
+        'Deploy failed. 1 platform variable a service needs has no value',
+      );
+    } finally {
+      delete process.env['STRIPE_SECRET_KEY'];
+    }
+  });
+
+  test('no value appears in what preflight hands back or in its error', async () => {
+    const sentinel = 'sk_live_SENTINEL';
+    const result = await withValues({ secrets: { STRIPE_SECRET_KEY: sentinel } }, () =>
+      preflightWith({ graph: secretGraph(), ...preview }, { client: fakeClient(state) }),
+    );
+    const message = await withValues({ secrets: { STRIPE_SECRET_KEY: sentinel } }, () =>
+      failureOf(
+        preflightWith({ graph: requiredSecretGraph(), ...preview }, { client: fakeClient(state) }),
+      ),
+    );
+
+    expect(JSON.stringify({ ...result, updatedAt: [...result.updatedAt] })).not.toContain(sentinel);
+    expect(message).not.toContain(sentinel);
   });
 
   describe('env-var listing pagination (bounded — drivePagesAsync)', () => {
@@ -675,29 +836,19 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       ];
 
       await preflightWith(
-        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'pr-1' },
+        { graph: requiredSecretGraph(), ...preview },
         { client: fakeClient(state) },
       );
 
       expect(state.gets).toHaveLength(2);
-      expect(state.posts).toEqual([]);
     });
 
     test('a non-advancing cursor fails as broken pagination instead of looping', async () => {
-      // No matching rows: every page is empty, so the search never
-      // short-circuits and the stuck cursor is what ends it.
       state.pageSize = 1;
       state.cursorStuck = true;
 
       await expect(
-        preflightWith(
-          {
-            graph: secretGraph(),
-            container: fakeContainer('proj', undefined),
-            environment: 'production',
-          },
-          { client: fakeClient(state) },
-        ),
+        preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) }),
       ).rejects.toThrow(/pagination appears broken.*possibly incomplete listing/);
     });
 
@@ -706,14 +857,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       state.cursorRunaway = true;
 
       await expect(
-        preflightWith(
-          {
-            graph: secretGraph(),
-            container: fakeContainer('proj', undefined),
-            environment: 'production',
-          },
-          { client: fakeClient(state) },
-        ),
+        preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) }),
       ).rejects.toThrow(/did not finish within 1000 pages/);
     });
 
@@ -722,19 +866,31 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       state.cursorMissing = true;
 
       await expect(
-        preflightWith(
-          {
-            graph: secretGraph(),
-            container: fakeContainer('proj', undefined),
-            environment: 'production',
-          },
-          { client: fakeClient(state) },
-        ),
+        preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) }),
       ).rejects.toThrow(/reported more pages but returned no cursor/);
     });
   });
 
   describe('the rotation timestamps it hands back', () => {
+    const row = (branchId: string | null, updatedAt: string): Row => ({
+      projectId: 'proj',
+      class: 'preview',
+      key: 'STRIPE_SECRET_KEY',
+      branchId,
+      updatedAt,
+    });
+    const timestampsFor = async () =>
+      (
+        await preflightWith(
+          {
+            graph: secretGraph(),
+            container: fakeContainer('proj', 'br-1'),
+            environment: 'feature',
+          },
+          { client: fakeClient(state) },
+        )
+      ).updatedAt;
+
     test('a name present on the platform reports when it was last written', async () => {
       state.rows = [
         {
@@ -746,163 +902,51 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
         },
       ];
 
-      const timestamps = await preflightWith(
-        {
-          graph: secretGraph(),
-          container: fakeContainer('proj', undefined),
-          environment: 'production',
-        },
+      const { updatedAt } = await preflightWith(
+        { graph: secretGraph(), ...production },
         { client: fakeClient(state) },
       );
 
-      expect([...timestamps]).toEqual([['STRIPE_SECRET_KEY', '2026-05-05T12:00:00.000Z']]);
+      expect([...updatedAt]).toEqual([['STRIPE_SECRET_KEY', '2026-05-05T12:00:00.000Z']]);
     });
 
-    test('with a template and a branch override in scope, the NEWER row wins', async () => {
-      state.rows = [
-        {
-          projectId: 'proj',
-          class: 'preview',
-          key: 'STRIPE_SECRET_KEY',
-          branchId: null,
-          updatedAt: '2026-05-05T12:00:00.000Z',
-        },
-        {
-          projectId: 'proj',
-          class: 'preview',
-          key: 'STRIPE_SECRET_KEY',
-          branchId: 'br-1',
-          updatedAt: '2026-07-07T12:00:00.000Z',
-        },
-      ];
+    test("with a class row and this branch's row, the branch row's time is handed back", async () => {
+      state.rows = [row(null, '2026-05-05T12:00:00.000Z'), row('br-1', '2026-07-07T12:00:00.000Z')];
 
-      const timestamps = await preflightWith(
-        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'feature' },
-        { client: fakeClient(state) },
-      );
-
-      expect(timestamps.get('STRIPE_SECRET_KEY')).toBe('2026-07-07T12:00:00.000Z');
+      expect((await timestampsFor()).get('STRIPE_SECRET_KEY')).toBe('2026-07-07T12:00:00.000Z');
     });
 
-    test('the NEWER row wins even when it is the template, not the branch override', async () => {
-      state.rows = [
-        {
-          projectId: 'proj',
-          class: 'preview',
-          key: 'STRIPE_SECRET_KEY',
-          branchId: null,
-          updatedAt: '2026-08-08T12:00:00.000Z',
-        },
-        {
-          projectId: 'proj',
-          class: 'preview',
-          key: 'STRIPE_SECRET_KEY',
-          branchId: 'br-1',
-          updatedAt: '2026-07-07T12:00:00.000Z',
-        },
-      ];
+    test('the branch row wins even when the class row is newer', async () => {
+      state.rows = [row(null, '2026-08-08T12:00:00.000Z'), row('br-1', '2026-07-07T12:00:00.000Z')];
 
-      const timestamps = await preflightWith(
-        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'feature' },
-        { client: fakeClient(state) },
-      );
+      expect((await timestampsFor()).get('STRIPE_SECRET_KEY')).toBe('2026-07-07T12:00:00.000Z');
+    });
 
-      // Recency, not scope precedence: the rotation signal is the newest write
-      // among every row visible to this environment.
-      expect(timestamps.get('STRIPE_SECRET_KEY')).toBe('2026-08-08T12:00:00.000Z');
+    test('a newer class row under a branch row changes nothing', async () => {
+      state.rows = [row(null, '2026-05-05T12:00:00.000Z'), row('br-1', '2026-07-07T12:00:00.000Z')];
+      const before = await timestampsFor();
+      state.rows = [row(null, '2026-09-09T12:00:00.000Z'), row('br-1', '2026-07-07T12:00:00.000Z')];
+
+      expect(await timestampsFor()).toEqual(before);
+    });
+
+    test('with no branch row, the class row is handed back', async () => {
+      state.rows = [row(null, '2026-05-05T12:00:00.000Z')];
+
+      expect((await timestampsFor()).get('STRIPE_SECRET_KEY')).toBe('2026-05-05T12:00:00.000Z');
     });
 
     test('a row belonging to ANOTHER branch is not in scope and does not date this one', async () => {
       state.rows = [
-        {
-          projectId: 'proj',
-          class: 'preview',
-          key: 'STRIPE_SECRET_KEY',
-          branchId: null,
-          updatedAt: '2026-05-05T12:00:00.000Z',
-        },
-        {
-          projectId: 'proj',
-          class: 'preview',
-          key: 'STRIPE_SECRET_KEY',
-          branchId: 'br-other',
-          updatedAt: '2026-09-09T12:00:00.000Z',
-        },
+        row(null, '2026-05-05T12:00:00.000Z'),
+        row('br-other', '2026-09-09T12:00:00.000Z'),
       ];
 
-      const timestamps = await preflightWith(
-        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), environment: 'feature' },
-        { client: fakeClient(state) },
-      );
-
-      expect(timestamps.get('STRIPE_SECRET_KEY')).toBe('2026-05-05T12:00:00.000Z');
+      expect((await timestampsFor()).get('STRIPE_SECRET_KEY')).toBe('2026-05-05T12:00:00.000Z');
     });
 
-    test('a name preflight fills from the app secrets reports the created row\u2019s time', async () => {
-      state.rows = [];
-
-      const timestamps = await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
-        preflightWith(
-          {
-            graph: secretGraph(),
-            container: fakeContainer('proj', undefined),
-            environment: 'production',
-          },
-          { client: fakeClient(state) },
-        ),
-      );
-
-      expect(timestamps.get('STRIPE_SECRET_KEY')).toBe(CREATED_UPDATED_AT);
-    });
-
-    test('a fill that lost the race (409) reports no time, so the next deploy redeploys once', async () => {
-      state.rows = [];
-      state.postStatus = 409;
-
-      const timestamps = await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
-        preflightWith(
-          {
-            graph: secretGraph(),
-            container: fakeContainer('proj', undefined),
-            environment: 'production',
-          },
-          { client: fakeClient(state) },
-        ),
-      );
-
-      expect(timestamps.has('STRIPE_SECRET_KEY')).toBe(false);
-    });
-
-    test('a graph with nothing to check hands back an empty map', async () => {
-      const timestamps = await preflightWith(
-        {
-          graph: noSecretGraph(),
-          container: fakeContainer('proj', undefined),
-          environment: 'production',
-        },
-        { client: fakeClient(state) },
-      );
-
-      expect(timestamps.size).toBe(0);
-    });
-
-    test('no VALUE is ever handed back — the API returns none and preflight asks for none', async () => {
-      state.rows = [];
-
-      const timestamps = await withValues(
-        { secrets: { STRIPE_SECRET_KEY: 'sk_live_sentinel' } },
-        () =>
-          preflightWith(
-            {
-              graph: secretGraph(),
-              container: fakeContainer('proj', undefined),
-              environment: 'production',
-            },
-            { client: fakeClient(state) },
-          ),
-      );
-
-      expect(JSON.stringify([...timestamps])).not.toContain('sk_live_sentinel');
+    test('a name with no row has no time', async () => {
+      expect((await timestampsFor()).has('STRIPE_SECRET_KEY')).toBe(false);
     });
   });
 });
@@ -929,7 +973,7 @@ describe('runPreflight — a COMPOSER_ key that changes owner in the move to ful
   let state: FakeState;
 
   beforeEach(() => {
-    state = { gets: [], posts: [], rows: [], postStatus: 201 };
+    state = { gets: [], posts: [], rows: [] };
   });
 
   const preflight = () =>
@@ -1027,7 +1071,6 @@ describe('runPreflight — a chain of COMPOSER_ keys that change owner', () => {
       gets: [],
       posts: [],
       rows: [row('COMPOSER_SHOP_X_ORIGIN'), row('COMPOSER_SHOP_SHOP_X_ORIGIN')],
-      postStatus: 201,
     };
 
     const message = String(await preflight(state).catch((e: unknown) => e));
@@ -1045,104 +1088,9 @@ describe('runPreflight — a chain of COMPOSER_ keys that change owner', () => {
         row('COMPOSER_SHOP_SHOP_X_ORIGIN'),
         row('COMPOSER_SHOP_SHOP_SHOP_X_ORIGIN'),
       ],
-      postStatus: 201,
     };
 
     await preflight(state);
-  });
-});
-
-describe('runPreflight — values come from the app configuration and the app secrets, never the shell', () => {
-  let state: FakeState;
-
-  beforeEach(() => {
-    state = { gets: [], posts: [], rows: [], postStatus: 201 };
-  });
-
-  const production = { container: fakeContainer('proj', undefined), environment: 'production' };
-
-  /** A name bound both as a secret in the service's input and as an env-sourced param. */
-  const sharedNameGraph = () =>
-    Load(
-      module('app', ({ provision }) => {
-        provision(compute({ name: 'web', deps: {}, input: anySchema, build }), {
-          id: 'web',
-          input: { key: envSecret('SHARED') },
-          params: { port: envParam('SHARED') },
-        });
-      }),
-    );
-
-  async function withShell<T>(values: Record<string, string>, fn: () => Promise<T>): Promise<T> {
-    for (const [name, value] of Object.entries(values)) process.env[name] = value;
-    try {
-      return await fn();
-    } finally {
-      for (const name of Object.keys(values)) delete process.env[name];
-    }
-  }
-
-  test('a missing secret is filled from the app secrets, not the shell', async () => {
-    await withShell({ STRIPE_SECRET_KEY: 'shell' }, () =>
-      withValues({ secrets: { STRIPE_SECRET_KEY: 'pool' } }, () =>
-        preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) }),
-      ),
-    );
-
-    expect(state.posts).toEqual([
-      { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', value: 'pool' },
-    ]);
-  });
-
-  test('a missing secret the app secrets lacks fails, even when the shell has it', async () => {
-    const error = await withShell({ STRIPE_SECRET_KEY: 'shell' }, () =>
-      preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) }).catch(
-        (e: unknown) => e,
-      ),
-    );
-
-    expect(String(error)).toContain(
-      'Deploy failed. 1 required setting has no value:\n  - STRIPE_SECRET_KEY  (used by service "app.ingest")',
-    );
-    expect(state.posts).toEqual([]);
-  });
-
-  test('a missing env-sourced param is filled from the app configuration', async () => {
-    await withShell({ APP_ORIGIN: 'shell' }, () =>
-      withValues({ configuration: { APP_ORIGIN: 'https://pool.example' } }, () =>
-        preflightWith({ graph: paramGraph(), ...production }, { client: fakeClient(state) }),
-      ),
-    );
-
-    expect(state.posts).toEqual([
-      { projectId: 'proj', class: 'production', key: 'APP_ORIGIN', value: 'https://pool.example' },
-    ]);
-  });
-
-  test('a name bound as a secret and as an env-sourced param is filled from the app secrets', async () => {
-    await withValues(
-      { secrets: { SHARED: 'from-secrets' }, configuration: { SHARED: 'from-config' } },
-      () =>
-        preflightWith({ graph: sharedNameGraph(), ...production }, { client: fakeClient(state) }),
-    );
-
-    expect(state.posts).toEqual([
-      { projectId: 'proj', class: 'production', key: 'SHARED', value: 'from-secrets' },
-    ]);
-  });
-
-  test('an env-sourced param whose app configuration value is not text fails naming its kind', async () => {
-    const error = await withValues({ configuration: { APP_ORIGIN: 4 } }, () =>
-      preflightWith({ graph: paramGraph(), ...production }, { client: fakeClient(state) }).catch(
-        (e: unknown) => e,
-      ),
-    );
-
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe(
-      'The `config` adapters return a number for "APP_ORIGIN", not text, so preflight cannot set the platform variable envParam(\'APP_ORIGIN\') of service "app.web" reads. Make the adapter return a string.',
-    );
-    expect(state.posts).toEqual([]);
   });
 });
 
