@@ -93,7 +93,7 @@ describe('readDocument', () => {
       plain: 'p',
     });
     expect(() => read(document, { G_PLAIN: 'p' })).toThrow(
-      'The platform variable "G_SECRET", which the deploy writes, has no value. Deploy again.',
+      'The variable "G_SECRET" on the platform, which the deploy writes, has no value. Deploy again.',
     );
   });
 

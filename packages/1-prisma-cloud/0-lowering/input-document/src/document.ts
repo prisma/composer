@@ -136,7 +136,7 @@ export function readDocument(document: unknown, options: ReadDocumentOptions): R
       const text = textOf(name);
       if (text === undefined) {
         throw new Error(
-          `The platform variable "${name}", which the deploy writes, has no value. Deploy again.`,
+          `The variable "${name}" on the platform, which the deploy writes, has no value. Deploy again.`,
         );
       }
       return value.redacted ? options.secret(text) : text;
