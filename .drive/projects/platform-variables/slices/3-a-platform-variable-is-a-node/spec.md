@@ -472,7 +472,7 @@ Under `prisma dev`, Composer plays the platform's part: it gives each service th
 
   ```text
   The platform variable "EMAIL_FROM", which prisma dev read from the `config` adapters, holds the value of the secret "EMAIL_DELIVERY_CREDENTIAL". Composer hands the second process every plain value in a file, and never writes a secret to a file.
-  Fix: keep the value of "EMAIL_DELIVERY_CREDENTIAL" out of the platform variable "EMAIL_FROM", or give "EMAIL_FROM" a different value.
+  Fix: Keep the value of "EMAIL_DELIVERY_CREDENTIAL" out of the platform variable "EMAIL_FROM", or give "EMAIL_FROM" a different value.
   ```
 
 **The second process.** It reads `plainVariableText` from the file and passes it to the local target's providers. The local target fills a plain `$platform` marker and a per-key pointer from `plainVariableText`, and a secret marker from the named secrets.
@@ -697,7 +697,7 @@ Everything below is observable without reading the code. Each item says what mus
   - a required unset input field stops dev;
   - a non-text value stops dev before any service starts, with the message in 5.6;
   - a changed value changes only its readers' fingerprints;
-  - a rebuild whose reads or read nodes differ from those at start, because a code change added or removed a node, a reader or a site, does not converge, reports the message in 5.6, and pauses rebuilds until restart. A variable renamed under an explicit id pauses rebuilds. A plain node changed to a secret under the same id pauses rebuilds. Reordering two `provision()` calls does not.
+  - a rebuild whose reads or read nodes differ from those at start, because the graph the first process loads changed in a node, a reader or a site, does not converge, reports the message in 5.6, and pauses rebuilds until restart. A variable renamed under an explicit id pauses rebuilds. A plain node changed to a secret under the same id pauses rebuilds. Reordering two `provision()` calls does not.
 
   Tested in the target, and the rebuild case in the CLI. The target tests run with a plain node bound to a required param, an optional param and a param with a default.
 - **19.** Under `prisma dev`, a plain node's text that holds a secret's value fails with `CONFIG.SECRET_AS_PLAIN_VALUE`. The deploy's app configuration file has an empty `plainVariableText`. The graph's `appConfigurationRead` holds the root's input only. The file written on the first converge and on a rebuild holds the texts from the preflight run at start. The second process reads `plainVariableText` from the file and passes it to the local target. Tested in the CLI.
