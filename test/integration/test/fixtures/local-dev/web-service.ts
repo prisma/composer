@@ -17,6 +17,6 @@ import { type } from 'arktype';
 export default compute({
   name: 'web',
   deps: { db: rawPostgres(), store: bucket() },
-  input: type({ 'greeting?': field(type('string')) }),
+  input: type({ 'greeting?': field(type('string')), 'smtpPort?': field(type('number')) }),
   build: node({ module: import.meta.url, entry: 'built/web-server.mjs' }),
 });
