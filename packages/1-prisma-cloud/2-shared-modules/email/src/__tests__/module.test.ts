@@ -89,7 +89,7 @@ describe('email()', () => {
     expect(graph.valueReads).toContainEqual({
       reader: 'root.email.service',
       resource: 'root.emailDeliveryCredential',
-      site: { kind: 'serviceInput', path: 'deliveryCredential' },
+      path: 'deliveryCredential',
     });
     expect(binding['deliveryUrl']).toBe('https://api.resend.com');
   });
