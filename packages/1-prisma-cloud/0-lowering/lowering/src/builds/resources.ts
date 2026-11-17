@@ -20,7 +20,7 @@ export const BUILD_ID_ENV = 'PRISMA_BUILD_ID';
 
 interface PlatformResource {
   readonly type: BuildResourceType;
-  /** The attribute holding the platform's own id — `Deployment` does not call it `id`. */
+  /** The attribute holding the platform's own id — `ComputeVersion` calls it `versionId`. */
   readonly idField: string;
 }
 
@@ -42,8 +42,8 @@ const PLATFORM_RESOURCES: Readonly<Record<string, PlatformResource>> = {
   'Prisma.Database': { type: 'database', idField: 'databaseId' },
   'Prisma.Connection': { type: 'service_key', idField: 'connectionId' },
   'Prisma.Bucket': { type: 'bucket', idField: 'bucketId' },
-  'Prisma.App': { type: 'app', idField: 'appId' },
-  'Prisma.Deployment': { type: 'deployment', idField: 'deploymentId' },
+  'Prisma.ComputeService': { type: 'app', idField: 'serviceId' },
+  'Prisma.ComputeVersion': { type: 'deployment', idField: 'versionId' },
   'Prisma.EnvironmentVariable': { type: 'config_variable', idField: 'environmentVariableId' },
 };
 

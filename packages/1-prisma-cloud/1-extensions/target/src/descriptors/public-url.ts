@@ -51,7 +51,7 @@ export function publicUrlDescriptor(): NodeDescriptor {
       }
       const { hostname } = strategy;
       const domain = yield* Prisma.CustomDomain(resourceId(address, 'domain', hostname), {
-        app: service.serviceId,
+        service: service.serviceId,
         hostname,
       });
       return {

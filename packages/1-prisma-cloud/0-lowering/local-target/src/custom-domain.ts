@@ -6,9 +6,10 @@ import type * as Layer from 'effect/Layer';
 import * as Predicate from 'effect/Predicate';
 import { DEV_TIMESTAMP } from './upstream-attributes.ts';
 
-function appIdOfInput(value: unknown): string {
+function serviceIdOfInput(value: unknown): string {
   if (typeof value === 'string') return value;
-  if (Predicate.isObject(value) && typeof value['appId'] === 'string') return value['appId'];
+  if (Predicate.isObject(value) && typeof value['serviceId'] === 'string')
+    return value['serviceId'];
   return 'local';
 }
 
@@ -22,7 +23,7 @@ export function LocalCustomDomainProvider(
       Effect.succeed({
         customDomainId: `local-${id}`,
         hostname: news.hostname,
-        appId: appIdOfInput(news.app),
+        serviceId: serviceIdOfInput(news.service),
         status: 'active',
         foundryStatus: 'active',
         failureReason: null,

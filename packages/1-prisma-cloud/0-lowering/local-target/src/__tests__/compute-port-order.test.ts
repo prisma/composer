@@ -3,12 +3,12 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { App } from '@alchemy.run/prisma';
+import { ComputeService } from '@alchemy.run/prisma';
 import type { ContainerInstance } from '@internal/core/config';
 import { EMULATORS_DIR_ENV, ensureDaemon, stopDaemon } from '@internal/dev-emulators';
 import * as Effect from 'effect/Effect';
 import { ensureAppInstances } from '../app-instances.ts';
-import { LocalAppProvider } from '../compute.ts';
+import { LocalComputeServiceProvider } from '../compute.ts';
 import { ensureServiceInstance, nodeInstancesOf } from '../emulator-instances.ts';
 
 function ensureServiceInstances(
@@ -57,11 +57,11 @@ const reconcileInput = (id: string, news: Record<string, unknown>) =>
     bindings: [],
   }) as never;
 
-async function reconcileApp(container: ContainerInstance, address: string): Promise<number> {
+async function reconcileService(container: ContainerInstance, address: string): Promise<number> {
   const provider = await Effect.runPromise(
-    App.Provider.pipe(
+    ComputeService.Provider.pipe(
       Effect.provide(
-        LocalAppProvider({
+        LocalComputeServiceProvider({
           container,
           devDir,
           plainVariableText: {},
@@ -70,7 +70,7 @@ async function reconcileApp(container: ContainerInstance, address: string): Prom
       ),
     ),
   );
-  const attributes: App['Attributes'] = await Effect.runPromise(
+  const attributes: ComputeService['Attributes'] = await Effect.runPromise(
     provider.reconcile(
       reconcileInput(address, {
         project: 'local',
@@ -78,7 +78,7 @@ async function reconcileApp(container: ContainerInstance, address: string): Prom
       }),
     ),
   );
-  return Number(new URL(attributes.appEndpointDomain ?? '').port);
+  return Number(new URL(attributes.serviceEndpointDomain).port);
 }
 
 async function reservedPorts(app: string): Promise<Record<string, number>> {
@@ -86,7 +86,7 @@ async function reservedPorts(app: string): Promise<Record<string, number>> {
   return Object.fromEntries(nodes.map(({ address, instance }) => [address, instance.port]));
 }
 
-test('each App provider returns the port reserved for its service, even when the providers race', async () => {
+test('each service provider returns the port reserved for its service, even when the providers race', async () => {
   for (let run = 0; run < 10; run++) {
     const appName = `port-order-${String(run)}`;
     const container = fakeContainer(appName);
@@ -96,8 +96,8 @@ test('each App provider returns the port reserved for its service, even when the
     const reserved = await reservedPorts(appName);
 
     const [gateway, quotes] = await Promise.all([
-      reconcileApp(container, GATEWAY),
-      reconcileApp(container, QUOTES),
+      reconcileService(container, GATEWAY),
+      reconcileService(container, QUOTES),
     ]);
 
     expect({ quotes, gateway }).toEqual({
@@ -126,18 +126,18 @@ test('reserving the services of an app that already has ports keeps those ports'
     'port-order-warm.gateway',
   ]);
 
-  expect(await reconcileApp(container, 'port-order-warm.quotes')).toBe(quotes.port);
-  expect(await reconcileApp(container, 'port-order-warm.gateway')).toBe(gateway.port);
+  expect(await reconcileService(container, 'port-order-warm.quotes')).toBe(quotes.port);
+  expect(await reconcileService(container, 'port-order-warm.gateway')).toBe(gateway.port);
 });
 
-test('a dotted service address reserves the same emulator instance the App provider uses', async () => {
+test('a dotted service address reserves the same emulator instance the service provider uses', async () => {
   const container = fakeContainer('port-order-nested');
   await ensureServiceInstances(container, devDir, ['port-order-nested.shop.quotes']);
 
   const listed = (
     await nodeInstancesOf({ devDir, app: 'port-order-nested', environment: 'dev' }, 'service')
   ).map((node) => node.instance);
-  expect(await reconcileApp(container, 'port-order-nested.shop.quotes')).toBe(
+  expect(await reconcileService(container, 'port-order-nested.shop.quotes')).toBe(
     listed[0]?.port ?? -1,
   );
   expect(listed).toHaveLength(1);

@@ -10,7 +10,7 @@ import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
 import { data, fakeManagementApi, page } from '../../__tests__/fake-management-api.ts';
 import { runScratch, scratchStack } from '../../scratch-stack.ts';
-import { appAfterEnvironment } from '../deployment-edge.ts';
+import { serviceAfterEnvironment } from '../deployment-edge.ts';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -38,7 +38,7 @@ const scenarios: {
 ];
 
 test.each(scenarios)(
-  'deployment snapshots completed environment writes: $name',
+  'version snapshots completed environment writes: $name',
   async ({ input, addVariable = false, repairDrift = false, failUpdate = false }) => {
     const variables = new Map<string, Prisma.Types.EnvironmentVariable>();
     const values = new Map<string, string>();
@@ -161,6 +161,22 @@ test.each(scenarios)(
             yield* client.updateEnvironmentVariable(variable, { value: field(body, 'value') }),
           );
         }
+        // `skipCodeUpload` copies the version the service serves, so the
+        // version reads the service first.
+        if (method === 'GET' && url.pathname === '/v1/services/app-1') {
+          return data({
+            id: 'app-1',
+            type: 'app',
+            url: 'https://api.prisma.test/v1/services/app-1',
+            name: 'app-1',
+            region: { id: 'us-east-1', name: 'N. Virginia' },
+            projectId: 'project-1',
+            branchId: 'branch-1',
+            latestDeploymentId: 'deployment-0',
+            appEndpointDomain: 'app-1.prisma.build',
+            createdAt: '2026-01-01T00:00:00.000Z',
+          });
+        }
         if (method === 'GET' && url.pathname === '/v1/services/app-1/deployments') {
           return page(yield* client.listAppDeployments());
         }
@@ -182,10 +198,10 @@ test.each(scenarios)(
 
     const providers = Layer.effect(
       Prisma.Providers,
-      Provider.collection([Prisma.EnvironmentVariable, Prisma.Deployment]),
+      Provider.collection([Prisma.EnvironmentVariable, Prisma.ComputeVersion]),
     ).pipe(
       Layer.provideMerge(
-        Layer.mergeAll(Prisma.EnvironmentVariableProvider(), Prisma.DeploymentProvider()),
+        Layer.mergeAll(Prisma.EnvironmentVariableProvider(), Prisma.ComputeVersionProvider()),
       ),
       Layer.provideMerge(api),
     );
@@ -211,8 +227,8 @@ test.each(scenarios)(
             }),
           );
         }
-        const deployment = yield* Prisma.Deployment('deployment', {
-          app: appAfterEnvironment(Output.asOutput('app-1'), environment),
+        const deployment = yield* Prisma.ComputeVersion('deployment', {
+          service: serviceAfterEnvironment(Output.asOutput('app-1'), environment),
           skipCodeUpload: true,
           start: false,
           // Environment values alone must replace the deployment. The drift case

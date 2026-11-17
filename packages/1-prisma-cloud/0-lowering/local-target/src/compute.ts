@@ -1,17 +1,24 @@
 /**
- * Local compute-cluster providers: upstream alchemy's `Prisma.App` and
- * `Prisma.Deployment` become clients of the machine-scoped Compute emulator;
- * `Prisma.EnvironmentVariable` becomes a row in the dev env store;
+ * Local compute-cluster providers: upstream alchemy's `Prisma.ComputeService`
+ * and `Prisma.ComputeVersion` become clients of the machine-scoped Compute
+ * emulator; `Prisma.EnvironmentVariable` becomes a row in the dev env store;
  * `Prisma.Project` is an identity stand-in. Attributes match upstream's
- * shapes; fields the emulator cannot answer are left absent, and both
- * `appEndpointDomain`s carry the emulator's local URL. Nothing here reads
+ * shapes; fields the emulator cannot answer are left absent, and the
+ * service's `serviceEndpointDomain` and `url` and the version's `url` carry
+ * the emulator's local URL. Nothing here reads
  * `process.cwd()`; the environment is read only for the variables a service's
  * rows point at.
  */
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { App, Deployment, EnvironmentVariable, Project } from '@alchemy.run/prisma';
+import {
+  ComputeService,
+  type ComputeServiceActiveVersion,
+  ComputeVersion,
+  EnvironmentVariable,
+  Project,
+} from '@alchemy.run/prisma';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
 import { computeClient } from '@internal/dev-emulators';
 import {
@@ -20,6 +27,7 @@ import {
   INPUT_KEY_NAME,
   ownKeyPrefix,
 } from '@internal/input-document';
+import { providerError } from '@internal/lowering';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
@@ -36,16 +44,18 @@ import {
 } from './emulator-instances.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
 
-/** Reads an app id from upstream's `app` input: a plain string or a resolved `Prisma.App` attributes record. */
-function appIdOfInput(value: unknown): string {
+/** Reads a service id from upstream's `service` input: a plain string or a resolved `Prisma.ComputeService` attributes record. */
+function serviceIdOfInput(value: unknown): string {
   if (typeof value === 'string') return value;
-  if (Predicate.isObject(value) && typeof value['appId'] === 'string') return value['appId'];
-  throw new Error(`local Deployment received an app reference it cannot read: ${String(value)}`);
+  if (Predicate.isObject(value) && typeof value['serviceId'] === 'string') {
+    return value['serviceId'];
+  }
+  throw new Error(`local version received a service reference it cannot read: ${String(value)}`);
 }
 
 /**
  * The artifact's own sha256, streamed from its bytes — the digest that names
- * the unpacked artifact directory and identifies the deployment. Memoized on
+ * the unpacked artifact directory and identifies the version. Memoized on
  * (path, size, mtime): every converge re-runs providers and artifacts run to
  * hundreds of megabytes.
  */
@@ -142,7 +152,7 @@ function isComputeManifest(value: unknown): value is ComputeManifest {
  * Reads the address the artifact was packaged for, and whether the service
  * listens on its port, out of its own `compute.manifest.json` — intrinsic
  * artifact metadata (the SAME manifest `bootstrap.js` was baked from), never
- * dev config threaded through the platform's `Deployment` primitive
+ * dev config threaded through the platform's version primitive
  * (local-dev spec § 4, REVERTED — operator review of #162).
  */
 export function readComputeManifest(artifactDir: string): {
@@ -163,7 +173,7 @@ export function readComputeManifest(artifactDir: string): {
 }
 
 /**
- * A deployment's environment: its own rows, its port, the platform variables its input document names, and `PATH` and `HOME`.
+ * A version's environment: its own rows, its port, the platform variables its input document names, and `PATH` and `HOME`.
  * A dev server is given the same (ADR-0056).
  */
 export async function materializeEnv(
@@ -198,56 +208,69 @@ function localUrl(port: number): string {
 }
 
 /**
- * `Prisma.App` → the Compute emulator: finds or creates the instance that
- * runs the service, which holds the service's port. The app id here IS the
- * service's own address. An App whose instance was re-created on another
- * port is updated, so its dependents get the new URL. Deleting an App (its
- * service was removed) deletes its instance.
+ * `Prisma.ComputeService` → the Compute emulator: finds or creates the
+ * instance that runs the service, which holds the service's port. The service
+ * id here IS the service's own address. A service whose instance was
+ * re-created on another port is updated, so its dependents get the new URL.
+ * Deleting a service (it was removed) deletes its instance.
+ *
+ * The version attached with `Prisma.activateVersion` and the service read
+ * each other, which the engine resolves by creating the service first:
+ * `precreate` does what `reconcile` does. The emulator runs whatever version
+ * was last put, so the attached version is recorded, never promoted.
  */
-export function LocalAppProvider(
+export function LocalComputeServiceProvider(
   input: LocalTargetProvidersInput,
-): Layer.Layer<Provider.Provider<App>> {
-  const service: Provider.ProviderService<App> = {
+): Layer.Layer<Provider.Provider<ComputeService>> {
+  const ensure = (
+    id: string,
+    news: ComputeService['Props'],
+    bindings: ReadonlyArray<{ readonly data: ComputeServiceActiveVersion }>,
+  ) =>
+    Effect.tryPromise({
+      try: async () => {
+        // The resource ID is the node's address, the record's key (ADR-0057).
+        const name = id;
+        const { instance } = await ensureServiceInstance(appScopeOf(input), name);
+        const url = localUrl(instance.port);
+        return {
+          serviceId: name,
+          name,
+          projectId: projectIdOfInput(news.project),
+          regionId: news.regionId ?? 'us-east-1',
+          branchId: news.branchId ?? null,
+          branchRole: null,
+          activeVersionId: bindings[0]?.data.versionId ?? null,
+          serviceEndpointDomain: url,
+          url,
+          createdAt: DEV_TIMESTAMP,
+          logicalId: null,
+        } satisfies ComputeService['Attributes'];
+      },
+      catch: providerError,
+    });
+  const service: Provider.ProviderService<ComputeService> = {
     list: () => Effect.succeed([]),
-    reconcile: ({ id, news }) =>
-      Effect.tryPromise({
-        try: async () => {
-          // The resource ID is the node's address, the record's key (ADR-0057).
-          const name = id;
-          const { instance } = await ensureServiceInstance(appScopeOf(input), name);
-          const url = localUrl(instance.port);
-          return {
-            appId: name,
-            name,
-            projectId: projectIdOfInput(news.project),
-            regionId: news.regionId ?? 'us-east-1',
-            branchId: news.branchId ?? null,
-            latestDeploymentId: null,
-            appEndpointDomain: url,
-            createdAt: DEV_TIMESTAMP,
-            logicalId: null,
-          } satisfies App['Attributes'];
-        },
-        catch: (cause) => cause,
-      }),
+    precreate: ({ id, news, bindings }) => ensure(id, news, bindings),
+    reconcile: ({ id, news, bindings }) => ensure(id, news, bindings),
     diff: ({ output }) =>
       Effect.tryPromise({
         try: async () => {
           if (output === undefined) return undefined;
           const live = await liveServiceInstance(appScopeOf(input), output.name);
-          if (live?.url === output.appEndpointDomain) return undefined;
+          if (live?.url === output.serviceEndpointDomain) return undefined;
           return { action: 'update' as const };
         },
-        catch: (cause) => cause,
+        catch: providerError,
       }),
     delete: ({ output }) =>
       Effect.tryPromise({
         try: () => deleteNodeInstance(appScopeOf(input), output.name),
-        catch: (cause) => cause,
+        catch: providerError,
       }),
     read: ({ output }) => Effect.succeed(output),
   };
-  return Provider.effect(App, Effect.succeed(service));
+  return Provider.effect(ComputeService, Effect.succeed(service));
 }
 
 /** `Prisma.EnvironmentVariable` → a key/value row in `<devDir>/env.json`. Upstream's value is `Redacted`; env.json holds the plain string the child process is given. */
@@ -259,10 +282,15 @@ export function LocalEnvironmentVariableProvider(
     reconcile: ({ news }) =>
       Effect.tryPromise({
         try: async () => {
-          await envStore(input.devDir).update((current) => ({
-            ...current,
-            [news.key]: Redacted.value(news.value),
-          }));
+          // Upstream reads a value that resolves to `undefined` as "declare
+          // no variable", and deletes the one the resource wrote.
+          const value = news.value;
+          await envStore(input.devDir).update((current) => {
+            const next = { ...current };
+            if (value === undefined) delete next[news.key];
+            else next[news.key] = Redacted.value(value);
+            return next;
+          });
           return {
             environmentVariableId: news.key,
             projectId: projectIdOfInput(news.project),
@@ -276,7 +304,7 @@ export function LocalEnvironmentVariableProvider(
             updatedAt: DEV_TIMESTAMP,
           } satisfies EnvironmentVariable['Attributes'];
         },
-        catch: (cause) => cause,
+        catch: providerError,
       }),
     delete: ({ output }) =>
       Effect.tryPromise({
@@ -287,33 +315,33 @@ export function LocalEnvironmentVariableProvider(
             return next;
           });
         },
-        catch: (cause) => cause,
+        catch: providerError,
       }),
   };
   return Provider.effect(EnvironmentVariable, Effect.succeed(service));
 }
 
 /**
- * `Prisma.Deployment` → unpacks the artifact once per hash, finds the
+ * `Prisma.ComputeVersion` → unpacks the artifact once per hash, finds the
  * service's emulator instance and its port, materializes the child's full env (env store +
  * the current values of the variables its rows point at + the port override +
- * `PATH`/`HOME`), and puts the deployment — the
+ * `PATH`/`HOME`), and puts the version — the
  * emulator (re)starts the child only when the hash or env actually changed.
  * `portMapping` is ignored on purpose: the emulator owns port allocation, and
  * the child learns its port from `COMPOSER_<ADDRESS>_PORT` in the env this
  * provider materializes.
  */
-export function LocalDeploymentProvider(
+export function LocalComputeVersionProvider(
   input: LocalTargetProvidersInput,
-): Layer.Layer<Provider.Provider<Deployment>> {
-  const service: Provider.ProviderService<Deployment> = {
+): Layer.Layer<Provider.Provider<ComputeVersion>> {
+  const service: Provider.ProviderService<ComputeVersion> = {
     list: () => Effect.succeed([]),
     reconcile: ({ news }) =>
       Effect.tryPromise({
-        try: async (): Promise<Deployment['Attributes']> => {
-          const appId = appIdOfInput(news.app);
+        try: async (): Promise<ComputeVersion['Attributes']> => {
+          const serviceId = serviceIdOfInput(news.service);
           if (news.artifactPath === undefined) {
-            throw new Error('local Deployment requires an artifactPath — nothing to run.');
+            throw new Error('local version requires an artifactPath — nothing to run.');
           }
           const artifactHash = await artifactSha256(news.artifactPath);
 
@@ -323,7 +351,7 @@ export function LocalDeploymentProvider(
           }
           const { address, listens } = readComputeManifest(artifactDir);
 
-          const { instance } = await ensureServiceInstance(appScopeOf(input), appId);
+          const { instance } = await ensureServiceInstance(appScopeOf(input), serviceId);
           const env = await materializeEnv(
             input.devDir,
             address,
@@ -342,45 +370,44 @@ export function LocalDeploymentProvider(
             throw withServiceAddresses(error, [{ address, instance }]);
           }
 
-          const url = localUrl(instance.port);
           return {
-            deploymentId: artifactHash,
-            appId,
+            versionId: artifactHash,
+            serviceId,
             // The emulator has no Foundry: the artifact digest is the only
-            // identity a local deployment has, and it is what upstream's
+            // identity a local version has, and it is what upstream's
             // recovery-by-version lookup would be given.
             foundryVersionId: artifactHash,
             status: 'running',
             previewDomain: null,
             artifactHash,
-            appEndpointDomain: url,
+            url: localUrl(instance.port),
             createdAt: DEV_TIMESTAMP,
-          } satisfies Deployment['Attributes'];
+          } satisfies ComputeVersion['Attributes'];
         },
-        catch: (cause) => cause,
+        catch: providerError,
       }),
-    // An instance that no longer runs this deployment — re-created after the
-    // emulator lost it, or never deployed — needs the deployment again, even
+    // An instance that no longer runs this version — re-created after the
+    // emulator lost it, or never deployed — needs the version again, even
     // when nothing in the app changed, and so does an artifact no longer
     // unpacked in the environment's folder.
     diff: ({ output }) =>
       Effect.tryPromise({
         try: async () => {
           if (output === undefined) return undefined;
-          const live = await liveServiceInstance(appScopeOf(input), output.appId);
+          const live = await liveServiceInstance(appScopeOf(input), output.serviceId);
           const { artifactHash } = output;
           if (live?.artifactHash !== artifactHash) return { action: 'update' as const };
           const unpacked =
             artifactHash === undefined || fs.existsSync(artifactDirOf(input.devDir, artifactHash));
           return unpacked ? undefined : { action: 'update' as const };
         },
-        catch: (cause) => cause,
+        catch: providerError,
       }),
     // Content-addressed, cheap to leave unpacked; `--fresh` removes the whole
-    // dev dir, and deleting the App deletes the emulator's instance.
+    // dev dir, and deleting the service deletes the emulator's instance.
     delete: () => Effect.void,
   };
-  return Provider.effect(Deployment, Effect.succeed(service));
+  return Provider.effect(ComputeVersion, Effect.succeed(service));
 }
 
 /**

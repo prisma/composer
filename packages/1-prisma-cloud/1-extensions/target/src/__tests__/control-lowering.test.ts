@@ -56,6 +56,7 @@ const recorded: {
   warm: Array<[string, unknown]>;
   svc: Array<[string, unknown]>;
   deploy: Array<[string, unknown]>;
+  activate: Array<[unknown, unknown]>;
   pkg: Array<[unknown]>;
   serviceKey: Array<[string, unknown]>;
   creds: Array<[string, unknown]>;
@@ -74,6 +75,7 @@ const recorded: {
   conn: [],
   warm: [],
   svc: [],
+  activate: [],
   deploy: [],
   pkg: [],
   serviceKey: [],
@@ -103,10 +105,10 @@ mock.module('alchemy/Output', () => ({
 }));
 
 // The postgres family (Database/Connection) and the compute family
-// (App/Deployment/EnvironmentVariable) are upstream alchemy's — the descriptors
-// import them from '@alchemy.run/prisma', so the stubs live there. The returned
-// attributes use upstream's field names (`databaseId`, `appId`,
-// `appEndpointDomain`, `environmentVariableId`).
+// (ComputeService/ComputeVersion/EnvironmentVariable) are upstream alchemy's —
+// the descriptors import them from '@alchemy.run/prisma', so the stubs live
+// there. The returned attributes use upstream's field names (`databaseId`,
+// `serviceId`, `serviceEndpointDomain`, `environmentVariableId`).
 /** Records the adoption policy the resource declaration runs under, as Alchemy captures it at registration. */
 const recordingAdoptPolicy = <A>(resource: string, result: Effect.Effect<A>) =>
   Effect.flatMap(Effect.serviceOption(AdoptPolicy), (policy) => {
@@ -127,27 +129,31 @@ const recordingPolicies = <A>(resource: string, result: Effect.Effect<A>) =>
 
 mock.module('@alchemy.run/prisma', () => ({
   ...RealAlchemyPrisma,
-  App: (id: string, props: unknown) => {
+  ComputeService: (id: string, props: unknown) => {
     recorded.svc.push([id, props]);
     return recordingPolicies(
-      `App ${id}`,
+      `ComputeService ${id}`,
       Effect.succeed({
-        appId: `${id}#cloud-id`,
+        serviceId: `${id}#cloud-id`,
         name: id,
-        appEndpointDomain: `https://${id}.example`,
+        serviceEndpointDomain: `https://${id}.example`,
       }),
     );
   },
-  Deployment: (id: string, props: unknown) => {
+  ComputeVersion: (id: string, props: unknown) => {
     recorded.deploy.push([id, props]);
     return recordingRenamePolicy(
-      `Deployment ${id}`,
+      `ComputeVersion ${id}`,
       Effect.succeed({
-        deploymentId: 'v1',
-        appId: `deployment-app-of:${id}`,
-        appEndpointDomain: `https://${id}.example`,
+        versionId: `${id}#version`,
+        serviceId: `version-service-of:${id}`,
+        url: `https://${id}.preview.example`,
       }),
     );
+  },
+  activateVersion: (service: unknown, version: unknown) => {
+    recorded.activate.push([service, version]);
+    return Effect.void;
   },
   EnvironmentVariable: (id: string, props: { key: string; value: unknown }) => {
     // Upstream's prop is `Redacted`. Recorded UNWRAPPED so every row
@@ -381,7 +387,10 @@ type Mirror<T> = { readonly [K in keyof T]: Resolved<T[K]> };
 /** The mock EnvironmentVariable, standing in for the real resource. */
 type MockedEnvironment = ReadonlyArray<{ environmentVariableId: string; key: string }>;
 
-type MockedProvisioned = Mirror<ComputeProvisioned>;
+/** The mock ComputeService's attributes, standing in for the real resource. */
+type MockedProvisioned = Omit<Mirror<ComputeProvisioned>, 'service'> & {
+  readonly service: Readonly<Record<string, string>>;
+};
 type MockedSerialized = Omit<Mirror<ComputeSerialized>, 'environment'> & {
   readonly environment: MockedEnvironment;
 };
@@ -940,6 +949,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       const result = run<MockedProvisioned>(serviceDescriptorOf(target, 'compute').provision(ctx));
 
       expect(result).toEqual({
+        service: {
+          serviceId: 'shop.auth#cloud-id',
+          name: 'shop.auth',
+          serviceEndpointDomain: 'https://shop.auth.example',
+        },
         serviceId: 'shop.auth#cloud-id',
         projectId: 'shop-project#cloud-id',
         endpointDomain: 'https://shop.auth.example',
@@ -1079,7 +1093,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       });
       expect(result.platformVariables).toEqual([]);
       // serialize also surfaces the resolved listen port for deploy() — the
-      // Deployment must route to whatever the app binds, not a constant.
+      // The version must route to whatever the app binds, not a constant.
       expect(result.port).toBe(3000);
     });
   });
@@ -1700,7 +1714,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     ]);
   });
 
-  test("deploy declares serialize's triggers (plus pointer timestamps) and rides the app ordering edge — PRO-211", () => {
+  test("deploy declares serialize's triggers (plus pointer timestamps) and rides the service ordering edge — PRO-211", () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const ctx = {
       id: 'shop.auth',
@@ -1708,7 +1722,14 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       graph: { root: { id: 'shop' } },
       opts: {},
     } as unknown as LowerContext;
-    const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const provisioned = {
+      service: {
+        serviceId: 'auth-svc#cloud-id',
+        serviceEndpointDomain: 'https://auth-svc.example',
+      },
+      serviceId: 'auth-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+    };
     const artifact = { path: '/tmp/auth.tar.gz', sha256: 'sha-auth' };
     const serialized = {
       environment: [
@@ -1721,7 +1742,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       // The input document points at an operator-owned platform variable; its
       // preflight `updatedAt` must join the triggers under `<name>:updatedAt`.
       platformVariables: ['STRIPE_SECRET_KEY'],
-      // A non-default port from serialize must reach the Deployment verbatim.
+      // A non-default port from serialize must reach the version verbatim.
       port: 8080,
     };
 
@@ -1730,16 +1751,16 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     );
 
     // The mocked `Output.all`/`Output.map` collapse to "apply the function to
-    // the collected values", so the recorded `app` is the resolved id — what
-    // the real Output resolves to as well. What the assertion pins is that
-    // `app` is built FROM the env rows' ids, which is the dependency Alchemy
-    // schedules the writes on, and that the triggers reach the Deployment
+    // the collected values", so the recorded `service` is the resolved id —
+    // what the real Output resolves to as well. What the assertion pins is
+    // that `service` is built FROM the env rows' ids, which is the dependency
+    // Alchemy schedules the writes on, and that the triggers reach the version
     // with the pointer timestamp folded in ('?' — no preflight ran here).
     expect(recorded.deploy).toEqual([
       [
         'shop.auth.deployment',
         {
-          app: 'auth-svc#cloud-id',
+          service: 'auth-svc#cloud-id',
           artifactPath: '/tmp/auth.tar.gz',
           artifactContentType: 'application/gzip',
           portMapping: { http: 8080 },
@@ -1748,14 +1769,25 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
             'STRIPE_SECRET_KEY:updatedAt': '?',
           },
           start: true,
-          promote: true,
+        },
+      ],
+    ]);
+    // The version is made live by attaching it to the service, not by
+    // promoting itself, so the service keeps the version it replaces.
+    expect(recorded.activate).toEqual([
+      [
+        provisioned.service,
+        {
+          versionId: 'shop.auth.deployment#version',
+          serviceId: 'version-service-of:shop.auth.deployment',
+          url: 'https://shop.auth.deployment.preview.example',
         },
       ],
     ]);
     expect(result.outputs).toEqual({
-      url: 'https://shop.auth.deployment.example',
+      url: 'https://auth-svc.example',
       projectId: 'shop-project#cloud-id',
-      serviceId: 'deployment-app-of:shop.auth.deployment',
+      serviceId: 'auth-svc#cloud-id',
     });
     // compute publishes its URL deliberately — a Compute service's deployed
     // endpoint IS public, and this descriptor is the only party that knows it.
@@ -1763,7 +1795,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       {
         kind: 'compute-service',
         id: 'auth-svc#cloud-id',
-        url: 'https://shop.auth.deployment.example',
+        url: 'https://auth-svc.example',
       },
     ]);
   });
@@ -1776,7 +1808,14 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       graph: { root: { id: 'shop' } },
       opts: {},
     } as unknown as LowerContext;
-    const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const provisioned = {
+      service: {
+        serviceId: 'auth-svc#cloud-id',
+        serviceEndpointDomain: 'https://auth-svc.example',
+      },
+      serviceId: 'auth-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+    };
     const artifact = { path: '/tmp/auth.tar.gz', sha256: 'sha-auth' };
     const serialized = {
       environment: [],
@@ -1798,7 +1837,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       {
         kind: 'compute-service',
         id: 'auth-svc#cloud-id',
-        url: 'https://shop.auth.deployment.example',
+        url: 'https://auth-svc.example',
         details: {
           input: '{"stripeKey":$platform STRIPE_SECRET_KEY}',
           absent: 'greeting → ENV_GREETING\nregion → ENV_REGION',
@@ -1815,7 +1854,14 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       graph: { root: { id: 'shop' } },
       opts: {},
     } as unknown as LowerContext;
-    const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const provisioned = {
+      service: {
+        serviceId: 'auth-svc#cloud-id',
+        serviceEndpointDomain: 'https://auth-svc.example',
+      },
+      serviceId: 'auth-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+    };
     const artifact = { path: '/tmp/auth.tar.gz', sha256: 'sha-auth' };
     const serialized = {
       environment: [],
@@ -1837,7 +1883,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       {
         kind: 'compute-service',
         id: 'auth-svc#cloud-id',
-        url: 'https://shop.auth.deployment.example',
+        url: 'https://auth-svc.example',
         details: {
           input: '{"stripeKey":$platform STRIPE_SECRET_KEY}',
         },
@@ -1966,7 +2012,14 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
       graph: { root: { id: 'shop' } },
       opts: {},
     } as unknown as LowerContext;
-    const provisioned = { serviceId: 'store-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const provisioned = {
+      service: {
+        serviceId: 'store-svc#cloud-id',
+        serviceEndpointDomain: 'https://store-svc.example',
+      },
+      serviceId: 'store-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+    };
     const artifact = { path: '/tmp/store.tar.gz', sha256: 'sha-store' };
     const serialized = {
       environment: [{ id: 'STORE_PORT-var#cloud-id', key: 'STORE_PORT' }],
@@ -1984,9 +2037,9 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
 
     // The four S3Config fields a consumer's s3() slot resolves by name, plus url.
     expect(result.outputs).toEqual({
-      url: 'https://shop.store.deployment.example',
+      url: 'https://store-svc.example',
       projectId: 'shop-project#cloud-id',
-      serviceId: 'deployment-app-of:shop.store.deployment',
+      serviceId: 'store-svc#cloud-id',
       bucket: 'streams',
       accessKeyId: 'AKIA123',
       secretAccessKey: 'sekret',
@@ -1999,7 +2052,7 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
       {
         kind: 'compute-service',
         id: 'store-svc#cloud-id',
-        url: 'https://shop.store.deployment.example',
+        url: 'https://store-svc.example',
       },
     ]);
   });
@@ -2995,7 +3048,7 @@ describe('platform identity: each row carries its topology node logicalId — th
       const ownRows = [...policies].filter(([resource]) => !resource.startsWith('Connection '));
       expect(ownRows.map(([resource]) => resource)).toEqual(
         expect.arrayContaining([
-          'App shop.auth.service',
+          'ComputeService shop.auth.service',
           'Database shop.auth.database',
           'Bucket shop.files',
         ]),
@@ -3028,7 +3081,7 @@ describe('resource IDs are built from the full address, and each declares the ID
     rows.slice(before).map(([id]) => id);
   const shopGraph = { root: { id: 'shop' } };
 
-  test('compute: the App and Deployment of a nested service', () => {
+  test('compute: the ComputeService and ComputeVersion of a nested service', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const ctx = { id: 'shop.auth.api', address: 'shop.auth.api', graph: shopGraph, application };
     const before = { svc: recorded.svc.length, deploy: recorded.deploy.length };
@@ -3037,18 +3090,22 @@ describe('resource IDs are built from the full address, and each declares the ID
     run(
       serviceDescriptorOf(target, 'compute').deploy(
         ctx as unknown as LowerContext,
-        { serviceId: 'shop.auth.api#cloud-id', projectId: 'shop-project#cloud-id' },
+        {
+          service: { serviceId: 'shop.auth.api#cloud-id' },
+          serviceId: 'shop.auth.api#cloud-id',
+          projectId: 'shop-project#cloud-id',
+        },
         { path: '/tmp/api.tar.gz', sha256: 'sha-api' },
         { environment: [], triggers: {}, platformVariables: [], port: 3000 },
       ),
     );
 
     expect(idsSince(recorded.svc, before.svc)).toEqual(['shop.auth.api']);
-    expect(renamedFromOf('App shop.auth.api')).toEqual(['auth.api-svc']);
+    expect(renamedFromOf('ComputeService shop.auth.api')).toEqual(['auth.api-svc']);
     // The display name is the address; upstream updates it in place.
     expect(recorded.svc[before.svc]?.[1]).toHaveProperty('displayName', 'shop.auth.api');
     expect(idsSince(recorded.deploy, before.deploy)).toEqual(['shop.auth.api.deployment']);
-    expect(renamedFromOf('Deployment shop.auth.api.deployment')).toEqual(['auth.api-deploy']);
+    expect(renamedFromOf('ComputeVersion shop.auth.api.deployment')).toEqual(['auth.api-deploy']);
   });
 
   test('compute: config rows, the input row, a generated value and its row, and a provider-param row', async () => {
@@ -3133,7 +3190,7 @@ describe('resource IDs are built from the full address, and each declares the ID
       );
 
       expect(idsSince(recorded.svc, before.svc)).toEqual(['my-shop.web']);
-      expect(renamedFromOf('App my-shop.web')).toEqual(['web-svc']);
+      expect(renamedFromOf('ComputeService my-shop.web')).toEqual(['web-svc']);
       expect(recorded.svc[before.svc]?.[1]).toHaveProperty('displayName', 'my-shop.web');
       const port = 'my-shop.web.env.COMPOSER_MY_SHOP_WEB_PORT';
       expect(idsSince(recorded.envVar, before.envVar)).toContain(port);
@@ -3564,7 +3621,7 @@ describe("prismaCloud().nodes['public-url'] — the public URL descriptor", () =
     const result = lowerSite(shop('Shop.COM.'));
 
     expect(recorded.customDomain.slice(before)).toEqual([
-      ['shop.site.domain.shop.com', { app: 'svc_123', hostname: 'shop.com' }],
+      ['shop.site.domain.shop.com', { service: 'svc_123', hostname: 'shop.com' }],
     ]);
     expect(result).toEqual({
       outputs: {},
@@ -3579,16 +3636,13 @@ describe("prismaCloud().nodes['public-url'] — the public URL descriptor", () =
     });
   });
 
-  test("the CustomDomain's app comes from the target service's Deployment, so it waits for the promote", async () => {
+  test("the CustomDomain's service is read once the service serves its version, so it waits for the promote", async () => {
     const before = recorded.customDomain.length;
 
     await lowerThroughCore(shop('shop.com'), { 'shop.web': 'modules/web/dist' });
 
     expect(recorded.customDomain.slice(before)).toEqual([
-      [
-        'shop.site.domain.shop.com',
-        { app: 'deployment-app-of:shop.web.deployment', hostname: 'shop.com' },
-      ],
+      ['shop.site.domain.shop.com', { service: 'shop.web#cloud-id', hostname: 'shop.com' }],
     ]);
   });
 
@@ -3631,7 +3685,7 @@ describe("prismaCloud().nodes['public-url'] — the public URL descriptor", () =
     expect(recorded.customDomain.slice(before)).toEqual([
       [
         'shop.site.domain.shop.com',
-        { app: 'deployment-app-of:shop.storefront.web.deployment', hostname: 'shop.com' },
+        { service: 'shop.storefront.web#cloud-id', hostname: 'shop.com' },
       ],
     ]);
   });

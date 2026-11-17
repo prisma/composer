@@ -7,13 +7,13 @@
  */
 
 import {
-  App,
   Bucket,
   BucketAccessKey,
+  ComputeService,
+  ComputeVersion,
   Connection,
   CustomDomain,
   Database,
-  Deployment,
   EnvironmentVariable,
   Project,
 } from '@alchemy.run/prisma';
@@ -23,8 +23,8 @@ import * as Provider from 'alchemy/Provider';
 import * as Layer from 'effect/Layer';
 import { LocalBucketAccessKeyProvider, LocalBucketProvider } from './bucket.ts';
 import {
-  LocalAppProvider,
-  LocalDeploymentProvider,
+  LocalComputeServiceProvider,
+  LocalComputeVersionProvider,
   LocalEnvironmentVariableProvider,
   LocalProjectProvider,
 } from './compute.ts';
@@ -38,8 +38,8 @@ export const localTargetProviders = (input: LocalTargetProvidersInput): Layer.La
       Project,
       Database,
       Connection,
-      App,
-      Deployment,
+      ComputeService,
+      ComputeVersion,
       EnvironmentVariable,
       Bucket,
       BucketAccessKey,
@@ -51,8 +51,8 @@ export const localTargetProviders = (input: LocalTargetProvidersInput): Layer.La
         LocalProjectProvider(input),
         LocalDatabaseProvider(input),
         LocalConnectionProvider(input),
-        LocalAppProvider(input),
-        LocalDeploymentProvider(input),
+        LocalComputeServiceProvider(input),
+        LocalComputeVersionProvider(input),
         LocalEnvironmentVariableProvider(input),
         LocalBucketProvider(input),
         LocalBucketAccessKeyProvider(input),

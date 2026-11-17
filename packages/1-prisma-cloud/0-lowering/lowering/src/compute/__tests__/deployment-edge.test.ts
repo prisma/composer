@@ -1,11 +1,11 @@
 /**
- * The environment→deployment ordering edge, against the REAL Output machinery
- * and upstream's REAL `Prisma.Deployment` provider (an eager-collapse stub
+ * The environment→version ordering edge, against the REAL Output machinery
+ * and upstream's REAL `Prisma.ComputeVersion` provider (an eager-collapse stub
  * cannot represent the unresolved half of planning). Two properties on the
  * deploy that adds a variable and changes code in one run: every variable
- * write and the app are upstream of the deployment, and the artifact
+ * write and the service are upstream of the version, and the artifact
  * comparison still runs while the new variable is unresolved (see
- * deployment-edge.ts for why only the `app` prop keeps that true).
+ * deployment-edge.ts for why only the `service` prop keeps that true).
  */
 
 import { afterAll, describe, expect, test } from 'bun:test';
@@ -21,7 +21,7 @@ import { sha256, sha256Object } from 'alchemy/Util/sha256';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import { appAfterEnvironment } from '../deployment-edge.ts';
+import { serviceAfterEnvironment } from '../deployment-edge.ts';
 
 /** A stack the resource constructors register into; nothing ever applies it. */
 const stack = { name: 'shop', stage: 'prod', resources: {}, bindings: {}, actions: {} };
@@ -31,8 +31,12 @@ const registered = <A>(effect: Effect.Effect<A, never, unknown>): A =>
     effect.pipe(Effect.provideService(Stack, stack as never)) as Effect.Effect<A, never, never>,
   );
 
-const app = registered(
-  Prisma.App('auth-svc', { project: 'proj-1', displayName: 'auth', regionId: 'us-east-1' }),
+const service = registered(
+  Prisma.ComputeService('auth-svc', {
+    project: 'proj-1',
+    displayName: 'auth',
+    regionId: 'us-east-1',
+  }),
 );
 
 /** Two variables: one this deploy already had, one it is adding. */
@@ -65,14 +69,13 @@ afterAll(() => {
 });
 
 /** The deploy hook's props, built by the same helper the descriptor uses. */
-const deploymentProps = (triggers?: Record<string, unknown>) => ({
-  app: appAfterEnvironment(app.appId, environment),
+const versionProps = (triggers?: Record<string, unknown>) => ({
+  service: serviceAfterEnvironment(service.serviceId, environment),
   artifactPath,
   artifactContentType: 'application/gzip',
   portMapping: { http: 8080 },
   ...(triggers !== undefined ? { triggers } : {}),
   start: true,
-  promote: true,
 });
 
 /** Upstream's own fingerprint for the bytes on disk — its formula, its hashes. */
@@ -104,52 +107,52 @@ const stubClient = {
 
 // Same `any` leak through Provider.effect's typing the state tests document:
 // the stubbed PrismaClient is the only real requirement and it IS provided.
-const deploymentService = () =>
+const versionService = () =>
   Effect.runPromise(
-    Prisma.Deployment.Provider.pipe(
+    Prisma.ComputeVersion.Provider.pipe(
       Effect.provide(
-        Prisma.DeploymentProvider().pipe(
+        Prisma.ComputeVersionProvider().pipe(
           Layer.provide(Layer.succeed(Prisma.PrismaClient, stubClient)),
         ),
       ),
-    ) as Effect.Effect<Provider.ProviderService<Prisma.Deployment>, never, never>,
+    ) as Effect.Effect<Provider.ProviderService<Prisma.ComputeVersion>, never, never>,
   );
 
 const persistedOutput = (
   artifactHash: string,
   triggersHash?: Redacted.Redacted<string> | string,
 ) => ({
-  deploymentId: 'dep-1',
-  appId: 'app-1',
+  versionId: 'dep-1',
+  serviceId: 'app-1',
   foundryVersionId: 'fv-1',
   status: 'running',
   previewDomain: null,
   artifactHash,
   ...(triggersHash !== undefined ? { triggersHash } : {}),
-  appEndpointDomain: 'auth.prisma.app',
+  url: undefined,
   createdAt: '2025-01-01T00:00:00.000Z',
 });
 
 /**
  * `news` as the planner hands it over on the deploy that adds a variable: the
- * combined `app` expression cannot resolve (the new variable has no state to
- * resolve to), every other prop is a value. `olds` are the previous deploy's
- * persisted props, where `app` had resolved to the app id.
+ * combined `service` expression cannot resolve (the new variable has no state
+ * to resolve to), every other prop is a value. `olds` are the previous
+ * deploy's persisted props, where `service` had resolved to the service id.
  */
 const diffAgainst = async (
   output: Record<string, unknown>,
   triggers: { old?: Record<string, unknown>; new?: Record<string, unknown> } = {},
 ) => {
-  const service = await deploymentService();
-  if (service.diff === undefined) throw new Error('provider must expose diff');
+  const provider = await versionService();
+  if (provider.diff === undefined) throw new Error('provider must expose diff');
   return Effect.runPromise(
-    service
+    provider
       .diff({
         id: 'auth-deploy',
         fqn: 'auth-deploy',
         instanceId: 'inst-deploy',
-        olds: { ...deploymentProps(triggers.old), app: 'app-1' },
-        news: deploymentProps(triggers.new),
+        olds: { ...versionProps(triggers.old), service: 'app-1' },
+        news: versionProps(triggers.new),
         output,
         session: undefined,
         bindings: [],
@@ -158,18 +161,18 @@ const diffAgainst = async (
   );
 };
 
-describe('appAfterEnvironment — the edge Alchemy actually plans on', () => {
-  test('every variable AND the app are upstream of the deployment', () => {
-    const upstream = Output.upstreamAny(deploymentProps());
+describe('serviceAfterEnvironment — the edge Alchemy actually plans on', () => {
+  test('every variable AND the service are upstream of the version', () => {
+    const upstream = Output.upstreamAny(versionProps());
     expect(Object.keys(upstream).sort()).toEqual(
       ['COMPOSER_AUTH_DB_URL-var', 'COMPOSER_AUTH_PORT-var', 'auth-svc'].sort(),
     );
   });
 
-  test('the combined expression still resolves to the app id — not a variable id or tuple', () => {
+  test('the combined expression still resolves to the service id — not a variable id or tuple', () => {
     const resolved = Effect.runSync(
-      Output.evaluate(appAfterEnvironment(app.appId, environment), {
-        'auth-svc': { appId: 'app-123' },
+      Output.evaluate(serviceAfterEnvironment(service.serviceId, environment), {
+        'auth-svc': { serviceId: 'app-123' },
         'COMPOSER_AUTH_PORT-var': { environmentVariableId: 'var-1' },
         'COMPOSER_AUTH_DB_URL-var': { environmentVariableId: 'var-2' },
       }) as Effect.Effect<string>,
@@ -177,24 +180,24 @@ describe('appAfterEnvironment — the edge Alchemy actually plans on', () => {
     expect(resolved).toBe('app-123');
   });
 
-  test('a service with no variables passes the app id straight through', () => {
-    expect(Object.keys(Output.upstreamAny({ app: appAfterEnvironment(app.appId, []) }))).toEqual([
-      'auth-svc',
-    ]);
+  test('a service with no variables passes the service id straight through', () => {
+    expect(
+      Object.keys(Output.upstreamAny({ service: serviceAfterEnvironment(service.serviceId, []) })),
+    ).toEqual(['auth-svc']);
   });
 
   test('the artifact props are plain values, never expressions', () => {
-    const props = deploymentProps();
+    const props = versionProps();
     expect(Output.isOutput(props.artifactPath)).toBe(false);
     expect(Output.isOutput(props.artifactContentType)).toBe(false);
     expect(Output.isOutput(props.portMapping)).toBe(false);
-    // The unresolved half is confined to `app` and (possibly) `triggers`
+    // The unresolved half is confined to `service` and (possibly) `triggers`
     // members, which is the point: upstream's replacement block stays resolved.
-    expect(Output.isOutput(props.app)).toBe(true);
+    expect(Output.isOutput(props.service)).toBe(true);
   });
 });
 
-describe('upstream Deployment.diff while the new variable is still unresolved', () => {
+describe('upstream ComputeVersion.diff while the new variable is still unresolved', () => {
   test('a changed artifact plans a REPLACE — the code change is not dropped', async () => {
     const diff = await diffAgainst(persistedOutput('the-previous-generations-fingerprint'));
     expect(diff).toEqual({ action: 'replace' });
@@ -203,7 +206,7 @@ describe('upstream Deployment.diff while the new variable is still unresolved', 
   test('an identical artifactPath plans no replacement', async () => {
     const diff = await diffAgainst(persistedOutput(await artifactFingerprint()));
     // An update, not a replace: with the SAME path and bytes, upstream reuses
-    // the deployment and only re-asserts start/promote. The platform never
+    // the version and only re-asserts that it runs. The platform never
     // re-reads environment rows into a reused deployment, so a real deploy may
     // only reach this plan when its environment is unchanged too — which is
     // what folding the environment into the path enforces.
@@ -214,7 +217,7 @@ describe('upstream Deployment.diff while the new variable is still unresolved', 
 /**
  * What each environment declares as `triggers`, and what upstream plans for
  * it. The environment-value-only change is the case that has no other signal
- * at all: no other Deployment prop moves, and the platform never returns a
+ * at all: no other version prop moves, and the platform never returns a
  * value — so the triggers fingerprint is the ONLY thing that can tell
  * upstream to ship a fresh deployment, which the platform requires because it
  * materializes env rows only at deployment create (PRO-211). These members
@@ -251,7 +254,7 @@ describe('the environment triggers, against upstream diff', () => {
       { old: unchanged, new: unchanged },
     );
     // An update, not a replace: same triggers, same bytes, so upstream keeps
-    // the running deployment and only re-asserts start/promote.
+    // the running version and only re-asserts that it runs.
     expect(diff).toEqual({ action: 'update' });
   });
 

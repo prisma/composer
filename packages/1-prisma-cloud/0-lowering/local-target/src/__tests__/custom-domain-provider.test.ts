@@ -21,7 +21,7 @@ const input: LocalTargetProvidersInput = {
 /** The stack program, with the provider requirement that `localTargetProviders`' erased layer satisfies. */
 const programFor = (hostname: string) =>
   Prisma.CustomDomain(`shop.site.domain.${hostname}`, {
-    app: 'local-app',
+    service: 'local-app',
     hostname,
   }) as unknown as Effect.Effect<Prisma.CustomDomain['Attributes']>;
 const program = programFor('shop.com');
@@ -40,7 +40,7 @@ describe('a custom domain under the local providers', () => {
     expect(first).toMatchObject({
       customDomainId: 'local-shop.site.domain.shop.com',
       hostname: 'shop.com',
-      appId: 'local-app',
+      serviceId: 'local-app',
       status: 'active',
       dnsRecords: [],
     });

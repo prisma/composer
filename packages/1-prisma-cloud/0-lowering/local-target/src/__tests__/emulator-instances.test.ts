@@ -7,7 +7,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { App, Deployment } from '@alchemy.run/prisma';
+import { ComputeService, ComputeVersion } from '@alchemy.run/prisma';
 import type { ContainerInstance } from '@internal/core/config';
 import {
   computeClient,
@@ -19,7 +19,7 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import { packageComputeArtifact } from '@internal/lowering/compute';
 import * as Effect from 'effect/Effect';
 import { ensureAppInstances } from '../app-instances.ts';
-import { LocalAppProvider, LocalDeploymentProvider } from '../compute.ts';
+import { LocalComputeServiceProvider, LocalComputeVersionProvider } from '../compute.ts';
 import { envStore } from '../dev-store.ts';
 import {
   type AppInstances,
@@ -111,11 +111,11 @@ async function deploy(
   version: string,
   artifactPath: string = artifactFor(address, version),
   forContainer: ContainerInstance = container,
-): Promise<Deployment['Attributes']> {
+): Promise<ComputeVersion['Attributes']> {
   const provider = await Effect.runPromise(
-    Deployment.Provider.pipe(
+    ComputeVersion.Provider.pipe(
       Effect.provide(
-        LocalDeploymentProvider({
+        LocalComputeVersionProvider({
           container: forContainer,
           devDir,
           plainVariableText: {},
@@ -127,18 +127,21 @@ async function deploy(
   return Effect.runPromise(
     provider.reconcile(
       reconcileInput(`${address}-deployment`, {
-        app: address,
+        service: address,
         artifactPath,
       }),
     ),
   );
 }
 
-async function deploymentDiff(devDir: string, output: Deployment['Attributes']): Promise<unknown> {
+async function deploymentDiff(
+  devDir: string,
+  output: ComputeVersion['Attributes'],
+): Promise<unknown> {
   const provider = await Effect.runPromise(
-    Deployment.Provider.pipe(
+    ComputeVersion.Provider.pipe(
       Effect.provide(
-        LocalDeploymentProvider({
+        LocalComputeVersionProvider({
           container,
           devDir,
           plainVariableText: {},
@@ -148,15 +151,15 @@ async function deploymentDiff(devDir: string, output: Deployment['Attributes']):
     ),
   );
   const diff = provider.diff;
-  if (!diff) throw new Error('the local Deployment provider has no diff');
+  if (!diff) throw new Error('the local version provider has no diff');
   return Effect.runPromise(diff({ output } as never));
 }
 
-async function appProvider(devDir: string) {
+async function serviceProvider(devDir: string) {
   return Effect.runPromise(
-    App.Provider.pipe(
+    ComputeService.Provider.pipe(
       Effect.provide(
-        LocalAppProvider({
+        LocalComputeServiceProvider({
           container,
           devDir,
           plainVariableText: {},
@@ -318,9 +321,9 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       }));
       const names = ['EMAIL_FROM', 'API_KEY'];
       const provider = await Effect.runPromise(
-        Deployment.Provider.pipe(
+        ComputeVersion.Provider.pipe(
           Effect.provide(
-            LocalDeploymentProvider({
+            LocalComputeVersionProvider({
               container,
               devDir,
               plainVariableText: {
@@ -336,7 +339,7 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       await Effect.runPromise(
         provider.reconcile(
           reconcileInput(`${QUOTES}-deployment`, {
-            app: QUOTES,
+            service: QUOTES,
             artifactPath: envEchoArtifactFor(QUOTES, names),
           }),
         ),
@@ -421,11 +424,11 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       expect(await deploymentDiff(devDir, deployed)).toEqual({ action: 'update' });
     }, 30_000);
 
-    test("deleting a removed service's App deletes its instance and forgets it", async () => {
+    test("deleting a removed service's ComputeService deletes its instance and forgets it", async () => {
       const { directory, devDir } = projectDir('removed');
       await ensureServiceInstances(container, devDir, ADDRESSES);
       const quotes = await nodeOf(directory, QUOTES);
-      const provider = await appProvider(devDir);
+      const provider = await serviceProvider(devDir);
 
       await Effect.runPromise(provider.delete({ output: { name: QUOTES } } as never));
 
@@ -556,9 +559,12 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
     });
   });
 
-  describe("the App provider's diff", () => {
-    async function reconcileApp(devDir: string, address: string): Promise<App['Attributes']> {
-      const provider = await appProvider(devDir);
+  describe("the service provider's diff", () => {
+    async function reconcileService(
+      devDir: string,
+      address: string,
+    ): Promise<ComputeService['Attributes']> {
+      const provider = await serviceProvider(devDir);
       return Effect.runPromise(
         provider.reconcile(
           reconcileInput(address, {
@@ -569,37 +575,60 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       );
     }
 
-    async function appDiff(devDir: string, output: App['Attributes']): Promise<unknown> {
-      const diff = (await appProvider(devDir)).diff;
-      if (!diff) throw new Error('the local App provider has no diff');
+    async function serviceDiff(
+      devDir: string,
+      output: ComputeService['Attributes'],
+    ): Promise<unknown> {
+      const diff = (await serviceProvider(devDir)).diff;
+      if (!diff) throw new Error('the local service provider has no diff');
       return Effect.runPromise(diff({ output } as never));
     }
 
     test('asks for an update when the re-created instance got another port', async () => {
       const { directory, devDir } = projectDir('app-moved');
       await ensureServiceInstances(container, devDir, [QUOTES]);
-      const before = await reconcileApp(devDir, QUOTES);
+      const before = await reconcileService(devDir, QUOTES);
       const recorded = await nodeOf(directory, QUOTES);
       await computeClient().deleteInstance(recorded.id);
       await computeClient().createInstance({ labels: {}, port: recorded.port });
       await ensureServiceInstances(container, devDir, [QUOTES]);
 
-      expect(await appDiff(devDir, before)).toEqual({ action: 'update' });
-      const after = await reconcileApp(devDir, QUOTES);
-      expect(after.appEndpointDomain).toBe(
+      expect(await serviceDiff(devDir, before)).toEqual({ action: 'update' });
+      const after = await reconcileService(devDir, QUOTES);
+      expect(after.serviceEndpointDomain).toBe(
         `http://localhost:${String((await nodeOf(directory, QUOTES)).port)}`,
       );
-      expect(after.appEndpointDomain).not.toBe(before.appEndpointDomain);
+      expect(after.serviceEndpointDomain).not.toBe(before.serviceEndpointDomain);
+    });
+
+    test('creates the service before its version, and records the version attached to it', async () => {
+      const { directory, devDir } = projectDir('service-precreate');
+      await ensureServiceInstances(container, devDir, [QUOTES]);
+      const provider = await serviceProvider(devDir);
+      if (provider.precreate === undefined)
+        throw new Error('the local service provider has no precreate');
+      const news = { project: 'local', displayName: QUOTES };
+      const precreated = await Effect.runPromise(provider.precreate(reconcileInput(QUOTES, news)));
+      const url = `http://localhost:${String((await nodeOf(directory, QUOTES)).port)}`;
+      expect(precreated).toMatchObject({ serviceId: QUOTES, activeVersionId: null, url });
+
+      const attached = await Effect.runPromise(
+        provider.reconcile({
+          ...(reconcileInput(QUOTES, news) as object),
+          bindings: [{ sid: 'Prisma.ComputeService.ActiveVersion(v)', data: { versionId: 'v1' } }],
+        } as never),
+      );
+      expect(attached).toMatchObject({ serviceId: QUOTES, activeVersionId: 'v1', url });
     });
 
     test('asks for nothing when the re-created instance kept its port', async () => {
       const { directory, devDir } = projectDir('app-kept');
       await ensureServiceInstances(container, devDir, [QUOTES]);
-      const before = await reconcileApp(devDir, QUOTES);
+      const before = await reconcileService(devDir, QUOTES);
       await computeClient().deleteInstance((await nodeOf(directory, QUOTES)).id);
       await ensureServiceInstances(container, devDir, [QUOTES]);
 
-      expect(await appDiff(devDir, before)).toBeUndefined();
+      expect(await serviceDiff(devDir, before)).toBeUndefined();
     });
   });
 

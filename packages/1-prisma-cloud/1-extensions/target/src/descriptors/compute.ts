@@ -5,8 +5,8 @@ import type { ServiceLowering } from '@internal/core/deploy';
 import { describeDocument, type PlatformMarkerUse } from '@internal/input-document';
 import {
   ARTIFACT_CONTENT_TYPE,
-  appAfterEnvironment,
   packageComputeArtifact,
+  serviceAfterEnvironment,
 } from '@internal/lowering';
 import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
@@ -40,33 +40,57 @@ function declaresNoListening(node: unknown): boolean {
 }
 
 /**
+ * Upstream checks that a new version answers on its preview URL, and that the
+ * service answers on its stable URL after promoting it. A service that never
+ * listens never answers, so for it both checks are off.
+ */
+const urlCheckOf = (node: unknown): { readonly verifyUrl?: false } =>
+  declaresNoListening(node) ? { verifyUrl: false } : {};
+
+/**
+ * `value`, resolved only once the service serves its attached version. A
+ * custom domain is bound to the live version, so a resource that reads the
+ * service's id or URL from deploy's outputs must wait for the promotion, as it
+ * waited for the self-promoting deployment before. The service's
+ * `activeVersionId` is re-read after every promotion, which is what carries
+ * the edge; `value` is inside the combined expression as well as returned from
+ * it, because Alchemy's dependency walker never looks inside the function.
+ */
+const onceServing = <A>(
+  service: Prisma.ComputeService,
+  value: Output.Output<A>,
+): Output.Output<A> => Output.flatMap(Output.all(value, service.activeVersionId), () => value);
+
+/**
  * compute's provision → serialize/deploy handoff. `serviceId` is an
  * `Output<string>`, not a `string`: the whole stack effect runs before Alchemy
  * applies anything, so a yielded resource's attributes are lazy references
- * that only resolve at apply time. It reaches `Deployment`'s `app` prop
- * unchanged — that prop takes `Input<string | App>`, which accepts the
- * reference. `projectId` really is a `string`: it comes from the CLI's
- * environment, not from a resource attribute.
+ * that only resolve at apply time. It reaches `ComputeVersion`'s `service`
+ * prop unchanged — that prop takes `Input<string | ComputeService>`, which
+ * accepts the reference. `service` is the resource itself, which deploy
+ * attaches its version to. `projectId` really is a `string`: it comes from
+ * the CLI's environment, not from a resource attribute.
  */
 export interface ComputeProvisioned {
+  readonly service: Prisma.ComputeService;
   readonly serviceId: Output.Output<string>;
   readonly projectId: string;
-  /** The platform-assigned public origin domain — resolves to `undefined` only
+  /** The service's stable endpoint domain — resolves to `undefined` only
    *  in the narrow provider-response gap the origin param's deploy-side value
    *  function enforces away (control.ts's `selfOriginValue`): every other
    *  reader may treat it as present. */
   readonly endpointDomain: Output.Output<string | undefined>;
 }
 
-/** compute's serialize → deploy handoff: the env-var rows deploy must depend on, the deployment's replacement triggers, the resolved port it routes to, and the serialized input document (when the service declares one) for the deploy report. */
+/** compute's serialize → deploy handoff: the env-var rows deploy must depend on, the version's replacement triggers, the resolved port it routes to, and the serialized input document (when the service declares one) for the deploy report. */
 export interface ComputeSerialized {
   readonly environment: readonly Prisma.EnvironmentVariable[];
   /**
-   * What the deploy hook declares as `Prisma.Deployment.triggers` — one member
-   * per row of `environment`, carrying the SAME value the row writes (Redacted,
-   * possibly still an unresolved Output). The platform materializes env rows
-   * into a deployment only at create (PRO-211), so a changed value must replace
-   * the deployment; upstream compares a salted hash of these to plan that
+   * What the deploy hook declares as `Prisma.ComputeVersion.triggers` — one
+   * member per row of `environment`, carrying the SAME value the row writes
+   * (Redacted, possibly still an unresolved Output). The platform materializes
+   * env rows into a version only at create (PRO-211), so a changed value must
+   * replace the version; upstream compares a salted hash of these to plan that
    * replacement. Alchemy also writes the members to its state as given,
    * `Redacted` values in plain text included. Because upstream resolves the actual
    * values, a value re-issued under a stable resource identity (a connection
@@ -112,7 +136,7 @@ function originOf(
   return Output.map(provisioned.endpointDomain, (v) => {
     if (v === undefined) {
       throw new Error(
-        `the App for "${target}" reported no endpoint domain — cannot resolve serviceOrigin("${target}") for "${consumer}".`,
+        `the service for "${target}" reported no endpoint domain — cannot resolve serviceOrigin("${target}") for "${consumer}".`,
       );
     }
     return v;
@@ -123,7 +147,7 @@ function isComputeProvisioned(value: unknown): value is ComputeProvisioned {
   return typeof value === 'object' && value !== null && 'endpointDomain' in value;
 }
 
-/** One environment row and its trigger member: the resource AND the value it writes, so a row cannot exist without joining the deployment's replacement triggers. */
+/** One environment row and its trigger member: the resource AND the value it writes, so a row cannot exist without joining the version's replacement triggers. */
 interface EnvRow {
   readonly record: Prisma.EnvironmentVariable;
   readonly key: string;
@@ -157,22 +181,28 @@ export function computeDescriptor(
 ): { readonly kind: 'service' } & ServiceLowering<ComputeProvisioned, ComputeSerialized> {
   return {
     kind: 'service' as const,
-    // The service as a PLACE inside the application's Project: the App,
-    // identity-bearing only, no code runs.
-    provision: ({ address, application, graph }) =>
+    // The service as a PLACE inside the application's Project: the
+    // ComputeService, identity-bearing only, no code runs.
+    provision: ({ address, application, graph, node }) =>
       Effect.gen(function* () {
         const app = graph.root.id;
         validatePlatformName('App', address);
         const projectId = projectIdOf(application);
         const { branchId } = cloudApplicationOf(application);
-        const svc = yield* Prisma.App(resourceId(address), {
+        const service = yield* Prisma.ComputeService(resourceId(address), {
           project: projectId,
           displayName: address,
           ...(o().region !== undefined ? { regionId: o().region } : {}),
           ...(branchId !== undefined ? { branchId } : {}),
           ...logicalIdProp(application, address),
+          ...urlCheckOf(node),
         }).pipe(asOwnRow, fromLegacyId(legacyNodeResourceId(app, address, 'svc')));
-        return { serviceId: svc.appId, projectId, endpointDomain: svc.appEndpointDomain };
+        return {
+          service,
+          serviceId: service.serviceId,
+          projectId,
+          endpointDomain: service.serviceEndpointDomain,
+        };
       }),
 
     serialize: (ctx, provisioned, config) =>
@@ -234,7 +264,7 @@ export function computeDescriptor(
           // The resource id is stable per service+leaf so reconcile finds the
           // existing value instead of regenerating.
           for (const leaf of inputRow.generated) {
-            // References the target's App, not its Deployment, so its consumers form no cycle.
+            // References the target's service, not its version, so its consumers form no cycle.
             const value =
               leaf.origin !== undefined
                 ? originOf(ctx.services, leaf.origin, address)
@@ -366,13 +396,13 @@ export function computeDescriptor(
         }),
       ),
 
-    deploy: ({ address, graph }, provisioned, artifact, serialized) =>
+    deploy: ({ address, graph, node }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
         const { platformVariableVersion } = o().preflight;
         // Env keys never contain ':', so a `<name>:updatedAt` member cannot
         // collide with a row's own trigger member. The key name is historical:
         // under `prisma dev` the member holds an HMAC of the value, and
-        // renaming it would redeploy every hosted deployment once.
+        // renaming it would make a new version of every hosted service once.
         const triggers = {
           ...serialized.triggers,
           ...Object.fromEntries(
@@ -383,47 +413,51 @@ export function computeDescriptor(
           ),
         };
         const app = graph.root.id;
-        const deployment = yield* Prisma.Deployment(resourceId(address, 'deployment'), {
-          // `app` carries the ordering edge on serialize's variable writes as
-          // well as the app id — see `appAfterEnvironment` for why it is the
-          // only prop that can (PRO-211).
-          app: appAfterEnvironment(provisioned.serviceId, serialized.environment),
+        const version = yield* Prisma.ComputeVersion(resourceId(address, 'deployment'), {
+          // `service` carries the ordering edge on serialize's variable writes
+          // as well as the service id — see `serviceAfterEnvironment` for why
+          // it is the only prop that can (PRO-211).
+          service: serviceAfterEnvironment(provisioned.serviceId, serialized.environment),
           artifactPath: artifact.path,
           // The artifact IS a gzipped tar (see @internal/lowering's packager);
           // upstream sends this as the upload's Content-Type and folds it into
-          // the fingerprint that decides whether a new deployment is needed.
+          // the fingerprint that decides whether a new version is needed.
           artifactContentType: ARTIFACT_CONTENT_TYPE,
           // Upstream plans a replacement exactly when a member moved (or cannot
           // be proven unmoved), because the platform materializes env rows into
-          // a deployment only at create (PRO-211). Alchemy writes the members
+          // a version only at create (PRO-211). Alchemy writes the members
           // to its state as given.
           triggers,
           // Route to the port the app actually binds (the service's `port`
           // param, resolved by serialize) — not a hardcoded constant.
           portMapping: { http: serialized.port },
           // A Composer deploy always ships: upload the artifact, wait for it
-          // to run, then move the app's stable endpoint onto it. Neither is
+          // to run, and make it the service's active version below. Neither is
           // configurable — "deployed but not serving" is not a state Composer
           // expresses.
           start: true,
-          promote: true,
+          ...urlCheckOf(node),
         }).pipe(fromLegacyId(legacyNodeResourceId(app, address, 'deploy')));
-        // `url` IS published here: a Compute service's deployed URL is a
-        // public endpoint, and this descriptor is the only party that knows
-        // that. Both fields are still unresolved Output references at this
-        // point — apply resolves them before the report's runner sees them.
-        //
+        // The service promotes the version and checks its stable URL. A
+        // version this replaces is kept on the platform, so the platform's
+        // rollback can return to it.
+        yield* Prisma.activateVersion(provisioned.service, version);
+        // `url` IS published here: a Compute service's URL is a public
+        // endpoint, and this descriptor is the only party that knows that.
+        // Both fields are still unresolved Output references at this point —
+        // apply resolves them before the report's runner sees them.
+        const url = onceServing(provisioned.service, provisioned.service.serviceEndpointDomain);
         return {
           outputs: {
-            url: deployment.appEndpointDomain,
+            url,
             projectId: provisioned.projectId,
-            serviceId: deployment.appId,
+            serviceId: onceServing(provisioned.service, provisioned.serviceId),
           },
           entities: [
             {
               kind: 'compute-service',
               id: provisioned.serviceId,
-              url: deployment.appEndpointDomain,
+              url,
               ...inputDetails(serialized),
             },
           ],
@@ -431,16 +465,16 @@ export function computeDescriptor(
       }),
 
     // ADR-0056: a service that runs its build adapter's dev server under
-    // `prisma dev` has no artifact. What `deploy` returns, with the
-    // `Deployment` removed: the URL comes from the App, which locally is the
-    // same `http://localhost:<port>` the Deployment would report, so
-    // dependents' rows do not change between a served and an assembled run.
+    // `prisma dev` has no artifact. What `deploy` returns, with the version
+    // removed: the URL comes from the service, which locally is the same
+    // `http://localhost:<port>` a version would run on, so dependents' rows
+    // do not change between a served and an assembled run.
     reserve: (_ctx, provisioned, serialized) =>
       Effect.sync(() => {
         const url = Output.map(provisioned.endpointDomain, (domain) => {
           if (domain === undefined) {
             throw new Error(
-              'the App reported no endpoint domain for a service without a deployment.',
+              'the service reported no endpoint domain for a service without a version.',
             );
           }
           return domain;
