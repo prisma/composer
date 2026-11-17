@@ -91,15 +91,40 @@ describe('sources a service takes stay in place', () => {
     expect(bindingOf(graph)['greeting']).toBe(greeting);
   });
 
-  test("a source in a service's params reaches the graph as the same object, with no app configuration", () => {
-    const label = variable('G');
+});
+
+describe("a source in a service's param", () => {
+  const refusal = (label: string) =>
+    `Service "shop.echo" binds its param "label" to ${label}, a value known only at boot. A param takes a literal or a value the deploy has. Bind the value to a field of the service's input instead.`;
+
+  test('a param source a cast gets past the types fails Load', () => {
     const root = module('shop', ({ provision }) => {
-      provision(echoService(), { input: {}, params: { label } });
+      provision(echoService(), { input: {}, params: { label: variable('G') as never } });
     });
 
-    const graph = Load(root);
+    expect(() => Load(root)).toThrow(refusal('the variable "G"'));
+  });
 
-    expect(graph.params[0]?.binding).toBe(label);
+  test('a secret source a cast gets past the types fails Load', () => {
+    const root = module('shop', ({ provision }) => {
+      provision(echoService(), { input: {}, params: { label: pointer('K') as never } });
+    });
+
+    expect(() => Load(root)).toThrow(refusal('the secret "K"'));
+  });
+
+  test('a source that reaches a param through a module input field fails Load', () => {
+    const relay = module('relay', { input: anyInputSchema }, ({ input, provision }) => {
+      const fields = input as never as Record<string, unknown>;
+      provision(echoService(), { input: {}, params: { label: fields['label'] as never } });
+    });
+    const root = module('shop', ({ provision }) => {
+      provision(relay, { id: 'relay', input: { label: variable('G') } as never });
+    });
+
+    expect(() => Load(root)).toThrow(
+      refusal('the variable "G"').replace('"shop.echo"', '"shop.relay.echo"'),
+    );
   });
 });
 

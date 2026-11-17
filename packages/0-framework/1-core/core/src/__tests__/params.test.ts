@@ -50,20 +50,6 @@ describe('Load records param bindings', () => {
     ]);
   });
 
-  test('a ParamSource bound at provision is recorded opaquely — core never inspects the payload', () => {
-    const app = svc();
-    const graph = Load(
-      module('root', ({ provision }) => {
-        provision(app, { id: 'app', params: { origin: paramSource('APP_ORIGIN') } });
-      }),
-    );
-
-    expect(graph.params).toHaveLength(1);
-    expect(graph.params[0]?.serviceAddress).toBe('root.app');
-    expect(graph.params[0]?.slot).toBe('origin');
-    expect(isParamSource(graph.params[0]?.binding)).toBe(true);
-  });
-
   test('an unbound param yields no binding — it falls back to its default at buildConfig', () => {
     const graph = Load(
       module('root', ({ provision }) => {

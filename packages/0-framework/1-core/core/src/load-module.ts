@@ -812,7 +812,7 @@ export function loadModule(root: ModuleNode | AppRootNode, opts?: LoadOptions): 
     inputBindings: resolved.inputBindings,
     params: resolved.params,
     secretSources: resolved.secretSources,
-    valueReads: valueReadsOf(resolved.inputBindings, resolved.params),
+    valueReads: valueReadsOf(resolved.inputBindings),
     appConfigurationRead: resolved.appConfigurationRead,
   };
 }

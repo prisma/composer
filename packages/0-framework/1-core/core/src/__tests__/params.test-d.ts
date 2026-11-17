@@ -31,6 +31,7 @@ test('provisioning a service accepts a literal typed by the param schema, or a P
     // fallback / optionality make binding genuinely optional per param).
     provision(svc, { id: 'app' });
     provision(svc, { id: 'app', params: { origin: 'https://example.com' } });
+    // @ts-expect-error a param takes a literal or a deploy-time value, never a source
     provision(svc, { id: 'app', params: { origin: paramSource('APP_ORIGIN') } });
     provision(svc, { id: 'app', params: { port: 8080 } });
     // @ts-expect-error a string param rejects a number literal

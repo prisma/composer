@@ -38,9 +38,7 @@ import {
   type BuildAdapter,
   type Deps,
   dependency,
-  isParamSource,
   module,
-  paramSource,
   provisionNeed,
   resource,
   service,
@@ -435,7 +433,7 @@ describe('buildConfig — provision-time param binding', () => {
     const graph = Load(root);
 
     expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(
-      'Param "token" of "shop.auth" (service "test-service") has no default, is not optional, and was not bound at provision — bind it on its provision() call with a literal value or a value known only at boot, or give it a default.',
+      'Param "token" of "shop.auth" (service "test-service") has no default, is not optional, and was not bound at provision — bind it on its provision() call with a literal value or a value the deploy has, or give it a default.',
     );
   });
 
@@ -482,20 +480,6 @@ describe('buildConfig — provision-time param binding', () => {
     });
   });
 
-  test('a ParamSource binding flows through to Config.service opaquely — buildConfig never validates it against the schema (the target resolves and validates at boot)', () => {
-    const auth = app('fake/compute', {}, { origin: string() });
-    const source = paramSource('APP_ORIGIN');
-    const root = module('shop', {}, (h) => {
-      h.provision(auth, { id: 'auth', params: { origin: source } });
-      return {};
-    });
-    const graph = Load(root);
-
-    const config = buildConfig(auth, 'shop.auth', graph, new Map(), new Map());
-    expect(isParamSource(config.service['origin'])).toBe(true);
-    expect(config.service['origin']).toBe(source);
-  });
-
   test('a literal that fails the param schema is a LowerError naming the param, the service, and the schema issue', () => {
     const auth = app('fake/compute', {}, { port: number({ default: 3000 }) });
     const root = module('shop', {}, (h) => {
@@ -512,26 +496,15 @@ describe('buildConfig — provision-time param binding', () => {
   test('a param claiming BOTH a provision need and a provision-time binding is a LowerError naming the param and both sources', () => {
     const brand = Symbol.for('test:both-sources');
     const auth = app('fake/compute', {}, { token: string({ provision: provisionNeed(brand) }) });
-    const asSource = module('shop', {}, (h) => {
-      h.provision(auth, { id: 'auth', params: { token: paramSource('TOKEN_VAR') } });
-      return {};
-    });
-    const asLiteral = module('shop', {}, (h) => {
+    const root = module('shop', {}, (h) => {
       h.provision(auth, { id: 'auth', params: { token: 'literal-token' } });
       return {};
     });
 
-    const sourceGraph = Load(asSource);
-    expect(() => buildConfig(auth, 'shop.auth', sourceGraph, new Map(), new Map())).toThrow(
-      LowerError,
-    );
-    expect(() => buildConfig(auth, 'shop.auth', sourceGraph, new Map(), new Map())).toThrow(
-      /"token".*two sources.*a param source.*test:both-sources/,
-    );
-
-    const literalGraph = Load(asLiteral);
-    expect(() => buildConfig(auth, 'shop.auth', literalGraph, new Map(), new Map())).toThrow(
-      /"token".*two sources.*a literal value.*test:both-sources/,
+    const graph = Load(root);
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(LowerError);
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(
+      /"token".*two sources.*a literal bound at provision.*test:both-sources/,
     );
   });
 });

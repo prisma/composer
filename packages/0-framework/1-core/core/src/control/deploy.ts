@@ -13,7 +13,6 @@ import type { AppConfigurationRead } from '../graph-types.ts';
 import {
   type AppRootNode,
   type BuildAdapter,
-  isParamSource,
   isValueResource,
   type ModuleNode,
   type ProvisionNeed,
@@ -320,8 +319,7 @@ function assertSameNodeAddresses(built: readonly string[], firstProcess: readonl
  *
  * 1. A param claiming BOTH a provision-time binding and a `provision` need
  *    (ADR-0031) is a loud error — two sources for one value.
- * 2. A provision-time binding (a schema-validated literal, or an opaque
- *    `ParamSource` the target resolves at boot per ADR-0019) beats the
+ * 2. A provision-time binding, a schema-validated literal, beats the
  *    declared `default`.
  * 3. A framework-minted `provision` need is resolved per dependency EDGE
  *    against the consumer extension's registry — that path fills CONNECTION
@@ -342,12 +340,11 @@ function resolveParam(
     if (param.provision !== undefined) {
       throw new LowerError(
         `Param "${name}" of "${serviceId}" (service "${node.name}") has two sources claiming one ` +
-          `value: a provision-time binding (${isParamSource(bound) ? 'a param source' : 'a literal value'}) ` +
+          'value: a literal bound at provision ' +
           `AND a framework provision need ("${String(param.provision.brand)}") on its declaration — ` +
           'remove the binding or drop the `provision` facet.',
       );
     }
-    if (isParamSource(bound)) return bound;
     const result = param.schema['~standard'].validate(bound);
     if (result instanceof Promise) {
       throw new LowerError(
@@ -369,7 +366,7 @@ function resolveParam(
   throw new LowerError(
     `Param "${name}" of "${serviceId}" (service "${node.name}") has no default, is not optional, ` +
       'and was not bound at provision — bind it on its provision() call with a literal value or a ' +
-      'value known only at boot, or give it a default.',
+      'value the deploy has, or give it a default.',
   );
 }
 

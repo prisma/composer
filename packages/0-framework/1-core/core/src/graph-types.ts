@@ -129,18 +129,15 @@ export interface InputBindingUse {
 
 /**
  * A resolved param binding: a `provision()` call bound a service's param
- * slot to either a literal value or an opaque `ParamSource` — the non-secret
- * sibling of `SecretBinding`. Unlike a secret, a param binding is not
- * required for every declared param (a param may fall back to its own
- * `default`), so this list only carries the ones a `provision()` call
- * actually bound.
+ * slot to a literal value. A param may fall back to its own `default`, so
+ * this list only carries the ones a `provision()` call actually bound.
  */
 export interface ParamBinding {
   /** The graph address of the service that declares the param. */
   readonly serviceAddress: NodeId;
   /** The param name on that service. */
   readonly slot: string;
-  /** A literal value (schema-validated by `buildConfig`) or an opaque `ParamSource` (the deploy target reads its own payload back) — check with `isParamSource`. Core never inspects a `ParamSource`'s payload. */
+  /** A literal value, schema-validated by `buildConfig`. */
   readonly binding: unknown;
 }
 
@@ -160,8 +157,8 @@ export interface ValueRead {
   readonly reader: NodeId;
   /** The address of the value resource. */
   readonly resource: NodeId;
-  /** Where the service reads it: the dotted key path in its input binding, `''` for the whole binding, or the param's name. */
-  readonly site: { readonly kind: 'serviceInput' | 'param'; readonly path: string };
+  /** The dotted key path in the service's input binding; `''` for the whole binding. */
+  readonly path: string;
 }
 
 export interface Graph {
@@ -175,7 +172,7 @@ export interface Graph {
   readonly authoredEdges: readonly AuthoredEdge[];
   /** Every service input binding a `provision()` call supplied (ADR-0042). */
   readonly inputBindings: readonly InputBindingUse[];
-  /** Every service param bound at provision — literal or source; unbound params are absent here and fall back to their `default` (see `buildConfig`). */
+  /** Every service param bound at provision; unbound params are absent here and fall back to their `default` (see `buildConfig`). */
   readonly params: readonly ParamBinding[];
   /** Every secret source a binding names, and every secret value resource, once each (ADR-0029). */
   readonly secretSources: readonly SecretSourceUse[];

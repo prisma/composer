@@ -255,11 +255,10 @@ export function isParamSource(value: unknown): value is ParamSource {
   );
 }
 
-/** What `provision(service, { params })` accepts per declared param: a literal (schema-validated when config is built) or an opaque `ParamSource`, taking precedence over `param.default`. Every entry is optional — an unbound param falls back to its `default`. */
+/** What `provision(service, { params })` accepts per declared param: a literal (schema-validated when config is built) or a deploy-time value, taking precedence over `param.default`. Every entry is optional — an unbound param falls back to its `default`. */
 export type ParamBindings<P extends Params> = {
   readonly [K in keyof P]?:
     | StandardSchemaV1.InferOutput<P[K]['schema']>
-    | ParamSource
     | (StandardSchemaV1.InferOutput<P[K]['schema']> extends PlainData
         ? Value<StandardSchemaV1.InferOutput<P[K]['schema']>>
         : never);
@@ -601,7 +600,7 @@ interface SharedProvision {
     resource: ResourceNode<C> & { readonly [VALUE_RESOURCE]?: undefined },
     opts?: { id?: string },
   ): { readonly id: string } & (C extends AnyContract ? RefPort<C> : Record<never, never>);
-  /** Registers an owned service; its id defaults to the node's `name`; `deps`/`input` are required iff it declares them; a reserved param may be bound (literal or `ParamSource`), overriding its default. */
+  /** Registers an owned service; its id defaults to the node's `name`; `deps`/`input` are required iff it declares them; a reserved param may be bound (literal or deploy-time value), overriding its default. */
   <D extends Deps, P extends Params, E extends Expose, I extends StandardSchemaV1 | undefined>(
     service: ServiceNode<D, P, E, I>,
     ...args: ServiceProvisionArgs<D, I, ParamBindings<P>>

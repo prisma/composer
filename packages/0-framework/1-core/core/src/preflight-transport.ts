@@ -51,10 +51,9 @@ export function readPreflightPayload(
   return payload === undefined || payload.length === 0 ? undefined : payload;
 }
 
-/** Where a platform variable is named: a service's input field, a service's per-key param, or a resource no service reads. */
+/** Where a platform variable is named: a service's input field, or a resource no service reads. */
 export type PlatformVariableReader =
   | { readonly kind: 'field'; readonly service: string; readonly path: string }
-  | { readonly kind: 'param'; readonly service: string; readonly param: string }
   | { readonly kind: 'unread'; readonly node: string; readonly nodeKind: 'resource' };
 
 /** A platform variable with no value that nothing requires, with its readers and the commands that set it. */
@@ -75,8 +74,6 @@ export function platformVariableReaderText(reader: PlatformVariableReader): stri
   switch (reader.kind) {
     case 'field':
       return `read by service "${reader.service}", field "${reader.path === '' ? '(root)' : reader.path}"`;
-    case 'param':
-      return `read by service "${reader.service}", per-key param "${reader.param}"`;
     case 'unread':
       return `named by ${reader.nodeKind} "${reader.node}", read by no service`;
   }
@@ -93,8 +90,6 @@ function isPlatformVariableReader(value: unknown): value is PlatformVariableRead
   switch (value['kind']) {
     case 'field':
       return typeof value['service'] === 'string' && typeof value['path'] === 'string';
-    case 'param':
-      return typeof value['service'] === 'string' && typeof value['param'] === 'string';
     case 'unread':
       return typeof value['node'] === 'string' && value['nodeKind'] === 'resource';
     default:

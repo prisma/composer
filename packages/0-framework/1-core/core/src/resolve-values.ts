@@ -459,6 +459,19 @@ function validateModuleInput(
   return restore(result.value, '');
 }
 
+function refuseSourcesInParams(params: readonly ParamBinding[]): void {
+  for (const { serviceAddress, slot, binding } of params) {
+    const [source] = pointersIn(binding);
+    if (source === undefined) continue;
+    const label =
+      sourceOriginOf(source)?.label ??
+      (isSecretSource(source) ? 'a secret source' : 'a param source');
+    throw new LoadError(
+      `Service "${serviceAddress}" binds its param "${slot}" to ${label}, a value known only at boot. A param takes a literal or a value the deploy has. Bind the value to a field of the service's input instead.`,
+    );
+  }
+}
+
 function refusePointersInProps(address: NodeId, props: unknown): void {
   const seen = new WeakSet<object>();
   const walk = (value: unknown, path: string): void => {
@@ -518,9 +531,8 @@ export function resolveValues(input: {
   };
   const secretSourcesReceivedBy = (
     inputBindings: readonly InputBindingUse[],
-    params: readonly ParamBinding[],
   ): readonly SecretSourceUse[] => {
-    for (const { serviceAddress, binding } of [...inputBindings, ...params]) {
+    for (const { serviceAddress, binding } of inputBindings) {
       for (const pointer of pointersIn(binding)) {
         if (!isSecretSource(pointer)) continue;
         const canonical = canonicalSecret(pointer);
@@ -706,7 +718,8 @@ export function resolveValues(input: {
   );
   if (found.length === 0) {
     for (const [address, props] of authoredProps) refusePointersInProps(address, props);
-    const secretSources = secretSourcesReceivedBy(input.inputBindings, input.params);
+    refuseSourcesInParams(input.params);
+    const secretSources = secretSourcesReceivedBy(input.inputBindings);
     return {
       inputBindings: input.inputBindings,
       params: input.params,
@@ -747,7 +760,8 @@ export function resolveValues(input: {
     if (binding === undefined && isValue(entry.binding)) return [];
     return [binding === entry.binding ? entry : { ...entry, binding }];
   });
-  const secretSources = secretSourcesReceivedBy(inputBindings, params);
+  refuseSourcesInParams(params);
+  const secretSources = secretSourcesReceivedBy(inputBindings);
   return {
     resourceProps,
     inputBindings,
@@ -757,23 +771,12 @@ export function resolveValues(input: {
   };
 }
 
-export function valueReadsOf(
-  inputBindings: readonly InputBindingUse[],
-  params: readonly ParamBinding[],
-): readonly ValueRead[] {
+export function valueReadsOf(inputBindings: readonly InputBindingUse[]): readonly ValueRead[] {
   const reads: ValueRead[] = [];
-  const record = (source: ParamSource | SecretSource, reader: NodeId, site: ValueRead['site']) => {
-    const resource = sourceOriginOf(source)?.resource;
-    if (resource !== undefined) reads.push({ reader, resource, site });
-  };
   for (const { serviceAddress, binding } of inputBindings) {
     for (const [path, source] of sourcesByPath(binding)) {
-      record(source, serviceAddress, { kind: 'serviceInput', path });
-    }
-  }
-  for (const { serviceAddress, slot, binding } of params) {
-    for (const source of pointersIn(binding)) {
-      record(source, serviceAddress, { kind: 'param', path: slot });
+      const resource = sourceOriginOf(source)?.resource;
+      if (resource !== undefined) reads.push({ reader: serviceAddress, resource, path });
     }
   }
   return reads;

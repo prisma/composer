@@ -237,12 +237,12 @@ describe('the loaded graph', () => {
       {
         reader: 'shop.echo',
         resource: 'shop.greeting',
-        site: { kind: 'serviceInput', path: 'mail.greeting' },
+        path: 'mail.greeting',
       },
       {
         reader: 'shop.echo',
         resource: 'shop.apiKey',
-        site: { kind: 'serviceInput', path: 'mail.keys.1' },
+        path: 'mail.keys.1',
       },
     ]);
   });
@@ -259,12 +259,12 @@ describe('the loaded graph', () => {
       {
         reader: 'shop.echo',
         resource: 'shop.greeting',
-        site: { kind: 'serviceInput', path: 'a.greeting' },
+        path: 'a.greeting',
       },
       {
         reader: 'shop.echo',
         resource: 'shop.greeting',
-        site: { kind: 'serviceInput', path: 'b.greeting' },
+        path: 'b.greeting',
       },
     ]);
   });
@@ -282,7 +282,7 @@ describe('the loaded graph', () => {
       {
         reader: 'shop.echo',
         resource: 'shop.greeting',
-        site: { kind: 'serviceInput', path: 'greeting' },
+        path: 'greeting',
       },
     ]);
   });
@@ -295,7 +295,7 @@ describe('the loaded graph', () => {
     );
 
     expect(graph.valueReads).toEqual([
-      { reader: 'shop.echo', resource: 'shop.greeting', site: { kind: 'serviceInput', path: '' } },
+      { reader: 'shop.echo', resource: 'shop.greeting', path: '' },
     ]);
   });
 
@@ -316,7 +316,7 @@ describe('the loaded graph', () => {
       {
         reader: 'shop.outer.inner.echo',
         resource: 'shop.greeting',
-        site: { kind: 'serviceInput', path: 'greeting' },
+        path: 'greeting',
       },
     ]);
   });
@@ -339,7 +339,7 @@ describe('the loaded graph', () => {
       {
         reader: 'shop.mailer.echo',
         resource: 'shop.apiKey',
-        site: { kind: 'serviceInput', path: 'key.key' },
+        path: 'key.key',
       },
     ]);
   });
@@ -359,22 +359,20 @@ describe('the loaded graph', () => {
       {
         reader: 'shop.mailer.echo',
         resource: 'shop.greeting',
-        site: { kind: 'serviceInput', path: 'greeting' },
+        path: 'greeting',
       },
     ]);
   });
 
-  test('records a read in a per-key param', () => {
-    const graph = Load(
-      appRoot('shop', ({ provision }) => {
-        const greeting = provision(plainValue('GREETING'));
-        provision(echo(), { input: {}, params: { greeting } });
-      }),
-    );
+  test('refuses a value a cast binds to a per-key param', () => {
+    const root = appRoot('shop', ({ provision }) => {
+      const greeting = provision(plainValue('GREETING'));
+      provision(echo(), { input: {}, params: { greeting: greeting as never } });
+    });
 
-    expect(graph.valueReads).toEqual([
-      { reader: 'shop.echo', resource: 'shop.greeting', site: { kind: 'param', path: 'greeting' } },
-    ]);
+    expect(() => Load(root)).toThrow(
+      `Service "shop.echo" binds its param "greeting" to the test value "GREETING", a value known only at boot. A param takes a literal or a value the deploy has. Bind the value to a field of the service's input instead.`,
+    );
   });
 
   test('records no read for a source no node provisioned', () => {
