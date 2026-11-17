@@ -12,7 +12,7 @@ import {
   valueResource,
 } from '@internal/core';
 import type { SecretString } from '@internal/foundation/secret';
-import type { JsonSchema } from '@internal/input-document';
+import { isPlainObject, type JsonSchema } from '@internal/input-document';
 import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID } from './extension-id.ts';
 import { variableJsonSchema } from './variable-json-schema.ts';
@@ -68,6 +68,7 @@ export interface PlatformVariableNode {
   readonly address: string;
   readonly name: string;
   readonly secret: boolean;
+  readonly schema?: JsonSchema;
 }
 
 export function platformVariableNodes(graph: Graph): readonly PlatformVariableNode[] {
@@ -80,13 +81,14 @@ export function platformVariableNodes(graph: Graph): readonly PlatformVariableNo
     ) {
       return [];
     }
-    const { name, secret } = candidate.props;
+    const { name, secret, schema } = candidate.props;
     if (typeof name !== 'string') {
       throw new Error(
         `The platform variable node "${id}" has no name in its props, so Composer cannot tell which platform variable it declares. Build it with variable() or variable.secret().`,
       );
     }
-    return [{ address: id, name, secret: secret === true }];
+    const declared = { address: id, name, secret: secret === true };
+    return [isPlainObject(schema) ? { ...declared, schema } : declared];
   });
 }
 

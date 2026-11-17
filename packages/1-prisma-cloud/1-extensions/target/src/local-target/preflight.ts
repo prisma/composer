@@ -12,6 +12,7 @@ import type {
 } from '@internal/core/config';
 import { DEV_DIR, devEnvironmentDir } from '@internal/core/config';
 import { quotedList } from '@internal/foundation/errors';
+import { decodeVariableText, type JsonSchema } from '@internal/input-document';
 import {
   movePreEnvironmentDevState,
   readOrCreateFingerprintKey,
@@ -61,6 +62,24 @@ function plainVariableNotTextError(
   );
 }
 
+function checkedVariableText(
+  name: string,
+  text: string,
+  schema: JsonSchema | undefined,
+  readers: readonly string[],
+): void {
+  try {
+    decodeVariableText(name, text, schema);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    const readBy =
+      readers.length === 1
+        ? `service ${quotedList(readers)} reads it`
+        : `services ${quotedList(readers)} read it`;
+    throw new Error(`${message} prisma dev cannot start, because ${readBy}.`);
+  }
+}
+
 function plainVariableTexts(input: PreflightInput): Record<string, string> {
   const texts: Record<string, string> = {};
   for (const node of platformVariableNodes(input.graph)) {
@@ -76,7 +95,9 @@ function plainVariableTexts(input: PreflightInput): Record<string, string> {
     const text = configurationText(input.configuration, node.name, (kind) =>
       plainVariableNotTextError(node.name, node.address, readers, kind),
     );
-    if (isSet(text)) texts[node.name] = text;
+    if (!isSet(text)) continue;
+    checkedVariableText(node.name, text, node.schema, readers);
+    texts[node.name] = text;
   }
   return texts;
 }
