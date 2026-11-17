@@ -38,7 +38,7 @@
     "build": "tsdown && node scripts/rewrite-internal-dts.mjs",
     "clean": "rm -rf dist",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test"
   },
   "dependencies": {
     "@alchemy.run/prisma": "catalog:",

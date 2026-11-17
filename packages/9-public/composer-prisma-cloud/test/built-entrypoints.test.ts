@@ -16,7 +16,7 @@ const SHARED_MODULE_ENTRYPOINTS: readonly (readonly [string, string])[] = [
 
 const INLINED_PACKAGES = ['@cfworker/json-schema', '@internal/input-document'];
 
-const VALIDATOR_CLASS = 'var Validator = class';
+const VALIDATOR_SOURCE = '__absolute_uri__';
 
 function builtFiles(dir: string): string[] {
   return fs
@@ -85,7 +85,7 @@ describe('the built code a service runs carries the platform-variable validator 
       .join('/');
     test(`${label} holds the validator and imports neither package`, () => {
       const graph = withRelativeChunks(entrypoint);
-      expect(graph).toContain(VALIDATOR_CLASS);
+      expect(graph).toContain(VALIDATOR_SOURCE);
       for (const specifier of INLINED_PACKAGES) {
         expect({ specifier, imports: importsOf(graph, specifier) }).toEqual({
           specifier,
@@ -96,6 +96,6 @@ describe('the built code a service runs carries the platform-variable validator 
   }
 
   test("the services' runtime in @prisma/composer-prisma-cloud holds the validator", () => {
-    expect(withRelativeChunks(path.join(distDir, 'index.mjs'))).toContain(VALIDATOR_CLASS);
+    expect(withRelativeChunks(path.join(distDir, 'index.mjs'))).toContain(VALIDATOR_SOURCE);
   });
 });
