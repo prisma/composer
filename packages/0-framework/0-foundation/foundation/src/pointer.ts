@@ -34,7 +34,7 @@ function kindOf(value: unknown): unknown {
   return Reflect.get(value, POINTER);
 }
 
-/** True for a plain pointer: a value known only at boot whose variable holds plain text. */
+/** True for a plain pointer: a value known only at boot that is not a secret. */
 export function isPlainPointer(value: unknown): value is PlainPointer {
   return kindOf(value) === 'plain';
 }

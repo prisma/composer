@@ -68,8 +68,8 @@ function innerProblem(inner: Type<unknown, unknown>, field: FieldError): string 
  * which stands for a value known only at boot. The field's input type is
  * `In | Pointer<In>` and its output type `Out | Pointer<In>`, where `In` and
  * `Out` are `inner`'s. A value that is not a pointer gets `inner`'s error.
- * The field holds the whole value one source supplies: text, a number, a
- * boolean, or an object or array when a platform variable's schema says so.
+ * The field holds the whole value its source supplies, which may be an object
+ * or an array.
  * Put a default outside the wrapper.
  *
  * ```ts

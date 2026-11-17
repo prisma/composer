@@ -136,6 +136,23 @@ test('in a module body a wrapped field is a value of Out | Pointer<In>', () => {
   });
 });
 
+test('in a module body a wrapped object field is one field, with no nested fields', () => {
+  const smtp = { user: 'string', port: 'number' } as const;
+  module('m', { input: type({ smtp: arkField(type(smtp)), plain: smtp }) }, ({ input }) => {
+    expectTypeOf(input.smtp).toEqualTypeOf<
+      ModuleInputField<{ user: string; port: number } | Pointer<{ user: string; port: number }>>
+    >();
+    expectTypeOf(input.plain.user).toEqualTypeOf<ModuleInputField<string>>();
+    // @ts-expect-error a wrapped object field may be a pointer at deploy, so it has no nested fields
+    void input.smtp.user;
+  });
+  const zodSmtp = z.object({ user: z.string() });
+  module('m', { input: z.object({ smtp: zodField(zodSmtp) }) }, ({ input }) => {
+    // @ts-expect-error a wrapped object field may be a pointer at deploy, so it has no nested fields
+    void input.smtp.user;
+  });
+});
+
 test("a wrapped field's binding takes a literal, a deploy-time value and a plain runtime value", () => {
   module('shop', ({ provision }) => {
     provision(arkChild, { id: 'a', input: { from: 'x', port: '1', host: 'h', key: secretValue } });
