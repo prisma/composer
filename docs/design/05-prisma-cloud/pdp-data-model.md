@@ -97,8 +97,8 @@ Consequences Prisma Composer designs around:
    restart-on-config-change and no live re-resolution; a late-written variable
    never reaches an existing version. Propagating a changed value (e.g. a
    producer's new URL) into a consumer therefore means creating a new consumer
-   version — which Composer does: a deploy whose environment changed replaces
-   the deployment, so the change reaches the running service (see the
+   version — which Composer does: a deploy whose environment changed creates a
+   new version and promotes it, so the change reaches the running service (see the
    change-propagation note in
    [alchemy-lowering.md](alchemy-lowering.md#the-lowering-graphs)).
 3. **`DATABASE_URL` is not a separate mechanism.** It is a platform-written

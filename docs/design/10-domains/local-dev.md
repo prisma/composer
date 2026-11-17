@@ -212,7 +212,7 @@ lock. A file whose process has died is removed. The port is in the deployment's 
 in its dependents' URLs, and a warm start does not redeploy, so a port that
 changed between sessions would leave services built for the old one.
 
-The local `Deployment` provider does not spawn processes; it
+The local `ComputeVersion` provider does not spawn processes; it
 unpacks the artifact into `.prisma-composer/dev/<environment>/artifacts/<hash>/`,
 materializes the complete child env, and puts the deployment at the
 service's instance, and the emulator owns the processes:
@@ -221,7 +221,7 @@ service's instance, and the emulator owns the processes:
   old child if any, spawn the artifact's `bootstrap.js` under bun with the
   materialized env. Only the changed service restarts — Alchemy's diff
   already limited which deployments were re-put.
-- **Readiness** → a service declared `compute({ ..., listens: false })` (the cron scheduler, which receives no requests) is `running` as soon as its process is spawned; the descriptor records `listens: false` in the artifact's `compute.manifest.json`, the local `Deployment` provider reads it from there and sends it with the deployment, and the emulator stores it with the instance; it is a property of the deployment, not of an app or address. Every other service is `running` only once its port accepts a TCP connection on loopback (IPv4 or IPv6). The emulator probes the port every 50 ms until it does, so a service that counts connections sees a few extra ones. The compute emulator's `--ready-poll-ms` argument changes that interval; the CLI never passes it, and the emulator's own tests use it to widen the moment between a process exiting and its start noticing. The deployment PUT and the session-resume start return only then, so a converge, and the `ready` line after it, finish only when every URL answers. A redeploy of a running service sets it to `stopped` once the old process has exited, and back to `running` when the new one listens. A child that exits before it listens fails the call with its address, exit code, and log path. A child that does not listen within the readiness timeout (30 seconds; `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS`, which the CLI passes to the compute emulator as `--ready-timeout-ms` when it starts the emulator) is stopped, and the call fails with its address, port, log path and the variable's name. A crash-backoff restart that times out ends `held`, like other crash loops.
+- **Readiness** → a service declared `compute({ ..., listens: false })` (the cron scheduler, which receives no requests) is `running` as soon as its process is spawned; the descriptor records `listens: false` in the artifact's `compute.manifest.json`, the local `ComputeVersion` provider reads it from there and sends it with the deployment, and the emulator stores it with the instance; it is a property of the deployment, not of an app or address. Every other service is `running` only once its port accepts a TCP connection on loopback (IPv4 or IPv6). The emulator probes the port every 50 ms until it does, so a service that counts connections sees a few extra ones. The compute emulator's `--ready-poll-ms` argument changes that interval; the CLI never passes it, and the emulator's own tests use it to widen the moment between a process exiting and its start noticing. The deployment PUT and the session-resume start return only then, so a converge, and the `ready` line after it, finish only when every URL answers. A redeploy of a running service sets it to `stopped` once the old process has exited, and back to `running` when the new one listens. A child that exits before it listens fails the call with its address, exit code, and log path. A child that does not listen within the readiness timeout (30 seconds; `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS`, which the CLI passes to the compute emulator as `--ready-timeout-ms` when it starts the emulator) is stopped, and the call fails with its address, port, log path and the variable's name. A crash-backoff restart that times out ends `held`, like other crash loops.
 - **Concurrent starts and stops** → a service has at most one process and at most one start in flight; the rules are in [Concurrent starts and stops](#concurrent-starts-and-stops) below.
 - **Child exits unexpectedly** → the emulator restarts it with backoff and
   writes its supervision events into that service's log stream; repeated
@@ -246,7 +246,7 @@ service's instance, and the emulator owns the processes:
   session; see § Process lifetimes.
 
   **Known gap (proving-pass finding, fixed in #164):** a service actually only restarts
-  when its `Deployment` resource is re-put — and Alchemy skips calling the
+  when its `ComputeVersion` resource is re-put — and Alchemy skips calling the
   provider at all when a resource's props (artifact hash, env) are
   unchanged from its last recorded apply. A Ctrl-C stop is invisible to that
   diff: nothing about the resource's *props* changed, only the process's
@@ -298,7 +298,7 @@ The exit of a process the emulator no longer tracks is ignored.
 
 The env materialization is the one platform-side behavior the local target
 implements itself: the hosted platform joins the branch's config variables
-into a deployment at version-create; locally, the `Deployment` provider
+into a deployment at version-create; locally, the `ComputeVersion` provider
 performs the same join from the `EnvironmentVariable` records the lowering
 emitted — against props defined in this repo, once, not an emulation of a
 foreign API. One pinned deviation: the local join is scoped to the
@@ -350,12 +350,12 @@ every command is told which app and environment to act on. A record
 written by the version before that (`{ "app", "nodes" }`, one app, whose
 services have kind `compute`) reads as that one app with `service` nodes and
 is rewritten on the next write. Every node's key is its address, which is
-also the resource ID of its main resource (a service's `App`, a database's
+also the resource ID of its main resource (a service's `ComputeService`, a database's
 `Database`, a bucket's `Bucket`), so the local providers find their instance
 by resource ID.
 
 The record is the only place Composer's names are mapped to instances. The
-emulators hook, the local `App`, `Deployment`, `Database`, `Connection`,
+emulators hook, the local `ComputeService`, `ComputeVersion`, `Database`, `Connection`,
 `Bucket` and `BucketAccessKey` providers, the attachment (endpoints, logs,
 start, stop) and `--fresh` all go through it; no Composer code finds an
 instance by its labels. The labels Composer writes on create —
@@ -396,8 +396,8 @@ migrated, as the record's rewrite to full addresses did before it.
   (`database "<address>"` for a database).
 - **Redeploying a re-created instance.** A re-created instance starts empty,
   and a warm start's converge changes nothing, so Alchemy would never call the
-  providers. The `Deployment` provider's diff asks for an update when its
-  instance does not run the recorded artifact, the `App` provider's when its
+  providers. The `ComputeVersion` provider's diff asks for an update when its
+  instance does not run the recorded artifact, the `ComputeService` provider's when its
   instance's URL changed, and the `Database` and `Bucket` providers' when the
   recorded instance is not the one they created, so dependents and access
   keys follow. A database created again keeps its URL when it gets its old
@@ -405,7 +405,7 @@ migrated, as the record's rewrite to full addresses did before it.
   migration marker and asks for an update whenever it is not at the target;
   the committed migrations then replay as on a fresh start. That read is one
   connection per database per converge.
-- **A removed service.** Deleting its `App` resource deletes its instance and
+- **A removed service.** Deleting its `ComputeService` resource deletes its instance and
   its entry.
 - **When `prisma dev` ends** (Ctrl-C, SIGTERM, a failure), the attachment's
   `stopApp` stops the app's service processes and database servers.
@@ -481,8 +481,8 @@ semantics):
 | `Project` | a local identity record; no platform |
 | `Database` | the database instance the directory's record names for the resource, on its own `@prisma/dev` server hosted by the Postgres emulator; started if stopped, created when missing; `databaseId` is the instance id |
 | `Connection` | the URL of the database instance its `Database` names |
-| `App` | finds the service's Compute instance through the directory's record, creating it when there is none; the instance holds the service's port; `appEndpointDomain = http://localhost:<port>` — which makes origin (ADR-0039) work unchanged. Deleting it deletes the instance |
-| `Deployment` | unpacks the artifact once per hash, materializes the env, and puts the deployment at the service's Compute instance, which (re)starts the child; updated when its instance does not run the recorded artifact |
+| `ComputeService` | finds the service's Compute instance through the directory's record, creating it when there is none; the instance holds the service's port; `serviceEndpointDomain` and `url` are `http://localhost:<port>` — which makes origin (ADR-0039) work unchanged. It is created before its version (`precreate`), and records the version attached with `Prisma.activateVersion` as its `activeVersionId`; the emulator runs whatever was last put, so there is nothing to promote. Deleting it deletes the instance |
+| `ComputeVersion` | unpacks the artifact once per hash, materializes the env, and puts the deployment at the service's Compute instance, which (re)starts the child; updated when its instance does not run the recorded artifact |
 | `EnvironmentVariable` | a key→value row in the dev state store |
 | `Bucket` | the bucket instance the directory's record names for the resource, over a directory under `.prisma-composer/dev/<environment>/buckets/<app>/<bucket>/`, served by the bucket emulator; `bucketId` is the instance id, also its S3 name |
 | `BucketKey` | credentials registered with the bucket emulator for its bucket |
@@ -556,7 +556,7 @@ The second process of `prisma dev` runs no adapter. It reads three things from t
 
 A rebuild runs no dev preflight, so a read of a platform variable that a code change adds would have no value. After a rebuild's Load, `prisma dev` compares the graph's reads of platform variable nodes (`valueReads`: reader, node and path) and each read node's address and `props` with those at start. If either differs, it does not converge, emits the `value-reads-changed` event with the nodes whose reads were added, removed or changed, and pauses rebuilds until it is restarted. The CLI prints a warning: `The platform variables the app reads changed since dev started: reads of "shop.smtpPort" were added, reads of "shop.emailFrom" were removed, and "shop.sender" was changed. Restart dev to apply them; rebuilds are paused until then.` Known limit: on a rebuild, the first process loads the entry again with `import()`, and the runtime returns the modules it loaded at start, so after an edit to `module.ts` the first process still holds the graph from the start and this comparison sees no change. The second process does load the edited code: an edit that adds or removes a node fails the converge with the error that the two processes built different graphs, and an edit that changes only a read converges with the values worked out at start. This is how `prisma dev` handles every edit to the graph today.
 
-The local `Deployment` provider gives each service only the variables its own input reads: the `$platform` markers in its input document, at any depth. This isolation is a requirement of the local target only. On Prisma Cloud every deployment receives every variable of its class.
+The local `ComputeVersion` provider gives each service only the variables its own input reads: the `$platform` markers in its input document, at any depth. This isolation is a requirement of the local target only. On Prisma Cloud every deployment receives every variable of its class.
 
 To load `.env` files, list `dotenv()` in `config` and `secrets`, with `environmentVariables()` after it to keep the shell. It reads `.env`, `.env.local`, `.env.<environment>` and `.env.<environment>.local` beside `prisma.config.ts`, through `dotenv-flow`, and skips `.env.local` for the environment `test`. Values in `.env.dev` are read only by the environment `dev`; values in `.env` and `.env.local` are read by every environment, `prisma deploy` to `production` included. The deploy does not copy a secret to the platform, but a plain value there reaches the root's input in every environment. `import 'dotenv/config'` at the top of `prisma.config.ts` still works with the default lists; remove it when you list `dotenv()`.
 

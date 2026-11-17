@@ -57,7 +57,7 @@ The capture workflow is the Ignite `product-record-gotcha` skill.
 
 Same service id (created explicitly in `us-east-1`), different region subdomain (`.cdg.` vs `.ewr.`).
 
-**Workaround.** Ignore the create response's `serviceEndpointDomain`. After promote, re-`GET /v1/compute-services/{id}` and use _that_ `serviceEndpointDomain`. Our Alchemy provider's `Deployment` re-reads the service post-promote and returns it as `deployedUrl`.
+**Workaround.** Ignore the create response's `serviceEndpointDomain`. After promote, re-`GET /v1/compute-services/{id}` and use _that_ `serviceEndpointDomain`. Upstream's `Prisma.ComputeService` re-reads the service after it promotes the attached version.
 
 **Fixed upstream** ([pdp-control-plane#4650](https://github.com/prisma/pdp-control-plane/pull/4650), merged 2026-07-22): the pre-promote `serviceEndpointDomain` is now composed from the service's actual region and documented as a contract — it names the domain the service will serve on once promoted. The post-promote re-read stays correct (a stored Foundry-assigned domain is returned verbatim), but is no longer the only trustworthy source; ADR-0039's `origin()` relies on the create-time value.
 
@@ -72,7 +72,7 @@ Same service id (created explicitly in `us-east-1`), different region subdomain 
 
 - Upstream: [PRO-200](https://linear.app/prisma-company/issue/PRO-200/compute-services-create-returns-a-placeholder-region)
 - Workaround source: [`packages/prisma-alchemy/src/compute/Deployment.ts`](packages/prisma-alchemy/src/compute/Deployment.ts)
-- Related: [`docs/design/05-prisma-cloud/alchemy-lowering.md`](docs/design/05-prisma-cloud/alchemy-lowering.md) — "The resource inventory", `Prisma.Deployment` row
+- Related: [`docs/design/05-prisma-cloud/alchemy-lowering.md`](docs/design/05-prisma-cloud/alchemy-lowering.md) — "The resource inventory", `Prisma.ComputeService` row
 
 ---
 
@@ -205,7 +205,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 
 **Cause (corrected after reading pdp-control-plane source).** Env vars are `ConfigVariable` rows **materialized into a version at version-create time** (`materializeBranchEnvVars` resolves the branch's map and hands it to Foundry with the version) and frozen there — version start does not re-resolve, and updating a variable touches only the row, never an existing version. So the race is the env-var POST vs the consumer's **version-create** call, issued by one apply with no dependency edge between them. Consequences: (1) a version created before the row exists never sees it, regardless of VM recycles; (2) config changes take effect only via a new version — there is no restart-on-config-change. _The original filing (and this entry's first version) claimed boot-time application and recycle-healing; the source model contradicts that. Our one observed recycle-heal is treated as a platform bug, not behavior to rely on._
 
-**Workaround.** Two halves, both handled in Prisma Composer. **Ordering:** give the consumer's version-create a real dependency on the env-var write in the deploy graph — the version genuinely consumes the environment (PDP's version-create call contains the materialized map). The consumer's deployment reads its app id through every variable's id, so the planner schedules each write ahead of version-create (`compute/deployment-edge.ts` in `@internal/lowering`; alchemy's `Prisma.Deployment` has no prop for the environment itself). **Propagation:** since a version's environment is frozen at create, a changed variable *value* reaches a running service only via a new version — so the deploy hook declares each service's environment values as `Prisma.Deployment.triggers` (one `Redacted` member per row, shipped in alchemy 2.0.0-beta.74 as the renamed `redeployOn`): upstream folds the resolved members into a salted fingerprint in its own state and replaces the deployment exactly when one moved; an unchanged service is reused. Because upstream resolves the actual values, a value re-issued under a stable resource identity (a connection rotated in place, a re-minted service key) replaces too — this closed the narrowing the earlier Composer-side fingerprint had to accept (ADR-0048). Out-of-band rotation of a pointed platform variable is still caught via `updatedAt` metadata read at preflight, joined as a `<name>:updatedAt` trigger member. See the change-propagation note in [`docs/design/05-prisma-cloud/alchemy-lowering.md`](docs/design/05-prisma-cloud/alchemy-lowering.md). Manual stacks: create the variable, then ship a new version.
+**Workaround.** Two halves, both handled in Prisma Composer. **Ordering:** give the consumer's version-create a real dependency on the env-var write in the deploy graph — the version genuinely consumes the environment (PDP's version-create call contains the materialized map). The consumer's version reads its service id through every variable resource, so the planner schedules each write ahead of version-create (`compute/deployment-edge.ts` in `@internal/lowering`; alchemy's `Prisma.ComputeVersion` has no prop for the environment itself). **Propagation:** since a version's environment is frozen at create, a changed variable *value* reaches a running service only via a new version — so the deploy hook declares each service's environment values as `Prisma.ComputeVersion.triggers` (one `Redacted` member per row, shipped in alchemy 2.0.0-beta.74 as the renamed `redeployOn`): upstream folds the resolved members into a salted fingerprint in its own state and replaces the version exactly when one moved; an unchanged service is reused. Because upstream resolves the actual values, a value re-issued under a stable resource identity (a connection rotated in place, a re-minted service key) replaces too — this closed the narrowing the earlier Composer-side fingerprint had to accept (ADR-0048). Out-of-band rotation of a pointed platform variable is still caught via `updatedAt` metadata read at preflight, joined as a `<name>:updatedAt` trigger member. See the change-propagation note in [`docs/design/05-prisma-cloud/alchemy-lowering.md`](docs/design/05-prisma-cloud/alchemy-lowering.md). Manual stacks: create the variable, then ship a new version.
 
 **Reproduction.**
 
@@ -216,7 +216,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 **References.**
 
 - Upstream: [PRO-211](https://linear.app/prisma-company/issue/PRO-211/compute-fresh-deploys-race-env-var-creation-against-first-version)
-- Race + edge analysis: [`packages/1-prisma-cloud/0-lowering/lowering/src/compute/deployment-edge.ts`](packages/1-prisma-cloud/0-lowering/lowering/src/compute/deployment-edge.ts) (why the edge rides `app`, and what it does not do)
+- Race + edge analysis: [`packages/1-prisma-cloud/0-lowering/lowering/src/compute/deployment-edge.ts`](packages/1-prisma-cloud/0-lowering/lowering/src/compute/deployment-edge.ts) (why the edge rides `service`, and what it does not do)
 - Related: [`dogfood-report.md`](dogfood-report.md)
 
 ---

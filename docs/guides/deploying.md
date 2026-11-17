@@ -563,6 +563,20 @@ What deployed apps actually run into, and what to do about it:
   them — editing one by hand doesn't survive.
 - **Calls into a sleeping service can get `ECONNRESET`** while it cold-starts.
   Retry them.
+- **A deploy keeps the versions it replaces, so you can roll back.** Each code
+  or environment change makes a new version of the service; the previous one
+  stays on the platform and scales to zero. Roll back in the Prisma Console, or
+  with the Management API's rollback (`POST /v1/services/<id>/rollback` with
+  the `deploymentId` to serve). The next `prisma deploy` makes the version your
+  code declares live again, even when nothing changed. Destroying the app
+  deletes every version with its service.
+- **A deploy waits until the new version answers.** After a new version
+  starts, the deploy waits until its preview URL answers, and after the service
+  is pointed at it, until the stable URL answers. Any response other than the
+  platform's own "no service" page counts. If the stable URL does not answer,
+  the service is rolled back to the version it served before and the deploy
+  fails. A service declared with `listens: false` never answers, so neither
+  check runs for it.
 - **The `cron` scheduler stays awake on purpose.** It holds Compute's
   keep-awake guard for its whole lifetime, so it never scales to zero: one warm
   instance per app is the cost of the clock. Every other service, the runner
@@ -683,7 +697,7 @@ Legacy leftovers are inert and safe to remove whenever convenient — nothing re
 
 Framework versions that manage databases, apps, deployments, and environment variables through upstream alchemy's Prisma provider adopt each environment's existing resources in place — deploy state already in the platform state API is migrated automatically on read (rows written under retired type-ids), and existing databases and connections are adopted, never replaced. The first redeploy can still converge database *properties* in place — Branch attachment and display name — as the one-time effects below describe. Environments still on the older SQL state store are not migrated — destroy and redeploy them, as the section above describes.
 
-**A service's deployment is replaced exactly when its artifact or environment changed, and reused otherwise.** The platform freezes a deployment's environment when the deployment is created, so a changed value only takes effect through a new one — the framework declares each service's environment values as the deployment's replacement triggers (alchemy's `Prisma.Deployment.triggers`), so a changed variable, a value re-issued in place (a connection rotated in place, a re-minted service key), or an out-of-band rotation of a platform variable a service's input document names all ship a new deployment, and an unchanged service redeploys nothing. No plaintext lands in deploy state — alchemy persists only a salted fingerprint of the trigger values. A replacement uploads the artifact, starts it, moves the stable endpoint over, and removes the old deployment; your service's URL does not change.
+**A service gets a new version exactly when its artifact or environment changed, and keeps its version otherwise.** The platform freezes a version's environment when the version is created, so a changed value only takes effect through a new one — the framework declares each service's environment values as the version's replacement triggers (alchemy's `Prisma.ComputeVersion.triggers`), so a changed variable, a value re-issued in place (a connection rotated in place, a re-minted service key), or an out-of-band rotation of a platform variable a service's input document names all ship a new version, and an unchanged service redeploys nothing. No plaintext lands in deploy state — alchemy persists only a salted fingerprint of the trigger values. A new version is uploaded, started and checked on its own preview URL; then the service is pointed at it and its stable URL is checked. The version it replaces stays on the platform, so you can roll back to it. Your service's URL does not change.
 
 **`DATABASE_URL` and `DATABASE_URL_POOLED` hold the placeholder `"-"`, and the framework never modifies or deletes them.** At provision the framework claims both names (production and preview class, project level) with the placeholder, using create-only writes: if the variable already exists — yours, or one Prisma Cloud seeded — the claim does nothing. The placeholder is deliberate. Without it, Prisma Cloud fills a missing `DATABASE_URL` in on the first deploy with a live credential to one of your app's own databases, and anything reading `process.env.DATABASE_URL` directly would quietly work against a database it was never wired to. With it, a direct read fails loudly. Nothing you declare can carry those names — `variable()` and `variable.secret()` reject them — and every database URL your services use comes from the connection they declare.
 
@@ -701,6 +715,12 @@ Deleting the variables by hand is not useful: the next deploy's claim (or the pl
 That same reconcile can also **rotate the database's default connection credentials**, exactly as the bullet above describes: rotation happens when the deploy state carries no stored connection secrets for the database — always the case for state migrated from the legacy store. The framework's own named connection — the one your services actually use — is NOT rotated and keeps working. Only credentials minted outside the framework from the database's *default* connection (Console-copied URLs, BI tools, backup jobs) stop working and must be re-issued.
 
 Local dev state written with retired resource types is not converted: if `prisma dev` fails at plan time with `No provider is registered for resource type 'PrismaComposer.…'`, run it once with `--fresh` to clear the stale local state.
+
+## Upgrading to kept versions
+
+Composer now declares a service's versions with alchemy's `Prisma.ComputeService` and `Prisma.ComputeVersion`, which were `Prisma.App` and `Prisma.Deployment`. Nothing to do: the first `prisma deploy` after the upgrade rewrites the app's deploy state to the new names before it plans, and updates each service and version in place. No service, database or variable is created again, and every URL stays. A service whose code and environment did not change keeps its version, except that a service that calls another service gets one new version on that first deploy, because the other service's URL is now read from the service instead of from its last deployment. From then on, the version a deploy replaces is kept, and a deploy with nothing changed makes no new version. (Before, a service that called another got a new deployment on every deploy.) `prisma dev` rewrites its local state the same way on its first run.
+
+Do not deploy the app with an older Composer after this. The state now holds the new names, which an older Composer does not read: its deploy stops at each service with `Prisma App logical ID '<address>' is already used by another App`, after rewriting the variables with the values they already have. It deletes nothing, and the app keeps serving. The next deploy with the current Composer continues normally, making one new version of each service.
 
 ## Updating a database whose schema an older version synthesized
 

@@ -604,7 +604,7 @@ interface ServiceLowering<P = unknown, S = unknown> {
   package(ctx: LowerContext, input: PackageInput):
     Effect.Effect<Artifact, unknown, unknown>
   // deploy: ship the packaged artifact into the provisioned thing and run it
-  // (create → upload → start → promote). Builds the deployment's props out of
+  // (create → upload → start, then the service promotes it). Builds the version's props out of
   // `serialized`'s env records, which is the ordering edge. Returns the node's
   // outputs — what dependent nodes' connection params resolve against — plus
   // the entities it became on the deployment target, for the deploy report.
@@ -666,7 +666,7 @@ type Outputs = Readonly<Record<string, unknown>>
 // `url` is present only when the descriptor declares the address publicly
 // reachable — a connection string is never a `url` (no core-level rule is safe:
 // `url` on compute is an endpoint, on postgres it would be a DSN). A descriptor
-// constructing one holds `deployment.appEndpointDomain` — an Output<T>, not a T,
+// constructing one holds `service.serviceEndpointDomain` — an Output<T>, not a T,
 // because the stack effect runs before Alchemy applies — so construction sites
 // traffic in `Input<DeployedEntity>` (LoweredResult.entities above); apply
 // resolves them before any reader sees them.
@@ -1077,16 +1077,16 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
       compute: {
         kind: "service",
 
-        // The service as a PLACE inside the Project: the App, identity only.
+        // The service as a PLACE inside the Project: the ComputeService, identity only.
         // serviceId is an Output<string> (an unresolved ref) — the honest type,
         // since the whole stack effect runs before Alchemy applies. projectId is a
         // real string (from the CLI env, not a resource attribute).
         provision: ({ address, application }) =>
           Effect.gen(function* () {
-            const svc = yield* Prisma.App(address, {
+            const service = yield* Prisma.ComputeService(address, {
               project: projectIdOf(application), displayName: address, regionId: o.region ?? "us-east-1", logicalId: address,
             })
-            return { serviceId: svc.appId, projectId: projectIdOf(application) }  // : ComputeProvisioned
+            return { service, serviceId: service.serviceId, projectId: projectIdOf(application) }  // : ComputeProvisioned
           }),
 
         // Encode the typed Config into the runtime environment — one env var per
@@ -1116,23 +1116,26 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         package: ({ id }, { assembled, address }) =>
           Effect.try(() => Prisma.packageComputeArtifact({ id, bundleDir: assembled.dir, appEntry: assembled.entry, address })),
 
-        // create → upload → start → promote. The app id is read through
-        // serialize's env-var records, so the deployment depends on them — the
-        // ordering edge that kills PRO-211. Returns a LoweredResult: `url` IS
-        // published here — a Compute service's deployed URL is a public endpoint,
-        // and this descriptor is the only party that knows it. Both fields are
-        // still Output refs until apply.
+        // create → upload → start, then the service promotes the version
+        // attached to it; the version it replaces is kept for a rollback. The
+        // service id is read through serialize's env-var records, so the
+        // version depends on them — the ordering edge that kills PRO-211.
+        // Returns a LoweredResult: `url` IS published here — a Compute
+        // service's URL is a public endpoint, and this descriptor is the only
+        // party that knows it. Both fields are still Output refs until apply.
         deploy: ({ address }, provisioned, artifact, serialized) =>
           Effect.gen(function* () {
-            const deployment = yield* Prisma.Deployment(`${address}.deployment`, {
-              app: appAfterEnvironment(provisioned.serviceId, serialized.environment),
+            const version = yield* Prisma.ComputeVersion(`${address}.deployment`, {
+              service: serviceAfterEnvironment(provisioned.serviceId, serialized.environment),
               artifactPath: artifact.path,
               artifactContentType: "application/gzip",
-              portMapping: { http: serialized.port }, start: true, promote: true,
+              portMapping: { http: serialized.port }, start: true,
             })
+            yield* Prisma.activateVersion(provisioned.service, version)
+            const url = onceServing(provisioned.service, provisioned.service.serviceEndpointDomain)
             return {
-              outputs: { url: deployment.appEndpointDomain, projectId: provisioned.projectId },
-              entities: [{ kind: "compute-service", id: provisioned.serviceId, url: deployment.appEndpointDomain }],
+              outputs: { url, projectId: provisioned.projectId },
+              entities: [{ kind: "compute-service", id: provisioned.serviceId, url }],
             }
           }),
       },

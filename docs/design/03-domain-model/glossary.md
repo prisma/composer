@@ -512,8 +512,8 @@ is in `layering.md`; this is the term-by-term catalogue.
   the last deploy to detect change. (A rebuild registers as a change because the
   artifact is content-addressed: new bytes, new `artifactPath`.) `→` a node's **dependencies** +
   **Input**.
-- **Attributes / Output\<T>** — values the cloud returns (`appEndpointDomain`,
-  `deploymentId`, ids); lazy references that flow into other Resources' Props.
+- **Attributes / Output\<T>** — values the cloud returns (`serviceEndpointDomain`,
+  `versionId`, ids); lazy references that flow into other Resources' Props.
   Resource-to-resource wiring is Output → Props. `→` a node's **exposed interfaces**; a
   **connection** (exposed interface→dependency) lowers to Output→Props, plus an
   `EnvironmentVariable` when the consumer reads it at runtime (what `AUTH_URL`
@@ -569,7 +569,7 @@ is where the framework's own binding layer gets built.
 - **Redacted** (`effect/Redacted`) — wraps a secret so it doesn't print. `→`
   a secret field of a node's **Input** (e.g. `DATABASE_URL`).
 - **Schedule** (`effect/Schedule`) — retry/poll policy (we poll a compute
-  version until `running` before promoting).
+  version until `running` before its service promotes it).
 - **Data.TaggedError** (`effect/Data`) — typed, tagged errors (our
   `PrismaApiError`). `→` the error channel of a provider/binding.
 - **Scope** — resource lifetime for a Layer (`Layer.scoped` + finalizers). `→`
