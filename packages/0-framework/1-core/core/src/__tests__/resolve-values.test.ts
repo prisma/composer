@@ -585,7 +585,7 @@ describe('a root input field and a secret value resource with one name', () => {
     });
 
     expect(
-      loadError(() => Load(root, { configuration: { API_KEY: 'sk_live_supersecret' } })).message,
+      loadError(() => Load(root, { configuration: { API_KEY: 'a-made-up-secret' } })).message,
     ).toBe(message);
   });
 
@@ -596,7 +596,7 @@ describe('a root input field and a secret value resource with one name', () => {
     });
 
     expect(
-      loadError(() => Load(root, { configuration: { API_KEY: 'sk_live_supersecret' } })).message,
+      loadError(() => Load(root, { configuration: { API_KEY: 'a-made-up-secret' } })).message,
     ).toBe(message);
   });
 });
