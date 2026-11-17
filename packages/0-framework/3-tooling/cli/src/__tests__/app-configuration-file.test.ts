@@ -169,7 +169,7 @@ describe('the app configuration file', () => {
     return error;
   };
   const refusedBecause = (where: string) =>
-    `${where} holds the value of the secret "SHOP_SECRET", which a platform secret in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`;
+    `${where} holds the value of the platform secret "SHOP_SECRET". Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`;
 
   test('prepareSecondProcess refuses a file that would hold a known secret, naming where and never the secret', () => {
     const graph = shopGraph({ ...configuration, EMAIL_FROM: 'secret-text-77' });
@@ -246,7 +246,7 @@ describe('the app configuration file', () => {
     expect(error).toMatchObject({
       code: 'CONFIG.SECRET_AS_PLAIN_VALUE',
       message:
-        'The platform variable "EMAIL_FROM", which prisma dev read from the `config` adapters, holds the value of the secret "EMAIL_DELIVERY_CREDENTIAL". Composer hands the second process every plain value in a file, and never writes a secret to a file.',
+        'The platform variable "EMAIL_FROM", which prisma dev read from the `config` adapters, holds the value of the platform secret "EMAIL_DELIVERY_CREDENTIAL". Composer hands the second process every plain value in a file, and never writes a secret to a file.',
       fix: 'Keep the value of "EMAIL_DELIVERY_CREDENTIAL" out of the platform variable "EMAIL_FROM", or give "EMAIL_FROM" a different value.',
     });
     expect(JSON.stringify({ ...error, message: error.message })).not.toContain('cred-77-secret');
@@ -290,7 +290,7 @@ describe('the app configuration file', () => {
 
   test('readAppConfigurationFile names the variable when it is not set', () => {
     expect(errorOf(() => readAppConfigurationFile({})).message).toBe(
-      'PRISMA_COMPOSER_APP_CONFIGURATION_FILE is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which names the app configuration file it wrote there.',
+      'PRISMA_COMPOSER_APP_CONFIGURATION_FILE is not set. This stack file runs as the second process of a Composer destroy or prisma dev, which names the app configuration file it wrote there.',
     );
   });
 
@@ -305,7 +305,7 @@ describe('the app configuration file', () => {
     expect(message).toEndWith('run the command again.');
   });
 
-  test('readAppConfigurationFile refuses a file Composer did not write', () => {
+  test('readAppConfigurationFile refuses a file not in its shape, and names a version difference as the usual cause', () => {
     const file = freshFile();
     const env = { [APP_CONFIGURATION_FILE_ENV]: file };
     const refused = (contents: string) => {
@@ -318,18 +318,19 @@ describe('the app configuration file', () => {
         plainVariableText,
         nodeAddresses: addresses,
       });
-    const prefix = `The app configuration file ${file} is not one Composer wrote: `;
+    const refusal = (what: string) =>
+      `The app configuration file ${file} is not in the shape this version of Composer reads: ${what}. The usual cause is a \`prisma\` CLI and an app on different Composer versions. Put the \`prisma\` CLI and the app's \`@prisma/composer\` on the same version.`;
 
-    expect(refused('not json')).toBe(`${prefix}it is not JSON.`);
-    expect(refused('{"nodeAddresses":[]}')).toBe(`${prefix}appConfigurationRead is not an object.`);
-    expect(refused(read({}, []))).toBe(`${prefix}rootInput is not a list of fields.`);
+    expect(refused('not json')).toBe(refusal('it is not JSON'));
+    expect(refused('{"nodeAddresses":[]}')).toBe(refusal('appConfigurationRead is not an object'));
+    expect(refused(read({}, []))).toBe(refusal('rootInput is not a list of fields'));
     expect(refused(read([], [], { A: 1 }))).toBe(
-      `${prefix}plainVariableText is not an object of text.`,
+      refusal('plainVariableText is not an object of text'),
     );
     expect(refused(JSON.stringify({ appConfigurationRead: { rootInput: [] } }))).toBe(
-      `${prefix}plainVariableText is not an object of text.`,
+      refusal('plainVariableText is not an object of text'),
     );
-    expect(refused(read([], {}))).toBe(`${prefix}nodeAddresses is not a list of node addresses.`);
+    expect(refused(read([], {}))).toBe(refusal('nodeAddresses is not a list of node addresses'));
   });
 });
 
@@ -344,7 +345,7 @@ describe('the named secrets', () => {
       errorOf(() => namedSecretsFromEnvironment({ [NAMED_SECRETS_ENV]: '{"KEY":1}' })).message,
     ).toBe('PRISMA_COMPOSER_NAMED_SECRETS is not a JSON object of text.');
     expect(errorOf(() => namedSecretsFromEnvironment({})).message).toBe(
-      'PRISMA_COMPOSER_NAMED_SECRETS is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which hands the secrets the local services need there.',
+      'PRISMA_COMPOSER_NAMED_SECRETS is not set. This stack file runs as the second process of a Composer destroy or prisma dev, which hands the secrets the local services need there.',
     );
   });
 });

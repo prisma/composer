@@ -38,7 +38,7 @@ import type {
 import { createManagementApiClient } from '@prisma/management-api-sdk';
 import * as Effect from 'effect/Effect';
 import type { ManagementApiClient } from '../client.ts';
-import { managementApiBaseUrl } from '../credentials.ts';
+import { tokenClientOrigin } from '../credentials.ts';
 import { type BuildsApi, buildsApi, type UpdateBuildBody } from './api.ts';
 import {
   type ApplicationTopologyApi,
@@ -107,7 +107,7 @@ async function beginSession(
 
   // The caller's already-authenticated client, when the engine supplied one
   // — "present means the extension must not build its own from the
-  // environment" (ContainerCredentials). The env token is the standalone
+  // environment" (CallerCredentials). The env token is the standalone
   // fallback, for hosts driving `@prisma/composer/control` without an engine.
   const injected = input.credentials?.client;
   const token = env['PRISMA_SERVICE_TOKEN'];
@@ -132,7 +132,7 @@ async function beginSession(
       injected ??
       createManagementApiClient({
         token: token ?? '',
-        baseUrl: options.origin ?? Effect.runSync(managementApiBaseUrl(options.env)),
+        baseUrl: options.origin ?? Effect.runSync(tokenClientOrigin(options.env)),
       }));
   const api = options.api ?? buildsApi({ client: clientOf(), warn });
   const topologyApi = options.topology ?? applicationTopologyApi({ client: clientOf(), warn });

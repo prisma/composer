@@ -1,79 +1,63 @@
 import * as Prisma from '@alchemy.run/prisma';
 import { Credentials } from '@distilled.cloud/prisma';
-import * as NodeHttpClient from '@effect/platform-node/NodeHttpClient';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import * as HttpClient from 'effect/http/HttpClient';
-import * as HttpClientRequest from 'effect/http/HttpClientRequest';
 import * as Layer from 'effect/Layer';
+import type { ManagementApiClient } from './client.ts';
 import * as client from './client.ts';
-import {
-  deploySourceHeaders,
-  fromEnv,
-  managementApiBaseUrl,
-  PrismaCredentials,
-} from './credentials.ts';
+import { suppliedClientOrigin, tokenClientOrigin } from './credentials.ts';
+import { managementApiHttpClientLayer } from './management-api-http-client.ts';
 
 /** The collection of Prisma resource providers. */
 export class Providers extends Provider.ProviderCollection<Providers>()('PrismaComposer') {}
 
 /**
- * Upstream's `PrismaEnvironment`, built from Composer's own env credentials —
- * no profile store, so no TTY prompt and no non-interactive hard-fail:
- * `PRISMA_SERVICE_TOKEN` (redacted, via `PrismaCredentials`) plus the base
- * URL from `managementApiBaseUrl()` — the SAME resolver `client.ts` uses,
- * so `PRISMA_API_URL` moves the postgres family and the compute/bucket/state
- * clients together, never one without the other.
+ * Upstream's `PrismaEnvironment`, with no token: the bundle's `HttpClient`
+ * sends Management API requests through `ManagementClient`, which
+ * authenticates them. Upstream's type has no case for "the HTTP client
+ * authenticates", so `type` is the only value it allows, and `source` says
+ * where the credential really is.
  */
-const prismaEnvironment = () =>
-  Layer.effect(
+const prismaEnvironment = (baseUrl: string, clientSupplied: boolean) =>
+  Layer.succeed(
     Prisma.PrismaEnvironment,
-    Effect.gen(function* () {
-      const { token } = yield* PrismaCredentials;
-      const baseUrl = yield* managementApiBaseUrl();
-      return {
-        type: 'serviceToken' as const,
-        serviceToken: token,
-        source: { type: 'env' as const, details: 'PRISMA_SERVICE_TOKEN' },
-        baseUrl,
-      };
+    Effect.succeed({
+      type: 'serviceToken' as const,
+      source: clientSupplied
+        ? {
+            type: 'stored' as const,
+            details:
+              "held by the caller's Management API client (for `prisma deploy`, the `prisma` CLI's signed-in credential), which authenticates each request",
+          }
+        : { type: 'env' as const, details: 'PRISMA_SERVICE_TOKEN' },
+      baseUrl,
     }),
   );
 
-/** The generated Management API operations' credentials: the same token and origin. */
-const operationCredentials = () =>
-  Layer.effect(
-    Credentials,
+const operationCredentials = (apiBaseUrl: string) =>
+  Layer.succeed(Credentials, Effect.succeed({ apiBaseUrl }));
+
+/** The bundle's `HttpClient`, over `ManagementClient` (see `managementApiHttpClientLayer`). */
+const managementApiHttpLayer = (origin: string) =>
+  Layer.unwrap(
     Effect.gen(function* () {
-      const { token } = yield* PrismaCredentials;
-      const apiBaseUrl = yield* managementApiBaseUrl();
-      return Effect.succeed({ apiToken: token, apiBaseUrl });
+      return managementApiHttpClientLayer(yield* client.ManagementClient, origin);
     }),
   );
-
-/** A node:http transport that adds deploy-source headers to every request. */
-const prismaManagementHttpLayer = Layer.effect(
-  HttpClient.HttpClient,
-  Effect.gen(function* () {
-    const base = yield* HttpClient.HttpClient;
-    return HttpClient.mapRequest(base, HttpClientRequest.setHeaders(deploySourceHeaders()));
-  }),
-).pipe(Layer.provide(NodeHttpClient.layerNodeHttp));
 
 /**
  * Upstream alchemy's live providers for the postgres family (Project,
  * Database, Connection), the compute family (App, Deployment,
  * EnvironmentVariable, CustomDomain), and the bucket family (Bucket, BucketAccessKey),
- * over upstream's management clients, authenticated by
- * {@link prismaEnvironment}. The generated Management API operations read
- * their token and origin from the same environment.
+ * over upstream's management clients, configured by
+ * {@link prismaEnvironment}.
  *
  * Composed from the per-resource provider layers rather than upstream's own
  * `providers()` bundle: that bundle pulls in the profile store
  * (`AlchemyProfile`/`CredentialsStore`), and Composer deliberately runs
  * without one — no TTY prompt, no non-interactive hard-fail.
  */
-const upstreamPrismaProviders = () =>
+const upstreamPrismaProviders = (baseUrl: string, clientSupplied: boolean) =>
   Layer.mergeAll(
     Prisma.ProjectProvider(),
     Prisma.DatabaseProvider(),
@@ -86,41 +70,40 @@ const upstreamPrismaProviders = () =>
     Prisma.CustomDomainProvider(),
   ).pipe(
     Layer.provideMerge(Prisma.PrismaClientLive),
-    Layer.provideMerge(prismaEnvironment()),
-    Layer.provideMerge(operationCredentials()),
+    Layer.provideMerge(prismaEnvironment(baseUrl, clientSupplied)),
+    Layer.provideMerge(operationCredentials(baseUrl)),
   );
 
 /**
- * The Prisma provider bundle: every resource provider, the Management API
- * client, and env-based credentials. Plug into a stack with
- * `{ providers: Prisma.providers() }`.
- *
- * The deploy-source transport is the bundle's ambient `HttpClient`: upstream's
- * generated Management API operations resolve it when they run, and its
- * `Deployment` artifact upload needs node's explicit Content-Length (fetch
- * streams chunked). Upstream's providers run their operations against this
- * bundle's output, so their credentials are merged into it. Invariant: no
- * Composer provider may resolve the ambient `HttpClient` — each carries its
- * own client — or it would silently get this override.
+ * The Prisma provider bundle. Without `options.client` it builds its own client from
+ * `PRISMA_SERVICE_TOKEN`. With one, it throws `DEPLOY.MANAGEMENT_API_URL_CONFLICT` when
+ * `PRISMA_API_URL` names another host.
  */
-export const providers = () =>
-  Layer.effect(
-    Providers,
-    Provider.collection([
-      Prisma.Project,
-      Prisma.Database,
-      Prisma.Connection,
-      Prisma.App,
-      Prisma.Deployment,
-      Prisma.EnvironmentVariable,
-      Prisma.Bucket,
-      Prisma.BucketAccessKey,
-      Prisma.CustomDomain,
-    ]),
-  ).pipe(
-    Layer.provideMerge(upstreamPrismaProviders()),
-    Layer.provideMerge(prismaManagementHttpLayer),
-    Layer.provideMerge(client.layer()),
-    Layer.provideMerge(fromEnv()),
-    Layer.orDie,
-  );
+export const providers = (options?: { readonly client?: ManagementApiClient | undefined }) => {
+  const suppliedOrigin =
+    options?.client === undefined ? undefined : suppliedClientOrigin(process.env);
+  return Layer.unwrap(
+    Effect.map(
+      suppliedOrigin === undefined ? tokenClientOrigin() : Effect.succeed(suppliedOrigin),
+      (origin) =>
+        Layer.effect(
+          Providers,
+          Provider.collection([
+            Prisma.Project,
+            Prisma.Database,
+            Prisma.Connection,
+            Prisma.App,
+            Prisma.Deployment,
+            Prisma.EnvironmentVariable,
+            Prisma.Bucket,
+            Prisma.BucketAccessKey,
+            Prisma.CustomDomain,
+          ]),
+        ).pipe(
+          Layer.provideMerge(upstreamPrismaProviders(origin, options?.client !== undefined)),
+          Layer.provideMerge(managementApiHttpLayer(origin)),
+          Layer.provideMerge(client.suppliedOrFromEnv(options?.client, origin)),
+        ),
+    ),
+  ).pipe(Layer.orDie);
+};

@@ -25,11 +25,6 @@ export function preflightEnv(payloads: ReadonlyMap<string, string>): Record<stri
   for (const [extensionId, payload] of payloads) {
     if (payload.length === 0) continue;
     const varName = preflightEnvVarName(extensionId);
-    if (varName === PREFLIGHT_FINDINGS_ENV_VAR) {
-      throw new Error(
-        `Extension id "${extensionId}" uses the environment variable "${varName}", which Composer reserves. Rename the extension.`,
-      );
-    }
     const owner = ownerByVarName.get(varName);
     if (owner !== undefined) {
       throw new Error(
@@ -77,70 +72,4 @@ export function platformVariableReaderText(reader: PlatformVariableReader): stri
     case 'unread':
       return `named by resource "${reader.node}", read by no service`;
   }
-}
-
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const isStringArray = (value: unknown): value is readonly string[] =>
-  Array.isArray(value) && value.every((member) => typeof member === 'string');
-
-function isPlatformVariableReader(value: unknown): value is PlatformVariableReader {
-  if (!isRecord(value)) return false;
-  switch (value['kind']) {
-    case 'field':
-      return typeof value['service'] === 'string' && typeof value['path'] === 'string';
-    case 'unread':
-      return typeof value['node'] === 'string';
-    default:
-      return false;
-  }
-}
-
-function isUnsetPlatformVariable(value: unknown): value is UnsetPlatformVariable {
-  return (
-    isRecord(value) &&
-    typeof value['name'] === 'string' &&
-    Array.isArray(value['readers']) &&
-    value['readers'].every(isPlatformVariableReader) &&
-    isStringArray(value['commands'])
-  );
-}
-
-function isPreflightFindings(value: unknown): value is PreflightFindings {
-  return (
-    isRecord(value) &&
-    Array.isArray(value['unset']) &&
-    value['unset'].every(isUnsetPlatformVariable)
-  );
-}
-
-/** The variable that carries every extension's deploy preflight findings from the first process to the second. No extension's preflight variable may take this name. */
-export const PREFLIGHT_FINDINGS_ENV_VAR = 'PRISMA_COMPOSER_PREFLIGHT_FINDINGS';
-
-/** The env entry the CLI sets on the second process. It is always set, and empty when nothing was found, so a stale value in the shell never reads as this run's. */
-export function preflightFindingsEnv(findings: PreflightFindings): Record<string, string> {
-  return {
-    [PREFLIGHT_FINDINGS_ENV_VAR]: findings.unset.length === 0 ? '' : JSON.stringify(findings),
-  };
-}
-
-/** The second process's side: the findings the CLI carried, or none. Throws on a value that does not decode: that is a framework bug. */
-export function readPreflightFindings(
-  env: Readonly<Record<string, string | undefined>>,
-): PreflightFindings {
-  const text = env[PREFLIGHT_FINDINGS_ENV_VAR];
-  if (text === undefined || text.length === 0) return { unset: [] };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    parsed = undefined;
-  }
-  if (!isPreflightFindings(parsed)) {
-    throw new Error(
-      `The deploy check's findings could not be read in the second process (${PREFLIGHT_FINDINGS_ENV_VAR}). This is a Composer bug; deploying again will not fix it.`,
-    );
-  }
-  return parsed;
 }

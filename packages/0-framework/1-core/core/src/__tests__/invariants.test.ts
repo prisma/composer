@@ -141,7 +141,7 @@ describe("invariant 2: the '.' authoring entry bundles lean", () => {
 });
 
 describe('invariant 4: core touches the environment only to read back the transports it wrote', () => {
-  test("only the deploy's second process reads the process environment", () => {
+  test("core reads the process environment only in control/deploy.ts's transportedLowerInputs, for a caller that passes no containers or preflight payloads", () => {
     const sources = shippedSources();
     expect(sources.length).toBeGreaterThan(0);
 
@@ -151,7 +151,7 @@ describe('invariant 4: core touches the environment only to read back the transp
       return count > 0 ? [{ file, count }] : [];
     });
 
-    expect(hits).toEqual([{ file: 'control/deploy.ts', count: 3 }]);
+    expect(hits).toEqual([{ file: 'control/deploy.ts', count: 1 }]);
   });
 });
 

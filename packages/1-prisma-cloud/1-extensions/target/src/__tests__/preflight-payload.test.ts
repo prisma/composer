@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { appRoot, Load } from '@internal/core';
-import { preflightEnv } from '@internal/core/config';
+import { preflightEnv, readPreflightPayload } from '@internal/core/config';
 import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
 import {
   decodePreflightPayload,
+  preflightView,
   serializeDeployPreflightPayload,
   serializeDevPreflightPayload,
-  transportedPreflight,
 } from '../control/preflight-payload.ts';
 import { compute, variable } from '../exports/index.ts';
 import { runPreflight } from '../preflight.ts';
@@ -86,7 +86,9 @@ async function cliProcess(updatedAt: string | undefined): Promise<Record<string,
  * fingerprint moves on.
  */
 function alchemyProcessVariableTriggers(env: Record<string, string>): Record<string, string> {
-  const { platformVariableVersion } = transportedPreflight(() => undefined, env);
+  const { platformVariableVersion } = preflightView(
+    readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, env),
+  );
   return Object.fromEntries(
     platformVariables.map((name) => [`${name}:updatedAt`, platformVariableVersion(name) ?? '?']),
   );
@@ -177,9 +179,7 @@ describe('what the payload may contain', () => {
   });
 
   test('a payload that is present but unreadable fails loudly rather than losing the signal', () => {
-    expect(() => decodePreflightPayload('not json')).toThrow(
-      /could not be read in the second process/,
-    );
+    expect(() => decodePreflightPayload('not json')).toThrow(/payload could not be read: /);
     expect(() => decodePreflightPayload('"a string"')).toThrow(/not a JSON object/);
     expect(() => decodePreflightPayload('{"updatedAt":{"A_KEY":42}}')).toThrow(
       /"updatedAt" is not an object of string timestamps/,
@@ -187,19 +187,15 @@ describe('what the payload may contain', () => {
   });
 });
 
-describe("the CLI process's own preflight", () => {
+describe("each run's own preflight", () => {
   test('a variable deleted since the last check is treated as having no value', async () => {
-    let snapshot: ReadonlyMap<string, string> | undefined;
-    const { platformVariableVersion } = transportedPreflight(
-      () => snapshot,
-      await cliProcess('2026-05-05T12:00:00.000Z'),
-    );
+    const versionAfter = async (updatedAt: string | undefined) =>
+      preflightView(
+        serializeDeployPreflightPayload(await preflightAgainst(updatedAt)),
+      ).platformVariableVersion('STRIPE_SECRET_KEY');
 
-    snapshot = (await preflightAgainst('2026-07-07T09:15:00.000Z')).updatedAt;
-    expect(platformVariableVersion('STRIPE_SECRET_KEY')).toBe('2026-07-07T09:15:00.000Z');
-
-    snapshot = (await preflightAgainst(undefined)).updatedAt;
-    expect(platformVariableVersion('STRIPE_SECRET_KEY')).toBeUndefined();
+    expect(await versionAfter('2026-07-07T09:15:00.000Z')).toBe('2026-07-07T09:15:00.000Z');
+    expect(await versionAfter(undefined)).toBeUndefined();
   });
 });
 
@@ -210,12 +206,14 @@ describe('one transport variable, two kinds of payload', () => {
     );
 
   test('a deploy payload names no absent secret and reads as timestamps', () => {
-    const preflight = transportedPreflight(
-      () => undefined,
-      childEnv(
-        serializeDeployPreflightPayload({
-          updatedAt: new Map([['STRIPE_SECRET_KEY', '2026-10-01T00:00:00Z']]),
-        }),
+    const preflight = preflightView(
+      readPreflightPayload(
+        PRISMA_CLOUD_EXTENSION_ID,
+        childEnv(
+          serializeDeployPreflightPayload({
+            updatedAt: new Map([['STRIPE_SECRET_KEY', '2026-10-01T00:00:00Z']]),
+          }),
+        ),
       ),
     );
 
@@ -224,13 +222,15 @@ describe('one transport variable, two kinds of payload', () => {
   });
 
   test('a dev payload carries the absent variables and the value versions', () => {
-    const preflight = transportedPreflight(
-      () => undefined,
-      childEnv(
-        serializeDevPreflightPayload({
-          absentVariables: ['STRIPE_WEBHOOK_SECRET'],
-          platformVariableVersions: { STRIPE_SECRET_KEY: 'hmac-of-value' },
-        }),
+    const preflight = preflightView(
+      readPreflightPayload(
+        PRISMA_CLOUD_EXTENSION_ID,
+        childEnv(
+          serializeDevPreflightPayload({
+            absentVariables: ['STRIPE_WEBHOOK_SECRET'],
+            platformVariableVersions: { STRIPE_SECRET_KEY: 'hmac-of-value' },
+          }),
+        ),
       ),
     );
 
@@ -239,7 +239,9 @@ describe('one transport variable, two kinds of payload', () => {
   });
 
   test('with no payload nothing is absent and every version is unknown', () => {
-    const preflight = transportedPreflight(() => undefined, childEnv(undefined));
+    const preflight = preflightView(
+      readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv(undefined)),
+    );
 
     expect([...preflight.absentVariables]).toEqual([]);
     expect(preflight.platformVariableVersion('STRIPE_SECRET_KEY')).toBeUndefined();

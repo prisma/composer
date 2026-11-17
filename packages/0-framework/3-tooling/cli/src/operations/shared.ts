@@ -6,13 +6,15 @@
  */
 import type { RunAssembler } from '@internal/assemble';
 import type {
-  ContainerCredentials,
+  CallerCredentials,
   ContainerDescriptor,
   ContainerInstance,
 } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
+import type { AppConvergeEntry } from '../app-converge.ts';
 import type { startWatch } from '../dev/watch.ts';
+import type { SecretRedaction } from '../redaction.ts';
 import type { RunAlchemy } from '../run-alchemy.ts';
 
 /** The `id` of an ExtensionDescriptor — what keys the executors' per-extension maps. */
@@ -39,11 +41,15 @@ export interface ServiceEndpoint {
 export interface OperationDeps {
   readonly runAssembler?: RunAssembler | undefined;
   /**
-   * Starts the converge child. The CLI passes one backed by the engine's
-   * `ctx.spawn`, so the terminal reaches the child natively and the engine
-   * owns signal policy; hosts get the default `spawnAlchemy`.
+   * Starts the converge child for `destroy` and `dev`. The CLI passes one
+   * backed by the engine's `ctx.spawn`, so the terminal reaches the child
+   * natively and the engine owns signal policy; hosts get the default `spawnAlchemy`.
    */
   readonly alchemy?: RunAlchemy | undefined;
+  /** The `lower` and converge `deploy` runs; defaults to the app's own install (`loadAppConvergeEntry`). Tests substitute it. */
+  readonly appConvergeEntry?: AppConvergeEntry | undefined;
+  /** What `deploy` redacts from everything it reports. Defaults to one built from `process.env`; the CLI passes its own so its console redirect redacts the same values. */
+  readonly redaction?: SecretRedaction | undefined;
   /** Starts a file watch for `dev`; defaults to chokidar-backed `startWatch`. Tests substitute it to drive changes directly. */
   readonly watch?: typeof startWatch | undefined;
   /**
@@ -60,7 +66,7 @@ export interface OperationDeps {
    * call", and both commands are credential-free by contract: there is no
    * authenticated call on those paths for this to reach.
    */
-  readonly credentials?: ContainerCredentials | undefined;
+  readonly credentials?: CallerCredentials | undefined;
 }
 
 /**

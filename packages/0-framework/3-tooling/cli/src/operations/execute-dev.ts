@@ -12,12 +12,7 @@ import * as path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import type { Graph, ServiceNode } from '@internal/core';
 import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
-import {
-  containerEnv,
-  preflightEnv,
-  preflightEnvVarName,
-  preflightFindingsEnv,
-} from '@internal/core/config';
+import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
 import type { DevServer } from '@internal/core/deploy';
 import { nodeAddresses, secretsKeys } from '@internal/core/deploy';
 import type {
@@ -315,7 +310,6 @@ async function executeDevInner(
     for (const extension of config.extensions) {
       preflightTransportEnv[preflightEnvVarName(extension.id)] ??= '';
     }
-    Object.assign(preflightTransportEnv, preflightFindingsEnv({ unset: [] }));
 
     // Emulators — ensure the daemons this topology's node kinds need, and their per-node state.
     for (const [id, dev] of resolved) {

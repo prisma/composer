@@ -4,12 +4,12 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { appRoot, isSecretPointer, Load, module, resolve, type ServiceNode } from '@internal/core';
-import { preflightEnv } from '@internal/core/config';
+import { preflightEnv, readPreflightPayload } from '@internal/core/config';
 import { isSecretString } from '@internal/foundation/secret';
 import { rawHttpContract } from '@internal/http';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
-import { decodePreflightPayload, transportedPreflight } from '../control/preflight-payload.ts';
+import { decodePreflightPayload, preflightView } from '../control/preflight-payload.ts';
 import { compute, publicUrl, variable } from '../exports/index.ts';
 import { runDevPreflight } from '../local-target/preflight.ts';
 import { serializeInput } from '../serializer.ts';
@@ -214,7 +214,9 @@ function billingDocument(
 ): unknown {
   const node = graph.nodes.find((entry) => entry.id === 'app.billing')?.node as ServiceNode;
   const binding = graph.inputBindings.find((b) => b.serviceAddress === 'app.billing')?.binding;
-  const { absentVariables } = transportedPreflight(() => undefined, childEnv);
+  const { absentVariables } = preflightView(
+    readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv),
+  );
   const row = serializeInput(node, 'app.billing', binding, { absentVariables });
   return JSON.parse(row?.value ?? 'null');
 }
@@ -330,9 +332,8 @@ describe('prisma dev preflight', () => {
     const graph = billingGraph(requiresSecrets('stripeKey'));
     const memberFor = async (value: string) => {
       secrets['STRIPE_SECRET_KEY'] = value;
-      const { platformVariableVersion } = transportedPreflight(
-        () => undefined,
-        transported(await preflight(graph)),
+      const { platformVariableVersion } = preflightView(
+        readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, transported(await preflight(graph))),
       );
       return platformVariableVersion('STRIPE_SECRET_KEY');
     };
@@ -349,9 +350,9 @@ describe('prisma dev preflight', () => {
     const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
 
     expect(
-      transportedPreflight(() => undefined, childEnv).platformVariableVersion(
-        'STRIPE_WEBHOOK_SECRET',
-      ),
+      preflightView(
+        readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv),
+      ).platformVariableVersion('STRIPE_WEBHOOK_SECRET'),
     ).toBeUndefined();
   });
 
@@ -599,7 +600,9 @@ describe('prisma dev preflight', () => {
     ): unknown {
       const node = graph.nodes.find((entry) => entry.id === address)?.node as ServiceNode;
       const binding = graph.inputBindings.find((b) => b.serviceAddress === address)?.binding;
-      const { absentVariables } = transportedPreflight(() => undefined, childEnv);
+      const { absentVariables } = preflightView(
+        readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv),
+      );
       const row = serializeInput(node, address, binding, { absentVariables });
       return JSON.parse(row?.value ?? 'null');
     }
@@ -695,9 +698,8 @@ describe('prisma dev preflight', () => {
       const triggersFor = async (from: string) => {
         configuration['EMAIL_FROM'] = from;
         const childEnv = transported(await preflight(graph));
-        const { absentVariables, platformVariableVersion } = transportedPreflight(
-          () => undefined,
-          childEnv,
+        const { absentVariables, platformVariableVersion } = preflightView(
+          readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv),
         );
         const membersOf = (address: string) => {
           const node = graph.nodes.find((entry) => entry.id === address)?.node as ServiceNode;

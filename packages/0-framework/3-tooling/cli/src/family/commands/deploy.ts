@@ -1,23 +1,22 @@
 /**
- * `deploy` — a result command that hands the terminal to alchemy.
- *
- * `--production` is gone. It was accepted and then always errored ("only
- * valid with destroy"), so no invocation using it could ever have succeeded;
- * deploy targets the environment production when no `--environment` is given.
+ * `deploy` — a result command that runs Alchemy's plan and apply in this
+ * process and reports its progress as step events.
  */
 import type { EngineEvent } from '@prisma/cli-engine';
 import { defineCommand, flag } from '@prisma/cli-engine';
+import { notOk, ok } from '@prisma/cli-engine/protocol';
 import {
   DEFAULT_DEPLOY_ENVIRONMENT,
   type DeployEvent,
   type DeployStep,
 } from '../../operations/deploy.ts';
+import { SecretRedaction } from '../../redaction.ts';
 import { unsetPlatformVariablesText } from '../../unset-platform-variables.ts';
-import { convergeSpawn, operationDeps, settleConverge } from '../converge.ts';
+import { withConsoleOnStderr } from '../console-to-stderr.ts';
 import { dataLine } from '../data-lines.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
-import { workspaceIdOf } from '../workspace.ts';
+import { toEngineError } from '../translate-error.ts';
 
 const STEP_LABELS = {
   prepare: 'load config and app',
@@ -29,13 +28,36 @@ const STEP_LABELS = {
 } as const;
 
 function stepLabel(step: DeployStep): string {
-  return step.name === 'assemble-service' ? `assemble ${step.address}` : STEP_LABELS[step.name];
+  switch (step.name) {
+    case 'assemble-service':
+      return `assemble ${step.address}`;
+    case 'apply-resource':
+      return `${step.status} ${step.resourceId}`;
+    default:
+      return STEP_LABELS[step.name];
+  }
 }
 
 function stepId(step: DeployStep): string {
-  return step.name === 'assemble-service'
-    ? `deploy.assemble.${step.address}`
-    : `deploy.${step.name}`;
+  switch (step.name) {
+    case 'assemble-service':
+      return `deploy.assemble.${step.address}`;
+    case 'apply-resource':
+      return `deploy.apply.${step.resourceId}`;
+    default:
+      return `deploy.${step.name}`;
+  }
+}
+
+function parentId(step: DeployStep): string | undefined {
+  switch (step.name) {
+    case 'assemble-service':
+      return 'deploy.assemble';
+    case 'apply-resource':
+      return 'deploy.apply';
+    default:
+      return undefined;
+  }
 }
 
 /** `850ms`, `12.3s`, `9m 35s`. */
@@ -46,8 +68,11 @@ function formatDuration(ms: number): string {
   return `${String(Math.floor(seconds / 60))}m ${String(seconds % 60)}s`;
 }
 
-/** The operation's events as engine events. */
+/** The operation's events as engine events. The engine prints only `step`, so a finished step carries its duration in the text too. */
 function toEngineEvent(event: DeployEvent): EngineEvent | undefined {
+  if (event.kind === 'message') {
+    return { kind: 'message', severity: event.severity, text: event.text };
+  }
   if (event.kind === 'preflight-findings') {
     const text = unsetPlatformVariablesText(event.findings.unset);
     return text === undefined
@@ -56,11 +81,15 @@ function toEngineEvent(event: DeployEvent): EngineEvent | undefined {
   }
   const id = stepId(event.step);
   if (event.kind === 'step-started') {
+    const parent = parentId(event.step);
     return {
       kind: 'step-started',
       step: stepLabel(event.step),
       id,
-      ...(event.step.name === 'assemble-service' ? { parentId: 'deploy.assemble' } : {}),
+      ...(parent === undefined ? {} : { parentId: parent }),
+      ...(event.step.name === 'apply-resource'
+        ? { data: { resourceType: event.step.resourceType } }
+        : {}),
     };
   }
   return {
@@ -122,52 +151,81 @@ export const createDeployCommand = (operations: ComposerOperations) =>
         }),
       },
     },
-    needs: { config: composerSection, credentials: 'child' },
-    maySpawn: true,
+    needs: { config: composerSection, credentials: true },
     handler: async (args, ctx) => {
-      const alchemy = convergeSpawn(ctx);
-      const result = await operations.deploy(
-        {
-          entry: args.flags.entry,
-          config: ctx.config,
-          name: args.flags.name,
-          environment: args.flags.environment,
-          cwd: ctx.cwd,
-          reportPath: args.flags.report,
-          reportId: args.flags.buildId,
-          onEvent: (event) => {
-            const engineEvent = toEngineEvent(event);
-            if (engineEvent !== undefined) ctx.report(engineEvent);
-          },
-        },
-        operationDeps({
-          alchemy,
-          workspaceId: await workspaceIdOf(ctx),
-          client: ctx.api,
-        }),
+      // Every Management API request the deploy makes goes through ctx.api,
+      // which authenticates and refreshes; the workspace is the same
+      // credential's.
+      const credential = await ctx.activeCredential();
+      const redaction = new SecretRedaction(process.env);
+      const result = await withConsoleOnStderr(
+        (text) => redaction.redact(text),
+        () =>
+          operations.deploy(
+            {
+              entry: args.flags.entry,
+              config: ctx.config,
+              name: args.flags.name,
+              environment: args.flags.environment,
+              cwd: ctx.cwd,
+              reportPath: args.flags.report,
+              reportId: args.flags.buildId,
+              onEvent: (event) => {
+                const engineEvent = toEngineEvent(event);
+                if (engineEvent !== undefined) ctx.report(engineEvent);
+              },
+              signal: ctx.signal,
+            },
+            {
+              credentials: {
+                workspaceId: credential?.workspaceId,
+                client: ctx.api,
+              },
+              redaction,
+            },
+          ),
       );
+      if (!result.ok) {
+        // An interrupted run settles as the signal it is: the engine exits
+        // 130/143 only for its own abort, not for a returned error. The
+        // structured error still reaches the output, as a message.
+        if (result.failure.code === 'DEPLOY.INTERRUPTED' && ctx.signal.aborted) {
+          const { code, message, why, fix } = result.failure;
+          ctx.report({
+            kind: 'message',
+            severity: 'warn',
+            text: `${message} ${fix ?? ''}`.trim(),
+            data: { code, message, why, fix },
+          });
+          throw ctx.signal.reason;
+        }
+        return notOk(toEngineError(result.failure));
+      }
 
-      return settleConverge(result, ctx, ({ summary, durationMs }) => {
-        const target = `to ${args.flags.environment ?? DEFAULT_DEPLOY_ENVIRONMENT} in ${formatDuration(durationMs)}`;
-        for (const node of summary?.nodes ?? []) {
-          for (const entity of node.entities) {
-            if (entity.url !== undefined) {
-              ctx.report({ kind: 'endpoint', name: node.address, url: entity.url });
-            }
+      const { summary, durationMs } = result.value;
+      const unsetText =
+        summary === undefined ? undefined : unsetPlatformVariablesText(summary.findings.unset);
+      const target = `to ${args.flags.environment ?? DEFAULT_DEPLOY_ENVIRONMENT} in ${formatDuration(durationMs)}`;
+      for (const node of summary?.nodes ?? []) {
+        for (const entity of node.entities) {
+          if (entity.url !== undefined) {
+            ctx.report({ kind: 'endpoint', name: node.address, url: entity.url });
           }
         }
-        return ctx.present(
+      }
+      return ok(
+        ctx.present(
           { data: { summary: summary ?? null, durationMs } },
           {
-            human: (ui) =>
-              summary === undefined
-                ? [{ kind: 'summary', status: 'ok', text: `Deployed ${target}.` }]
+            human: (ui) => [
+              ...(summary === undefined
+                ? [{ kind: 'summary', status: 'ok', text: `Deployed ${target}.` } as const]
                 : [
                     {
                       kind: 'summary',
                       status: 'ok',
                       text: `Deployed ${ui.emphasize(summary.app)} ${target}.`,
-                    },
+                    } as const,
                     {
                       kind: 'table',
                       columns: ['Address', 'Deployed'],
@@ -175,8 +233,12 @@ export const createDeployCommand = (operations: ComposerOperations) =>
                         node.address,
                         node.entities.map((entity) => `${entity.kind} ${entity.id}`).join(', '),
                       ]),
-                    },
-                  ],
+                    } as const,
+                  ]),
+              ...(unsetText === undefined
+                ? []
+                : [{ kind: 'drawing', lines: unsetText.split('\n') } as const]),
+            ],
             stdout: () =>
               (summary?.nodes ?? []).flatMap((node) =>
                 node.entities.map((entity) =>
@@ -186,7 +248,7 @@ export const createDeployCommand = (operations: ComposerOperations) =>
             json: () => ({ summary: summary ?? null, durationMs }),
             next: () => [],
           },
-        );
-      });
+        ),
+      );
     },
   });

@@ -122,9 +122,9 @@ install never gets there.
 
 ## Pinning an unreleased alchemy build
 
-The repo is on a registry release: `alchemy` and `@alchemy.run/prisma` at 2.0.0-beta.85, `@distilled.cloud/prisma` at 1.0.0-rc.18. It was on a preview of commit `972f294` until beta.85 shipped that commit. Use a preview only when you need a fix that no release contains yet.
+The repo is on registry releases: `alchemy` and `@alchemy.run/prisma` 2.0.0-beta.87, `@distilled.cloud/prisma` 1.0.0-rc.20, and `effect` with its companions at 4.1.4. History: Composer pinned a preview of alchemy-run/alchemy#3101 until beta.87 released it together with alchemy-run/distilled#1076. Those two changes let `PrismaEnvironment` and Distilled's `Credentials` omit the token, which `prisma deploy` needs to send every request through the engine's client. Use a preview only when you need a fix that no release contains yet.
 
-alchemy publishes a preview of every commit on `main`. Pin it by commit, never by branch, in the `catalog:` block of `pnpm-workspace.yaml`:
+alchemy publishes a preview of every commit on `main`, and of each pull request's head as `pr:<number>:<short sha>`. Pin it by commit, never by branch, in the `catalog:` block of `pnpm-workspace.yaml`:
 
 ```yaml
 alchemy: https://pkg.alchemy.run/alchemy/<commit sha>
@@ -136,7 +136,7 @@ alchemy: https://pkg.alchemy.run/alchemy/<commit sha>
 - **The commit URL is immutable.** It redirects to a content-addressed tarball (`/alchemy/-/<sha256>.tgz`). The lockfile records the commit URL and the tarball's integrity.
 - **Pin `alchemy` and every `@alchemy.run/*` package at the same commit.** They are built together.
 - **A preview's own dependencies are content-addressed URLs too.** `@alchemy.run/prisma` depends on `@distilled.cloud/prisma` by a `/-/<sha256>.tgz` URL. Pin our `@distilled.cloud/prisma` to that exact URL (read it from the tarball's `package.json`), or pnpm and npm install a second copy and `Credentials` stops matching. The commit URL for the same package does not dedupe with it.
-- **The `alchemy` peer of `@alchemy.run/prisma` names a different tarball hash than the commit URL resolves to.** The two differ only in an embedded URL in `package.json`; the code is identical. Both pnpm and npm accept our copy and install one `alchemy`; `check:npm-effect-resolution` asserts that.
+- **The `alchemy` peer of `@alchemy.run/prisma` is a tarball URL.** For a commit preview it may name a different tarball hash than the commit URL resolves to; the two differ only in an embedded URL in `package.json`, and npm accepts our copy. For a pull request preview (`pr:<n>:<sha>`) the peer names the same tarball the PR URL redirects to, but npm compares the specs and `npm ls` reports our `alchemy` invalid, so `check:npm-effect-resolution` fails. Pin `alchemy` to the peer's exact tarball URL then.
 - **Not every package has a preview.** `@alchemy.run/test` returns 404 at every commit, so nothing may depend on it (see the breakage classes).
 - **Read the source at the commit**, not the docs: `git clone https://github.com/alchemy-run/alchemy && git checkout <sha>`, or extract the tarball into a gitignored `wip/` folder.
 - **Move back to a registry version** once a release contains the commit: `npm view alchemy dist-tags`, then compare the release date with the commit date.
@@ -171,6 +171,8 @@ History: beta.83 listed `@effect/sql-d1` and `@effect/sql-sqlite-do` as regular 
 - **`alchemy/Test/Core` is gone (2.0.0-beta.84).** It moved to `@alchemy.run/test`, which is not published. Provider tests use `scratchStack` and `runScratch` from `@internal/lowering/scratch-stack`, a port of the parts we used.
 - **Real network calls in provider tests.** At the 2.0.0-beta.84 preview, `Prisma.CustomDomain` waits for the hostname's CNAME on its authoritative nameservers before it registers a domain. Tests stub `node:dns/promises` so the wait is skipped.
 - **New adoption advice in engine or provider messages.** `withComposerAdvice` in the CLI rewrites Alchemy's `--adopt` and "explicit adoption" advice; its tests read every such message from the installed `alchemy` (`Plan.ts`, `Apply.ts`) and `@alchemy.run/prisma` sources and fail on one it does not rewrite. Add the new message to the rewrite list.
+- **Typed provider errors (2.0.0-beta.87).** Every lifecycle method of a `ProviderService` must fail with `Provider.ProviderError` (`{ _tag: string; message?: string }`), not `unknown`. `Effect.tryPromise` sites pass `catch: toProviderError` from `@internal/core/deploy`, which keeps an error that already has a `_tag` and wraps any other in a `ProviderFailure` with the same message and the original as `cause`. The deploy reports a wrapped error as the error it wraps.
+- **`PrismaEnvironment` holds an Effect (2.0.0-beta.87).** Alchemy runs it on every Management API request. Provide `Layer.succeed(Prisma.PrismaEnvironment, Effect.succeed({ ... }))`.
 - **New required fields on alchemy's resource-handler context** (e.g. `fqn`).
   These surface only in the test fixtures that build the context by hand.
 - **`exactOptionalPropertyTypes` vs alchemy's types.** See the patch section.
