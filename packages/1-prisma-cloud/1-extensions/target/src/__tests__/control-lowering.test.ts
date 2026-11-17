@@ -1807,6 +1807,45 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     ]);
   });
 
+  test("the deploy report shows a typed platform variable's type in brackets", () => {
+    const target = prismaCloud({ workspaceId: 'ws_1' });
+    const ctx = {
+      id: 'shop.mailer',
+      address: 'shop.mailer',
+      graph: { root: { id: 'shop' } },
+      opts: {},
+    } as unknown as LowerContext;
+    const provisioned = { serviceId: 'mailer-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const artifact = { path: '/tmp/mailer.tar.gz', sha256: 'sha-mailer' };
+    const serialized = {
+      environment: [],
+      triggers: {},
+      platformVariables: [],
+      port: 3000,
+      input: {
+        key: 'COMPOSER_SHOP_MAILER_INPUT',
+        value: JSON.stringify({
+          port: { $platform: { name: 'SMTP_PORT', schema: { type: 'number' } } },
+          from: { $platform: { name: 'EMAIL_FROM' } },
+        }),
+        absent: [],
+      },
+    };
+
+    const result = run<LoweredResult>(
+      serviceDescriptorOf(target, 'compute').deploy(ctx, provisioned, artifact, serialized),
+    );
+
+    expect(result.entities).toEqual([
+      {
+        kind: 'compute-service',
+        id: 'mailer-svc#cloud-id',
+        url: 'https://shop.mailer.deployment.example',
+        details: { input: '{"port":$platform SMTP_PORT (number),"from":$platform EMAIL_FROM}' },
+      },
+    ]);
+  });
+
   test('deploy omits the absent detail when no key is absent (the common case) — no spurious blank report line (ADR-0042)', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const ctx = {

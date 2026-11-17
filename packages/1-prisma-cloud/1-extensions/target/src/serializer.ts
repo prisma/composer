@@ -40,7 +40,12 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { configKey, ORIGIN_KEY_NAME } from './config-key.ts';
 import { isGeneratedParamSource, isOriginParamSource } from './param.ts';
-import { bindingPlace, isPlainVariableSource, platformVariableName } from './platform-variable.ts';
+import {
+  bindingPlace,
+  isPlainVariableSource,
+  platformVariableName,
+  platformVariableSchema,
+} from './platform-variable.ts';
 import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
 
 // The ambient environment of whatever runtime hosts the bundle. Declared
@@ -596,10 +601,16 @@ function substitutePointers(
   const walk = (v: unknown, path: string, inArray = false): unknown => {
     const leaf = generatedByPath.get(path);
     if (isSecretSource(v) || isPlainVariableSource(v)) {
-      const secret = isSecretSource(v);
       const name = platformVariableName(v, bindingPlace(path, address));
-      markers.push({ name, path, secret, inArray });
-      return platformMarker(name, secret);
+      if (isSecretSource(v)) {
+        markers.push({ name, path, secret: true, inArray });
+        return platformMarker(name, true);
+      }
+      markers.push({ name, path, secret: false, inArray });
+      const schema = platformVariableSchema(v);
+      return schema === undefined
+        ? platformMarker(name, false)
+        : platformMarker(name, false, schema);
     }
     if (isParamSource(v)) {
       if (leaf === undefined) {

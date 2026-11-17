@@ -12,21 +12,25 @@ import {
   valueResource,
 } from '@internal/core';
 import type { SecretString } from '@internal/foundation/secret';
+import type { JsonSchema } from '@internal/input-document';
+import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID } from './extension-id.ts';
+import { variableJsonSchema } from './variable-json-schema.ts';
 import { assertVariableName } from './variable-name.ts';
 
 const PLATFORM_VARIABLE: unique symbol = Symbol.for('prisma:prisma-cloud-platform-variable');
 
 const PLATFORM_VARIABLE_NODE_TYPE = 'platform-variable';
 
-/** The payload of every platform variable value: the variable's name, and whether it is a secret. */
+/** The payload of every platform variable value: the variable's name, whether it is a secret, and the JSON Schema of a plain variable that has one. */
 export interface PlatformVariablePayload {
   readonly [PLATFORM_VARIABLE]: true;
   readonly name: string;
   readonly secret: boolean;
+  readonly schema?: JsonSchema;
 }
 
-export type PlainVariableValue = ParamSource<PlatformVariablePayload> & RuntimeValue<string>;
+export type PlainVariableValue<T = string> = ParamSource<PlatformVariablePayload> & RuntimeValue<T>;
 export type SecretVariableValue = SecretSource<PlatformVariablePayload> &
   RuntimeValue<SecretString>;
 
@@ -54,6 +58,10 @@ const notAPlatformVariable = (where: string): string =>
 export function platformVariableName(source: SecretSource | ParamSource, where: string): string {
   if (!isPlatformVariablePayload(source.payload)) throw new Error(notAPlatformVariable(where));
   return source.payload.name;
+}
+
+export function platformVariableSchema(source: ParamSource): JsonSchema | undefined {
+  return isPlatformVariablePayload(source.payload) ? source.payload.schema : undefined;
 }
 
 export interface PlatformVariableNode {
@@ -93,16 +101,29 @@ function defaultProvisionId(name: string): string {
     .join('');
 }
 
-function plainVariable(options: { readonly name: string }): ValueResourceNode<PlainVariableValue> {
+function plainVariable(options: {
+  readonly name: string;
+}): ValueResourceNode<PlainVariableValue<string>>;
+function plainVariable<S extends StandardJSONSchemaV1>(options: {
+  readonly name: string;
+  readonly schema: S;
+}): ValueResourceNode<PlainVariableValue<StandardJSONSchemaV1.InferOutput<S>>>;
+function plainVariable(options: {
+  readonly name: string;
+  readonly schema?: unknown;
+}): ValueResourceNode<PlainVariableValue<unknown>> {
   const { name } = options;
   assertVariableName(name, 'variable', "variable({ name: 'API_KEY' })");
+  const schema = 'schema' in options ? variableJsonSchema(name, options.schema) : undefined;
   return valueResource({
     name: defaultProvisionId(name),
     extension: PRISMA_CLOUD_EXTENSION_ID,
     type: PLATFORM_VARIABLE_NODE_TYPE,
-    props: { name, secret: false },
-    value: paramSource<PlatformVariablePayload, Pointer<string>>(
-      { [PLATFORM_VARIABLE]: true, name, secret: false },
+    props: schema === undefined ? { name, secret: false } : { name, secret: false, schema },
+    value: paramSource<PlatformVariablePayload, Pointer<unknown>>(
+      schema === undefined
+        ? { [PLATFORM_VARIABLE]: true, name, secret: false }
+        : { [PLATFORM_VARIABLE]: true, name, secret: false, schema },
       { label: `the platform variable "${name}"` },
     ),
   });
@@ -113,6 +134,11 @@ function secretVariable(options: {
 }): ValueResourceNode<SecretVariableValue> {
   const { name } = options;
   assertVariableName(name, 'variable.secret', "variable.secret({ name: 'API_KEY' })");
+  if ('schema' in options) {
+    throw new Error(
+      `variable.secret({ name: "${name}" }) takes no schema. A platform secret's value is always text; check its content in the service's secret field.`,
+    );
+  }
   return valueResource({
     name: defaultProvisionId(name),
     extension: PRISMA_CLOUD_EXTENSION_ID,
@@ -126,9 +152,7 @@ function secretVariable(options: {
 }
 
 /**
- * Declares a platform variable that services read by name at boot. Provision it in the app root and pass its value down. `variable.secret()` declares a platform secret.
+ * Declares a platform variable that services read by name at boot. Provision it in the app root and pass its value down. `schema` says what the variable's text holds; without it the value is the text. `variable.secret()` declares a platform secret.
  */
-export const variable: {
-  (options: { readonly name: string }): ValueResourceNode<PlainVariableValue>;
-  secret(options: { readonly name: string }): ValueResourceNode<SecretVariableValue>;
-} = Object.assign(plainVariable, { secret: secretVariable });
+export const variable: typeof plainVariable & { readonly secret: typeof secretVariable } =
+  Object.assign(plainVariable, { secret: secretVariable });

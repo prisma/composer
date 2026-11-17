@@ -433,6 +433,12 @@
       "plane": "control"
     },
     {
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/variable-json-schema.ts",
+      "domain": "prisma-cloud",
+      "layer": "extensions",
+      "plane": "shared"
+    },
+    {
       "glob": "packages/1-prisma-cloud/1-extensions/target/src/variable-name.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
