@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { readDocument } from '@internal/input-document';
 import { materializeEnv } from '../compute.ts';
 import { envStore } from '../dev-store.ts';
 
@@ -112,4 +113,20 @@ test('a plain platform variable whose value is not text is left out', async () =
   const web = await materializeEnv(devDir, 'web', 4000, { APP_ORIGIN: { host: 'x' } }, {});
 
   expect('APP_ORIGIN' in web).toBe(false);
+});
+
+test('a typed plain platform variable keeps its schema in the document, so the local service decodes the same text', async () => {
+  const document = JSON.stringify({
+    port: { $platform: { name: 'SMTP_PORT', schema: { type: 'number' } } },
+  });
+  await writeRows({ COMPOSER_MAILER_INPUT: document });
+
+  const mailer = await materializeEnv(devDir, 'mailer', 4000, { SMTP_PORT: '587' }, {});
+
+  expect(mailer['SMTP_PORT']).toBe('587');
+  const input = mailer['COMPOSER_MAILER_INPUT'] ?? '';
+  expect(
+    readDocument(JSON.parse(input), { variable: (name) => mailer[name], secret: (text) => text })
+      .value,
+  ).toEqual({ port: 587 });
 });
