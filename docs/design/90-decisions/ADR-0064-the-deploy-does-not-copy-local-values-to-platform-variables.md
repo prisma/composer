@@ -4,11 +4,13 @@
 // module.ts
 import { appRoot } from '@prisma/composer';
 import { variable } from '@prisma/composer-prisma-cloud';
+import { type } from 'arktype';
 
 export default appRoot('shop', ({ provision }) => {
   const from = provision(variable({ name: 'EMAIL_FROM' }));
+  const smtpPort = provision(variable({ name: 'SMTP_PORT', schema: type('number') }));
   const apiKey = provision(variable.secret({ name: 'EMAIL_API_KEY' }));
-  provision(emailService(), { input: { from, apiKey } });
+  provision(emailService(), { input: { from, smtpPort, apiKey } });
 });
 ```
 
@@ -23,7 +25,7 @@ Platform variables with no value:
 
 ## Decision
 
-A **platform variable** is a variable on the platform that a service reads by name at boot. The app declares each one with a **platform variable node** in its root: `variable({ name })` for a plain value, `variable.secret({ name })` for a **platform secret**, both from `@prisma/composer-prisma-cloud`. `provision()` returns the value, and the root passes it down through module inputs to the services that read it. The loaded graph lists every node and, for each service, the variables it reads, without deploying.
+A **platform variable** is a variable on the platform that a service reads by name at boot. The app declares each one with a **platform variable node** in its root: `variable({ name })` for a plain value, `variable.secret({ name })` for a **platform secret**, both from `@prisma/composer-prisma-cloud`. A plain variable may also declare what its text holds: `variable({ name, schema })` takes a schema from any library that implements [Standard JSON Schema](https://standardschema.dev/json-schema), such as ArkType or Zod. The value is then typed by the schema, and boot decodes the text and validates it against the schema's JSON Schema before the service's own schema sees it. `provision()` returns the value, and the root passes it down through module inputs to the services that read it. The loaded graph lists every node and, for each service, the variables it reads, without deploying.
 
 The deploy does not copy a platform variable's value from the developer's local environment: the `secrets` and `config` adapters, by default `.env` files and the shell. An implicit copy can push a local value into a remote environment by accident. For now the operator sets each value on Prisma Cloud with `prisma project env add`, and the deploy creates, changes and deletes no platform variable. Preflight checks only that every variable a service needs has a value. This is not a rule that the deploy may never set a variable. An explicit way to set variables through `deploy`, where the operator says which values go to which environment, is expected later (see Future work).
 
@@ -50,9 +52,9 @@ The environment's facts, such as `environment.name`, and the values Composer cre
 
 ### The node
 
-- **The constructors.** `variable` is a function with a `secret` property. `variable({ name })` returns a value resource whose value is a plain source, typed `ParamSource<PlatformVariablePayload> & RuntimeValue<string>`; `variable.secret({ name })` returns one whose value is a secret source, typed `SecretSource<PlatformVariablePayload> & RuntimeValue<SecretString>`. Both are core value resources ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)) of type `platform-variable`, with `props: { name, secret }`. The payload, `PlatformVariablePayload`, carries the variable's name and whether it is a secret; the serializer, preflight and `prisma dev` read the name from it.
+- **The constructors.** `variable` is a function with a `secret` property. `variable({ name })` returns a value resource whose value is a plain source, typed `PlainVariableValue<string>`, which is `ParamSource<PlatformVariablePayload> & RuntimeValue<string>`. `variable({ name, schema })`, where `schema` is a `StandardJSONSchemaV1` from `@standard-schema/spec`, returns `PlainVariableValue<T>`, where `T` is the schema's output type. `variable.secret({ name })` returns a value resource whose value is a secret source, typed `SecretSource<PlatformVariablePayload> & RuntimeValue<SecretString>`. All are core value resources ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)) of type `platform-variable`. Their `props` are `{ name, secret }`, plus `schema` for a plain variable that has one. The payload, `PlatformVariablePayload`, carries the same members; the serializer, preflight and `prisma dev` read the name and the schema from it.
 - **Root only.** Only an `appRoot()` body can provision one. In a `module()` body the call does not compile, and the error names `appRoot()`. An app that names a platform variable therefore has an `appRoot()` root.
-- **The value.** `provision(variable({ name: 'EMAIL_FROM' }))` returns the value with `id`, the node's address, on it. A plain value fits a `field()` field of a service's or a module's input. A secret value fits a `secretString()` field only. The value goes nowhere but a field of an input: a plain value in a secret field, a secret value in a `field()`, and any node value in per-key params do not compile. The source's label is `the platform variable "NAME"` or `the platform secret "NAME"`, and core's messages print it where they name a source.
+- **The value.** `provision(variable({ name: 'EMAIL_FROM' }))` returns the value with `id`, the node's address, on it. A plain value fits a `field()` field of a service's or a module's input whose inner schema takes its type: `field(type('number'))` takes a variable declared `schema: type('number')`, and `field(type('string'))` takes a variable with no schema. An object schema fits a `field()` of the same object type. A secret value fits a `secretString()` field only. The value goes nowhere but a field of an input: a plain value in a secret field, a secret value in a `field()`, and any node value in per-key params do not compile. The source's label is `the platform variable "NAME"` or `the platform secret "NAME"`, and core's messages print it where they name a source.
 - **The default id** is the variable's name in camel case: split on `_`, drop empty parts, lower-case each part, and capitalise each part after the first. `EMAIL_FROM` gives `emailFrom`, `SMTP_PORT` gives `smtpPort`, `EMAIL_2FA` gives `email2fa`. An explicit id goes on `provision(node, { id })`. Two names that give one id fail Load's duplicate-id error, which names both nodes.
 - **It creates nothing.** The target registers a descriptor for `platform-variable` in `prismaCloud().nodes`, and the deploy walk looks it up like every other node ([ADR-0017](ADR-0017-control-plane-loads-through-the-app-config.md)). Its lowering creates nothing and writes no row. The application topology sent to Prisma Cloud leaves it out: the platform has no node kind for it, and Composer owns nothing it names. The deploy report has no line for it, because a line would read as something Composer deployed.
 - **Where its value may go.** The compiler refuses a node value in a `resolve()` dependency, in a plain field (a schema member written without `field()`), in a field of the other secrecy, and in a service's per-key params, whose binding type admits no source. Load refuses a `resolve()` dependency and a resource's props at run time, and a source a cast gets into a per-key param, with `Service "<address>" binds its param "<name>" to <label of the source>, a value known only at boot. A param takes a literal or a value the deploy has. Bind the value to a field of the service's input instead.` A plain field reached through a cast is refused by the service's own schema at serialize or preflight, and the error ends with `The field "<path>" reads the platform variable "<NAME>".`
@@ -63,6 +65,61 @@ The environment's facts, such as `environment.name`, and the values Composer cre
 
 - A name matches `^[A-Z][A-Z0-9_]*$`: an upper-case letter, then upper-case letters, digits and underscores. The platform also accepts a leading underscore; Composer refuses it (see Reasoning).
 - These names are reserved: any name starting with `COMPOSER_`, which are Composer's own variables on the platform; `DATABASE_URL` and `DATABASE_URL_POOLED`, which Prisma Cloud sets and manages; `PORT`, which boot sets to the service's port; `PATH` and `HOME`, which `prisma dev` sets from the developer's shell. `HOST` is allowed.
+
+### A typed platform variable
+
+A variable on the platform holds text. Without `schema`, a plain platform variable's value is its text, exactly. With `schema`, the text is read by one fixed rule that the variable's JSON Schema decides, and the value is validated against that JSON Schema at boot.
+
+#### The schema option
+
+- `schema` may be an object or a function; an ArkType schema is a function. A schema with no `~standard.jsonSchema` does not compile, and through a cast it fails when the root's body runs: `The schema of the platform variable "SMTP_PORT" does not implement Standard JSON Schema. Use a schema from a library that does, such as ArkType or Zod.`
+- `variable.secret()` takes no schema. Passing one does not compile, and through a cast it fails when the root's body runs: `variable.secret({ name: "API_KEY" }) takes no schema. A platform secret's value is always text; check its content in the service's secret field.`
+- The constructor calls `schema['~standard'].jsonSchema.input({ target: 'draft-2020-12' })` and then `.output({ target: 'draft-2020-12' })`, each at most once. It never calls the library's `validate`, because the app's module code is not in the service: the library's schema cannot run on the value.
+
+#### The variable's JSON Schema
+
+The constructor reads each of the two JSON Schemas the library emits in one walk. The walk refuses the references, keywords and patterns listed under "What the constructor refuses" below as it goes, so each is found before anything is removed. It keeps only the keywords of draft 2020-12 that validate. JSON Schema treats every other keyword as an annotation, so nothing that validates is lost. The walk follows this table and nothing else, so a property named `title` or `default` is kept, and so is everything inside a `const` or an `enum`:
+
+| Keywords | Their value |
+| --- | --- |
+| `not`, `if`, `then`, `else`, `items`, `contains`, `additionalProperties`, `unevaluatedProperties`, `unevaluatedItems`, `propertyNames` | one schema, walked |
+| `allOf`, `anyOf`, `oneOf`, `prefixItems` | a list of schemas, each walked |
+| `properties`, `patternProperties`, `$defs`, `dependentSchemas` | a map from a name to a schema; the names are kept, each schema walked |
+| `type`, `const`, `enum`, `required`, `dependentRequired`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `format`, `minItems`, `maxItems`, `uniqueItems`, `minContains`, `maxContains`, `minProperties`, `maxProperties`, `$ref` | kept as it is |
+| every other keyword, including `$schema`, `title`, `description`, `examples`, `default`, `$comment`, `deprecated` and whatever a library's metadata adds | removed |
+
+A schema that is the boolean `true` or `false` is kept where it is a member of the table's first three rows.
+
+Then the `$defs` are renamed. ArkType names them with a counter that depends on what else the process created, so the same type can emit `intersection215` and later `intersection232`. The constructor renames each top-level `$defs` entry to `d0`, `d1` and so on, in the order a depth-first walk from the top first reaches a `$ref` to it. The walk visits an object's members in the table's order, the entries of a map by sorted name, and `$ref` last. It rewrites each `$ref`, and removes every entry the walk did not reach, and every `$defs` below the top level, which no accepted reference can name. In `#/$defs/<name>`, `<name>` is everything after `#/$defs/`, looked up as an own key of `$defs`.
+
+The reduced input form is the **variable's JSON Schema**. The node keeps it in `props.schema`, and the payload in `schema`. So a changed type is a changed node, and a changed description, or an unrelated edit elsewhere in the app, is not. A `default` in the variable's schema has no effect; a default belongs on the service's field, whose schema runs at boot.
+
+#### The three kinds
+
+One function, `schemaKind()` in `@internal/input-document`, decides the kind of a JSON Schema from its top level. The constructor, boot and the dev preflight all call it. Wherever the rule looks at a schema that has a `$ref`, it looks at the schema the `$ref` names instead, and ignores the keywords beside it. A `$ref` already followed on the way down, or one that names nothing, makes the schema mixed.
+
+- **Text-only** when `type` is `"string"` or `["string"]`; or `const` is a string; or `enum` is non-empty and holds only strings; or it is an `anyOf` or `oneOf` whose every member is text-only; or it is an `allOf` with at least one text-only member.
+- **Never-text** when `type` is one of `number`, `integer`, `boolean`, `object`, `array`, `null`, or a list without `string`; or `const` is not a string; or `enum` is non-empty and holds no string; or it is an `anyOf` or `oneOf` whose every member is never-text; or it is an `allOf` with at least one never-text member.
+- **Mixed** when neither rule holds, or both do. That includes an empty schema, a boolean schema, a `not`, `type: "number"` with a string `const`, and an `allOf` with both kinds.
+
+`number | null` is never-text, and the text `null` gives `null`.
+
+#### What the constructor refuses
+
+Each refusal happens when the root's body runs, and names the variable.
+
+| Case | Message |
+| --- | --- |
+| The library throws from `.input()` or `.output()` | `The schema of the platform variable "SMTP_PORT" cannot be written as JSON Schema: <the library's message>. Declare the type the text holds, and put any other check in the service's own schema.` The library's message is printed with each run of whitespace made one space, because ArkType's spans several lines. |
+| The reduced input and output forms differ | `The schema of the platform variable "SMTP_PORT" gives a different type from the one it takes. No code runs on a platform variable's value, so a transform or a default cannot apply. Declare the type the text holds, such as type('number'), and put a default on the service's field.` |
+| A mixed schema | `The schema of the platform variable "SMTP_PORT" accepts both text and other values, or neither, so Composer cannot tell how to read the variable's text. Declare a text type, or a type that is never text.` When the schema is a top-level `anyOf` or `oneOf` of text-only members and `null`, the message adds: `A variable on the platform cannot hold null as text: declare the text type and make the service's field optional.` |
+| A `$ref`, at any depth, that is not `#` or `#/$defs/<name>` with an existing name; or a `$dynamicRef`, `$dynamicAnchor`, `$anchor` or `$id` anywhere | `The schema of the platform variable "SMTP_PORT" refers to "<ref>", which Composer cannot follow. It reads only references to the schema's own $defs.` For the four keywords, `<ref>` is the keyword's value. |
+| A keyword of an older draft that the validator still reads (`dependencies`, `additionalItems`, `$recursiveRef`, `$recursiveAnchor`, or `items` as a list), or a keyword of the table whose value has the wrong shape, at any schema position. A `const` or an `enum` member that is not plain JSON data is a wrong shape. | `The schema of the platform variable "SMTP_PORT" uses "<keyword>" in a form that is not JSON Schema draft 2020-12, which is the form Composer reads.` |
+| A `pattern`, or a `patternProperties` name, that is not a valid regular expression under the `u` flag, which is how the validator compiles it | `The schema of the platform variable "SMTP_PORT" holds the pattern "<pattern>", which is not valid as a Unicode regular expression: <the engine's message>. Rewrite it; an escape such as \- outside a character class is the usual cause.` |
+
+**Comparing the two forms.** The comparison is deep equality of the two reduced forms, with the members of an object compared whatever their order and the members of a list in order. One difference is allowed, at a schema position only: `additionalProperties: false` in the output form where the input form has no `additionalProperties`. Zod writes that for every `z.object()`, and ArkType for `'+': 'delete'`. In the library, such an object drops the keys it does not declare. That removal does not run on a platform variable's value, so an undeclared key reaches the service's field, whose own schema decides.
+
+The library's message in the first row and the engine's in the last are about the author's own schema, read at Load on the author's machine. Neither can hold a variable's value.
 
 ### The graph check
 
@@ -79,15 +136,21 @@ The platform variable nodes are the value resources in `graph.nodes` whose exten
 Each place in a service's input document that reads a platform variable holds a `$platform` marker:
 
 ```json
-{ "from": { "$platform": { "name": "EMAIL_FROM" } }, "apiKey": { "$platform": { "name": "EMAIL_API_KEY", "secret": true } } }
+{
+  "from": { "$platform": { "name": "EMAIL_FROM" } },
+  "smtpPort": { "$platform": { "name": "SMTP_PORT", "schema": { "type": "number" } } },
+  "apiKey": { "$platform": { "name": "EMAIL_API_KEY", "secret": true } }
+}
 ```
 
-- `name` is the variable. `secret` is `true` for a platform secret.
+- `name` is the variable. `secret` is `true` for a platform secret. `schema` is the variable's JSON Schema, for a plain variable declared with one.
+- A marker with both `secret` and `schema`, or whose `schema` is not an object or is mixed, is malformed, and is refused with the malformed-marker message wherever a document is read.
+- Two fields that read one variable each hold the full marker.
 - The serializer writes a marker for every platform variable value, plain or secret, in place in the binding. It refuses any other param source except `generatedParam()` and `serviceOrigin()`, naming the platform variable nodes as the fix. It reads nothing from the app configuration.
 - A `$generated` marker names a variable Composer writes itself, for `generatedParam()` and `serviceOrigin()`. Two `$generated` markers in one document must name different variables, compared without case. Two `$platform` markers for one name are two reads of one variable and are allowed.
 - A user key spelled like a marker (`$platform` or `$generated`) gains one leading `$` when written and loses it when read, so only Composer can place a marker.
-- The deploy report shows each marker as `$platform NAME` or `$generated NAME`.
-- The marker format, the code that finds every marker at any depth, boot's handling of a marker, and the names of Composer's own `COMPOSER_…` rows live in one package, `@internal/input-document`. The serializer, boot and the local target all use it.
+- The deploy report shows each marker as `$platform NAME` or `$generated NAME`. A marker with a schema shows a word in brackets, such as `$platform SMTP_PORT (number)`. The word is the top-level `type` when it is a string; its members joined with ` | ` when it is a list; otherwise `text` for a text-only schema and `json` for a never-text one.
+- The marker format, the code that finds every marker at any depth, boot's handling of a marker, the kind rule, decoding and validating with their messages, and the names of Composer's own `COMPOSER_…` rows live in one package, `@internal/input-document`. The serializer, boot, the dev preflight and the local target all use it.
 
 ### Per-key params read no variable
 
@@ -98,11 +161,45 @@ A service's per-key param takes a literal or a deploy-time value, and no source 
 `service.input()` reads the input document in four steps:
 
 1. **A marker whose variable has no value** leaves its key out of its object. No value means `process.env[name]` is undefined or empty. A marker in an array position cannot be left out: boot fails, naming the variable and the path.
-2. **A marker whose variable has text** takes the text.
-3. **A marker with `secret: true`** puts the text in a secret box.
+2. **A marker with `secret: true`** puts the text in a secret box.
+3. **A plain marker** takes the text, decoded and validated by its schema when it has one, as below. The value is never searched for markers.
 4. **The service's schema validates the whole object.** When it fails and step 1 left out at least one variable, the error ends with `(platform variables with no value: X, Y)`.
 
 Empty means unset everywhere: at boot and under `prisma dev`.
+
+### Decoding and validating
+
+`decodeVariableText(name, text, schema)` in `@internal/input-document` holds the decoding rule, the validator call and the messages. Boot and the dev preflight call it, and a local service runs it at its own boot.
+
+1. **No schema, or a text-only schema:** the value is the text, exactly, with nothing trimmed.
+2. **A never-text schema:** the text is parsed as JSON, as `JSON.parse` reads it: surrounding whitespace is allowed, the last of two equal keys wins, and a key named `__proto__` is an ordinary key. Text that is not JSON fails. A parsed number, at any depth, that is not finite, or is a whole number outside the safe range, fails, because `JSON.parse` rounds the second silently and reads `1e400` as infinity.
+3. **With a schema, the value is validated** against the variable's JSON Schema, as draft 2020-12, with `format` checked for the formats the validator knows and ignored for the others.
+
+The messages. `<expected>` and `<example>` come from the top-level `type`, after following a top-level `$ref`: `a number` and `587` for `number` or `integer`; `true or false` and `true` for `boolean`; `an object` and `{"key":"value"}`; `an array` and `[1,2]`; `null` and `null`. For anything else `<expected>` is `JSON`, and the sentence ends at `must be JSON.`
+
+| Case | Message |
+| --- | --- |
+| The text is not JSON | `The platform variable "SMTP_PORT" does not hold <expected>. Its schema is not a text type, so its text must be JSON, such as <example>.` |
+| A number that is not finite or not safe | `The platform variable "ORDER_ID" holds a number outside the range Composer reads exactly, which is whole numbers up to 9007199254740991. Declare it as text and keep it as text in the service.` |
+| The value does not fit the schema | `The platform variable "SMTP_PORT" does not fit its schema: it fails "minimum" at #/minimum.` |
+| The parser, the number check or the validator throws anything else, such as for a document nested too deeply | `The platform variable "SMTP_PORT" could not be checked against its schema.` |
+
+**Which failure the third message names.** The validator runs with its short-circuit option on, and returns a list in which a failure is followed by the failures inside it. First every failure whose keyword the validator reports as `false` is removed: such a failure's location is built from the value's own key or index, not from the schema. It arises for `additionalProperties`, `unevaluatedProperties`, `items` and `unevaluatedItems` set to `false`, and for a `contains` with `minContains` whose items fail a `false` schema, which the validator lists with no wrapping failure, sometimes first in the list. The message then starts at the first failure left and moves to the next failure in the list while that failure's schema location is the current one's followed by `/`. It stops when there is none, or when the current keyword is `anyOf`, `oneOf`, `not` or `if`. The location is printed as the validator gives it: its path through the schema, such as `#/$ref/properties/port/minimum`. A `dependentRequired` failure is reported at the validator's own spelling of the location, `#/dependantRequired`, and a `patternProperties` location holds the schema's pattern percent-encoded; both come from the schema.
+
+No message holds the text, a part of it, a key of it, the parser's message or the validator's message. A failure fails `service.input()`, so the process exits and the error is in `prisma service logs <service>`. The deploy still succeeds, as for every boot failure.
+
+### The validator and how it ships
+
+The validator is `@cfworker/json-schema` 4.1.6, checked against the JSON Schemas ArkType 2.2.7 and Zod 4.4.3 emit.
+
+- It validates draft 2020-12. It has no dependencies, generates no code (`new Function` and `eval` do not occur in it), and uses no Node or Bun API.
+- A `$ref` to `#` and into `$defs` resolves, including a recursive type. An unresolved `$ref` throws only when validation reaches it, and it ignores `$dynamicRef`; that is why the constructor refuses both.
+- It compiles `pattern` with the `u` flag when it validates, and throws for a pattern that flag refuses; that is why the constructor compiles each one.
+- It checks these formats: `date`, `time`, `date-time`, `duration`, `uri`, `uri-reference`, `uri-template`, `url`, `email`, `hostname`, `ipv4`, `ipv6`, `regex`, `uuid`, `json-pointer`, `json-pointer-uri-fragment` and `relative-json-pointer`. It accepts any value under any other format.
+- Its messages can quote the value (`0 is less than 1.`), so Composer uses only each failure's keyword and location.
+- It defines hidden properties on the schema object it is given, so Composer hands it a copy.
+
+The validator must be present wherever `@internal/input-document` runs at boot. `@internal/input-document` depends on it. `@prisma/composer-prisma-cloud` and each self-contained shared-module entrypoint (auth, cron, storage, email, streams) inline it, as they inline `@internal/input-document` itself: every build pass that lists `@internal/` in `noExternal` lists `@cfworker/` too. A test in `@prisma/composer-prisma-cloud` fails if any built file of that package, or any shared-module entrypoint, imports either package.
 
 ### Deploy preflight
 
@@ -134,12 +231,13 @@ Preflight runs after the deploy has resolved the app's Project and Branch, and b
 The local target plays the platform's part.
 
 - **A plain platform variable comes from the app configuration.** The target's dev preflight runs in the first process. For each plain node a service reads, found in `graph.valueReads`, it reads the app configuration under the variable's name, once. A text value goes into `plainVariableText`, which `prisma dev` writes into the app configuration file for the second process, and counts toward its readers' fingerprints, so a changed value restarts only its readers. A value that is not text stops `prisma dev` before any service starts: ``The `config` adapters return a number for "SMTP_PORT", not text. prisma dev cannot start, because the platform variable "shop.smtpPort", which service "shop.mail.service" reads, takes text. Make the adapter return a string.``
+- **A typed platform variable is decoded and validated before any service starts.** The dev preflight then calls `decodeVariableText` on each text, once per platform variable node. A failure stops `prisma dev` with the message boot would give, followed by one sentence naming the readers: `prisma dev cannot start, because service "shop.mail.service" reads it.`, or with several readers `because services "shop.mail" and "shop.digest" read it.` The local service decodes again at its own boot, through the same code, from the same text, because its input document keeps the marker's schema.
 - **A platform secret comes from the app secrets.** The first process hands the second process the named secrets, the app secrets under the secrets keys of the graph's platform secrets, in `PRISMA_COMPOSER_NAMED_SECRETS`, in memory.
 - **A missing value follows ADR-0058.** For a variable a service reads in its input, an unset or empty one is left out of the service's input document, and the schema decides: a required one, or one an array position reads, stops `prisma dev` before any service starts, naming it and the service.
 - **Every plain value in the file is checked.** A member of `plainVariableText` that holds a known secret fails with `CONFIG.SECRET_AS_PLAIN_VALUE`, naming the platform variable and the secret, never the value.
 - **It isolates.** A local service receives only the variables its own `$platform` markers name. This is a requirement of the local target only: on Prisma Cloud every deployment receives every row of its class.
 - **A changed value pauses rebuilds** until `prisma dev` is restarted. After the restart, the deployment's `<name>:updatedAt` trigger replaces only the readers' deployments.
-- **A change to what the app reads pauses rebuilds.** A rebuild runs no preflight, so the values and the list of unset variables come from the preflight at start, and a read the change adds would have neither. After a rebuild's Load, `prisma dev` compares two sets with those at start: one key per `valueReads` entry (reader, node and path), and each read node's address with its `props`. Order does not matter. If either set differs, `prisma dev` does not converge, emits the `value-reads-changed` event, and pauses rebuilds until it is restarted. The CLI prints it as a warning: `The platform variables the app reads changed since dev started: reads of "shop.smtpPort" were added, reads of "shop.emailFrom" were removed, and "shop.sender" was changed. Restart dev to apply them; rebuilds are paused until then.` A node whose reads were only added goes in the first clause, one whose reads were only removed in the second, and one whose `props` changed, or whose reads were both added and removed, in the third.
+- **A change to what the app reads pauses rebuilds.** A rebuild runs no preflight, so the values and the list of unset variables come from the preflight at start, and a read the change adds would have neither. After a rebuild's Load, `prisma dev` compares two sets with those at start: one key per `valueReads` entry (reader, node and path), and each read node's address with its `props`. Order does not matter. A change to a node's schema changes its `props`, so it is a change too. If either set differs, `prisma dev` does not converge, emits the `value-reads-changed` event, and pauses rebuilds until it is restarted. The CLI prints it as a warning: `The platform variables the app reads changed since dev started: reads of "shop.smtpPort" were added, reads of "shop.emailFrom" were removed, and "shop.sender" was changed. Restart dev to apply them; rebuilds are paused until then.` A node whose reads were only added goes in the first clause, one whose reads were only removed in the second, and one whose `props` changed, or whose reads were both added and removed, in the third.
 - **Known limit: an edit to the app's own modules.** On a rebuild, the first process loads the entry again with `import()`, and the runtime returns the module it loaded at start. So after an edit to `module.ts` the first process still holds the graph from the start, and the comparison above sees no change. The second process does load the edited code. An edit that adds or removes a node then fails the converge with the existing error that the two processes built different graphs, and an edit that changes a read without changing a node address converges with the values worked out at start. This is how `prisma dev` handles every edit to the graph today, not only platform variables.
 
 ## Reasoning
@@ -162,6 +260,18 @@ The local target plays the platform's part.
 
 **Empty means unset.** The platform cannot store an empty value. `prisma dev` treats empty as unset. Treating empty as unset at boot too makes the two agree.
 
+**A schema says what the text means.** A variable on the platform holds text, so a service field typed `number` could not take a platform variable until the variable could say how its text is read. The schema's type also lets the compiler check the binding: `field(type('number'))` accepts a variable typed `number` and refuses one with no schema.
+
+**The type travels as data.** The app's module code is not in the service, so the library's schema cannot run on the value at boot. The constructor turns the schema into plain JSON Schema once, and the deploy writes it into each reading service's input document. Reading the JSON Schema a library emits through a public standard, Standard JSON Schema, is not reading the library's schema: Composer reads what the library publishes, never its internals ([ADR-0042](ADR-0042-service-input-is-one-standard-schema.md)).
+
+**One rule decides how the text is read, from the schema alone.** A schema that accepts only text gives the text, and one that accepts no text reads JSON. A schema that accepts both is refused, because any choice would guess: `"587"` and `587` are both a valid reading of the text `587`.
+
+**The value is validated before the service's schema sees it.** A constraint the app's author wrote on the variable, such as `number > 0`, would otherwise be ignored without a word whenever the module's field is looser.
+
+**The reduction keeps the node stable.** Without it, a description or an unrelated edit, or ArkType's counter in `$defs` names, would change the node and redeploy every reader.
+
+**No message holds the value.** Every message is built from the variable's name, the JSON Schema and the validator's path through the JSON Schema. The parser's and the validator's own messages can quote the value, so they are never printed.
+
 **The graph check runs after Load.** A requirement that depends on more than one place in the graph cannot be checked in a constructor. Running it right after Load, in every command that runs Load, refuses a bad graph before preflight and before any dev service starts, without a deploy.
 
 ## Consequences
@@ -173,6 +283,9 @@ The local target plays the platform's part.
 - Every service on Prisma Cloud sees every variable of its class. Composer records which service reads which variable in its graph and in each input document, so it can send that record if the platform ever takes one.
 - Under `prisma dev` and on the platform, a service with an unset optional variable receives the same input: the field is absent. Dev's input document leaves the marker out; the deploy's document holds the marker, and boot leaves the key out.
 - The deploy reads the app secrets only to redact the values under the graph's secrets keys wherever it prints.
+- A schema's transform, default, refinement or removal of undeclared keys does not run on a platform variable's value. A transform or default the library can show in its JSON Schema is refused; one it cannot show, such as Zod's `.trim()` or `z.coerce`, is accepted and does not run. Such a check or change belongs in the service's own schema.
+- A hand-written schema whose `$ref` contradicts the keywords beside it, such as `{ "$ref": "#/$defs/n", "type": "string" }` with `n` a number, is judged by its target, so it is accepted and fails every boot with "does not fit". Neither ArkType nor Zod emits such a schema.
+- An input document repeats a variable's schema in every field that reads it, and no limit on its size is recorded.
 - A test that needs to know which variable a binding reads finds the entry in `graph.valueReads`, takes the node at its `resource` from `graph.nodes`, and reads `props.name`.
 
 ## Alternatives considered
@@ -191,6 +304,16 @@ The local target plays the platform's part.
 - **A prefixed node type, `prisma-cloud/platform-variable`.** Rejected: the registry key already sits under the extension, and every key in `prismaCloud().nodes` is a bare name.
 - **A platform variable in a service's per-key param**, written as a pointer row the service read at boot. Rejected: a compute service's one per-key param is `port`, which the deploy needs before the service exists, so the deploy would route to 3000 while the service read the variable, and the variable's text also fails `port`'s number schema at boot. Where a compute service's port is set is not decided.
 - **Running the dev preflight on every rebuild**, so a change to what the app reads needs no restart. Deferred: it is a separate change to the dev loop.
+- **Decode only, with no validator; let the service's own schema check the value.** Rejected: a constraint the app's author wrote on the variable, such as `number > 0`, would be ignored without a word whenever the module's field is looser.
+- **Refuse any difference between the input and output forms.** Rejected: Zod's output form for every plain object adds `additionalProperties: false`, so every Zod object would be refused as a transform.
+- **Detect every transform.** Impossible: `z.string().trim()` and `z.coerce.number()` emit the same JSON Schema as the type without them. The guide says they do not run.
+- **Keep the library's JSON Schema whole and remove five annotation keywords.** Rejected: a library's metadata adds keys of its own, which would reach a variable on the platform, and a walk that removes a key by name at every depth removes properties with that name.
+- **Print a failure's location only when it exists in the schema.** Rejected: a value's key named like a keyword passes that test, and a real location behind a `$ref` fails it.
+- **Decode by trying JSON first, or decode a mixed schema as text.** Rejected: either guesses which reading the author meant.
+- **A fixed vocabulary of types,** such as `variable({ name, type: 'number' })`. Rejected: it adds a type language beside the schema libraries the app already uses, and cannot say an object's shape.
+- **Run the library's schema at boot.** Impossible: the app's module code is not in the service.
+- **A validator that compiles schemas to code,** such as Ajv. Rejected: it uses `new Function`, which a runtime policy can forbid.
+- **Trim the text under a text-only schema.** Rejected: it changes a value nobody asked to change.
 - **"Subscription" as the word for a service reading a variable.** Rejected: it names a platform mechanism that does not exist, and reads as "receives updates as they happen", which is false.
 
 ## Future work
