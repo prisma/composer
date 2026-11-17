@@ -290,7 +290,7 @@ export default appRoot('shop', ({ provision }) => {
 });
 ```
 
-You set its value on the platform. The node creates nothing: the deploy report has no line for it. The deploy does not copy a value from `.env` or your shell to the platform, because that could push a local value into a remote environment by accident, and today it creates, changes and deletes no platform variable.
+You set its value on the platform as text. A variable declared with a `schema`, such as `variable({ name: 'SMTP_PORT', schema: type('number') })`, is decoded and validated when the service boots, not when you deploy: a text that does not fit fails the service at boot, the deploy still succeeds, and the error is in `prisma service logs <service>` ([Building an app § A typed platform variable](building-an-app.md#a-typed-platform-variable)). The node creates nothing: the deploy report has no line for it. The deploy does not copy a value from `.env` or your shell to the platform, because that could push a local value into a remote environment by accident, and today it creates, changes and deletes no platform variable.
 
 Set a variable with the `prisma` CLI, at one of three scopes:
 
