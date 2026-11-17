@@ -56,6 +56,16 @@ The nodes are added before the functions are removed because the examples, fixtu
 
 **Completed when.** No file under `docs/` or `skills/` names `envSecret()` or `envParam()`, except the two friction logs the spec leaves as they are and decision records' "Alternatives considered"; every record the spec lists says what the spec says it must; the skill is staged; the docs checks in CI's lint job pass locally.
 
+## 6. A platform variable goes into `input` only
+
+**Outcome.** The decision of 2026-11-17 (`wip/handover/port-decision.md`), as the spec now states it in 4.6, 5.2, 5.4, 5.5 and 5.6: a platform variable node's value goes into a field of a service's or a module's `input` only; a per-key param takes a literal or a deploy-time value and no source; the pointer row, `paramName()` and all per-key handling in preflight, the dev preflight and the local target are deleted; `ValueRead` is `{ reader, resource, path }`; the rebuild check keys a read by reader, resource and path. The records, guides and skill say the same.
+
+**Builds on.** Dispatches 1 to 5.
+
+**Hands to.** The slice's "Done when", ready for `/drive-code-review` and QA.
+
+**Completed when.** Every point of the decision holds, each proved by a test: the compiler refuses a source in a per-key param; Load refuses a source cast into one, with the message in 5.4; no pointer row is written or read; `paramName()` is not exported; `valueReads` entries have `path` and no `site`; and the integration fixture binds its plain node to an input field. Acceptance items 3, 11, 15, 17, 18 and 21 pass as the spec now states them.
+
 ## After the dispatches
 
 `/drive-code-review` on the whole slice, with its findings fixed; QA on Prisma Cloud as the spec's "Done when" lists; then the pull request.

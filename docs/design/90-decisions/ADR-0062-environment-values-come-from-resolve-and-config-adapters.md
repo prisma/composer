@@ -62,7 +62,7 @@ The requirement covers the data Composer hands the body. A body that reads `proc
 
 ## Values
 
-A **value**, typed `Value<T>`, is an opaque stand-in, in a module body, for data known later. Its **real value** is that data. The body can pass a value wherever data of its type is accepted: into a child module's or a service's `input`, a service param, or a resource's props, such as a public URL's `url`. A value cannot be a node's `name` or `id`, a `deps` binding or a `target`, because those decide the graph's structure and a node's address.
+A **value**, typed `Value<T>`, is an opaque stand-in, in a module body, for data known later. Its **real value** is that data. The body can pass a value wherever data of its type is accepted: into a child module's or a service's `input`, a service param (a deploy-time value only), or a resource's props, such as a public URL's `url`. A value cannot be a node's `name` or `id`, a `deps` binding or a `target`, because those decide the graph's structure and a node's address.
 
 The body cannot read a value. Turning one into text or a number, serializing it, listing its keys or spreading it throws at Load. A truthiness check or `typeof` cannot be caught, because JavaScript calls no hook for them, but a value is always an object, so such a branch goes the same way in every environment and cannot vary the graph.
 
@@ -95,7 +95,7 @@ Some values name something outside the app that the operator supplies, such as a
 
 ### The reads list
 
-The graph shows, without deploying, which services read each value resource. `Graph.valueReads` holds one entry per read: `{ reader, resource, site }`, where `reader` is the service whose resolved binding holds the value, `resource` the value resource's address, and `site` where the service reads it: `{ kind: 'serviceInput', path }` with the dotted key path in its input binding, `''` for the whole binding, or `{ kind: 'param', path }` with the param's name. Load builds the list from each service's resolved input binding and per-key params, at any depth, through objects and arrays, from every source whose origin has a `resource`. A value passed through any number of module inputs is recorded, because the copy keeps its address. The list is empty when nothing reads a value resource.
+The graph shows, without deploying, which services read each value resource. `Graph.valueReads` holds one entry per read: `{ reader, resource, path }`, where `reader` is the service whose resolved input binding holds the value, `resource` the value resource's address, and `path` the dot-joined key path inside that binding, `''` for the whole binding. A value resource's value goes into input bindings only: a per-key param takes a literal or a deploy-time value, and no source ([ADR-0032](ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md)). Load builds the list from each service's resolved input binding, at any depth, through objects and arrays, from every source whose origin has a `resource`. A value passed through any number of module inputs is recorded, because the copy keeps its address. The list is empty when nothing reads a value resource.
 
 `Graph.secretSources` holds every secret source a binding names and every secret value resource, once each, so a secret value resource that nothing binds is still a known secret and is redacted. Its entry names a service whose final binding holds it, if one does, and otherwise the node itself.
 

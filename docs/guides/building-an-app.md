@@ -716,7 +716,7 @@ export default appRoot('shop', ({ provision }) => {
 
 Here `mailer` is a service of the app whose input schema declares `from: field(type('string'))` and `deliveryCredential: secretString()`.
 
-- **`variable({ name })`** declares a plain value. Its value fits a field wrapped with `field()`. The binding's type also accepts it in a service's per-key params, where it writes a pointer row the service reads at boot; a compute service has one per-key param, the reserved `port`, and every other value is a field of its `input`. Boot hands the variable's text to `port`'s number schema, so bind `port` to a literal or a root input field instead.
+- **`variable({ name })`** declares a plain value. Its value fits a field wrapped with `field()`. A platform variable's value goes into a field of a service's or a module's `input` only: a service's per-key params, such as a compute service's reserved `port`, take a literal or a root input field, because the deploy needs the port before the service exists.
 - **`variable.secret({ name })`** declares a **platform secret**, for credentials, with one rule: **the value never enters framework config**. Its value fits a `secretString()` field only. What your code gets is a `SecretString` box that redacts on logging, rendering, and JSON-serialization — leaking it takes a deliberate `.expose()`:
 
   ```ts
@@ -780,7 +780,7 @@ prisma dev                             # "HELLO FROM DEV"
 for data that is known only once the deploy knows which environment it is
 deploying. The module body cannot read a value, compare it or branch on it.
 It can only pass it on: as a dependency of another `resolve()`, as a leaf of
-a service's or a module's input binding at any depth, as a service param, as
+a service's or a module's input binding at any depth, as a service param (a deploy-time value only), as
 one of a `resource()` node's `props`, or as a
 [public URL's `url`](#a-hostname-per-environment). A field of a module's
 `input` is a value too ([A module's input](#a-modules-input)). A value cannot
@@ -1220,7 +1220,7 @@ The design record explains *why* the model is shaped this way:
   — why the service input is one schema and the binding carries the sourcing;
   [ADR-0029](../design/90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md)
   for secrets, which the deploy carries by name only, and
-  [ADR-0032](../design/90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)
+  [ADR-0032](../design/90-decisions/ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md)
   for provision-time binding and env sourcing.
 - [ADR-0030](../design/90-decisions/ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md)
   — why service keys work the way they do.

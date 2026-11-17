@@ -311,7 +311,7 @@ The platform copies the variables into a deployment when it creates it. A value 
 
 The `check environment variables` step looks up every platform variable the app reads, before any service or database is created. It reads whether a value exists, never the value.
 
-- **A variable a service needs that has no value fails the deploy.** Whether a service needs it is decided by the service's input schema: the deploy leaves the variable out and validates the input. A required field fails; an optional one does not. A param with no default that is not optional is needed too.
+- **A variable a service needs that has no value fails the deploy.** Whether a service needs it is decided by the service's input schema: the deploy leaves the variable out and validates the input. A required field fails; an optional one does not.
 
   ```text
   Deploy failed. 1 platform variable a service needs has no value:
@@ -337,7 +337,7 @@ The `check environment variables` step looks up every platform variable the app 
 
 A new app's first deploy creates its project, then stops at this step if a service needs a variable, with the commands and the new project id. Set the variables and deploy again.
 
-At boot, an unset or empty variable leaves its field out of the service's input, and the service's schema decides. A param with a default takes the default. A service whose schema refuses the input fails at boot, and the error ends with the names of the variables that had no value. **Prisma Cloud still reports a service that fails at boot as running, and the deploy promotes it**, so the deploy succeeds; the error is in `prisma service logs <service> --project <project id>`.
+At boot, an unset or empty variable leaves its field out of the service's input, and the service's schema decides. A service whose schema refuses the input fails at boot, and the error ends with the names of the variables that had no value. **Prisma Cloud still reports a service that fails at boot as running, and the deploy promotes it**, so the deploy succeeds; the error is in `prisma service logs <service> --project <project id>`.
 
 Every deployment on Prisma Cloud receives every variable of its class, including the ones another service reads. Under `prisma dev` each service receives only its own.
 

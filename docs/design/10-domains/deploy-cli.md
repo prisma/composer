@@ -279,6 +279,7 @@ them:
 | Default export is a service | to provision the service inside an `appRoot()` root |
 | Unwired dependency slot | which input, and to deploy the composing Module |
 | Two nodes take one provision id in one module (`COMPOSE.GRAPH_INVALID`) | both nodes: the one already at the id and the one that takes it too, and to pass `id` to `provision()` |
+| A service's per-key param is bound to a source, such as a platform variable node's value, through a cast (`COMPOSE.GRAPH_INVALID`) | the service, the param and the source, and to bind the value to a field of the service's input instead |
 | A module that is not an `appRoot()` root provisions a platform variable node through a cast (`COMPOSE.GRAPH_INVALID`) | the module and the node, and to provision it in the app root and pass its value down |
 | Missing `composer` section in `prisma.config.ts` | what the section must contain (ADR-0049) |
 | Old `configPath` field in the section (`CONFIG.FIELD_RETIRED`) | to move `extensions` and `state` into the section and delete the old file (ADR-0049) |
@@ -287,7 +288,7 @@ them:
 | Missing extension env | the exact variable(s) the extension factory needed |
 | Built output missing | the expected path, and "run your build" |
 | An extension's graph check refuses the graph (`COMPOSE.GRAPH_INVALID`) | the extension's message: for Prisma Cloud, a platform variable declared by two nodes, a name used by both a plain platform variable node and a root input field, or a node bound as a service's whole input, naming the variable and every address involved |
-| A platform variable a service needs has no value (`DEPLOY.PREFLIGHT_FAILED`) | each variable, the service and field or param that reads it, and the `prisma project env add` commands: `--role production` for production, otherwise `--role preview` then `--role preview --branch` |
+| A platform variable a service needs has no value (`DEPLOY.PREFLIGHT_FAILED`) | each variable, the service and field that reads it, and the `prisma project env add` commands: `--role production` for production, otherwise `--role preview` then `--role preview --branch` |
 | A platform variable the app reads is managed by Prisma Cloud (`DEPLOY.PREFLIGHT_FAILED`) | the variable, and to rename it in the app |
 | Root's input refused by its schema | the schema's messages, and that a root's input is the app configuration for the environment |
 | A config adapter throws or returns something other than an object (`CONFIG.ADAPTER_FAILED`, `CONFIG.ADAPTER_INVALID`) | which list and position, and the fix |

@@ -131,14 +131,15 @@ A value the operator supplies and the deploy reads is a [root input field](#root
 A binding is typed from the schema's input type, for a Service as for a Module. In a binding, a field typed `secretString()` takes only a secret: a platform secret's value or a redacted `generatedParam()`, or a module's own secret field passed on. A secret box written in a binding fails to compile, because a secret's value never sits in the code, and no pointer is ever written as a literal. A [wrapped field](#field) also takes a plain runtime value: a plain platform variable's value, `serviceOrigin()` or a plain `generatedParam()`. A plain field takes neither, and a binding that gives it one fails to compile. Where the compiler sees no type, such as a schema without type information or a cast, the deploy checks each value known only at boot as its pointer, so a plain field bound to one fails the deploy.
 
 The older form of input is a service's per-key `params`, each bound to a
-literal or a source
-([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)).
+literal or a deploy-time value, never a source. A compute service declares one,
+the reserved `port`
+([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md)).
 
 Two properties fall out of the source, and neither is its own category:
 
 - **Persistence follows the source.** A platform variable's value never
   enters deploy state: the service reads it at boot, from its input document's
-  marker or a param's pointer row. A root input field is read again on every
+  marker. A root input field is read again on every
   deploy. Generated and literal values live in the deployment. Persistence is a
   *consequence* of where the value comes from, not a flag.
 - **Redaction is an orthogonal facet** — whether a value is printed in the
@@ -241,11 +242,11 @@ schema whose leaves are wrapped. For another Standard Schema library,
 
 ### Platform variable
 
-A variable on the platform that a service reads by name at boot. The app declares each one with a [platform variable node](#platform-variable-node) in its root, so every message can name the node. "Plain platform variable" means the non-secret kind; the secret kind is a [platform secret](#platform-secret). A deploy does not copy its value from the developer's local environment and does not read it: the platform hands it to the running service. For now the operator sets it with `prisma project env add`. Under `prisma dev`, the local target plays the platform's part: it reads a plain platform variable's value from the app configuration and a platform secret's from the app secrets, and hands it to the local service. A variable has a class row (production or preview) and, on a preview environment, may have a branch row for one branch; the branch row wins ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)). Composer's own `COMPOSER_` rows are [variables on the platform](#a-variable-on-the-platform) but not platform variables, because the app does not declare them. In code: `PlatformVariableReader`, `UnsetPlatformVariable`, `PlatformVariableCheck`.
+A variable on the platform that a service reads by name at boot. The app declares each one with a [platform variable node](#platform-variable-node) in its root, so every message can name the node. The service reads it through a field of its `input`. "Plain platform variable" means the non-secret kind; the secret kind is a [platform secret](#platform-secret). A deploy does not copy its value from the developer's local environment and does not read it: the platform hands it to the running service. For now the operator sets it with `prisma project env add`. Under `prisma dev`, the local target plays the platform's part: it reads a plain platform variable's value from the app configuration and a platform secret's from the app secrets, and hands it to the local service. A variable has a class row (production or preview) and, on a preview environment, may have a branch row for one branch; the branch row wins ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)). Composer's own `COMPOSER_` rows are [variables on the platform](#a-variable-on-the-platform) but not platform variables, because the app does not declare them. In code: `PlatformVariableReader`, `UnsetPlatformVariable`, `PlatformVariableCheck`.
 
 ### Platform variable node
 
-The node that declares a [platform variable](#platform-variable), built with `variable({ name })` or `variable.secret({ name })` from `@prisma/composer-prisma-cloud` and provisioned in the [app root](#app-root). `provision()` returns the variable's value, with `id` on it, and the root passes that value down through module inputs to the services that read it. It is a [value resource](#value-resource) of type `platform-variable`: it creates nothing, writes no row, and is not sent to the application topology. Its default provision id is the variable's name in camel case (`EMAIL_FROM` gives `emailFrom`). The loaded graph lists every node and, in `valueReads`, each service that reads it ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)).
+The node that declares a [platform variable](#platform-variable), built with `variable({ name })` or `variable.secret({ name })` from `@prisma/composer-prisma-cloud` and provisioned in the [app root](#app-root). `provision()` returns the variable's value, with `id` on it, and the root passes that value down through module inputs to the services that read it. The value goes into a field of a service's or a module's `input` only, never a per-key param. It is a [value resource](#value-resource) of type `platform-variable`: it creates nothing, writes no row, and is not sent to the application topology. Its default provision id is the variable's name in camel case (`EMAIL_FROM` gives `emailFrom`). The loaded graph lists every node and, in `valueReads`, each service that reads it and the path in its input binding ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)).
 
 ### Platform secret
 
@@ -257,7 +258,7 @@ Any entry, or **row**, in a Prisma Cloud project's environment variables: a name
 
 ### Value resource
 
-Core's name for a [Resource](#resource) node that is also a value: provisioning it returns a [value](#value), not a reference to an interface. Only the [app root](#app-root) can provision one. It provides no interface and has no dependencies. A platform variable node is the one value resource today. The term lets core state its rules without knowing about Prisma Cloud ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). In code: `valueResource()`, `isValueResource()`, `ValueResourceNode`, `Graph.valueReads`.
+Core's name for a [Resource](#resource) node that is also a value: provisioning it returns a [value](#value), not a reference to an interface. Only the [app root](#app-root) can provision one. It provides no interface and has no dependencies. A platform variable node is the one value resource today. The term lets core state its rules without knowing about Prisma Cloud ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). In code: `valueResource()`, `isValueResource()`, `ValueResourceNode`, and `Graph.valueReads`, whose entries are `{ reader, resource, path }`.
 
 ### Root input field
 

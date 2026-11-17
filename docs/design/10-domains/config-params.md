@@ -1,6 +1,6 @@
 # Config params
 
-How a per-key param is declared, typed, bound at provision, carried to the platform, and read back at boot. Rests on [ADR-0018](../90-decisions/ADR-0018-config-params-carry-a-caller-owned-schema.md) (a param's type is a caller-owned schema), [ADR-0019](../90-decisions/ADR-0019-the-target-owns-config-serialization.md) (the deploy target owns serialization) and [ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md) (a param binds at provision to a literal, a deploy-time value or a plain platform variable node's value).
+How a per-key param is declared, typed, bound at provision, carried to the platform, and read back at boot. Rests on [ADR-0018](../90-decisions/ADR-0018-config-params-carry-a-caller-owned-schema.md) (a param's type is a caller-owned schema), [ADR-0019](../90-decisions/ADR-0019-the-target-owns-config-serialization.md) (the deploy target owns serialization) and [ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md) (a param binds at provision to a literal or a deploy-time value).
 
 ## Params and input
 
@@ -27,26 +27,23 @@ The facets are `default` (used when no value is bound or stored) and `optional`.
 
 ## Binding a param at provision
 
-A declaration carries no value beyond its `default`. The value is bound where the composition decision is made, the `provision()` call ([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)):
+A declaration carries no value beyond its `default`. The value is bound where the composition decision is made, the `provision()` call ([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md)):
 
 ```ts
-export default appRoot('shop', ({ provision }) => {
+export default appRoot('shop', { input: type({ WEB_PORT: 'string.integer.parse' }) }, ({ input, provision }) => {
   // A literal, schema-validated when config is built at deploy:
   provision(api, { params: { port: 8080 } });
 
-  // A plain platform variable: the value lives in a variable on the platform,
-  // per environment. Only the app root provisions the node; `variable` is the
-  // target's, from @prisma/composer-prisma-cloud.
-  const port = provision(variable({ name: 'WEB_PORT' }));
-  provision(web, { params: { port } });
+  // A deploy-time value of the param's type, here a root input field read from
+  // the config adapters; the deploy writes its real value as it writes a literal:
+  provision(web, { params: { port: input.WEB_PORT } });
 });
 ```
 
-A param also accepts a deploy-time value of its type, such as a root input field, whose real value the deploy writes as it writes a literal. A platform secret does not fit a param: the binding's type admits no secret source.
+A param takes no source: not a platform variable node's value, not `generatedParam()`, not `serviceOrigin()`. The deploy needs a compute service's port before the service exists, to set the deployment's port mapping, so a value known only at boot cannot set it. The binding's type admits no `ParamSource`, and Load refuses a source a cast gets there with `COMPOSE.GRAPH_INVALID`, saying to bind the value to a field of the service's input instead.
 
 Resolution order per param: binding, else `default`, else absent (only legal for an `optional` param). A required param nothing binds fails the deploy, naming the param and the service.
 
-A param bound to a **plain platform variable** writes a pointer row. The row holds the name of the platform variable, not a value, marked with the `@composer-param-pointer:` prefix, which no JSON-encoded literal can start with. The operator sets the variable on the platform. The deploy checks whether the variable has a value in the environment, and does not set it. At boot, the service reads the row to find the variable's name, then reads that variable. A variable with no value gives the param its default, or leaves it out when the param is optional. The deploy check and boot fail only for a required param ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)). The param's own schema receives the variable's **raw text**, with no decoding, so a `number()` param such as `port` bound to a platform variable fails its schema at boot. An empty string means unset, because the platform cannot store one. A changed value needs a redeploy. Under `prisma dev` the target's dev preflight reads the variable's text from the `config` adapters instead.
 
 ## Sources are values
 
@@ -55,14 +52,14 @@ A platform variable node's value, `generatedParam()` and `serviceOrigin()` are e
 | Where | Plain platform variable | Platform secret | `generatedParam()` | `serviceOrigin()` |
 | --- | --- | --- | --- | --- |
 | A service's `input` binding | its pointer, which a wrapped field accepts | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
-| A service's per-key params | a pointer row, read at boot | refused by the type | refused at deploy | refused at deploy |
+| A service's per-key params | refused by the type, and at Load through a cast | refused by the type, and at Load through a cast | refused by the type, and at Load through a cast | refused by the type, and at Load through a cast |
 | A module's `input` binding | its pointer, which a wrapped field accepts | its pointer, which a `secretString()` field accepts | its pointer: a `secretString()` field accepts it when redacted, a wrapped field otherwise | its pointer, which a wrapped field accepts |
 | A `resolve()` dependency | refused | refused | refused | refused |
 | A resource's `props` | refused at Load | refused by the type | refused by the type | refused at Load |
 
 In a service's and a module's input, the schema checks each runtime source as its pointer. A plain field refuses a pointer, so a field bound to one is wrapped with `field()`, or is a `secretString()` field for a secret ([glossary](../03-domain-model/glossary.md#field)). Both bindings are typed from the schema, so a source bound to a field that refuses it fails to compile. The deploy check catches what the compiler cannot see: a refinement the type does not carry, such as a URL format, a schema without type information, or a cast. A schema failure on a field that reads a platform variable ends with the variable's name.
 
-A service's input binding and its params receive the source itself. So the target reads the leaves, writes the pointer rows and checks the names from the source's payload.
+A service's input binding receives the source itself. So the target reads the leaves, writes the markers and checks the names from the source's payload.
 
 Every source is runtime: the deploy never holds its data, so its real value at deploy is a pointer, which the service dereferences at boot. A platform variable's data is on the platform; `generatedParam()` and `serviceOrigin()` are runtime because the deploy creates their values after Load. A pointer cannot be read: turning it into text or a number throws an error that names the source. A `resolve()` cannot list a source: listing one fails to compile, and Load refuses a dependency whose real value is a pointer or holds one.
 
@@ -91,9 +88,9 @@ COMPOSER_SHOP_WEB_PORT   = '3000'
 COMPOSER_SHOP_WEB_DB_URL = '"postgres://…"'
 ```
 
-A param bound to a platform variable is stored as its pointer row instead. The service's deployment depends on these variables, so it is created after the writes and replaced when a value changes.
+The service's deployment depends on these variables, so it is created after the writes and replaced when a value changes.
 
-**Boot: deserialize (the target).** The service's bootstrap reads the rows back and reverses the encoding: `port` is validated into a number, and the dependency's params into its connection values. A pointer row is followed to the variable it names.
+**Boot: deserialize (the target).** The service's bootstrap reads the rows back and reverses the encoding: `port` is validated into a number, and the dependency's params into its connection values.
 
 **Runtime.** The service reads the port through `service.port()` and its dependencies through `service.load()`, which hydrates them. Its input comes separately, from its input document, through `service.input()` ([ADR-0042](../90-decisions/ADR-0042-service-input-is-one-standard-schema.md)).
 
@@ -152,7 +149,7 @@ Three lines the model holds everywhere:
 ## Related
 
 - [ADR-0018](../90-decisions/ADR-0018-config-params-carry-a-caller-owned-schema.md) and [ADR-0019](../90-decisions/ADR-0019-the-target-owns-config-serialization.md): a param's schema, and the wire the target owns.
-- [ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md): binding a param at provision.
+- [ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md): binding a param at provision.
 - [ADR-0042](../90-decisions/ADR-0042-service-input-is-one-standard-schema.md): service input, where every other value goes.
 - [ADR-0029](../90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md): the secrets model § Secrets summarizes.
 - [ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md): platform variables.

@@ -76,12 +76,12 @@ Each slice is one pull request, merged before the next starts. Slice 1 stands al
 
 **After this slice merges:**
 
-- `variable()` and `variable.secret()` exist in `@prisma/composer-prisma-cloud`. A plain value fits a `field()` field or a service's per-key param; a secret fits a secret field and arrives boxed.
+- `variable()` and `variable.secret()` exist in `@prisma/composer-prisma-cloud`. A plain value fits a `field()` field of an input; a secret fits a secret field and arrives boxed. A service's per-key param takes no source: the pointer row is removed.
 - `provision(variable(…))` in a `module()` body, at the root or below it, does not compile, and the error names `appRoot()`.
 - The loaded graph lists every platform variable node and, for each service, the variables it reads.
 - Right after Load, the target's graph check refuses: two nodes for one name; a node and a root input field with one name; and a node value as a service's whole input.
 - Deploy, preflight and boot treat a node's variable as slice 2 treats an `envSecret()`'s. The node creates nothing, is not sent in the application topology, and has no line in the deploy report.
-- `prisma dev` fills a plain platform variable from the app configuration, in an input field or a per-key param, and refuses a value that is not text before any service starts.
+- `prisma dev` fills a plain platform variable from the app configuration, in an input field, and refuses a value that is not text before any service starts.
 - `@prisma/composer-prisma-cloud` no longer exports `envSecret()`, `envParam()` or `secretName()`. Core's `paramSource()` takes no `configurationKey`, and Load reads nothing from the app configuration except the root's input. The release note is a migration guide with a before and after for each use.
 - The `email`, `auth` and `storefront-auth` examples use the nodes; `env-param` becomes `root-input`, an example of a root input field. The guides, the skill and the records teach the two ways to get a value.
 - Apps and docs in Prisma's other repositories move off the removed functions in those repositories, not in this slice.
@@ -91,7 +91,7 @@ Each slice is one pull request, merged before the next starts. Slice 1 stands al
 
 **Design:** D2 to D7, D8 (the node's constructor), D12 (plain platform variables under dev), D14 (the shortcuts removed), D15. Design sections 4, 5, 6, 10, 12 and 14.
 
-**Checked on Prisma Cloud:** an app with a plain node, a secret node and a module that receives both through its input, deployed with the secret unset and required (preflight refuses), then set (the service boots with the value); a plain node in a per-key param; a fresh preview branch of that app; a nested module and a `module()` root's body failing to compile with `appRoot()` in the error; the same app under `prisma dev`; the planted-secret search with a secret node.
+**Checked on Prisma Cloud:** an app with a plain node, a secret node and a module that receives both through its input, deployed with the secret unset and required (preflight refuses), then set (the service boots with the value); a fresh preview branch of that app; a nested module and a `module()` root's body failing to compile with `appRoot()` in the error; the same app under `prisma dev`; the planted-secret search with a secret node.
 
 **Spec:** [slices/3-a-platform-variable-is-a-node/spec.md](slices/3-a-platform-variable-is-a-node/spec.md), which states every public type, rule, message, observable behaviour and record change, the acceptance items, and the alternatives considered.
 
