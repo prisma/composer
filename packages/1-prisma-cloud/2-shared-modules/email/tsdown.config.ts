@@ -1,4 +1,4 @@
-import { baseConfig } from '@internal/tsdown-config';
+import { baseConfig, internalPackagesAndTheirDependencies } from '@internal/tsdown-config';
 import { defineConfig } from 'tsdown';
 
 // Mirrors storage's multi-pass shape (storage/tsdown.config.ts): index +
@@ -26,8 +26,7 @@ export default defineConfig([
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
     noExternal: [
-      /^@internal\//,
-      /^@cfworker\//,
+      ...internalPackagesAndTheirDependencies,
       /^@prisma\/(?!orm-)/,
       /^arktype/,
       /^@standard-schema\//,
@@ -45,6 +44,6 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//, /^@cfworker\//, /^@prisma\/(?!orm-)/],
+    noExternal: [...internalPackagesAndTheirDependencies, /^@prisma\/(?!orm-)/],
   },
 ]);

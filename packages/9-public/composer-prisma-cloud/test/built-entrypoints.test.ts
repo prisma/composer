@@ -6,13 +6,12 @@ const packageDir = path.join(import.meta.dir, '..');
 const distDir = path.join(packageDir, 'dist');
 const sharedModulesDir = path.join(packageDir, '..', '..', '1-prisma-cloud', '2-shared-modules');
 
-const SHARED_MODULE_ENTRYPOINTS: readonly (readonly [string, string])[] = [
-  ['auth', 'auth-entrypoint.mjs'],
-  ['cron', 'scheduler-entrypoint.mjs'],
-  ['email', 'email-entrypoint.mjs'],
-  ['storage', 'storage-entrypoint.mjs'],
-  ['streams', 'streams-entrypoint.mjs'],
-];
+const isEntrypoint = (file: string): boolean => file.endsWith('-entrypoint.mjs');
+
+const sharedModules = fs
+  .readdirSync(sharedModulesDir, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name);
 
 const INLINED_PACKAGES = ['@cfworker/json-schema', '@internal/input-document'];
 
@@ -51,14 +50,27 @@ function importsOf(text: string, specifier: string): boolean {
   );
 }
 
-const entrypoints = [
-  ...SHARED_MODULE_ENTRYPOINTS.map(([module, file]) =>
-    path.join(sharedModulesDir, module, 'dist', file),
+const sharedModuleEntrypoints = sharedModules.flatMap((module) =>
+  builtFiles(path.join(sharedModulesDir, module, 'dist')).filter((file) =>
+    isEntrypoint(path.basename(file)),
   ),
-  ...SHARED_MODULE_ENTRYPOINTS.map(([module, file]) => path.join(distDir, module, file)),
-];
+);
+const packageEntrypoints = builtFiles(distDir).filter((file) => isEntrypoint(path.basename(file)));
+const entrypoints = [...sharedModuleEntrypoints, ...packageEntrypoints];
 
 describe('the built code a service runs carries the platform-variable validator inside it', () => {
+  test('every shared module builds a service entrypoint, and this package ships a copy of each', () => {
+    for (const module of sharedModules) {
+      const own = sharedModuleEntrypoints.filter((file) =>
+        file.startsWith(path.join(sharedModulesDir, module, 'dist')),
+      );
+      expect({ module, entrypoints: own.length > 0 }).toEqual({ module, entrypoints: true });
+      for (const file of own) {
+        expect(fs.existsSync(path.join(distDir, module, path.basename(file)))).toBe(true);
+      }
+    }
+  });
+
   test('no built file of @prisma/composer-prisma-cloud imports the validator or the input document', () => {
     const files = builtFiles(distDir);
     expect(files.length).toBeGreaterThan(0);

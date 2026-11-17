@@ -1,4 +1,4 @@
-import { baseConfig } from '@internal/tsdown-config';
+import { baseConfig, internalPackagesAndTheirDependencies } from '@internal/tsdown-config';
 import { defineConfig } from 'tsdown';
 
 // Mirrors storage's three passes. index + streams-service share the dist root
@@ -30,8 +30,7 @@ export default defineConfig([
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
     noExternal: [
-      /^@internal\//,
-      /^@cfworker\//,
+      ...internalPackagesAndTheirDependencies,
       /^@prisma\/(?!orm-)/,
       /^arktype/,
       /^@standard-schema\//,
@@ -51,6 +50,11 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//, /^@cfworker\//, /^@prisma\/(?!orm-)/, /^fastq/, /^reusify/],
+    noExternal: [
+      ...internalPackagesAndTheirDependencies,
+      /^@prisma\/(?!orm-)/,
+      /^fastq/,
+      /^reusify/,
+    ],
   },
 ]);

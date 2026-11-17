@@ -1,4 +1,4 @@
-import { baseConfig } from '@internal/tsdown-config';
+import { baseConfig, internalPackagesAndTheirDependencies } from '@internal/tsdown-config';
 import { defineConfig } from 'tsdown';
 
 // Mirrors email's multi-pass shape (email/tsdown.config.ts): index +
@@ -34,8 +34,7 @@ export default defineConfig([
     outputOptions: { inlineDynamicImports: true },
     external: [/^bun$/, /^bun:/],
     noExternal: [
-      /^@internal\//,
-      /^@cfworker\//,
+      ...internalPackagesAndTheirDependencies,
       // `@prisma/orm-*` (the Prisma ORM shells) are excluded: this entrypoint
       // must not carry the ORM, which the app resolves from its own facade.
       /^@prisma\/(?!orm-)/,
@@ -68,8 +67,7 @@ export default defineConfig([
     outputOptions: { inlineDynamicImports: true },
     external: [/^bun$/, /^bun:/],
     noExternal: [
-      /^@internal\//,
-      /^@cfworker\//,
+      ...internalPackagesAndTheirDependencies,
       // The local bootstrap runs the real PN dbInit path, so the control
       // client (and the rest of the @prisma/orm-* graph it reaches) must ride
       // inside the bundle — consumers never resolve those packages themselves.
