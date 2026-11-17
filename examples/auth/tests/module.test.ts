@@ -13,10 +13,7 @@ function bindingOf(graph: ReturnType<typeof Load>, address: string): Record<stri
 }
 
 function variableReadAt(graph: ReturnType<typeof Load>, reader: string, path: string): unknown {
-  const read = graph.valueReads.find(
-    (entry) =>
-      entry.reader === reader && entry.site.kind === 'serviceInput' && entry.site.path === path,
-  );
+  const read = graph.valueReads.find((entry) => entry.reader === reader && entry.path === path);
   const node = graph.nodes.find((entry) => entry.id === read?.resource)?.node;
   return node?.kind === 'resource' ? node.props['name'] : undefined;
 }

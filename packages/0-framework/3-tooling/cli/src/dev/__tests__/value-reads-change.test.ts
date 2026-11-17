@@ -1,13 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  appRoot,
-  Load,
-  paramSource,
-  secretSource,
-  service,
-  string,
-  valueResource,
-} from '@internal/core';
+import { appRoot, Load, paramSource, secretSource, service, valueResource } from '@internal/core';
 import type { Pointer } from '@internal/foundation/pointer';
 import type { SecretString } from '@internal/foundation/secret';
 import { valueReadsChange } from '../value-reads-change.ts';
@@ -18,12 +10,9 @@ interface NodeSpec {
   readonly secret?: boolean;
 }
 
-type Site = 'input' | 'param';
-
 interface ReadSpec {
   readonly reader: 'mail' | 'digest';
   readonly node: string;
-  readonly at: Site;
   readonly path: string;
 }
 
@@ -41,7 +30,7 @@ const reader = (name: string) =>
     extension: 'test/pack',
     type: 'compute',
     inputs: {},
-    params: { token: string({ optional: true }), from: string({ optional: true }) },
+    params: {},
     input: anyInput,
     build: { extension: 'test/build', type: 'node', module: 'file:///test/app.ts', entry: 'x.js' },
   });
@@ -73,24 +62,21 @@ function graphOf(nodes: readonly NodeSpec[], reads: readonly ReadSpec[]) {
       for (const name of ['mail', 'digest'] as const) {
         const mine = reads.filter((read) => read.reader === name);
         if (mine.length === 0) continue;
-        const pick = (at: Site) =>
-          Object.fromEntries(
-            mine.filter((read) => read.at === at).map((read) => [read.path, values.get(read.node)]),
-          );
-        provision(reader(name), { id: name, input: pick('input'), params: pick('param') } as never);
+        const input = Object.fromEntries(mine.map((read) => [read.path, values.get(read.node)]));
+        provision(reader(name), { id: name, input } as never);
       }
     }),
   );
 }
 
-const fromRead: ReadSpec = { reader: 'mail', node: 'emailFrom', at: 'input', path: 'from' };
+const fromRead: ReadSpec = { reader: 'mail', node: 'emailFrom', path: 'from' };
 const emailFrom: NodeSpec = { id: 'emailFrom', name: 'EMAIL_FROM' };
 const unread: NodeSpec = { id: 'unread', name: 'UNREAD' };
 
 describe('valueReadsChange', () => {
   test('identical graphs built in another order are no change', () => {
     const token: NodeSpec = { id: 'token', name: 'API_TOKEN' };
-    const tokenRead: ReadSpec = { reader: 'digest', node: 'token', at: 'param', path: 'token' };
+    const tokenRead: ReadSpec = { reader: 'digest', node: 'token', path: 'token' };
 
     expect(
       valueReadsChange(
@@ -118,11 +104,11 @@ describe('valueReadsChange', () => {
     ).toEqual({ added: [], removed: ['shop.emailFrom'], changed: [] });
   });
 
-  test('a read that moves from an input field to a per-key param of the same name is a change', () => {
+  test('a read that moves to another field of the same service is a change', () => {
     expect(
       valueReadsChange(
         graphOf([emailFrom], [fromRead]),
-        graphOf([emailFrom], [{ ...fromRead, at: 'param' }]),
+        graphOf([emailFrom], [{ ...fromRead, path: 'sender' }]),
       ),
     ).toEqual({ added: [], removed: [], changed: ['shop.emailFrom'] });
   });
@@ -159,14 +145,14 @@ describe('valueReadsChange', () => {
   test('each node is named in one list only', () => {
     const port: NodeSpec = { id: 'smtpPort', name: 'SMTP_PORT' };
     const sender: NodeSpec = { id: 'sender', name: 'EMAIL_SENDER' };
-    const senderRead: ReadSpec = { reader: 'mail', node: 'sender', at: 'input', path: 'sender' };
+    const senderRead: ReadSpec = { reader: 'mail', node: 'sender', path: 'sender' };
 
     expect(
       valueReadsChange(
         graphOf([emailFrom, sender, port], [fromRead, senderRead]),
         graphOf(
           [emailFrom, { ...sender, secret: true }, port],
-          [senderRead, { reader: 'mail', node: 'smtpPort', at: 'input', path: 'port' }],
+          [senderRead, { reader: 'mail', node: 'smtpPort', path: 'port' }],
         ),
       ),
     ).toEqual({ added: ['shop.smtpPort'], removed: ['shop.emailFrom'], changed: ['shop.sender'] });

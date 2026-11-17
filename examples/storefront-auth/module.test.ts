@@ -17,10 +17,7 @@ describe('storefront-auth root graph', () => {
     const leaf = (binding as Record<string, unknown>)['signingKey'];
     if (!isSecretSource(leaf)) throw new Error('expected a secret-source leaf');
     const read = graph.valueReads.find(
-      (entry) =>
-        entry.reader === 'storefront-auth.auth.service' &&
-        entry.site.kind === 'serviceInput' &&
-        entry.site.path === 'signingKey',
+      (entry) => entry.reader === 'storefront-auth.auth.service' && entry.path === 'signingKey',
     );
     const node = graph.nodes.find((entry) => entry.id === read?.resource)?.node;
     expect(node?.kind === 'resource' ? node.props['name'] : undefined).toBe('AUTH_SIGNING_SECRET');

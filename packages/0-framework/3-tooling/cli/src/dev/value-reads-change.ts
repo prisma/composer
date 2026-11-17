@@ -8,7 +8,7 @@ export interface ValueReadsChange {
 }
 
 const readKey = (read: ValueRead): string =>
-  JSON.stringify([read.reader, read.resource, read.site.kind, read.site.path]);
+  JSON.stringify([read.reader, read.resource, read.path]);
 
 function readsByResource(graph: Graph): Map<string, Set<string>> {
   const byResource = new Map<string, Set<string>>();
