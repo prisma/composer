@@ -13,8 +13,8 @@ import {
   generatedParamProviderService,
   generateValue,
 } from '../generated-param-resource.ts';
-import { envParam, generatedParam, isEnvParamSource, isGeneratedParamSource } from '../param.ts';
-import { envSecret } from '../secret.ts';
+import { generatedParam, isGeneratedParamSource } from '../param.ts';
+import { plainVariable, secretVariable } from './variable-values.ts';
 
 const reconcile = (bytes: number, output: GeneratedParamAttributes | undefined) =>
   generatedParamProviderService.reconcile({
@@ -88,15 +88,13 @@ describe('isGeneratedParamSource discrimination', () => {
     expect(isGeneratedParamSource(generatedParam())).toBe(true);
   });
 
-  test('a generated source IS a ParamSource but is NOT an envParam source (distinct brands)', () => {
-    const source = generatedParam();
-    expect(isParamSource(source)).toBe(true);
-    expect(isEnvParamSource(source)).toBe(false);
+  test('a generated source is a ParamSource', () => {
+    expect(isParamSource(generatedParam())).toBe(true);
   });
 
-  test('env and secret sources are NOT generated', () => {
-    expect(isGeneratedParamSource(envParam('APP_ORIGIN'))).toBe(false);
-    expect(isGeneratedParamSource(envSecret('STRIPE_SECRET_KEY'))).toBe(false);
+  test('platform variable values are not generated', () => {
+    expect(isGeneratedParamSource(plainVariable('APP_ORIGIN'))).toBe(false);
+    expect(isGeneratedParamSource(secretVariable('STRIPE_SECRET_KEY'))).toBe(false);
   });
 
   test('a raw core paramSource and a plain literal are NOT generated', () => {

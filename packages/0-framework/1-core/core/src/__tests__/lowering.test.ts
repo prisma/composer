@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { blindCast } from '@internal/foundation/casts';
+import * as Alchemy from 'alchemy';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type { Config, Params } from '../config.ts';
@@ -33,19 +34,18 @@ import {
 } from '../control/deploy.ts';
 import { Load, nodeAddresses } from '../graph.ts';
 import {
+  appRoot,
   type BuildAdapter,
   type Deps,
   dependency,
-  isParamSource,
   module,
-  paramSource,
   provisionNeed,
   resource,
   service,
 } from '../node.ts';
 import { PREFLIGHT_FINDINGS_ENV_VAR } from '../preflight-transport.ts';
 import { resolve } from '../value.ts';
-import { anyInputSchema, conn, providerContract } from './helpers.ts';
+import { anyInputSchema, conn, plainValue, providerContract } from './helpers.ts';
 
 const dbResource = () =>
   resource({
@@ -424,6 +424,19 @@ describe('buildConfig — provision-time param binding', () => {
     });
   });
 
+  test('an unbound required param fails, saying to bind a literal value or a value the deploy has', () => {
+    const auth = app('fake/compute', {}, { token: string() });
+    const root = module('shop', {}, (h) => {
+      h.provision(auth, { id: 'auth' });
+      return {};
+    });
+    const graph = Load(root);
+
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(
+      'Param "token" of "shop.auth" (service "test-service") has no default, is not optional, and was not bound at provision — bind it on its provision() call with a literal value or a value the deploy has, or give it a default.',
+    );
+  });
+
   test('an unbound param falls back to its default', () => {
     const auth = app('fake/compute', {}, { port: number({ default: 3000 }) });
     const root = module('shop', {}, (h) => {
@@ -467,20 +480,6 @@ describe('buildConfig — provision-time param binding', () => {
     });
   });
 
-  test('a ParamSource binding flows through to Config.service opaquely — buildConfig never validates it against the schema (the target resolves and validates at boot)', () => {
-    const auth = app('fake/compute', {}, { origin: string() });
-    const source = paramSource('APP_ORIGIN');
-    const root = module('shop', {}, (h) => {
-      h.provision(auth, { id: 'auth', params: { origin: source } });
-      return {};
-    });
-    const graph = Load(root);
-
-    const config = buildConfig(auth, 'shop.auth', graph, new Map(), new Map());
-    expect(isParamSource(config.service['origin'])).toBe(true);
-    expect(config.service['origin']).toBe(source);
-  });
-
   test('a literal that fails the param schema is a LowerError naming the param, the service, and the schema issue', () => {
     const auth = app('fake/compute', {}, { port: number({ default: 3000 }) });
     const root = module('shop', {}, (h) => {
@@ -494,29 +493,18 @@ describe('buildConfig — provision-time param binding', () => {
     expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(/"port"/);
   });
 
-  test('a param claiming BOTH a provision need and a provision-time binding is a LowerError naming the param and both sources', () => {
+  test('a param claiming BOTH a provision need and a provision-time binding is a LowerError naming the param and the provision need', () => {
     const brand = Symbol.for('test:both-sources');
     const auth = app('fake/compute', {}, { token: string({ provision: provisionNeed(brand) }) });
-    const asSource = module('shop', {}, (h) => {
-      h.provision(auth, { id: 'auth', params: { token: paramSource('TOKEN_VAR') } });
-      return {};
-    });
-    const asLiteral = module('shop', {}, (h) => {
+    const root = module('shop', {}, (h) => {
       h.provision(auth, { id: 'auth', params: { token: 'literal-token' } });
       return {};
     });
 
-    const sourceGraph = Load(asSource);
-    expect(() => buildConfig(auth, 'shop.auth', sourceGraph, new Map(), new Map())).toThrow(
-      LowerError,
-    );
-    expect(() => buildConfig(auth, 'shop.auth', sourceGraph, new Map(), new Map())).toThrow(
-      /"token".*two sources.*a param source.*test:both-sources/,
-    );
-
-    const literalGraph = Load(asLiteral);
-    expect(() => buildConfig(auth, 'shop.auth', literalGraph, new Map(), new Map())).toThrow(
-      /"token".*two sources.*a literal value.*test:both-sources/,
+    const graph = Load(root);
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(LowerError);
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(
+      'Param "token" of "shop.auth" (service "test-service") is bound at provision and also declares a framework provision need ("Symbol(test:both-sources)"). Remove the binding or the `provision` facet.',
     );
   });
 });
@@ -620,8 +608,8 @@ describe('lowering a module root — a single service', () => {
       const label = (input as never as { label: never }).label;
       provision(app('fake/compute', {}, { label: string() }), { id: 'svc', params: { label } });
     });
-    const root = module('hello', ({ provision }) => {
-      provision(relay, { input: { label: paramSource({ name: 'X' }, { configurationKey: 'X' }) } });
+    const root = module('hello', { input: anyInputSchema }, ({ input, provision }) => {
+      provision(relay, { input: { label: (input as never as { LABEL: never }).LABEL } });
     });
     const bundles = { 'hello.relay.svc': { dir: 'dist/bundle', entry: 'server.js' } };
 
@@ -631,7 +619,7 @@ describe('lowering a module root — a single service', () => {
         config,
         opts({
           bundles,
-          appConfigurationRead: { rootInput: [], configurationKeyText: { X: 'probe' } },
+          appConfigurationRead: { rootInput: [{ path: ['LABEL'], value: 'probe' }] },
         }),
       ),
     );
@@ -1465,7 +1453,7 @@ describe('deploymentResult', () => {
     });
     const unset = {
       name: 'MAIL_KEY',
-      readers: [{ kind: 'unread', node: 'shop.mail', nodeKind: 'module' }] as const,
+      readers: [{ kind: 'unread', node: 'shop.mailKey' }] as const,
       commands: ["prisma project env add 'MAIL_KEY=<value>' --project 'proj' --role production"],
     };
 
@@ -1488,6 +1476,46 @@ describe('lowering() — the report path', () => {
     // would drag alchemy's Stack context into the requirements and runSync
     // would die. `run()` is Effect.runSync.
     expect(run(lowering(root, config, opts(svcBundles)))).toBeUndefined();
+  });
+
+  test('a value resource is lowered through its descriptor and adds no entry to the report', () => {
+    const { descriptor } = fakeExtension();
+    const loweredValues: string[] = [];
+    const lowerValue = Object.assign(
+      (ctx: LowerContext): Effect.Effect<LoweredResult, unknown, unknown> => {
+        loweredValues.push(ctx.id);
+        return Effect.succeed({ outputs: {}, entities: [] });
+      },
+      { kind: 'resource' as const },
+    );
+    const config: PrismaAppConfig = {
+      extensions: [{ ...descriptor, nodes: { ...descriptor.nodes, 'test-value': lowerValue } }],
+      state: { extension: descriptor.id, create: () => stateSentinel('config-default') },
+    };
+    const root = appRoot('hello', ({ provision }) => {
+      provision(plainValue('GREETING'));
+      provision(dbResource(), { id: 'db' });
+    });
+    const reports: unknown[] = [];
+    const stack: { actions: Record<string, Alchemy.Action>; resources: Record<string, unknown> } = {
+      actions: {},
+      resources: {},
+    };
+
+    Effect.runSync(
+      lowering(root, config, opts({ report: (result) => reports.push(result) })).pipe(
+        Effect.provideService(Alchemy.Stack, stack as never),
+        Effect.orDie,
+      ) as Effect.Effect<undefined>,
+    );
+    const action = stack.actions['composer-deployment-report'];
+    Effect.runSync(action?.Run(action.Input) as Effect.Effect<unknown>);
+
+    expect(loweredValues).toEqual(['hello.greeting']);
+    expect(reports).toHaveLength(1);
+    expect(
+      (reports[0] as { nodes: { address: string }[] }).nodes.map(({ address }) => address),
+    ).toEqual(['hello.db']);
   });
 
   test('findings that do not decode fail lowering before any node is lowered', () => {

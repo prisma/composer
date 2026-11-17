@@ -1,5 +1,5 @@
 import type { Graph, ServiceNode } from '@internal/core';
-import { inputManifest, secretSourceManifest } from '@internal/core';
+import { inputManifest } from '@internal/core';
 import type {
   PlatformVariableReader,
   PreflightInput,
@@ -22,15 +22,9 @@ import { mapWithConcurrency } from './map-with-concurrency.ts';
 import { addReader, missingVariableNames, missingVariablesText } from './missing-variables-text.ts';
 import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
-import { envParamBindings, inputSecretNames } from './preflight-names.ts';
+import { inputVariableNames, unreadVariables } from './preflight-names.ts';
 import { checkPublicUrls } from './public-url.ts';
-import {
-  checkRequirements,
-  type MissingVariables,
-  paramIsRequired,
-  requiredParam,
-} from './required-variables.ts';
-import { secretName } from './secret.ts';
+import { checkRequirements, type MissingVariables } from './required-variables.ts';
 
 type EnvClass = 'production' | 'preview';
 
@@ -211,7 +205,7 @@ function setCommands(
   const add = `prisma project env add ${shellQuote(`${name}=<value>`)} --project ${shellQuote(projectId)}`;
   return branchId === undefined
     ? [`${add} --role production`]
-    : [`${add} --role preview`, `${add} --role preview --branch ${shellQuote(environment)}`];
+    : [`${add} --role preview`, `${add} --branch ${shellQuote(environment)}`];
 }
 
 function requiredError(
@@ -293,25 +287,14 @@ export async function runPreflight(
   const services = inputManifest(input.graph).map(({ serviceAddress, binding }) => ({
     serviceAddress,
     binding,
-    names: inputSecretNames(binding, serviceAddress),
+    names: inputVariableNames(binding, serviceAddress).map((variable) => variable.name),
   }));
-  const params = envParamBindings(input.graph);
-  const unread = secretSourceManifest(input.graph).flatMap((use) =>
-    use.nodeKind === 'service'
-      ? []
-      : [
-          {
-            name: secretName(use.source, `a secret source of ${use.nodeKind} "${use.address}"`),
-            reader: { kind: 'unread', node: use.address, nodeKind: use.nodeKind } as const,
-          },
-        ],
-  );
+  const unread = unreadVariables(input.graph).map(({ name, node }) => ({
+    name,
+    reader: { kind: 'unread', node } as const,
+  }));
   const names = [
-    ...new Set([
-      ...services.flatMap((service) => service.names),
-      ...unread.map((use) => use.name),
-      ...params.map((param) => param.name),
-    ]),
+    ...new Set([...services.flatMap((service) => service.names), ...unread.map((use) => use.name)]),
   ];
   const clashes = findEnvKeyClashes(input.graph);
   if (names.length === 0 && clashes.length === 0) {
@@ -350,13 +333,7 @@ export async function runPreflight(
     const unsetHere = serviceNames.filter((name) => unset.has(name));
     if (unsetHere.length === 0) continue;
     const node = serviceNodeAt(input.graph, serviceAddress);
-    const decided = checkRequirements(
-      node,
-      serviceAddress,
-      binding,
-      unsetHere,
-      input.configuration,
-    );
+    const decided = checkRequirements(node, serviceAddress, binding, unsetHere);
     if (decided.kind === 'invalid') throw invalidInputError(serviceAddress, decided.message);
     for (const marker of decided.markers) {
       if (!unset.has(marker.name)) continue;
@@ -370,17 +347,6 @@ export async function runPreflight(
   }
   for (const use of unread) {
     if (unset.has(use.name)) addReader(readers, use.name, use.reader);
-  }
-  for (const param of params) {
-    if (!unset.has(param.name)) continue;
-    addReader(readers, param.name, {
-      kind: 'param',
-      service: param.serviceAddress,
-      param: param.param,
-    });
-    if (paramIsRequired(serviceNodeAt(input.graph, param.serviceAddress), param.param)) {
-      required.push(requiredParam(param));
-    }
   }
 
   const commandsFor = (name: string) => setCommands(name, projectId, branchId, input.environment);

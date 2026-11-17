@@ -1,9 +1,3 @@
-/**
- * Provision-time param binding: a param may be bound to a literal (schema-
- * validated when config is built, see lowering.test.ts's buildConfig suite)
- * or to an opaque `ParamSource` (core forwards it, never inspects it) — the
- * non-secret sibling of ADR-0029's secret need/source split.
- */
 import { describe, expect, test } from 'bun:test';
 import { blindCast } from '@internal/foundation/casts';
 import { string } from '../config.ts';
@@ -48,20 +42,6 @@ describe('Load records param bindings', () => {
     expect(graph.params).toEqual([
       { serviceAddress: 'root.app', slot: 'origin', binding: 'https://example.com' },
     ]);
-  });
-
-  test('a ParamSource bound at provision is recorded opaquely — core never inspects the payload', () => {
-    const app = svc();
-    const graph = Load(
-      module('root', ({ provision }) => {
-        provision(app, { id: 'app', params: { origin: paramSource('APP_ORIGIN') } });
-      }),
-    );
-
-    expect(graph.params).toHaveLength(1);
-    expect(graph.params[0]?.serviceAddress).toBe('root.app');
-    expect(graph.params[0]?.slot).toBe('origin');
-    expect(isParamSource(graph.params[0]?.binding)).toBe(true);
   });
 
   test('an unbound param yields no binding — it falls back to its default at buildConfig', () => {

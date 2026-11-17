@@ -164,16 +164,16 @@ describe('renderDeployment', () => {
             name: 'EMAIL_API_KEY',
             readers: [
               { kind: 'field', service: 'shop.email', path: 'apiKey' },
-              { kind: 'param', service: 'shop.email', param: 'key' },
+              { kind: 'field', service: 'shop.digest', path: 'keys.0' },
             ],
             commands: [
               "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview",
-              "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview --branch 'staging'",
+              "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --branch 'staging'",
             ],
           },
           {
             name: 'AUDIT_TOKEN',
-            readers: [{ kind: 'unread', node: 'shop.audit', nodeKind: 'module' }],
+            readers: [{ kind: 'unread', node: 'shop.auditToken' }],
             commands: [
               "prisma project env add 'AUDIT_TOKEN=<value>' --project 'proj_1' --role production",
             ],
@@ -188,10 +188,10 @@ describe('renderDeployment', () => {
         '└─ email   compute-service cps_1',
         '',
         'Platform variables with no value:',
-        '  - EMAIL_API_KEY  (read by service "shop.email", field "apiKey"; read by service "shop.email", per-key param "key")',
+        '  - EMAIL_API_KEY  (read by service "shop.email", field "apiKey"; read by service "shop.digest", field "keys.0")',
         "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview",
-        "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview --branch 'staging'",
-        '  - AUDIT_TOKEN  (named by module "shop.audit", read by no service)',
+        "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --branch 'staging'",
+        '  - AUDIT_TOKEN  (named by resource "shop.auditToken", read by no service)',
         "    prisma project env add 'AUDIT_TOKEN=<value>' --project 'proj_1' --role production",
       ].join('\n'),
     );

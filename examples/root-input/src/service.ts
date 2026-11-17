@@ -6,7 +6,7 @@ import { type } from 'arktype';
 /**
  * A single compute service with two required input keys and no defaults — the
  * smallest surface that forces a provision-time binding. The root binds
- * `greeting` to a platform env var via `envParam` and `environment` to a value
+ * `greeting` to a field of its input and `environment` to a value
  * computed from the environment's name (module.ts); the server reads both back
  * through `input()` (ADR-0042). It exposes its HTTP interface so the root
  * can make it public.

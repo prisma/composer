@@ -6,6 +6,7 @@ export type {
 export { CliStructuredError } from '../cli-structured-error.ts';
 export { describeKind } from '../describe-kind.ts';
 export { assertNever, InternalError, isInternalError } from '../internal-error.ts';
+export { quotedList } from '../quoted-list.ts';
 export type { StructuredError, StructuredErrorOptions } from '../structured-error.ts';
 export {
   DOCS_BASE,

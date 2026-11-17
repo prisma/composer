@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { blindCast } from '@internal/foundation/casts';
-import { Load } from '../graph.ts';
-import { isSecretSource, module, resource, secretSource, service } from '../node.ts';
-import { anyInputSchema, providerContract } from './helpers.ts';
+import { Load, secretsKeys } from '../graph.ts';
+import { appRoot, isSecretSource, module, resource, secretSource, service } from '../node.ts';
+import { anyInputSchema, providerContract, secretValue } from './helpers.ts';
 
 const build = {
   extension: '@prisma/composer/node',
@@ -127,7 +127,9 @@ describe('Load validates input bindings and secret forwarding', () => {
           );
         }),
       ),
-    ).toThrow(/received secrets for a service/);
+    ).toThrow(
+      'provision("auth") received secrets for a service — a service takes its secrets as values bound to secretString() fields of its `input` binding, not a secrets map.',
+    );
   });
 
   test('a resource may not receive an input binding', () => {
@@ -168,5 +170,51 @@ describe('Load validates input bindings and secret forwarding', () => {
         }),
       ),
     ).toThrow(/received an input binding, but the module declares no input schema/);
+  });
+});
+
+describe("a secret value resource is in the graph's secret sources", () => {
+  test('named by the node itself when the root provisions it and binds it nowhere', () => {
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        provision(secretValue('API_KEY'), { id: 'apiKey' });
+      }),
+    );
+
+    expect(graph.secretSources.map(({ address, nodeKind }) => ({ address, nodeKind }))).toEqual([
+      { address: 'shop.apiKey', nodeKind: 'resource' },
+    ]);
+    expect(secretsKeys(graph)).toEqual(['API_KEY']);
+  });
+
+  test('named by the node itself when a module receives it and no service reads it', () => {
+    const mailer = module('mailer', { input: anyInputSchema }, () => {});
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        const key = provision(secretValue('API_KEY'), { id: 'apiKey' });
+        provision(mailer, { input: { key } });
+      }),
+    );
+
+    expect(graph.secretSources.map(({ address, nodeKind }) => ({ address, nodeKind }))).toEqual([
+      { address: 'shop.apiKey', nodeKind: 'resource' },
+    ]);
+    expect(secretsKeys(graph)).toEqual(['API_KEY']);
+  });
+
+  test('named by the service whose binding holds it, once', () => {
+    const mailer = module('mailer', { input: anyInputSchema }, ({ input, provision }) => {
+      provision(svcWithInput('send'), { input: { key: (input as never)['key'] } });
+    });
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        const key = provision(secretValue('API_KEY'), { id: 'apiKey' });
+        provision(mailer, { input: { key } });
+      }),
+    );
+
+    expect(graph.secretSources.map(({ address, nodeKind }) => ({ address, nodeKind }))).toEqual([
+      { address: 'shop.mailer.send', nodeKind: 'service' },
+    ]);
   });
 });

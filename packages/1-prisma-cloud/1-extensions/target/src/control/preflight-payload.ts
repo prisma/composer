@@ -1,26 +1,15 @@
-/**
- * What this extension's preflight hands the alchemy process, which re-imports
- * the config from scratch, in one environment variable that carries either kind:
- *
- * - deploy: a JSON object holding `updatedAt`, which maps each platform
- *   variable a service reads to the `updatedAt` of the row the platform resolves;
- * - `prisma dev`: `dev:` followed by JSON naming the unset secrets and an
- *   HMAC-SHA256 of the current value of each variable a service points at.
- *
- * A deploy payload always starts with `{`, so the prefix tells them apart.
- * Names, times and keyed hashes only, never a value.
- */
+// A deploy payload is JSON `{ updatedAt }`; a `prisma dev` payload is `dev:` then JSON
+// `{ absentVariables, platformVariableVersions }`. Names, times and keyed hashes only, never a value.
 import { readPreflightPayload } from '@internal/core/config';
 import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
 
-/** A value that changes when the pointed variable's value changes: the platform `updatedAt` on deploy, an HMAC of the value under `prisma dev`. Undefined when unknown. */
-export type PointerVersion = (name: string) => string | undefined;
+/** A value that changes when the platform variable's value changes: the platform `updatedAt` on deploy, an HMAC of the value under `prisma dev`. Undefined when unknown. */
+export type PlatformVariableVersion = (name: string) => string | undefined;
 
 /** What the preflight of this run sent, as the lowering reads it. */
 export interface TransportedPreflight {
-  readonly pointerVersion: PointerVersion;
-  /** The `envSecret` names `prisma dev` found unset; their leaves are left out of the input document. Always empty for a deploy. */
-  readonly absentSecrets: ReadonlySet<string>;
+  readonly platformVariableVersion: PlatformVariableVersion;
+  readonly absentVariables: ReadonlySet<string>;
 }
 
 export interface DeployPreflightPayload {
@@ -28,8 +17,8 @@ export interface DeployPreflightPayload {
 }
 
 export interface DevPreflightPayload {
-  readonly absentSecrets: readonly string[];
-  readonly pointerVersions: Readonly<Record<string, string>>;
+  readonly absentVariables: readonly string[];
+  readonly platformVariableVersions: Readonly<Record<string, string>>;
 }
 
 export type DecodedPreflightPayload =
@@ -37,8 +26,8 @@ export type DecodedPreflightPayload =
   | ({ readonly kind: 'deploy' } & DeployPreflightPayload)
   | {
       readonly kind: 'dev';
-      readonly absentSecrets: ReadonlySet<string>;
-      readonly pointerVersions: ReadonlyMap<string, string>;
+      readonly absentVariables: ReadonlySet<string>;
+      readonly platformVariableVersions: ReadonlyMap<string, string>;
     };
 
 const DEV_PAYLOAD_PREFIX = 'dev:';
@@ -54,8 +43,10 @@ export function serializeDeployPreflightPayload(
 
 export function serializeDevPreflightPayload(payload: DevPreflightPayload): string {
   return `${DEV_PAYLOAD_PREFIX}${JSON.stringify({
-    absentSecrets: [...new Set(payload.absentSecrets)].sort(),
-    pointerVersions: Object.fromEntries(Object.entries(payload.pointerVersions).sort(byName)),
+    absentVariables: [...new Set(payload.absentVariables)].sort(),
+    platformVariableVersions: Object.fromEntries(
+      Object.entries(payload.platformVariableVersions).sort(byName),
+    ),
   })}`;
 }
 
@@ -84,18 +75,18 @@ export function decodePreflightPayload(payload: string | undefined): DecodedPref
     if (
       typeof parsed !== 'object' ||
       parsed === null ||
-      !('absentSecrets' in parsed) ||
-      !Array.isArray(parsed.absentSecrets) ||
-      !parsed.absentSecrets.every((name: unknown) => typeof name === 'string') ||
-      !('pointerVersions' in parsed) ||
-      !isStringRecord(parsed.pointerVersions)
+      !('absentVariables' in parsed) ||
+      !Array.isArray(parsed.absentVariables) ||
+      !parsed.absentVariables.every((name: unknown) => typeof name === 'string') ||
+      !('platformVariableVersions' in parsed) ||
+      !isStringRecord(parsed.platformVariableVersions)
     ) {
       throw devPayloadError('it does not have the expected shape');
     }
     return {
       kind: 'dev',
-      absentSecrets: new Set<string>(parsed.absentSecrets),
-      pointerVersions: new Map(Object.entries(parsed.pointerVersions)),
+      absentVariables: new Set<string>(parsed.absentVariables),
+      platformVariableVersions: new Map(Object.entries(parsed.platformVariableVersions)),
     };
   }
   const parsed = parseJson(payload, deployPayloadError);
@@ -127,19 +118,19 @@ export function transportedPreflight(
   let decoded: DecodedPreflightPayload | undefined;
   const decode = () =>
     (decoded ??= decodePreflightPayload(readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, env)));
-  const noSecrets: ReadonlySet<string> = new Set();
+  const noVariables: ReadonlySet<string> = new Set();
   return {
-    pointerVersion: (name) => {
+    platformVariableVersion: (name) => {
       const snapshot = own();
       if (snapshot !== undefined) return snapshot.get(name);
       const payload = decode();
       if (payload.kind === 'deploy') return payload.updatedAt.get(name);
-      if (payload.kind === 'dev') return payload.pointerVersions.get(name);
+      if (payload.kind === 'dev') return payload.platformVariableVersions.get(name);
       return undefined;
     },
-    get absentSecrets() {
+    get absentVariables() {
       const payload = decode();
-      return payload.kind === 'dev' ? payload.absentSecrets : noSecrets;
+      return payload.kind === 'dev' ? payload.absentVariables : noVariables;
     },
   };
 }

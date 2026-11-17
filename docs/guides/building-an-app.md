@@ -341,10 +341,11 @@ The module declares `signingKey` as a `secretString()` field of its input and
 passes it on without learning the platform variable's name. Inside, the field
 is just another leaf of the service's input binding ([below](#service-input)).
 
-The root then treats it like any other node:
+The root then treats it like any other node. It declares the platform secret and passes its value in ([Platform variables](#platform-variables)):
 
 ```ts
-const auth = provision(authModule, { input: { signingKey: envSecret('AUTH_SIGNING_SECRET') } });
+const signingKey = provision(variable.secret({ name: 'AUTH_SIGNING_SECRET' }));
+const auth = provision(authModule, { input: { signingKey } });
 provision(storefrontService, { deps: { auth: auth.rpc } });
 ```
 
@@ -373,7 +374,7 @@ A module declares its configuration as one `input` schema, as a service does
 ```ts
 import { appRoot, module, resolve } from '@prisma/composer';
 import { field, secretString } from '@prisma/composer/arktype';
-import { envSecret } from '@prisma/composer-prisma-cloud';
+import { variable } from '@prisma/composer-prisma-cloud';
 import { type } from 'arktype';
 
 const email = module(
@@ -390,15 +391,12 @@ const email = module(
 );
 
 export default appRoot('shop', ({ provision }) => {
-  provision(email, {
-    input: { from: 'shop@example.com', deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL') },
-  });
+  const deliveryCredential = provision(variable.secret({ name: 'EMAIL_DELIVERY_CREDENTIAL' }));
+  provision(email, { input: { from: 'shop@example.com', deliveryCredential } });
 });
 ```
 
-`prisma deploy --environment staging` gives `shop.email.service` the input
-`{ from: 'staging+shop@example.com', deliveryCredential:
-envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
+`prisma deploy --environment staging` gives `shop.email.service` the input `{ from: 'staging+shop@example.com', deliveryCredential }`, where `deliveryCredential` is the value of the platform secret `EMAIL_DELIVERY_CREDENTIAL`, which the service reads at boot.
 
 - The body receives `input`, a dictionary with one [value](#values-that-differ-per-environment) per field. It can pass a field into a `provision()` binding, or, if the field is plain, list it as a `resolve()` dependency to compute with it.
 - `input` itself is not a value. Pass each field on by name, as `input: { from: sender, replyTo: input.replyTo, deliveryCredential: input.deliveryCredential }` does above. Passing the whole `input` on, as in `provision(child, { input })`, fails to compile, and the deploy refuses it if a cast gets it past the compiler.
@@ -419,13 +417,7 @@ envSecret('EMAIL_DELIVERY_CREDENTIAL') }`.
 - The module's schema checks the binding when the deploy loads the graph, so
   a mistake fails before anything reaches the platform.
 - A root module's input is filled from the config adapters ([Values from outside the code](#values-from-outside-the-code)).
-- A module's `input` takes every source a service's does. Its schema checks
-  `envParam()`'s value, and checks each of the other three as its
-  **pointer**: the object that names the platform variable the service
-  reads at boot. A `secretString()` field accepts the pointer of
-  `envSecret()` and of a redacted `generatedParam()`. A plain field accepts
-  no pointer, so a field bound to `serviceOrigin()` or a plain
-  `generatedParam()` is wrapped with `field()`, below.
+- A module's `input` takes every source a service's does. Its schema checks each source as its **pointer**: the object that names the variable on the platform the service reads at boot. A `secretString()` field accepts the pointer of a platform secret and of a redacted `generatedParam()`. A plain field accepts no pointer, so a field bound to a plain platform variable, `serviceOrigin()` or a plain `generatedParam()` is wrapped with `field()`, below.
 - `field()`, from `@prisma/composer/arktype` or `@prisma/composer/zod`,
   wraps one leaf field's schema: `type({ from: field(type('string')) })` or
   `z.object({ from: field(z.string()) })`. A wrapped field also accepts a
@@ -541,18 +533,12 @@ provision(cron({ schedule, runner: promotionsService }), {
 });
 ```
 
-A runner that declares an `input` schema ([below](#service-input)) takes its
-binding on `cron()` itself, with `envSecret(...)` where the schema expects a
-secret. It is required exactly when the runner declares a schema, the same
-rule `provision()` applies:
+A runner that declares an `input` schema ([below](#service-input)) takes its binding on `cron()` itself, with a platform secret's value where the schema expects a secret. It is required exactly when the runner declares a schema, the same rule `provision()` applies:
 
 ```ts
+const token = provision(variable.secret({ name: 'INGEST_TOKEN' }));
 provision(
-  cron({
-    schedule,
-    runner: ingestService,
-    input: { token: envSecret('INGEST_TOKEN') },
-  }),
+  cron({ schedule, runner: ingestService, input: { token } }),
   { deps: { catalog: catalog.rpc } },
 );
 ```
@@ -588,7 +574,7 @@ and choosing the channel is most of the decision:
 | The value is… | Declare it as | Provide it | Read it |
 | --- | --- | --- | --- |
 | produced by another node — a database, another service | a dependency: `deps: { db: rawPostgres() }` | wire it at `provision()` | `service.load()` |
-| anything else — a region, a flag, a job list, a credential | one field of the service's `input` schema | bind it at `provision()`: a literal, `envParam()`, `envSecret()`, or a value from `resolve()` | `service.input()` |
+| anything else — a region, a flag, a job list, a credential | one field of the service's `input` schema | bind it at `provision()`: a literal, a root input field, a platform variable node's value, or a value from `resolve()` | `service.input()` |
 
 Dependencies are covered above. This section is the second row.
 
@@ -628,8 +614,8 @@ Because the input is a real schema, legality can be conditional — "no
 and `service.input()` narrows it like any other TypeScript union:
 
 ```ts
-const chatInput = type({ stripeEnabled: 'false', appOrigin: 'string' }).or(
-  type({ stripeEnabled: 'true', appOrigin: 'string', stripeSecretKey: secretString() }),
+const chatInput = type({ stripeEnabled: 'false', appOrigin: field(type('string')) }).or(
+  type({ stripeEnabled: 'true', appOrigin: field(type('string')), stripeSecretKey: secretString() }),
 );
 
 const chat = compute({ name: 'chat', input: chatInput, /* ... */ });
@@ -645,23 +631,24 @@ standalone `server.js`, which binds `PORT` itself.)
 
 ### Binding the input at provision
 
-The service declares what shapes are legal; the place that provisions it decides where each value comes from. The binding is a plain object mirroring the schema's shape whose leaves are literals, `envParam(...)`, `envSecret(...)`, or values from `resolve()` ([below](#values-that-differ-per-environment)). It is typed from the schema, as a module's binding is. So a binding of the wrong shape or kind fails to compile: a missing or undeclared key, a literal of the wrong type, a source in the wrong kind of field. A refinement the type cannot carry, such as a URL format, is checked by the deploy:
+The service declares what shapes are legal; the place that provisions it decides where each value comes from. The binding is a plain object mirroring the schema's shape whose leaves are literals, values such as a root input field or a `resolve()` result ([below](#values-that-differ-per-environment)), or sources such as a platform variable node's value. It is typed from the schema, as a module's binding is. So a binding of the wrong shape or kind fails to compile: a missing or undeclared key, a literal of the wrong type, a source in the wrong kind of field. A refinement the type cannot carry, such as a URL format, is checked by the deploy:
 
 ```ts
-import { envParam, envSecret } from '@prisma/composer-prisma-cloud';
+import { appRoot } from '@prisma/composer';
+import { variable } from '@prisma/composer-prisma-cloud';
 
-provision(chat, {
-  input: {
-    stripeEnabled: true,
-    appOrigin: envParam('APP_ORIGIN'),
-    stripeSecretKey: envSecret('STRIPE_SECRET_KEY'),
-  },
+export default appRoot('shop', ({ provision }) => {
+  const appOrigin = provision(variable({ name: 'APP_ORIGIN' }));
+  const stripeSecretKey = provision(variable.secret({ name: 'STRIPE_SECRET_KEY' }));
+  provision(chat, { input: { stripeEnabled: true, appOrigin, stripeSecretKey } });
 });
 ```
 
-Secretness is checked twice. The binding's type refuses a plain literal where the schema expects a `SecretString`, an `envSecret()` where it expects text, and a `SecretString` box written in the code, so each fails to compile. The deploy checks the binding with the schema too, so where the schema has no type information, or a cast hides the mistake, the deploy fails before anything is created. Neither side can silently misclassify a credential.
+Here `chat`'s schema declares `appOrigin` as `field(type('string'))`, because a platform variable's value is known only at boot.
 
-**A field bound to `serviceOrigin()` or `generatedParam({ redacted: false })` is wrapped.** Their value exists only at boot, so at deploy the schema sees a pointer to the platform variable, and only a field wrapped with `field()`, from `@prisma/composer/arktype` (or `@prisma/composer/zod`), accepts it: `type({ returnUrl: field(type('string')) })`. Binding one to a plain `'string'` field fails to compile, in a service's binding as in a module's, and the deploy refuses it where the compiler cannot see the schema's types. A redacted `generatedParam()` is a secret, so its field is `secretString()`. In the service a wrapped field reads as its inner type: `service.input().returnUrl` is a `string`, because at boot the pointer has been replaced by the variable's text. `mockService()` takes the input double in the same shape.
+Secretness is checked twice. The binding's type refuses a plain literal where the schema expects a `SecretString`, a platform secret's value where it expects text, and a `SecretString` box written in the code, so each fails to compile. The deploy checks the binding with the schema too, so where the schema has no type information, or a cast hides the mistake, the deploy fails before anything is created. Neither side can silently misclassify a credential.
+
+**A field bound to a value known only at boot is wrapped.** A plain platform variable's value, `serviceOrigin()` and `generatedParam({ redacted: false })` exist only at boot, so at deploy the schema sees a pointer to the variable, and only a field wrapped with `field()`, from `@prisma/composer/arktype` (or `@prisma/composer/zod`), accepts it: `type({ returnUrl: field(type('string')) })`. Binding one to a plain `'string'` field fails to compile, in a service's binding as in a module's, and the deploy refuses it where the compiler cannot see the schema's types. A platform secret and a redacted `generatedParam()` are secrets, so their field is `secretString()`. In the service a wrapped field reads as its inner type: `service.input().returnUrl` is a `string`, because at boot the pointer has been replaced by the variable's text. `mockService()` takes the input double in the same shape.
 
 An ArkType schema with a `SecretString` field cannot also transform its
 input. A morph anywhere in the schema, such as `'string.trim'`,
@@ -673,18 +660,63 @@ boot. The deploy checks for this and refuses such a schema, naming the
 secret field. Do the transform in the service code instead. A Zod schema
 keeps the secret box when it transforms, so it can do both.
 
-**`envParam('NAME')`** is for plain values the code *can't* know. An app origin is the canonical case: it's different on production and on every preview environment. The deploy reads the variable from the app configuration: by default the shell that runs `prisma deploy` or `prisma dev`, or the `config` adapters you list ([Values from outside the code](#values-from-outside-the-code)), and writes its value into the service's input. So set it in that shell for every deploy; in CI, export it per environment. An unset or empty variable leaves the key out, and the schema decides ([below](#absence-is-the-schemas-call)). The value is text, so bind `envParam` to text fields. Binding it to a field of a narrower type, such as `'resend' | 'smtp' | 'none'`, fails to compile, because the variable may hold any text: declare that field in your root's `input` with the same type instead (for `email()`, build it from the exported `emailDeliveryModes`), and the root's schema checks the variable before anything is created. To change the value, deploy again with the new value. [`examples/env-param`](../../examples/env-param/) is the minimal working version, including a smoke script that proves the per-environment split.
+### Two ways to get a value
 
-**`envParam()` in an input binding is deprecated.** Declare the value as a field of your root's `input` instead and pass the field on by name ([Values from outside the code](#values-from-outside-the-code)): the root's schema then checks it before anything is created. It still works. Only `envParam()` in an input binding is deprecated; `envParam()` in a service's per-key params is not. Editors strike through every `envParam()` call, including in per-key params, because one function serves both uses. The deprecation applies only to an input binding.
+A value you supply, rather than write in the code, reaches the app in one of two ways. Pick by who reads it:
 
-**`envSecret('NAME')`** is for credentials, with one rule: **the value never enters framework config**. The value lives in a platform variable that you set on the platform, for production, for every preview environment, or for one: `prisma project env add 'STRIPE_SECRET_KEY=<value>' --project '<project id>' --role preview`. The deploy does not copy it from `.env` or your shell. At deploy, preflight checks that the environment has the variable, and fails, with the command to run, when a service's schema requires a variable that has no value ([Deploying § Platform variables](deploying.md#platform-variables)). The framework carries only the variable's *name*; the platform injects the value straight into the running instance. Under `prisma dev` the value comes from the `secrets` adapters instead. What your code gets is a `SecretString` box that redacts on logging, rendering, and JSON-serialization — leaking it takes a deliberate `.expose()`:
+| Who reads the value | Declare it as | Where you set it |
+| --- | --- | --- |
+| the deploy, before anything runs | a **root input field**: a field of your root's `input` schema | the `config` adapters: by default the shell that runs `prisma deploy` or `prisma dev` |
+| the service, at boot | a **platform variable node**, provisioned in your root with `variable({ name })` or `variable.secret({ name })` | on the platform, with `prisma project env add`; under `prisma dev`, the `config` or `secrets` adapters |
+
+A value the deploy reads can be listed in `resolve()` and put in a resource's props. A value the service reads at boot cannot, because the deploy never has it.
+
+#### Root input fields
+
+A root input field is for a plain value the deploy needs, which differs per environment and is not a credential: a sender address, a hostname, a feature flag. Declare it in your root's `input` and pass it on by name:
 
 ```ts
-const input = service.input();
-if (input.stripeEnabled) stripe(input.stripeSecretKey.expose());
+import { appRoot } from '@prisma/composer';
+import { type } from 'arktype';
+
+export default appRoot('shop', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {
+  provision(web, { input: { greeting: input.GREETING } });
+});
 ```
 
-`envSecret()` and `envParam()` take an upper-case name: an upper-case letter followed by upper-case letters, digits and underscores, such as `STRIPE_SECRET_KEY`. Any name starting with `COMPOSER_`, and `DATABASE_URL`, `DATABASE_URL_POOLED`, `PORT`, `PATH` and `HOME`, are reserved. A name has one meaning: `envParam('X')` and `envSecret('X')`, or `envParam('X')` and a field `X` of your root's input, cannot both appear in one app. Each of these fails before anything is created, naming the rule.
+The deploy reads `GREETING` from the app configuration ([Values from outside the code](#values-from-outside-the-code)), checks it with the root's schema before anything is created, and writes its value into the service's input document. So set it in the deploying shell for every deploy; in CI, export it per environment. An unset value fails the deploy with the schema's message, unless the root declares the field optional (`'GREETING?': 'string'`), in which case the key is left out. Declare the field with the type the service needs, such as `'resend' | 'smtp' | 'none'`, and the root's schema checks it. To change the value, deploy again with the new value. [`examples/root-input`](../../examples/root-input/) is the minimal working version, including a smoke script that proves the per-environment split.
+
+#### Platform variables
+
+A platform variable is a variable on the platform that a service reads by name at boot. It comes down to three things: its name, the services that read it, and the place the operator sets its value. You declare it with a node in your app root. The node holds the name, the graph records which services read it, and preflight prints the command that sets its value when it has none.
+
+```ts
+import { appRoot } from '@prisma/composer';
+import { variable } from '@prisma/composer-prisma-cloud';
+
+export default appRoot('shop', ({ provision }) => {
+  const from = provision(variable({ name: 'EMAIL_FROM' }));
+  const deliveryCredential = provision(variable.secret({ name: 'EMAIL_DELIVERY_CREDENTIAL' }));
+  provision(mailer, { input: { from, deliveryCredential } });
+});
+```
+
+Here `mailer` is a service of the app whose input schema declares `from: field(type('string'))` and `deliveryCredential: secretString()`.
+
+- **`variable({ name })`** declares a plain value. Its value fits a field wrapped with `field()`. A platform variable's value goes into a field of a service's or a module's `input` only: a service's per-key params, such as a compute service's reserved `port`, take a literal or a root input field, because the deploy needs the port before the service exists.
+- **`variable.secret({ name })`** declares a **platform secret**, for credentials, with one rule: **the value never enters framework config**. Its value fits a `secretString()` field only. What your code gets is a `SecretString` box that redacts on logging, rendering, and JSON-serialization — leaking it takes a deliberate `.expose()`:
+
+  ```ts
+  const input = service.input();
+  if (input.stripeEnabled) stripe(input.stripeSecretKey.expose());
+  ```
+
+- **`provision()` returns the value**, with `id`, the node's address, on it. Pass it into a service's or a module's input like any other value. The node's default id is the name in camel case, so `EMAIL_FROM` is `shop.emailFrom`; give it another with `provision(variable({ name }), { id: 'sender' })`.
+- **Only the app root provisions one.** A platform variable names something outside the app, the names form one space per deployed app, and the root is the app. In a `module()` body, `provision(variable(…))` fails to compile, with an error that names `appRoot()`. A module that needs the value declares a field in its `input`, and the root passes the value down. So a root built with `module()` cannot declare a platform variable: build it with `appRoot()`.
+- **The operator sets the value on the platform**, for production, for every preview environment, or for one: `prisma project env add 'STRIPE_SECRET_KEY=<value>' --project '<project id>' --role preview`. The deploy does not copy it from `.env` or your shell. At deploy, preflight checks that the environment has the variable, and fails, with the command to run, when a service's schema requires a variable that has no value ([Deploying § Platform variables](deploying.md#platform-variables)). The framework carries only the variable's *name*; the platform injects the value straight into the running instance. Under `prisma dev` a plain variable's value comes from the `config` adapters and a secret's from the `secrets` adapters ([Running locally](running-locally.md)).
+- **The node creates nothing.** It is not sent to the platform's application topology, and the deploy report has no line for it. The loaded graph lists it, with each service that reads it in `graph.valueReads`. A node no service reads is listed under "Platform variables with no value" when it has none, as `named by resource "shop.emailFrom", read by no service`.
+
+A name is an upper-case letter followed by upper-case letters, digits and underscores, such as `STRIPE_SECRET_KEY`. Any name starting with `COMPOSER_`, and `DATABASE_URL`, `DATABASE_URL_POOLED`, `PORT`, `PATH` and `HOME`, are reserved. A name has one meaning in an app: two nodes with one name, or a platform variable and a root input field with one name, fail before anything is created, naming the variable and both places. Declare each platform variable once and pass its value to every module that needs it. A node's value bound as a service's whole input also fails: bind it to one field.
 
 A reusable Module takes a secret as a `secretString()` field of its `input`
 and passes it on without ever learning the platform name
@@ -693,7 +725,7 @@ a Module require credentials without dictating your naming.
 
 ### Absence is the schema's call
 
-An env-bound field whose variable is unset (or empty) resolves to *key omitted*: an `envParam()` field at deploy, from the app configuration, and an `envSecret()` field at boot, from the platform. The schema decides whether that is allowed: an optional field, a union member, or a validation error that fails the deploy. A credential for an off-by-default feature is an ordinary optional `SecretString` field, not a framework flag. Because an omitted key can also be a mistyped variable name, the deploy report prints every key that resolved absent.
+A field bound to a platform variable whose value is unset (or empty) resolves to *key omitted* at boot. The schema decides whether that is allowed: an optional field, a union member, or a validation error. A credential for an off-by-default feature is an ordinary optional `SecretString` field, not a framework flag. Preflight decides the same way before the deploy: it fails when the schema needs a variable that has no value, and lists the others.
 
 ### What travels
 
@@ -731,15 +763,7 @@ prisma deploy --environment staging    # "HELLO FROM STAGING"
 prisma dev                             # "HELLO FROM DEV"
 ```
 
-`environment.name` and the result of `resolve()` are **values**: stand-ins
-for data that is known only once the deploy knows which environment it is
-deploying. The module body cannot read a value, compare it or branch on it.
-It can only pass it on: as a dependency of another `resolve()`, as a leaf of
-a service's or a module's input binding at any depth, as a service param, as
-one of a `resource()` node's `props`, or as a
-[public URL's `url`](#a-hostname-per-environment). A field of a module's
-`input` is a value too ([A module's input](#a-modules-input)). A value cannot
-be a provision id or a `deps` entry.
+`environment.name` and the result of `resolve()` are **values**: stand-ins for data that is known only once the deploy knows which environment it is deploying. The module body cannot read a value, compare it or branch on it. It can only pass it on: as a dependency of another `resolve()`, as a leaf of a service's or a module's input binding at any depth, as a service param (a deploy-time value only), as one of a `resource()` node's `props`, or as a [public URL's `url`](#a-hostname-per-environment). A field of a module's `input` is a value too ([A module's input](#a-modules-input)). A value cannot be a provision id or a `deps` entry.
 
 `resolve(dependencies, fn)` lists the values it depends on, and `fn`
 receives their real values as one tuple, in the same order. After every
@@ -772,27 +796,23 @@ the platform, with a message that names the binding the value sits in, such as
   a result for every environment; Composer never picks a default.
 - `fn` returns a value. List that value as a dependency instead; `fn`
   receives its real value.
-- `fn` returns a source, such as `envSecret()` called inside `fn`.
+- `fn` returns a source, a value known only at boot.
 - `resolve()` lists a value known only at boot, or a field whose real value
   holds one ([below](#sources-in-resolve)).
-- `resolve()` lists `envParam('NAME')` and the variable is unset or empty.
 - `fn` returns a Promise, a function, a class instance or anything else
   that is not plain data.
 - A value depends on itself.
 
-When a dependency's `fn` is the one that failed, the message says so: it
-starts `A resolve() function that … depends on`.
-[`examples/env-param`](../../examples/env-param/) serves a value computed
-from the environment's name.
+When a dependency's `fn` is the one that failed, the message says so: it starts `A resolve() function that … depends on`. [`examples/root-input`](../../examples/root-input/) serves a value computed from the environment's name.
 
 ### Sources in resolve()
 
-`envParam()` is known at deploy, so `resolve()` can list it: `fn` receives the variable's value at deploy, read from the app configuration. `envSecret()`, `generatedParam()` and `serviceOrigin()` are known only at boot: the deploy never holds a secret, and it creates a generated value or a service's origin after it has run `fn`. So `fn` would have nothing to compute with, and `resolve()` cannot list them. Nor can it list a module's input field wrapped with `field()` or typed `secretString()`, because its real value may be one of them. A dependency must be a **deploy-time value**: `environment.name`, another `resolve()` result, `envParam()`, or a plain field of a module's input. Bind the other sources directly:
+A root input field is known at deploy, so `resolve()` can list it: `fn` receives the field's value, read from the app configuration. A platform variable's value, `generatedParam()` and `serviceOrigin()` are known only at boot: the deploy never holds a platform variable's value, and it creates a generated value or a service's origin after it has run `fn`. So `fn` would have nothing to compute with, and `resolve()` cannot list them. Nor can it list a module's input field wrapped with `field()` or typed `secretString()`, because its real value may be one of them. A dependency must be a **deploy-time value**: `environment.name`, another `resolve()` result, a root input field, or a plain field of a module's input. Bind the other sources directly:
 
 ```ts
 import { appRoot, module, resolve } from '@prisma/composer';
 import { field, secretString } from '@prisma/composer/arktype';
-import { envParam, envSecret, serviceOrigin } from '@prisma/composer-prisma-cloud';
+import { serviceOrigin, variable } from '@prisma/composer-prisma-cloud';
 import { type } from 'arktype';
 
 const billing = module(
@@ -806,11 +826,12 @@ const billing = module(
   },
 );
 
-export default appRoot('shop', ({ provision }) => {
+export default appRoot('shop', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {
+  const stripeKey = provision(variable.secret({ name: 'STRIPE_KEY' }));
   provision(billing, {
     input: {
-      greeting: resolve([envParam('GREETING')], ([greeting]) => greeting.toUpperCase()),
-      stripeKey: envSecret('STRIPE_KEY'),
+      greeting: resolve([input.GREETING], ([greeting]) => greeting.toUpperCase()),
+      stripeKey,
       returnUrl: serviceOrigin('shop.web'),
     },
   });
@@ -818,16 +839,12 @@ export default appRoot('shop', ({ provision }) => {
 });
 ```
 
-`GREETING=hi prisma deploy --environment staging` gives `shop.billing.service`
-the input binding `{ greeting: 'HI', stripeKey: envSecret('STRIPE_KEY'),
-returnUrl: serviceOrigin('shop.web') }`.
+`GREETING=hi prisma deploy --environment staging` gives `shop.billing.service` the input binding `{ greeting: 'HI', stripeKey, returnUrl: serviceOrigin('shop.web') }`, where `stripeKey` is the platform secret `STRIPE_KEY`'s value.
 
-Listing a value known only at boot, such as
-`resolve([envSecret('STRIPE_KEY')], ([key]) => …)`, fails to compile, with a
-type error that says a dependency must be a deploy-time value:
+Listing a value known only at boot, such as `resolve([stripeKey], ([key]) => …)`, fails to compile, with a type error that says a dependency must be a deploy-time value:
 
 ```text
-error TS2322: Type 'SecretSource<EnvSecretPayload> & RuntimeValue<SecretString>' is not assignable to type '"a resolve() dependency must be a deploy-time value, never a value known only at boot or a field wrapped with field(); to compute with an input field, declare it plain"'.
+error TS2322: Type 'SecretSource<PlatformVariablePayload> & RuntimeValue<SecretString> & { readonly id: string; }' is not assignable to type '"a resolve() dependency must be a deploy-time value, never a value known only at boot or a field wrapped with field(); to compute with an input field, declare it plain"'.
 ```
 
 A second error can follow where the result is used, because TypeScript types
@@ -842,18 +859,13 @@ instead. For a wrapped field, it says to declare the field plain:
 The resolve() function for input key "url" of service "shop.email.service" lists input.from of module "shop.email", whose real value is serviceOrigin('shop.web'), a value known only at boot. A resolve() dependency must be a deploy-time value. To compute with input.from, declare it plain, without field(), and bind it to deploy-time data.
 ```
 
-For a secret field, the message says to pass the field on into a binding and
-read it in the service. For a source listed directly, such as `envSecret()`,
-it says to bind the source directly into the input of the service that reads
-it.
+For a secret field, the message says to pass the field on into a binding and read it in the service. For a source listed directly, such as a platform secret's value, it says to bind it directly into the input of the service that reads it.
 
 To use a different secret in each environment, give the secret one name and
 set a different value for it on each environment, instead of choosing between
 two names in `resolve()`.
 
-Turning `envParam()` itself into text in a module body, such as
-`` `${envParam('GREETING')}` ``, fails the deploy, as reading an input field
-does. List it in `resolve()` to compute with its value.
+Turning a platform variable's value into text in a module body, such as `` `${stripeKey}` ``, fails the deploy, as reading an input field does.
 
 ## Values from outside the code
 
@@ -881,9 +893,8 @@ export default appRoot(
   'shop',
   { input: type({ EMAIL_FROM: 'string', 'SITE_HOSTNAME?': 'string' }) },
   ({ input, environment, provision }) => {
-    const web = provision(webService, {
-      input: { from: input.EMAIL_FROM, stripeKey: envSecret('STRIPE_KEY') },
-    });
+    const stripeKey = provision(variable.secret({ name: 'STRIPE_KEY' }));
+    const web = provision(webService, { input: { from: input.EMAIL_FROM, stripeKey } });
     const url = resolve([input.SITE_HOSTNAME, environment.name], ([hostname, name]) =>
       hostname !== undefined ? publicUrl.hostname(hostname) : publicUrl.prismaBuild());
     provision(publicUrl({ id: 'site', url, target: web.http }));
@@ -903,12 +914,11 @@ the shell.
 
 `dotenv()` reads `.env`, `.env.local`, `.env.<environment>` and `.env.<environment>.local` beside `prisma.config.ts`, in that order, through `dotenv-flow`, and a later file wins. It skips `.env.local` for the environment `test`, and never reads `.env.defaults`. An environment name with `/` is encoded in the file name: the environment `feature/x` reads `.env.feature%2Fx`. If `prisma.config.ts` has `import 'dotenv/config'`, remove it when you list `dotenv()`: the import puts `.env` into the shell's values, which `environmentVariables()` returns last, so `.env` would override `.env.<environment>`.
 
-`envParam('NAME')` reads `NAME` from the app configuration.
+The app configuration fills only the root's input. Under `prisma dev` it also gives each plain platform variable a service reads its value, under the variable's name.
 
 The `secrets` adapters give `prisma dev` its secrets. A deploy reads them only to know which values to redact. The operator sets a platform variable on the platform; the deploy does not copy it from the `secrets` adapters ([Deploying § Platform variables](deploying.md#platform-variables)).
 
-A root's input takes no secret, so bind `envSecret()` inside the body, as
-`stripeKey` is above.
+A root's input takes no secret, so provision a platform secret node inside the body and bind its value, as `stripeKey` is above.
 
 Pass the root's input fields on by name, as `from: input.EMAIL_FROM` is above. No module can pass its whole `input` on, and for the root it matters most: its whole `input` is every value the `config` adapters return, which by default is every variable of the shell, secrets included.
 
@@ -916,9 +926,9 @@ The root's schema checks the app configuration before anything is created, so a 
 
 A deploy reads the adapters once, in the command's own process. `prisma dev` reads them at start and again at each rebuild. The deploy engine runs in a second process, which runs no adapter. It reads the values it needs from the app configuration file, which the first process writes to `.prisma-composer/`. Only you can read that file, and it is deleted when the deploy ends. It is not `prisma.config.ts`. A root field your body passes on must hold data JSON can hold exactly: text, numbers, booleans, null, arrays and plain objects.
 
-The app configuration file never holds a secret. A deploy fails if a root field your body passes on has the same name as an `envSecret()` in the graph, or if any value in the file contains a secret's value, such as the password in a URL (`CONFIG.SECRET_AS_PLAIN_VALUE`). A secret shorter than eight characters, such as a `dev` placeholder, counts only when it is the whole value, so it does not refuse `dev@example.com`. The error names the field and the secret's name, never the value. Read the secret with `envSecret()`, or give the plain value text that is not a secret.
+The app configuration file never holds a secret. A deploy fails if a root field your body passes on has the same name as a platform secret in the graph, or if any value in the file contains a secret's value, such as the password in a URL (`CONFIG.SECRET_AS_PLAIN_VALUE`). A secret shorter than eight characters, such as a `dev` placeholder, counts only when it is the whole value, so it does not refuse `dev@example.com`. The error names the field and the secret's name, never the value. The fix it gives: pass the value of the platform secret to where the plain value is used, or give the plain value text that does not contain the secret's value.
 
-Composer replaces a secret's value with `[redacted]` wherever it prints. The secrets it knows are the values under the names an `envSecret()` in the graph reads, in either list. The lists' other values, such as `EMAIL_FROM` in `.env` or the shell's `SHLVL`, are not secrets and print as they are, apart from values that look like credentials. The deploy engine's own output is not redacted yet; Composer redacts its failure message. Nothing is redacted by the known secrets before Load has named them: an adapter that throws, and a root schema failure that echoes a field's value, are redacted only by the credential-looking rule.
+Composer replaces a secret's value with `[redacted]` wherever it prints. The secrets it knows are the values under the names of the graph's platform secrets, in either list, including one no service reads. The lists' other values, such as `EMAIL_FROM` in `.env` or the shell's `SHLVL`, are not secrets and print as they are, apart from values that look like credentials. The deploy engine's own output is not redacted yet; Composer redacts its failure message. Nothing is redacted by the known secrets before Load has named them: an adapter that throws, and a root schema failure that echoes a field's value, are redacted only by the credential-looking rule.
 
 A value in `.env` or `.env.local` is read by every environment, including a
 `prisma deploy` to `production` from your machine.
@@ -1069,8 +1079,7 @@ in the app. Today the platform still gives every service a `prisma.build`
 hostname, so such a service is reachable there. When the platform makes that
 hostname opt-in, your code does not change.
 
-[`examples/env-param`](../../examples/env-param/) makes its service public at
-its `prisma.build` hostname.
+[`examples/root-input`](../../examples/root-input/) makes its service public at its `prisma.build` hostname.
 
 ## Builds
 
@@ -1172,12 +1181,7 @@ The design record explains *why* the model is shaped this way:
   contracts in depth.
 - [`module-composition.md`](../design/10-domains/module-composition.md) —
   boundaries, forwarding, nesting.
-- [ADR-0042](../design/90-decisions/ADR-0042-service-input-is-one-standard-schema.md)
-  — why the service input is one schema and the binding carries the sourcing;
-  [ADR-0029](../design/90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md)
-  for secrets, which the deploy carries by name only, and
-  [ADR-0032](../design/90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)
-  for provision-time binding and env sourcing.
+- [ADR-0042](../design/90-decisions/ADR-0042-service-input-is-one-standard-schema.md) — why the service input is one schema and the binding carries the sourcing; [ADR-0029](../design/90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) for secrets, which the deploy carries by name only, and [ADR-0032](../design/90-decisions/ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md) for binding a per-key param at provision.
 - [ADR-0030](../design/90-decisions/ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md)
   — why service keys work the way they do.
 - [ADR-0005](../design/90-decisions/ADR-0005-users-build-the-framework-assembles.md)

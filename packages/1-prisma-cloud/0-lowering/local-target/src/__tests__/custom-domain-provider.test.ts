@@ -14,7 +14,7 @@ const container: ContainerInstance = {
 const input: LocalTargetProvidersInput = {
   container,
   devDir: '/nonexistent/.prisma-composer/dev/dev',
-  configurationKeyText: {},
+  plainVariableText: {},
   namedSecrets: {},
 };
 

@@ -21,6 +21,7 @@ import {
 import { bucketDescriptor } from '../descriptors/bucket.ts';
 import { computeDescriptor } from '../descriptors/compute.ts';
 import { postgresDescriptor } from '../descriptors/orm-postgres.ts';
+import { platformVariableDescriptor } from '../descriptors/platform-variable.ts';
 import { publicUrlDescriptor } from '../descriptors/public-url.ts';
 import { rawPostgresDescriptor } from '../descriptors/raw-postgres.ts';
 import { s3CredentialsDescriptor } from '../descriptors/s3-credentials.ts';
@@ -330,11 +331,8 @@ function lazyOptions(
 
 /** The Prisma Cloud extension descriptor — the `composer` section of `prisma.config.ts` lists it under `extensions`. */
 export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor => {
-  // When each pointed-at platform variable was last written — filled by the
-  // deploy preflight, read by the environment fingerprint. A closure, not a
-  // module variable, so two `prismaCloud()` extensions cannot share it. In
-  // the alchemy process (no preflight) the lookup falls back to what the CLI
-  // transported (preflight-payload.ts).
+  // A closure, so two `prismaCloud()` extensions cannot share it.
+  // The alchemy process has no preflight and reads what the CLI transported.
   let preflightTimestamps: ReadonlyMap<string, string> | undefined;
   const transported = transportedPreflight(() => preflightTimestamps, process.env);
   const o = lazyOptions(opts, transported);
@@ -405,6 +403,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
       // bucket descriptor registers under 's3', not 'bucket'.
       s3: bucketDescriptor(o),
       'public-url': publicUrlDescriptor(),
+      'platform-variable': platformVariableDescriptor(),
     },
 
     // A lazy reference, not the descriptor (ADR-0041, operator directive):

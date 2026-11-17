@@ -271,8 +271,8 @@ export interface LocalTargetDescriptor {
   providers(input: LocalTargetProvidersInput): Layer.Layer<never>;
   /** A stable local identity — resolved without any platform call. */
   readonly container: ContainerDescriptor;
-  /** Value sourcing (secrets/env-params) — runs where deploy's preflight runs. What it returns reaches the alchemy process the same way deploy's preflight payload does. */
-  preflight?(input: PreflightInput): Promise<PreflightPayload>;
+  /** Works out the platform variables' values, where deploy's preflight runs. Its payload reaches the alchemy process the same way deploy's preflight payload does. */
+  preflight?(input: PreflightInput): Promise<DevPreflightResult>;
   /** Ensure the emulator daemons this topology's node kinds need are running, plus any per-node emulator state that must exist before converge (idempotent; daemons persist across sessions). */
   emulators?(input: LocalTargetEmulatorsInput): Promise<void>;
   /** The dev session's view of the running app. Core renders it and never learns an emulator's API. */
@@ -286,6 +286,13 @@ export interface LocalTargetDescriptor {
    * Undefined when this extension recorded nothing for the app there.
    */
   current?(input: LocalTargetCurrentInput): Promise<LocalTargetCurrentApp | undefined>;
+}
+
+/** What a local target's preflight found. */
+export interface DevPreflightResult {
+  readonly payload: PreflightPayload;
+  /** The text of each plain platform variable a service reads, by name. Never a secret. */
+  readonly plainVariableText: Readonly<Record<string, string>>;
 }
 
 export interface LocalTargetCurrentInput {
@@ -347,9 +354,9 @@ export interface LocalTargetProvidersInput {
   readonly container: ContainerInstance | undefined;
   /** Absolute path of the environment's dev state directory (`devEnvironmentDir`, under the cwd). */
   readonly devDir: string;
-  /** The text of each configuration key the graph reads, from the app configuration file. A local deployment takes the text its param rows point at from it. */
-  readonly configurationKeyText: Readonly<Record<string, string>>;
-  /** The app secrets the graph's `envSecret()`s name, which the first process handed the second. A local deployment takes the text its `$platform` markers name from it. */
+  /** The text of each plain platform variable a service reads, by name. Never a secret. */
+  readonly plainVariableText: Readonly<Record<string, string>>;
+  /** The app secrets the graph's platform secrets name, which the first process handed the second. A local deployment takes the text its secret `$platform` markers name from it. */
   readonly namedSecrets: NamedSecrets;
 }
 
@@ -471,7 +478,7 @@ export type ConfigValues = Readonly<Record<string, unknown>>;
 /** A function in the `config` or `secrets` list of the `composer` section (ADR-0062): it receives the environment and returns that environment's values. Only the command's first process calls it; the second process reads what the first read from the app configuration file. */
 export type ConfigAdapter = (input: ConfigAdapterInput) => ConfigValues | Promise<ConfigValues>;
 
-/** The app configuration (ADR-0062): what the `config` adapters return, merged by top-level key, a later adapter winning. It is the root's input, and what `envParam()` reads. */
+/** The app configuration (ADR-0062): what the `config` adapters return, merged by top-level key, a later adapter winning. It is the root's input, and under `prisma dev` it also holds the text of each plain platform variable. */
 export type AppConfiguration = Readonly<Record<string, unknown>>;
 
 /** The app secrets (ADR-0062): what the `secrets` adapters return, merged the same way. Every value is text. Nothing fills a platform variable from them. `prisma dev` hands its second process the values under the secrets keys of the graph's secret sources, and Composer redacts those values wherever it prints. */

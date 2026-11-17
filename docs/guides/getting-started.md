@@ -424,13 +424,16 @@ your built server file, then make three changes to the server itself:
 
 1. Read the port from `service.port()` (never `process.env`), and bind
    `0.0.0.0`.
-2. Replace every other `process.env` read with what it really is: a field of
-   the service's input schema for config and credentials, or a dependency
-   for anything another service provides. If a value differs per environment — an
-   app origin, an external URL — bind it with `envParam`; a credential, with
-   `envSecret`. [Building an app § Service
-   input](building-an-app.md#service-input) has the how-to-choose table and
-   both shapes.
+2. Replace every other `process.env` read with what it really is: a field of the service's input schema for config and credentials, or a dependency for anything another service provides. If a value differs per environment and the deploy reads it — an external URL, a sender address — declare it as a field of your root's `input`. If the service reads it at boot, such as a credential, declare a platform variable in your root and pass its value in:
+
+   ```ts
+   export default appRoot('shop', ({ provision }) => {
+     const apiKey = provision(variable.secret({ name: 'STRIPE_SECRET_KEY' }));
+     provision(web, { input: { apiKey } });
+   });
+   ```
+
+   `variable` comes from `@prisma/composer-prisma-cloud`; `variable({ name })` declares a plain value, `variable.secret({ name })` a secret. You set its value on the platform with `prisma project env add`. [Building an app § Two ways to get a value](building-an-app.md#two-ways-to-get-a-value) has the how-to-choose table and both shapes.
 3. If it talks to Postgres: declare `deps: { db: rawPostgres() }` and build your
    existing client (`pg`, Bun's `SQL`, whatever you use today) from the
    injected `db.url` instead of a connection-string env var.

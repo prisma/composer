@@ -1,5 +1,5 @@
 import { appRoot } from '@prisma/composer';
-import { envSecret } from '@prisma/composer-prisma-cloud';
+import { variable } from '@prisma/composer-prisma-cloud';
 import authModule from '@storefront-auth/auth';
 import storefrontService from '@storefront-auth/storefront';
 
@@ -11,8 +11,7 @@ import storefrontService from '@storefront-auth/storefront';
  * that contract.
  */
 export default appRoot('storefront-auth', ({ provision }) => {
-  const auth = provision(authModule, {
-    input: { signingKey: envSecret('AUTH_SIGNING_SECRET') },
-  });
+  const signingKey = provision(variable.secret({ name: 'AUTH_SIGNING_SECRET' }));
+  const auth = provision(authModule, { input: { signingKey } });
   provision(storefrontService, { deps: { auth: auth.rpc } });
 });

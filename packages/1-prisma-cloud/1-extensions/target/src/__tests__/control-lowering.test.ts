@@ -4,7 +4,7 @@ import * as RealAlchemyPrisma from '@alchemy.run/prisma';
 import type { Contract } from '@internal/core';
 import type { NodeDescriptor } from '@internal/core/config';
 import { type ContainerInstance, containerEnvVarName } from '@internal/core/config';
-import type { LowerContext, LoweredResult, Outputs } from '@internal/core/deploy';
+import type { DeploymentResult, LowerContext, LoweredResult, Outputs } from '@internal/core/deploy';
 // Import the REAL modules the mocks below stub, so each mock can spread them.
 // This matters beyond convenience: `bun test` runs every test file in ONE
 // process and `mock.module` is process-global. When the real module is already
@@ -17,6 +17,7 @@ import * as RealDevEmulators from '@internal/dev-emulators';
 import { field, secretString } from '@internal/foundation/arktype';
 import * as RealLocalTarget from '@internal/local-target';
 import * as RealPrismaAlchemy from '@internal/lowering';
+import * as Alchemy from 'alchemy';
 import { AdoptPolicy } from 'alchemy/AdoptPolicy';
 import * as RealOutput from 'alchemy/Output';
 import { type FormerId, RenamePolicy } from 'alchemy/Rename';
@@ -320,19 +321,21 @@ mock.module('@internal/local-target', () => ({
 
 const { prismaCloud } = await import('../exports/control.ts');
 const { runDevEmulators } = await import('../local-target/emulators.ts');
+const { secretVariable } = await import('./variable-values.ts');
 const {
   compute,
-  envParam,
   bucket,
-  envSecret,
   generatedParam,
   publicUrl,
   rawPostgres,
   rawPostgresContract,
   s3StoreService,
   serviceOrigin,
+  variable,
 } = await import('../exports/index.ts');
-const { dependency, Load, module, provisionNeed, resolve, string } = await import('@internal/core');
+const { appRoot, dependency, Load, module, provisionNeed, resolve, string } = await import(
+  '@internal/core'
+);
 const { rawHttpContract } = await import('@internal/http');
 const { composeApplicationTopology } = await import('@internal/lowering/builds');
 const { lowering } = await import('@internal/core/deploy');
@@ -1069,16 +1072,12 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           key: 'COMPOSER_SHOP_AUTH_ORIGIN',
         },
       ]);
-      // The same three rows as the deploy hook declares them on
-      // `Deployment.triggers`: one member per row, carrying the SAME value
-      // the row writes (Redacted; under these mocks already resolved). No
-      // pointed platform variable here, so no pointer names ride along.
       expect(unwrapTriggers(result.triggers)).toEqual({
         COMPOSER_SHOP_AUTH_DB_URL: 'postgres://real-db',
         COMPOSER_SHOP_AUTH_PORT: '3000',
         COMPOSER_SHOP_AUTH_ORIGIN: '"https://auth-svc.example"',
       });
-      expect(result.pointers).toEqual([]);
+      expect(result.platformVariables).toEqual([]);
       // serialize also surfaces the resolved listen port for deploy() — the
       // Deployment must route to whatever the app binds, not a constant.
       expect(result.port).toBe(3000);
@@ -1222,7 +1221,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           inputBindings: [
             {
               serviceAddress: 'shop.ingest',
-              binding: { stripeEnabled: true, stripeKey: envSecret('STRIPE_SECRET_KEY') },
+              binding: { stripeEnabled: true, stripeKey: secretVariable('STRIPE_SECRET_KEY') },
             },
           ],
           edges: [],
@@ -1262,14 +1261,10 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         });
         // No serialized EnvironmentVariable output carries the secret's value.
         expect(JSON.stringify(writes)).not.toContain('sk_live');
-        // Neither does what the deploy hook declares as triggers: the
-        // document rides as its own (secret-free) text, and the platform
-        // variable it points at is named in `pointers`, so its rotation
-        // timestamp can join the triggers — the VALUE is nowhere near it.
         expect(unwrapTriggers(result.triggers)['COMPOSER_SHOP_INGEST_INPUT']).toBe(
           '{"stripeEnabled":true,"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
         );
-        expect(result.pointers).toEqual(['STRIPE_SECRET_KEY']);
+        expect(result.platformVariables).toEqual(['STRIPE_SECRET_KEY']);
         expect(JSON.stringify(unwrapTriggers(result.triggers))).not.toContain('sk_live');
         // The row also rides the serialize → deploy handoff, so deploy() can
         // put the document (secret-free by construction) on the report entity.
@@ -1279,8 +1274,6 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
             '{"stripeEnabled":true,"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
           absent: [],
           generated: [],
-          // The pointed platform variable, so the deploy hook can fold its
-          // rotation timestamp into the deployment triggers.
           markers: [{ name: 'STRIPE_SECRET_KEY', path: 'stripeKey', secret: true, inArray: false }],
         });
       },
@@ -1366,7 +1359,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       expect(unwrapTriggers(result.triggers)['COMPOSER_SHOP_INGEST_SECRET_GENERATED']).toBe(
         'generated-for-shop.ingest.generated.secret',
       );
-      expect(result.pointers).toEqual([]);
+      expect(result.platformVariables).toEqual([]);
     });
   });
 
@@ -1492,181 +1485,6 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         'service "shop.login" binds serviceOrigin("shop.wbe"), but no compute service has that address — known services: shop.web.',
       );
     });
-  });
-
-  test('serialize records every env-bound input key that resolved absent — deploy-report fodder (ADR-0042)', async () => {
-    await withEnv({ NOT_SET_GREETING_VAR: undefined }, () => {
-      const target = prismaCloud({ workspaceId: 'ws_1' });
-      const node = compute({
-        name: 'ingest',
-        deps: {},
-        input: type({ 'greeting?': 'string' }),
-        build: {
-          extension: '@prisma/composer/node',
-          type: 'node',
-          module: 'file:///test/service.ts',
-          entry: 'server.js',
-        },
-      });
-      const graph = {
-        root: { id: 'shop' },
-        inputBindings: [
-          {
-            serviceAddress: 'shop.ingest',
-            binding: { greeting: envParam('NOT_SET_GREETING_VAR') },
-          },
-        ],
-        edges: [],
-      };
-      const ctx = {
-        address: 'shop.ingest',
-        node,
-        graph,
-        application: {
-          projectId: 'shop-project#cloud-id',
-          branchId: undefined,
-          defaultBranchId: undefined,
-          branchless: false,
-        },
-        opts: {},
-      } as unknown as LowerContext;
-      const provisioned = {
-        projectId: 'shop-project#cloud-id',
-        endpointDomain: 'https://svc.example',
-      };
-      const config = { service: { port: 3000 }, inputs: {} };
-
-      const result = run<MockedSerialized>(
-        serviceDescriptorOf(target, 'compute').serialize(ctx, provisioned, config),
-      );
-
-      expect(result.input).toEqual({
-        key: 'COMPOSER_SHOP_INGEST_INPUT',
-        value: '{}',
-        absent: ['greeting → NOT_SET_GREETING_VAR'],
-        generated: [],
-        markers: [],
-      });
-    });
-  });
-
-  test('the input document reads envParam() leaves from LowerOptions.appConfigurationRead', async () => {
-    await withEnv({ G: 'shell' }, () => {
-      const target = prismaCloud({ workspaceId: 'ws_1' });
-      const node = compute({
-        name: 'ingest',
-        deps: {},
-        input: type({ greeting: 'string' }),
-        build: {
-          extension: '@prisma/composer/node',
-          type: 'node',
-          module: 'file:///test/service.ts',
-          entry: 'server.js',
-        },
-      });
-      const ctx = {
-        address: 'shop.ingest',
-        node,
-        graph: {
-          root: { id: 'shop' },
-          inputBindings: [{ serviceAddress: 'shop.ingest', binding: { greeting: envParam('G') } }],
-          edges: [],
-        },
-        application: {
-          projectId: 'shop-project#cloud-id',
-          branchId: undefined,
-          defaultBranchId: undefined,
-          branchless: false,
-        },
-        opts: { appConfigurationRead: { rootInput: [], configurationKeyText: { G: 'pool' } } },
-      } as unknown as LowerContext;
-      const provisioned = {
-        projectId: 'shop-project#cloud-id',
-        endpointDomain: 'https://svc.example',
-      };
-
-      const result = run<MockedSerialized>(
-        serviceDescriptorOf(target, 'compute').serialize(ctx, provisioned, {
-          service: { port: 3000 },
-          inputs: {},
-        }),
-      );
-
-      expect(result.input?.value).toBe('{"greeting":"pool"}');
-    });
-  });
-
-  test('an env-sourced reserved param serializes a POINTER row — value is the bound platform NAME, never a value', async () => {
-    await withEnv(
-      // The real value is present in the deploy shell, proving it still cannot
-      // reach the serialized row — buildConfig never resolved a source's value.
-      { PLATFORM_PORT: '8443' },
-      () => {
-        const target = prismaCloud({ workspaceId: 'ws_1' });
-        const node = compute({
-          name: 'web',
-          deps: {},
-          build: {
-            extension: '@prisma/composer/node',
-            type: 'node',
-            module: 'file:///test/service.ts',
-            entry: 'server.js',
-          },
-        });
-        // The provision call bound the reserved port to PLATFORM_PORT — it rides on graph.params.
-        const graph = {
-          root: { id: 'shop' },
-          inputBindings: [],
-          params: [
-            { serviceAddress: 'shop.web', slot: 'port', binding: envParam('PLATFORM_PORT') },
-          ],
-          edges: [],
-        };
-        const ctx = {
-          address: 'shop.web',
-          node,
-          graph,
-          application: {
-            projectId: 'shop-project#cloud-id',
-            branchId: undefined,
-            defaultBranchId: undefined,
-            branchless: false,
-          },
-          opts: {},
-        } as unknown as LowerContext;
-        const provisioned = {
-          projectId: 'shop-project#cloud-id',
-          endpointDomain: 'https://svc.example',
-        };
-        // buildConfig resolved the param to the opaque ParamSource, unvalidated — exactly what
-        // deploy.ts's resolveParam does for a source-bound param.
-        const config = { service: { port: envParam('PLATFORM_PORT') }, inputs: {} };
-        const before = recorded.envVar.length;
-
-        const result = run<MockedSerialized>(
-          serviceDescriptorOf(target, 'compute').serialize(ctx, provisioned, config),
-        );
-
-        const writes = recorded.envVar.slice(before).map(([, props]) => props);
-        // The pointer row holds the bound platform NAME, never a value.
-        expect(writes).toContainEqual({
-          project: 'shop-project#cloud-id',
-          key: 'COMPOSER_SHOP_WEB_PORT',
-          value: '@composer-param-pointer:PLATFORM_PORT',
-          class: 'production',
-        });
-        // No serialized EnvironmentVariable output carries the actual value.
-        expect(JSON.stringify(writes)).not.toContain('8443');
-        // The pointer row triggers on its text (the platform NAME) AND the
-        // named variable joins `pointers`, so rotating PLATFORM_PORT out of
-        // band ships a new deployment even though the row itself never moves.
-        expect(unwrapTriggers(result.triggers)['COMPOSER_SHOP_WEB_PORT']).toBe(
-          '@composer-param-pointer:PLATFORM_PORT',
-        );
-        expect(result.pointers).toEqual(['PLATFORM_PORT']);
-        expect(JSON.stringify(unwrapTriggers(result.triggers))).not.toContain('8443');
-      },
-    );
   });
 
   test('a literal-bound reserved param still serializes as a plain JSON-encoded value row (unchanged)', async () => {
@@ -1902,7 +1720,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       triggers: { COMPOSER_AUTH_DB_URL: Redacted.make('postgres://real-db') },
       // The input document points at an operator-owned platform variable; its
       // preflight `updatedAt` must join the triggers under `<name>:updatedAt`.
-      pointers: ['STRIPE_SECRET_KEY'],
+      platformVariables: ['STRIPE_SECRET_KEY'],
       // A non-default port from serialize must reach the Deployment verbatim.
       port: 8080,
     };
@@ -1963,7 +1781,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     const serialized = {
       environment: [],
       triggers: {},
-      pointers: [],
+      platformVariables: [],
       port: 3000,
       input: {
         key: 'COMPOSER_AUTH_INPUT',
@@ -2002,7 +1820,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     const serialized = {
       environment: [],
       triggers: {},
-      pointers: [],
+      platformVariables: [],
       port: 3000,
       input: {
         key: 'COMPOSER_AUTH_INPUT',
@@ -2153,7 +1971,7 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
     const serialized = {
       environment: [{ id: 'STORE_PORT-var#cloud-id', key: 'STORE_PORT' }],
       triggers: {},
-      pointers: [],
+      platformVariables: [],
       port: 3000,
       bucket: 'streams',
       accessKeyId: 'AKIA123',
@@ -2734,8 +2552,8 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
         workspaceId: 'ws_1',
         providerParams,
         preflight: {
-          pointerVersion: () => undefined,
-          absentSecrets: new Set(),
+          platformVariableVersion: () => undefined,
+          absentVariables: new Set(),
         },
       };
       const node = compute({ name: 'multi', deps: {}, build, expose: { any: anyContract } });
@@ -2787,14 +2605,14 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
   });
 });
 
-describe('a secret the prisma dev preflight found unset', () => {
+describe('a platform variable the prisma dev preflight found unset', () => {
   test('is left out of the input document the compute service writes', () => {
     const o: ResolvedCloudOptions = {
       workspaceId: 'ws_1',
       providerParams: new Map(),
       preflight: {
-        pointerVersion: () => undefined,
-        absentSecrets: new Set(['STRIPE_WEBHOOK_SECRET']),
+        platformVariableVersion: () => undefined,
+        absentVariables: new Set(['STRIPE_WEBHOOK_SECRET']),
       },
     };
     const node = compute({
@@ -2817,8 +2635,8 @@ describe('a secret the prisma dev preflight found unset', () => {
           {
             serviceAddress: 'shop.billing',
             binding: {
-              stripeKey: envSecret('STRIPE_SECRET_KEY'),
-              webhookSecret: envSecret('STRIPE_WEBHOOK_SECRET'),
+              stripeKey: secretVariable('STRIPE_SECRET_KEY'),
+              webhookSecret: secretVariable('STRIPE_WEBHOOK_SECRET'),
             },
           },
         ],
@@ -3221,7 +3039,7 @@ describe('resource IDs are built from the full address, and each declares the ID
         ctx as unknown as LowerContext,
         { serviceId: 'shop.auth.api#cloud-id', projectId: 'shop-project#cloud-id' },
         { path: '/tmp/api.tar.gz', sha256: 'sha-api' },
-        { environment: [], triggers: {}, pointers: [], port: 3000 },
+        { environment: [], triggers: {}, platformVariables: [], port: 3000 },
       ),
     );
 
@@ -3816,5 +3634,133 @@ describe("prismaCloud().nodes['public-url'] — the public URL descriptor", () =
         { app: 'deployment-app-of:shop.storefront.web.deployment', hostname: 'shop.com' },
       ],
     ]);
+  });
+});
+
+describe("prismaCloud().nodes['platform-variable'] — a platform variable node", () => {
+  const build = {
+    extension: '@prisma/composer/node',
+    type: 'node',
+    module: 'file:///test/service.ts',
+    entry: 'server.js',
+  };
+  const mailer = compute({
+    name: 'mailer',
+    deps: {},
+    build,
+    input: type({ from: field(type('string')), key: secretString() }),
+  });
+  const web = compute({
+    name: 'web',
+    deps: {},
+    build,
+    input: type({ greeting: field(type('string')) }),
+  });
+
+  const shop = appRoot('shop', ({ provision }) => {
+    const from = provision(variable({ name: 'EMAIL_FROM' }));
+    const key = provision(variable.secret({ name: 'EMAIL_KEY' }));
+    provision(variable({ name: 'UNREAD_NAME' }));
+    const greeting = provision(variable({ name: 'WEB_GREETING' }));
+    provision(mailer, { input: { from, key } });
+    provision(web, { input: { greeting }, params: { port: 4000 } });
+  });
+
+  const lowerShop = () =>
+    withEnv(
+      { ...containerEnv('shop-project#cloud-id'), EMAIL_KEY: 'sk_planted_should_not_leak' },
+      () => {
+        const reports: DeploymentResult[] = [];
+        const stack: {
+          actions: Record<string, Alchemy.Action>;
+          resources: Record<string, unknown>;
+        } = { actions: {}, resources: {} };
+        run<undefined>(
+          lowering(shop, configFor(prismaCloud({ workspaceId: 'ws_1' })), {
+            name: 'shop',
+            environment: 'production',
+            bundles: {
+              'shop.mailer': { dir: 'modules/mailer/dist', entry: 'server.js' },
+              'shop.web': { dir: 'modules/web/dist', entry: 'server.js' },
+            },
+            report: (result) => reports.push(result),
+          }).pipe(Effect.provideService(Alchemy.Stack, stack as never)),
+        );
+        const action = stack.actions['composer-deployment-report'];
+        if (action === undefined) throw new Error('expected the deployment report action');
+        run<unknown>(action.Run(action.Input));
+        return reports;
+      },
+    );
+
+  test('the deploy report has a line for each service and none for a platform variable node', async () => {
+    const reports = await lowerShop();
+
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.nodes.map((node) => node.address).sort()).toEqual([
+      'shop.mailer',
+      'shop.web',
+    ]);
+  });
+
+  test('its descriptor creates nothing and writes no row', () => {
+    const graph = Load(shop);
+    const node = graph.nodes.find((entry) => entry.id === 'shop.emailFrom')?.node;
+    const ctx = { id: 'shop.emailFrom', address: 'shop.emailFrom', node, graph, opts: {} };
+    const before = recorded.envVar.length;
+
+    const result = run<LoweredResult>(
+      resourceDescriptorOf(
+        prismaCloud({ workspaceId: 'ws_1' }),
+        'platform-variable',
+      )(ctx as unknown as LowerContext),
+    );
+
+    expect(result).toEqual({ outputs: {}, entities: [] });
+    expect(recorded.envVar.length).toBe(before);
+  });
+
+  test('a deploy writes a $platform marker for each plain and secret node a service reads', async () => {
+    const before = recorded.envVar.length;
+
+    await lowerShop();
+
+    const writes = recorded.envVar.slice(before).map(([, props]) => props);
+    expect(writes).toContainEqual({
+      project: 'shop-project#cloud-id',
+      key: 'COMPOSER_SHOP_MAILER_INPUT',
+      value:
+        '{"from":{"$platform":{"name":"EMAIL_FROM"}},"key":{"$platform":{"name":"EMAIL_KEY","secret":true}}}',
+      class: 'production',
+    });
+    expect(writes).toContainEqual({
+      project: 'shop-project#cloud-id',
+      key: 'COMPOSER_SHOP_WEB_INPUT',
+      value: '{"greeting":{"$platform":{"name":"WEB_GREETING"}}}',
+      class: 'production',
+    });
+    const keys = writes.map((props) => (props as { key: string }).key);
+    expect(keys).not.toContain('EMAIL_FROM');
+    expect(keys).not.toContain('UNREAD_NAME');
+    expect(JSON.stringify(writes)).not.toContain('sk_planted');
+  });
+
+  test("each deployment's triggers hold the rows of the nodes its service reads, and no others: a literal per-key param adds none", async () => {
+    const before = recorded.deploy.length;
+
+    await lowerShop();
+
+    const triggersOf = (id: string) => {
+      const props = recorded.deploy.slice(before).find(([deployment]) => deployment === id)?.[1];
+      return Object.keys((props as { triggers: Record<string, unknown> }).triggers);
+    };
+    expect(triggersOf('shop.mailer.deployment')).toContain('EMAIL_FROM:updatedAt');
+    expect(triggersOf('shop.mailer.deployment')).toContain('EMAIL_KEY:updatedAt');
+    expect(triggersOf('shop.mailer.deployment')).not.toContain('WEB_GREETING:updatedAt');
+    expect(
+      triggersOf('shop.web.deployment').filter((member) => member.endsWith(':updatedAt')),
+    ).toEqual(['WEB_GREETING:updatedAt']);
+    expect(triggersOf('shop.web.deployment')).not.toContain('EMAIL_FROM:updatedAt');
+    expect(JSON.stringify(recorded.deploy.slice(before))).not.toContain('UNREAD_NAME');
   });
 });

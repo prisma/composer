@@ -3,25 +3,15 @@ import { createHash, createHmac } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import {
-  isSecretPointer,
-  Load,
-  module,
-  resolve,
-  type ServiceNode,
-  service,
-  string,
-} from '@internal/core';
+import { appRoot, isSecretPointer, Load, module, resolve, type ServiceNode } from '@internal/core';
 import { preflightEnv } from '@internal/core/config';
 import { isSecretString } from '@internal/foundation/secret';
 import { rawHttpContract } from '@internal/http';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
 import { decodePreflightPayload, transportedPreflight } from '../control/preflight-payload.ts';
-import { compute, publicUrl } from '../exports/index.ts';
+import { compute, publicUrl, variable } from '../exports/index.ts';
 import { runDevPreflight } from '../local-target/preflight.ts';
-import { envParam } from '../param.ts';
-import { envSecret } from '../secret.ts';
 import { serializeInput } from '../serializer.ts';
 
 const build = {
@@ -68,69 +58,71 @@ const requiresOneOf = (...keys: string[]): StandardSchemaV1<unknown, unknown> =>
 
 const billingGraph = (schema: StandardSchemaV1<unknown, unknown>) =>
   Load(
-    module('app', ({ provision }) => {
+    appRoot('app', ({ provision }) => {
       provision(compute({ name: 'billing', deps: {}, input: schema, build }), {
         id: 'billing',
         input: {
-          stripeKey: envSecret('STRIPE_SECRET_KEY'),
-          webhookSecret: envSecret('STRIPE_WEBHOOK_SECRET'),
+          stripeKey: provision(variable.secret({ name: 'STRIPE_SECRET_KEY' })),
+          webhookSecret: provision(variable.secret({ name: 'STRIPE_WEBHOOK_SECRET' })),
         },
       });
     }),
   );
 
-const paramGraph = () =>
+const acceptsAnything: StandardSchemaV1<unknown, unknown> = {
+  '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },
+};
+
+const portGraph = () =>
   Load(
-    module('app', ({ provision }) => {
-      provision(compute({ name: 'web', deps: {}, build }), {
+    appRoot('app', ({ provision }) => {
+      provision(compute({ name: 'web', deps: {}, input: acceptsAnything, build }), {
         id: 'web',
-        params: { port: envParam('APP_PORT') },
+        input: { port: provision(variable({ name: 'APP_PORT' })) },
       });
     }),
   );
 
-/** A service whose per-key param `token` reads API_TOKEN: required unless `token` has a default or is optional. */
-const tokenService = (token = string()) =>
-  service({
-    name: 'web',
-    extension: '@prisma/composer-prisma-cloud',
-    type: 'compute',
-    inputs: {},
-    params: { token },
-    build,
-  });
+const tokenService = () => compute({ name: 'web', deps: {}, input: requiresOneOf('token'), build });
 
-const tokenGraph = (token = string()) =>
+const tokenGraph = () =>
   Load(
-    module('app', ({ provision }) => {
-      provision(tokenService(token), { id: 'web', params: { token: envParam('API_TOKEN') } });
+    appRoot('app', ({ provision }) => {
+      provision(tokenService(), {
+        id: 'web',
+        input: { token: provision(variable({ name: 'API_TOKEN' })) },
+      });
     }),
   );
 
 const mixedGraph = (schema: StandardSchemaV1<unknown, unknown>) =>
   Load(
-    module('app', ({ provision }) => {
+    appRoot('app', ({ provision }) => {
       provision(compute({ name: 'billing', deps: {}, input: schema, build }), {
         id: 'billing',
-        input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+        input: { stripeKey: provision(variable.secret({ name: 'STRIPE_SECRET_KEY' })) },
       });
-      provision(tokenService(), { id: 'web', params: { token: envParam('API_TOKEN') } });
+      provision(tokenService(), {
+        id: 'web',
+        input: { token: provision(variable({ name: 'API_TOKEN' })) },
+      });
     }),
   );
 
 const sharedGraph = () =>
   Load(
-    module('app', ({ provision }) => {
+    appRoot('app', ({ provision }) => {
+      const stripeKey = provision(variable.secret({ name: 'STRIPE_SECRET_KEY' }));
       provision(
         compute({ name: 'billing', deps: {}, input: requiresSecrets('stripeKey'), build }),
         {
           id: 'billing',
-          input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+          input: { stripeKey },
         },
       );
       provision(compute({ name: 'reports', deps: {}, input: requiresSecrets(), build }), {
         id: 'reports',
-        input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+        input: { stripeKey },
       });
     }),
   );
@@ -187,7 +179,7 @@ const devPreflightWarnings = async (graph: ReturnType<typeof Load>, environment:
 let secrets: Record<string, string> = {};
 let configuration: Record<string, unknown> = {};
 
-const preflight = (graph: ReturnType<typeof Load>, environment = 'dev') =>
+const devPreflight = (graph: ReturnType<typeof Load>, environment = 'dev') =>
   runDevPreflight({
     graph,
     container: fakeContainer(environment),
@@ -195,6 +187,9 @@ const preflight = (graph: ReturnType<typeof Load>, environment = 'dev') =>
     configuration,
     secrets,
   });
+
+const preflight = async (graph: ReturnType<typeof Load>, environment = 'dev') =>
+  (await devPreflight(graph, environment)).payload;
 
 /** The folder `prisma dev --environment <name>` keeps its local copy in. */
 const environmentDir = (cwd: string, folder = 'dev') =>
@@ -219,8 +214,8 @@ function billingDocument(
 ): unknown {
   const node = graph.nodes.find((entry) => entry.id === 'app.billing')?.node as ServiceNode;
   const binding = graph.inputBindings.find((b) => b.serviceAddress === 'app.billing')?.binding;
-  const { absentSecrets } = transportedPreflight(() => undefined, childEnv);
-  const row = serializeInput(node, 'app.billing', binding, { env: {}, absentSecrets });
+  const { absentVariables } = transportedPreflight(() => undefined, childEnv);
+  const row = serializeInput(node, 'app.billing', binding, { absentVariables });
   return JSON.parse(row?.value ?? 'null');
 }
 
@@ -326,8 +321,8 @@ describe('prisma dev preflight', () => {
     const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
 
     const payload = devPayload(childEnv);
-    expect([...payload.absentSecrets]).toEqual(['STRIPE_WEBHOOK_SECRET']);
-    expect([...payload.pointerVersions.keys()]).toEqual(['STRIPE_SECRET_KEY']);
+    expect([...payload.absentVariables]).toEqual(['STRIPE_WEBHOOK_SECRET']);
+    expect([...payload.platformVariableVersions.keys()]).toEqual(['STRIPE_SECRET_KEY']);
     expect(Object.values(childEnv).join('')).not.toContain('sk_test_1');
   });
 
@@ -335,11 +330,11 @@ describe('prisma dev preflight', () => {
     const graph = billingGraph(requiresSecrets('stripeKey'));
     const memberFor = async (value: string) => {
       secrets['STRIPE_SECRET_KEY'] = value;
-      const { pointerVersion } = transportedPreflight(
+      const { platformVariableVersion } = transportedPreflight(
         () => undefined,
         transported(await preflight(graph)),
       );
-      return pointerVersion('STRIPE_SECRET_KEY');
+      return platformVariableVersion('STRIPE_SECRET_KEY');
     };
 
     const first = await memberFor('sk_test_1');
@@ -354,16 +349,18 @@ describe('prisma dev preflight', () => {
     const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
 
     expect(
-      transportedPreflight(() => undefined, childEnv).pointerVersion('STRIPE_WEBHOOK_SECRET'),
+      transportedPreflight(() => undefined, childEnv).platformVariableVersion(
+        'STRIPE_WEBHOOK_SECRET',
+      ),
     ).toBeUndefined();
   });
 
   test('a secret an array position reads that is unset stops dev, naming the variable and the service', async () => {
     const graph = Load(
-      module('app', ({ provision }) => {
+      appRoot('app', ({ provision }) => {
         provision(compute({ name: 'billing', deps: {}, input: requiresSecrets(), build }), {
           id: 'billing',
-          input: { keys: [envSecret('STRIPE_SECRET_KEY')] },
+          input: { keys: [provision(variable.secret({ name: 'STRIPE_SECRET_KEY' }))] },
         });
       }),
     );
@@ -375,39 +372,10 @@ describe('prisma dev preflight', () => {
     );
   });
 
-  test('an unset per-key param with no default that is not optional stops dev, naming the variable, the service and the param', async () => {
-    const message = await preflightError(tokenGraph());
-
-    expect(message).toContain(
-      '1 platform variable a service needs has no value:\n  - API_TOKEN  (read by service "app.web", per-key param "token")',
-    );
-    expect(message).toContain('the `config` list for an env-sourced param');
-  });
-
-  test('an empty per-key param with no default that is not optional stops dev the same way', async () => {
-    configuration['API_TOKEN'] = '';
-
-    expect(await preflightError(tokenGraph())).toContain('API_TOKEN  (read by service "app.web"');
-  });
-
-  test('an unset per-key param with a default does not stop dev and has no fingerprint', async () => {
-    const payload = await preflight(tokenGraph(string({ default: 'local' })));
-
-    expect(payload).toBeUndefined();
-  });
-
-  test('an unset per-key param that is optional does not stop dev and has no fingerprint', async () => {
-    configuration['API_TOKEN'] = '';
-
-    const payload = await preflight(tokenGraph(string({ optional: true })));
-
-    expect(payload).toBeUndefined();
-  });
-
-  test('missing params and secrets are reported together, with the ways to set them given once', async () => {
+  test('missing plain variables and secrets are reported together, with the ways to set them given once', async () => {
     const message = await preflightError(mixedGraph(requiresSecrets('stripeKey')));
 
-    expect(message).toContain('API_TOKEN  (read by service "app.web", per-key param "token")');
+    expect(message).toContain('API_TOKEN  (read by service "app.web", field "token")');
     expect(message).toContain(
       'STRIPE_SECRET_KEY  (read by service "app.billing", field "stripeKey")',
     );
@@ -420,40 +388,42 @@ describe('prisma dev preflight', () => {
     expect(message).toContain('invalid input for service "app.billing": somethingElse is required');
     expect(message).not.toContain('Deploy-time');
     expect(message).not.toContain('STRIPE_SECRET_KEY');
-    expect(message).toContain('API_TOKEN  (read by service "app.web", per-key param "token")');
+    expect(message).toContain('API_TOKEN  (read by service "app.web", field "token")');
   });
 
-  test('an env-sourced param that is set is fingerprinted for the alchemy process', async () => {
+  test('a plain node in an input field that is set is fingerprinted for the alchemy process', async () => {
     configuration['APP_PORT'] = '3000';
 
-    const childEnv = transported(await preflight(paramGraph()));
+    const childEnv = transported(await preflight(portGraph()));
 
-    expect([...devPayload(childEnv).pointerVersions.keys()]).toEqual(['APP_PORT']);
+    expect([...devPayload(childEnv).platformVariableVersions.keys()]).toEqual(['APP_PORT']);
   });
 
   test('the fingerprint key is created once, readable only by its owner, and reused', async () => {
     configuration['APP_PORT'] = '3000';
     const keyPath = path.join(environmentDir(cwd), 'fingerprint.key');
 
-    const first = devPayload(transported(await preflight(paramGraph())));
+    const first = devPayload(transported(await preflight(portGraph())));
     const key = fs.readFileSync(keyPath);
-    const second = devPayload(transported(await preflight(paramGraph())));
+    const second = devPayload(transported(await preflight(portGraph())));
 
     // Windows has no POSIX file modes, and local dev does not run there.
     if (process.platform !== 'win32') expect(fs.statSync(keyPath).mode & 0o777).toBe(0o600);
     expect(fs.readFileSync(keyPath)).toEqual(key);
-    expect(second.pointerVersions).toEqual(first.pointerVersions);
+    expect(second.platformVariableVersions).toEqual(first.platformVariableVersions);
   });
 
   test('a lost fingerprint key only changes the fingerprints', async () => {
     configuration['APP_PORT'] = '3000';
     const keyPath = path.join(environmentDir(cwd), 'fingerprint.key');
 
-    const first = devPayload(transported(await preflight(paramGraph())));
+    const first = devPayload(transported(await preflight(portGraph())));
     fs.rmSync(keyPath);
-    const second = devPayload(transported(await preflight(paramGraph())));
+    const second = devPayload(transported(await preflight(portGraph())));
 
-    expect(second.pointerVersions.get('APP_PORT')).not.toBe(first.pointerVersions.get('APP_PORT'));
+    expect(second.platformVariableVersions.get('APP_PORT')).not.toBe(
+      first.platformVariableVersions.get('APP_PORT'),
+    );
   });
 
   test('a secret shared by two services stops dev, naming both services that read it', async () => {
@@ -469,8 +439,8 @@ describe('prisma dev preflight', () => {
 
     const payload = devPayload(transported(await preflight(sharedGraph())));
 
-    expect([...payload.pointerVersions.keys()]).toEqual(['STRIPE_SECRET_KEY']);
-    expect([...payload.absentSecrets]).toEqual([]);
+    expect([...payload.platformVariableVersions.keys()]).toEqual(['STRIPE_SECRET_KEY']);
+    expect([...payload.absentVariables]).toEqual([]);
   });
 
   test('a damaged fingerprint key stops dev with the file and how to fix it', async () => {
@@ -479,7 +449,7 @@ describe('prisma dev preflight', () => {
     fs.mkdirSync(devDir, { recursive: true });
     fs.writeFileSync(path.join(devDir, 'fingerprint.key'), 'short');
 
-    const message = await preflightError(paramGraph());
+    const message = await preflightError(portGraph());
 
     expect(message).toContain(path.join('.prisma-composer', 'dev', 'dev', 'fingerprint.key'));
     expect(message).toContain('Delete the file or run `prisma dev --fresh`');
@@ -491,7 +461,7 @@ describe('prisma dev preflight', () => {
     fs.writeFileSync(path.join(devDir, 'secrets.json'), '{"STRIPE_SECRET_KEY":"sk_live_old"}');
     fs.writeFileSync(path.join(devDir, 'env.json'), '{}');
 
-    await preflight(paramGraph()).catch(() => undefined);
+    await preflight(Load(appRoot('app', () => {})));
 
     expect(fs.readdirSync(devDir)).toEqual(['env.json']);
   });
@@ -505,7 +475,7 @@ describe('prisma dev preflight', () => {
     );
     fs.writeFileSync(path.join(root, 'secrets.json'), '{"STRIPE_SECRET_KEY":"sk_live_old"}');
 
-    await preflight(paramGraph(), 'test').catch(() => undefined);
+    await preflight(Load(appRoot('app', () => {})), 'test');
 
     expect(fs.existsSync(path.join(root, 'secrets.json'))).toBe(false);
     expect(fs.existsSync(path.join(environmentDir(cwd), 'secrets.json'))).toBe(false);
@@ -516,8 +486,8 @@ describe('prisma dev preflight', () => {
 
     const versions = [];
     for (const environment of ['dev', 'test', 'feature/x']) {
-      const payload = devPayload(transported(await preflight(paramGraph(), environment)));
-      versions.push(payload.pointerVersions.get('APP_PORT'));
+      const payload = devPayload(transported(await preflight(portGraph(), environment)));
+      versions.push(payload.platformVariableVersions.get('APP_PORT'));
     }
 
     expect(new Set(versions).size).toBe(3);
@@ -548,7 +518,7 @@ describe('prisma dev preflight', () => {
       );
       const key = fs.readFileSync(path.join(environmentDir(cwd), 'fingerprint.key'));
 
-      expect(payload.pointerVersions.get('STRIPE_SECRET_KEY')).toBe(
+      expect(payload.platformVariableVersions.get('STRIPE_SECRET_KEY')).toBe(
         createHmac('sha256', key).update('sk_pool').digest('hex'),
       );
     } finally {
@@ -556,27 +526,27 @@ describe('prisma dev preflight', () => {
     }
   });
 
-  test('an env-sourced param is read from the app configuration', async () => {
+  test('a plain node is read from the app configuration, not the shell', async () => {
     process.env['API_TOKEN'] = 'from-the-shell';
     try {
       expect(await preflightError(tokenGraph())).toContain(
-        'API_TOKEN  (read by service "app.web", per-key param "token")',
+        'API_TOKEN  (read by service "app.web", field "token")',
       );
 
       configuration['API_TOKEN'] = 'from-the-configuration';
       const payload = devPayload(transported(await preflight(tokenGraph())));
 
-      expect([...payload.pointerVersions.keys()]).toEqual(['API_TOKEN']);
+      expect([...payload.platformVariableVersions.keys()]).toEqual(['API_TOKEN']);
     } finally {
       delete process.env['API_TOKEN'];
     }
   });
 
-  test('a per-key param whose app configuration value is not text stops dev, naming the variable, the service and the kind', async () => {
+  test('a plain node whose app configuration value is not text stops dev, naming the variable, the service and the kind', async () => {
     configuration['API_TOKEN'] = 42;
 
     expect(await preflightError(tokenGraph())).toBe(
-      'The `config` adapters return a number for "API_TOKEN", not text, so prisma dev cannot give service "app.web" the value envParam(\'API_TOKEN\') reads. Make the adapter return a string.',
+      'The `config` adapters return a number for "API_TOKEN", not text. prisma dev cannot start, because the platform variable "app.apiToken", which service "app.web" reads, takes text. Make the adapter return a string.',
     );
   });
 
@@ -584,7 +554,7 @@ describe('prisma dev preflight', () => {
     const message = await preflightError(tokenGraph());
 
     expect(message).toContain(
-      'Set each missing variable where an adapter in prisma.config.ts reads it: the `secrets` list of the `composer` section for a secret, the `config` list for an env-sourced param. environmentVariables() reads the shell you run `prisma dev` from; dotenv() reads .env, .env.local, .env.dev and .env.dev.local beside prisma.config.ts.',
+      'Set each missing variable where an adapter in prisma.config.ts reads it: the `secrets` list of the `composer` section for a secret, the `config` list for a plain platform variable. environmentVariables() reads the shell you run `prisma dev` from; dotenv() reads .env, .env.local, .env.dev and .env.dev.local beside prisma.config.ts.',
     );
   });
 
@@ -609,5 +579,147 @@ describe('prisma dev preflight', () => {
       'shop.site and shop.www both name the hostname shop.com. One hostname serves one public URL.',
     );
     expect(fs.existsSync(path.join(cwd, '.prisma-composer'))).toBe(false);
+  });
+
+  describe('plain platform variable nodes', () => {
+    const plainGraph = (schema: StandardSchemaV1<unknown, unknown>) =>
+      Load(
+        appRoot('shop', ({ provision }) => {
+          const from = provision(variable({ name: 'EMAIL_FROM' }));
+          provision(compute({ name: 'mail', deps: {}, input: schema, build }), {
+            input: { from },
+          });
+        }),
+      );
+
+    function documentOf(
+      graph: ReturnType<typeof Load>,
+      address: string,
+      childEnv: Record<string, string>,
+    ): unknown {
+      const node = graph.nodes.find((entry) => entry.id === address)?.node as ServiceNode;
+      const binding = graph.inputBindings.find((b) => b.serviceAddress === address)?.binding;
+      const { absentVariables } = transportedPreflight(() => undefined, childEnv);
+      const row = serializeInput(node, address, binding, { absentVariables });
+      return JSON.parse(row?.value ?? 'null');
+    }
+
+    test('a plain node is filled from the app configuration', async () => {
+      configuration['EMAIL_FROM'] = 'shop@example.com';
+      const graph = plainGraph(acceptsAnything);
+
+      const result = await devPreflight(graph);
+
+      expect(result.plainVariableText).toEqual({ EMAIL_FROM: 'shop@example.com' });
+      const payload = devPayload(transported(result.payload));
+      expect([...payload.platformVariableVersions.keys()]).toEqual(['EMAIL_FROM']);
+      expect([...payload.absentVariables]).toEqual([]);
+      expect(documentOf(graph, 'shop.mail', transported(result.payload))).toEqual({
+        from: { $platform: { name: 'EMAIL_FROM' } },
+      });
+      expect(JSON.stringify(result.payload)).not.toContain('shop@example.com');
+    });
+
+    test('a plain node no service reads is not read from the app configuration', async () => {
+      configuration['UNREAD_FROM'] = { not: 'text' };
+      const graph = Load(
+        appRoot('shop', ({ provision }) => {
+          provision(variable({ name: 'UNREAD_FROM' }));
+        }),
+      );
+
+      expect((await devPreflight(graph)).plainVariableText).toEqual({});
+    });
+
+    test('an unset optional input field is left out of the input document', async () => {
+      const graph = plainGraph(acceptsAnything);
+
+      const result = await devPreflight(graph);
+
+      expect(result.plainVariableText).toEqual({});
+      expect([...devPayload(transported(result.payload)).absentVariables]).toEqual(['EMAIL_FROM']);
+      expect(documentOf(graph, 'shop.mail', transported(result.payload))).toEqual({});
+    });
+
+    test('a required unset input field stops dev, naming the variable, the service and the field', async () => {
+      configuration['EMAIL_FROM'] = '';
+
+      const message = await preflightError(plainGraph(requiresOneOf('from')));
+
+      expect(message).toContain(
+        '1 platform variable a service needs has no value:\n  - EMAIL_FROM  (read by service "shop.mail", field "from")',
+      );
+    });
+
+    test('a value that is not text stops dev before any service starts, naming the variable, the node and its reader', async () => {
+      configuration['EMAIL_FROM'] = 42;
+
+      expect(await preflightError(plainGraph(acceptsAnything))).toBe(
+        'The `config` adapters return a number for "EMAIL_FROM", not text. prisma dev cannot start, because the platform variable "shop.emailFrom", which service "shop.mail" reads, takes text. Make the adapter return a string.',
+      );
+    });
+
+    test('the not-text message names every service that reads the node, each once', async () => {
+      configuration['SMTP_PORT'] = 25;
+      const graph = Load(
+        appRoot('shop', ({ provision }) => {
+          const smtpPort = provision(variable({ name: 'SMTP_PORT' }));
+          provision(compute({ name: 'mail', deps: {}, input: acceptsAnything, build }), {
+            input: { port: smtpPort, again: smtpPort },
+          });
+          provision(compute({ name: 'digest', deps: {}, input: acceptsAnything, build }), {
+            input: { port: smtpPort },
+          });
+        }),
+      );
+
+      expect(await preflightError(graph)).toBe(
+        'The `config` adapters return a number for "SMTP_PORT", not text. prisma dev cannot start, because the platform variable "shop.smtpPort", which services "shop.mail" and "shop.digest" read, takes text. Make the adapter return a string.',
+      );
+    });
+
+    test("a changed value changes only its readers' trigger members", async () => {
+      configuration['API_TOKEN'] = 'tok_1';
+      const graph = Load(
+        appRoot('shop', ({ provision }) => {
+          const from = provision(variable({ name: 'EMAIL_FROM' }));
+          const token = provision(variable({ name: 'API_TOKEN' }));
+          provision(compute({ name: 'mail', deps: {}, input: acceptsAnything, build }), {
+            input: { from },
+          });
+          provision(compute({ name: 'web', deps: {}, input: acceptsAnything, build }), {
+            input: { token },
+          });
+        }),
+      );
+      const triggersFor = async (from: string) => {
+        configuration['EMAIL_FROM'] = from;
+        const childEnv = transported(await preflight(graph));
+        const { absentVariables, platformVariableVersion } = transportedPreflight(
+          () => undefined,
+          childEnv,
+        );
+        const membersOf = (address: string) => {
+          const node = graph.nodes.find((entry) => entry.id === address)?.node as ServiceNode;
+          const binding = graph.inputBindings.find((b) => b.serviceAddress === address)?.binding;
+          const row = serializeInput(node, address, binding, { absentVariables });
+          return Object.fromEntries(
+            (row?.markers ?? []).map(({ name }) => [
+              `${name}:updatedAt`,
+              platformVariableVersion(name),
+            ]),
+          );
+        };
+        return { mail: membersOf('shop.mail'), web: membersOf('shop.web') };
+      };
+
+      const first = await triggersFor('a@example.com');
+      const second = await triggersFor('b@example.com');
+
+      expect(Object.keys(first.mail)).toEqual(['EMAIL_FROM:updatedAt']);
+      expect(Object.keys(first.web)).toEqual(['API_TOKEN:updatedAt']);
+      expect(second.mail).not.toEqual(first.mail);
+      expect(second.web).toEqual(first.web);
+    });
   });
 });

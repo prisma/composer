@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { Load, type SecretSource } from '@prisma/composer';
-import { secretName } from '@prisma/composer-prisma-cloud';
+import { Load } from '@prisma/composer';
 import root from '../module.ts';
 
 /** The email service's recorded input binding, as the plain object it is. */
@@ -14,6 +13,12 @@ function serviceBindingOf(graph: ReturnType<typeof Load>): Record<string, unknow
   return binding as Record<string, unknown>;
 }
 
+function variableReadAt(graph: ReturnType<typeof Load>, reader: string, path: string): unknown {
+  const read = graph.valueReads.find((entry) => entry.reader === reader && entry.path === path);
+  const node = graph.nodes.find((entry) => entry.id === read?.resource)?.node;
+  return node?.kind === 'resource' ? node.props['name'] : undefined;
+}
+
 describe('email example root graph', () => {
   test("the root's input from the app configuration reaches the email service", () => {
     const graph = Load(root, {
@@ -22,7 +27,7 @@ describe('email example root graph', () => {
     const binding = serviceBindingOf(graph);
     expect(binding['deliveryMode']).toBe('none');
     expect(binding['from']).toBe('a@example.com');
-    expect(secretName(binding['deliveryCredential'] as SecretSource, 'deliveryCredential')).toBe(
+    expect(variableReadAt(graph, 'email-example.email.service', 'deliveryCredential')).toBe(
       'EMAIL_DELIVERY_CREDENTIAL',
     );
   });

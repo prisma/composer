@@ -25,7 +25,7 @@ type RunnerInput<I extends ServiceNode['inputSchema']> = I extends undefined
  * real work target through them, e.g.
  * `provision(cron({ schedule, runner }), { worker: worker.rpc })`. A runner
  * that declares an `input` schema takes its binding as `opts.input`, with
- * `envSecret(...)` leaves where the schema expects secrets. `opts.name` sets
+ * secret values where the schema expects secrets. `opts.name` sets
  * the module name (default `'cron'`). Exposes nothing.
  */
 export function cron<

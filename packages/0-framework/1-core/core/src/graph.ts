@@ -23,6 +23,7 @@ export type {
   PortEndpoint,
   RootInputField,
   SecretSourceUse,
+  ValueRead,
 } from './graph-types.ts';
 export { GraphCheckError, LoadError, RESOURCE_OUT_PORT } from './graph-types.ts';
 

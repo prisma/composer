@@ -551,7 +551,9 @@ describe('containerDescriptor().remove()', () => {
         await descriptor.remove(instance);
 
         expect(state.deleteProjectCalls).toEqual(['proj-1']);
-        expect(logSpy.mock.calls.join(' ')).toContain('Removed the Project');
+        expect(logSpy.mock.calls).toEqual([
+          ['Removed the Project (proj-1) and every variable set on it.'],
+        ]);
       });
     } finally {
       logSpy.mockRestore();

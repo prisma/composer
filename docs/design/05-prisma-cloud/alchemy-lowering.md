@@ -59,19 +59,7 @@ away: the platform self-heals a missing `DATABASE_URL` template on the first
 Compute deploy, wiring it from any ready database on the Project (default
 first, then oldest) — on a Composer Project, one of the app's own databases.
 
-So the framework claims the keys first. `application.provision` writes
-`DATABASE_URL` and `DATABASE_URL_POOLED` (production and preview class,
-project-level) with the placeholder value `"-"` via create-only calls
-(`lowering/src/database-url-claim.ts`). The platform's writes are also
-create-only, so whoever writes first wins permanently: on a fresh Project the
-claim lands first and the self-heal never fires; on a Project whose variables
-the platform already seeded, the claim gets a 409 and no-ops. The rows are
-plain platform variables, never Alchemy resources — nothing enters deploy
-state and upstream's `EnvironmentVariable` never owns them. Alongside the
-claim, the authoring-side ban holds: `param.ts` and `secret.ts` reject both
-names, so no Composer-declared row can carry one. Every database URL a
-service actually consumes is an explicit, per-service variable the pack's
-`serialize` writes under its own named key, inside the `COMPOSER_` namespace.
+So the framework claims the keys first. `application.provision` writes `DATABASE_URL` and `DATABASE_URL_POOLED` (production and preview class, project-level) with the placeholder value `"-"` via create-only calls (`lowering/src/database-url-claim.ts`). The platform's writes are also create-only, so whoever writes first wins permanently: on a fresh Project the claim lands first and the self-heal never fires; on a Project whose variables the platform already seeded, the claim gets a 409 and no-ops. The rows are plain variables on the platform, never Alchemy resources — nothing enters deploy state and upstream's `EnvironmentVariable` never owns them. Alongside the claim, the authoring-side ban holds: `variable()` and `variable.secret()` reject both names (`variable-name.ts`), so no platform variable the app declares can carry one. Every database URL a service actually consumes is an explicit, per-service variable the pack's `serialize` writes under its own named key, inside the `COMPOSER_` namespace.
 
 A service that reads `process.env.DATABASE_URL` behind the framework's back
 therefore reads the placeholder `"-"` and fails loudly — or, on a Project the

@@ -14,6 +14,7 @@
  * `dev` is credential-free: everything it starts runs on this machine.
  */
 import * as path from 'node:path';
+import { quotedList } from '@internal/foundation/errors';
 import type { ChildResult, EngineEvent } from '@prisma/cli-engine';
 import { defineSessionCommand, flag } from '@prisma/cli-engine';
 import { ok } from '@prisma/cli-engine/protocol';
@@ -25,6 +26,26 @@ import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
 
 const STOP_STEP = "Stopping the app's services — emulators and data stay up";
+
+function valueReadsChangedText(
+  change: Extract<DevEvent, { readonly kind: 'value-reads-changed' }>,
+): string {
+  const clauses = [
+    ...(change.added.length > 0 ? [`reads of ${quotedList(change.added)} were added`] : []),
+    ...(change.removed.length > 0 ? [`reads of ${quotedList(change.removed)} were removed`] : []),
+    ...(change.changed.length > 0
+      ? [`${quotedList(change.changed)} ${change.changed.length === 1 ? 'was' : 'were'} changed`]
+      : []),
+  ];
+  const [first, second, third] = clauses;
+  const joined =
+    third !== undefined
+      ? `${first}, ${second}, and ${third}`
+      : second !== undefined
+        ? `${first} and ${second}`
+        : first;
+  return `The platform variables the app reads changed since dev started: ${joined}. Restart dev to apply them; rebuilds are paused until then.`;
+}
 
 /** Resolves when the run is asked to stop. */
 function stopRequested(signal: AbortSignal): Promise<void> {
@@ -159,6 +180,10 @@ function reportDevEvent(
           severity: 'warn',
           text: 'The values the config or secrets adapters return changed since dev started. Restart dev to apply them; rebuilds are paused until then.',
         });
+        return;
+
+      case 'value-reads-changed':
+        report({ kind: 'message', severity: 'warn', text: valueReadsChangedText(event) });
         return;
 
       case 'watch-error':

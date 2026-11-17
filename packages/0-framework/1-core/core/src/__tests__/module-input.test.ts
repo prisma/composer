@@ -383,11 +383,11 @@ describe('forwarding and the second pass', () => {
         provision(echoService(), { input: { marker } });
       },
     );
-    const key = secretSource({ name: 'EMAIL_KEY' }, { label: "envSecret('EMAIL_KEY')" });
+    const key = secretSource({ name: 'EMAIL_KEY' }, { label: 'the secret "EMAIL_KEY"' });
 
     expect(loadError(() => Load(shopWith(email, { key }))).message).toBe(
       'The resolve() function for input key "marker" of service "shop.email.echo" lists ' +
-        `input.key of module "shop.email", whose real value is envSecret('EMAIL_KEY'), a value ` +
+        `input.key of module "shop.email", whose real value is the secret "EMAIL_KEY", a value ` +
         'known only at boot. A resolve() dependency must be a deploy-time value. A secret has ' +
         'no deploy-time value: pass input.key on into a binding, and read it in the service.',
     );
@@ -497,7 +497,7 @@ describe('errors', () => {
 
     expect(loadError(() => Load(shopWith(email, { key: new SecretBox('x') }))).message).toBe(
       'input key "key" of module "shop.email" is bound to a SecretString. A secret\'s value ' +
-        "never appears in the code; bind envSecret('NAME'), or pass on an input field typed " +
+        'never appears in the code; bind a secret source, or pass on an input field typed ' +
         'secretString().',
     );
   });

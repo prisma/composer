@@ -461,7 +461,7 @@ describe('step events', () => {
             readers: [{ kind: 'field', service: 'shop.email', path: 'apiKey' }],
             commands: [
               "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview",
-              "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview --branch 'pr-7'",
+              "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --branch 'pr-7'",
             ],
           },
         ],
@@ -505,7 +505,7 @@ describe('step events', () => {
       'Platform variables with no value:',
       '  - EMAIL_API_KEY  (read by service "shop.email", field "apiKey")',
       "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview",
-      "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview --branch 'pr-7'",
+      "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --branch 'pr-7'",
       '▸ record result',
       '✘ record result (850ms)',
       'console: https://console.ewr.prisma.build',

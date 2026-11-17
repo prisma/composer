@@ -1,11 +1,4 @@
 /**
- * Dev preflight (local-dev spec § 5, ADR-0041): the same name walk deploy's
- * preflight uses (`preflight-names.ts`), with dev's value-sourcing policy.
- * Every value comes from what the command read: secrets from the app secrets, env-sourced params from the app configuration. An unset or empty secret is left out of the
- * service's input; it is an error only when the service's schema rejects
- * its absence or an array position reads it. An unset or empty per-key env-sourced param takes its default
- * or is left out when optional; it is an error only when it is required.
- *
  * Control-plane only, runs in the CLI parent (no CliError import — see
  * container.ts). Reads no Management API — dev is credential-free.
  */
@@ -13,11 +6,12 @@
 import type { Graph, ServiceNode } from '@internal/core';
 import { inputManifest } from '@internal/core';
 import type {
+  DevPreflightResult,
   PlatformVariableReader,
   PreflightInput,
-  PreflightPayload,
 } from '@internal/core/config';
 import { DEV_DIR, devEnvironmentDir } from '@internal/core/config';
+import { quotedList } from '@internal/foundation/errors';
 import {
   movePreEnvironmentDevState,
   readOrCreateFingerprintKey,
@@ -26,14 +20,10 @@ import {
 import { configurationText } from '../configuration-text.ts';
 import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
 import { addReader, missingVariablesText } from '../missing-variables-text.ts';
-import { envParamBindings, envParamNotTextError, inputSecretNames } from '../preflight-names.ts';
+import { platformVariableNodes } from '../platform-variable.ts';
+import { inputVariableNames, type VariableName } from '../preflight-names.ts';
 import { checkPublicUrls, publicUrlStrategies } from '../public-url.ts';
-import {
-  checkRequirements,
-  type MissingVariables,
-  paramIsRequired,
-  requiredParam,
-} from '../required-variables.ts';
+import { checkRequirements, type MissingVariables } from '../required-variables.ts';
 
 const isSet = (value: string | undefined): value is string =>
   value !== undefined && value.length > 0;
@@ -42,7 +32,7 @@ function howToSet(environment: string): string {
   const encoded = encodeURIComponent(environment);
   return (
     'Set each missing variable where an adapter in prisma.config.ts reads it: the `secrets` list of ' +
-    'the `composer` section for a secret, the `config` list for an env-sourced param. ' +
+    'the `composer` section for a secret, the `config` list for a plain platform variable. ' +
     'environmentVariables() reads the shell you run `prisma dev` from; dotenv() reads .env, ' +
     `.env.local, .env.${encoded} and .env.${encoded}.local beside prisma.config.ts.`
   );
@@ -56,13 +46,48 @@ function serviceNodeAt(graph: Graph, address: string): ServiceNode {
   return found;
 }
 
+function plainVariableNotTextError(
+  name: string,
+  address: string,
+  readers: readonly string[],
+  kind: string,
+): Error {
+  const readBy =
+    readers.length === 1
+      ? `which service ${quotedList(readers)} reads`
+      : `which services ${quotedList(readers)} read`;
+  return new Error(
+    `The \`config\` adapters return ${kind} for "${name}", not text. prisma dev cannot start, because the platform variable "${address}", ${readBy}, takes text. Make the adapter return a string.`,
+  );
+}
+
+function plainVariableTexts(input: PreflightInput): Record<string, string> {
+  const texts: Record<string, string> = {};
+  for (const node of platformVariableNodes(input.graph)) {
+    if (node.secret) continue;
+    const readers = [
+      ...new Set(
+        input.graph.valueReads
+          .filter((read) => read.resource === node.address)
+          .map((read) => read.reader),
+      ),
+    ];
+    if (readers.length === 0) continue;
+    const text = configurationText(input.configuration, node.name, (kind) =>
+      plainVariableNotTextError(node.name, node.address, readers, kind),
+    );
+    if (isSet(text)) texts[node.name] = text;
+  }
+  return texts;
+}
+
 /** HMAC-SHA256 under a local random key, so the fingerprints in Alchemy state cannot be checked against guessed values without the key file. */
 async function fingerprint(key: CryptoKey, value: string): Promise<string> {
   const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export async function runDevPreflight(input: PreflightInput): Promise<PreflightPayload> {
+export async function runDevPreflight(input: PreflightInput): Promise<DevPreflightResult> {
   checkPublicUrls(input.graph);
   for (const { address, strategy } of publicUrlStrategies(input.graph)) {
     if (strategy.strategy === 'hostname') {
@@ -77,27 +102,30 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
   const devDir = `${process.cwd()}/${devEnvironmentDir(input.environment)}`;
   await removeRetiredSecretsFile(`${process.cwd()}/${DEV_DIR}`);
   await removeRetiredSecretsFile(devDir);
-  const env = input.configuration;
-  const secretValue = (name: string): string | undefined => input.secrets[name];
+  const plainVariableText = plainVariableTexts(input);
+  const variableValue = (variable: VariableName): string | undefined =>
+    variable.secret ? input.secrets[variable.name] : plainVariableText[variable.name];
 
-  const absentSecrets = new Set<string>();
-  const secretNames = new Set<string>();
-  const pointed = new Map<string, string>();
+  const absentVariables = new Set<string>();
+  const values = new Map<string, string>();
   const required: MissingVariables[] = [];
   const readers = new Map<string, PlatformVariableReader[]>();
   const invalidInputs: string[] = [];
   for (const { serviceAddress, binding } of inputManifest(input.graph)) {
-    const names = inputSecretNames(binding, serviceAddress);
-    const unset = names.filter((name) => !isSet(secretValue(name)));
-    for (const name of names) {
-      secretNames.add(name);
-      const value = secretValue(name);
-      if (isSet(value)) pointed.set(name, value);
-      else absentSecrets.add(name);
+    const variables = inputVariableNames(binding, serviceAddress);
+    const unset: string[] = [];
+    for (const variable of variables) {
+      const value = variableValue(variable);
+      if (isSet(value)) {
+        values.set(variable.name, value);
+      } else {
+        unset.push(variable.name);
+        absentVariables.add(variable.name);
+      }
     }
     if (unset.length === 0) continue;
     const node = serviceNodeAt(input.graph, serviceAddress);
-    const decided = checkRequirements(node, serviceAddress, binding, unset, env);
+    const decided = checkRequirements(node, serviceAddress, binding, unset);
     if (decided.kind === 'invalid') {
       invalidInputs.push(`invalid input for service "${serviceAddress}": ${decided.message}`);
       continue;
@@ -114,25 +142,6 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
     required.push(...decided.missing);
   }
 
-  for (const param of envParamBindings(input.graph)) {
-    const value = secretNames.has(param.name)
-      ? secretValue(param.name)
-      : configurationText(env, param.name, (kind) =>
-          envParamNotTextError(param.name, param.serviceAddress, kind),
-        );
-    if (isSet(value)) {
-      pointed.set(param.name, value);
-      continue;
-    }
-    if (!paramIsRequired(serviceNodeAt(input.graph, param.serviceAddress), param.param)) continue;
-    addReader(readers, param.name, {
-      kind: 'param',
-      service: param.serviceAddress,
-      param: param.param,
-    });
-    required.push(requiredParam(param));
-  }
-
   const missing = required.length > 0 ? [missingVariablesText(required, readers)] : [];
   const sections = [
     ...invalidInputs,
@@ -143,7 +152,9 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
     throw new Error(`prisma dev cannot start:\n\n${sections.join('\n\n')}`);
   }
 
-  if (absentSecrets.size === 0 && pointed.size === 0) return undefined;
+  if (absentVariables.size === 0 && values.size === 0) {
+    return { payload: undefined, plainVariableText };
+  }
   const key = await crypto.subtle.importKey(
     'raw',
     await readOrCreateFingerprintKey(devDir),
@@ -151,7 +162,14 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
     false,
     ['sign'],
   );
-  const pointerVersions: Record<string, string> = {};
-  for (const [name, value] of pointed) pointerVersions[name] = await fingerprint(key, value);
-  return serializeDevPreflightPayload({ absentSecrets: [...absentSecrets], pointerVersions });
+  const platformVariableVersions: Record<string, string> = {};
+  for (const [name, value] of values)
+    platformVariableVersions[name] = await fingerprint(key, value);
+  return {
+    payload: serializeDevPreflightPayload({
+      absentVariables: [...absentVariables],
+      platformVariableVersions,
+    }),
+    plainVariableText,
+  };
 }

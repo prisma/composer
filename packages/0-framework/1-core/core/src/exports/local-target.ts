@@ -10,6 +10,7 @@
 export {
   DEV_DIR,
   DEV_ENVIRONMENT_NAME_FILE,
+  type DevPreflightResult,
   devEnvironmentDir,
   type LocalNodeCondition,
   type LocalNodeLocation,

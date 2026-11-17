@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 /**
- * Verifies a DEPLOYED env-param example: resolves the echo service's URL via
+ * Verifies a DEPLOYED root-input example: resolves the echo service's URL via
  * the Management API (state is hosted, not local files), polls it until it
  * serves the expected greeting and environment (an older revision may still
  * serve for a while after deploy), and asserts three things about what arrived:
  *
- * - the greeting it serves is exactly the value the target environment's platform
- *   var carries (the param round trip),
+ * - the greeting it serves is exactly the value of ROOT_INPUT_GREETING the
+ *   deploy shell held (the root input field's round trip),
  * - the environment it serves is "deployed to <environment>", which Load
  *   computed from the environment's name, and
  * - GET /logo.svg serves the asset that sits beside the entry in the built
@@ -16,9 +16,9 @@
  * Before polling, it reads the run report `pnpm deploy` wrote and asserts the
  * public URL `site` is reported as a `public-url` entity whose URL is echo's.
  *
- *   EXPECTED_GREETING=… [ENV_PARAM_ENVIRONMENT=…] [ENV_PARAM_STACK_NAME=…] [ENV_PARAM_REPORT=…] bun scripts/smoke.ts
+ *   ROOT_INPUT_GREETING=… [ROOT_INPUT_ENVIRONMENT=…] [ROOT_INPUT_STACK_NAME=…] [ROOT_INPUT_REPORT=…] bun scripts/smoke.ts
  *
- * ENV_PARAM_ENVIRONMENT defaults to production, the Project's default Branch;
+ * ROOT_INPUT_ENVIRONMENT defaults to production, the Project's default Branch;
  * any other name resolves the Branch with that gitName and its app.
  * Requires PRISMA_SERVICE_TOKEN (run via `pnpm smoke:deployed`, which
  * sources the deploy env file).
@@ -31,14 +31,14 @@ const token = process.env['PRISMA_SERVICE_TOKEN'];
 if (token === undefined || token === '') {
   throw new Error('PRISMA_SERVICE_TOKEN is required to resolve the deployed URL');
 }
-const expected = process.env['EXPECTED_GREETING'];
+const expected = process.env['ROOT_INPUT_GREETING'];
 if (expected === undefined || expected === '') {
   throw new Error(
-    'EXPECTED_GREETING must carry the greeting the deployed environment should serve',
+    'ROOT_INPUT_GREETING must hold the greeting the deploy shell held, which the deployed environment should serve',
   );
 }
-const stack = process.env['ENV_PARAM_STACK_NAME'] ?? 'env-param-example';
-const environment = process.env['ENV_PARAM_ENVIRONMENT'] || 'production';
+const stack = process.env['ROOT_INPUT_STACK_NAME'] ?? 'root-input-example';
+const environment = process.env['ROOT_INPUT_ENVIRONMENT'] || 'production';
 
 async function get(path: string): Promise<unknown> {
   const res = await fetch(`${api}${path}`, { headers: { authorization: `Bearer ${token}` } });
@@ -96,7 +96,7 @@ if (typeof domain !== 'string' || domain === '')
 const url = domain.startsWith('http') ? domain : `https://${domain}/`;
 console.log(`echo URL (${environment}): ${url}`);
 
-const reportPath = process.env['ENV_PARAM_REPORT'] || '.prisma/deploy-report.json';
+const reportPath = process.env['ROOT_INPUT_REPORT'] || '.prisma/deploy-report.json';
 const report = blindCast<
   {
     outcome?: string;
@@ -134,7 +134,7 @@ if (new URL(siteUrls[0]).origin !== new URL(url).origin) {
 console.log(`ok - ${siteAddress} is a public-url entity at echo's URL ${siteUrls[0]}`);
 
 /** The marker inside src/assets/logo.svg — served only if the asset shipped beside the entry. */
-const assetMarker = 'prisma-composer-env-param-asset';
+const assetMarker = 'prisma-composer-root-input-asset';
 const assetUrl = new URL('/logo.svg', url).href;
 
 // Poll: a version cold-starts after deploy (PRO-200).

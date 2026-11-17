@@ -45,7 +45,7 @@ describe('renderDevStackFile()', () => {
     expect(content).toContain('lower(app, config, {');
     expect(content).toContain('name: "app"');
     expect(content).toContain(
-      'providers: localTargetProviders(resolved, containers, devDir, file.appConfigurationRead.configurationKeyText, namedSecrets)',
+      'providers: localTargetProviders(resolved, containers, devDir, file.plainVariableText, namedSecrets)',
     );
     expect(content).toContain('state: devState()');
     expect(content).not.toContain('dev: true');
@@ -91,7 +91,7 @@ describe('renderDevStackFile() — the environment', () => {
     expect(content).toContain('  name: "app",\n  environment: "test",\n');
   });
 
-  test('reads the app configuration file and the named secrets the CLI handed over, passes what Load read to lower() directly after the environment, and the configuration key text and the named secrets to the local providers', () => {
+  test('reads the app configuration file and the named secrets the CLI handed over, passes what Load read to lower() directly after the environment, and the plain platform variable texts and the named secrets to the local providers', () => {
     const content = renderDevStackFile({
       entryPath: '/repo/app/module.ts',
       cwd: '/repo/app',
@@ -107,7 +107,7 @@ describe('renderDevStackFile() — the environment', () => {
       '  environment: "test",\n  appConfigurationRead: file.appConfigurationRead,\n  firstProcessNodeAddresses: file.nodeAddresses,',
     );
     expect(content).toContain(
-      '  providers: localTargetProviders(resolved, containers, devDir, file.appConfigurationRead.configurationKeyText, namedSecrets),',
+      '  providers: localTargetProviders(resolved, containers, devDir, file.plainVariableText, namedSecrets),',
     );
   });
 

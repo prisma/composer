@@ -17,9 +17,7 @@ import { computeClient } from '@internal/dev-emulators';
 import {
   collectPlatformMarkers,
   composerKey,
-  decodeParamPointer,
   INPUT_KEY_NAME,
-  isParamPointerRow,
   ownKeyPrefix,
 } from '@internal/input-document';
 import * as Provider from 'alchemy/Provider';
@@ -99,24 +97,19 @@ export function scopedEnvRows(
   return scoped;
 }
 
-export function pointedVariables(
+export function platformVariables(
   rows: Readonly<Record<string, string>>,
   address: string,
-): { readonly params: ReadonlySet<string>; readonly secrets: ReadonlySet<string> } {
-  const ownPrefix = ownKeyPrefix(address);
-  const params = new Set<string>();
+): { readonly plain: ReadonlySet<string>; readonly secrets: ReadonlySet<string> } {
+  const plain = new Set<string>();
   const secrets = new Set<string>();
-  for (const [key, value] of Object.entries(rows)) {
-    if (!key.startsWith(ownPrefix)) continue;
-    if (isParamPointerRow(value)) {
-      params.add(decodeParamPointer(value));
-    } else if (key === `${ownPrefix}${INPUT_KEY_NAME}`) {
-      for (const marker of collectPlatformMarkers(JSON.parse(value))) {
-        (marker.secret ? secrets : params).add(marker.name);
-      }
+  const document = rows[`${ownKeyPrefix(address)}${INPUT_KEY_NAME}`];
+  if (document !== undefined) {
+    for (const marker of collectPlatformMarkers(JSON.parse(document))) {
+      (marker.secret ? secrets : plain).add(marker.name);
     }
   }
-  return { params, secrets };
+  return { plain, secrets };
 }
 
 function manifestMissingAddressError(): Error {
@@ -170,11 +163,8 @@ export function readComputeManifest(artifactDir: string): {
 }
 
 /**
- * The environment a service's deployment runs with: its own rows from
- * `env.json` (`scopedEnvRows`), `COMPOSER_<ADDRESS>_PORT`, the current values
- * of the variables its rows point at, and `PATH` and `HOME` from the shell.
- * The `Deployment` provider puts it with an artifact; a dev server is given it
- * too (ADR-0056).
+ * A deployment's environment: its own rows, its port, the platform variables its input document names, and `PATH` and `HOME`.
+ * A dev server is given the same (ADR-0056).
  */
 export async function materializeEnv(
   devDir: string,
@@ -186,13 +176,13 @@ export async function materializeEnv(
   const rows = await envStore(devDir).read();
   const env: Record<string, string> = scopedEnvRows(rows, address);
   env[composerKey(address, 'PORT')] = JSON.stringify(port);
-  const pointed = pointedVariables(rows, address);
+  const named = platformVariables(rows, address);
   const setIfText = (name: string, value: unknown): void => {
     if (typeof value === 'string' && value.length > 0) env[name] = value;
   };
-  for (const name of pointed.secrets) setIfText(name, secrets[name]);
-  for (const name of pointed.params) {
-    if (!pointed.secrets.has(name)) setIfText(name, configuration[name]);
+  for (const name of named.secrets) setIfText(name, secrets[name]);
+  for (const name of named.plain) {
+    if (!named.secrets.has(name)) setIfText(name, configuration[name]);
   }
   if (process.env['PATH'] !== undefined) env['PATH'] = process.env['PATH'];
   if (process.env['HOME'] !== undefined) env['HOME'] = process.env['HOME'];
@@ -338,7 +328,7 @@ export function LocalDeploymentProvider(
             input.devDir,
             address,
             instance.port,
-            input.configurationKeyText,
+            input.plainVariableText,
             input.namedSecrets,
           );
           try {

@@ -49,20 +49,6 @@ test('each service gets the current values of only the variables its own rows po
   expect(billing['UNRELATED_SECRET']).toBeUndefined();
 });
 
-test('a param pointer row gives the service the current value of the variable it names', async () => {
-  await writeRows({ COMPOSER_WEB_ORIGIN: '@composer-param-pointer:APP_ORIGIN' });
-
-  const web = await materializeEnv(
-    devDir,
-    'web',
-    4000,
-    { APP_ORIGIN: 'http://localhost:3000' },
-    {},
-  );
-
-  expect(web['APP_ORIGIN']).toBe('http://localhost:3000');
-});
-
 test('a value changed in the app secrets reaches the service on the next materialization', async () => {
   await writeRows({
     COMPOSER_BILLING_INPUT: JSON.stringify({
@@ -82,7 +68,7 @@ test('a value changed in the app secrets reaches the service on the next materia
   expect(billing['STRIPE_SECRET_KEY']).toBe('sk_test_new');
 });
 
-test('a pointed variable that is unset or empty is not given to the service', async () => {
+test('a platform variable that is unset or empty is not given to the service', async () => {
   await writeRows({
     COMPOSER_BILLING_INPUT: JSON.stringify({
       stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
@@ -96,12 +82,12 @@ test('a pointed variable that is unset or empty is not given to the service', as
   expect('MAILER_KEY' in billing).toBe(false);
 });
 
-test('a local deployment takes its secrets from the app secrets and its param pointers from the app configuration, never the shell', async () => {
+test('a local deployment takes its secrets from the app secrets and its plain platform variables from their texts, never the shell', async () => {
   await writeRows({
     COMPOSER_BILLING_INPUT: JSON.stringify({
       stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+      origin: { $platform: { name: 'APP_ORIGIN' } },
     }),
-    COMPOSER_BILLING_ORIGIN: '@composer-param-pointer:APP_ORIGIN',
   });
   process.env['STRIPE_SECRET_KEY'] = 'shell';
   process.env['APP_ORIGIN'] = 'shell';
@@ -118,8 +104,10 @@ test('a local deployment takes its secrets from the app secrets and its param po
   expect(billing['APP_ORIGIN']).toBe('https://pool.example');
 });
 
-test('a param pointer whose app configuration value is not text is left out', async () => {
-  await writeRows({ COMPOSER_WEB_ORIGIN: '@composer-param-pointer:APP_ORIGIN' });
+test('a plain platform variable whose value is not text is left out', async () => {
+  await writeRows({
+    COMPOSER_WEB_INPUT: JSON.stringify({ origin: { $platform: { name: 'APP_ORIGIN' } } }),
+  });
 
   const web = await materializeEnv(devDir, 'web', 4000, { APP_ORIGIN: { host: 'x' } }, {});
 
