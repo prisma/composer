@@ -1,7 +1,6 @@
-// The app's own entrypoint (the build adapter's `entry`) — the pack-printed
-// bootstrap dynamically imports this AFTER main.run(address, boot) has
-// re-keyed the platform environment address-free, so service.input() below
-// reads it directly, with no address.
+// The app's own entrypoint (the build adapter's `entry`). The pack-printed
+// bootstrap imports it only after `run()` has stashed the service's values,
+// so service.input() below reads them with no address.
 //
 // The build emits this file into dist/server/ next to assets/, and the build
 // adapter's directory form ships that whole tree — so the asset is this

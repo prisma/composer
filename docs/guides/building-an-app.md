@@ -730,9 +730,10 @@ A field bound to a platform variable whose value is unset (or empty) resolves to
 ### What travels
 
 The deploy validates the resolved binding, applies the schema's defaults,
-and serializes the result into one document row, with each secret as a
+and serializes the result into one document, with each secret as a
 pointer naming the platform variable that holds the value — never the value
-itself:
+itself. The deploy writes the document into the service's artifact, not into
+an environment variable:
 
 ```json
 { "stripeEnabled": true, "stripeSecretKey": { "$platform": { "name": "STRIPE_SECRET_KEY", "secret": true } } }

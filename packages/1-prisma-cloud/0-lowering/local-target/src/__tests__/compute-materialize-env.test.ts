@@ -113,3 +113,63 @@ test('a plain platform variable whose value is not text is left out', async () =
 
   expect('APP_ORIGIN' in web).toBe(false);
 });
+
+test("a service gets the variables its artifact's input document names, and not the document itself", async () => {
+  await writeRows({ COMPOSER_WEB_PORT: '3000' });
+  const inputDocument = {
+    stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+    origin: { $platform: { name: 'APP_ORIGIN' } },
+  };
+
+  const web = await materializeEnv(
+    devDir,
+    'web',
+    4000,
+    { APP_ORIGIN: 'http://localhost:3000', UNREAD_NAME: 'not read' },
+    { STRIPE_SECRET_KEY: 'sk_test_1', MAILER_KEY: 'mk_1' },
+    { inputDocument },
+  );
+
+  expect(web['STRIPE_SECRET_KEY']).toBe('sk_test_1');
+  expect(web['APP_ORIGIN']).toBe('http://localhost:3000');
+  expect('MAILER_KEY' in web).toBe(false);
+  expect('UNREAD_NAME' in web).toBe(false);
+  expect('COMPOSER_WEB_INPUT' in web).toBe(false);
+});
+
+test('a stale input document in env.json gives the service nothing when its artifact carries one', async () => {
+  await writeRows({
+    COMPOSER_WEB_INPUT: JSON.stringify({
+      old: { $platform: { name: 'OLD_SECRET', secret: true } },
+    }),
+  });
+  const inputDocument = {
+    stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+  };
+
+  const web = await materializeEnv(
+    devDir,
+    'web',
+    4000,
+    {},
+    { OLD_SECRET: 'sk_old', STRIPE_SECRET_KEY: 'sk_test_1' },
+    { inputDocument },
+  );
+
+  expect('OLD_SECRET' in web).toBe(false);
+  expect(web['STRIPE_SECRET_KEY']).toBe('sk_test_1');
+  expect('COMPOSER_WEB_INPUT' in web).toBe(false);
+});
+
+test('a stale input document in env.json gives the service nothing when its artifact carries none', async () => {
+  await writeRows({
+    COMPOSER_WEB_INPUT: JSON.stringify({
+      old: { $platform: { name: 'OLD_SECRET', secret: true } },
+    }),
+  });
+
+  const web = await materializeEnv(devDir, 'web', 4000, {}, { OLD_SECRET: 'sk_old' }, {});
+
+  expect('OLD_SECRET' in web).toBe(false);
+  expect('COMPOSER_WEB_INPUT' in web).toBe(false);
+});

@@ -66,7 +66,7 @@ export interface ProvisionerDescriptor {
 /**
  * The phased service SPI. `P` and `S` are the descriptor's OWN intra-node
  * handoff types — provision's product consumed by serialize/deploy, and
- * serialize's product consumed by deploy. Core threads them through without
+ * serialize's product consumed by package/deploy. Core threads them through without
  * inspection; only the descriptor that writes them reads them.
  *
  * Method syntax (not property-arrow) is required: the heterogeneous
@@ -90,9 +90,14 @@ export interface ServiceLowering<P = unknown, S = unknown> {
   /**
    * Prints the bootstrap and assembles the deployable artifact from the
    * app-built bundle. Must be byte-deterministic: an unchanged service noops
-   * on redeploy.
+   * on redeploy. `serialized` is this service's `serialize` product. It must
+   * not write a secret, or a value the deploy has not resolved, into the artifact.
    */
-  package(ctx: LowerContext, input: PackageInput): Effect.Effect<Artifact, unknown, unknown>;
+  package(
+    ctx: LowerContext,
+    input: PackageInput,
+    serialized: S,
+  ): Effect.Effect<Artifact, unknown, unknown>;
   /** Ships the packaged artifact into the provisioned thing and runs it. Returns the node's outputs for dependents, plus the entities it became on the deployment target. */
   deploy(
     ctx: LowerContext,
@@ -851,10 +856,11 @@ export function lowering(
       if (bundle === undefined) {
         return yield* Effect.fail(missingBundleError(id));
       }
-      const artifact = yield* descriptor.package(ctx, {
-        assembled: { dir: bundle.dir, entry: bundle.entry },
-        address: id,
-      });
+      const artifact = yield* descriptor.package(
+        ctx,
+        { assembled: { dir: bundle.dir, entry: bundle.entry }, address: id },
+        serialized,
+      );
       const result = yield* descriptor.deploy(ctx, provisionedNode, artifact, serialized);
       lowered.set(id, result.outputs);
       entries.push({ address: id, entities: result.entities });

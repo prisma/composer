@@ -2,7 +2,7 @@
  * The `s3-store` node kind's descriptor (§ 5): compute's service lowering with
  * EXTENDED deploy outputs. provision/package are compute's unchanged; serialize
  * and deploy delegate to compute's then surface the four consumer-visible
- * `S3Config` fields — `bucket` from the service's own param, `accessKeyId` /
+ * `S3Config` fields — `bucket` from the service's input document, `accessKeyId` /
  * `secretAccessKey` from the wired `s3-credentials` resource (reachable in the
  * built Config as `inputs.credentials`). A consumer wiring the `store` port into
  * an `s3()` slot resolves those fields by NAME from these outputs.
@@ -39,9 +39,10 @@ export function s3StoreDescriptor(o: () => ResolvedCloudOptions): NodeDescriptor
     provision: base.provision,
     package: base.package,
 
-    // compute's env-var writes stay unchanged (the storage service reads db,
-    // credentials, and bucket through them); we additionally surface the four
-    // consumer-facing fields so deploy can hand them to consumers.
+    // compute's serialize is unchanged: the storage service reads `db` and
+    // `credentials` from variables, and `bucket` from its input document, which
+    // travels in the artifact. We additionally surface the four consumer-facing
+    // fields so deploy can hand them to consumers.
     serialize: (ctx, provisioned, config) =>
       Effect.gen(function* () {
         const serialized = yield* base.serialize(ctx, provisioned, config);
