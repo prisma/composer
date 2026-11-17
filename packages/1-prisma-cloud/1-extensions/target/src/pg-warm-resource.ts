@@ -15,6 +15,8 @@
  * and tests, never by `index.ts` / the `./orm` authoring entry — the
  * isolation invariants hold.
  */
+
+import { providerError } from '@internal/lowering';
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
@@ -76,7 +78,7 @@ export const pgWarmProviderService: Provider.ProviderService<PgWarm> = {
       try: () => warmDatabase(news.url),
       // Exhausted retries mean the DB is unreachable at deploy-end — fail the
       // deploy loudly rather than ship a service that can't reach its database.
-      catch: (error) => error,
+      catch: providerError,
     }).pipe(Effect.map(() => ({ url: news.url }))),
   delete: () => Effect.void,
 };

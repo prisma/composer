@@ -52,7 +52,10 @@
   "pnpm": {
     "overrides": {
       "@prisma/composer-cli": "workspace:*",
-      "@prisma/cli-engine": "0.10.0"
+      "@prisma/cli-engine": "0.10.0",
+      "alchemy": "file:wip/alchemy-tarballs/alchemy-2.0.0-beta.87.tgz",
+      "@alchemy.run/prisma": "file:wip/alchemy-tarballs/alchemy.run-prisma-2.0.0-beta.87.tgz",
+      "@alchemy.run/node-utils": "file:wip/alchemy-tarballs/alchemy.run-node-utils-2.0.0-beta.87.tgz"
     },
     "onlyBuiltDependencies": [
       "prisma",

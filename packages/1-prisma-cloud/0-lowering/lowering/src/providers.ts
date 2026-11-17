@@ -31,12 +31,14 @@ const prismaEnvironment = () =>
     Effect.gen(function* () {
       const { token } = yield* PrismaCredentials;
       const baseUrl = yield* managementApiBaseUrl();
-      return {
+      // Upstream runs this Effect on every Management API request; the
+      // service token Composer reads does not change during a deploy.
+      return Effect.succeed({
         type: 'serviceToken' as const,
         serviceToken: token,
         source: { type: 'env' as const, details: 'PRISMA_SERVICE_TOKEN' },
         baseUrl,
-      };
+      });
     }),
   );
 
@@ -62,7 +64,7 @@ const prismaManagementHttpLayer = Layer.effect(
 
 /**
  * Upstream alchemy's live providers for the postgres family (Project,
- * Database, Connection), the compute family (App, Deployment,
+ * Database, Connection), the compute family (ComputeService, ComputeVersion,
  * EnvironmentVariable, CustomDomain), and the bucket family (Bucket, BucketAccessKey),
  * over upstream's management clients, authenticated by
  * {@link prismaEnvironment}. The generated Management API operations read
@@ -78,8 +80,8 @@ const upstreamPrismaProviders = () =>
     Prisma.ProjectProvider(),
     Prisma.DatabaseProvider(),
     Prisma.ConnectionProvider(),
-    Prisma.AppProvider(),
-    Prisma.DeploymentProvider(),
+    Prisma.ComputeServiceProvider(),
+    Prisma.ComputeVersionProvider(),
     Prisma.EnvironmentVariableProvider(),
     Prisma.BucketProvider(),
     Prisma.BucketAccessKeyProvider(),
@@ -97,7 +99,7 @@ const upstreamPrismaProviders = () =>
  *
  * The deploy-source transport is the bundle's ambient `HttpClient`: upstream's
  * generated Management API operations resolve it when they run, and its
- * `Deployment` artifact upload needs node's explicit Content-Length (fetch
+ * `ComputeVersion` artifact upload needs node's explicit Content-Length (fetch
  * streams chunked). Upstream's providers run their operations against this
  * bundle's output, so their credentials are merged into it. Invariant: no
  * Composer provider may resolve the ambient `HttpClient` — each carries its
@@ -110,8 +112,8 @@ export const providers = () =>
       Prisma.Project,
       Prisma.Database,
       Prisma.Connection,
-      Prisma.App,
-      Prisma.Deployment,
+      Prisma.ComputeService,
+      Prisma.ComputeVersion,
       Prisma.EnvironmentVariable,
       Prisma.Bucket,
       Prisma.BucketAccessKey,
