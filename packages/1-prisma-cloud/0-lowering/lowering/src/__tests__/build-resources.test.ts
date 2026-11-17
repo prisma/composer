@@ -42,7 +42,7 @@ describe('reportableResource', () => {
       ['Prisma.Database', 'databaseId', 'database'],
       ['Prisma.Connection', 'connectionId', 'service_key'],
       ['Prisma.Bucket', 'bucketId', 'bucket'],
-      ['Prisma.App', 'appId', 'app'],
+      ['Prisma.ComputeService', 'serviceId', 'app'],
       ['Prisma.EnvironmentVariable', 'environmentVariableId', 'config_variable'],
     ];
 
@@ -55,16 +55,16 @@ describe('reportableResource', () => {
     }
   });
 
-  test('a deployment keys its platform id as deploymentId, not id', () => {
+  test('a version keys its platform id as versionId, not id', () => {
     expect(
       reportableResource(
-        state({ resourceType: 'Prisma.Deployment', attr: { deploymentId: 'dep_1' } }),
+        state({ resourceType: 'Prisma.ComputeVersion', attr: { versionId: 'cpv_1' } }),
       ),
-    ).toEqual({ type: 'deployment', id: 'dep_1', action: 'created' });
+    ).toEqual({ type: 'deployment', id: 'cpv_1', action: 'created' });
 
-    // An `id` on a deployment is some other identifier and must not be reported as one.
+    // An `id` on a version is some other identifier and must not be reported as one.
     expect(
-      reportableResource(state({ resourceType: 'Prisma.Deployment', attr: { id: 'wrong' } })),
+      reportableResource(state({ resourceType: 'Prisma.ComputeVersion', attr: { id: 'wrong' } })),
     ).toBeUndefined();
   });
 

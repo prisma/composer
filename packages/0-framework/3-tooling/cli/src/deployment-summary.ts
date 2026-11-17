@@ -130,6 +130,10 @@ const ALCHEMY_ADOPT_ADVICE: readonly (readonly [RegExp, string])[] = [
     'Something other than this app holds it. Remove that resource, then deploy again.',
   ],
   [
+    /; rerun with adoption enabled if it is the intended [\w ]+, or remove it first\./g,
+    '. Remove that resource, then deploy again.',
+  ],
+  [
     /; rerun with adoption enabled if it is the intended [\w ]+\./g,
     '. Remove that resource, then deploy again.',
   ],
