@@ -49,12 +49,18 @@ const urlCheckOf = (node: unknown): { readonly verifyUrl?: false } =>
 
 /**
  * `value`, resolved only once the service serves its attached version. A
- * custom domain is bound to the live version, so a resource that reads the
- * service's id or URL from deploy's outputs must wait for the promotion, as it
- * waited for the self-promoting deployment before. The service's
+ * custom domain is bound to the live version, so the custom domain, which
+ * reads the service's id from deploy's outputs, must wait for the promotion,
+ * as it waited for the self-promoting deployment before. The service's
  * `activeVersionId` is re-read after every promotion, which is what carries
  * the edge; `value` is inside the combined expression as well as returned from
  * it, because Alchemy's dependency walker never looks inside the function.
+ *
+ * `url` is not read this way. A consumer's environment row holds it, and its
+ * version's `triggers` hold the row's value: a value still unresolved while
+ * planning replaces the version, so a URL that waited for every promotion
+ * would make a new version of each consumer on every deploy. The stable
+ * domain is known from the service's create and does not change.
  */
 const onceServing = <A>(
   service: Prisma.ComputeService,
@@ -446,7 +452,7 @@ export function computeDescriptor(
         // endpoint, and this descriptor is the only party that knows that.
         // Both fields are still unresolved Output references at this point —
         // apply resolves them before the report's runner sees them.
-        const url = onceServing(provisioned.service, provisioned.service.serviceEndpointDomain);
+        const url = provisioned.service.serviceEndpointDomain;
         return {
           outputs: {
             url,
