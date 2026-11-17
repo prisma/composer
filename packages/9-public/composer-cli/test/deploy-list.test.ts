@@ -83,15 +83,18 @@ const COMPOSER_CONFIG = {
   },
 };
 
+const HOST_GROUPS = {
+  deploy: { brief: 'Deploy the app.' },
+  dev: { brief: 'Run the app on this machine.' },
+  emulator: { brief: 'The local emulators on this machine.' },
+};
+
 function cliWith(api: FakeApi, requests: Request[] = []) {
   const family = createComposerFamily();
-  const command = family.commands['deploy list'];
-  const deploy = family.commands['deploy'];
-  if (command === undefined || deploy === undefined) throw new Error('no deploy list command');
   return createTestCli({
     commandFamilies: [family],
-    commands: { deploy, 'deploy list': command },
-    groups: { deploy: { brief: 'Deploy the app.' } },
+    commands: family.commands,
+    groups: HOST_GROUPS,
     config: { composer: COMPOSER_CONFIG },
     credential: {
       token: mintTestJwt({

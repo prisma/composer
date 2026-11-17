@@ -9,12 +9,13 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok } from '@internal/foundation/result';
+import type { NextAction } from '@prisma/cli-engine/protocol';
 import type { ScriptedChildProgram, TestCli } from '@prisma/cli-engine/testing';
 import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
 import { createOperationsDouble, type OperationsDouble } from '../../testing/operations-double.ts';
 import { createComposerFamily } from '../family.ts';
-import { commandAt } from './command-at.ts';
 import { validComposerSection } from './fixtures/composer-section.ts';
+import { mountAsHost } from './host-mount.ts';
 
 type Fixtures = Parameters<typeof createOperationsDouble>[0];
 
@@ -71,10 +72,7 @@ function composerCli(
   const family = createComposerFamily({ operations: double.operations });
   const cli = createTestCli({
     commandFamilies: [family],
-    // The two product verbs, at the root. `dev url` and `dev stop` mount
-    // beneath `dev`, which needs an engine that lets a command also be a
-    // group; their own tests mount them alone.
-    commands: { deploy: commandAt(family, 'deploy'), dev: commandAt(family, 'dev') },
+    ...mountAsHost(family),
     config: { composer: validComposerSection() },
     ...(spec.signedIn === false ? {} : { credential: activeCredential() }),
     ...(spec.spawnScript === undefined ? {} : { spawnScript: spec.spawnScript }),
@@ -165,9 +163,16 @@ describe('argument validation', () => {
     if (last?.kind !== 'result' || last.envelope.ok) throw new Error('expected an errored result');
     expect(last.envelope.error.code).toBe('CLI.COMMAND_MOVED');
     expect(last.envelope.error.summary).toBe('`--stage` on `deploy` has been replaced');
-    expect(last.envelope.nextActions).toEqual([
-      expect.objectContaining({ command: expect.stringContaining('deploy --environment <name>') }),
-    ]);
+    expect(last.envelope.error.why).toBe('A place the app runs is now called an environment.');
+    const nextActions: NextAction[] = [
+      {
+        kind: 'run-command',
+        label: 'Use the replacement',
+        command: 'prisma-test deploy --environment <name>',
+      },
+    ];
+    expect(last.envelope.nextActions).toEqual(nextActions);
+    expect(last.envelope.error.nextActions).toEqual(nextActions);
     expect(double.calls.deploy).toEqual([]);
   });
 

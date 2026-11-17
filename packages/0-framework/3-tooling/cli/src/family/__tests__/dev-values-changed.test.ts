@@ -5,8 +5,8 @@ import { createTestCli } from '@prisma/cli-engine/testing';
 import type { DevEvent } from '../../operations/dev.ts';
 import { createOperationsDouble } from '../../testing/operations-double.ts';
 import { createComposerFamily } from '../family.ts';
-import { commandAt } from './command-at.ts';
 import { validComposerSection } from './fixtures/composer-section.ts';
+import { mountAsHost } from './host-mount.ts';
 
 async function warningsFor(event: DevEvent, expected: string) {
   const double = createOperationsDouble({
@@ -45,7 +45,7 @@ describe('dev — changed adapter values', () => {
     const family = createComposerFamily({ operations: double.operations });
     const cli = createTestCli({
       commandFamilies: [family],
-      commands: { deploy: commandAt(family, 'deploy'), dev: commandAt(family, 'dev') },
+      ...mountAsHost(family),
       config: { composer: validComposerSection() },
     });
     const interrupt = new AbortController();

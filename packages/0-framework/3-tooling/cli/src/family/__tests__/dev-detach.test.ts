@@ -4,8 +4,8 @@ import type { EngineEvent } from '@prisma/cli-engine';
 import { createTestCli } from '@prisma/cli-engine/testing';
 import { createOperationsDouble } from '../../testing/operations-double.ts';
 import { createComposerFamily } from '../family.ts';
-import { commandAt } from './command-at.ts';
 import { validComposerSection } from './fixtures/composer-section.ts';
+import { mountAsHost } from './host-mount.ts';
 
 const AS_TTY = { isTty: { stdout: true, stderr: true } } as const;
 
@@ -13,7 +13,7 @@ function cliOver(double: ReturnType<typeof createOperationsDouble>) {
   const family = createComposerFamily({ operations: double.operations });
   return createTestCli({
     commandFamilies: [family],
-    commands: { deploy: commandAt(family, 'deploy'), dev: commandAt(family, 'dev') },
+    ...mountAsHost(family),
     config: { composer: validComposerSection() },
   });
 }

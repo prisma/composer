@@ -4,8 +4,8 @@ import type { EngineEvent } from '@prisma/cli-engine';
 import { createTestCli } from '@prisma/cli-engine/testing';
 import { createOperationsDouble } from '../../testing/operations-double.ts';
 import { createComposerFamily } from '../family.ts';
-import { commandAt } from './command-at.ts';
 import { validComposerSection } from './fixtures/composer-section.ts';
+import { mountAsHost } from './host-mount.ts';
 
 const WARNING =
   'shop.site names the hostname shop.com. prisma dev ignores it and serves the service on its local URL.';
@@ -19,7 +19,7 @@ describe('dev — target warnings', () => {
     const family = createComposerFamily({ operations: double.operations });
     const cli = createTestCli({
       commandFamilies: [family],
-      commands: { deploy: commandAt(family, 'deploy'), dev: commandAt(family, 'dev') },
+      ...mountAsHost(family),
       config: { composer: validComposerSection() },
     });
     const interrupt = new AbortController();
