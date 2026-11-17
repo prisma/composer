@@ -21,7 +21,13 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//, /^@prisma\/(?!orm-)/, /^arktype/, /^@standard-schema\//],
+    noExternal: [
+      /^@internal\//,
+      /^@cfworker\//,
+      /^@prisma\/(?!orm-)/,
+      /^arktype/,
+      /^@standard-schema\//,
+    ],
   },
   {
     // The /testing local stand-in (createPgStore + startStorageServer). Its own
@@ -36,6 +42,6 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
   },
 ]);

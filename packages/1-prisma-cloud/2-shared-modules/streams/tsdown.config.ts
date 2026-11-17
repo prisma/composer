@@ -31,6 +31,7 @@ export default defineConfig([
     external: [/^bun$/, /^bun:/],
     noExternal: [
       /^@internal\//,
+      /^@cfworker\//,
       /^@prisma\/(?!orm-)/,
       /^arktype/,
       /^@standard-schema\//,
@@ -50,6 +51,6 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//, /^@prisma\/(?!orm-)/, /^fastq/, /^reusify/],
+    noExternal: [/^@internal\//, /^@cfworker\//, /^@prisma\/(?!orm-)/, /^fastq/, /^reusify/],
   },
 ]);

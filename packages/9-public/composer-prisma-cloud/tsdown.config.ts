@@ -79,7 +79,7 @@ export default defineConfig([
     exports: false,
     clean: true,
     skipNodeModulesBundle: false,
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework],
   },
   {
@@ -89,7 +89,7 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework],
   },
   {
@@ -103,7 +103,7 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework],
   },
   {
@@ -130,7 +130,7 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework],
   },
   {
@@ -140,7 +140,7 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework],
   },
   {
@@ -156,7 +156,7 @@ export default defineConfig([
     skipNodeModulesBundle: false,
     // `bun` is a runtime builtin — keep it external in the re-emitted entrypoint.
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework],
   },
   {
@@ -169,7 +169,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework],
   },
   {
@@ -179,7 +179,7 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework],
   },
   {
@@ -198,7 +198,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework],
   },
   {
@@ -211,7 +211,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework],
   },
   {
@@ -221,7 +221,7 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework, externalizeEmailToSelf],
   },
   {
@@ -241,7 +241,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework],
   },
   {
@@ -254,7 +254,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework, externalizeEmailToSelf],
   },
   {
@@ -264,7 +264,7 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework],
   },
   {
@@ -282,7 +282,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework],
   },
   {
@@ -295,7 +295,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//],
+    noExternal: [/^@internal\//, /^@cfworker\//],
     plugins: [externalizeFramework],
   },
 ]);
