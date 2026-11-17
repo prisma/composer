@@ -21,15 +21,18 @@ and this into the service's artifact, in `compute.bootstrap.json`:
   "moduleEntrypoint": "./main.mjs",
   "appEntrypoint": "./server.mjs",
   "address": "shop.web",
-  "inputDocument": "{\"siteName\":\"Shop\",\"stripeKey\":{\"$platform\":{\"name\":\"STRIPE_SECRET_KEY\",\"secret\":true}}}"
+  "inputDocument": {
+    "siteName": "Shop",
+    "stripeKey": { "$platform": { "name": "STRIPE_SECRET_KEY", "secret": true } }
+  }
 }
 ```
 
-A deploy that kept every value in a variable would also have written `COMPOSER_SHOP_WEB_INPUT` as a fourth variable, holding the same text, and the artifact would have had no `inputDocument` field.
+A deploy that kept every value in a variable would also have written `COMPOSER_SHOP_WEB_INPUT` as a fourth variable, holding the same document as text, and the artifact would have had no `inputDocument` field.
 
 ## Decision
 
-On Prisma Cloud, the deploy writes a Compute service's input document into the service's artifact, in the `inputDocument` field of `compute.bootstrap.json`. It creates no variable for it. A service that declares no input has no `inputDocument` field. Every other value the service reads at boot stays a variable on the platform: `port`, each dependency's connection params, the provider params (the RPC accepted keys, the streams key, the service's origin) and each generated value.
+On Prisma Cloud, the deploy writes a Compute service's input document into the service's artifact, in the `inputDocument` field of `compute.bootstrap.json`, as nested JSON rather than as a string that holds JSON. It creates no variable for it. A service that declares no input has no `inputDocument` field. Every other value the service reads at boot stays a variable on the platform: `port`, each dependency's connection params, the provider params (the RPC accepted keys, the streams key, the service's origin) and each generated value.
 
 The artifact is the input document's only source. At boot the artifact's `bootstrap.js` passes the document to the service's `run(address, boot, inputDocument)`, which puts it in place of any `COMPOSER_<ADDRESS>_INPUT` variable in the environment it reads. Under `prisma dev`, the local target does not use such a variable for a service that runs its artifact. An app's author writes nothing differently: `service.input()`, `service.load()` and `service.port()` behave as before.
 
@@ -66,9 +69,9 @@ The deploy builds each service in four steps, `provision`, `serialize`, `package
 
 1. `serialize` builds the input document and creates no variable for it. The document is on its result, in `input`, where the deploy report already reads it.
 2. Core passes `serialize`'s result to `package`. Core does not look inside it.
-3. `package` passes the document's text to the artifact packer, which writes it into `compute.bootstrap.json` as `inputDocument`, unchanged, so the artifact stays byte-for-byte deterministic.
+3. `package` passes the document, as a JSON value, to the artifact packer, which writes it into `compute.bootstrap.json` as the nested value of `inputDocument`. The same document always gives the same bytes, so the artifact stays deterministic.
 4. The printed `bootstrap.js` is constant code that reads `compute.bootstrap.json` and calls `main.run(boot.address, () => import(boot.appEntrypoint), boot.inputDocument)`. No text from the app is ever placed inside the JavaScript.
-5. The Prisma Cloud service's `run(address, boot, inputDocument)` reads the service's environment with the document under the service's input key, `COMPOSER_<ADDRESS>_INPUT`. Then `stashRows` writes the address-free copies, `PORT` and `HOST` into the process environment, and `input()`, `load()`, `port()` and `origin()` read them there.
+5. The Prisma Cloud service's `run(address, boot, inputDocument)` turns the document into its JSON text and reads the service's environment with that text under the service's input key, `COMPOSER_<ADDRESS>_INPUT`. Then `stashRows` writes the address-free copies, `PORT` and `HOST` into the process environment, and `input()`, `load()`, `port()` and `origin()` read them there.
 
 The third parameter belongs to the Prisma Cloud service. Core's `RunnableServiceNode.run(address, boot)` has two, because how configuration travels to a service is the target's concern ([ADR-0019](ADR-0019-the-target-owns-config-serialization.md)). A test harness that calls `run(address, boot)` reads everything from the environment.
 
@@ -113,7 +116,7 @@ No value is written in two places, and nothing is migrated.
 
 - **Keep every value a variable.** Rejected: a variable's value is limited to 8 KB, and the input document grows with every field a service declares.
 - **A general map in `compute.bootstrap.json` of `COMPOSER_` keys to text, laid over the environment at boot.** Rejected. It accepts keys that nothing may put there, since every value other than the input document is a secret or is issued during the deploy, except `port`, which the Compute emulator has to be able to set under `prisma dev`. A later entry would silently shadow a variable with the same key. And the guarantee that no secret reaches the artifact would rest on which keys the descriptor happens to put in an open map, instead of on a field that can hold only the input document.
-- **Write the document into `compute.bootstrap.json` as parsed JSON instead of as its text.** Rejected: `run()`, `stashRows` and the local target read the input document as the text `serializeInput` writes. Keeping it as that text lets every reader use the code it already has, and keeps the artifact's bytes exactly what `serialize` produced.
+- **Write the document into `compute.bootstrap.json` as its JSON text, a string inside the JSON file.** Rejected. The text form was left over from the time the document lived in a variable, whose value can only be text. A nested value is readable in the file, and a reader gets the document with the one parse of the file instead of a second parse of the string. `run()` turns the value back into text in one place, for the environment that `input()` reads.
 - **Let the environment win over the artifact.** Rejected: the first deploy after the upgrade would read the previous deploy's document, which is still a variable on the branch when the new deployment is created.
 - **Write the document to both places for one release.** Rejected: it gives one value two sources that can disagree, for a rollback to a deployment made before the upgrade that is not supported anyway.
 

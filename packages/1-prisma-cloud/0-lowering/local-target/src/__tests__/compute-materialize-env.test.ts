@@ -116,10 +116,10 @@ test('a plain platform variable whose value is not text is left out', async () =
 
 test("a service gets the variables its artifact's input document names, and not the document itself", async () => {
   await writeRows({ COMPOSER_WEB_PORT: '3000' });
-  const inputDocument = JSON.stringify({
+  const inputDocument = {
     stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
     origin: { $platform: { name: 'APP_ORIGIN' } },
-  });
+  };
 
   const web = await materializeEnv(
     devDir,
@@ -143,9 +143,9 @@ test('a stale input document in env.json gives the service nothing when its arti
       old: { $platform: { name: 'OLD_SECRET', secret: true } },
     }),
   });
-  const inputDocument = JSON.stringify({
+  const inputDocument = {
     stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
-  });
+  };
 
   const web = await materializeEnv(
     devDir,

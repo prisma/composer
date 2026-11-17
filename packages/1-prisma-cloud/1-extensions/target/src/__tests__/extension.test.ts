@@ -855,7 +855,7 @@ describe("run(address, boot, inputDocument) — the artifact's input document ov
             loaded = app.load();
             environmentRow = process.env['COMPOSER_GREET_INPUT'];
           },
-          '{"greeting":"from the artifact"}',
+          { greeting: 'from the artifact' },
         ),
     );
     expect(seen).toEqual({ greeting: 'from the artifact' });
@@ -874,10 +874,38 @@ describe("run(address, boot, inputDocument) — the artifact's input document ov
           async () => {
             seen = app.input();
           },
-          '{"greeting":"from the artifact"}',
+          { greeting: 'from the artifact' },
         ),
     );
     expect(seen).toEqual({ greeting: 'from the artifact' });
+  });
+
+  test('a document given to run() as a JSON value reads the same through input() as its text in the environment', async () => {
+    const document = { greeting: 'hello', tags: ['a', 'b'], nested: { count: 2 } };
+    const schema = type({ greeting: 'string', tags: 'string[]', nested: { count: 'number' } });
+    const readThrough = async (
+      environmentRow: string | undefined,
+      givenToRun: unknown,
+    ): Promise<unknown> => {
+      const app = compute({ name: 'greet', deps: {}, input: schema, build });
+      let seen: unknown;
+      await withEnv({ ...stashedKeys, COMPOSER_GREET_INPUT: environmentRow }, () =>
+        app.run(
+          'greet',
+          async () => {
+            seen = app.input();
+          },
+          givenToRun,
+        ),
+      );
+      return seen;
+    };
+
+    const fromValue = await readThrough(undefined, document);
+    const fromText = await readThrough(JSON.stringify(document), undefined);
+
+    expect(fromValue).toEqual(document);
+    expect(fromValue).toEqual(fromText);
   });
 
   test('without a document, run() reads the input key from the environment', async () => {

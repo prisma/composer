@@ -83,8 +83,9 @@ export class ComputeService<
     return this.#resolved;
   }
 
-  async run(address: string, boot: () => Promise<unknown>, inputDocument?: string) {
-    const fromArtifact = inputDocument === undefined ? {} : { [inputKey(address)]: inputDocument };
+  async run(address: string, boot: () => Promise<unknown>, inputDocument?: unknown) {
+    const fromArtifact =
+      inputDocument === undefined ? {} : { [inputKey(address)]: JSON.stringify(inputDocument) };
     // The address-free stash, PORT and HOST — the same rows a dev server is
     // started with under `prisma dev` (ADR-0056), so the two cannot drift.
     Object.assign(process.env, stashRows(this, address, { ...process.env, ...fromArtifact }));

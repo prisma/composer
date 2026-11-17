@@ -32,8 +32,8 @@ export interface PackageComputeArtifactOptions {
   readonly address: string;
   /** `false` for a service that does not listen on its port — recorded in the manifest only then, so other artifacts are unchanged. */
   readonly listens?: boolean;
-  /** The service's input document, written into the bootstrap data and passed to `run()` at boot. Left out for a service that declares no input. */
-  readonly inputDocument?: string;
+  /** The service's input document as a JSON value, written into the bootstrap data as nested JSON and passed to `run()` at boot. Left out for a service that declares no input. */
+  readonly inputDocument?: unknown;
 }
 
 export interface ComputeArtifact {
@@ -420,11 +420,11 @@ function bootDataUnreadableError(artifactDir: string, reason: string): Error {
 }
 
 /**
- * The input document that `packageComputeArtifact` wrote into an unpacked
- * artifact's `compute.bootstrap.json`, or `undefined` for a service that
- * declares no input.
+ * The input document, as a JSON value, that `packageComputeArtifact` wrote
+ * into an unpacked artifact's `compute.bootstrap.json`, or `undefined` for a
+ * service that declares no input.
  */
-export function readComputeInputDocument(artifactDir: string): string | undefined {
+export function readComputeInputDocument(artifactDir: string): unknown {
   let text: string;
   try {
     text = fs.readFileSync(path.join(artifactDir, 'compute.bootstrap.json'), 'utf8');
@@ -446,9 +446,5 @@ export function readComputeInputDocument(artifactDir: string): string | undefine
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw bootDataUnreadableError(artifactDir, 'it is not a JSON object');
   }
-  if (!('inputDocument' in parsed)) return undefined;
-  if (typeof parsed.inputDocument !== 'string') {
-    throw bootDataUnreadableError(artifactDir, 'its inputDocument is not a string');
-  }
-  return parsed.inputDocument;
+  return 'inputDocument' in parsed ? parsed.inputDocument : undefined;
 }

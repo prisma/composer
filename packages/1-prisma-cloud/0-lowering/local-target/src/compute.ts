@@ -102,13 +102,18 @@ export function platformVariables(
   rows: Readonly<Record<string, string>>,
   address: string,
 ): { readonly plain: ReadonlySet<string>; readonly secrets: ReadonlySet<string> } {
+  const document = rows[`${ownKeyPrefix(address)}${INPUT_KEY_NAME}`];
+  return variablesNamedBy(document === undefined ? undefined : JSON.parse(document));
+}
+
+function variablesNamedBy(document: unknown): {
+  readonly plain: ReadonlySet<string>;
+  readonly secrets: ReadonlySet<string>;
+} {
   const plain = new Set<string>();
   const secrets = new Set<string>();
-  const document = rows[`${ownKeyPrefix(address)}${INPUT_KEY_NAME}`];
-  if (document !== undefined) {
-    for (const marker of collectPlatformMarkers(JSON.parse(document))) {
-      (marker.secret ? secrets : plain).add(marker.name);
-    }
+  for (const marker of collectPlatformMarkers(document)) {
+    (marker.secret ? secrets : plain).add(marker.name);
   }
   return { plain, secrets };
 }
@@ -175,17 +180,17 @@ export async function materializeEnv(
   port: number,
   configuration: Readonly<Record<string, unknown>>,
   secrets: Readonly<Record<string, string>>,
-  artifact?: { readonly inputDocument?: string | undefined },
+  artifact?: { readonly inputDocument?: unknown },
 ): Promise<Record<string, string>> {
   const rows = scopedEnvRows(await envStore(devDir).read(), address);
   const inputKey = composerKey(address, INPUT_KEY_NAME);
   if (artifact !== undefined) delete rows[inputKey];
   const env: Record<string, string> = { ...rows };
   env[composerKey(address, 'PORT')] = JSON.stringify(port);
-  const named = platformVariables(
-    artifact?.inputDocument === undefined ? rows : { ...rows, [inputKey]: artifact.inputDocument },
-    address,
-  );
+  const named =
+    artifact === undefined
+      ? platformVariables(rows, address)
+      : variablesNamedBy(artifact.inputDocument);
   const setIfText = (name: string, value: unknown): void => {
     if (typeof value === 'string' && value.length > 0) env[name] = value;
   };

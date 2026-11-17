@@ -70,7 +70,7 @@ function artifactFor(address: string, version: string): string {
 function envEchoArtifactFor(
   address: string,
   names: readonly string[],
-  inputDocument?: string,
+  inputDocument?: unknown,
 ): string {
   const bundleDir = fs.mkdtempSync(path.join(root, `bundle-${address}-`));
   fs.writeFileSync(
@@ -320,10 +320,10 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
     test('a plain marker takes its text from the plain platform variable texts, and a secret marker from the named secrets', async () => {
       const { directory, devDir } = projectDir('values');
       await ensureServiceInstances(container, devDir, [QUOTES]);
-      const inputDocument = JSON.stringify({
+      const inputDocument = {
         from: { $platform: { name: 'EMAIL_FROM' } },
         key: { $platform: { name: 'API_KEY', secret: true } },
-      });
+      };
       const names = ['EMAIL_FROM', 'API_KEY'];
       const provider = await Effect.runPromise(
         Deployment.Provider.pipe(
@@ -365,10 +365,10 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
           old: { $platform: { name: 'OLD_SECRET', secret: true } },
         }),
       }));
-      const inputDocument = JSON.stringify({
+      const inputDocument = {
         key: { $platform: { name: 'API_KEY', secret: true } },
         from: { $platform: { name: 'EMAIL_FROM' } },
-      });
+      };
       const names = [
         'API_KEY',
         'EMAIL_FROM',

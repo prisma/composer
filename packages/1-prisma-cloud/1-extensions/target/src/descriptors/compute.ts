@@ -345,7 +345,9 @@ export function computeDescriptor(
           appEntry: assembled.entry,
           address,
           ...(declaresNoListening(node) ? { listens: false } : {}),
-          ...(serialized.input !== undefined ? { inputDocument: serialized.input.value } : {}),
+          ...(serialized.input !== undefined
+            ? { inputDocument: JSON.parse(serialized.input.value) }
+            : {}),
         }),
       ),
 

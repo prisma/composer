@@ -2095,7 +2095,7 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
     );
     expect(pkg).toEqual({ path: '/tmp/shop.store.tar.gz', sha256: 'sha-shop.store' });
     expect(recorded.pkg[before]?.[0]).toMatchObject({
-      inputDocument: '{"bucket":"streams"}',
+      inputDocument: { bucket: 'streams' },
     });
   });
 });
@@ -3807,14 +3807,16 @@ describe("prismaCloud().nodes['platform-variable'] — a platform variable node"
     expect(packed).toContainEqual(
       expect.objectContaining({
         address: 'shop.mailer',
-        inputDocument:
-          '{"from":{"$platform":{"name":"EMAIL_FROM"}},"key":{"$platform":{"name":"EMAIL_KEY","secret":true}}}',
+        inputDocument: {
+          from: { $platform: { name: 'EMAIL_FROM' } },
+          key: { $platform: { name: 'EMAIL_KEY', secret: true } },
+        },
       }),
     );
     expect(packed).toContainEqual(
       expect.objectContaining({
         address: 'shop.web',
-        inputDocument: '{"greeting":{"$platform":{"name":"WEB_GREETING"}}}',
+        inputDocument: { greeting: { $platform: { name: 'WEB_GREETING' } } },
       }),
     );
     const keys = writes.map((props) => (props as { key: string }).key);
@@ -4035,9 +4037,11 @@ describe("a compute service's input document travels in its artifact", () => {
         fs.readFileSync(path.join(unpacked, 'compute.bootstrap.json'), 'utf8'),
       );
 
-      expect(boot.inputDocument).toBe(
-        '{"siteName":"Shop","stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}},"token":{"$generated":"COMPOSER_SHOP_WEB_TOKEN_GENERATED","redacted":true}}',
-      );
+      expect(boot.inputDocument).toEqual({
+        siteName: 'Shop',
+        stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+        token: { $generated: 'COMPOSER_SHOP_WEB_TOKEN_GENERATED', redacted: true },
+      });
       expect(pack('Shop').path).toBe(shop.path);
       expect(pack('Shop and more').path).not.toBe(shop.path);
     });

@@ -107,7 +107,7 @@ describe('packageComputeArtifact', () => {
     });
   });
 
-  test('writes the input document into the bootstrap data as the text it is given', () => {
+  test('writes the input document into the bootstrap data as nested JSON', () => {
     const bundleDir = makeBundle({ 'main.js': 'export default {};' });
 
     const artifact = packageComputeArtifact({
@@ -115,11 +115,14 @@ describe('packageComputeArtifact', () => {
       bundleDir,
       appEntry: 'server.js',
       address: 'shop.web',
-      inputDocument: '{"siteName":"Shop"}',
+      inputDocument: { siteName: 'Shop', greeting: { $platform: { name: 'WEB_GREETING' } } },
     });
     const { read } = readTar(fs.readFileSync(artifact.path));
 
-    expect(JSON.parse(read('compute.bootstrap.json')).inputDocument).toBe('{"siteName":"Shop"}');
+    expect(JSON.parse(read('compute.bootstrap.json')).inputDocument).toEqual({
+      siteName: 'Shop',
+      greeting: { $platform: { name: 'WEB_GREETING' } },
+    });
   });
 
   test('packing the same input document twice yields identical bytes', () => {
@@ -130,7 +133,7 @@ describe('packageComputeArtifact', () => {
         bundleDir,
         appEntry: 'server.js',
         address: 'shop.web',
-        inputDocument: '{"siteName":"Shop"}',
+        inputDocument: { siteName: 'Shop' },
       });
 
     const first = pack();
@@ -148,7 +151,7 @@ describe('packageComputeArtifact', () => {
         bundleDir,
         appEntry: 'server.js',
         address: 'shop.web',
-        inputDocument: JSON.stringify({ siteName }),
+        inputDocument: { siteName },
       });
 
     expect(pack('Shop').path).not.toBe(pack('Shop and more').path);
@@ -157,7 +160,7 @@ describe('packageComputeArtifact', () => {
   test('executes the generated data-backed bootstrap under Bun', () => {
     const bundleDir = makeBundle({
       'main.js':
-        'export default { run: async (address, boot, inputDocument) => { await boot(); console.log(`address:${address}`); console.log(`input:${inputDocument}`); } };',
+        'export default { run: async (address, boot, inputDocument) => { await boot(); console.log(`address:${address}`); console.log(`input:${JSON.stringify(inputDocument)}`); } };',
       'server.js': 'console.log("server:booted");',
     });
     const artifact = packageComputeArtifact({
@@ -165,7 +168,7 @@ describe('packageComputeArtifact', () => {
       bundleDir,
       appEntry: 'server.js',
       address: 'auth',
-      inputDocument: '{"greeting":"hi"}',
+      inputDocument: { greeting: 'hi' },
     });
     const archive = readTar(fs.readFileSync(artifact.path));
     const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-bootstrap-run-'));
@@ -188,7 +191,8 @@ describe('packageComputeArtifact', () => {
     const bundleEntry = `main\`; ${marker}; \`.js`;
     const appEntry = `server\`; ${marker}; \`.js`;
     const address = `auth\`); ${marker}; (\``;
-    const inputDocument = `"\`); ${marker}; (\`"`;
+    const hostile = `"\`); ${marker}; (\`"`;
+    const inputDocument = { [hostile]: hostile };
     const bundleDir = makeBundle({
       [bundleEntry]: 'export default {};',
       [appEntry]: 'export default {};',
@@ -580,13 +584,13 @@ describe('readComputeInputDocument', () => {
       bundleDir: makeBundle({ 'main.js': 'export default {};' }),
       appEntry: 'server.js',
       address: 'shop.web',
-      inputDocument: '{"siteName":"Shop"}',
+      inputDocument: { siteName: 'Shop' },
     });
     const { read } = readTar(fs.readFileSync(artifact.path));
 
-    expect(readComputeInputDocument(unpacked(read('compute.bootstrap.json')))).toBe(
-      '{"siteName":"Shop"}',
-    );
+    expect(readComputeInputDocument(unpacked(read('compute.bootstrap.json')))).toEqual({
+      siteName: 'Shop',
+    });
   });
 
   test('returns nothing for a service that declares no input', () => {
@@ -612,11 +616,5 @@ describe('readComputeInputDocument', () => {
     for (const bootData of ['[]', 'null']) {
       expect(() => readComputeInputDocument(unpacked(bootData))).toThrow(/it is not a JSON object/);
     }
-  });
-
-  test('fails for an input document that is not a string', () => {
-    expect(() =>
-      readComputeInputDocument(unpacked('{"inputDocument":{"siteName":"Shop"}}')),
-    ).toThrow(/its inputDocument is not a string/);
   });
 });

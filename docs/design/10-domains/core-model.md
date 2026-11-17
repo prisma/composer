@@ -590,7 +590,7 @@ interface ServiceLowering<P = unknown, S = unknown> {
   provision(ctx: LowerContext): Effect.Effect<P, unknown, unknown>
   // serialize: encode the typed Config core built into the service's runtime
   // environment (on Prisma Cloud: EnvironmentVariables on the project, and the
-  // input document's text for the artifact), keyed by the deployment address.
+  // input document for the artifact), keyed by the deployment address.
   // The pack owns the encoding; run()'s deserialize reverses it through the same
   // serializer, so writer and reader cannot drift. Leaf values are provisioning
   // refs → the env writes depend on the resources/producer (the ordering edges).
@@ -601,7 +601,7 @@ interface ServiceLowering<P = unknown, S = unknown> {
   // package: assemble the deployable artifact from the build adapter's normalized
   // bundle dir and `serialized`, and print the bootstrap. The envelope is target
   // vocabulary and the pack's business (Compute: bootstrap.js +
-  // compute.bootstrap.json with the address and the input document's text +
+  // compute.bootstrap.json with the address and the input document as nested JSON +
   // compute.manifest.json + tar.gz). MUST be byte-deterministic (fixed tar
   // mtimes/ordering): identical inputs yield an identical hash, so an unchanged
   // service noops on redeploy.
@@ -774,11 +774,11 @@ nodes are edges only and never lower. Then for each service:
    not strings.
 3. `serialize(config)` — the pack encodes that typed Config into the service's
    runtime environment (Prisma Cloud: one env write per leaf, keyed by the
-   pack's own naming from the address, value = the ref; the input document's
-   text is returned for the artifact instead). Never the platform default.
+   pack's own naming from the address, value = the ref; the input document
+   is returned for the artifact instead). Never the platform default.
 4. `package({ assembled, address }, serialized)` — the build adapter's assembler
    has produced the normalized bundle dir; the pack prints the bootstrap, writes
-   the address and the input document's text into `compute.bootstrap.json`
+   the address and the input document, as nested JSON, into `compute.bootstrap.json`
    (§ below), and wraps it in the target envelope.
 5. `deploy(artifact)` — the first version snapshots an environment that is already
    complete.
@@ -811,7 +811,7 @@ the [input glossary entry](../03-domain-model/glossary.md#input)).
 server.js              ← the app's OWN built entry (Hono bundle / Next standalone). Calls service.load().
 main.js                ← framework wrapper: the service module bundled, core inlined ONCE. Inert on import.
 bootstrap.js           ← pack-printed constant code: reads compute.bootstrap.json, then `main.run(address, () => import(appEntrypoint), inputDocument)`
-compute.bootstrap.json ← pack-written data: the wrapper and entry paths, the address, and `inputDocument` (the input document's text; absent for a service with no input)
+compute.bootstrap.json ← pack-written data: the wrapper and entry paths, the address, and `inputDocument` (the input document as nested JSON; absent for a service with no input)
 compute.manifest.json  ← pack-written envelope; entrypoint = bootstrap.js
 ```
 
@@ -968,9 +968,9 @@ export const compute = <D extends Deps>(def: {
     // Controller: resolve config from the address-keyed env, with the artifact's
     // input document in place of any variable under its key, re-emit it under
     // address-free keys (the stash), then boot the app's entry.
-    async run(address: string, boot: () => Promise<unknown>, inputDocument?: string) {
+    async run(address: string, boot: () => Promise<unknown>, inputDocument?: unknown) {
       const shape = configOf(node)
-      const env = inputDocument === undefined ? process.env : { ...process.env, [inputKey(address)]: inputDocument }
+      const env = inputDocument === undefined ? process.env : { ...process.env, [inputKey(address)]: JSON.stringify(inputDocument) }
       stash(shape, deserialize(shape, address, env))   // the pack's ONE env read + coercion → address-free env
       return boot()
     },
@@ -1125,11 +1125,11 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
 
         // Print the bootstrap and assemble the deployable artifact from the build
         // adapter's normalized bundle dir: bootstrap.js + compute.bootstrap.json
-        // (the address and the input document's text) + compute.manifest.json
+        // (the address and the input document as nested JSON) + compute.manifest.json
         // beside the app's entry + wrapper, deterministic tar.gz. The whole envelope
         // is the pack's — target vocabulary.
         package: ({ id }, { assembled, address }, serialized) =>
-          Effect.try(() => Prisma.packageComputeArtifact({ id, bundleDir: assembled.dir, appEntry: assembled.entry, address, inputDocument: serialized.input?.value })),
+          Effect.try(() => Prisma.packageComputeArtifact({ id, bundleDir: assembled.dir, appEntry: assembled.entry, address, inputDocument: serialized.input && JSON.parse(serialized.input.value) })),
 
         // create → upload → start → promote. The app id is read through
         // serialize's env-var records, so the deployment depends on them — the

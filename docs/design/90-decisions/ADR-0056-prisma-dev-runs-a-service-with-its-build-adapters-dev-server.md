@@ -86,7 +86,7 @@ The obvious fix, running `next dev` in another terminal, fails for a reason that
 
 ```text
 COMPOSER_WEB_API_URL=http://localhost:3000   # a variable written by the deploy, keyed by the address "web"
-COMPOSER_WEB_INPUT={"...":"..."}             # the artifact's inputDocument, in place of any variable under this key
+COMPOSER_WEB_INPUT={"...":"..."}             # the artifact's inputDocument as text, in place of any variable under this key
 
 COMPOSER_API_URL=http://localhost:3000       # written by run() at boot: the stash
 COMPOSER_INPUT={"...":"..."}                 # what load() and input() read
@@ -290,7 +290,7 @@ export function stashRows(
 ): Record<string, string>;
 ```
 
-`run(address, boot, inputDocument)` becomes `Object.assign(process.env, stashRows(this, address, env))` followed by `boot()`, where `env` is `process.env` with the artifact's input document, when it has one, under the service's input key `COMPOSER_<ADDRESS>_INPUT`. The target's `serve` calls `stashRows(node, address, materialized)`. `deserialize`, `coerce`, `coerceEnvSourcedParam` and `stashInput` take the environment as a parameter instead of reading `process.env`; `serializeInput` already does. `load()` and `input()` still read `process.env`, which is where `run()` and the emulator's spawn both put the rows.
+`run(address, boot, inputDocument)` becomes `Object.assign(process.env, stashRows(this, address, env))` followed by `boot()`, where `env` is `process.env` with the artifact's input document as JSON text, when it has one, under the service's input key `COMPOSER_<ADDRESS>_INPUT`. The target's `serve` calls `stashRows(node, address, materialized)`. `deserialize`, `coerce`, `coerceEnvSourcedParam` and `stashInput` take the environment as a parameter instead of reading `process.env`; `serializeInput` already does. `load()` and `input()` still read `process.env`, which is where `run()` and the emulator's spawn both put the rows.
 
 The command's environment is the shell's, then the materialized deployment environment, then the stash rows, later entries winning. A deployed artifact gets only `PATH` and `HOME` from the shell, but a dev server needs more (`NODE_OPTIONS`, a framework's own `.env` loading, the developer's proxy settings), and it runs on the developer's machine anyway. Composer's values are laid last, so a stale `COMPOSER_…` export in the shell cannot shadow them, and Next's `.env` loading, which never overrides a variable already set, cannot either.
 

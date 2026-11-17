@@ -114,8 +114,8 @@ framework's deploy lowers onto — creates on the platform.
 
 A service's input document ([ADR-0042](ADR-0042-service-input-is-one-standard-schema.md))
 is the one value that is not a variable. It is not secret and the deploy knows
-it before it builds the artifact, so the target writes its text into the
-service's artifact, in the `inputDocument` field of `compute.bootstrap.json`,
+it before it builds the artifact, so the target writes it, as nested JSON, into
+the service's artifact, in the `inputDocument` field of `compute.bootstrap.json`,
 and the artifact's bootstrap passes it to `run()` at boot
 ([ADR-0065](ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)).
 The target owns both ends of that medium too: its packer writes the field, and
