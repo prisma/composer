@@ -33,11 +33,12 @@ export const secretString = () =>
   );
 
 /**
- * Wraps the schema of one leaf field so the field also accepts a plain
- * pointer, which stands for a value known only at boot. The field's input type
- * is `In | Pointer<In>` and its output type `Out | Pointer<In>`, where `In` and
+ * Wraps the schema of one field so the field also accepts a plain pointer,
+ * which stands for a value known only at boot. The field's input type is
+ * `In | Pointer<In>` and its output type `Out | Pointer<In>`, where `In` and
  * `Out` are `inner`'s. A value that is not a pointer gets `inner`'s error.
- * Wrap a leaf, never an object schema.
+ * The field holds the whole value one source supplies: text, a number, a
+ * boolean, or an object or array when a platform variable's schema says so.
  *
  * ```ts
  * input: z.object({ from: field(z.string()), port: field(z.string().transform(Number)) })
@@ -49,7 +50,7 @@ export function field<S extends z.ZodType>(
   const pointer = z.custom((value) => isPlainPointer(value));
   return blindCast<
     z.ZodType<z.output<S> | Pointer<z.input<S>>, z.input<S> | Pointer<z.input<S>>>,
-    "Zod infers the pointer branch as unknown; the branch admits only a plain pointer, which stands for the inner schema's input text"
+    "Zod infers the pointer branch as unknown; the branch admits only a plain pointer, which stands for a value of the inner schema's input type"
   >(
     z.union([inner, pointer], {
       error: (issue) =>

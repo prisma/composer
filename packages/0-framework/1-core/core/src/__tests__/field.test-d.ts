@@ -14,6 +14,7 @@ import type {
   ModuleInputField,
   ModuleNode,
   PlainData,
+  PlainPointer,
   Pointer,
   RuntimeValue,
   SecretString,
@@ -216,10 +217,17 @@ test('RuntimeValue<T> is Value<Pointer<T>>', () => {
   expectTypeOf<RuntimeValue<string>>().toEqualTypeOf<Value<Pointer<string>>>();
 });
 
-test('isPlainPointer() narrows to Pointer<string>, isSecretPointer() to Pointer<SecretString>', () => {
+test('isPlainPointer() narrows to PlainPointer, isSecretPointer() to Pointer<SecretString>', () => {
   const x: unknown = undefined;
-  if (isPlainPointer(x)) expectTypeOf(x).toEqualTypeOf<Pointer<string>>();
+  if (isPlainPointer(x)) expectTypeOf(x).toEqualTypeOf<PlainPointer>();
   if (isSecretPointer(x)) expectTypeOf(x).toEqualTypeOf<Pointer<SecretString>>();
+});
+
+test('a plain pointer of any data type is a PlainPointer, and a secret pointer is not', () => {
+  expectTypeOf<Pointer<string>>().toExtend<PlainPointer>();
+  expectTypeOf<Pointer<number>>().toExtend<PlainPointer>();
+  expectTypeOf<Pointer<{ readonly port: number }>>().toExtend<PlainPointer>();
+  expectTypeOf<Pointer<SecretString>>().not.toExtend<PlainPointer>();
 });
 
 test('the two kinds of pointer do not fit each other', () => {
