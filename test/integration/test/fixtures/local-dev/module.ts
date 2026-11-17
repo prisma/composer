@@ -5,7 +5,7 @@
  * `prisma.config.ts` carries the `composer` section a real `dev` would read.
  *
  * `apiKey` is required, so dev stops when it is unset; `webhookSecret` and
- * `port` are not, so dev starts without them.
+ * `greeting` are not, so dev starts without them.
  */
 import { appRoot } from '@prisma/composer';
 import { bucket, rawPostgres, variable } from '@prisma/composer-prisma-cloud';
@@ -18,9 +18,6 @@ export default appRoot('localdevs4fixture', ({ provision }) => {
   const apiKey = provision(variable.secret({ name: 'LOCALDEV_FIXTURE_API_KEY' }));
   const webhookSecret = provision(variable.secret({ name: 'LOCALDEV_FIXTURE_WEBHOOK_SECRET' }));
   const greeting = provision(variable({ name: 'LOCALDEV_FIXTURE_GREETING' }));
-  provision(webService, { deps: { db, store } });
-  provision(bgService, {
-    input: { apiKey, webhookSecret },
-    params: { port: greeting },
-  });
+  provision(webService, { deps: { db, store }, input: { greeting } });
+  provision(bgService, { input: { apiKey, webhookSecret } });
 });

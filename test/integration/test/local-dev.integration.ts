@@ -539,11 +539,23 @@ async function main(): Promise<void> {
     const health = (await waitFor(
       () => fetch(`${web.url}/health`).then((r) => (r.ok ? r.json() : undefined)),
       15_000,
-    )) as { ok: boolean; version: string; db: boolean; store: boolean; portEnv: string | null };
+    )) as {
+      ok: boolean;
+      version: string;
+      db: boolean;
+      store: boolean;
+      greeting: string | null;
+      portEnv: string | null;
+    };
     assertEqual(
       { ok: health.ok, version: health.version, db: health.db, store: health.store },
       { ok: true, version: 'v1', db: true, store: true },
       'the web service /health round-trip',
+    );
+    assertEqual(
+      health.greeting,
+      'hello',
+      'the web service reads the plain platform variable LOCALDEV_FIXTURE_GREETING from the app configuration',
     );
 
     // 9. Emulator listing correct: both services running, stable ports/pids present.

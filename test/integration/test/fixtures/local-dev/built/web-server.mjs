@@ -9,12 +9,15 @@
 // between converges.
 
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { field } from '@prisma/composer/arktype';
 import node from '@prisma/composer/node';
 import { bucket, compute, rawPostgres } from '@prisma/composer-prisma-cloud';
+import { type } from 'arktype';
 
 const service = compute({
   name: 'web',
   deps: { db: rawPostgres(), store: bucket() },
+  input: type({ 'greeting?': field(type('string')) }),
   build: node({ module: import.meta.url, entry: 'web-server.mjs' }),
 });
 
@@ -22,6 +25,7 @@ const VERSION = 'v1';
 
 const port = service.port();
 const { db, store } = service.load();
+const { greeting } = service.input();
 
 // The bucket round-trip proof (S5, acceptance criterion 4): a real
 // @aws-sdk/client-s3 client against the bucket binding, exactly as
@@ -50,6 +54,7 @@ Bun.serve({
         version: VERSION,
         db: typeof db.url === 'string' && db.url.length > 0,
         store: typeof store.url === 'string' && store.url.length > 0,
+        greeting: greeting ?? null,
         // The port-override row local dev's Deployment provider materializes
         // into this process's own env (never persisted to env.json — see
         // local-dev spec § 4) — exposed here so a test can assert on it
