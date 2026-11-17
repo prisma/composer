@@ -81,6 +81,47 @@ The core deals only in the abstract model — Modules, inputs, outputs, resource
 never branches on where you're deploying. Everything a given target needs (Prisma
 Cloud's resource types, or another's) arrives as an extension pack.
 
+## A layer does not know what is built on it
+
+The packages are layered: foundation, core, the authoring surfaces, tooling,
+then each deployment target with its lowering, its extensions and its shared
+modules
+([ADR-0028](../90-decisions/ADR-0028-numbered-domains-and-layers-enforced-by-dependency-cruiser.md)).
+Each layer owns its own concepts. Core owns Modules, Services, Resources and
+Connections. Service RPC is one kind of Connection, owned by the authoring
+layer. Prisma Cloud is one deployment target. Cron and streams are Modules
+built on that target.
+
+A layer may use the layers below it. It contains nothing that exists for a
+concept a layer above it owns: no import, and no type, method or field either.
+This is what lets someone add a kind of Connection, a deployment target or a
+Module without changing a lower layer.
+
+```ts
+// Core's service interface. Every service on every target has these.
+interface RunnableServiceNode {
+  run(address: string, boot: () => Promise<unknown>): Promise<unknown>;
+  load(): HydratedDeps;
+  input(): InputValue;
+  // acceptedRpcKeys(): string[]  ← does not belong: only service RPC has these
+}
+```
+
+A member belongs in a layer when that layer's own model needs it, which means
+every implementer has a real answer for it. A member that only one layer above
+would call belongs to that layer's concept, and a more general name
+(`acceptedKeys()`, `reservedValue(name)`) does not change that.
+
+When code in a higher layer cannot reach a value it needs, the change is made
+in the layer that owns the concept. Often that layer can ask for the value
+through something the lower layer offers to everyone: a dependency, or a field
+of the Service's input. If nothing carries it, that is a gap in the design to
+settle, not a reason to widen the lower layer.
+
+[The framework has no knowledge of specific deployment targets](#the-framework-has-no-knowledge-of-specific-deployment-targets)
+and [Compose, don't special-case](guiding-principles.md#compose-dont-special-case)
+are this principle for two particular cases.
+
 ## Data contracts are the interface for data resources
 
 A data contract names exactly what a Module may read and write; a resource plugs in

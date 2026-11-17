@@ -13,19 +13,21 @@ stays inside the bundle, and never dereferenced)
 amended by
 [ADR-0047](docs/design/90-decisions/ADR-0047-compute-assembly-preserves-safe-runtime-topology.md)).
 
-## A lower layer does not know what is built on it
+## A layer does not know what is built on it
 
-Core models services, resources and connections. RPC, Prisma Cloud, cron and
-streams are built on top of it, and that is what lets someone add a connection
-kind, a target or a module without changing core.
+This is an
+[architectural principle](docs/design/01-principles/architectural-principles.md#a-layer-does-not-know-what-is-built-on-it),
+and it is the one agents most often break without noticing. It comes up as a
+shortcut: code in a higher layer needs a value, the only thing it holds is a
+lower layer's interface, and one more member on that interface is the shortest
+way. Stop there and read the principle.
 
-So when code in a higher layer needs a value and the shortest way is one more
-member on a lower layer's interface, stop and ask who the member is for. If
-only one connection kind, target or module would use it, the change belongs in
-the layer that owns that concept. A more general name does not change that. Do
-not build it, and do not offer it to anyone as an option. How to tell, what to
-do, and an example:
-[`.agents/rules/lower-layers-do-not-know-higher-layers.mdc`](.agents/rules/lower-layers-do-not-know-higher-layers.mdc).
+If the member would exist for one kind of Connection, one deployment target or
+one Module, do not build it. Do not offer it to the operator as an option
+either, whether the idea is yours or a subagent's: the operator would have to
+catch the problem themselves, and the gap in the design you found would go
+unreported. Report the gap instead: what the higher layer needs, and why
+nothing that exists carries it.
 
 ## Read the design docs before any design discussion
 
