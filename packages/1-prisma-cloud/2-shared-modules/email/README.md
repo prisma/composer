@@ -176,13 +176,9 @@ In the sample above, `EMAIL_DELIVERY_MODE` and `EMAIL_FROM` are root input field
 | --- | --- | --- | --- |
 | `EMAIL_DELIVERY_MODE` | the deploy shell | `resend` (or `smtp`) | `none` |
 | `EMAIL_FROM` | the deploy shell | `noreply@myapp.com` | anything (unused when `none`) |
-| `EMAIL_DELIVERY_CREDENTIAL` | the platform | Resend API key / SMTP password | **any non-empty junk** — required by preflight even though never read |
+| `EMAIL_DELIVERY_CREDENTIAL` | the platform | Resend API key / SMTP password | any non-empty value, which preflight requires even though the service never reads it |
 
-The junk-credential row on preview is a known wart: the email service's input
-schema requires the credential in every mode, so an environment that never
-delivers still has to set a non-empty value. A schema can make a secret field
-optional (ADR-0042); this one does not. See `gotchas.md` for the filed friction
-finding.
+Preview needs a credential because the email service's input schema requires it in every mode, so an environment that never delivers still sets a non-empty value. A schema can make a secret field optional (ADR-0042); this one does not. `gotchas.md` records this.
 
 ## Delivery policy
 
