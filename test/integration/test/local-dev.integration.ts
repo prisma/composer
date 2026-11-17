@@ -468,7 +468,7 @@ async function main(): Promise<void> {
     // 4. Assemble both services (real build adapter, hand-written "built" entries).
     const bundles = await assembleFixture();
 
-    // 5. Preflight. Step 3 sets the fixture's secrets, so this passes whatever the
+    // 5. Preflight. Step 3 sets the fixture's values, so this passes whatever the
     // shell holds; local-dev-criteria-4-5.integration.ts proves them unset.
     const preflightResult =
       dev.preflight === undefined

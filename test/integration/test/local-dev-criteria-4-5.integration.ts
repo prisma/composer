@@ -342,6 +342,19 @@ async function main(): Promise<void> {
     // ——— Criterion 4: bucket round-trip through the app ———
     const web = session.endpoints.find((e) => e.address === 'localdevs4fixture.web');
     assert(web !== undefined, 'the web service must appear in the front door');
+    const health = await waitForAsync(
+      () =>
+        fetch(`${web.url}/health`).then((r) =>
+          r.ok ? (r.json() as Promise<{ readonly greeting: string | null }>) : undefined,
+        ),
+      15_000,
+    );
+    assertEqual(
+      health.greeting,
+      GREETING.LOCALDEV_FIXTURE_GREETING,
+      'the plain platform variable the shell holds reaches the web service',
+    );
+    console.log('[proving] PASS: a plain platform variable reaches the service that reads it');
 
     const putRes = await waitForAsync(
       () =>
