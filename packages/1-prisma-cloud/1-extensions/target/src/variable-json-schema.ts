@@ -340,7 +340,7 @@ function readEmitted(name: string, emit: Emit): VariableJsonSchema {
   try {
     schema = emit();
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
+    const message = (cause instanceof Error ? cause.message : String(cause)).replace(/\s+/g, ' ');
     throw new Error(
       `${prefix(name)} cannot be written as JSON Schema: ${message}. Declare the type the text holds, and put any other check in the service's own schema.`,
     );

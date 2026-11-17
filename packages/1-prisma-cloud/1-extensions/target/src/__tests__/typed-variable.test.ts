@@ -190,9 +190,11 @@ describe('variable({ name, schema }) keeps the reduced JSON Schema in its props'
 
 describe('variable({ name, schema }) refuses, when the root body runs, a schema it cannot read', () => {
   test('the library cannot write the schema as JSON Schema', () => {
-    expect(refusal(type('number').narrow((n) => n > 0))).toStartWith(
-      `${lead} cannot be written as JSON Schema: `,
+    const narrowed = refusal(type('number').narrow((n) => n > 0));
+    expect(narrowed).toMatch(
+      /^The schema of the platform variable "SMTP_PORT" cannot be written as JSON Schema: \{ code: "predicate", base: \{ type: "number" \}, predicate: Function\(\w+\) \}\. Declare the type the text holds, and put any other check in the service's own schema\.$/,
     );
+    expect(narrowed).not.toContain('\n');
     expect(refusal(z.number().transform((n) => n + 1))).toBe(
       `${lead} cannot be written as JSON Schema: Transforms cannot be represented in JSON Schema. Declare the type the text holds, and put any other check in the service's own schema.`,
     );
@@ -362,6 +364,15 @@ describe('a typed platform variable deploys and boots', () => {
       port: 587,
       from: 'shop@example.com',
     });
+  });
+
+  test('two fields that read one typed variable each hold the full marker', () => {
+    const port = provisioned(variable({ name: NAME, schema: type('number') }));
+    const node = svc(type({ port: arkField(type('number')), again: arkField(type('number')) }));
+    const row = serializeInput(node, 'shop.mailer', { port, again: port });
+    const marker = { $platform: { name: NAME, schema: { type: 'number' } } };
+    expect(JSON.parse(row?.value ?? '')).toEqual({ port: marker, again: marker });
+    expect(boot(row?.value ?? '', { [NAME]: '587' })).toEqual({ port: 587, again: 587 });
   });
 
   test('an object variable binds to a field of the same object type, as the value, as a literal and through a module', () => {
