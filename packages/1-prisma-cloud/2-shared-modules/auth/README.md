@@ -98,12 +98,7 @@ const proxy = authProxy(authApi);
 // route /api/auth/* → proxy(request); verify API calls with verifier.verify(<bearer>)
 ```
 
-The database is a BOUNDARY dependency: the root decides dedicated vs shared.
-`baseUrl` is the public origin browsers see (scheme+host, no trailing slash,
-no path) — bind it with `serviceOrigin('<app>.<service>')`, the service's
-full address, so each environment trusts its own URL, or a field of the root's input, such as `input.AUTH_BASE_URL`, for a custom domain. The
-instance secret is platform-minted inside the module; rotation is unsupported
-in v1 (rotating would invalidate every session and the encrypted jwks rows).
+The database is a BOUNDARY dependency: the root decides dedicated vs shared. `baseUrl` is the public origin browsers see (scheme+host, no trailing slash, no path) — bind it with `serviceOrigin('<app>.<service>')`, the service's full address, so each environment trusts its own URL, or a field of the root's input, such as `input.AUTH_BASE_URL`, for a custom domain. The instance secret is platform-minted inside the module; rotation is unsupported in v1 (rotating would invalidate every session and the encrypted jwks rows).
 
 A complete, deployable copy of this wiring lives in `examples/auth`.
 
