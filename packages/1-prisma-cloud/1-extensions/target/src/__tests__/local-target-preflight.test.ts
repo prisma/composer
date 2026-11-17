@@ -84,8 +84,7 @@ const portGraph = () =>
   );
 
 /** A service whose input field `token` reads API_TOKEN and is required. */
-const tokenService = () =>
-  compute({ name: 'web', deps: {}, input: requiresOneOf('token'), build });
+const tokenService = () => compute({ name: 'web', deps: {}, input: requiresOneOf('token'), build });
 
 const tokenGraph = () =>
   Load(

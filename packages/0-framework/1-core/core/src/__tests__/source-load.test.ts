@@ -90,7 +90,6 @@ describe('sources a service takes stay in place', () => {
     expect(bindingOf(graph)['key']).toBe(key);
     expect(bindingOf(graph)['greeting']).toBe(greeting);
   });
-
 });
 
 describe("a source in a service's param", () => {

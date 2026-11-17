@@ -294,10 +294,7 @@ export async function runPreflight(
     reader: { kind: 'unread', node, nodeKind: 'resource' } as const,
   }));
   const names = [
-    ...new Set([
-      ...services.flatMap((service) => service.names),
-      ...unread.map((use) => use.name),
-    ]),
+    ...new Set([...services.flatMap((service) => service.names), ...unread.map((use) => use.name)]),
   ];
   const clashes = findEnvKeyClashes(input.graph);
   if (names.length === 0 && clashes.length === 0) {

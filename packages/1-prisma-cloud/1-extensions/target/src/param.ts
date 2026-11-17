@@ -1,4 +1,10 @@
-import { isParamSource, type ParamSource, type Pointer, paramSource, type RuntimeValue } from '@internal/core';
+import {
+  isParamSource,
+  type ParamSource,
+  type Pointer,
+  paramSource,
+  type RuntimeValue,
+} from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import type { SecretString } from '@internal/foundation/secret';
 
