@@ -5,10 +5,11 @@
  * consumers independently. Mirrors storage's module.test.ts.
  */
 import { describe, expect, test } from 'bun:test';
-import { Load, module, type SecretSource } from '@internal/core';
+import { type AppRootContext, appRoot, isSecretSource, Load } from '@internal/core';
 import node from '@internal/node';
-import { compute, envParam, envSecret, secretName } from '@internal/prisma-cloud';
+import { compute, variable } from '@internal/prisma-cloud';
 import { rpc } from '@internal/service-rpc';
+import { type } from 'arktype';
 import { emailOutboxContract, emailSender } from '../contract.ts';
 import { email } from '../email-module.ts';
 
@@ -32,16 +33,21 @@ const outboxConsumer = () =>
 
 const configuration = { EMAIL_FROM: 'shop@example.com' };
 
-const emailInput = () => ({
+const rootInput = type({ EMAIL_FROM: 'string' });
+
+type RootContext = AppRootContext<typeof rootInput>;
+
+const emailInput = ({ input, provision }: RootContext) => ({
   deliveryMode: 'none' as const,
-  from: envParam('EMAIL_FROM'),
-  deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
+  from: input.EMAIL_FROM,
+  deliveryCredential: provision(variable.secret({ name: 'EMAIL_DELIVERY_CREDENTIAL' })),
 });
 
+const emailRoot = (body: (ctx: RootContext) => void) => appRoot('root', { input: rootInput }, body);
+
 function rootWithEmail() {
-  return module('root', {}, ({ provision }) => {
-    provision(email(), { id: 'email', input: emailInput() });
-    return {};
+  return emailRoot((ctx) => {
+    ctx.provision(email(), { id: 'email', input: emailInput(ctx) });
   });
 }
 
@@ -74,30 +80,37 @@ describe('email()', () => {
     ]);
   });
 
-  test("the module's input reaches the service's input: a literal and an envParam() as their values, envSecret() as its source", () => {
+  test("the module's input reaches the service's input: a literal and a root input field as their values, a secret node as its source", () => {
     const graph = Load(rootWithEmail(), { configuration });
     const binding = serviceBindingOf(graph.inputBindings);
     expect(binding['deliveryMode']).toBe('none');
     expect(binding['from']).toBe('shop@example.com');
-    expect(secretName(binding['deliveryCredential'] as SecretSource, 'deliveryCredential')).toBe(
-      'EMAIL_DELIVERY_CREDENTIAL',
-    );
+    expect(isSecretSource(binding['deliveryCredential'])).toBe(true);
+    expect(graph.valueReads).toContainEqual({
+      reader: 'root.email.service',
+      resource: 'root.emailDeliveryCredential',
+      path: 'deliveryCredential',
+    });
     expect(binding['deliveryUrl']).toBe('https://api.resend.com');
   });
 
   test("a literal binds a field, as in a service's input", () => {
-    const root = module('root', {}, ({ provision }) => {
-      provision(email(), { id: 'email', input: { ...emailInput(), deliveryMode: 'smtp' } });
-      return {};
+    const root = emailRoot((ctx) => {
+      ctx.provision(email(), { id: 'email', input: { ...emailInput(ctx), deliveryMode: 'smtp' } });
     });
     const graph = Load(root, { configuration });
     expect(serviceBindingOf(graph.inputBindings)['deliveryMode']).toBe('smtp');
   });
 
   test("the module's schema refuses a missing from before the service's does", () => {
+    const root = emailRoot((ctx) => {
+      const withoutFrom: Partial<ReturnType<typeof emailInput>> = emailInput(ctx);
+      delete withoutFrom.from;
+      ctx.provision(email(), { id: 'email', input: withoutFrom as never });
+    });
     let message: string | undefined;
     try {
-      Load(rootWithEmail(), { configuration: {} });
+      Load(root, { configuration });
     } catch (error) {
       message = (error as Error).message;
     }
@@ -107,25 +120,25 @@ describe('email()', () => {
   });
 
   test('opts.deliveryUrl overrides the literal deliveryUrl leaf of the input binding', () => {
-    const root = module('root', {}, ({ provision }) => {
+    const root = emailRoot((ctx) => {
+      const { provision } = ctx;
       provision(email({ deliveryUrl: 'http://localhost:8025' }), {
         id: 'email',
-        input: emailInput(),
+        input: emailInput(ctx),
       });
-      return {};
     });
     const graph = Load(root, { configuration });
     expect(serviceBindingOf(graph.inputBindings)['deliveryUrl']).toBe('http://localhost:8025');
   });
 
   test('the send port resolves to the service for a sender consumer', () => {
-    const root = module('root', {}, ({ provision }) => {
+    const root = emailRoot((ctx) => {
+      const { provision } = ctx;
       const mail = provision(email(), {
         id: 'email',
-        input: emailInput(),
+        input: emailInput(ctx),
       });
       provision(senderConsumer(), { id: 'sender', deps: { email: mail.send } });
-      return {};
     });
 
     const graph = Load(root, { configuration });
@@ -138,14 +151,14 @@ describe('email()', () => {
   });
 
   test('the outbox port resolves to the service for a different consumer, independent of send', () => {
-    const root = module('root', {}, ({ provision }) => {
+    const root = emailRoot((ctx) => {
+      const { provision } = ctx;
       const mail = provision(email(), {
         id: 'email',
-        input: emailInput(),
+        input: emailInput(ctx),
       });
       provision(senderConsumer(), { id: 'sender', deps: { email: mail.send } });
       provision(outboxConsumer(), { id: 'reader', deps: { outbox: mail.outbox } });
-      return {};
     });
 
     const graph = Load(root, { configuration });
@@ -167,12 +180,12 @@ describe('email()', () => {
     // Deliberately distinct values: opts.name is the module's own declared
     // name; id is the graph address a provision() call picks. Using the same
     // string for both couldn't tell them apart.
-    const root = module('root', {}, ({ provision }) => {
+    const root = emailRoot((ctx) => {
+      const { provision } = ctx;
       provision(email({ name: 'mailerModule' }), {
         id: 'mailInstance',
-        input: emailInput(),
+        input: emailInput(ctx),
       });
-      return {};
     });
 
     const graph = Load(root, { configuration });

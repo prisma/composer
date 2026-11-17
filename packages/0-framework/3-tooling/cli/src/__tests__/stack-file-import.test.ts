@@ -44,7 +44,7 @@ function runStack(stackFile: string) {
 
 describe('the generated stack files, evaluated', () => {
   const file = {
-    appConfigurationRead: { rootInput: [], configurationKeyText: { read: 'from-file' } },
+    appConfigurationRead: { rootInput: [{ path: ['read'], value: 'from-file' }] },
     nodeAddresses: ['stub-address'],
   };
 
@@ -59,7 +59,7 @@ describe('the generated stack files, evaluated', () => {
     });
   });
 
-  test('the dev stack passes the composer export of prisma.config.ts, the environment, and the app configuration file, to lower(), the configuration key text and the named secrets to the local providers, and runs no adapter', () => {
+  test('the dev stack passes the composer export of prisma.config.ts, the environment, and the app configuration file, to lower(), the plain platform variable texts and the named secrets to the local providers, and runs no adapter', () => {
     expect(runStack(writeDevStackFile(stackInput))).toEqual({
       app: 'fixture-root',
       extensions: ['fixture-extension'],
@@ -67,7 +67,10 @@ describe('the generated stack files, evaluated', () => {
       environment: 'staging',
       appConfigurationRead: file.appConfigurationRead,
       firstProcessNodeAddresses: file.nodeAddresses,
-      local: { configurationKeyText: { read: 'from-file' }, namedSecrets: { read: 'secrets' } },
+      local: {
+        plainVariableText: { PLAIN: 'plain-from-file' },
+        namedSecrets: { read: 'secrets' },
+      },
     });
   });
 

@@ -4,6 +4,7 @@ import * as Layer from 'effect/Layer';
 import type {
   ExtensionDescriptor,
   LocalTargetDescriptor,
+  LocalTargetProvidersInput,
   PrismaAppConfig,
 } from '../control/app-config.ts';
 import type { AlchemyStateLayer } from '../control/deploy.ts';
@@ -104,6 +105,34 @@ describe('localTargetProviders', () => {
     const resolved = await resolveLocalTargets(config);
 
     expect(localTargetProviders(resolved, new Map(), '/tmp/dev', {}, {})).toBeDefined();
+  });
+
+  test('hands each descriptor the plain platform variable texts and the named secrets', () => {
+    const seen: LocalTargetProvidersInput[] = [];
+    const descriptor: LocalTargetDescriptor = {
+      ...fakeLocalTargetDescriptor(),
+      providers: (input) => {
+        seen.push(input);
+        return Layer.empty;
+      },
+    };
+
+    localTargetProviders(
+      new Map([['test/dev-pack', descriptor]]),
+      new Map(),
+      '/tmp/dev',
+      { EMAIL_FROM: 'shop@example.com' },
+      { API_KEY: 'sk_1' },
+    );
+
+    expect(seen).toEqual([
+      {
+        container: undefined,
+        devDir: '/tmp/dev',
+        plainVariableText: { EMAIL_FROM: 'shop@example.com' },
+        namedSecrets: { API_KEY: 'sk_1' },
+      },
+    ]);
   });
 
   test('an empty resolved map yields the empty layer', () => {

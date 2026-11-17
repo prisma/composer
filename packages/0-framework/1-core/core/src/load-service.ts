@@ -127,6 +127,7 @@ export function loadService(root: ServiceNode, rootId: NodeId): Graph {
     inputBindings: [],
     params: [],
     secretSources: [],
-    appConfigurationRead: { rootInput: [], configurationKeyText: {} },
+    valueReads: [],
+    appConfigurationRead: { rootInput: [] },
   };
 }

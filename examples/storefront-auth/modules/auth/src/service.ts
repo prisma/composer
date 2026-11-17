@@ -12,11 +12,8 @@ export default compute({
   deps: {
     db: rawPostgres(),
   },
-  // The whole incoming configuration as ONE schema (ADR-0042): a single
-  // secret field, typed as the redacting SecretString box. The auth module
-  // passes its own `signingKey` input field on as this field's binding; the
-  // root names the platform var via `envSecret` — this service never knows the
-  // name. Read via `input().signingKey.expose()`.
+  // The root provisions the platform secret and passes its value down, so
+  // this service never knows the variable's name.
   input: type({
     signingKey: secretString(),
   }),

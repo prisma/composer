@@ -219,7 +219,7 @@ describe('upstream Deployment.diff while the new variable is still unresolved', 
  * upstream to ship a fresh deployment, which the platform requires because it
  * materializes env rows only at deployment create (PRO-211). These members
  * mirror the compute descriptor's: one Redacted member per env row, plus a
- * `<name>:updatedAt` member per pointed platform variable.
+ * `<name>:updatedAt` member per platform variable the input document names.
  */
 const envTriggers = (port: string, updatedAt = '2026-01-02T00:00:00.000Z') => ({
   COMPOSER_AUTH_PORT: Redacted.make(port),

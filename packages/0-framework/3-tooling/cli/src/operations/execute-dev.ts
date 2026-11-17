@@ -15,7 +15,11 @@ import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
 import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
 import type { DevServer } from '@internal/core/deploy';
 import { nodeAddresses, secretsKeys } from '@internal/core/deploy';
-import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
+import type {
+  DevPreflightResult,
+  LocalTargetAttachment,
+  LocalTargetDescriptor,
+} from '@internal/core/local-target';
 import { devEnvironmentDir, resolveLocalTargets } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
@@ -26,6 +30,7 @@ import {
   type SecondProcessHandover,
 } from '../app-configuration-file.ts';
 import { devStackRelativePath, writeDevStackFile } from '../dev/generate-dev-stack.ts';
+import { valueReadsChange } from '../dev/value-reads-change.ts';
 import {
   authoringModuleTargets,
   startWatch,
@@ -132,7 +137,6 @@ function assertDevServersSupported(
   }
 }
 
-/** Runs the full dev pipeline; resolves to a running session or a structured failure. */
 /** The file's content hash; undefined when it cannot be read, which counts as a change. */
 function contentHash(file: string): string | undefined {
   try {
@@ -149,6 +153,24 @@ function sameValues(started: PipelineResult, now: PipelineResult): boolean {
   );
 }
 
+function isDevPreflightResult(value: unknown): value is DevPreflightResult {
+  if (typeof value !== 'object' || value === null) return false;
+  if (!('payload' in value) || !('plainVariableText' in value)) return false;
+  const { payload, plainVariableText } = value;
+  return (
+    (payload === undefined || typeof payload === 'string') &&
+    typeof plainVariableText === 'object' &&
+    plainVariableText !== null &&
+    Object.values(plainVariableText).every((text) => typeof text === 'string')
+  );
+}
+
+const olderLocalTargetError = (id: string): Error =>
+  new Error(
+    `The extension "${id}" returned a dev preflight result prisma dev cannot read: its local target was built for an older @prisma/composer. Upgrade "${id}" to a version built for the @prisma/composer this app uses.`,
+  );
+
+/** Runs the full dev pipeline; resolves to a running session or a structured failure. */
 export async function executeDev(
   input: DevInput,
   deps: OperationDeps,
@@ -187,6 +209,7 @@ async function executeDevInner(
   let resolved: ReadonlyMap<string, LocalTargetDescriptor>;
   const containers = new Map<ExtensionId, ContainerInstance>();
   let preflightTransportEnv: Record<string, string> = {};
+  const plainVariableText: Record<string, string> = {};
   // Each participating extension's view of the running app, made before the
   // first converge so a target that cannot run a dev server fails first.
   const attachmentsById = new Map<ExtensionId, LocalTargetAttachment>();
@@ -262,7 +285,7 @@ async function executeDevInner(
     for (const [id, dev] of resolved) {
       if (dev.preflight === undefined) continue;
       try {
-        const payload = await dev.preflight({
+        const found: unknown = await dev.preflight({
           graph,
           container: containers.get(id),
           environment,
@@ -270,7 +293,9 @@ async function executeDevInner(
           secrets: pipeline.secrets,
           warn: (message) => emit({ kind: 'target-warning', message }),
         });
-        if (payload !== undefined) preflightPayloads.set(id, payload);
+        if (!isDevPreflightResult(found)) throw olderLocalTargetError(id);
+        if (found.payload !== undefined) preflightPayloads.set(id, found.payload);
+        Object.assign(plainVariableText, found.plainVariableText);
       } catch (error) {
         throw toStructured('DEV.PREFLIGHT_FAILED', error);
       }
@@ -324,6 +349,7 @@ async function executeDevInner(
     const handover = prepareSecondProcess({
       file: devAppConfigurationFile(devDir),
       appConfigurationRead: p.graph.appConfigurationRead,
+      plainVariableText,
       nodeAddresses: nodeAddresses(p.graph),
       secretsKeys: secretsKeys(p.graph),
       knownSecrets: redaction.knownSecrets,
@@ -566,10 +592,11 @@ async function executeDevInner(
     const startedConfig = contentHash(configFile);
     let configChanged = false;
     let valuesChanged = false;
+    let readsChanged = false;
     // Read on every event, not only from the config watcher: a build watch
     // on a directory that contains the file can fire first.
     const paused = (): boolean => {
-      if (valuesChanged) return true;
+      if (valuesChanged || readsChanged) return true;
       if (!configChanged && contentHash(configFile) === startedConfig) return false;
       configChanged = true;
       emit({ kind: 'config-changed', file: configFile });
@@ -597,6 +624,12 @@ async function executeDevInner(
         if (!sameValues(pipeline, rePipeline)) {
           if (!valuesChanged) emit({ kind: 'values-changed' });
           valuesChanged = true;
+          return;
+        }
+        const change = valueReadsChange(pipeline.graph, rePipeline.graph);
+        if (change !== undefined) {
+          if (!readsChanged) emit({ kind: 'value-reads-changed', ...change });
+          readsChanged = true;
           return;
         }
         const { outcome, stackPath, invocation } = await converge(rePipeline);

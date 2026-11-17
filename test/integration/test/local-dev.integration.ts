@@ -468,14 +468,13 @@ async function main(): Promise<void> {
     // 4. Assemble both services (real build adapter, hand-written "built" entries).
     const bundles = await assembleFixture();
 
-    // 5. Preflight — the fixture's secret/env-param proof lives in the
-    // dedicated S5 script (local-dev-criteria-4-5.integration.ts), which
-    // deliberately runs WITHOUT these set; this script sets both in step 3 so its own
-    // (unrelated) proofs keep passing regardless of shell state.
-    const preflightPayload =
+    // 5. Preflight. Step 3 sets the fixture's values, so this passes whatever the
+    // shell holds; local-dev-criteria-4-5.integration.ts proves them unset.
+    const preflightResult =
       dev.preflight === undefined
         ? undefined
         : await dev.preflight({ graph, container: devContainer, environment: 'dev', ...read });
+    const preflightPayload = preflightResult?.payload;
     process.chdir(originalCwd);
 
     // 6. Emulators — ensures compute always, buckets because the graph has
@@ -506,6 +505,7 @@ async function main(): Promise<void> {
     const handover = prepareSecondProcess({
       file: path.join(devDir, 'app-configuration.json'),
       appConfigurationRead: graph.appConfigurationRead,
+      plainVariableText: preflightResult?.plainVariableText ?? {},
       nodeAddresses: nodeAddresses(graph),
       secretsKeys: secretsKeys(graph),
       knownSecrets: new KnownSecrets(),
@@ -539,11 +539,23 @@ async function main(): Promise<void> {
     const health = (await waitFor(
       () => fetch(`${web.url}/health`).then((r) => (r.ok ? r.json() : undefined)),
       15_000,
-    )) as { ok: boolean; version: string; db: boolean; store: boolean; portEnv: string | null };
+    )) as {
+      ok: boolean;
+      version: string;
+      db: boolean;
+      store: boolean;
+      greeting: string | null;
+      portEnv: string | null;
+    };
     assertEqual(
       { ok: health.ok, version: health.version, db: health.db, store: health.store },
       { ok: true, version: 'v1', db: true, store: true },
       'the web service /health round-trip',
+    );
+    assertEqual(
+      health.greeting,
+      'hello',
+      'the web service reads the plain platform variable LOCALDEV_FIXTURE_GREETING from the app configuration',
     );
 
     // 9. Emulator listing correct: both services running, stable ports/pids present.

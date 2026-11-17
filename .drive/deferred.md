@@ -95,7 +95,7 @@ registry). What we deliberately didn't do:
     checks the mount's keys and hands the request to that port's server.
     rpc is one kind of port server; Better Auth's HTTP API is another.
   - Public exposure is the only new authoring: a binding the root supplies
-    at `provision()`, like `envSecret`. A surface with no binding, public or
+    at `provision()`, like a platform secret. A surface with no binding, public or
     in-graph, is not served. For auth, the recommended wiring gives the auth
     service no public surface at all; the storefront proxies to it.
   Rationale in `docs/design/10-domains/auth-module.md`. The full design
@@ -259,7 +259,6 @@ ADR-0053 (the commands). What we deliberately didn't do:
 
 # dev-secrets-from-env — deferred (2026-10-23)
 
-- **Deploy fails when an optional secret is missing on the platform.** ADR-0042 says an env-bound leaf whose variable is unset resolves to "key omitted" and the schema decides whether that is legal. For `envSecret` leaves this is not implemented in deploy: the serializer always writes a `$secret` pointer, and deploy preflight fails when a bound secret is missing on both the platform and the shell, even when the schema marks the field optional. Fix inside deploy's own preflight: leave the field out when the schema accepts its absence. Origin: Will scoped the `prisma dev` secrets change (prisma/composer#379) to dev only.
 - **Alchemy state stores resource props as given, including redacted values.** The local `.alchemy/state/` files hold Composer-minted credentials in plain text (the fixture's `web-deploy.json` shows the local S3 secret key), and hosted deploy state very likely does the same. Check the hosted state and decide whether minted credentials should leave props. Origin: dev-secrets-from-env review round 2.
 - **The compute emulator saves each deployment's full environment, secret values included, in its machine-wide `instances.json`** (mode 0600). `prisma dev` reads values fresh each run, but the last values stay on disk. Decide whether the emulator should keep the environment only in memory. Origin: dev-secrets-from-env review round 2.
 - **A rebuild during a `prisma dev` session skips the dev preflight.** It reuses the payload from session start, so a secret added to a binding mid-session is not checked or left out. Fix: run each local target's preflight again in `rebuild` and rebuild the invocation from its payload. Existing behaviour before this slice. Origin: dev-secrets-from-env final review (C02).
@@ -294,12 +293,9 @@ ADR-0053 (the commands). What we deliberately didn't do:
 
 # Module input — deferred (2026-10-29)
 
-- **Deprecate `envParam()`.** Once a root declares `input` from config adapters, `envParam('NAME')` in a binding is the same as `input.NAME`. Deprecate it in a later step. Origin: module-input design discussion with Will.
-- **A run-time config source.** Like `envSecret()`, but it provisions a plain platform variable and keeps its value in Alchemy state, so a service reads it at boot. Fills the empty run-time config cell. Origin: module-input design discussion with Will.
 - **`doppler()` and other secrets adapters.** `secrets: [doppler()]` beside `config: [dotenv()]`; only the default `environmentVariables()` ships with module-input.
 - **Route run-time secrets to a secret store such as Doppler.** A source whose pointer names a Doppler key, dereferenced at boot by the target, with preflight checking and filling it. Core does not change.
 - **A service whose ArkType input schema has a secret field and any morph is refused at deploy.** ArkType clones its input when the schema has a morph, `SecretBox` included, and the clone loses the box's private value. At boot `readInput` returns the schema's output, so `expose()` on the secret would throw. The serializer refuses such a schema with an error that names the copied secret (`packages/1-prisma-cloud/1-extensions/target/src/serializer.ts`). A real fix needs `SecretBox` to survive the copy, which is a foundation change. Found by the module-input S1 spike; the S2 review showed that tagging the deploy sentinel only moved the failure from deploy to boot.
-- An envParam() in a module's input that resolves absent is not in the deploy report's list of absent keys, which ADR-0042 promises for a service's input. Load would record it and the compute descriptor would print it.
 - prisma dev notices a changed adapter value only at the next rebuild, and then pauses. Watching the files an adapter reads would need adapters to name them.
 - The deploy child reads the config pool again. Nothing checks that it got the values the CLI checked; a non-deterministic adapter deploys a graph the CLI did not validate.
 - **Load no longer refuses slot fields on a module node built by another copy of core.** Load recognises a node by a global symbol, so it accepts a module node from a different copy of core. An app whose published module bundles a core older than 0.37, instead of declaring `@prisma/composer` as a peer dependency, hands Load a node with `secretSlots` or `paramSlots`. Load ignores them, and the module body fails with a bare `TypeError` reading `ctx.secrets` instead of a message naming `input`. If it is ever seen, the fix is a check in `loadModule` for an own `secretSlots` or `paramSlots` key. Origin: module-input S5 system-design review.

@@ -33,6 +33,7 @@ describe('prismaCloud() — constructs with NO environment present (local-dev sp
       expect(Object.keys(descriptor.nodes).sort()).toEqual([
         'compute',
         'credentials',
+        'platform-variable',
         'postgres',
         'public-url',
         'raw-postgres',

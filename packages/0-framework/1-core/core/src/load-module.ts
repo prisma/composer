@@ -28,11 +28,15 @@ import {
   type ModuleContext,
   type ModuleNode,
   type ProvisionedRef,
+  provisionedValue,
   type ResourceNode,
   type ResourceProps,
   type ServiceNode,
+  type SourceValue,
+  slotsOf,
+  valueResourceOrigin,
 } from './node.ts';
-import { type ProvisionedModuleInput, resolveValues } from './resolve-values.ts';
+import { type ProvisionedModuleInput, resolveValues, valueReadsOf } from './resolve-values.ts';
 import { topoSort } from './toposort.ts';
 import { environmentFacts, isValue } from './value.ts';
 
@@ -116,6 +120,10 @@ function producerIdOf(ref: unknown): string | undefined {
  * identity the branding copy creates, never on reading this back.
  */
 const MODULE_INPUT_KEY = Symbol('prisma:module-input-key');
+
+function describeNode(node: ServiceNode | ResourceNode | ModuleNode): string {
+  return valueResourceOrigin(node)?.label ?? `${node.kind} "${node.name}"`;
+}
 
 /** Whether `ref` carries a callable `satisfies` that accepts `required` truthily. */
 function satisfiesRequired(ref: unknown, required: unknown): boolean {
@@ -274,12 +282,13 @@ function flatten(
   paramBindings: ParamBinding[],
   moduleInputs: ProvisionedModuleInput[],
   byId: Map<string, ServiceNode | ResourceNode | ModuleNode>,
+  valueResources: Map<NodeId, SourceValue>,
   ports: BoundaryPort[],
   authoredEdges: AuthoredEdge[],
   loading: { sealed: boolean },
 ): Record<string, unknown> {
   ports.push(...boundaryPortsOf(selfId, moduleNode));
-  const localIds = new Set<string>();
+  const localNodes = new Map<string, ServiceNode | ResourceNode | ModuleNode>();
   const used = new Set<string>();
 
   // Each ctx.deps entry gets its OWN object identity: a shallow copy of the
@@ -389,9 +398,7 @@ function flatten(
           '("_" collides with the key separator and "." with the address separator.)',
       );
     }
-    if (localIds.has(id)) {
-      throw new LoadError(`Duplicate provision id "${id}" in module "${moduleNode.name}".`);
-    }
+    const fullAddress = `${selfId}.${id}`;
     // Brand-check on a widened alias: predicate-narrowing the declared union
     // drops the `any`-instantiated ResourceNode member (the same quirk
     // slotNodesAndEdges sidesteps by widening `kind` to a plain string).
@@ -415,10 +422,34 @@ function flatten(
           'entry and cannot be provisioned. Build the module with module() instead.',
       );
     }
-    localIds.add(id);
-    const fullAddress = `${selfId}.${id}`;
+    const holder = localNodes.get(id);
+    if (holder !== undefined) {
+      throw new LoadError(
+        `Duplicate provision id "${id}" in module "${selfId}": "${fullAddress}" already holds ${describeNode(holder)}, and ${describeNode(child)} takes the same id. Give one of them a different id with provision(node, { id: '…' }).`,
+      );
+    }
+    localNodes.set(id, child);
 
     if (child.kind === 'resource') {
+      const valueOrigin = valueResourceOrigin(child);
+      if (valueOrigin !== undefined) {
+        if (typeof moduleNode.isRoot !== 'function' || !moduleNode.isRoot()) {
+          throw new LoadError(
+            `Module "${selfId}" provisions "${id}", a resource that is a value. Only the app root, built with appRoot(), can provision one. Provision it in the root and pass its value down through this module's input.`,
+          );
+        }
+        const also =
+          child.provides !== undefined
+            ? 'provides a contract'
+            : Object.keys(slotsOf(child)).length > 0
+              ? 'declares dependency slots'
+              : undefined;
+        if (also !== undefined) {
+          throw new LoadError(
+            `Resource "${fullAddress}" is a value and also ${also}. A resource that is a value provides no contract and has no dependencies.`,
+          );
+        }
+      }
       if (provisionWiring !== undefined) {
         throw new LoadError(
           `provision("${id}") received deps for a resource — a resource's slots are wired when it is constructed, not at provision().`,
@@ -467,6 +498,11 @@ function flatten(
         targetKind: 'resource',
         enclosingModuleName: moduleNode.name,
       });
+      if (valueOrigin !== undefined) {
+        const value = provisionedValue(valueOrigin, fullAddress);
+        valueResources.set(fullAddress, value);
+        return value;
+      }
       return refForResource(fullAddress, child);
     }
 
@@ -488,7 +524,7 @@ function flatten(
       if (provisionSecrets !== undefined) {
         throw new LoadError(
           `provision("${id}") received secrets for a service — a service takes its secrets as ` +
-            'envSecret(...) leaves of its `input` binding (ADR-0042), not a secrets map.',
+            'values bound to secretString() fields of its `input` binding, not a secrets map.',
         );
       }
       // The input binding pairs 1:1 with a declared input schema — a schema
@@ -585,6 +621,7 @@ function flatten(
       paramBindings,
       moduleInputs,
       byId,
+      valueResources,
       ports,
       authoredEdges,
       loading,
@@ -611,14 +648,14 @@ function flatten(
 
   const ctx = blindCast<
     ModuleContext<Deps>,
-    "ctxInputs holds one resolved ref per moduleNode.deps key (the shape a producer port carries), input is buildModuleInput(selfId) exactly when the node declares an input schema, and provision is exactly ModuleBuilder['provision'] — together they satisfy ModuleContext<D, I> structurally for whatever D/I this moduleNode declares"
+    "ctxInputs holds one resolved ref per moduleNode.deps key (the shape a producer port carries), input is buildModuleInput(selfId) exactly when the node declares an input schema, and provision is the one implementation behind both a module() body's and an appRoot() body's overloads — together they satisfy ModuleContext<D, I> structurally for whatever D/I this moduleNode declares"
   >({
     deps: ctxInputs,
     input: moduleNode.inputSchema === undefined ? undefined : buildModuleInput(selfId),
     environment: environmentFacts,
     provision: blindCast<
       ModuleBuilder['provision'],
-      'single implementation behind the provision() overloads — returns the contract-carrying ref for a resource, a ProvisionedRef for a service, and a ProvisionedRef for a nested module, exactly what each overload pins, but an object property cannot carry an overloaded implementation signature'
+      'single implementation behind the provision() overloads of a module() body and an appRoot() body — returns the contract-carrying ref for a resource, a ProvisionedRef for a service and for a nested module, and the copy of the value for a value resource, exactly what each overload pins, but an object property cannot carry an overloaded implementation signature'
     >(provision),
   });
 
@@ -718,6 +755,7 @@ export function loadModule(root: ModuleNode | AppRootNode, opts?: LoadOptions): 
   const inputBindings: InputBindingUse[] = [];
   const paramBindings: ParamBinding[] = [];
   const byId = new Map<string, ServiceNode | ResourceNode | ModuleNode>();
+  const valueResources = new Map<NodeId, SourceValue>();
   const ports: BoundaryPort[] = [];
   const authoredEdges: AuthoredEdge[] = [];
   const loading = { sealed: false };
@@ -734,6 +772,7 @@ export function loadModule(root: ModuleNode | AppRootNode, opts?: LoadOptions): 
       paramBindings,
       moduleInputs,
       byId,
+      valueResources,
       ports,
       authoredEdges,
       loading,
@@ -749,12 +788,11 @@ export function loadModule(root: ModuleNode | AppRootNode, opts?: LoadOptions): 
   }
   const resolved = resolveValues({
     environment: opts?.environment,
-    configuration: opts?.configuration,
-    appConfigurationRead: opts?.appConfigurationRead,
     inputBindings,
     params: paramBindings,
     moduleInputs,
     resources,
+    valueResources,
   });
   const resolvedNodes = nodes.map((entry): GraphNode => {
     const props = resolved.resourceProps.get(entry.id);
@@ -774,6 +812,7 @@ export function loadModule(root: ModuleNode | AppRootNode, opts?: LoadOptions): 
     inputBindings: resolved.inputBindings,
     params: resolved.params,
     secretSources: resolved.secretSources,
+    valueReads: valueReadsOf(resolved.inputBindings),
     appConfigurationRead: resolved.appConfigurationRead,
   };
 }

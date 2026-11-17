@@ -11,13 +11,13 @@ export { ComputeService, compute } from '../compute.ts';
 export { configKey } from '../config-key.ts';
 export type { GeneratedParamOptions } from '../param.ts';
 export {
-  envParam,
   generatedParam,
   isGeneratedParamSource,
   isOriginParamSource,
-  paramName,
   serviceOrigin,
 } from '../param.ts';
+export type { PlatformVariablePayload } from '../platform-variable.ts';
+export { variable } from '../platform-variable.ts';
 export type { ProvisionedEdge } from '../provisioned-edges.ts';
 export { provisionedEdges } from '../provisioned-edges.ts';
 export type {
@@ -35,5 +35,4 @@ export { requiredPackHead, requiredPackHeadOf } from '../required-pack-head.ts';
 export type { CredentialsConfig, CredentialsContract } from '../s3-credentials.ts';
 export { credentialsContract, s3Credentials } from '../s3-credentials.ts';
 export { s3StoreService } from '../s3-store.ts';
-export { envSecret, secretName } from '../secret.ts';
 export { STREAMS_API_KEY, STREAMS_API_KEY_ENV, streamsApiKeyNeed } from '../streams-keys.ts';

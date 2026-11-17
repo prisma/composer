@@ -347,7 +347,7 @@ async function removeAppProject(
   );
   const outcome = await runWithClient(program, client);
   if (outcome.ok) {
-    console.log(`Removed the Project (${projectId}), with every platform variable set on it.`);
+    console.log(`Removed the Project (${projectId}) and every variable set on it.`);
     return;
   }
   if (outcome.error.status === 400) {

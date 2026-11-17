@@ -20,7 +20,6 @@ import type {
 
 interface AppConfigurationReadAt2 {
   readonly rootInput: readonly { readonly path: readonly string[]; readonly value?: unknown }[];
-  readonly configurationKeyText: Readonly<Record<string, string>>;
 }
 
 interface BundleAt2 {
@@ -31,8 +30,7 @@ interface BundleAt2 {
 
 type PlatformVariableReaderAt2 =
   | { readonly kind: 'field'; readonly service: string; readonly path: string }
-  | { readonly kind: 'param'; readonly service: string; readonly param: string }
-  | { readonly kind: 'unread'; readonly node: string; readonly nodeKind: 'module' | 'resource' };
+  | { readonly kind: 'unread'; readonly node: string };
 
 interface PreflightFindingsAt2 {
   readonly unset: readonly {

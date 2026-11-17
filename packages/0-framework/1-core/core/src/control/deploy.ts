@@ -13,7 +13,7 @@ import type { AppConfigurationRead } from '../graph-types.ts';
 import {
   type AppRootNode,
   type BuildAdapter,
-  isParamSource,
+  isValueResource,
   type ModuleNode,
   type ProvisionNeed,
   type ResourceNode,
@@ -227,7 +227,7 @@ export interface LowerOptions {
   readonly name: string;
   /** The environment being deployed, as `--environment` gave it. Required by any value over `environment.name`; the generated stack files always pass it. */
   readonly environment?: string;
-  /** What the caller's Load read from the app configuration (ADR-0062). Load takes the root's input and every configuration key's text from it, and the Prisma Cloud serializer reads a service's `envParam()` leaves from its `configurationKeyText`. */
+  /** What the caller's Load read from the app configuration (ADR-0062). Load takes the root's input from it. */
   readonly appConfigurationRead?: AppConfigurationRead;
   /** The node addresses of the graph the caller built. When given, lowering refuses a graph whose addresses differ. */
   readonly firstProcessNodeAddresses?: readonly string[];
@@ -328,23 +328,7 @@ function assertSameNodeAddresses(built: readonly string[], firstProcess: readonl
   );
 }
 
-/**
- * Resolves one SERVICE-OWN param to its config value. The full resolution
- * order across both value channels:
- *
- * 1. A param claiming BOTH a provision-time binding and a `provision` need
- *    (ADR-0031) is a loud error — two sources for one value.
- * 2. A provision-time binding (a schema-validated literal, or an opaque
- *    `ParamSource` the target resolves at boot per ADR-0019) beats the
- *    declared `default`.
- * 3. A framework-minted `provision` need is resolved per dependency EDGE
- *    against the consumer extension's registry — that path fills CONNECTION
- *    params in `buildConfig`'s inputs loop, never this function. A
- *    service-own param has no edge to mint against, so an unbound need here
- *    falls through like any unbound param.
- * 4. The `default`, else absent (only legal when `optional`), else a loud
- *    error naming the param, the service, and the fix.
- */
+/** A service's own param: its binding, else its `default`, else absent when optional. A `provision` need (ADR-0031) is filled per edge in `buildConfig`, never here. */
 function resolveParam(
   node: ServiceNode,
   serviceId: NodeId,
@@ -355,13 +339,11 @@ function resolveParam(
   if (bound !== undefined) {
     if (param.provision !== undefined) {
       throw new LowerError(
-        `Param "${name}" of "${serviceId}" (service "${node.name}") has two sources claiming one ` +
-          `value: a provision-time binding (${isParamSource(bound) ? 'a param source' : 'a literal value'}) ` +
-          `AND a framework provision need ("${String(param.provision.brand)}") on its declaration — ` +
-          'remove the binding or drop the `provision` facet.',
+        `Param "${name}" of "${serviceId}" (service "${node.name}") is bound at provision and also ` +
+          `declares a framework provision need ("${String(param.provision.brand)}"). ` +
+          'Remove the binding or the `provision` facet.',
       );
     }
-    if (isParamSource(bound)) return bound;
     const result = param.schema['~standard'].validate(bound);
     if (result instanceof Promise) {
       throw new LowerError(
@@ -382,8 +364,8 @@ function resolveParam(
   if (param.optional === true) return undefined;
   throw new LowerError(
     `Param "${name}" of "${serviceId}" (service "${node.name}") has no default, is not optional, ` +
-      'and was not bound at provision — bind it with a literal value or a param source ' +
-      "(e.g. envParam('NAME')) on its provision() call, or give it a default.",
+      'and was not bound at provision — bind it on its provision() call with a literal value or a ' +
+      'value the deploy has, or give it a default.',
   );
 }
 
@@ -855,7 +837,7 @@ export function lowering(
       if (descriptor.kind === 'resource') {
         const result = yield* descriptor(ctx);
         lowered.set(id, result.outputs);
-        entries.push({ address: id, entities: result.entities });
+        if (!isValueResource(node)) entries.push({ address: id, entities: result.entities });
         continue;
       }
       if (descriptor.kind !== 'service') {

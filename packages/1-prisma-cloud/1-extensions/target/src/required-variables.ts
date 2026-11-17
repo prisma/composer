@@ -26,14 +26,12 @@ export function checkRequirements(
   serviceAddress: string,
   binding: unknown,
   unset: readonly string[],
-  env: Readonly<Record<string, unknown>>,
 ): RequirementCheck {
-  const invalid = inputValidationFailure(node, serviceAddress, binding, {
-    env,
-    absentSecrets: new Set(),
-  });
-  if (invalid !== undefined) return { kind: 'invalid', message: invalid };
-  const markers = serializeInput(node, serviceAddress, binding, { env })?.markers ?? [];
+  const invalid = inputValidationFailure(node, serviceAddress, binding);
+  if (invalid !== undefined) {
+    return { kind: 'invalid', message: `${invalid.message}${invalid.variableNote}` };
+  }
+  const markers = serializeInput(node, serviceAddress, binding)?.markers ?? [];
   const unsetNames = new Set(unset);
   const inArray = new Set(
     markers.filter((marker) => marker.inArray && unsetNames.has(marker.name)).map((m) => m.name),
@@ -52,39 +50,21 @@ export function checkRequirements(
   });
   if (rest.length === 0) return checked([]);
   const withoutAll = inputValidationFailure(node, serviceAddress, binding, {
-    env,
-    absentSecrets: new Set(rest),
+    absentVariables: new Set(rest),
   });
   if (withoutAll === undefined) return checked([]);
   const alone: MissingVariables[] = [];
   for (const name of rest) {
-    const message = inputValidationFailure(node, serviceAddress, binding, {
-      env,
-      absentSecrets: new Set([name]),
+    const failure = inputValidationFailure(node, serviceAddress, binding, {
+      absentVariables: new Set([name]),
     });
-    if (message !== undefined) {
-      alone.push({ names: [name], serviceAddress, message, decidedBy: 'schema' });
+    if (failure !== undefined) {
+      alone.push({ names: [name], serviceAddress, message: failure.message, decidedBy: 'schema' });
     }
   }
   return checked(
     alone.length > 0
       ? alone
-      : [{ names: rest, serviceAddress, message: withoutAll, decidedBy: 'schema' }],
+      : [{ names: rest, serviceAddress, message: withoutAll.message, decidedBy: 'schema' }],
   );
 }
-
-export function paramIsRequired(node: ServiceNode, param: string): boolean {
-  const declared = node.params[param];
-  return declared !== undefined && declared.default === undefined && declared.optional !== true;
-}
-
-export const requiredParam = (param: {
-  readonly name: string;
-  readonly serviceAddress: string;
-  readonly param: string;
-}): MissingVariables => ({
-  names: [param.name],
-  serviceAddress: param.serviceAddress,
-  message: `per-key param "${param.param}" has no default and is not optional`,
-  decidedBy: 'rule',
-});

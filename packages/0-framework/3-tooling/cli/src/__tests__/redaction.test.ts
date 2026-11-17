@@ -343,7 +343,7 @@ describe('redacting what a command returns', () => {
         unset: [
           {
             name: 'MAIL_KEY',
-            readers: [{ kind: 'unread', node: 'shop.mail', nodeKind: 'module' }],
+            readers: [{ kind: 'unread', node: 'shop.mail' }],
             commands: ["prisma project env add 'MAIL_KEY=hunter2'"],
           },
         ],
@@ -370,7 +370,7 @@ describe('redacting what a command returns', () => {
         unset: [
           {
             name: 'MAIL_KEY',
-            readers: [{ kind: 'unread', node: 'shop.mail', nodeKind: 'module' }],
+            readers: [{ kind: 'unread', node: 'shop.mail' }],
             commands: ["prisma project env add 'MAIL_KEY=[redacted]'"],
           },
         ],

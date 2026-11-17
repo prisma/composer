@@ -1,4 +1,4 @@
-import { appRoot, module, paramSource, secretSource, service } from '@internal/core';
+import { appRoot, module, secretSource, service } from '@internal/core';
 
 const anyInput = {
   '~standard': {
@@ -30,21 +30,30 @@ const greetingInput = {
   },
 };
 
+const rootInput = {
+  '~standard': {
+    version: 1 as const,
+    vendor: 'fixture',
+    types: { input: { CONFIG_POOL_PROBE: '' }, output: { CONFIG_POOL_PROBE: '' } },
+    validate: (value: unknown) =>
+      typeof value === 'object' && value !== null && 'CONFIG_POOL_PROBE' in value
+        ? { value: { CONFIG_POOL_PROBE: String(value.CONFIG_POOL_PROBE) } }
+        : { issues: [{ message: 'CONFIG_POOL_PROBE is required' }] },
+  },
+};
+
 const greeter = module('greeter', { input: greetingInput }, ({ input, provision }) => {
   provision(echo, { input: { greeting: input.greeting } });
 });
 
-export default appRoot('pipeline-app-configuration-fixture', ({ provision }) => {
-  provision(greeter, {
-    input: {
-      greeting: paramSource<{ name: string }, string>(
-        { name: 'CONFIG_POOL_PROBE' },
-        { configurationKey: 'CONFIG_POOL_PROBE' },
-      ),
-    },
-  });
-  provision(echo, {
-    id: 'keyed',
-    input: { key: secretSource({}, { label: 'secret', secretsKey: 'S11_SECRET' }) },
-  });
-});
+export default appRoot(
+  'pipeline-app-configuration-fixture',
+  { input: rootInput },
+  ({ input, provision }) => {
+    provision(greeter, { input: { greeting: input.CONFIG_POOL_PROBE } });
+    provision(echo, {
+      id: 'keyed',
+      input: { key: secretSource({}, { label: 'secret', secretsKey: 'S11_SECRET' }) },
+    });
+  },
+);

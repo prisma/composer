@@ -13,10 +13,10 @@ const RESERVED_NAMES: ReadonlyMap<string, string> = new Map([
   ['HOME', SHELL_REASON],
 ]);
 
-export function assertVariableName(name: string, factory: string): void {
+export function assertVariableName(name: string, factory: string, example: string): void {
   if (typeof name !== 'string' || name.length === 0) {
     throw new Error(
-      `${factory}() requires a non-empty platform variable name, for example ${factory}('API_KEY').`,
+      `${factory}() requires a non-empty platform variable name, for example ${example}.`,
     );
   }
   if (!VARIABLE_NAME.test(name)) {
@@ -26,7 +26,7 @@ export function assertVariableName(name: string, factory: string): void {
   }
   if (name.startsWith('COMPOSER_')) {
     throw new Error(
-      `${factory} name "${name}" is reserved: names starting with COMPOSER_ are Composer's own platform variables.`,
+      `${factory} name "${name}" is reserved: names starting with COMPOSER_ are Composer's own variables on the platform.`,
     );
   }
   const reason = RESERVED_NAMES.get(name);

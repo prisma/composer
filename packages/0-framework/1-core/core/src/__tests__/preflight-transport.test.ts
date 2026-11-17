@@ -87,7 +87,7 @@ describe('readPreflightPayload()', () => {
 describe('readPreflightFindings()', () => {
   const unset: UnsetPlatformVariable = {
     name: 'MAIL_KEY',
-    readers: [{ kind: 'unread', node: 'app.mail', nodeKind: 'module' }],
+    readers: [{ kind: 'unread', node: 'app.mailKey' }],
     commands: ["prisma project env add 'MAIL_KEY=<value>' --project 'proj' --role production"],
   };
 
@@ -108,6 +108,12 @@ describe('readPreflightFindings()', () => {
     );
     expect(() =>
       readPreflightFindings({ [PREFLIGHT_FINDINGS_ENV_VAR]: '{"unset":[{"name":"A_KEY"}]}' }),
+    ).toThrow(/could not be read in the second process/);
+    const namelessReader = { ...unset, readers: [{ kind: 'unread' }] };
+    expect(() =>
+      readPreflightFindings({
+        [PREFLIGHT_FINDINGS_ENV_VAR]: JSON.stringify({ unset: [namelessReader] }),
+      }),
     ).toThrow(/could not be read in the second process/);
   });
 });

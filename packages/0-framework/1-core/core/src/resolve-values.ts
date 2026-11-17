@@ -11,6 +11,7 @@ import {
   type ParamBinding,
   type RootInputField,
   type SecretSourceUse,
+  type ValueRead,
 } from './graph-types.ts';
 import { inputFieldLabel } from './module-input.ts';
 import {
@@ -21,6 +22,7 @@ import {
   type ResourceNode,
   type ResourceProps,
   type SecretSource,
+  type SourceValue,
   sourceOriginOf,
 } from './node.ts';
 import {
@@ -179,8 +181,8 @@ function nodeKindOf(site: ValueBindingSite): SecretSourceUse['nodeKind'] {
   }
 }
 
-function pointersIn(values: unknown): ReadonlySet<object> {
-  const pointers = new Set<object>();
+function pointersIn(values: unknown): ReadonlySet<ParamSource | SecretSource> {
+  const pointers = new Set<ParamSource | SecretSource>();
   const seen = new WeakSet<object>();
   const walk = (value: unknown): void => {
     if (isSecretSource(value) || isParamSource(value)) {
@@ -210,7 +212,7 @@ function checkResult(result: unknown, fnLabel: string): void {
     }
     if (isSecretSource(value) || isParamSource(value)) {
       throw new LoadError(
-        `${fnLabel} returned a source${atPath}, such as envSecret() or envParam() called inside the function. resolve() returns plain data; bind a source directly.`,
+        `${fnLabel} returned a source${atPath}, a value known only at boot. resolve() returns plain data; bind the source directly.`,
       );
     }
     if (isValue(value)) {
@@ -258,7 +260,7 @@ function firstPointer(
 function refusePointerDependency(fnLabel: string, dependency: Value<unknown>, real: unknown): void {
   const found = firstPointer(real);
   if (found === undefined) return;
-  const label = sourceOriginOf(found.pointer)?.label ?? 'a value known only at boot';
+  const label = sourceOriginOf(found.pointer)?.label ?? 'a source';
   const origin = originOf(dependency);
   if (origin.kind !== 'input') {
     throw new LoadError(
@@ -353,7 +355,7 @@ function refuseSecretBoxes(address: NodeId, value: unknown, path: string): void 
   if (isSecretSource(value) || isParamSource(value)) return;
   if (isSecretString(value)) {
     throw new LoadError(
-      `${describeSite({ address, kind: 'moduleInput', path })} is bound to a SecretString. A secret's value never appears in the code; bind envSecret('NAME'), or pass on an input field typed secretString().`,
+      `${describeSite({ address, kind: 'moduleInput', path })} is bound to a SecretString. A secret's value never appears in the code; bind a secret source, or pass on an input field typed secretString().`,
     );
   }
   if (Array.isArray(value)) {
@@ -374,18 +376,22 @@ function sourcesByPath(
   value: unknown,
   path = '',
   found = new Map<string, ParamSource | SecretSource>(),
+  ancestors = new Set<object>(),
 ) {
   if (isSecretSource(value) || isParamSource(value)) {
     found.set(path, sourceOriginOf(value)?.source ?? value);
-  } else if (Array.isArray(value)) {
-    for (const [index, member] of value.entries()) {
-      sourcesByPath(member, joinPath(path, index), found);
-    }
-  } else if (isPlainObject(value)) {
-    for (const [key, member] of Object.entries(value)) {
-      sourcesByPath(member, joinPath(path, key), found);
-    }
+    return found;
   }
+  if (!Array.isArray(value) && !isPlainObject(value)) return found;
+  if (ancestors.has(value)) return found;
+  ancestors.add(value);
+  const entries: [string | number, unknown][] = Array.isArray(value)
+    ? value.map((member, index) => [index, member])
+    : Object.entries(value);
+  for (const [key, member] of entries) {
+    sourcesByPath(member, joinPath(path, key), found, ancestors);
+  }
+  ancestors.delete(value);
   return found;
 }
 
@@ -453,13 +459,22 @@ function validateModuleInput(
   return restore(result.value, '');
 }
 
+function refuseSourcesInParams(params: readonly ParamBinding[]): void {
+  for (const { serviceAddress, slot, binding } of params) {
+    const [source] = pointersIn(binding);
+    if (source === undefined) continue;
+    const label = sourceOriginOf(source)?.label ?? 'a source';
+    throw new LoadError(
+      `Service "${serviceAddress}" binds its param "${slot}" to ${label}, a value known only at boot. A param takes a literal or a value the deploy has. Bind the value to a field of the service's input instead.`,
+    );
+  }
+}
+
 function refusePointersInProps(address: NodeId, props: unknown): void {
   const seen = new WeakSet<object>();
   const walk = (value: unknown, path: string): void => {
     if (isSecretSource(value) || isParamSource(value)) {
-      const label =
-        sourceOriginOf(value)?.label ??
-        (isSecretSource(value) ? 'a secret source' : 'a param source');
+      const label = sourceOriginOf(value)?.label ?? 'a source';
       throw new LoadError(
         `${describeSite({ address, kind: 'props', path })} is bound to ${label}, which is known only at boot. A resource's props are read at deploy; bind a value known at deploy.`,
       );
@@ -481,12 +496,11 @@ function refusePointersInProps(address: NodeId, props: unknown): void {
  */
 export function resolveValues(input: {
   readonly environment: EnvironmentRealValues | undefined;
-  readonly configuration: Readonly<Record<string, unknown>> | undefined;
-  readonly appConfigurationRead: AppConfigurationRead | undefined;
   readonly inputBindings: readonly InputBindingUse[];
   readonly params: readonly ParamBinding[];
   readonly moduleInputs: readonly ProvisionedModuleInput[];
   readonly resources: ReadonlyMap<NodeId, ResourceNode>;
+  readonly valueResources: ReadonlyMap<NodeId, SourceValue>;
 }): {
   readonly inputBindings: readonly InputBindingUse[];
   readonly params: readonly ParamBinding[];
@@ -496,32 +510,12 @@ export function resolveValues(input: {
 } {
   const { environment } = input;
   const rootFields = new Map<string, RootInputField>();
-  const keysRead = new Map<string, { readonly label: string; readonly text: string | undefined }>();
-  /** The text the app configuration holds for `key`, recorded; `undefined` when it holds none or `''`. */
-  const configurationText = (
-    key: string,
-    label: string,
-    site: ValueBindingSite,
-  ): string | undefined => {
-    let raw: unknown;
-    if (input.appConfigurationRead !== undefined)
-      raw = input.appConfigurationRead.configurationKeyText[key];
-    else if (input.configuration !== undefined) raw = input.configuration[key];
-    else {
-      throw new LoadError(
-        `${describeSite(site)} depends on ${label}, but Load was given no app configuration to read "${key}" from. Pass { configuration } to Load; the deploy and dev commands pass the values the \`config\` adapters return.`,
-      );
-    }
-    if (raw !== undefined && raw !== '' && typeof raw !== 'string') {
-      throw new LoadError(
-        `${describeSite(site)} depends on ${label}, which reads "${key}" from the values the \`config\` adapters return, but they return ${describeKind(raw)} for it, not text. ${label} reads text; to pass other data, declare it in the root module's input.`,
-      );
-    }
-    const text = raw === undefined || raw === '' ? undefined : raw;
-    keysRead.set(key, { label, text });
-    return text;
-  };
   const secretUses = new Map<SecretSource, SecretSourceUse>();
+  for (const [address, value] of input.valueResources) {
+    if (isSecretSource(value)) {
+      secretUses.set(value, { source: value, address, nodeKind: 'resource' });
+    }
+  }
   const recordSecret = (source: SecretSource, site: ValueBindingSite): void => {
     const canonical = canonicalSecret(source);
     if (secretUses.has(canonical)) return;
@@ -533,9 +527,8 @@ export function resolveValues(input: {
   };
   const secretSourcesReceivedBy = (
     inputBindings: readonly InputBindingUse[],
-    params: readonly ParamBinding[],
   ): readonly SecretSourceUse[] => {
-    for (const { serviceAddress, binding } of [...inputBindings, ...params]) {
+    for (const { serviceAddress, binding } of inputBindings) {
       for (const pointer of pointersIn(binding)) {
         if (!isSecretSource(pointer)) continue;
         const canonical = canonicalSecret(pointer);
@@ -599,22 +592,12 @@ export function resolveValues(input: {
         break;
       case 'source': {
         if (isSecretSource(origin.source)) recordSecret(origin.source, site);
-        if (origin.sourceKind === 'secret' || origin.configurationKey === undefined) {
-          result = origin.source;
-        } else {
-          result = configurationText(origin.configurationKey, origin.label, site);
-        }
+        result = origin.source;
         break;
       }
       case 'computed': {
         const args = origin.dependencies.map((dependency) => {
           const real = resolveOne(dependency, site);
-          const source = originOf(dependency);
-          if (real === undefined && source.kind === 'source' && source.sourceKind === 'param') {
-            throw new LoadError(
-              `${fnLabelFor(site)} lists ${source.label}, but "${source.configurationKey}" is unset or empty, so it has no real value. Set "${source.configurationKey}", or bind ${source.label} directly into an input binding, where an absent value leaves the key out and the schema decides.`,
-            );
-          }
           refusePointerDependency(fnLabelFor(site), dependency, real);
           return real;
         });
@@ -694,41 +677,12 @@ export function resolveValues(input: {
     input.moduleInputs.find((entry) => entry.isLoadRoot)?.moduleAddress ?? '';
 
   const appConfigurationReadOf = (
-    inputBindings: readonly InputBindingUse[],
-    params: readonly ParamBinding[],
     secretSources: readonly SecretSourceUse[],
   ): AppConfigurationRead => {
-    if (input.configuration !== undefined || input.appConfigurationRead !== undefined) {
-      const kept: { readonly binding: unknown; readonly site: ValueBindingSite }[] = [
-        ...inputBindings.map(({ serviceAddress, binding }) => ({
-          binding,
-          site: { address: serviceAddress, kind: 'serviceInput' as const, path: '' },
-        })),
-        ...params.map(({ serviceAddress, slot, binding }) => ({
-          binding,
-          site: { address: serviceAddress, kind: 'param' as const, path: slot },
-        })),
-      ];
-      for (const { binding, site } of kept) {
-        for (const pointer of pointersIn(binding)) {
-          if (!isParamSource(pointer)) continue;
-          const origin = sourceOriginOf(pointer);
-          if (origin?.sourceKind === 'param' && origin.configurationKey !== undefined) {
-            configurationText(origin.configurationKey, origin.label, site);
-          }
-        }
-      }
-    }
     for (const use of secretSources) {
       const origin = sourceOriginOf(use.source);
       if (origin?.sourceKind !== 'secret') continue;
       const key = origin.secretsKey;
-      const read = key === undefined ? undefined : keysRead.get(key);
-      if (key !== undefined && read !== undefined) {
-        throw new LoadError(
-          `${read.label} reads "${key}" from the app configuration, and ${origin.label} names "${key}" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every plain value it reads, in a file, and never writes a secret to a file. Give the plain value and the secret different names.`,
-        );
-      }
       const field = [...rootFields.values()].find((candidate) => candidate.path[0] === key);
       if (key !== undefined && field !== undefined) {
         const label = inputFieldLabel({
@@ -749,10 +703,7 @@ export function resolveValues(input: {
         );
       }
     }
-    const configurationKeyText: Record<string, string> = {};
-    for (const [key, { text }] of keysRead)
-      if (text !== undefined) configurationKeyText[key] = text;
-    return { rootInput: [...rootFields.values()], configurationKeyText };
+    return { rootInput: [...rootFields.values()] };
   };
 
   for (const entry of input.moduleInputs) validatedInputOf(entry);
@@ -763,17 +714,14 @@ export function resolveValues(input: {
   );
   if (found.length === 0) {
     for (const [address, props] of authoredProps) refusePointersInProps(address, props);
-    const secretSources = secretSourcesReceivedBy(input.inputBindings, input.params);
+    refuseSourcesInParams(input.params);
+    const secretSources = secretSourcesReceivedBy(input.inputBindings);
     return {
       inputBindings: input.inputBindings,
       params: input.params,
       resourceProps: authoredProps,
       secretSources,
-      appConfigurationRead: appConfigurationReadOf(
-        input.inputBindings,
-        input.params,
-        secretSources,
-      ),
+      appConfigurationRead: appConfigurationReadOf(secretSources),
     };
   }
 
@@ -808,12 +756,24 @@ export function resolveValues(input: {
     if (binding === undefined && isValue(entry.binding)) return [];
     return [binding === entry.binding ? entry : { ...entry, binding }];
   });
-  const secretSources = secretSourcesReceivedBy(inputBindings, params);
+  refuseSourcesInParams(params);
+  const secretSources = secretSourcesReceivedBy(inputBindings);
   return {
     resourceProps,
     inputBindings,
     params,
     secretSources,
-    appConfigurationRead: appConfigurationReadOf(inputBindings, params, secretSources),
+    appConfigurationRead: appConfigurationReadOf(secretSources),
   };
+}
+
+export function valueReadsOf(inputBindings: readonly InputBindingUse[]): readonly ValueRead[] {
+  const reads: ValueRead[] = [];
+  for (const { serviceAddress, binding } of inputBindings) {
+    for (const [path, source] of sourcesByPath(binding)) {
+      const resource = sourceOriginOf(source)?.resource;
+      if (resource !== undefined) reads.push({ reader: serviceAddress, resource, path });
+    }
+  }
+  return reads;
 }

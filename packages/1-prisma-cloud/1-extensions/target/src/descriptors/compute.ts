@@ -1,15 +1,8 @@
 /** The `compute` node kind's descriptor: the four service hooks — provision, serialize, package, deploy — plus `reserve`, which stands in for the last two when the service runs a dev server (ADR-0056). */
 
 import * as Prisma from '@alchemy.run/prisma';
-import { isParamSource } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
-import {
-  decodeParamPointer,
-  describeDocument,
-  encodeParamPointer,
-  isParamPointerRow,
-  type PlatformMarkerUse,
-} from '@internal/input-document';
+import { describeDocument, type PlatformMarkerUse } from '@internal/input-document';
 import {
   ARTIFACT_CONTENT_TYPE,
   appAfterEnvironment,
@@ -30,7 +23,6 @@ import {
   legacyInputKey,
   legacyNodeResourceId,
 } from '../legacy-resource-ids.ts';
-import { paramBindingFor, paramName } from '../param.ts';
 import { provisionedEdges } from '../provisioned-edges.ts';
 import { resourceId } from '../resource-ids.ts';
 import { encode, type InputDocumentRow, paramEntries, serializeInput } from '../serializer.ts';
@@ -83,7 +75,7 @@ export interface ComputeSerialized {
    */
   readonly triggers: Readonly<Record<string, unknown>>;
   /** Platform variables the service reads and Composer does not write; each joins the triggers as `<name>:updatedAt`. */
-  readonly pointers: readonly string[];
+  readonly platformVariables: readonly string[];
   readonly port: number;
   readonly input?: InputDocumentRow;
 }
@@ -137,7 +129,7 @@ interface EnvRow {
   readonly record: Prisma.EnvironmentVariable;
   readonly key: string;
   readonly value: Redacted.Redacted<string> | Output.Output<Redacted.Redacted<string>>;
-  readonly pointers?: readonly string[];
+  readonly platformVariables?: readonly string[];
 }
 
 const sortedMarkerNames = (markers: readonly PlatformMarkerUse[]): string[] =>
@@ -206,15 +198,7 @@ export function computeDescriptor(
           // Mirrors stash(), keeping writer and reader consistent.
           if (value === undefined) continue;
           const key = configKey(address, d);
-          // A service's own param resolved (buildConfig) to an opaque
-          // ParamSource — env-sourced (ADR-0029's param sibling) — writes a
-          // POINTER row (the bound platform NAME), never a value; everything
-          // else (literals; dependency-input provisioning refs) is unchanged.
-          const rowValue =
-            d.owner === 'service' && isParamSource(value)
-              ? encodeParamPointer(paramName(paramBindingFor(graph.params, address, d.name)))
-              : encode(d.owner, value);
-          const wrapped = envValue(rowValue);
+          const wrapped = envValue(encode(d.owner, value));
           const record = yield* Prisma.EnvironmentVariable(resourceId(address, 'env', key), {
             project: projectId,
             key,
@@ -222,30 +206,14 @@ export function computeDescriptor(
             class: cls,
             ...branch,
           }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyConfigKey(app, address, d))));
-          // A pointer row triggers on its text (the platform NAME); the pointed
-          // variable's own rotation joins as a `<name>:updatedAt` member.
-          const pointer =
-            d.owner === 'service' && isParamPointerRow(rowValue)
-              ? decodeParamPointer(rowValue)
-              : undefined;
-          rows.push({
-            record,
-            key,
-            value: wrapped,
-            ...(pointer !== undefined ? { pointers: [pointer] } : {}),
-          });
+          rows.push({ record, key, value: wrapped });
         }
 
         const inputRow = serializeInput(
           svc,
           address,
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
-          {
-            absentSecrets: preflightView(ctx.preflight).absentSecrets,
-            ...(ctx.opts.appConfigurationRead !== undefined
-              ? { env: ctx.opts.appConfigurationRead.configurationKeyText }
-              : {}),
-          },
+          { absentVariables: preflightView(ctx.preflight).absentVariables },
         );
         if (inputRow !== undefined) {
           const inputValue = envValue(inputRow.value);
@@ -259,7 +227,7 @@ export function computeDescriptor(
             }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(app, address)))),
             key: inputRow.key,
             value: inputValue,
-            pointers: sortedMarkerNames(inputRow.markers),
+            platformVariables: sortedMarkerNames(inputRow.markers),
           });
           // Each generated leaf: generate its value ONCE (the resource keeps it
           // stable across redeploys via its persisted output) and provision it
@@ -380,7 +348,7 @@ export function computeDescriptor(
           environment: rows.map((r) => r.record),
           // Keys are unique per row (one env var each), so no member collides.
           triggers: Object.fromEntries(rows.map((r) => [r.key, r.value])),
-          pointers: [...new Set(rows.flatMap((r) => r.pointers ?? []))],
+          platformVariables: [...new Set(rows.flatMap((r) => r.platformVariables ?? []))],
           port,
           ...(inputRow !== undefined ? { input: inputRow } : {}),
         };
@@ -401,7 +369,7 @@ export function computeDescriptor(
 
     deploy: ({ address, graph, preflight }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
-        const { pointerVersion } = preflightView(preflight);
+        const { platformVariableVersion } = preflightView(preflight);
         // Env keys never contain ':', so a `<name>:updatedAt` member cannot
         // collide with a row's own trigger member. The key name is historical:
         // under `prisma dev` the member holds an HMAC of the value, and
@@ -409,7 +377,10 @@ export function computeDescriptor(
         const triggers = {
           ...serialized.triggers,
           ...Object.fromEntries(
-            serialized.pointers.map((name) => [`${name}:updatedAt`, pointerVersion(name) ?? '?']),
+            serialized.platformVariables.map((name) => [
+              `${name}:updatedAt`,
+              platformVariableVersion(name) ?? '?',
+            ]),
           ),
         };
         const app = graph.root.id;

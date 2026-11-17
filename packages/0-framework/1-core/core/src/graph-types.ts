@@ -29,8 +29,6 @@ export interface RootInputField {
 export interface AppConfigurationRead {
   /** Each field of the root's input that its body names, as the root's schema produced it. Empty when the root declares no input. */
   readonly rootInput: readonly RootInputField[];
-  /** The text the app configuration holds for each configuration key a source reads, such as `envParam('NAME')`'s `NAME`. A key the app configuration does not hold, or holds as `''`, is absent. */
-  readonly configurationKeyText: Readonly<Record<string, string>>;
 }
 
 interface CommonLoadOptions {
@@ -42,7 +40,7 @@ interface CommonLoadOptions {
 
 /** Load's options in the first process, or wherever the app configuration is at hand. */
 export interface FirstProcessLoadOptions extends CommonLoadOptions {
-  /** The app configuration (ADR-0062): what the `config` adapters return. It is the root's input, which the root's schema checks, and what a source with a configuration key, such as `envParam('NAME')`, reads. */
+  /** The app configuration (ADR-0062): what the `config` adapters return. It is the root's input, which the root's schema checks. */
   readonly configuration?: Readonly<Record<string, unknown>>;
   readonly appConfigurationRead?: never;
 }
@@ -129,31 +127,33 @@ export interface InputBindingUse {
   readonly binding: unknown;
 }
 
-/**
- * A resolved param binding: a `provision()` call bound a service's param
- * slot to either a literal value or an opaque `ParamSource` — the non-secret
- * sibling of `SecretBinding`. Unlike a secret, a param binding is not
- * required for every declared param (a param may fall back to its own
- * `default`), so this list only carries the ones a `provision()` call
- * actually bound.
- */
 export interface ParamBinding {
   /** The graph address of the service that declares the param. */
   readonly serviceAddress: NodeId;
   /** The param name on that service. */
   readonly slot: string;
-  /** A literal value (schema-validated by `buildConfig`) or an opaque `ParamSource` (the deploy target reads its own payload back) — check with `isParamSource`. Core never inspects a `ParamSource`'s payload. */
+  /** A literal value, schema-validated by `buildConfig`. */
   readonly binding: unknown;
 }
 
-/** A secret source a binding in the graph names, wherever it sits (ADR-0029). Deploy preflight checks every one, including one in a module's input that no service receives. */
+/** A secret source a binding in the graph names, or a secret value resource, wherever it sits (ADR-0029). Deploy preflight checks every one, including one in a module's input that no service receives. */
 export interface SecretSourceUse {
   /** The source, as its target built it. Core never reads its payload. */
   readonly source: SecretSource;
-  /** A service whose final binding holds it, if one does. Otherwise the module whose input holds it. */
+  /** A service whose final binding holds it, if one does. Otherwise the secret value resource itself, or the module whose input holds it. */
   readonly address: NodeId;
   /** That node's kind. */
   readonly nodeKind: 'service' | 'module' | 'resource';
+}
+
+/** One service reading one value resource's value. */
+export interface ValueRead {
+  /** The service whose resolved binding holds the value. */
+  readonly reader: NodeId;
+  /** The address of the value resource. */
+  readonly resource: NodeId;
+  /** The dotted key path in the service's input binding; `''` for the whole binding. */
+  readonly path: string;
 }
 
 export interface Graph {
@@ -167,10 +167,12 @@ export interface Graph {
   readonly authoredEdges: readonly AuthoredEdge[];
   /** Every service input binding a `provision()` call supplied (ADR-0042). */
   readonly inputBindings: readonly InputBindingUse[];
-  /** Every service param bound at provision — literal or source; unbound params are absent here and fall back to their `default` (see `buildConfig`). */
+  /** Every service param bound at provision; unbound params are absent here and fall back to their `default` (see `buildConfig`). */
   readonly params: readonly ParamBinding[];
-  /** Every secret source a binding names, once each, in the order Load met them (ADR-0029). */
+  /** Every secret source a binding names, and every secret value resource, once each (ADR-0029). */
   readonly secretSources: readonly SecretSourceUse[];
+  /** Each service that reads a value resource's value, and where in its binding it reads it. */
+  readonly valueReads: readonly ValueRead[];
   /** What this Load read from the app configuration (ADR-0062). Empty when Load was given none. */
   readonly appConfigurationRead: AppConfigurationRead;
 }

@@ -635,7 +635,7 @@ describe('step events', () => {
         readers: [{ kind: 'field', service: 'shop.email', path: 'apiKey' }],
         commands: [
           "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview",
-          "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview --branch 'pr-7'",
+          "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --branch 'pr-7'",
         ],
       },
     ],
@@ -693,7 +693,7 @@ describe('step events', () => {
       'Platform variables with no value:',
       '  - EMAIL_API_KEY  (read by service "shop.email", field "apiKey")',
       "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview",
-      "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview --branch 'pr-7'",
+      "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --branch 'pr-7'",
     ];
     const expected = [
       '▸ assemble services',
@@ -762,7 +762,7 @@ describe('step events', () => {
       unset: [
         {
           name: 'MAIL_FROM',
-          readers: [{ kind: 'unread', node: 'shop.mail', nodeKind: 'module' }],
+          readers: [{ kind: 'unread', node: 'shop.mail' }],
           commands: ["prisma project env add 'MAIL_FROM=<value>' --project 'proj_1'"],
         },
       ],
@@ -782,7 +782,7 @@ describe('step events', () => {
     expect(deployed).toBeGreaterThan(-1);
     expect(before).toContain('EMAIL_API_KEY');
     expect(before).not.toContain('MAIL_FROM');
-    expect(after).toContain('  - MAIL_FROM  (named by module "shop.mail", read by no service)');
+    expect(after).toContain('  - MAIL_FROM  (named by resource "shop.mail", read by no service)');
     expect(after).not.toContain('EMAIL_API_KEY');
   });
 

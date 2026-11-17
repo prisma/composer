@@ -24,20 +24,11 @@ boot loop stashing it address-free. `origin()` is a memoized method on the
 accessor, because the origin is neither a dep, a param, nor a secret
 (ADR-0021). It never appears in `config()`.
 
-`envParam(…)` remains the right shape for a *genuinely operator-known* origin
-— a custom domain the operator provisioned themselves. This ADR covers only
-the origin the platform assigns.
+A plain platform variable node, or a root input field, remains the right shape for a *genuinely operator-known* origin — a custom domain the operator provisioned themselves. This ADR covers only the origin the platform assigns.
 
 ## Reasoning
 
-**Operator input was a category error.** The first port that needed its own
-URL at boot (Better Auth `baseURL`, Stripe redirects) modelled it as
-`envParam('APP_ORIGIN')`. But no operator knows this value — the platform
-assigns it at deploy. Putting a platform output in an operator-input slot
-forced a five-step manual loop: deploy with a placeholder, read the assigned
-URL from the deploy report, PATCH the platform variable, force an artifact-hash
-change so the redeploy isn't a no-op, revert. The manual PATCH also wrote a
-bare string where the deserializer expects JSON, crash-looping the service.
+**Operator input was a category error.** The first port that needed its own URL at boot (Better Auth `baseURL`, Stripe redirects) modelled it as an operator-set platform variable, `APP_ORIGIN`. But no operator knows this value — the platform assigns it at deploy. Putting a platform output in an operator-input slot forced a five-step manual loop: deploy with a placeholder, read the assigned URL from the deploy report, PATCH the variable on the platform, force an artifact-hash change so the redeploy isn't a no-op, revert. The manual PATCH also wrote a bare string where the deserializer expects JSON, crash-looping the service.
 
 **The value is knowable before the version exists.** The compute *service*
 (the stable endpoint, hence the URL) is a separate resource from the *version*
@@ -77,9 +68,7 @@ services that never read it are unaffected.
 
 ## Alternatives considered
 
-- **Keep `envParam('APP_ORIGIN')` + manual correction** — every step of the
-  workaround was self-inflicted by the wrong category, and the manual PATCH
-  crash-looped the service.
+- **Keep an operator-set `APP_ORIGIN` platform variable, corrected by hand** — every step of the workaround was self-inflicted by the wrong category, and the manual PATCH crash-looped the service.
 - **Framework builds the URL from a region→subdomain map** — guessing
   (ADR-0005), and couples the framework to a URL scheme the platform owns.
 - **Framework-driven two-pass deploy** (write env post-promote) — better than

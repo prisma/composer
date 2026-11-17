@@ -10,9 +10,10 @@ export const APP_CONFIGURATION_FILE_ENV = 'PRISMA_COMPOSER_APP_CONFIGURATION_FIL
 /** `prisma dev` only: the named secrets, as a JSON object. */
 export const NAMED_SECRETS_ENV = 'PRISMA_COMPOSER_NAMED_SECRETS';
 
-/** What the app configuration file holds: what the first process's Load read from the app configuration, and the node addresses of the graph it built. */
+/** What the app configuration file holds: what the first process's Load read, the plain platform variable texts, and the graph's node addresses. */
 export interface AppConfigurationFile {
   readonly appConfigurationRead: AppConfigurationRead;
+  readonly plainVariableText: Readonly<Record<string, string>>;
   readonly nodeAddresses: readonly string[];
 }
 
@@ -97,18 +98,13 @@ export interface SecondProcessHandover {
 }
 
 /**
- * First process: the handover to the second process (ADR-0062). The app configuration file at
- * `file` holds what Load read and the graph's node addresses. With `appSecrets`, which only
- * `prisma dev` passes, the environment also carries the named secrets: the app secrets under
- * the graph's secrets keys, each with text. Refuses when the file would hold any of
- * `knownSecrets`. Every other input is plain data from the graph, such as
- * `graph.appConfigurationRead`, `nodeAddresses(graph)` and `secretsKeys(graph)`, so a caller with
- * its own copy of Composer's core can pass them. The exception is `knownSecrets`, a
- * `KnownSecrets`, which such a caller builds from the testing entry.
+ * First process: the app configuration file and the environment the second process starts with (ADR-0062).
+ * Refuses a file that would hold any of `knownSecrets`.
  */
 export function prepareSecondProcess(input: {
   readonly file: string;
   readonly appConfigurationRead: AppConfigurationRead;
+  readonly plainVariableText: Readonly<Record<string, string>>;
   readonly nodeAddresses: readonly string[];
   readonly secretsKeys: readonly string[];
   readonly knownSecrets: KnownSecrets;
@@ -117,11 +113,13 @@ export function prepareSecondProcess(input: {
   const { file, appSecrets } = input;
   refuseSecretsIn(
     input.appConfigurationRead,
+    input.plainVariableText,
     input.knownSecrets,
     'Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.',
   );
   const contents: AppConfigurationFile = {
     appConfigurationRead: input.appConfigurationRead,
+    plainVariableText: input.plainVariableText,
     nodeAddresses: input.nodeAddresses,
   };
   const env: Record<string, string> = { [APP_CONFIGURATION_FILE_ENV]: file };
@@ -227,13 +225,17 @@ export function readAppConfigurationFile(
   if (!isRecord(read)) throw notComposers('appConfigurationRead is not an object');
   const rootInput = rootFieldsOf(read['rootInput']);
   if (rootInput === undefined) throw notComposers('rootInput is not a list of fields');
-  const configurationKeyText = textByKeyOf(read['configurationKeyText']);
-  if (configurationKeyText === undefined) {
-    throw notComposers('configurationKeyText is not an object of text');
+  const plainVariableText = textByKeyOf(parsed['plainVariableText']);
+  if (plainVariableText === undefined) {
+    throw notComposers('plainVariableText is not an object of text');
   }
   const addresses = parsed['nodeAddresses'];
   if (!isTextList(addresses)) throw notComposers('nodeAddresses is not a list of node addresses');
-  return { appConfigurationRead: { rootInput, configurationKeyText }, nodeAddresses: addresses };
+  return {
+    appConfigurationRead: { rootInput },
+    plainVariableText,
+    nodeAddresses: addresses,
+  };
 }
 
 /** Second process, under `prisma dev`: the named secrets the first process handed it. */

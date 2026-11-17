@@ -238,14 +238,8 @@ function redactReader(
         service: redaction.redact(reader.service),
         path: redaction.redact(reader.path),
       };
-    case 'param':
-      return {
-        kind: 'param',
-        service: redaction.redact(reader.service),
-        param: redaction.redact(reader.param),
-      };
     case 'unread':
-      return { kind: 'unread', node: redaction.redact(reader.node), nodeKind: reader.nodeKind };
+      return { kind: 'unread', node: redaction.redact(reader.node) };
   }
 }
 

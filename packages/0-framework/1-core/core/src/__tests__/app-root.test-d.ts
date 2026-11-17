@@ -1,3 +1,4 @@
+import type { Pointer } from '@internal/foundation/pointer';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { expectTypeOf, test } from 'vitest';
 import type {
@@ -8,7 +9,7 @@ import type {
   ModuleNode,
   ServiceNode,
 } from '../exports/index.ts';
-import { appRoot, Load, module } from '../exports/index.ts';
+import { appRoot, Load, module, paramSource, valueResource } from '../exports/index.ts';
 
 declare const greetingSchema: StandardSchemaV1<{ GREETING: string }>;
 
@@ -50,9 +51,19 @@ test('the options take input and nothing else', () => {
   appRoot('shop', withExpose, () => {});
 });
 
-test("the body's context has input, environment and provision, and no deps", () => {
+test("the body's context has input, environment and provision, and no deps; its provision() also takes a value resource", () => {
   expectTypeOf<keyof AppRootContext>().toEqualTypeOf<'input' | 'environment' | 'provision'>();
-  expectTypeOf<AppRootContext['provision']>().toEqualTypeOf<ModuleBuilder['provision']>();
+  const value = valueResource({
+    name: 'greeting',
+    extension: 'test/pack',
+    type: 'test-value',
+    value: paramSource<{ readonly name: string }, Pointer<string>>({ name: 'GREETING' }),
+  });
+  const inRoot = (provision: AppRootContext['provision']) => provision(value);
+  // @ts-expect-error a module() body's provision() refuses a value resource
+  const inModule = (provision: ModuleBuilder['provision']) => provision(value);
+  void inRoot;
+  void inModule;
   appRoot('shop', (ctx) => {
     // @ts-expect-error an app root's body has no deps
     void ctx.deps;

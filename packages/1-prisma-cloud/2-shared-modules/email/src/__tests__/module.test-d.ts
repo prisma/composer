@@ -5,9 +5,9 @@
  * (vitest --typecheck, never executed) — mirrors storage's module.test-d.ts.
  */
 import type { ModuleNode, Pointer, RefPort, SecretString, Value } from '@internal/core';
-import { module } from '@internal/core';
+import { appRoot } from '@internal/core';
 import node from '@internal/node';
-import { compute, envParam, envSecret, type rawPostgresContract } from '@internal/prisma-cloud';
+import { compute, type rawPostgresContract, variable } from '@internal/prisma-cloud';
 import { rpc } from '@internal/service-rpc';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { expectTypeOf, test } from 'vitest';
@@ -37,38 +37,40 @@ test("email()'s input is the wrapped fields deliveryMode and from, and a secret 
 });
 
 test("the module's send port wires into a consumer's emailSender() slot", () => {
-  module('root', {}, ({ provision }) => {
+  appRoot('root', ({ provision }) => {
+    const from = provision(variable({ name: 'EMAIL_FROM' }));
+    const deliveryCredential = provision(variable.secret({ name: 'EMAIL_DELIVERY_CREDENTIAL' }));
     const mail = provision(email(), {
       id: 'email',
       input: {
         deliveryMode: 'none',
-        from: envParam('EMAIL_FROM'),
-        deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
+        from,
+        deliveryCredential,
       },
     });
     provision(compute({ name: 'sender', deps: { email: emailSender({}) }, build }), {
       id: 'sender',
       deps: { email: mail.send },
     });
-    return {};
   });
 });
 
 test("the module's outbox port wires into a consumer's rpc(emailOutboxContract) slot", () => {
-  module('root', {}, ({ provision }) => {
+  appRoot('root', ({ provision }) => {
+    const from = provision(variable({ name: 'EMAIL_FROM' }));
+    const deliveryCredential = provision(variable.secret({ name: 'EMAIL_DELIVERY_CREDENTIAL' }));
     const mail = provision(email(), {
       id: 'email',
       input: {
         deliveryMode: 'none',
-        from: envParam('EMAIL_FROM'),
-        deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
+        from,
+        deliveryCredential,
       },
     });
     provision(compute({ name: 'reader', deps: { outbox: rpc(emailOutboxContract) }, build }), {
       id: 'reader',
       deps: { outbox: mail.outbox },
     });
-    return {};
   });
 });
 
@@ -79,24 +81,26 @@ test('the outbox slot accepts an outbox port but rejects a wrong-kind (postgres)
 
 test("email() needs its input, takes a value of the root's narrower type, and refuses a plain string credential or a delivery mode that may be any text", () => {
   let mode!: Value<'resend' | 'smtp' | 'none'>;
-  module('root', {}, ({ provision }) => {
+  appRoot('root', ({ provision }) => {
+    const from = provision(variable({ name: 'EMAIL_FROM' }));
+    const deliveryCredential = provision(variable.secret({ name: 'EMAIL_DELIVERY_CREDENTIAL' }));
     // @ts-expect-error email() declares an input, so the provision needs one
     provision(email());
     provision(email(), {
       id: 'narrow',
       input: {
         deliveryMode: mode,
-        from: envParam('EMAIL_FROM'),
-        deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
+        from,
+        deliveryCredential,
       },
     });
     provision(email(), {
       id: 'any-text',
       input: {
-        // @ts-expect-error envParam() may hold any text; deliveryMode is resend, smtp or none
-        deliveryMode: envParam('EMAIL_DELIVERY_MODE'),
-        from: envParam('EMAIL_FROM'),
-        deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
+        // @ts-expect-error a platform variable may hold any text; deliveryMode is resend, smtp or none
+        deliveryMode: provision(variable({ name: 'EMAIL_DELIVERY_MODE' })),
+        from,
+        deliveryCredential,
       },
     });
     provision(email(), {
@@ -113,11 +117,10 @@ test("email() needs its input, takes a value of the root's narrower type, and re
       input: {
         deliveryMode: 'none',
         from: 'a@example.com',
-        deliveryCredential: envSecret('EMAIL_DELIVERY_CREDENTIAL'),
+        deliveryCredential,
       },
       // @ts-expect-error a module takes no params map
-      params: { from: envParam('EMAIL_FROM') },
+      params: { from },
     });
-    return {};
   });
 });

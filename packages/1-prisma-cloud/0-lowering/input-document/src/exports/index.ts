@@ -1,5 +1,5 @@
 /**
- * What the deploy writes and boot reads for a service: the input document and its markers, and the `COMPOSER_` row keys and per-key param pointer rows beside it.
+ * What the deploy writes and boot reads for a service: the input document and its markers, and the `COMPOSER_` row keys beside it.
  */
 export {
   collectPlatformMarkers,
@@ -17,16 +17,12 @@ export {
   type ReadDocument,
   type ReadDocumentOptions,
   readDocument,
-  requiredParamUnsetMessage,
   unescapeKey,
   withUnsetVariables,
 } from '../document.ts';
 export {
   addressKeySegments,
   composerKey,
-  decodeParamPointer,
-  encodeParamPointer,
   INPUT_KEY_NAME,
-  isParamPointerRow,
   ownKeyPrefix,
 } from '../env-keys.ts';

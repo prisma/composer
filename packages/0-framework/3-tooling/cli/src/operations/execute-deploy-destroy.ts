@@ -507,6 +507,7 @@ async function runStackPipelineInner(
     if (action === 'deploy') {
       refuseSecretsIn(
         graph.appConfigurationRead,
+        {},
         opts.redaction.knownSecrets,
         'A deploy sends every plain value Load read to the platform as plain configuration, and never sends a secret that way.',
       );
@@ -671,6 +672,7 @@ async function runStackPipelineInner(
       handover = prepareSecondProcess({
         file: deployAppConfigurationFile(cwd, randomUUID()),
         appConfigurationRead: pipeline.graph.appConfigurationRead,
+        plainVariableText: {},
         nodeAddresses: nodeAddresses(pipeline.graph),
         secretsKeys: secretsKeys(pipeline.graph),
         knownSecrets: opts.redaction.knownSecrets,

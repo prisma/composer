@@ -399,7 +399,7 @@ Both new codes are registered under ADR-0044's `DEV` namespace. A dev server tha
 - [ADR-0052](ADR-0052-composer-maps-its-nodes-to-emulator-instances-per-directory.md) — instances hold their ports; the emulators know nothing about Composer.
 - [ADR-0005](ADR-0005-users-build-the-framework-assembles.md) and [ADR-0047](ADR-0047-compute-assembly-preserves-safe-runtime-topology.md) — users build, Composer assembles, by documented steps; extended here to the documented dev step. `HOST=0.0.0.0` follows ADR-0047.
 - [ADR-0004](ADR-0004-paths-resolve-relative-to-the-authoring-file.md) — a build adapter's paths are relative to its authoring module; a Node dev command runs there.
-- [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md), [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) and [ADR-0032](ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md) — the input document, secret pointers and env-sourced params the dev server's environment carries unchanged.
+- [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md), [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) and [ADR-0032](ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md) — the input document, secret pointers and platform variable markers the dev server's environment carries unchanged.
 - [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md) — the `prisma dev` command.
 - [ADR-0044](ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md) — where the error codes are registered.
 - [local-dev.md](../10-domains/local-dev.md) — the mechanics of `prisma dev`.
