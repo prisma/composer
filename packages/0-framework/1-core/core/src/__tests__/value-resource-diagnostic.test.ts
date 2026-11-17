@@ -36,7 +36,7 @@ const ONLY_IN_APP_ROOT =
   "Only appRoot() can provision a resource that is a value. Provision it in the app root and pass its value down through this module's input.";
 
 function diagnosticsByMarker(): ReadonlyMap<string, string> {
-  const fileName = join(import.meta.dir, 'value-resource-fixture.ts');
+  const fileName = join(import.meta.dir, 'value-resource-fixture.ts').replaceAll('\\', '/');
   const config = ts.getParsedCommandLineOfConfigFile(
     join(import.meta.dir, '..', '..', 'tsconfig.json'),
     {},
