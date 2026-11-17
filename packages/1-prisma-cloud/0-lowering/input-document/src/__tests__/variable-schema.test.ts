@@ -363,6 +363,12 @@ describe('decodeVariableText', () => {
     expect(decodeVariableText('X', ' 587 ', undefined)).toBe(' 587 ');
   });
 
+  test('a mixed schema fails with the fixed message, since no reading rule applies', () => {
+    expect(() =>
+      decodeVariableText('X', '1', { anyOf: [{ type: 'string' }, { type: 'number' }] }),
+    ).toThrow('The platform variable "X" could not be checked against its schema.');
+  });
+
   test('it does not change the schema it is given', () => {
     const schema = Object.freeze({ $ref: '#/$defs/d0', $defs: Object.freeze({ d0: NUMBER }) });
     expect(decodeVariableText('X', '587', schema)).toBe(587);
