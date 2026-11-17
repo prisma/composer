@@ -26,10 +26,14 @@ export {
   INPUT_KEY_NAME,
   ownKeyPrefix,
 } from '../env-keys.ts';
-export { isPlainObject } from '../plain-object.ts';
+export { isJsonData, isPlainObject, type JsonData, setOwn } from '../plain-object.ts';
 export {
-  decodeVariableText,
-  type JsonSchema,
+  DEFS_PREFIX,
+  isVariableJsonSchema,
+  MAX_DEPTH,
+  readVariableText,
+  resolveSchemaRef,
   type SchemaKind,
   schemaKind,
+  type VariableJsonSchema,
 } from '../variable-schema.ts';

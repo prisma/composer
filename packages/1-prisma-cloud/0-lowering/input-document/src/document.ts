@@ -1,5 +1,11 @@
-import { isPlainObject } from './plain-object.ts';
-import { decodeVariableText, type JsonSchema, schemaKind, schemaWord } from './variable-schema.ts';
+import { isPlainObject, setOwn } from './plain-object.ts';
+import {
+  isVariableJsonSchema,
+  readVariableText,
+  schemaKind,
+  schemaWord,
+  type VariableJsonSchema,
+} from './variable-schema.ts';
 
 export const PLATFORM_MARKER = '$platform';
 export const GENERATED_MARKER = '$generated';
@@ -8,7 +14,7 @@ export interface PlatformMarker {
   readonly $platform: {
     readonly name: string;
     readonly secret?: true;
-    readonly schema?: JsonSchema;
+    readonly schema?: VariableJsonSchema;
   };
 }
 
@@ -25,8 +31,16 @@ export interface PlatformMarkerUse {
 }
 
 export function platformMarker(name: string, secret: boolean): PlatformMarker;
-export function platformMarker(name: string, secret: false, schema: JsonSchema): PlatformMarker;
-export function platformMarker(name: string, secret: boolean, schema?: JsonSchema): PlatformMarker {
+export function platformMarker(
+  name: string,
+  secret: false,
+  schema: VariableJsonSchema,
+): PlatformMarker;
+export function platformMarker(
+  name: string,
+  secret: boolean,
+  schema?: VariableJsonSchema,
+): PlatformMarker {
   if (secret) return { [PLATFORM_MARKER]: { name, secret: true } };
   return { [PLATFORM_MARKER]: schema === undefined ? { name } : { name, schema } };
 }
@@ -48,7 +62,7 @@ export function isPlatformMarker(value: unknown): value is PlatformMarker {
     typeof body['name'] === 'string' &&
     (secret === undefined || secret === true) &&
     (schema === undefined ||
-      (secret === undefined && isPlainObject(schema) && schemaKind(schema) !== 'mixed')) &&
+      (secret === undefined && isVariableJsonSchema(schema) && schemaKind(schema) !== 'mixed')) &&
     Object.keys(body).every((key) => key === 'name' || key === 'secret' || key === 'schema')
   );
 }
@@ -137,7 +151,7 @@ export function readDocument(document: unknown, options: ReadDocumentOptions): R
         unset.add(name);
         return ABSENT;
       }
-      return secret === true ? options.secret(text) : decodeVariableText(name, text, schema);
+      return secret === true ? options.secret(text) : readVariableText(name, text, schema);
     }
     if (isGeneratedMarker(value)) {
       const name = value.$generated;
@@ -159,12 +173,7 @@ export function readDocument(document: unknown, options: ReadDocumentOptions): R
         const key = unescapeKey(written);
         const read = walk(member, joinPath(path, key), false);
         if (read !== ABSENT) {
-          Object.defineProperty(out, key, {
-            value: read,
-            enumerable: true,
-            writable: true,
-            configurable: true,
-          });
+          setOwn(out, key, read);
         }
       }
       return out;

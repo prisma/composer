@@ -7,6 +7,7 @@ import { appRoot, isSecretPointer, Load, module, resolve, type ServiceNode } fro
 import { preflightEnv } from '@internal/core/config';
 import { isSecretString } from '@internal/foundation/secret';
 import { rawHttpContract } from '@internal/http';
+import { MAX_DEPTH, readVariableText } from '@internal/input-document';
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { z } from 'zod';
@@ -14,6 +15,7 @@ import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts
 import { decodePreflightPayload, transportedPreflight } from '../control/preflight-payload.ts';
 import { compute, publicUrl, variable } from '../exports/index.ts';
 import { runDevPreflight } from '../local-target/preflight.ts';
+import { platformVariableNodes } from '../platform-variable.ts';
 import { serializeInput } from '../serializer.ts';
 
 const build = {
@@ -765,6 +767,41 @@ describe('prisma dev preflight', () => {
       ).toEndWith('because services "shop.mail", "shop.digest" and "shop.audit" read it.');
     });
 
+    test("each dev message is the shared function's message followed by the reader sentence", async () => {
+      const deep = (depth: number) => `${'['.repeat(depth)}1${']'.repeat(depth)}`;
+      const cases: [StandardJSONSchemaV1, string][] = [
+        [type('number'), 'abc'],
+        [type('number'), '9007199254740993'],
+        [type('number >= 1'), '0'],
+        [type('number[]'), deep(MAX_DEPTH + 1)],
+        [handWritten({ type: 'object', dependentRequired: { a: ['b'] } }), '{"a":1}'],
+      ];
+      for (const [schema, text] of cases) {
+        configuration['SMTP_PORT'] = text;
+        const graph = typedGraph(schema);
+        const node = platformVariableNodes(graph).find((entry) => entry.name === 'SMTP_PORT');
+        const boot = thrownMessage(() => readVariableText('SMTP_PORT', text, node?.schema));
+
+        expect(await preflightError(graph)).toBe(
+          `${boot} prisma dev cannot start, because service "shop.mail" reads it.`,
+        );
+      }
+    });
+
+    test(`a text nested ${MAX_DEPTH} levels deep lets dev start, and one level more stops it`, async () => {
+      const deep = (depth: number) => `${'['.repeat(depth)}1${']'.repeat(depth)}`;
+      configuration['SMTP_PORT'] = deep(MAX_DEPTH);
+      expect(
+        (await devPreflight(typedGraph(handWritten({ type: 'array' })))).plainVariableText,
+      ).toEqual({
+        SMTP_PORT: deep(MAX_DEPTH),
+      });
+      configuration['SMTP_PORT'] = deep(MAX_DEPTH + 1);
+      expect(await preflightError(typedGraph(handWritten({ type: 'array' })))).toBe(
+        'The platform variable "SMTP_PORT" could not be checked against its schema. prisma dev cannot start, because service "shop.mail" reads it.',
+      );
+    });
+
     test('a typed variable with no value is left to the existing check, not decoded', async () => {
       const result = await devPreflight(typedGraph(type('number')));
 
@@ -822,4 +859,13 @@ function handWritten(schema: Record<string, unknown>): StandardJSONSchemaV1 {
       jsonSchema: { input: () => schema, output: () => schema },
     },
   };
+}
+
+function thrownMessage(run: () => unknown): string {
+  try {
+    run();
+  } catch (cause) {
+    if (cause instanceof Error) return cause.message;
+  }
+  throw new Error('expected the call to throw an error');
 }

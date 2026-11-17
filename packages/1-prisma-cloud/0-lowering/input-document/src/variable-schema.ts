@@ -1,7 +1,10 @@
 import { type OutputUnit, Validator } from '@cfworker/json-schema';
-import { isPlainObject } from './plain-object.ts';
+import { isJsonData, isPlainObject, type JsonData, setOwn } from './plain-object.ts';
 
-export type JsonSchema = Readonly<Record<string, unknown>>;
+export type VariableJsonSchema = { readonly [key: string]: JsonData };
+
+export const isVariableJsonSchema = (value: unknown): value is VariableJsonSchema =>
+  isPlainObject(value) && isJsonData(value);
 
 export type SchemaKind = 'text-only' | 'never-text' | 'mixed';
 
@@ -14,9 +17,9 @@ const NEVER_TEXT_TYPES: ReadonlySet<unknown> = new Set([
   'null',
 ]);
 
-const DEFS_PREFIX = '#/$defs/';
+export const DEFS_PREFIX = '#/$defs/';
 
-function resolveRef(root: unknown, ref: string): unknown {
+export function resolveSchemaRef(root: unknown, ref: string): unknown {
   if (ref === '#') return root;
   if (!ref.startsWith(DEFS_PREFIX) || !isPlainObject(root)) return undefined;
   const defs = root['$defs'];
@@ -28,7 +31,7 @@ function kindAt(schema: unknown, root: unknown, followed: ReadonlySet<string>): 
   if (!isPlainObject(schema)) return 'mixed';
   const ref = schema['$ref'];
   if (typeof ref === 'string') {
-    const target = resolveRef(root, ref);
+    const target = resolveSchemaRef(root, ref);
     if (followed.has(ref) || target === undefined) return 'mixed';
     return kindAt(target, root, new Set([...followed, ref]));
   }
@@ -71,21 +74,21 @@ export function schemaKind(schema: unknown, root: unknown = schema): SchemaKind 
   return kindAt(schema, root, new Set());
 }
 
-export function schemaWord(schema: JsonSchema): string {
+export function schemaWord(schema: VariableJsonSchema): string {
   const type = schema['type'];
   if (typeof type === 'string') return type;
   if (Array.isArray(type)) return type.join(' | ');
   return schemaKind(schema) === 'text-only' ? 'text' : 'json';
 }
 
-function topLevelType(schema: JsonSchema): unknown {
+function topLevelType(schema: VariableJsonSchema): unknown {
   let current: unknown = schema;
   const followed = new Set<string>();
   while (isPlainObject(current)) {
     const ref = current['$ref'];
     if (typeof ref !== 'string' || followed.has(ref)) return current['type'];
     followed.add(ref);
-    current = resolveRef(schema, ref);
+    current = resolveSchemaRef(schema, ref);
   }
   return undefined;
 }
@@ -100,7 +103,7 @@ const EXPECTED: Readonly<Record<string, { readonly expected: string; readonly ex
     null: { expected: 'null', example: 'null' },
   };
 
-function notJsonError(name: string, schema: JsonSchema): Error {
+function notJsonError(name: string, schema: VariableJsonSchema): Error {
   const type = topLevelType(schema);
   const known =
     typeof type === 'string' && Object.hasOwn(EXPECTED, type) ? EXPECTED[type] : undefined;
@@ -117,31 +120,46 @@ const inexactNumberError = (name: string): Error =>
     `The platform variable "${name}" holds a number outside the range Composer reads exactly, which is whole numbers up to 9007199254740991. Declare it as text and keep it as text in the service.`,
   );
 
+const MISSPELT_LOCATION = /\/dependantRequired$/;
+
+function printedLocation(failure: OutputUnit): string {
+  return failure.keyword === 'dependentRequired'
+    ? failure.keywordLocation.replace(MISSPELT_LOCATION, '/dependentRequired')
+    : failure.keywordLocation;
+}
+
 const doesNotFitError = (name: string, failure: OutputUnit): Error =>
   new Error(
-    `The platform variable "${name}" does not fit its schema: it fails "${failure.keyword}" at ${failure.keywordLocation}.`,
+    `The platform variable "${name}" does not fit its schema: it fails "${failure.keyword}" at ${printedLocation(failure)}.`,
   );
 
 const uncheckedError = (name: string): Error =>
   new Error(`The platform variable "${name}" could not be checked against its schema.`);
 
-function refuseInexactNumbers(name: string, value: unknown): void {
-  let exact: boolean;
-  try {
-    exact = holdsOnlyExactNumbers(value);
-  } catch {
-    throw uncheckedError(name);
+export const MAX_DEPTH = 1000;
+
+const isExactNumber = (value: number): boolean =>
+  Number.isFinite(value) && (!Number.isInteger(value) || Number.isSafeInteger(value));
+
+function refuseUnreadable(name: string, parsed: unknown): void {
+  const pending: [unknown, number][] = [[parsed, 0]];
+  let exact = true;
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    const [value, depth] = next;
+    if (typeof value === 'number') {
+      exact &&= isExactNumber(value);
+      continue;
+    }
+    const members = Array.isArray(value)
+      ? value
+      : isPlainObject(value)
+        ? Object.values(value)
+        : undefined;
+    if (members === undefined) continue;
+    if (depth >= MAX_DEPTH) throw uncheckedError(name);
+    for (const member of members) pending.push([member, depth + 1]);
   }
   if (!exact) throw inexactNumberError(name);
-}
-
-function holdsOnlyExactNumbers(value: unknown): boolean {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) && (!Number.isInteger(value) || Number.isSafeInteger(value));
-  }
-  if (Array.isArray(value)) return value.every(holdsOnlyExactNumbers);
-  if (isPlainObject(value)) return Object.values(value).every(holdsOnlyExactNumbers);
-  return true;
 }
 
 const STOP_KEYWORDS: ReadonlySet<string> = new Set(['anyOf', 'oneOf', 'not', 'if']);
@@ -161,7 +179,7 @@ function namedFailure(errors: readonly OutputUnit[]): OutputUnit | undefined {
   return current;
 }
 
-function parseJson(name: string, text: string, schema: JsonSchema): unknown {
+function parseJson(name: string, text: string, schema: VariableJsonSchema): unknown {
   try {
     return JSON.parse(text);
   } catch (cause) {
@@ -169,25 +187,20 @@ function parseJson(name: string, text: string, schema: JsonSchema): unknown {
   }
 }
 
-function copyOfValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(copyOfValue);
-  return isPlainObject(value) ? copyOfSchema(value) : value;
+const isJsonList = (value: JsonData): value is readonly JsonData[] => Array.isArray(value);
+
+function copyOfValue(value: JsonData): JsonData {
+  if (isJsonList(value)) return value.map(copyOfValue);
+  return typeof value === 'object' && value !== null ? copyOfSchema(value) : value;
 }
 
-function copyOfSchema(schema: JsonSchema): Record<string, unknown> {
-  const copy: Record<string, unknown> = {};
-  for (const [key, member] of Object.entries(schema)) {
-    Object.defineProperty(copy, key, {
-      value: copyOfValue(member),
-      enumerable: true,
-      writable: true,
-      configurable: true,
-    });
-  }
+function copyOfSchema(schema: VariableJsonSchema): Record<string, JsonData> {
+  const copy: Record<string, JsonData> = {};
+  for (const [key, member] of Object.entries(schema)) setOwn(copy, key, copyOfValue(member));
   return copy;
 }
 
-function failureOf(schema: JsonSchema, value: unknown): OutputUnit | 'valid' | 'unchecked' {
+function failureOf(schema: VariableJsonSchema, value: unknown): OutputUnit | 'valid' | 'unchecked' {
   try {
     const result = new Validator(copyOfSchema(schema), '2020-12', true).validate(value);
     if (result.valid) return 'valid';
@@ -197,10 +210,10 @@ function failureOf(schema: JsonSchema, value: unknown): OutputUnit | 'valid' | '
   }
 }
 
-export function decodeVariableText(
+export function readVariableText(
   name: string,
   text: string,
-  schema: JsonSchema | undefined,
+  schema: VariableJsonSchema | undefined,
 ): unknown {
   if (schema === undefined) return text;
   const kind = schemaKind(schema);
@@ -208,7 +221,7 @@ export function decodeVariableText(
   let value: unknown = text;
   if (kind === 'never-text') {
     value = parseJson(name, text, schema);
-    refuseInexactNumbers(name, value);
+    refuseUnreadable(name, value);
   }
   const failure = failureOf(schema, value);
   if (failure === 'unchecked') throw uncheckedError(name);

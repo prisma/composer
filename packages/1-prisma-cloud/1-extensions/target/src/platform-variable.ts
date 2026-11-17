@@ -12,7 +12,7 @@ import {
   valueResource,
 } from '@internal/core';
 import type { SecretString } from '@internal/foundation/secret';
-import { isPlainObject, type JsonSchema } from '@internal/input-document';
+import { isVariableJsonSchema, type VariableJsonSchema } from '@internal/input-document';
 import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID } from './extension-id.ts';
 import { variableJsonSchema } from './variable-json-schema.ts';
@@ -27,7 +27,7 @@ export interface PlatformVariablePayload {
   readonly [PLATFORM_VARIABLE]: true;
   readonly name: string;
   readonly secret: boolean;
-  readonly schema?: JsonSchema;
+  readonly schema?: VariableJsonSchema;
 }
 
 export type PlainVariableValue<T = string> = ParamSource<PlatformVariablePayload> & RuntimeValue<T>;
@@ -60,7 +60,7 @@ export function platformVariableName(source: SecretSource | ParamSource, where: 
   return source.payload.name;
 }
 
-export function platformVariableSchema(source: ParamSource): JsonSchema | undefined {
+export function platformVariableSchema(source: ParamSource): VariableJsonSchema | undefined {
   return isPlatformVariablePayload(source.payload) ? source.payload.schema : undefined;
 }
 
@@ -68,7 +68,7 @@ export interface PlatformVariableNode {
   readonly address: string;
   readonly name: string;
   readonly secret: boolean;
-  readonly schema?: JsonSchema;
+  readonly schema?: VariableJsonSchema;
 }
 
 export function platformVariableNodes(graph: Graph): readonly PlatformVariableNode[] {
@@ -88,7 +88,7 @@ export function platformVariableNodes(graph: Graph): readonly PlatformVariableNo
       );
     }
     const declared = { address: id, name, secret: secret === true };
-    return [isPlainObject(schema) ? { ...declared, schema } : declared];
+    return [isVariableJsonSchema(schema) ? { ...declared, schema } : declared];
   });
 }
 

@@ -7,6 +7,7 @@ import {
   platformMarker,
   readDocument,
   unescapeKey,
+  type VariableJsonSchema,
   withUnsetVariables,
 } from '../exports/index.ts';
 
@@ -167,7 +168,7 @@ describe('describeDocument', () => {
   });
 
   test('shows the word for a plain variable schema in brackets', () => {
-    const shown = (schema: Record<string, unknown>) =>
+    const shown = (schema: VariableJsonSchema) =>
       describeDocument(platformMarker('SMTP_PORT', false, schema));
     expect(shown({ type: 'number' })).toBe('$platform SMTP_PORT (number)');
     expect(shown({ type: 'string', format: 'email' })).toBe('$platform SMTP_PORT (string)');

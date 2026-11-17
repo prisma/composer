@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  decodeVariableText,
-  type JsonSchema,
+  MAX_DEPTH,
   platformMarker,
   readDocument,
+  readVariableText,
   type SchemaKind,
   schemaKind,
+  type VariableJsonSchema,
 } from '../exports/index.ts';
 
 const NUMBER = { type: 'number' };
@@ -145,19 +146,23 @@ describe('schemaKind', () => {
 
 const boxed = (text: string) => ({ boxed: text });
 
-const bootField = (schema: JsonSchema, text: string | undefined, name = 'SMTP_PORT'): unknown =>
+const bootField = (
+  schema: VariableJsonSchema,
+  text: string | undefined,
+  name = 'SMTP_PORT',
+): unknown =>
   readDocument(
     { field: platformMarker(name, false, schema) },
     { variable: () => text, secret: boxed },
   ).value;
 
-const bootValue = (schema: JsonSchema, text: string): unknown => {
+const bootValue = (schema: VariableJsonSchema, text: string): unknown => {
   const value = bootField(schema, text);
   if (typeof value !== 'object' || value === null) throw new Error('expected an object');
   return Reflect.get(value, 'field');
 };
 
-const bootFailure = (schema: JsonSchema, text: string, name = 'SMTP_PORT'): string => {
+const bootFailure = (schema: VariableJsonSchema, text: string, name = 'SMTP_PORT'): string => {
   try {
     bootField(schema, text, name);
   } catch (cause) {
@@ -310,11 +315,30 @@ describe('boot refuses a typed platform variable whose text does not decode or f
     expect(bootFailure({ type: 'number' }, '"587"')).toBe(fails('"type" at #/type'));
   });
 
-  test('a document nested too deeply to check fails with the fixed message', () => {
+  test(`a value nested more than ${MAX_DEPTH} levels deep fails with the fixed message, whatever the runtime`, () => {
     const nested = (depth: number) => `${'['.repeat(depth)}1${']'.repeat(depth)}`;
+    const nestedObject = (depth: number) => `${'{"a":'.repeat(depth)}1${'}'.repeat(depth)}`;
     const message = 'The platform variable "SMTP_PORT" could not be checked against its schema.';
-    expect(bootFailure(RECURSIVE_UNION_SELF_REF, nested(50_000))).toBe(message);
-    expect(bootFailure({ type: 'array' }, nested(200_000))).toBe(message);
+    expect(bootValue({ type: 'array' }, nested(MAX_DEPTH))).toBeArray();
+    expect(bootFailure({ type: 'array' }, nested(MAX_DEPTH + 1))).toBe(message);
+    expect(bootValue({ type: 'object' }, nestedObject(MAX_DEPTH))).toBeObject();
+    expect(bootFailure({ type: 'object' }, nestedObject(MAX_DEPTH + 1))).toBe(message);
+    expect(bootFailure({ type: 'array' }, nested(1_000_000))).toBe(message);
+  });
+
+  test('a value too deep fails as too deep, even when it also holds an inexact number', () => {
+    const deepInexact = `${'['.repeat(MAX_DEPTH + 1)}1e400${']'.repeat(MAX_DEPTH + 1)}`;
+    expect(bootFailure({ type: 'array' }, deepInexact)).toBe(
+      'The platform variable "SMTP_PORT" could not be checked against its schema.',
+    );
+  });
+
+  test('a failed dependentRequired is named at its place in the schema', () => {
+    expect(
+      bootFailure({ type: 'object', dependentRequired: { card: ['cvv'] } }, '{"card":"x"}'),
+    ).toBe(
+      'The platform variable "SMTP_PORT" does not fit its schema: it fails "dependentRequired" at #/dependentRequired.',
+    );
   });
 
   test('a failure under a false schema is never named, so its value-built location stays out', () => {
@@ -338,7 +362,7 @@ describe('boot refuses a typed platform variable whose text does not decode or f
 describe('no boot message holds any part of the variable text', () => {
   const SECRET = 'a-made-up-secret-7qx9';
   const parts = [SECRET, 'made-up', '7qx9'];
-  const cases: [string, JsonSchema, string][] = [
+  const cases: [string, VariableJsonSchema, string][] = [
     ['the text, under a number schema', NUMBER, SECRET],
     [
       'a key, under additionalProperties: false',
@@ -383,20 +407,20 @@ describe('no boot message holds any part of the variable text', () => {
   });
 });
 
-describe('decodeVariableText', () => {
+describe('readVariableText', () => {
   test('without a schema it gives the text', () => {
-    expect(decodeVariableText('X', ' 587 ', undefined)).toBe(' 587 ');
+    expect(readVariableText('X', ' 587 ', undefined)).toBe(' 587 ');
   });
 
   test('a mixed schema fails with the fixed message, since no reading rule applies', () => {
     expect(() =>
-      decodeVariableText('X', '1', { anyOf: [{ type: 'string' }, { type: 'number' }] }),
+      readVariableText('X', '1', { anyOf: [{ type: 'string' }, { type: 'number' }] }),
     ).toThrow('The platform variable "X" could not be checked against its schema.');
   });
 
   test('it does not change the schema it is given', () => {
     const schema = Object.freeze({ $ref: '#/$defs/d0', $defs: Object.freeze({ d0: NUMBER }) });
-    expect(decodeVariableText('X', '587', schema)).toBe(587);
+    expect(readVariableText('X', '587', schema)).toBe(587);
     expect(Object.getOwnPropertyNames(schema)).toEqual(['$ref', '$defs']);
   });
 });

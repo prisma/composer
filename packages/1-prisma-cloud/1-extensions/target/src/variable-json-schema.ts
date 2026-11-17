@@ -1,7 +1,13 @@
-import type { PlainData } from '@internal/core';
-import { isPlainObject, schemaKind } from '@internal/input-document';
-
-export type VariableJsonSchema = { readonly [key: string]: PlainData };
+import {
+  DEFS_PREFIX,
+  isJsonData,
+  isPlainObject,
+  type JsonData,
+  resolveSchemaRef,
+  schemaKind,
+  setOwn,
+  type VariableJsonSchema,
+} from '@internal/input-document';
 
 const ONE_SCHEMA: readonly string[] = [
   'not',
@@ -68,26 +74,8 @@ const OLDER_DRAFT_KEYWORDS: readonly string[] = [
   '$recursiveAnchor',
 ];
 
-const DEFS_PREFIX = '#/$defs/';
-
-function isPlainData(value: unknown): value is PlainData {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
-  if (typeof value === 'number') return Number.isFinite(value);
-  if (Array.isArray(value)) return value.every(isPlainData);
-  return isPlainObject(value) && Object.values(value).every(isPlainData);
-}
-
-const isDataObject = (value: PlainData): value is VariableJsonSchema =>
+const isDataObject = (value: JsonData): value is VariableJsonSchema =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
-
-function withMember(target: Record<string, PlainData>, key: string, value: PlainData): void {
-  Object.defineProperty(target, key, {
-    value,
-    enumerable: true,
-    writable: true,
-    configurable: true,
-  });
-}
 
 const prefix = (name: string): string => `The schema of the platform variable "${name}"`;
 
@@ -112,29 +100,26 @@ function checkPattern(name: string, pattern: string): void {
   }
 }
 
-function isFollowedReference(reference: string, root: Record<string, unknown>): boolean {
-  if (reference === '#') return true;
-  if (!reference.startsWith(DEFS_PREFIX)) return false;
-  const defs = root['$defs'];
-  return isPlainObject(defs) && Object.hasOwn(defs, reference.slice(DEFS_PREFIX.length));
-}
-
 interface Reading {
   readonly name: string;
   readonly root: Record<string, unknown>;
 }
 
-function readSchemaAt(reading: Reading, value: unknown, keyword: string): PlainData {
+function readSchemaAt(reading: Reading, value: unknown, keyword: string): JsonData {
   if (typeof value === 'boolean') return value;
   if (!isPlainObject(value)) throw olderDraftError(reading.name, keyword);
   return readSchema(reading, value);
 }
 
-function readKept(reading: Reading, key: string, value: unknown): PlainData | undefined {
+function readKept(reading: Reading, key: string, value: unknown): JsonData | undefined {
   const fits = KEPT.get(key);
   if (fits === undefined) return undefined;
-  if (!fits(value) || !isPlainData(value)) throw olderDraftError(reading.name, key);
-  if (typeof value === 'string' && key === '$ref' && !isFollowedReference(value, reading.root)) {
+  if (!fits(value) || !isJsonData(value)) throw olderDraftError(reading.name, key);
+  if (
+    typeof value === 'string' &&
+    key === '$ref' &&
+    resolveSchemaRef(reading.root, value) === undefined
+  ) {
     throw unfollowedReferenceError(reading.name, value);
   }
   if (typeof value === 'string' && key === 'pattern') checkPattern(reading.name, value);
@@ -143,30 +128,30 @@ function readKept(reading: Reading, key: string, value: unknown): PlainData | un
 
 function readSchema(reading: Reading, schema: Record<string, unknown>): VariableJsonSchema {
   const { name } = reading;
-  const reduced: Record<string, PlainData> = {};
+  const reduced: Record<string, JsonData> = {};
   for (const [key, value] of Object.entries(schema)) {
     if (UNFOLLOWED_REFERENCES.includes(key)) throw unfollowedReferenceError(name, value);
     if (OLDER_DRAFT_KEYWORDS.includes(key)) throw olderDraftError(name, key);
     if (ONE_SCHEMA.includes(key)) {
-      withMember(reduced, key, readSchemaAt(reading, value, key));
+      setOwn(reduced, key, readSchemaAt(reading, value, key));
     } else if (SCHEMA_LIST.includes(key)) {
       if (!Array.isArray(value)) throw olderDraftError(name, key);
-      withMember(
+      setOwn(
         reduced,
         key,
         value.map((member) => readSchemaAt(reading, member, key)),
       );
     } else if (SCHEMA_MAP.includes(key)) {
       if (!isPlainObject(value)) throw olderDraftError(name, key);
-      const map: Record<string, PlainData> = {};
+      const map: Record<string, JsonData> = {};
       for (const [entry, member] of Object.entries(value)) {
         if (key === 'patternProperties') checkPattern(name, entry);
-        withMember(map, entry, readSchemaAt(reading, member, key));
+        setOwn(map, entry, readSchemaAt(reading, member, key));
       }
-      withMember(reduced, key, map);
+      setOwn(reduced, key, map);
     } else {
       const kept = readKept(reading, key, value);
-      if (kept !== undefined) withMember(reduced, key, kept);
+      if (kept !== undefined) setOwn(reduced, key, kept);
     }
   }
   return reduced;
@@ -185,7 +170,7 @@ function renameDefs(root: VariableJsonSchema): VariableJsonSchema {
     defsValue !== undefined && isDataObject(defsValue) ? defsValue : {};
   const renamed = new Map<string, string>();
 
-  const visit = (schema: PlainData | undefined): void => {
+  const visit = (schema: JsonData | undefined): void => {
     if (schema === undefined || !isDataObject(schema)) return;
     for (const key of DEFS_WALK_ORDER) {
       const value = schema[key];
@@ -204,38 +189,38 @@ function renameDefs(root: VariableJsonSchema): VariableJsonSchema {
   };
   visit(root);
 
-  const rewriteAt = (value: PlainData): PlainData => (isDataObject(value) ? rewrite(value) : value);
+  const rewriteAt = (value: JsonData): JsonData => (isDataObject(value) ? rewrite(value) : value);
   const rewrite = (schema: VariableJsonSchema): VariableJsonSchema => {
-    const out: Record<string, PlainData> = {};
+    const out: Record<string, JsonData> = {};
     for (const [key, value] of Object.entries(schema)) {
       if (key === '$defs') continue;
-      if (ONE_SCHEMA.includes(key)) withMember(out, key, rewriteAt(value));
+      if (ONE_SCHEMA.includes(key)) setOwn(out, key, rewriteAt(value));
       else if (SCHEMA_LIST.includes(key) && Array.isArray(value)) {
-        withMember(out, key, value.map(rewriteAt));
+        setOwn(out, key, value.map(rewriteAt));
       } else if (SCHEMA_MAP.includes(key) && isDataObject(value)) {
-        const map: Record<string, PlainData> = {};
+        const map: Record<string, JsonData> = {};
         for (const [entry, member] of Object.entries(value)) {
-          withMember(map, entry, rewriteAt(member));
+          setOwn(map, entry, rewriteAt(member));
         }
-        withMember(out, key, map);
+        setOwn(out, key, map);
       } else if (key === '$ref' && typeof value === 'string' && value.startsWith(DEFS_PREFIX)) {
-        withMember(out, key, `${DEFS_PREFIX}${renamed.get(value.slice(DEFS_PREFIX.length))}`);
-      } else withMember(out, key, value);
+        setOwn(out, key, `${DEFS_PREFIX}${renamed.get(value.slice(DEFS_PREFIX.length))}`);
+      } else setOwn(out, key, value);
     }
     return out;
   };
 
-  const top: Record<string, PlainData> = { ...rewrite(root) };
-  const reached: Record<string, PlainData> = {};
+  const top: Record<string, JsonData> = { ...rewrite(root) };
+  const reached: Record<string, JsonData> = {};
   for (const [original, short] of renamed) {
     const definition = defs[original];
-    if (definition !== undefined) withMember(reached, short, rewriteAt(definition));
+    if (definition !== undefined) setOwn(reached, short, rewriteAt(definition));
   }
-  if (renamed.size > 0) withMember(top, '$defs', reached);
+  if (renamed.size > 0) setOwn(top, '$defs', reached);
   return top;
 }
 
-type Same = (key: string, a: PlainData | undefined, b: PlainData | undefined) => boolean;
+type Same = (key: string, a: JsonData | undefined, b: JsonData | undefined) => boolean;
 
 function sameMap(
   a: VariableJsonSchema,
@@ -252,12 +237,12 @@ function sameMap(
 }
 
 const bothObjects = (
-  a: PlainData | undefined,
-  b: PlainData | undefined,
+  a: JsonData | undefined,
+  b: JsonData | undefined,
 ): [VariableJsonSchema, VariableJsonSchema] | undefined =>
   a !== undefined && b !== undefined && isDataObject(a) && isDataObject(b) ? [a, b] : undefined;
 
-function sameData(a: PlainData | undefined, b: PlainData | undefined): boolean {
+function sameData(a: JsonData | undefined, b: JsonData | undefined): boolean {
   if (Array.isArray(a) && Array.isArray(b)) {
     return a.length === b.length && a.every((member, index) => sameData(member, b[index]));
   }
@@ -266,7 +251,7 @@ function sameData(a: PlainData | undefined, b: PlainData | undefined): boolean {
   return Object.is(a, b);
 }
 
-function sameSchema(input: PlainData | undefined, output: PlainData | undefined): boolean {
+function sameSchema(input: JsonData | undefined, output: JsonData | undefined): boolean {
   const objects = bothObjects(input, output);
   if (objects === undefined) return sameData(input, output);
   const [a, b] = objects;
@@ -275,7 +260,7 @@ function sameSchema(input: PlainData | undefined, output: PlainData | undefined)
   return sameMap(a, b, sameMember, closedOnlyInOutput ? 'additionalProperties' : undefined);
 }
 
-function sameMember(key: string, a: PlainData | undefined, b: PlainData | undefined): boolean {
+function sameMember(key: string, a: JsonData | undefined, b: JsonData | undefined): boolean {
   if (ONE_SCHEMA.includes(key)) return sameSchema(a, b);
   if (SCHEMA_LIST.includes(key) && Array.isArray(a) && Array.isArray(b)) {
     return a.length === b.length && a.every((member, index) => sameSchema(member, b[index]));
