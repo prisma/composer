@@ -51,8 +51,7 @@ const fakePlatform = (updatedAt: string | undefined): ManagementApiClient =>
     },
   }) as unknown as ManagementApiClient;
 
-/** The pointed platform variables serialize collected for this service — the input document points at the rotating secret. */
-const pointers = ['STRIPE_SECRET_KEY'];
+const platformVariables = ['STRIPE_SECRET_KEY'];
 
 /** The real preflight against a platform that last wrote the secret at `updatedAt`. */
 const preflightAgainst = (updatedAt: string | undefined) =>
@@ -87,9 +86,9 @@ async function cliProcess(updatedAt: string | undefined): Promise<Record<string,
  * fingerprint moves on.
  */
 function alchemyProcessPointerTriggers(env: Record<string, string>): Record<string, string> {
-  const { pointerVersion } = transportedPreflight(() => undefined, env);
+  const { platformVariableVersion } = transportedPreflight(() => undefined, env);
   return Object.fromEntries(
-    pointers.map((name) => [`${name}:updatedAt`, pointerVersion(name) ?? '?']),
+    platformVariables.map((name) => [`${name}:updatedAt`, platformVariableVersion(name) ?? '?']),
   );
 }
 
@@ -108,7 +107,7 @@ describe('the rotation signal across the CLI → alchemy process boundary', () =
     expect(second).toEqual(first);
   });
 
-  test('what the transport carries is the timestamp preflight read, under the pointed name', async () => {
+  test('what the transport carries is the timestamp preflight read, under the name of the platform variable', async () => {
     const env = await cliProcess('2026-05-05T12:00:00.000Z');
 
     expect(env).toEqual({
@@ -191,16 +190,16 @@ describe('what the payload may contain', () => {
 describe("the CLI process's own preflight", () => {
   test('a variable deleted since the last check is treated as having no value', async () => {
     let snapshot: ReadonlyMap<string, string> | undefined;
-    const { pointerVersion } = transportedPreflight(
+    const { platformVariableVersion } = transportedPreflight(
       () => snapshot,
       await cliProcess('2026-05-05T12:00:00.000Z'),
     );
 
     snapshot = (await preflightAgainst('2026-07-07T09:15:00.000Z')).updatedAt;
-    expect(pointerVersion('STRIPE_SECRET_KEY')).toBe('2026-07-07T09:15:00.000Z');
+    expect(platformVariableVersion('STRIPE_SECRET_KEY')).toBe('2026-07-07T09:15:00.000Z');
 
     snapshot = (await preflightAgainst(undefined)).updatedAt;
-    expect(pointerVersion('STRIPE_SECRET_KEY')).toBeUndefined();
+    expect(platformVariableVersion('STRIPE_SECRET_KEY')).toBeUndefined();
   });
 });
 
@@ -221,7 +220,7 @@ describe('one transport variable, two kinds of payload', () => {
     );
 
     expect([...preflight.absentVariables]).toEqual([]);
-    expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBe('2026-10-01T00:00:00Z');
+    expect(preflight.platformVariableVersion('STRIPE_SECRET_KEY')).toBe('2026-10-01T00:00:00Z');
   });
 
   test('a dev payload carries the absent variables and the value versions', () => {
@@ -230,20 +229,20 @@ describe('one transport variable, two kinds of payload', () => {
       childEnv(
         serializeDevPreflightPayload({
           absentVariables: ['STRIPE_WEBHOOK_SECRET'],
-          pointerVersions: { STRIPE_SECRET_KEY: 'hmac-of-value' },
+          platformVariableVersions: { STRIPE_SECRET_KEY: 'hmac-of-value' },
         }),
       ),
     );
 
     expect([...preflight.absentVariables]).toEqual(['STRIPE_WEBHOOK_SECRET']);
-    expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBe('hmac-of-value');
+    expect(preflight.platformVariableVersion('STRIPE_SECRET_KEY')).toBe('hmac-of-value');
   });
 
   test('with no payload nothing is absent and every version is unknown', () => {
     const preflight = transportedPreflight(() => undefined, childEnv(undefined));
 
     expect([...preflight.absentVariables]).toEqual([]);
-    expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBeUndefined();
+    expect(preflight.platformVariableVersion('STRIPE_SECRET_KEY')).toBeUndefined();
   });
 
   test('a dev payload that does not parse fails loudly', () => {

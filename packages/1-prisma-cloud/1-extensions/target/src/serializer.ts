@@ -259,7 +259,6 @@ export interface ResolvedInputBinding {
 
 interface VariableRead {
   readonly path: string;
-  readonly field: string;
   readonly name: string;
 }
 
@@ -311,11 +310,8 @@ export function resolveInputBinding(
   const absent: string[] = [];
   const variables: VariableRead[] = [];
 
-  const walk = (value: unknown, path: string, field: string): unknown => {
-    // A generated leaf is a ParamSource too, so it MUST be recognized before
-    // the param branch. It stays in place as its pointer, which the schema
-    // checks; serializing swaps it for a `{ "$generated": VAR, "redacted": <bool> }`
-    // pointer by path. The walk itself provisions nothing.
+  const walk = (value: unknown, path: string): unknown => {
+    // A generated leaf is a param source too, so it is matched before the platform variable case.
     if (isOriginParamSource(value)) {
       const varName = generatedParamVarName(address, path);
       generated.push({ varName, bytes: 0, redacted: false, path, origin: value.payload.address });
@@ -331,7 +327,7 @@ export function resolveInputBinding(
     }
     if (isSecretSource(value) || isParamSource(value)) {
       const name = platformVariableName(value, bindingPlace(path, address));
-      variables.push({ path, field, name });
+      variables.push({ path, name });
       if (absentVariables.has(name)) {
         absent.push(path === '' ? `(root) → ${name}` : `${path} → ${name}`);
         return ABSENT;
@@ -341,7 +337,7 @@ export function resolveInputBinding(
     if (Array.isArray(value)) {
       return value.map((member, index) => {
         const memberPath = path === '' ? String(index) : `${path}.${index}`;
-        const resolvedMember = walk(member, memberPath, `${field}[${index}]`);
+        const resolvedMember = walk(member, memberPath);
         if (resolvedMember === ABSENT) {
           throw absentArrayPositionError(member, memberPath, address);
         }
@@ -351,11 +347,7 @@ export function resolveInputBinding(
     if (isPlainObject(value)) {
       const out: Record<string, unknown> = {};
       for (const [key, member] of Object.entries(value)) {
-        const resolvedMember = walk(
-          member,
-          path === '' ? key : `${path}.${key}`,
-          field === '' ? key : `${field}.${key}`,
-        );
+        const resolvedMember = walk(member, path === '' ? key : `${path}.${key}`);
         if (resolvedMember === ABSENT) continue; // key omitted — the schema arbitrates absence
         out[key] = resolvedMember;
       }
@@ -378,7 +370,7 @@ export function resolveInputBinding(
     );
   };
 
-  const resolved = walk(binding, '', '');
+  const resolved = walk(binding, '');
   assertDistinctPointerNames(pointers, address);
   return {
     resolved: resolved === ABSENT ? undefined : resolved,
@@ -425,10 +417,8 @@ export function serializeInput(
   if (!judged.ok) {
     throw new Error(
       `invalid input for service "${address}": ${judged.thrown ? '' : 'config param validation failed: '}${judged.message}\n` +
-        '(Deploy-time validation sees each value known only at boot, a platform secret included, as a ' +
-        'pointer to a variable on the platform, never its value. A failure that names a secret field ' +
-        'means the binding and the schema disagree on whether it is a secret, or the schema checks ' +
-        `the secret's content, which it cannot see at deploy.)${judged.variableNote}`,
+        'At deploy, the schema sees each value known only at boot, a platform secret included, as a pointer to a variable on the platform, never its value. ' +
+        `A failure on a secret field means the binding and the schema disagree on whether it is a secret, or the schema checks the secret's content, which it cannot see at deploy.${judged.variableNote}`,
     );
   }
   const { validated, generated, absent, resolved } = judged;
@@ -532,7 +522,7 @@ function variableNote(variables: readonly VariableRead[], issuePaths: readonly s
     ),
   );
   return read
-    .map(({ field, name }) => `\nThe field "${field}" reads the platform variable "${name}".`)
+    .map(({ path, name }) => `\nThe field "${path}" reads the platform variable "${name}".`)
     .join('');
 }
 
@@ -628,10 +618,9 @@ function substitutePointers(
     }
     if (v instanceof SecretBox) {
       throw new Error(
-        `input key "${path}" of service "${address}" validated to a SecretString the binding did ` +
-          'not supply — a schema must not mint secret boxes (a default/transform cannot name a ' +
-          "platform variable); provision variable.secret({ name: 'NAME' }) in the app root and bind " +
-          'its value to the field instead.',
+        `input key "${path}" of service "${address}" validated to a SecretString that the binding did not supply. ` +
+          "A schema's default or transform cannot create a secret, because no platform variable holds it. " +
+          "Provision variable.secret({ name: 'NAME' }) in the app root and bind its value to the field.",
       );
     }
     if (Array.isArray(v)) {

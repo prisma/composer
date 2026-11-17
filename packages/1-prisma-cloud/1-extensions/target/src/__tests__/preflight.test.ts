@@ -1142,17 +1142,17 @@ describe('the deploy check of platform variable nodes', () => {
     expect(result.findings.unset).toEqual([
       {
         name: 'MAIL_KEY',
-        readers: [{ kind: 'unread', node: 'shop.mailKey', nodeKind: 'resource' }],
+        readers: [{ kind: 'unread', node: 'shop.mailKey' }],
         commands: commands('MAIL_KEY'),
       },
       {
         name: 'UNREAD_FROM',
-        readers: [{ kind: 'unread', node: 'shop.unreadFrom', nodeKind: 'resource' }],
+        readers: [{ kind: 'unread', node: 'shop.unreadFrom' }],
         commands: commands('UNREAD_FROM'),
       },
       {
         name: 'UNREAD_KEY',
-        readers: [{ kind: 'unread', node: 'shop.unreadKey', nodeKind: 'resource' }],
+        readers: [{ kind: 'unread', node: 'shop.unreadKey' }],
         commands: commands('UNREAD_KEY'),
       },
     ]);
@@ -1186,7 +1186,7 @@ describe('the deploy check of platform variable nodes', () => {
     expect(message).toEndWith('\nThe field "from" reads the platform variable "EMAIL_FROM".');
   });
 
-  test('the text listing the variables a service needs does not say which field reads each one', async () => {
+  test('a schema that needs one of several unset variables gets one line naming them all, and no line naming a field', async () => {
     const needsOne: StandardSchemaV1<unknown, unknown> = {
       '~standard': {
         version: 1,

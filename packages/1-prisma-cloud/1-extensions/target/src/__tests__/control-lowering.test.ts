@@ -1075,13 +1075,13 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       // The same three rows as the deploy hook declares them on
       // `Deployment.triggers`: one member per row, carrying the SAME value
       // the row writes (Redacted; under these mocks already resolved). No
-      // pointed platform variable here, so no pointer names ride along.
+      // platform variable here, so none rides along.
       expect(unwrapTriggers(result.triggers)).toEqual({
         COMPOSER_SHOP_AUTH_DB_URL: 'postgres://real-db',
         COMPOSER_SHOP_AUTH_PORT: '3000',
         COMPOSER_SHOP_AUTH_ORIGIN: '"https://auth-svc.example"',
       });
-      expect(result.pointers).toEqual([]);
+      expect(result.platformVariables).toEqual([]);
       // serialize also surfaces the resolved listen port for deploy() — the
       // Deployment must route to whatever the app binds, not a constant.
       expect(result.port).toBe(3000);
@@ -1267,12 +1267,12 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         expect(JSON.stringify(writes)).not.toContain('sk_live');
         // Neither does what the deploy hook declares as triggers: the
         // document rides as its own (secret-free) text, and the platform
-        // variable it points at is named in `pointers`, so its rotation
+        // variable it points at is named in `platformVariables`, so its rotation
         // timestamp can join the triggers — the VALUE is nowhere near it.
         expect(unwrapTriggers(result.triggers)['COMPOSER_SHOP_INGEST_INPUT']).toBe(
           '{"stripeEnabled":true,"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
         );
-        expect(result.pointers).toEqual(['STRIPE_SECRET_KEY']);
+        expect(result.platformVariables).toEqual(['STRIPE_SECRET_KEY']);
         expect(JSON.stringify(unwrapTriggers(result.triggers))).not.toContain('sk_live');
         // The row also rides the serialize → deploy handoff, so deploy() can
         // put the document (secret-free by construction) on the report entity.
@@ -1282,7 +1282,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
             '{"stripeEnabled":true,"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
           absent: [],
           generated: [],
-          // The pointed platform variable, so the deploy hook can fold its
+          // The platform variable the document names, so the deploy hook can fold its
           // rotation timestamp into the deployment triggers.
           markers: [{ name: 'STRIPE_SECRET_KEY', path: 'stripeKey', secret: true, inArray: false }],
         });
@@ -1369,7 +1369,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       expect(unwrapTriggers(result.triggers)['COMPOSER_SHOP_INGEST_SECRET_GENERATED']).toBe(
         'generated-for-shop.ingest.generated.secret',
       );
-      expect(result.pointers).toEqual([]);
+      expect(result.platformVariables).toEqual([]);
     });
   });
 
@@ -1730,7 +1730,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       triggers: { COMPOSER_AUTH_DB_URL: Redacted.make('postgres://real-db') },
       // The input document points at an operator-owned platform variable; its
       // preflight `updatedAt` must join the triggers under `<name>:updatedAt`.
-      pointers: ['STRIPE_SECRET_KEY'],
+      platformVariables: ['STRIPE_SECRET_KEY'],
       // A non-default port from serialize must reach the Deployment verbatim.
       port: 8080,
     };
@@ -1791,7 +1791,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     const serialized = {
       environment: [],
       triggers: {},
-      pointers: [],
+      platformVariables: [],
       port: 3000,
       input: {
         key: 'COMPOSER_AUTH_INPUT',
@@ -1830,7 +1830,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     const serialized = {
       environment: [],
       triggers: {},
-      pointers: [],
+      platformVariables: [],
       port: 3000,
       input: {
         key: 'COMPOSER_AUTH_INPUT',
@@ -1981,7 +1981,7 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
     const serialized = {
       environment: [{ id: 'STORE_PORT-var#cloud-id', key: 'STORE_PORT' }],
       triggers: {},
-      pointers: [],
+      platformVariables: [],
       port: 3000,
       bucket: 'streams',
       accessKeyId: 'AKIA123',
@@ -2562,7 +2562,7 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
         workspaceId: 'ws_1',
         providerParams,
         preflight: {
-          pointerVersion: () => undefined,
+          platformVariableVersion: () => undefined,
           absentVariables: new Set(),
         },
       };
@@ -2621,7 +2621,7 @@ describe('a platform variable the prisma dev preflight found unset', () => {
       workspaceId: 'ws_1',
       providerParams: new Map(),
       preflight: {
-        pointerVersion: () => undefined,
+        platformVariableVersion: () => undefined,
         absentVariables: new Set(['STRIPE_WEBHOOK_SECRET']),
       },
     };
@@ -3049,7 +3049,7 @@ describe('resource IDs are built from the full address, and each declares the ID
         ctx as unknown as LowerContext,
         { serviceId: 'shop.auth.api#cloud-id', projectId: 'shop-project#cloud-id' },
         { path: '/tmp/api.tar.gz', sha256: 'sha-api' },
-        { environment: [], triggers: {}, pointers: [], port: 3000 },
+        { environment: [], triggers: {}, platformVariables: [], port: 3000 },
       ),
     );
 
@@ -3673,7 +3673,7 @@ describe("prismaCloud().nodes['platform-variable'] — a platform variable node"
     provision(variable({ name: 'UNREAD_NAME' }));
     const greeting = provision(variable({ name: 'WEB_GREETING' }));
     provision(mailer, { input: { from, key } });
-    provision(web, { input: { greeting } });
+    provision(web, { input: { greeting }, params: { port: 4000 } });
   });
 
   const lowerShop = () =>
@@ -3755,7 +3755,7 @@ describe("prismaCloud().nodes['platform-variable'] — a platform variable node"
     expect(JSON.stringify(writes)).not.toContain('sk_planted');
   });
 
-  test("each deployment's triggers hold the rows of the nodes its service reads, and no others", async () => {
+  test("each deployment's triggers hold the rows of the nodes its service reads, and no others: a literal per-key param adds none", async () => {
     const before = recorded.deploy.length;
 
     await lowerShop();
@@ -3767,7 +3767,9 @@ describe("prismaCloud().nodes['platform-variable'] — a platform variable node"
     expect(triggersOf('shop.mailer.deployment')).toContain('EMAIL_FROM:updatedAt');
     expect(triggersOf('shop.mailer.deployment')).toContain('EMAIL_KEY:updatedAt');
     expect(triggersOf('shop.mailer.deployment')).not.toContain('WEB_GREETING:updatedAt');
-    expect(triggersOf('shop.web.deployment')).toContain('WEB_GREETING:updatedAt');
+    expect(
+      triggersOf('shop.web.deployment').filter((member) => member.endsWith(':updatedAt')),
+    ).toEqual(['WEB_GREETING:updatedAt']);
     expect(triggersOf('shop.web.deployment')).not.toContain('EMAIL_FROM:updatedAt');
     expect(JSON.stringify(recorded.deploy.slice(before))).not.toContain('UNREAD_NAME');
   });

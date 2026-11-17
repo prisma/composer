@@ -68,7 +68,7 @@ test('a value changed in the app secrets reaches the service on the next materia
   expect(billing['STRIPE_SECRET_KEY']).toBe('sk_test_new');
 });
 
-test('a pointed variable that is unset or empty is not given to the service', async () => {
+test('a platform variable that is unset or empty is not given to the service', async () => {
   await writeRows({
     COMPOSER_BILLING_INPUT: JSON.stringify({
       stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },

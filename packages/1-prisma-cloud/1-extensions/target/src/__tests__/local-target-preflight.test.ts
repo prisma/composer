@@ -83,7 +83,6 @@ const portGraph = () =>
     }),
   );
 
-/** A service whose input field `token` reads API_TOKEN and is required. */
 const tokenService = () => compute({ name: 'web', deps: {}, input: requiresOneOf('token'), build });
 
 const tokenGraph = () =>
@@ -323,7 +322,7 @@ describe('prisma dev preflight', () => {
 
     const payload = devPayload(childEnv);
     expect([...payload.absentVariables]).toEqual(['STRIPE_WEBHOOK_SECRET']);
-    expect([...payload.pointerVersions.keys()]).toEqual(['STRIPE_SECRET_KEY']);
+    expect([...payload.platformVariableVersions.keys()]).toEqual(['STRIPE_SECRET_KEY']);
     expect(Object.values(childEnv).join('')).not.toContain('sk_test_1');
   });
 
@@ -331,11 +330,11 @@ describe('prisma dev preflight', () => {
     const graph = billingGraph(requiresSecrets('stripeKey'));
     const memberFor = async (value: string) => {
       secrets['STRIPE_SECRET_KEY'] = value;
-      const { pointerVersion } = transportedPreflight(
+      const { platformVariableVersion } = transportedPreflight(
         () => undefined,
         transported(await preflight(graph)),
       );
-      return pointerVersion('STRIPE_SECRET_KEY');
+      return platformVariableVersion('STRIPE_SECRET_KEY');
     };
 
     const first = await memberFor('sk_test_1');
@@ -350,7 +349,9 @@ describe('prisma dev preflight', () => {
     const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
 
     expect(
-      transportedPreflight(() => undefined, childEnv).pointerVersion('STRIPE_WEBHOOK_SECRET'),
+      transportedPreflight(() => undefined, childEnv).platformVariableVersion(
+        'STRIPE_WEBHOOK_SECRET',
+      ),
     ).toBeUndefined();
   });
 
@@ -395,7 +396,7 @@ describe('prisma dev preflight', () => {
 
     const childEnv = transported(await preflight(portGraph()));
 
-    expect([...devPayload(childEnv).pointerVersions.keys()]).toEqual(['APP_PORT']);
+    expect([...devPayload(childEnv).platformVariableVersions.keys()]).toEqual(['APP_PORT']);
   });
 
   test('the fingerprint key is created once, readable only by its owner, and reused', async () => {
@@ -409,7 +410,7 @@ describe('prisma dev preflight', () => {
     // Windows has no POSIX file modes, and local dev does not run there.
     if (process.platform !== 'win32') expect(fs.statSync(keyPath).mode & 0o777).toBe(0o600);
     expect(fs.readFileSync(keyPath)).toEqual(key);
-    expect(second.pointerVersions).toEqual(first.pointerVersions);
+    expect(second.platformVariableVersions).toEqual(first.platformVariableVersions);
   });
 
   test('a lost fingerprint key only changes the fingerprints', async () => {
@@ -420,7 +421,9 @@ describe('prisma dev preflight', () => {
     fs.rmSync(keyPath);
     const second = devPayload(transported(await preflight(portGraph())));
 
-    expect(second.pointerVersions.get('APP_PORT')).not.toBe(first.pointerVersions.get('APP_PORT'));
+    expect(second.platformVariableVersions.get('APP_PORT')).not.toBe(
+      first.platformVariableVersions.get('APP_PORT'),
+    );
   });
 
   test('a secret shared by two services stops dev, naming both services that read it', async () => {
@@ -436,7 +439,7 @@ describe('prisma dev preflight', () => {
 
     const payload = devPayload(transported(await preflight(sharedGraph())));
 
-    expect([...payload.pointerVersions.keys()]).toEqual(['STRIPE_SECRET_KEY']);
+    expect([...payload.platformVariableVersions.keys()]).toEqual(['STRIPE_SECRET_KEY']);
     expect([...payload.absentVariables]).toEqual([]);
   });
 
@@ -484,7 +487,7 @@ describe('prisma dev preflight', () => {
     const versions = [];
     for (const environment of ['dev', 'test', 'feature/x']) {
       const payload = devPayload(transported(await preflight(portGraph(), environment)));
-      versions.push(payload.pointerVersions.get('APP_PORT'));
+      versions.push(payload.platformVariableVersions.get('APP_PORT'));
     }
 
     expect(new Set(versions).size).toBe(3);
@@ -515,7 +518,7 @@ describe('prisma dev preflight', () => {
       );
       const key = fs.readFileSync(path.join(environmentDir(cwd), 'fingerprint.key'));
 
-      expect(payload.pointerVersions.get('STRIPE_SECRET_KEY')).toBe(
+      expect(payload.platformVariableVersions.get('STRIPE_SECRET_KEY')).toBe(
         createHmac('sha256', key).update('sk_pool').digest('hex'),
       );
     } finally {
@@ -533,7 +536,7 @@ describe('prisma dev preflight', () => {
       configuration['API_TOKEN'] = 'from-the-configuration';
       const payload = devPayload(transported(await preflight(tokenGraph())));
 
-      expect([...payload.pointerVersions.keys()]).toEqual(['API_TOKEN']);
+      expect([...payload.platformVariableVersions.keys()]).toEqual(['API_TOKEN']);
     } finally {
       delete process.env['API_TOKEN'];
     }
@@ -609,7 +612,7 @@ describe('prisma dev preflight', () => {
 
       expect(result.plainVariableText).toEqual({ EMAIL_FROM: 'shop@example.com' });
       const payload = devPayload(transported(result.payload));
-      expect([...payload.pointerVersions.keys()]).toEqual(['EMAIL_FROM']);
+      expect([...payload.platformVariableVersions.keys()]).toEqual(['EMAIL_FROM']);
       expect([...payload.absentVariables]).toEqual([]);
       expect(documentOf(graph, 'shop.mail', transported(result.payload))).toEqual({
         from: { $platform: { name: 'EMAIL_FROM' } },
@@ -675,7 +678,7 @@ describe('prisma dev preflight', () => {
       );
     });
 
-    test("a changed value changes only that variable's fingerprint", async () => {
+    test("a changed value changes only its readers' trigger members", async () => {
       configuration['API_TOKEN'] = 'tok_1';
       const graph = Load(
         appRoot('shop', ({ provision }) => {
@@ -689,16 +692,34 @@ describe('prisma dev preflight', () => {
           });
         }),
       );
-      const versionsFor = async (from: string) => {
+      const triggersFor = async (from: string) => {
         configuration['EMAIL_FROM'] = from;
-        return devPayload(transported(await preflight(graph))).pointerVersions;
+        const childEnv = transported(await preflight(graph));
+        const { absentVariables, platformVariableVersion } = transportedPreflight(
+          () => undefined,
+          childEnv,
+        );
+        const membersOf = (address: string) => {
+          const node = graph.nodes.find((entry) => entry.id === address)?.node as ServiceNode;
+          const binding = graph.inputBindings.find((b) => b.serviceAddress === address)?.binding;
+          const row = serializeInput(node, address, binding, { absentVariables });
+          return Object.fromEntries(
+            (row?.markers ?? []).map(({ name }) => [
+              `${name}:updatedAt`,
+              platformVariableVersion(name),
+            ]),
+          );
+        };
+        return { mail: membersOf('shop.mail'), web: membersOf('shop.web') };
       };
 
-      const first = await versionsFor('a@example.com');
-      const second = await versionsFor('b@example.com');
+      const first = await triggersFor('a@example.com');
+      const second = await triggersFor('b@example.com');
 
-      expect(second.get('EMAIL_FROM')).not.toBe(first.get('EMAIL_FROM'));
-      expect(second.get('API_TOKEN')).toBe(first.get('API_TOKEN'));
+      expect(Object.keys(first.mail)).toEqual(['EMAIL_FROM:updatedAt']);
+      expect(Object.keys(first.web)).toEqual(['API_TOKEN:updatedAt']);
+      expect(second.mail).not.toEqual(first.mail);
+      expect(second.web).toEqual(first.web);
     });
   });
 });

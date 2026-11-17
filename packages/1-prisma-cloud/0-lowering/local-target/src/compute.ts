@@ -97,7 +97,7 @@ export function scopedEnvRows(
   return scoped;
 }
 
-export function pointedVariables(
+export function platformVariables(
   rows: Readonly<Record<string, string>>,
   address: string,
 ): { readonly plain: ReadonlySet<string>; readonly secrets: ReadonlySet<string> } {
@@ -163,11 +163,8 @@ export function readComputeManifest(artifactDir: string): {
 }
 
 /**
- * The environment a service's deployment runs with: its own rows from
- * `env.json` (`scopedEnvRows`), `COMPOSER_<ADDRESS>_PORT`, the current values
- * of the platform variables its input document names, and `PATH` and `HOME` from the shell.
- * The `Deployment` provider puts it with an artifact; a dev server is given it
- * too (ADR-0056).
+ * A deployment's environment: its own rows, its port, the platform variables its input document names, and `PATH` and `HOME`.
+ * A dev server is given the same (ADR-0056).
  */
 export async function materializeEnv(
   devDir: string,
@@ -179,13 +176,13 @@ export async function materializeEnv(
   const rows = await envStore(devDir).read();
   const env: Record<string, string> = scopedEnvRows(rows, address);
   env[composerKey(address, 'PORT')] = JSON.stringify(port);
-  const pointed = pointedVariables(rows, address);
+  const named = platformVariables(rows, address);
   const setIfText = (name: string, value: unknown): void => {
     if (typeof value === 'string' && value.length > 0) env[name] = value;
   };
-  for (const name of pointed.secrets) setIfText(name, secrets[name]);
-  for (const name of pointed.plain) {
-    if (!pointed.secrets.has(name)) setIfText(name, configuration[name]);
+  for (const name of named.secrets) setIfText(name, secrets[name]);
+  for (const name of named.plain) {
+    if (!named.secrets.has(name)) setIfText(name, configuration[name]);
   }
   if (process.env['PATH'] !== undefined) env['PATH'] = process.env['PATH'];
   if (process.env['HOME'] !== undefined) env['HOME'] = process.env['HOME'];

@@ -74,7 +74,7 @@ export interface ComputeSerialized {
    */
   readonly triggers: Readonly<Record<string, unknown>>;
   /** Platform variables the service reads and Composer does not write; each joins the triggers as `<name>:updatedAt`. */
-  readonly pointers: readonly string[];
+  readonly platformVariables: readonly string[];
   readonly port: number;
   readonly input?: InputDocumentRow;
 }
@@ -128,7 +128,7 @@ interface EnvRow {
   readonly record: Prisma.EnvironmentVariable;
   readonly key: string;
   readonly value: Redacted.Redacted<string> | Output.Output<Redacted.Redacted<string>>;
-  readonly pointers?: readonly string[];
+  readonly platformVariables?: readonly string[];
 }
 
 const sortedMarkerNames = (markers: readonly PlatformMarkerUse[]): string[] =>
@@ -226,7 +226,7 @@ export function computeDescriptor(
             }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(app, address)))),
             key: inputRow.key,
             value: inputValue,
-            pointers: sortedMarkerNames(inputRow.markers),
+            platformVariables: sortedMarkerNames(inputRow.markers),
           });
           // Each generated leaf: generate its value ONCE (the resource keeps it
           // stable across redeploys via its persisted output) and provision it
@@ -347,7 +347,7 @@ export function computeDescriptor(
           environment: rows.map((r) => r.record),
           // Keys are unique per row (one env var each), so no member collides.
           triggers: Object.fromEntries(rows.map((r) => [r.key, r.value])),
-          pointers: [...new Set(rows.flatMap((r) => r.pointers ?? []))],
+          platformVariables: [...new Set(rows.flatMap((r) => r.platformVariables ?? []))],
           port,
           ...(inputRow !== undefined ? { input: inputRow } : {}),
         };
@@ -368,7 +368,7 @@ export function computeDescriptor(
 
     deploy: ({ address, graph }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
-        const { pointerVersion } = o().preflight;
+        const { platformVariableVersion } = o().preflight;
         // Env keys never contain ':', so a `<name>:updatedAt` member cannot
         // collide with a row's own trigger member. The key name is historical:
         // under `prisma dev` the member holds an HMAC of the value, and
@@ -376,7 +376,10 @@ export function computeDescriptor(
         const triggers = {
           ...serialized.triggers,
           ...Object.fromEntries(
-            serialized.pointers.map((name) => [`${name}:updatedAt`, pointerVersion(name) ?? '?']),
+            serialized.platformVariables.map((name) => [
+              `${name}:updatedAt`,
+              platformVariableVersion(name) ?? '?',
+            ]),
           ),
         };
         const app = graph.root.id;

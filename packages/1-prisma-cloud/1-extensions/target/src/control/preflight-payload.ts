@@ -1,14 +1,14 @@
 // A deploy payload is JSON `{ updatedAt }`; a `prisma dev` payload is `dev:` then JSON
-// `{ absentVariables, pointerVersions }`. Names, times and keyed hashes only, never a value.
+// `{ absentVariables, platformVariableVersions }`. Names, times and keyed hashes only, never a value.
 import { readPreflightPayload } from '@internal/core/config';
 import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
 
-/** A value that changes when the pointed variable's value changes: the platform `updatedAt` on deploy, an HMAC of the value under `prisma dev`. Undefined when unknown. */
-export type PointerVersion = (name: string) => string | undefined;
+/** A value that changes when the platform variable's value changes: the platform `updatedAt` on deploy, an HMAC of the value under `prisma dev`. Undefined when unknown. */
+export type PlatformVariableVersion = (name: string) => string | undefined;
 
 /** What the preflight of this run sent, as the lowering reads it. */
 export interface TransportedPreflight {
-  readonly pointerVersion: PointerVersion;
+  readonly platformVariableVersion: PlatformVariableVersion;
   readonly absentVariables: ReadonlySet<string>;
 }
 
@@ -18,7 +18,7 @@ export interface DeployPreflightPayload {
 
 export interface DevPreflightPayload {
   readonly absentVariables: readonly string[];
-  readonly pointerVersions: Readonly<Record<string, string>>;
+  readonly platformVariableVersions: Readonly<Record<string, string>>;
 }
 
 export type DecodedPreflightPayload =
@@ -27,7 +27,7 @@ export type DecodedPreflightPayload =
   | {
       readonly kind: 'dev';
       readonly absentVariables: ReadonlySet<string>;
-      readonly pointerVersions: ReadonlyMap<string, string>;
+      readonly platformVariableVersions: ReadonlyMap<string, string>;
     };
 
 const DEV_PAYLOAD_PREFIX = 'dev:';
@@ -44,7 +44,9 @@ export function serializeDeployPreflightPayload(
 export function serializeDevPreflightPayload(payload: DevPreflightPayload): string {
   return `${DEV_PAYLOAD_PREFIX}${JSON.stringify({
     absentVariables: [...new Set(payload.absentVariables)].sort(),
-    pointerVersions: Object.fromEntries(Object.entries(payload.pointerVersions).sort(byName)),
+    platformVariableVersions: Object.fromEntries(
+      Object.entries(payload.platformVariableVersions).sort(byName),
+    ),
   })}`;
 }
 
@@ -76,15 +78,15 @@ export function decodePreflightPayload(payload: string | undefined): DecodedPref
       !('absentVariables' in parsed) ||
       !Array.isArray(parsed.absentVariables) ||
       !parsed.absentVariables.every((name: unknown) => typeof name === 'string') ||
-      !('pointerVersions' in parsed) ||
-      !isStringRecord(parsed.pointerVersions)
+      !('platformVariableVersions' in parsed) ||
+      !isStringRecord(parsed.platformVariableVersions)
     ) {
       throw devPayloadError('it does not have the expected shape');
     }
     return {
       kind: 'dev',
       absentVariables: new Set<string>(parsed.absentVariables),
-      pointerVersions: new Map(Object.entries(parsed.pointerVersions)),
+      platformVariableVersions: new Map(Object.entries(parsed.platformVariableVersions)),
     };
   }
   const parsed = parseJson(payload, deployPayloadError);
@@ -118,12 +120,12 @@ export function transportedPreflight(
     (decoded ??= decodePreflightPayload(readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, env)));
   const noVariables: ReadonlySet<string> = new Set();
   return {
-    pointerVersion: (name) => {
+    platformVariableVersion: (name) => {
       const snapshot = own();
       if (snapshot !== undefined) return snapshot.get(name);
       const payload = decode();
       if (payload.kind === 'deploy') return payload.updatedAt.get(name);
-      if (payload.kind === 'dev') return payload.pointerVersions.get(name);
+      if (payload.kind === 'dev') return payload.platformVariableVersions.get(name);
       return undefined;
     },
     get absentVariables() {

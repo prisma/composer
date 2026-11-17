@@ -107,7 +107,7 @@ export async function runDevPreflight(input: PreflightInput): Promise<DevPreflig
     variable.secret ? input.secrets[variable.name] : plainVariableText[variable.name];
 
   const absentVariables = new Set<string>();
-  const pointed = new Map<string, string>();
+  const values = new Map<string, string>();
   const required: MissingVariables[] = [];
   const readers = new Map<string, PlatformVariableReader[]>();
   const invalidInputs: string[] = [];
@@ -117,7 +117,7 @@ export async function runDevPreflight(input: PreflightInput): Promise<DevPreflig
     for (const variable of variables) {
       const value = variableValue(variable);
       if (isSet(value)) {
-        pointed.set(variable.name, value);
+        values.set(variable.name, value);
       } else {
         unset.push(variable.name);
         absentVariables.add(variable.name);
@@ -152,7 +152,7 @@ export async function runDevPreflight(input: PreflightInput): Promise<DevPreflig
     throw new Error(`prisma dev cannot start:\n\n${sections.join('\n\n')}`);
   }
 
-  if (absentVariables.size === 0 && pointed.size === 0) {
+  if (absentVariables.size === 0 && values.size === 0) {
     return { payload: undefined, plainVariableText };
   }
   const key = await crypto.subtle.importKey(
@@ -162,12 +162,13 @@ export async function runDevPreflight(input: PreflightInput): Promise<DevPreflig
     false,
     ['sign'],
   );
-  const pointerVersions: Record<string, string> = {};
-  for (const [name, value] of pointed) pointerVersions[name] = await fingerprint(key, value);
+  const platformVariableVersions: Record<string, string> = {};
+  for (const [name, value] of values)
+    platformVariableVersions[name] = await fingerprint(key, value);
   return {
     payload: serializeDevPreflightPayload({
       absentVariables: [...absentVariables],
-      pointerVersions,
+      platformVariableVersions,
     }),
     plainVariableText,
   };

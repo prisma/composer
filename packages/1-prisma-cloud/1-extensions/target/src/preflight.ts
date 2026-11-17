@@ -291,7 +291,7 @@ export async function runPreflight(
   }));
   const unread = unreadVariables(input.graph).map(({ name, node }) => ({
     name,
-    reader: { kind: 'unread', node, nodeKind: 'resource' } as const,
+    reader: { kind: 'unread', node } as const,
   }));
   const names = [
     ...new Set([...services.flatMap((service) => service.names), ...unread.map((use) => use.name)]),

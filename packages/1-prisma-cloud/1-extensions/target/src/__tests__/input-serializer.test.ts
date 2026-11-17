@@ -103,7 +103,7 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
     expect(() =>
       serializeInput(svc(type({ key: secretString() })), 'shop.web', { key: secretSource('KEY') }),
     ).toThrow(
-      'input key "key" of service "shop.web" is bound to a source that is not a platform variable.',
+      'input key "key" of service "shop.web" is bound to a source that is not a platform variable. Provision variable() or variable.secret() from @prisma/composer-prisma-cloud in the app root and pass its value down.',
     );
   });
 
@@ -199,7 +199,7 @@ describe('serializeInput — validate with pointers in place, serialize the vali
     }
     expect(message).toBe(
       'invalid input for service "web": config param validation failed: stripeKey must be a SecretString box — bind this field to a secret (was a string)\n' +
-        "(Deploy-time validation sees each value known only at boot, a platform secret included, as a pointer to a variable on the platform, never its value. A failure that names a secret field means the binding and the schema disagree on whether it is a secret, or the schema checks the secret's content, which it cannot see at deploy.)",
+        "At deploy, the schema sees each value known only at boot, a platform secret included, as a pointer to a variable on the platform, never its value. A failure on a secret field means the binding and the schema disagree on whether it is a secret, or the schema checks the secret's content, which it cannot see at deploy.",
     );
   });
 
@@ -237,7 +237,7 @@ describe('serializeInput — validate with pointers in place, serialize the vali
       injected: new SecretBox('made-up'),
     }));
     expect(() => serializeInput(svc(schema), 'web', { greeting: 'hi' })).toThrow(
-      'input key "injected" of service "web" validated to a SecretString the binding did not supply — a schema must not mint secret boxes (a default/transform cannot name a platform variable); provision variable.secret({ name: \'NAME\' }) in the app root and bind its value to the field instead.',
+      'input key "injected" of service "web" validated to a SecretString that the binding did not supply. A schema\'s default or transform cannot create a secret, because no platform variable holds it. Provision variable.secret({ name: \'NAME\' }) in the app root and bind its value to the field.',
     );
   });
 
@@ -874,7 +874,7 @@ describe('schemas see pointers at deploy', () => {
   test('a schema that mints its own secret box beside a secret pointer is refused for minting, not for copying', () => {
     const minting = svc(returning((value) => ({ ...value, other: new SecretBox('minted') })));
     expect(() => serializeInput(minting, 'web', { key: secretVariable('KEY') })).toThrow(
-      'input key "other" of service "web" validated to a SecretString the binding did not supply',
+      "input key \"other\" of service \"web\" validated to a SecretString that the binding did not supply. A schema's default or transform cannot create a secret, because no platform variable holds it. Provision variable.secret({ name: 'NAME' }) in the app root and bind its value to the field.",
     );
   });
 });
@@ -896,7 +896,7 @@ describe('platform variable nodes in a service binding', () => {
     ]);
   });
 
-  test('a plain node named absent is left out of the document', () => {
+  test('a plain node listed in absentVariables is left out of the document', () => {
     const optional = type({ 'from?': field(type('string')), key: secretString() });
     const row = serializeInput(
       svc(optional),
@@ -909,7 +909,7 @@ describe('platform variable nodes in a service binding', () => {
     expect(row?.absent).toEqual(['from → EMAIL_FROM']);
   });
 
-  test('an array position that reads a plain node named absent fails, naming the variable', () => {
+  test('an array position that reads a plain node listed in absentVariables fails, naming the variable', () => {
     expect(() =>
       resolveInputBinding({ senders: [from] }, 'shop.web', {
         absentVariables: new Set(['EMAIL_FROM']),
@@ -927,10 +927,10 @@ describe('platform variable nodes in a service binding', () => {
     );
   });
 
-  test('a schema failure on a node in an array position names the field as the serializer writes array positions', () => {
+  test('a schema failure on a node in an array position names the field by the dotted path the other messages use', () => {
     expect(() =>
       serializeInput(svc(type({ list: 'number[]' })), 'shop.web', { list: ['x', from] }),
-    ).toThrow(/\nThe field "list\[1\]" reads the platform variable "EMAIL_FROM"\.$/);
+    ).toThrow(/\nThe field "list\.1" reads the platform variable "EMAIL_FROM"\.$/);
   });
 
   test("a schema failure on a field under a node's path also ends with its name, and a failure elsewhere does not", () => {
@@ -944,6 +944,6 @@ describe('platform variable nodes in a service binding', () => {
         from,
         count: 'x',
       }),
-    ).toThrow(/cannot see at deploy\.\)$/);
+    ).toThrow(/which it cannot see at deploy\.$/);
   });
 });
