@@ -1,0 +1,55 @@
+---
+description: "A lower layer never learns a higher layer's concept. Core holds only generic primitives (Service, Resource, Connection, input, params, load, run). Never add, or propose to the operator, a member on a core interface that exists for one connection kind (RPC), one target (Prisma Cloud) or one module (cron, streams)."
+alwaysApply: true
+---
+
+# A lower layer never learns a higher layer's concept
+
+The packages are layered, and the directory numbers give the order:
+`0-framework/0-foundation`, `1-core`, `2-authoring`, `3-tooling`, then
+`1-prisma-cloud`. A package may use the layers below it. A lower layer must not
+know that a higher layer's concept exists.
+
+The dependency check only catches an import that points the wrong way. It does
+not catch a higher layer's concept written into a lower layer's interface. That
+is the case this rule covers.
+
+## The check
+
+Before you add a member to a type or interface in a lower layer, or change one,
+say in one sentence what the member is for. Then ask: does that sentence name
+something a higher layer owns?
+
+- A connection kind, such as RPC. RPC lives in `2-authoring/service-rpc`.
+- A deployment target, such as Prisma Cloud, or anything only that target has.
+- A shared module, such as cron or streams.
+
+If it does, the member does not belong in the lower layer. Core's service
+interface has `run`, `load` and `input` because every service has them. It has
+nothing for one kind of connection.
+
+## What to do instead
+
+- Give the higher layer what it needs through a primitive the lower layer
+  already has: a declared param, the service's input, or a dependency's
+  binding from `load()`.
+- Or keep the whole mechanism in the layer that owns the concept.
+- If neither works, the design is blocked. Say so, and say what you tried.
+
+## This applies to proposals
+
+Do not build such a change, and do not put it to the operator as an option. An
+option that fails the check is not an option. If a subagent offers one, reject
+it yourself; do not pass it on.
+
+## The case that produced this rule
+
+The RPC request handler `serve()` needed the accepted service keys. An agent
+proposed that core's `RunnableServiceNode` gain a method returning the accepted
+RPC keys, and asked the operator to approve it. That writes RPC, a concept of
+`service-rpc`, into core. The proposal was rejected. It should not have been
+made.
+
+Principles: "Compose, don't special-case" and "Thin core, fat targets" in
+`docs/design/01-principles/guiding-principles.md`; the split is described in
+`docs/design/03-domain-model/core-and-targets.md`.

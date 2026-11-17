@@ -13,6 +13,16 @@ stays inside the bundle, and never dereferenced)
 amended by
 [ADR-0047](docs/design/90-decisions/ADR-0047-compute-assembly-preserves-safe-runtime-topology.md)).
 
+## A lower layer never learns a higher layer's concept
+
+Core holds only what every service has: `run`, `load`, `input`, params,
+dependencies. Before you add or change a member of an interface in a lower
+layer, say in one sentence what it is for. If that sentence names a connection
+kind (RPC), a deployment target (Prisma Cloud) or a shared module (cron,
+streams), the member does not belong there. Do not build it, and do not offer
+it to the operator as an option. Full rule and the case behind it:
+[`.agents/rules/core-holds-no-higher-layer-concept.mdc`](.agents/rules/core-holds-no-higher-layer-concept.mdc).
+
 ## Read the design docs before any design discussion
 
 Before your first reply that offers an opinion, a proposal, or an answer to a
