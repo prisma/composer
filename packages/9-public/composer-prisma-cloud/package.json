@@ -48,7 +48,7 @@
     "@prisma/composer": "workspace:0.39.0",
     "@prisma/dev": "^0.25.2",
     "@prisma/management-api-sdk": "^1.80.0",
-    "@prisma/orm-toolchain": "8.0.0-rc.23",
+    "@prisma/orm-toolchain": "8.0.0-rc.24",
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "catalog:",
     "arktype": "^2.2.3",
@@ -59,7 +59,7 @@
     "tsdown": "^0.22.7"
   },
   "peerDependencies": {
-    "@prisma/orm-postgres": "8.0.0-rc.23"
+    "@prisma/orm-postgres": "8.0.0-rc.24"
   },
   "devDependencies": {
     "@internal/auth": "workspace:0.39.0",
@@ -80,7 +80,7 @@
     "@internal/storage": "workspace:0.39.0",
     "@internal/streams": "workspace:0.39.0",
     "@internal/tsdown-config": "workspace:0.39.0",
-    "@prisma/orm-postgres": "8.0.0-rc.23",
+    "@prisma/orm-postgres": "8.0.0-rc.24",
     "@types/node": "^26.0.1",
     "typescript": "^6.0.3"
   },
