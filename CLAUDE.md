@@ -13,15 +13,19 @@ stays inside the bundle, and never dereferenced)
 amended by
 [ADR-0047](docs/design/90-decisions/ADR-0047-compute-assembly-preserves-safe-runtime-topology.md)).
 
-## A lower layer never learns a higher layer's concept
+## A lower layer does not know what is built on it
 
-Core holds only what every service has: `run`, `load`, `input`, params,
-dependencies. Before you add or change a member of an interface in a lower
-layer, say in one sentence what it is for. If that sentence names a connection
-kind (RPC), a deployment target (Prisma Cloud) or a shared module (cron,
-streams), the member does not belong there. Do not build it, and do not offer
-it to the operator as an option. Full rule and the case behind it:
-[`.agents/rules/core-holds-no-higher-layer-concept.mdc`](.agents/rules/core-holds-no-higher-layer-concept.mdc).
+Core models services, resources and connections. RPC, Prisma Cloud, cron and
+streams are built on top of it, and that is what lets someone add a connection
+kind, a target or a module without changing core.
+
+So when code in a higher layer needs a value and the shortest way is one more
+member on a lower layer's interface, stop and ask who the member is for. If
+only one connection kind, target or module would use it, the change belongs in
+the layer that owns that concept. A more general name does not change that. Do
+not build it, and do not offer it to anyone as an option. How to tell, what to
+do, and an example:
+[`.agents/rules/lower-layers-do-not-know-higher-layers.mdc`](.agents/rules/lower-layers-do-not-know-higher-layers.mdc).
 
 ## Read the design docs before any design discussion
 
