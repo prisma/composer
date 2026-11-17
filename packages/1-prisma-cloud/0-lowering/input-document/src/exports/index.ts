@@ -26,3 +26,9 @@ export {
   INPUT_KEY_NAME,
   ownKeyPrefix,
 } from '../env-keys.ts';
+export {
+  decodeVariableText,
+  type JsonSchema,
+  type SchemaKind,
+  schemaKind,
+} from '../variable-schema.ts';

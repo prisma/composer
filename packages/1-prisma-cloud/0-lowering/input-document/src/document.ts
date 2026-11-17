@@ -1,8 +1,15 @@
+import { isPlainObject } from './plain-object.ts';
+import { decodeVariableText, type JsonSchema, schemaKind, schemaWord } from './variable-schema.ts';
+
 export const PLATFORM_MARKER = '$platform';
 export const GENERATED_MARKER = '$generated';
 
 export interface PlatformMarker {
-  readonly $platform: { readonly name: string; readonly secret?: true };
+  readonly $platform: {
+    readonly name: string;
+    readonly secret?: true;
+    readonly schema?: JsonSchema;
+  };
 }
 
 export interface GeneratedMarker {
@@ -17,31 +24,32 @@ export interface PlatformMarkerUse {
   readonly inArray: boolean;
 }
 
-export const platformMarker = (name: string, secret: boolean): PlatformMarker => ({
-  [PLATFORM_MARKER]: secret ? { name, secret: true } : { name },
-});
+export function platformMarker(name: string, secret: boolean): PlatformMarker;
+export function platformMarker(name: string, secret: false, schema: JsonSchema): PlatformMarker;
+export function platformMarker(name: string, secret: boolean, schema?: JsonSchema): PlatformMarker {
+  if (secret) return { [PLATFORM_MARKER]: { name, secret: true } };
+  return { [PLATFORM_MARKER]: schema === undefined ? { name } : { name, schema } };
+}
 
 export const generatedMarker = (name: string, redacted: boolean): GeneratedMarker => ({
   [GENERATED_MARKER]: name,
   redacted,
 });
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
-}
-
 export function isPlatformMarker(value: unknown): value is PlatformMarker {
   if (!isPlainObject(value)) return false;
   const keys = Object.keys(value);
   if (keys.length !== 1 || keys[0] !== PLATFORM_MARKER) return false;
   const body = value[PLATFORM_MARKER];
+  if (!isPlainObject(body)) return false;
+  const secret = body['secret'];
+  const schema = body['schema'];
   return (
-    isPlainObject(body) &&
     typeof body['name'] === 'string' &&
-    (body['secret'] === undefined || body['secret'] === true) &&
-    Object.keys(body).every((key) => key === 'name' || key === 'secret')
+    (secret === undefined || secret === true) &&
+    (schema === undefined ||
+      (secret === undefined && isPlainObject(schema) && schemaKind(schema) !== 'mixed')) &&
+    Object.keys(body).every((key) => key === 'name' || key === 'secret' || key === 'schema')
   );
 }
 
@@ -122,14 +130,14 @@ export function readDocument(document: unknown, options: ReadDocumentOptions): R
   };
   const walk = (value: unknown, path: string, inArray: boolean): unknown => {
     if (isPlatformMarker(value)) {
-      const { name, secret } = value.$platform;
+      const { name, secret, schema } = value.$platform;
       const text = textOf(name);
       if (text === undefined) {
         if (inArray) throw unsetInArrayError(name, path);
         unset.add(name);
         return ABSENT;
       }
-      return secret === true ? options.secret(text) : text;
+      return secret === true ? options.secret(text) : decodeVariableText(name, text, schema);
     }
     if (isGeneratedMarker(value)) {
       const name = value.$generated;
@@ -181,7 +189,12 @@ export function withUnsetVariables(message: string, unset: readonly string[]): s
 
 export function describeDocument(document: unknown): string {
   const describe = (value: unknown): string => {
-    if (isPlatformMarker(value)) return `$platform ${value.$platform.name}`;
+    if (isPlatformMarker(value)) {
+      const { name, schema } = value.$platform;
+      return schema === undefined
+        ? `$platform ${name}`
+        : `$platform ${name} (${schemaWord(schema)})`;
+    }
     if (isGeneratedMarker(value)) return `$generated ${value.$generated}`;
     if (Array.isArray(value)) return `[${value.map(describe).join(',')}]`;
     if (isPlainObject(value)) {

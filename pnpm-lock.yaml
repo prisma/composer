@@ -923,6 +923,10 @@ importers:
         version: 6.0.3
 
   packages/1-prisma-cloud/0-lowering/input-document:
+    dependencies:
+      '@cfworker/json-schema':
+        specifier: 4.1.6
+        version: 4.1.6
     devDependencies:
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
@@ -1993,6 +1997,9 @@ packages:
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
+
+  '@cfworker/json-schema@4.1.6':
+    resolution: {integrity: sha512-YzVGTHXf4bzlyAL5KAvHYCdNbbt6zM5cYkAgxqxQPDQM6aZ4ShIIN5yJ+6q7YeonnevxT8k/LmD2tJi/jOiKkg==}
 
   '@clack/core@1.4.0':
     resolution: {integrity: sha512-7Wctjq6f7c1CPz8sPpkwUnz8yRgVANkpNupb81q432FjcJg4l+Sw7XANdNSdWfAKq0IHI0JTcUeK5dxs/HrGPw==}
@@ -6087,6 +6094,8 @@ snapshots:
 
   '@biomejs/cli-win32-x64@2.5.4':
     optional: true
+
+  '@cfworker/json-schema@4.1.6': {}
 
   '@clack/core@1.4.0':
     dependencies:
