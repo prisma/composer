@@ -16,15 +16,9 @@ function textIn(value: unknown, at: readonly string[]): { at: readonly string[];
   return [];
 }
 
-/**
- * Throws `CONFIG.SECRET_AS_PLAIN_VALUE` when a plain value Load read, or a plain platform variable's
- * text, holds a known secret, a number or a boolean compared as its text (`KnownSecrets.nameIn`).
- * The message names where and the secrets key, never the value; `consequence` is the caller's
- * sentence on why a plain value Load read is refused.
- */
-export function refuseSecretsIn(
+/** Throws `CONFIG.SECRET_AS_PLAIN_VALUE` when a root input field Load read holds a known secret. */
+export function refuseSecretsInRootInput(
   read: AppConfigurationRead,
-  plainVariableText: Readonly<Record<string, string>>,
   knownSecrets: KnownSecrets,
   consequence: string,
 ): void {
@@ -45,6 +39,13 @@ export function refuseSecretsIn(
       },
     );
   }
+}
+
+/** Throws `CONFIG.SECRET_AS_PLAIN_VALUE` when a plain platform variable's text holds a known secret. */
+export function refuseSecretsInPlainVariables(
+  plainVariableText: Readonly<Record<string, string>>,
+  knownSecrets: KnownSecrets,
+): void {
   for (const [variable, text] of Object.entries(plainVariableText)) {
     const name = knownSecrets.nameIn(text);
     if (name === undefined) continue;

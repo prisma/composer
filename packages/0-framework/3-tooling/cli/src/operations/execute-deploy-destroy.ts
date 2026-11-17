@@ -68,7 +68,7 @@ import {
   toRunReport,
   writeRunReport,
 } from '../run-report.ts';
-import { refuseSecretsIn } from '../secret-as-plain-value.ts';
+import { refuseSecretsInRootInput } from '../secret-as-plain-value.ts';
 import { validateEnvironmentName } from '../validate-environment.ts';
 import {
   DEFAULT_DEPLOY_ENVIRONMENT,
@@ -505,9 +505,8 @@ async function runStackPipelineInner(
     const { graph, name: resolvedName } = pipeline;
     const config = pipeline.configSource.value;
     if (action === 'deploy') {
-      refuseSecretsIn(
+      refuseSecretsInRootInput(
         graph.appConfigurationRead,
-        {},
         opts.redaction.knownSecrets,
         'A deploy sends every plain value Load read to the platform as plain configuration, and never sends a secret that way.',
       );

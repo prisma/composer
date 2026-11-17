@@ -3,7 +3,10 @@ import * as path from 'node:path';
 import type { AppConfigurationRead, RootInputField } from '@internal/core';
 import { type AppSecrets, DEV_DIR, type NamedSecrets } from '@internal/core/config';
 import type { KnownSecrets } from './redaction.ts';
-import { refuseSecretsIn } from './secret-as-plain-value.ts';
+import {
+  refuseSecretsInPlainVariables,
+  refuseSecretsInRootInput,
+} from './secret-as-plain-value.ts';
 
 /** Names the app configuration file the first process wrote for this run (ADR-0062). */
 export const APP_CONFIGURATION_FILE_ENV = 'PRISMA_COMPOSER_APP_CONFIGURATION_FILE';
@@ -111,12 +114,12 @@ export function prepareSecondProcess(input: {
   readonly appSecrets?: AppSecrets;
 }): SecondProcessHandover {
   const { file, appSecrets } = input;
-  refuseSecretsIn(
+  refuseSecretsInRootInput(
     input.appConfigurationRead,
-    input.plainVariableText,
     input.knownSecrets,
     'Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.',
   );
+  refuseSecretsInPlainVariables(input.plainVariableText, input.knownSecrets);
   const contents: AppConfigurationFile = {
     appConfigurationRead: input.appConfigurationRead,
     plainVariableText: input.plainVariableText,
