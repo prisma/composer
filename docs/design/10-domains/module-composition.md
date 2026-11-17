@@ -130,15 +130,7 @@ export default appRoot('shop', ({ provision }) => {
 });
 ```
 
-`prisma deploy --environment staging` gives `shop.email.service` the input
-binding `{ from: 'staging+shop@example.com', deliveryCredential }`, where
-`deliveryCredential` is the value of the platform secret node `shop.emailDeliveryCredential`.
-The binding has no `replyTo` key, because the root left that optional field out.
-Only the app root can provision the node: in the `email` module's body,
-`provision(variable.secret(…))` fails to compile, with an error that names
-`appRoot()`. A variable's name is one space per deployed app, and the root is
-the app, so the module declares the field in its input and the root wires the
-value down.
+`prisma deploy --environment staging` gives `shop.email.service` the input binding `{ from: 'staging+shop@example.com', deliveryCredential }`, where `deliveryCredential` is the value of the platform secret node `shop.emailDeliveryCredential`. The binding has no `replyTo` key, because the root left that optional field out. Only the app root can provision the node: in the `email` module's body, `provision(variable.secret(…))` fails to compile, with an error that names `appRoot()`. A variable's name is one space per deployed app, and the root is the app, so the module declares the field in its input and the root wires the value down.
 
 The body holds `input`, a dictionary with one value for each key of the schema, such as `input.from` or `input.smtp.host`. Each is a [value](../03-domain-model/glossary.md#value), the same kind as `environment.name` and a `resolve()` result, and a provided one: the body is handed it. Its real value is the data at that key path in the module's validated input, which is the module's binding with its values replaced by their real values and passed through the module's schema. A real value is the schema's output, so a field typed `number` by a `string.integer.parse` schema receives `4`, not `'4'`. An input field bound to a deploy-time value is deploy-time: its real value is known by the end of Load. A field bound to a platform variable node's value, `generatedParam()` or `serviceOrigin()` is a runtime value: the data is known only at boot, so its real value is a pointer, and its type says so: a wrapped field's type includes `Pointer<In>`, and a `secretString()` field's includes `Pointer<SecretString>`.
 

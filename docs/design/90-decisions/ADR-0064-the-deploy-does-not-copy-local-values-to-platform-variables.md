@@ -146,7 +146,7 @@ The local target plays the platform's part.
 
 **A platform variable is a node.** A variable the operator sets is part of what an environment needs before the app can run. As a node, the graph lists it, with the services that read it, before anything is deployed, and every message can name it by its address.
 
-**Only the root declares one.** A variable's name is one space per project. A module below the root that named one would claim that name for every app and every instance that uses the module, and would hide from its input what it needs. The root is the app, so it is the one place whose scope matches that space. A module declares the value in its input and the root wires it down.
+**Only the root declares one.** A variable's name is one space per deployed app. A module below the root that named one would claim that name for every app and every instance that uses the module, and would hide from its input what it needs. The root is the app, so it is the one place whose scope matches that space. A module declares the value in its input and the root wires it down.
 
 **An implicit copy moves a local value to a remote environment.** A deploy that copies a missing variable from the app secrets or the app configuration to the platform can carry a developer's test key to production, because `.env` is read for every environment. Copying on each deploy also writes one override row per preview branch. Until the operator can say explicitly which value goes to which environment, the operator sets each value on the platform, in the scope the operator chooses.
 

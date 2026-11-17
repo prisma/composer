@@ -55,15 +55,7 @@ another target's equivalent (Alchemy calls it a Platform).
 
 ### Resource
 
-A **node that is not the app's own code**: either something a provider manages for
-the app, which the framework can create, update and delete, or a
-[value resource](#value-resource), which names a value the platform holds and which
-the framework lists and never creates, such as a platform variable node. Most
-managed Resources hold **state**, such as a database, a bucket or a cache.
-Surfaced as a typed **capability** (via an Alchemy Layer): the Resource exposes it as
-an interface, a Module depends on one, and the wire is valid iff the exposed interface
-satisfies the dependency. A Resource may expose nothing: a public URL offers a hostname
-to the internet, which is outside the graph, so no node can depend on it.
+A **node that is not the app's own code**: either something a provider manages for the app, which the framework can create, update and delete, or a [value resource](#value-resource), which names a value the platform holds and which the framework lists and never creates, such as a platform variable node. Most managed Resources hold **state**, such as a database, a bucket or a cache. Surfaced as a typed **capability** (via an Alchemy Layer): the Resource exposes it as an interface, a Module depends on one, and the wire is valid iff the exposed interface satisfies the dependency. A Resource may expose nothing: a public URL offers a hostname to the internet, which is outside the graph, so no node can depend on it.
 
 The lifecycle can be implemented by cloud APIs *or* third-party/partner APIs, so a
 provisioned third-party account is a Resource too — a Stripe product, a Tigris
@@ -114,11 +106,7 @@ code never reads the environment (no-globals). Each key of a binding takes:
   the provisioning module's own input;
 - a **source**: target-provided logic that turns what the author supplies
   into data. A source is a value too. Prisma Cloud's:
-  - **a [platform variable node](#platform-variable-node)'s value** — the app root
-    provisions `variable({ name })` or `variable.secret({ name })` and passes
-    the value down. The service reads the variable at boot. Its value **never
-    enters deploy state**. A [platform secret](#platform-secret)'s value is
-    also **redacted**.
+  - **a [platform variable node](#platform-variable-node)'s value** — the app root provisions `variable({ name })` or `variable.secret({ name })` and passes the value down. The service reads the variable at boot. Its value **never enters deploy state**. A [platform secret](#platform-secret)'s value is also **redacted**.
   - **`generatedParam(...)`** — the author supplies generation parameters;
     the **target generates the value at deploy** and **persists it in deploy
     state**, stable across redeploys. A generated value can act as
@@ -132,30 +120,14 @@ A value the operator supplies and the deploy reads is a [root input field](#root
 
 A binding is typed from the schema's input type, for a Service as for a Module. In a binding, a field typed `secretString()` takes only a secret: a platform secret's value or a redacted `generatedParam()`, or a module's own secret field passed on. A secret box written in a binding fails to compile, because a secret's value never sits in the code, and no pointer is ever written as a literal. A [wrapped field](#field) also takes a plain runtime value: a plain platform variable's value, `serviceOrigin()` or a plain `generatedParam()`. A plain field takes neither, and a binding that gives it one fails to compile. Where the compiler sees no type, such as a schema without type information or a cast, the deploy checks each value known only at boot as its pointer, so a plain field bound to one fails the deploy.
 
-The older form of input is a service's per-key `params`, each bound to a
-literal or a deploy-time value, never a source. A compute service declares one,
-the reserved `port`
-([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md)).
+A service also has per-key `params`, each bound to a literal or a deploy-time value, never a source. A compute service declares one, the reserved `port` ([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md)).
 
 Two properties fall out of the source, and neither is its own category:
 
-- **Persistence follows the source.** A platform variable's value never
-  enters deploy state: the service reads it at boot, from its input document's
-  marker. A root input field is read again on every
-  deploy. Generated and literal values live in the deployment. Persistence is a
-  *consequence* of where the value comes from, not a flag.
-- **Redaction is an orthogonal facet** — whether a value is printed in the
-  deploy report and logs, or masked. A platform secret is always redacted; a
-  generated param may be redacted (a signing key) or plain (a generated id).
-  Redaction is about *display*; it does not make a value a secret. A value is a
-  secret when it is held outside Composer and the deploy never holds it: today that is a [platform secret](#platform-secret), which is *externally sourced and never in state*.
+- **Persistence follows the source.** A platform variable's value never enters deploy state: the service reads it at boot, from its input document's marker. A root input field is read again on every deploy. Generated and literal values live in the deployment. Persistence is a *consequence* of where the value comes from, not a flag.
+- **Redaction is an orthogonal facet** — whether a value is printed in the deploy report and logs, or masked. A platform secret is always redacted; a generated param may be redacted (a signing key) or plain (a generated id). Redaction is about *display*; it does not make a value a secret. A value is a secret when it is held outside Composer and the deploy never holds it: today that is a [platform secret](#platform-secret), which is *externally sourced and never in state*.
 
-**The framework never produces a secret.** It names platform variables
-(carrying only the name), and it generates config params (which it may store).
-The secrets in the system are the platform secrets the app root declares. Much of what the framework writes is neither — it is
-**graph-materialized** config (a connection or resource address computed from
-the topology); a wire's change is a graph event, detected by provenance, never
-by inspecting the value.
+**The framework never produces a secret.** It names platform variables (carrying only the name), and it generates config params (which it may store). The secrets in the system are the platform secrets the app root declares. Much of what the framework writes is neither — it is **graph-materialized** config (a connection or resource address computed from the topology); a wire's change is a graph event, detected by provenance, never by inspecting the value.
 
 To pull an unmanaged external dependency *into* the topology as a reproducible node,
 provision it (making it a Resource) or wrap it in a Service that exposes your domain
@@ -176,46 +148,19 @@ whatever inputs Composer is given
 The data a value stands for is its **real value**.
 
 - **Provided or computed.** A provided value is handed to the module body: `environment.name` is one, a deploy-time fact of the environment, and each field of a module's `input` is another, whose real value is read from the module's input after its schema has validated it. The `input` itself is a dictionary of these values, not a value, so no binding accepts it. A root's input is the [app configuration](#the-app-configuration). A computed value is what `resolve(dependencies, fn)` returns; Load runs `fn` with its dependencies' real values after every module body has run, with `provision` disabled. `resolve()` declares a computed value; Load resolves every value.
-- **Deploy-time or runtime.** A deploy-time value has its real value by the
-  end of Load: `environment.name`, a `resolve()` result, a [root input field](#root-input-field),
-  and a module input field bound to one of these. A platform variable node's
-  value, `generatedParam()` and `serviceOrigin()` give
-  [runtime values](#runtimevalue): the platform holds the data, or the deploy
-  creates it later, so Load holds a pointer in its place. A `resolve()` lists
-  deploy-time values only: listing a runtime value fails to compile, and Load
-  refuses a dependency whose real value is a pointer or holds one.
-- **Sources are values.** `generatedParam()`, `serviceOrigin()` and the
-  `provision()` of a platform variable node each return one object that is a
-  value and the deploy target's source. Where a service's binding takes a
-  source, the target receives that object.
+- **Deploy-time or runtime.** A deploy-time value has its real value by the end of Load: `environment.name`, a `resolve()` result, a [root input field](#root-input-field), and a module input field bound to one of these. A platform variable node's value, `generatedParam()` and `serviceOrigin()` give [runtime values](#runtimevalue): the platform holds the data, or the deploy creates it later, so Load holds a pointer in its place. A `resolve()` lists deploy-time values only: listing a runtime value fails to compile, and Load refuses a dependency whose real value is a pointer or holds one.
+- **Sources are values.** `generatedParam()`, `serviceOrigin()` and the `provision()` of a platform variable node each return one object that is a value and the deploy target's source. Where a service's binding takes a source, the target receives that object.
 
-In code the type is `Value<T>`, and `RealValuesOf<D>` is the tuple of
-real-value types `fn` receives for a dependency tuple `D`. A source's type is
-the source and a value at once, such as `SecretSource & RuntimeValue<SecretString>`
-for a platform secret's value.
-A value is not a node: it has no lifecycle and no address. Elsewhere
-in this glossary "value" in lower case keeps its ordinary meaning, plain data
-such as a param's value.
+In code the type is `Value<T>`, and `RealValuesOf<D>` is the tuple of real-value types `fn` receives for a dependency tuple `D`. A source's type is the source and a value at once, such as `SecretSource & RuntimeValue<SecretString>` for a platform secret's value. A value is not a node: it has no lifecycle and no address. Elsewhere in this glossary "value" in lower case keeps its ordinary meaning, plain data such as a param's value.
 
 ### RuntimeValue
 
-A [value](#value) whose data exists only on the platform the app is
-deployed to: the service reads it at boot. A platform variable node's value,
-`generatedParam()` and `serviceOrigin()` give one. In code a runtime value is
-`RuntimeValue<T>`, which is `Value<Pointer<T>>`.
+A [value](#value) whose data exists only on the platform the app is deployed to: the service reads it at boot. A platform variable node's value, `generatedParam()` and `serviceOrigin()` give one. In code a runtime value is `RuntimeValue<T>`, which is `Value<Pointer<T>>`.
 
-At deploy its real value is a **pointer**: an object that names the
-[variable on the platform](#a-variable-on-the-platform) holding the data. For a
-platform variable node's value that is the platform variable; for
-`generatedParam()` and `serviceOrigin()` it is one of Composer's own
-`COMPOSER_` rows. The deploy writes the pointer into the service's input
-document, and the service reads the variable at boot. A pointer has one of two
-kinds, which it records in its data:
+At deploy its real value is a **pointer**: an object that names the [variable on the platform](#a-variable-on-the-platform) holding the data. For a platform variable node's value that is the platform variable; for `generatedParam()` and `serviceOrigin()` it is one of Composer's own `COMPOSER_` rows. The deploy writes the pointer into the service's input document, and the service reads the variable at boot. A pointer has one of two kinds, which it records in its data:
 
-- a **secret pointer**, typed `Pointer<SecretString>`, from a platform secret's
-  value and a redacted `generatedParam()`;
-- a **plain pointer**, typed `Pointer<string>`, from a plain platform
-  variable's value, `serviceOrigin()` and a plain `generatedParam()`.
+- a **secret pointer**, typed `Pointer<SecretString>`, from a platform secret's value and a redacted `generatedParam()`;
+- a **plain pointer**, typed `Pointer<string>`, from a plain platform variable's value, `serviceOrigin()` and a plain `generatedParam()`.
 
 A pointer is typed by the variable's text, so every plain pointer is a
 `Pointer<string>`. `isSecretPointer(x)` and `isPlainPointer(x)` from
@@ -516,11 +461,7 @@ conform (dependency inversion).
 
 ### provision
 
-The Module-scoped operator that turns a dependency descriptor into an **owned
-Resource** (`provision(rawPostgres())`) or instantiates and wires an owned node
-(`provision(svc, { db })`). In an app root, provisioning a [value resource](#value-resource) returns its value with `id` on it (`provision(variable({ name: 'EMAIL_FROM' }))`). Ownership and provisioning are a Module concern; a
-Service only *requires*. Forwarding is just passing a Module's dependencies down and
-returning owned nodes' exposed interfaces up.
+The Module-scoped operator that turns a dependency descriptor into an **owned Resource** (`provision(rawPostgres())`) or instantiates and wires an owned node (`provision(svc, { db })`). In an app root, provisioning a [value resource](#value-resource) returns its value with `id` on it (`provision(variable({ name: 'EMAIL_FROM' }))`). Ownership and provisioning are a Module concern; a Service only *requires*. Forwarding is just passing a Module's dependencies down and returning owned nodes' exposed interfaces up.
 
 ### run — the boot loop
 

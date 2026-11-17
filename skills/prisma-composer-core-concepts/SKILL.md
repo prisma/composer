@@ -65,19 +65,7 @@ export default appRoot('store', ({ provision }) => {
 
 Because interfaces are typed, **the compiler verifies every wire**. A dependency wired to the wrong producer, a missing RPC handler, a literal input value of the wrong shape: all of it fails `tsc`, not the deploy. Values from outside the code are the exception: a root input field exists only at deploy, and a platform variable only on the platform, so a schema refinement the type does not carry and a missing platform variable a service needs surface as early deploy-time refusals instead (see Two channels below). Typecheck, then build, then deploy; don't use the cloud to find out whether the wiring is correct.
 
-Composer itself is target-agnostic: `@prisma/composer` carries authoring,
-testing, and the CLI, coupled to no platform. A deploy target is an extension
-registered in the deploy config; `@prisma/composer-prisma-cloud` is the
-Prisma Cloud target and the one this skill's deploy sections assume. Its
-root exports `compute`, `rawPostgres`, `bucket`, `publicUrl`, `variable`,
-`generatedParam` and `serviceOrigin`; the ORM vocabulary (`postgres`, `dataContract`) lives under the
-`/orm` subpath, alongside the shared `/cron`, `/storage`, `/streams`,
-`/auth`, and `/email` modules. These are the only two Composer packages a
-basic Prisma Cloud app needs, and nothing installs them for you: a fresh
-project starts with neither, so add both as dependencies first. An
-extension adds its own `prisma-composer-*` package alongside them. Compose
-an existing Module before implementing a capability yourself; wiring one in
-is a couple of lines.
+Composer itself is target-agnostic: `@prisma/composer` carries authoring, testing, and the CLI, coupled to no platform. A deploy target is an extension registered in the deploy config; `@prisma/composer-prisma-cloud` is the Prisma Cloud target and the one this skill's deploy sections assume. Its root exports `compute`, `rawPostgres`, `bucket`, `publicUrl`, `variable`, `generatedParam` and `serviceOrigin`; the ORM vocabulary (`postgres`, `dataContract`) lives under the `/orm` subpath, alongside the shared `/cron`, `/storage`, `/streams`, `/auth`, and `/email` modules. These are the only two Composer packages a basic Prisma Cloud app needs, and nothing installs them for you: a fresh project starts with neither, so add both as dependencies first. An extension adds its own `prisma-composer-*` package alongside them. Compose an existing Module before implementing a capability yourself; wiring one in is a couple of lines.
 
 Within the entry graph (everything reachable from `module.ts`), write
 relative imports with explicit `.ts` extensions (`./service.ts`, with
@@ -125,12 +113,7 @@ client back from `load()`.
 | produced by another node | `deps: { db: rawPostgres() }` | wire at `provision()` | `load()` |
 | anything else (config or credential) | one field of the `input` schema | bind at `provision()`: literal, root input field, platform variable node's value, or a `resolve()` value | `input()` |
 
-The service declares its whole incoming configuration, plain values and
-credentials together, as **one [Standard Schema](https://standardschema.dev)**
-(arktype is the house choice). A credential is a field typed as
-`secretString()` from `@prisma/composer/arktype` (or `@prisma/composer/zod` for a Zod schema; the app installs `arktype` 2 or `zod` 4 itself, and Composer uses that copy); conditional legality ("no
-stripe key unless billing is on") is an ordinary schema union. The binding at
-`provision()` mirrors the schema's shape.
+The service declares its whole incoming configuration, plain values and credentials together, as **one [Standard Schema](https://standardschema.dev)** (arktype is the house choice). A credential is a field typed as `secretString()` from `@prisma/composer/arktype` (or `@prisma/composer/zod` for a Zod schema; the app installs `arktype` 2 or `zod` 4 itself, and Composer uses that copy); conditional legality ("no stripe key unless billing is on") is an ordinary schema union. The binding at `provision()` mirrors the schema's shape.
 
 A value you supply, rather than write in code, arrives in one of two ways:
 
@@ -154,12 +137,7 @@ Rules that bite:
 4. **The reserved `port` is outside the schema.** Read it through
    `service.port()`, never `process.env`. The framework also exports `PORT`
    for Next.js standalone, which binds it itself.
-5. **A Module passes a secret on without learning the platform name.**
-   Declare a `secretString()` field in the Module's `input` and pass
-   `input.<field>` on as a binding leaf; the app root provisions
-   `variable.secret({ name: 'NAME' })` and binds its value.
-   A module has no `params` or `secrets` slots: `module()` and `provision()`
-   refuse both, naming `input`. A service's `params` stay.
+5. **A Module passes a secret on without learning the platform name.** Declare a `secretString()` field in the Module's `input` and pass `input.<field>` on as a binding leaf; the app root provisions `variable.secret({ name: 'NAME' })` and binds its value. A module has no `params` or `secrets` slots: `module()` and `provision()` refuse both, naming `input`. A service's `params` stay.
 6. `input.apiKey.expose()` is the only way to a secret's value; the box
    redacts everywhere else (logs, JSON, errors).
 7. **Platform variable names are upper case**: `^[A-Z][A-Z0-9_]*$`. `COMPOSER_…`, `DATABASE_URL`, `DATABASE_URL_POOLED`, `PORT`, `PATH` and `HOME` are reserved, each name is declared by one node, and one name cannot be both a platform variable and a root input field. A node's value bound as a service's whole input is refused too. Each fails before anything is created, naming the variable and the addresses.
@@ -649,8 +627,7 @@ that surprise:
    build and run `prisma dev --detach` again.
 4. `dev` reads `prisma.config.ts` once, at start, and watches it: after an
    edit it says so and pauses rebuilds until you restart `dev`.
-5. `dev` reads secrets only from the `secrets` adapters. Put them where a `secrets` adapter reads them: the shell by default, or `.env.dev` with `secrets: [dotenv(), environmentVariables()]`. A required secret that is unset or empty stops `dev` with an error naming it; an optional one reaches the service as absent. A changed value takes effect on the next `prisma dev`. A `.env` that only the framework loads (Next.js) does not count: Composer reads secrets before the dev server starts.
-   A plain platform variable (`variable({ name })`) comes from the `config` adapters, under the variable's name, read at start: set it in `.env.dev` or the shell. A value that is not text stops `dev`. If a rebuild changes which platform variables the app reads, or where, `dev` warns that the platform variables the app reads changed and pauses rebuilds until you restart it. Today a rebuild reloads `module.ts` as it was at start in the process that checks this, so restart `dev` yourself after editing which variables the root declares or where it passes them.
+5. `dev` reads secrets only from the `secrets` adapters. Put them where a `secrets` adapter reads them: the shell by default, or `.env.dev` with `secrets: [dotenv(), environmentVariables()]`. A required secret that is unset or empty stops `dev` with an error naming it; an optional one reaches the service as absent. A changed value takes effect on the next `prisma dev`. A `.env` that only the framework loads (Next.js) does not count: Composer reads secrets before the dev server starts. A plain platform variable (`variable({ name })`) comes from the `config` adapters, under the variable's name, read at start: set it in `.env.dev` or the shell. A value that is not text stops `dev`. If a rebuild changes which platform variables the app reads, or where, `dev` warns that the platform variables the app reads changed and pauses rebuilds until you restart it. On a rebuild, `dev` checks the reads against the modules it loaded at start, so it does not see an edit to `module.ts` or to the modules it imports; restart `dev` yourself after editing which variables the root declares or where it passes them.
 6. The emulators are machine-wide daemons shared by every `dev`, registered
    under `~/.prisma-composer/emulators`. Set `PRISMA_COMPOSER_EMULATORS_DIR`
    to an absolute directory to give a checkout or CI job its own compute,

@@ -224,7 +224,7 @@ There is one exception, inherited from `dotenv-flow`: `dotenv()` skips `.env.loc
 - **A new node kind instead of a value resource**, such as a "reference". More honest in the types, but it changes core's node union, which every walker of the graph matches on. A resource that is a value costs less and says the same thing.
 - **Root-only provisioning checked by Load alone**, with `module()` as the root. Rejected: the requirement is structural, so the type system carries it; a Load check alone would let a library ship a module that compiles and fails every app that uses it.
 - **A public `value` member on a value resource.** Rejected: any module body could read it and bind the value without provisioning the node, which bypasses root-only provisioning.
-- **A source that reads the app configuration at deploy**, as `envParam()` did, through a configuration key on `paramSource()`. Rejected: it gave a value the deploy reads two spellings, a root input field and a source, and made Load, the serializer and the second-process handover each read the app configuration for sources. A root input field is now the one way.
+- **A source that reads the app configuration at deploy**, as `envParam()` did, through a configuration key on `paramSource()`. Rejected: it gave a value the deploy reads two spellings, a root input field and a source, and made Load, the serializer and the second-process handover each read the app configuration for sources. A root input field is the one way.
 - **One list for plain and protected values.** Rejected: a separate `secrets` list makes a secrets adapter the obvious place for a secret. What it returns never reaches Load or a schema, and Composer redacts what the graph reads from it.
 
 ## Related

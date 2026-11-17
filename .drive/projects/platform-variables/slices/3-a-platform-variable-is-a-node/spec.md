@@ -234,7 +234,7 @@ Core's messages that name a removed function say instead:
 
 - the `resolve()` refusal of a returned source, which says "such as envSecret() or envParam()", says the function returned a source, a value known only at boot, and names no function;
 - the refusal of `secrets` on a service's `provision()`, which says a service takes its secrets "as envSecret(...) leaves", says the service takes its secrets as values bound to `secretString()` fields of its `input` binding;
-- the unbound-param error at deploy, which suggests "e.g. envParam('NAME')", says "a literal value or a value known only at boot". Core's messages do not name a target's concept.
+- the unbound-param error at deploy, which suggests "e.g. envParam('NAME')", says "a literal value or a value the deploy has". Core's messages do not name a target's concept.
 
 No doc comment in core names either function after this slice.
 
@@ -401,6 +401,8 @@ The other places a node value may not go are refused elsewhere:
   ```text
   Service "<address>" binds its param "<name>" to <label of the source>, a value known only at boot. A param takes a literal or a value the deploy has. Bind the value to a field of the service's input instead.
   ```
+
+  `<label of the source>` is the source's label, such as `the platform variable "WEB_PORT"`, or `a source` when the source has no origin to take a label from.
 - A plain field reached through a cast is refused by the service's own schema at serialize or preflight. 5.5 adds the variable's name to that error.
 
 ### 5.5 Serializer, preflight and boot
@@ -415,7 +417,7 @@ Slice 2's handling of a platform variable applies to a node's value, with these 
 
 **Variables left out of the document.** The dev preflight's list of variables to leave out, `absentVariables`, covers plain platform variables as well as secrets. A variable named in it is left out of the document, as an unset secret is in slice 2.
 
-**Schema failure naming the variable.** The service's schema may refuse its input with an issue whose path equals a platform variable's path in the binding, or lies under it. Then the error ends with `The field "<path>" reads the platform variable "<NAME>".`
+**Schema failure naming the variable.** The service's schema may refuse its input with an issue whose path equals a platform variable's path in the binding, or lies under it. Then the error ends with `The field "<path>" reads the platform variable "<NAME>".`, where `<path>` is the field's path in dotted form, such as `The field "list.0" reads the platform variable "<NAME>".`
 
 **Per-key params read no variable.** A per-key param takes a literal or a deploy-time value, which the deploy writes as it did before this slice. The code that let an author point a per-key param at a variable on the platform is deleted:
 
@@ -435,7 +437,7 @@ Composer's own per-service values, such as dependency URLs, service keys, origin
 - The dev preflight finds names the same way.
 - Existence, resolution, triggers, the required error and the findings are slice 2's, unchanged.
 
-**Unread variables, each once.** Preflight finds unread variables only from the value resources not in `valueReads`. Their reader is `{ kind: 'unread', node: <the node's address>, nodeKind: 'resource' }`. So a secret node that a module receives and no service reads is listed once, named by its node.
+**Unread variables, each once.** Preflight finds unread variables only from the value resources not in `valueReads`. Their reader is `{ kind: 'unread', node: <the node's address> }`. The text is unchanged: `named by resource "<address>", read by no service`. So a secret node that a module receives and no service reads is listed once, named by its node.
 
 **Boot.** The input-document package already reads plain markers. Boot no longer reads a per-key pointer row.
 
@@ -479,6 +481,7 @@ Under `prisma dev`, Composer plays the platform's part: it gives each service th
   ```
 
   `DevPreflightResult` is exported as a type from the same entry point as `LocalTargetDescriptor`, in `@prisma/composer` and `@internal/core`. The deploy preflight's type does not change.
+- `prisma dev` checks the shape of what a local target's preflight returns. A local target whose preflight returns the old shape, a bare `PreflightPayload`, is refused before any service starts, with a message that names the extension and says to upgrade it.
 - `prisma dev` keeps the texts from the preflight it runs at start, and writes them into the file on the first converge and on every rebuild. The deploy writes `{}`.
 - The file is `{ appConfigurationRead: { rootInput }, plainVariableText, nodeAddresses }`. Reading a file without `plainVariableText` fails.
 - Before the file is written, every plain value in it, the root's input and each member of `plainVariableText`, is checked against the known secrets. A plain value equal to a secret's value fails with `CONFIG.SECRET_AS_PLAIN_VALUE`. For a member of `plainVariableText`, the message names the platform variable:
@@ -655,7 +658,7 @@ export default appRoot('shop', { input: type({ WEB_PORT: 'string.integer.parse' 
 - **`paramName()` is removed.** No per-key param points at a variable on the platform any more.
 - **`secretName()` is removed.** No public replacement: the target reads a node's name itself. A test that used it to find which variable a binding reads finds the entry in `graph.valueReads`, takes the node at its `resource` from `graph.nodes`, and reads `props.name`.
 - **The duplicate-id error** names both nodes that take the id and says to pass `id`.
-- **For extension authors:** core's `paramSource()` no longer takes `configurationKey`. Read a deploy-time value through a root input field. `AppConfigurationRead` has no `configurationKeyText`, `LocalTargetProvidersInput.configurationKeyText` is now `plainVariableText`, and `LocalTargetDescriptor.preflight` returns the new exported type `DevPreflightResult`, `{ payload, plainVariableText }`.
+- **For extension authors:** core's `paramSource()` no longer takes `configurationKey`. Read a deploy-time value through a root input field. `AppConfigurationRead` has no `configurationKeyText`, `LocalTargetProvidersInput.configurationKeyText` is now `plainVariableText`, and `LocalTargetDescriptor.preflight` returns the new exported type `DevPreflightResult`, `{ payload, plainVariableText }`; `prisma dev` refuses a local target whose preflight returns the old shape, naming the extension and saying to upgrade it. Core's `paramManifest()` and `secretSourceManifest()` are removed: their only consumer was the target's preflight, which now reads `valueReads`.
 
 **Follow-ups in other repositories.** These are not work in this slice. Each repository moves when it upgrades Composer:
 
@@ -746,6 +749,7 @@ Sections 4 to 8.
 - New: running the dev preflight on every rebuild, so a change to what the app reads needs no restart of `prisma dev`. Reason to wait: it is a separate change to the dev loop.
 - New: the check of a node against a root input field with one name sees only the root input fields the root's body passes on, because Composer cannot list a schema's keys (4.6).
 - New: whether a compute service's port should be set through a per-key param at all, or somewhere else such as the build options. Reason to wait: it is a question about the compute service's design, not about platform variables.
+- New: renaming core's `ParamSource` and `paramSource()`, which now name a source that no param accepts. Reason to wait: it is a rename across core's extension interface, separate from this slice.
 - New: the local dev server path reads the whole app configuration for a service's variables, where a deployment takes the start-time plain variable texts. Reason to wait: no behaviour differs today, and changing it changes core's `serve` contract.
 - Rewrite "A value given by a resource that also provides a contract": the value is held under a core-only key, so the conflict is the return of `provision()`, which would have to carry both the contract's ports and the value.
 

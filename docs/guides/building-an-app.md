@@ -341,8 +341,7 @@ The module declares `signingKey` as a `secretString()` field of its input and
 passes it on without learning the platform variable's name. Inside, the field
 is just another leaf of the service's input binding ([below](#service-input)).
 
-The root then treats it like any other node. It declares the platform secret
-and passes its value in ([Platform variables](#platform-variables)):
+The root then treats it like any other node. It declares the platform secret and passes its value in ([Platform variables](#platform-variables)):
 
 ```ts
 const signingKey = provision(variable.secret({ name: 'AUTH_SIGNING_SECRET' }));
@@ -397,10 +396,7 @@ export default appRoot('shop', ({ provision }) => {
 });
 ```
 
-`prisma deploy --environment staging` gives `shop.email.service` the input
-`{ from: 'staging+shop@example.com', deliveryCredential }`, where
-`deliveryCredential` is the value of the platform secret
-`EMAIL_DELIVERY_CREDENTIAL`, which the service reads at boot.
+`prisma deploy --environment staging` gives `shop.email.service` the input `{ from: 'staging+shop@example.com', deliveryCredential }`, where `deliveryCredential` is the value of the platform secret `EMAIL_DELIVERY_CREDENTIAL`, which the service reads at boot.
 
 - The body receives `input`, a dictionary with one [value](#values-that-differ-per-environment) per field. It can pass a field into a `provision()` binding, or, if the field is plain, list it as a `resolve()` dependency to compute with it.
 - `input` itself is not a value. Pass each field on by name, as `input: { from: sender, replyTo: input.replyTo, deliveryCredential: input.deliveryCredential }` does above. Passing the whole `input` on, as in `provision(child, { input })`, fails to compile, and the deploy refuses it if a cast gets it past the compiler.
@@ -421,13 +417,7 @@ export default appRoot('shop', ({ provision }) => {
 - The module's schema checks the binding when the deploy loads the graph, so
   a mistake fails before anything reaches the platform.
 - A root module's input is filled from the config adapters ([Values from outside the code](#values-from-outside-the-code)).
-- A module's `input` takes every source a service's does. Its schema checks
-  each source as its **pointer**: the object that names the variable on the
-  platform the service reads at boot. A `secretString()` field accepts the
-  pointer of a platform secret and of a redacted `generatedParam()`. A plain
-  field accepts no pointer, so a field bound to a plain platform variable,
-  `serviceOrigin()` or a plain `generatedParam()` is wrapped with `field()`,
-  below.
+- A module's `input` takes every source a service's does. Its schema checks each source as its **pointer**: the object that names the variable on the platform the service reads at boot. A `secretString()` field accepts the pointer of a platform secret and of a redacted `generatedParam()`. A plain field accepts no pointer, so a field bound to a plain platform variable, `serviceOrigin()` or a plain `generatedParam()` is wrapped with `field()`, below.
 - `field()`, from `@prisma/composer/arktype` or `@prisma/composer/zod`,
   wraps one leaf field's schema: `type({ from: field(type('string')) })` or
   `z.object({ from: field(z.string()) })`. A wrapped field also accepts a
@@ -543,10 +533,7 @@ provision(cron({ schedule, runner: promotionsService }), {
 });
 ```
 
-A runner that declares an `input` schema ([below](#service-input)) takes its
-binding on `cron()` itself, with a platform secret's value where the schema
-expects a secret. It is required exactly when the runner declares a schema, the
-same rule `provision()` applies:
+A runner that declares an `input` schema ([below](#service-input)) takes its binding on `cron()` itself, with a platform secret's value where the schema expects a secret. It is required exactly when the runner declares a schema, the same rule `provision()` applies:
 
 ```ts
 const token = provision(variable.secret({ name: 'INGEST_TOKEN' }));
@@ -776,15 +763,7 @@ prisma deploy --environment staging    # "HELLO FROM STAGING"
 prisma dev                             # "HELLO FROM DEV"
 ```
 
-`environment.name` and the result of `resolve()` are **values**: stand-ins
-for data that is known only once the deploy knows which environment it is
-deploying. The module body cannot read a value, compare it or branch on it.
-It can only pass it on: as a dependency of another `resolve()`, as a leaf of
-a service's or a module's input binding at any depth, as a service param (a deploy-time value only), as
-one of a `resource()` node's `props`, or as a
-[public URL's `url`](#a-hostname-per-environment). A field of a module's
-`input` is a value too ([A module's input](#a-modules-input)). A value cannot
-be a provision id or a `deps` entry.
+`environment.name` and the result of `resolve()` are **values**: stand-ins for data that is known only once the deploy knows which environment it is deploying. The module body cannot read a value, compare it or branch on it. It can only pass it on: as a dependency of another `resolve()`, as a leaf of a service's or a module's input binding at any depth, as a service param (a deploy-time value only), as one of a `resource()` node's `props`, or as a [public URL's `url`](#a-hostname-per-environment). A field of a module's `input` is a value too ([A module's input](#a-modules-input)). A value cannot be a provision id or a `deps` entry.
 
 `resolve(dependencies, fn)` lists the values it depends on, and `fn`
 receives their real values as one tuple, in the same order. After every
@@ -824,10 +803,7 @@ the platform, with a message that names the binding the value sits in, such as
   that is not plain data.
 - A value depends on itself.
 
-When a dependency's `fn` is the one that failed, the message says so: it
-starts `A resolve() function that … depends on`.
-[`examples/root-input`](../../examples/root-input/) serves a value computed
-from the environment's name.
+When a dependency's `fn` is the one that failed, the message says so: it starts `A resolve() function that … depends on`. [`examples/root-input`](../../examples/root-input/) serves a value computed from the environment's name.
 
 ### Sources in resolve()
 
@@ -863,14 +839,9 @@ export default appRoot('shop', { input: type({ GREETING: 'string' }) }, ({ input
 });
 ```
 
-`GREETING=hi prisma deploy --environment staging` gives `shop.billing.service`
-the input binding `{ greeting: 'HI', stripeKey, returnUrl:
-serviceOrigin('shop.web') }`, where `stripeKey` is the platform secret
-`STRIPE_KEY`'s value.
+`GREETING=hi prisma deploy --environment staging` gives `shop.billing.service` the input binding `{ greeting: 'HI', stripeKey, returnUrl: serviceOrigin('shop.web') }`, where `stripeKey` is the platform secret `STRIPE_KEY`'s value.
 
-Listing a value known only at boot, such as `resolve([stripeKey], ([key]) => …)`,
-fails to compile, with a type error that says a dependency must be a
-deploy-time value:
+Listing a value known only at boot, such as `resolve([stripeKey], ([key]) => …)`, fails to compile, with a type error that says a dependency must be a deploy-time value:
 
 ```text
 error TS2322: Type 'SecretSource<PlatformVariablePayload> & RuntimeValue<SecretString> & { readonly id: string; }' is not assignable to type '"a resolve() dependency must be a deploy-time value, never a value known only at boot or a field wrapped with field(); to compute with an input field, declare it plain"'.
@@ -888,17 +859,13 @@ instead. For a wrapped field, it says to declare the field plain:
 The resolve() function for input key "url" of service "shop.email.service" lists input.from of module "shop.email", whose real value is serviceOrigin('shop.web'), a value known only at boot. A resolve() dependency must be a deploy-time value. To compute with input.from, declare it plain, without field(), and bind it to deploy-time data.
 ```
 
-For a secret field, the message says to pass the field on into a binding and
-read it in the service. For a source listed directly, such as a platform
-secret's value, it says to bind it directly into the input of the service that
-reads it.
+For a secret field, the message says to pass the field on into a binding and read it in the service. For a source listed directly, such as a platform secret's value, it says to bind it directly into the input of the service that reads it.
 
 To use a different secret in each environment, give the secret one name and
 set a different value for it on each environment, instead of choosing between
 two names in `resolve()`.
 
-Turning a platform variable's value into text in a module body, such as
-`` `${stripeKey}` ``, fails the deploy, as reading an input field does.
+Turning a platform variable's value into text in a module body, such as `` `${stripeKey}` ``, fails the deploy, as reading an input field does.
 
 ## Values from outside the code
 
@@ -951,8 +918,7 @@ The app configuration fills only the root's input. Under `prisma dev` it also gi
 
 The `secrets` adapters give `prisma dev` its secrets. A deploy reads them only to know which values to redact. The operator sets a platform variable on the platform; the deploy does not copy it from the `secrets` adapters ([Deploying § Platform variables](deploying.md#platform-variables)).
 
-A root's input takes no secret, so provision a platform secret node inside the
-body and bind its value, as `stripeKey` is above.
+A root's input takes no secret, so provision a platform secret node inside the body and bind its value, as `stripeKey` is above.
 
 Pass the root's input fields on by name, as `from: input.EMAIL_FROM` is above. No module can pass its whole `input` on, and for the root it matters most: its whole `input` is every value the `config` adapters return, which by default is every variable of the shell, secrets included.
 
@@ -1113,8 +1079,7 @@ in the app. Today the platform still gives every service a `prisma.build`
 hostname, so such a service is reachable there. When the platform makes that
 hostname opt-in, your code does not change.
 
-[`examples/root-input`](../../examples/root-input/) makes its service public at
-its `prisma.build` hostname.
+[`examples/root-input`](../../examples/root-input/) makes its service public at its `prisma.build` hostname.
 
 ## Builds
 
@@ -1216,12 +1181,7 @@ The design record explains *why* the model is shaped this way:
   contracts in depth.
 - [`module-composition.md`](../design/10-domains/module-composition.md) —
   boundaries, forwarding, nesting.
-- [ADR-0042](../design/90-decisions/ADR-0042-service-input-is-one-standard-schema.md)
-  — why the service input is one schema and the binding carries the sourcing;
-  [ADR-0029](../design/90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md)
-  for secrets, which the deploy carries by name only, and
-  [ADR-0032](../design/90-decisions/ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md)
-  for binding a per-key param at provision.
+- [ADR-0042](../design/90-decisions/ADR-0042-service-input-is-one-standard-schema.md) — why the service input is one schema and the binding carries the sourcing; [ADR-0029](../design/90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md) for secrets, which the deploy carries by name only, and [ADR-0032](../design/90-decisions/ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md) for binding a per-key param at provision.
 - [ADR-0030](../design/90-decisions/ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md)
   — why service keys work the way they do.
 - [ADR-0005](../design/90-decisions/ADR-0005-users-build-the-framework-assembles.md)

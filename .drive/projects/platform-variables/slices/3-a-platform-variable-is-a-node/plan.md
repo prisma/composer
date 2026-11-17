@@ -58,7 +58,7 @@ The nodes are added before the functions are removed because the examples, fixtu
 
 ## 6. A platform variable goes into `input` only
 
-**Outcome.** The decision of 2026-11-17 (`wip/handover/port-decision.md`), as the spec now states it in 4.6, 5.2, 5.4, 5.5 and 5.6: a platform variable node's value goes into a field of a service's or a module's `input` only; a per-key param takes a literal or a deploy-time value and no source; the pointer row, `paramName()` and all per-key handling in preflight, the dev preflight and the local target are deleted; `ValueRead` is `{ reader, resource, path }`; the rebuild check keys a read by reader, resource and path. The records, guides and skill say the same.
+**Outcome.** The decision of 2026-11-17 (spec section 12, "A platform variable in a service's per-key param"), as the spec now states it in 4.6, 5.2, 5.4, 5.5 and 5.6: a platform variable node's value goes into a field of a service's or a module's `input` only; a per-key param takes a literal or a deploy-time value and no source; the pointer row, `paramName()` and all per-key handling in preflight, the dev preflight and the local target are deleted; `ValueRead` is `{ reader, resource, path }`; the rebuild check keys a read by reader, resource and path. The records, guides and skill say the same.
 
 **Builds on.** Dispatches 1 to 5.
 
