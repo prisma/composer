@@ -205,7 +205,7 @@ function setCommands(
   const add = `prisma project env add ${shellQuote(`${name}=<value>`)} --project ${shellQuote(projectId)}`;
   return branchId === undefined
     ? [`${add} --role production`]
-    : [`${add} --role preview`, `${add} --role preview --branch ${shellQuote(environment)}`];
+    : [`${add} --role preview`, `${add} --branch ${shellQuote(environment)}`];
 }
 
 function requiredError(

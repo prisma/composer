@@ -378,7 +378,7 @@ describe('the deploy check reads which variables exist and sets none', () => {
     expect(message).toEndWith(
       'Set it on the platform, then deploy again:\n' +
         "  - prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role preview\n" +
-        `  - prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role preview --branch 'it'\\''s "$HOME" x'`,
+        `  - prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --branch 'it'\\''s "$HOME" x'`,
     );
   });
 
@@ -395,7 +395,7 @@ describe('the deploy check reads which variables exist and sets none', () => {
           readers: [{ kind: 'field', service: 'app.ingest', path: 'stripeKey' }],
           commands: [
             "prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role preview",
-            "prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role preview --branch 'pr-1'",
+            "prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --branch 'pr-1'",
           ],
         },
       ],
