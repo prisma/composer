@@ -12,7 +12,7 @@ Alchemy research write-up lives in `../04-inspirations/Alchemy/glossary.md`.
 
 ## Core nouns
 
-A node either has a **managed lifecycle**, or names a value the platform holds and the operator sets. A node with a managed lifecycle can be recreated in a fresh environment and stood up in the local emulator. Two kinds carry that lifecycle: **Services** (your code) and **Resources** (managed dependencies); **Modules** group them into bounded contexts. A [platform variable node](#platform-variable-node) is the second kind: Composer lists the variable it names and checks that it has a value, and never creates it. Anything else without a lifecycle, such as an external URL, is part of a node's **[Input](#input)**, not a node.
+A node either has a **managed lifecycle**, or names a value the platform holds and the operator sets. A node with a managed lifecycle can be recreated in a fresh environment and stood up in the local emulator. **Services** (your code) carry that lifecycle, and so do **Resources** (managed dependencies), except a [value resource](#value-resource); **Modules** group them into bounded contexts. A value resource, such as a [platform variable node](#platform-variable-node), is the second kind: Composer lists the value it names and checks that it has one, and never creates it. Anything else without a lifecycle, such as an external URL, is part of a node's **[Input](#input)**, not a node.
 
 ### Module
 
@@ -55,9 +55,11 @@ another target's equivalent (Alchemy calls it a Platform).
 
 ### Resource
 
-A **node whose lifecycle a provider manages**: the framework can create, update and
-delete it. Most Resources hold **state**, such as a database, a bucket or a cache.
-A Resource can also be a [value resource](#value-resource): a node that names a value the platform holds, which the framework lists and never creates, such as a platform variable node.
+A **node that is not the app's own code**: either something a provider manages for
+the app, which the framework can create, update and delete, or a
+[value resource](#value-resource), which names a value the platform holds and which
+the framework lists and never creates, such as a platform variable node. Most
+managed Resources hold **state**, such as a database, a bucket or a cache.
 Surfaced as a typed **capability** (via an Alchemy Layer): the Resource exposes it as
 an interface, a Module depends on one, and the wire is valid iff the exposed interface
 satisfies the dependency. A Resource may expose nothing: a public URL offers a hostname
@@ -146,7 +148,7 @@ Two properties fall out of the source, and neither is its own category:
   deploy report and logs, or masked. A platform secret is always redacted; a
   generated param may be redacted (a signing key) or plain (a generated id).
   Redaction is about *display*; it does not make a value a secret. A value is a
-  secret when it is handled as one: today that is a [platform secret](#platform-secret), which is *externally sourced and never in state*.
+  secret when it is held outside Composer and the deploy never holds it: today that is a [platform secret](#platform-secret), which is *externally sourced and never in state*.
 
 **The framework never produces a secret.** It names platform variables
 (carrying only the name), and it generates config params (which it may store).
@@ -302,7 +304,7 @@ The graph of Modules and Resources wired together through their dependencies and
 The framework infers it from TypeScript and emits it as a static artifact for the
 platform to provision.
 
-Every node in the topology either has a managed lifecycle or names a value the operator sets on the platform. The first kind is what lets the whole graph be recreated in a fresh environment and reproduced in the local emulator (see the [goals](../00-purpose/goals.md)). The second kind is a [platform variable node](#platform-variable-node): Composer cannot create its value, so a new environment needs it set first, and preflight lists it by name before anything is created. Anything else without a lifecycle is part of a node's [Input](#input), not a node.
+Every node in the topology either has a managed lifecycle or names a value the operator sets on the platform. The first kind is what lets the whole graph be recreated in a fresh environment and reproduced in the local emulator (see the [goals](../00-purpose/goals.md)). The second kind is a [value resource](#value-resource), such as a [platform variable node](#platform-variable-node): Composer cannot create its value, so a new environment needs it set first, and preflight lists it by name before anything is created. Anything else without a lifecycle is part of a node's [Input](#input), not a node.
 
 ### Address and logical ID
 

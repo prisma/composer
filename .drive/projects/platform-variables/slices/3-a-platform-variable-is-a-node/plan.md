@@ -2,7 +2,7 @@
 
 Spec: [spec.md](spec.md). Section and acceptance item numbers below are the spec's.
 
-Five dispatches, in order. Each leaves the repository building, type-checking and passing its package tests, so each can be reviewed as it lands. The first three add the node beside `envSecret()` and `envParam()`; the fourth removes the two functions; the fifth rewrites the records and guides.
+Six dispatches, in order. Each leaves the repository building, type-checking and passing its package tests, so each can be reviewed as it lands. The first three add the node beside `envSecret()` and `envParam()`; the fourth removes the two functions; the fifth rewrites the records and guides; the sixth makes a platform variable go into `input` only, as decided on 2026-11-17.
 
 The nodes are added before the functions are removed because the examples, fixtures and tests can only move off the functions once the node works at deploy and under `prisma dev`.
 
@@ -18,17 +18,17 @@ The nodes are added before the functions are removed because the examples, fixtu
 
 ## 2. The Prisma Cloud target: `variable()` and `variable.secret()` at deploy
 
-**Outcome.** An app can provision a platform variable node in its root and deploy it: sections 5.1 to 5.5 and 5.7. The constructors, the payload, the descriptor that creates nothing, the topology skip, graph check rules 1 to 3, the `$platform` marker for plain and secret nodes, the pointer row for a plain node in a per-key param, the schema-failure suffix naming the variable, and deploy preflight for node names, including unread nodes listed once.
+**Outcome.** An app can provision a platform variable node in its root and deploy it: sections 5.1 to 5.5 and 5.7. The constructors, the payload, the descriptor that creates nothing, the topology skip, graph check rules 1 to 3, the `$platform` marker for plain and secret nodes, the pointer row for a plain node in a per-key param (dispatch 6 removes it), the schema-failure suffix naming the variable, and deploy preflight for node names, including unread nodes listed once.
 
 **Builds on.** Dispatch 1's exports and `valueReads`.
 
-**Hands to.** `variable` and the `PlatformVariablePayload` type are exported from `@prisma/composer-prisma-cloud`. A node's value works wherever an `envSecret()` or a per-key `envParam()` works at deploy. Slice 2's graph check rule for `envParam()` and both functions still exist beside the new rules.
+**Hands to.** `variable` and the `PlatformVariablePayload` type are exported from `@prisma/composer-prisma-cloud`. A node's value works wherever an `envSecret()` or a per-key `envParam()` works at deploy; dispatch 6 removes the per-key part. Slice 2's graph check rule for `envParam()` and both functions still exist beside the new rules.
 
 **Completed when.** Acceptance items 1, 3, 4, 5, 6, 7, 8, 15, 16, 17 and 20 pass; existing tests still pass.
 
 ## 3. `prisma dev` fills plain platform variables
 
-**Outcome.** Section 5.6. The dev preflight works out each plain node's text, `prisma dev` hands the texts to the second process in the app configuration file as `plainVariableText`, checked against the known secrets, and the local target fills markers and per-key pointers from them. After a rebuild, a change in the app's reads pauses rebuilds with the message the spec gives.
+**Outcome.** Section 5.6. The dev preflight works out each plain node's text, `prisma dev` hands the texts to the second process in the app configuration file as `plainVariableText`, checked against the known secrets, and the local target fills markers and per-key pointers from them (dispatch 6 removes the per-key pointers). After a rebuild, a change in the app's reads pauses rebuilds with the message the spec gives.
 
 **Builds on.** Dispatch 2's payload and name lookup; dispatch 1's `valueReads`.
 

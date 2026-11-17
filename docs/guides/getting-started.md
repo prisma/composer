@@ -440,8 +440,8 @@ your built server file, then make three changes to the server itself:
 
    `variable` comes from `@prisma/composer-prisma-cloud`; `variable({ name })`
    declares a plain value, `variable.secret({ name })` a secret. You set its
-   value on the platform with `prisma project env add`. [Building an app § Service
-   input](building-an-app.md#service-input) has the how-to-choose table and
+   value on the platform with `prisma project env add`. [Building an app § Two ways to get a
+   value](building-an-app.md#two-ways-to-get-a-value) has the how-to-choose table and
    both shapes.
 3. If it talks to Postgres: declare `deps: { db: rawPostgres() }` and build your
    existing client (`pg`, Bun's `SQL`, whatever you use today) from the

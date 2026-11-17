@@ -39,7 +39,7 @@ A param takes no source: not a platform variable node's value, not `generatedPar
 - A required param that nothing binds fails the deploy loudly.
 - The deploy writes each param as one JSON-encoded row, `COMPOSER_<address>_<name>`, and boot reads it back with the param's schema ([ADR-0019](ADR-0019-the-target-owns-config-serialization.md)). No param row names a variable on the platform.
 - A value change needs a redeploy: a deployment snapshots its environment at creation.
-- Whether a compute service's port should be set through a per-key param at all, or somewhere else such as the build options, is not decided. It is recorded in the platform variables project's `deferred.md`.
+- Where a compute service's port is set is not decided: through this per-key param, or somewhere else such as the build options.
 
 ## Alternatives considered
 

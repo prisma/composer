@@ -44,7 +44,6 @@ A param takes no source: not a platform variable node's value, not `generatedPar
 
 Resolution order per param: binding, else `default`, else absent (only legal for an `optional` param). A required param nothing binds fails the deploy, naming the param and the service.
 
-
 ## Sources are values
 
 A platform variable node's value, `generatedParam()` and `serviceOrigin()` are each one object that is both the target's source and a [value](../03-domain-model/glossary.md#value). The app root gets a platform variable's value from `provision(variable({ name }))` or `provision(variable.secret({ name }))`; only an `appRoot()` body can provision the node. A value the deploy reads is a root input field, not a source. Where each is accepted:

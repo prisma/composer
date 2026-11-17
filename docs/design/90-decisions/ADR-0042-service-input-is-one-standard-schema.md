@@ -120,7 +120,7 @@ A field bound to a platform variable that is unset or empty is a key left out at
 - [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): values, runtime values and pointers, and the app configuration, which fills the root's input.
 - [ADR-0064](ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md): platform variables, the `$platform` marker's rules, and the deploy preflight.
 - [ADR-0021](ADR-0021-params-are-read-through-config-not-load.md), superseded: `config()` is replaced by `service.input()`; dependencies still read through `load()`.
-- [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md), partly superseded: the platform secret survives as a binding leaf; the `secrets()` read and per-slot pointer rows are replaced.
-- [ADR-0032](ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md), partly superseded: binding at `provision()` survives; the `config()` read is replaced. A per-key param takes a literal or a deploy-time value, never a source, so a value known only at boot, such as a platform variable's, reaches a service only through its input.
+- [ADR-0029](ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md): secrets. A platform secret is a binding leaf.
+- [ADR-0032](ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md): binding a param at provision. A per-key param takes a literal or a deploy-time value, so a value known only at boot reaches a service only through its input.
 - [ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md): Composer's own provider params, still on per-key rows.
 - [config-params.md](../10-domains/config-params.md): the sources, and where each is accepted.

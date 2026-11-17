@@ -13,7 +13,7 @@ flowchart TB
   Topology["Topology — the emitted artifact"]
   Module["Module"]
   Service["Service — your code (compute)"]
-  Resource["Resource — managed lifecycle (Postgres + BYO)"]
+  Resource["Resource — managed lifecycle (Postgres + BYO), or a value resource"]
   Config["Configuration — per-env, not a node"]
   Dep["Dependency — requires an interface"]
   Exposed["Exposed interface — offered"]
@@ -69,10 +69,11 @@ flowchart TB
   outermost Module; a private one by its Module.
 - **Every node carries a managed lifecycle, or names a value the operator sets.**
   Services (your code) and Resources (managed dependencies) have a managed
-  lifecycle. That's what lets the whole topology be recreated in a new
-  environment and reproduced in the local emulator. A platform variable node,
-  provisioned in the app root, names a variable the operator sets on the
-  platform: Composer lists it and checks that it has a value, and never
+  lifecycle, except a value resource. That's what lets the whole topology be
+  recreated in a new environment and reproduced in the local emulator. A value
+  resource names a value the platform holds. A platform variable node, the one
+  value resource today, provisioned in the app root, names a variable the
+  operator sets on the platform: Composer lists it and checks that it has a value, and never
   creates it, so a new environment needs it set first.
 - **The rest of configuration is not a node.** A value the service reads at boot
   by name is a platform variable node. Other keys and URLs parameterise Services

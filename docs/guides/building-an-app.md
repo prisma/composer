@@ -1221,7 +1221,7 @@ The design record explains *why* the model is shaped this way:
   [ADR-0029](../design/90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md)
   for secrets, which the deploy carries by name only, and
   [ADR-0032](../design/90-decisions/ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md)
-  for provision-time binding and env sourcing.
+  for binding a per-key param at provision.
 - [ADR-0030](../design/90-decisions/ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md)
   — why service keys work the way they do.
 - [ADR-0005](../design/90-decisions/ADR-0005-users-build-the-framework-assembles.md)
