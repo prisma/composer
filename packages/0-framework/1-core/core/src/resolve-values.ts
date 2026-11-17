@@ -260,7 +260,7 @@ function firstPointer(
 function refusePointerDependency(fnLabel: string, dependency: Value<unknown>, real: unknown): void {
   const found = firstPointer(real);
   if (found === undefined) return;
-  const label = sourceOriginOf(found.pointer)?.label ?? 'a value known only at boot';
+  const label = sourceOriginOf(found.pointer)?.label ?? 'a source';
   const origin = originOf(dependency);
   if (origin.kind !== 'input') {
     throw new LoadError(
@@ -463,9 +463,7 @@ function refuseSourcesInParams(params: readonly ParamBinding[]): void {
   for (const { serviceAddress, slot, binding } of params) {
     const [source] = pointersIn(binding);
     if (source === undefined) continue;
-    const label =
-      sourceOriginOf(source)?.label ??
-      (isSecretSource(source) ? 'a secret source' : 'a param source');
+    const label = sourceOriginOf(source)?.label ?? 'a source';
     throw new LoadError(
       `Service "${serviceAddress}" binds its param "${slot}" to ${label}, a value known only at boot. A param takes a literal or a value the deploy has. Bind the value to a field of the service's input instead.`,
     );
@@ -476,9 +474,7 @@ function refusePointersInProps(address: NodeId, props: unknown): void {
   const seen = new WeakSet<object>();
   const walk = (value: unknown, path: string): void => {
     if (isSecretSource(value) || isParamSource(value)) {
-      const label =
-        sourceOriginOf(value)?.label ??
-        (isSecretSource(value) ? 'a secret source' : 'a param source');
+      const label = sourceOriginOf(value)?.label ?? 'a source';
       throw new LoadError(
         `${describeSite({ address, kind: 'props', path })} is bound to ${label}, which is known only at boot. A resource's props are read at deploy; bind a value known at deploy.`,
       );

@@ -313,22 +313,7 @@ function assertSameNodeAddresses(built: readonly string[], firstProcess: readonl
   );
 }
 
-/**
- * Resolves one SERVICE-OWN param to its config value. The full resolution
- * order across both value channels:
- *
- * 1. A param claiming BOTH a provision-time binding and a `provision` need
- *    (ADR-0031) is a loud error — two sources for one value.
- * 2. A provision-time binding, a schema-validated literal, beats the
- *    declared `default`.
- * 3. A framework-minted `provision` need is resolved per dependency EDGE
- *    against the consumer extension's registry — that path fills CONNECTION
- *    params in `buildConfig`'s inputs loop, never this function. A
- *    service-own param has no edge to mint against, so an unbound need here
- *    falls through like any unbound param.
- * 4. The `default`, else absent (only legal when `optional`), else a loud
- *    error naming the param, the service, and the fix.
- */
+/** A service's own param: its binding, else its `default`, else absent when optional. A `provision` need (ADR-0031) is filled per edge in `buildConfig`, never here. */
 function resolveParam(
   node: ServiceNode,
   serviceId: NodeId,
@@ -339,10 +324,9 @@ function resolveParam(
   if (bound !== undefined) {
     if (param.provision !== undefined) {
       throw new LowerError(
-        `Param "${name}" of "${serviceId}" (service "${node.name}") has two sources claiming one ` +
-          'value: a literal bound at provision ' +
-          `AND a framework provision need ("${String(param.provision.brand)}") on its declaration — ` +
-          'remove the binding or drop the `provision` facet.',
+        `Param "${name}" of "${serviceId}" (service "${node.name}") is bound at provision and also ` +
+          `declares a framework provision need ("${String(param.provision.brand)}"). ` +
+          'Remove the binding or the `provision` facet.',
       );
     }
     const result = param.schema['~standard'].validate(bound);

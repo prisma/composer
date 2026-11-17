@@ -53,7 +53,7 @@ export interface SecretSource<T = unknown> extends Value<unknown> {
 
 /** What a deploy target says about a source it builds. */
 export interface SourceOptions {
-  /** How errors name the source. Defaults to `a secret source` or `a param source`. */
+  /** How errors name the source. Defaults to `a source`. */
   readonly label?: string;
 }
 
@@ -74,7 +74,7 @@ export function secretSource<P, T = unknown>(
   payload: P,
   options?: SecretSourceOptions,
 ): SecretSource<P> & Value<T> {
-  const label = sourceLabel('secretSource', options?.label, 'a secret source');
+  const label = sourceLabel('secretSource', options?.label);
   const secretsKey = options?.secretsKey;
   if (secretsKey !== undefined && (typeof secretsKey !== 'string' || secretsKey.length === 0)) {
     throw new Error('secretSource() secretsKey must be a non-empty string.');
@@ -156,7 +156,7 @@ export function paramSource<P, T = unknown>(
   payload: P,
   options?: ParamSourceOptions,
 ): ParamSource<P> & Value<T> {
-  const label = sourceLabel('paramSource', options?.label, 'a param source');
+  const label = sourceLabel('paramSource', options?.label);
   const redacted = options?.redacted === true;
   return blindCast<
     ParamSource<P> & Value<T>,
@@ -171,8 +171,8 @@ export function paramSource<P, T = unknown>(
   );
 }
 
-function sourceLabel(factory: string, label: unknown, fallback: string): string {
-  if (label === undefined) return fallback;
+function sourceLabel(factory: string, label: unknown): string {
+  if (label === undefined) return 'a source';
   if (typeof label !== 'string' || label.length === 0) {
     throw new Error(`${factory}() label must be a non-empty string.`);
   }
@@ -662,7 +662,6 @@ export interface ModuleBuilder {
   readonly provision: SharedProvision & ProvisionInModule;
 }
 
-// The catch-all goes last: TypeScript reports the last overload's error.
 type AppRootProvision = ProvisionValue & SharedProvision & ProvisionInAppRoot;
 
 /** Dependency map: name → the slot the service declares. Only declarations are admitted, never a concrete ResourceNode. */

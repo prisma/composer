@@ -1,9 +1,3 @@
-/**
- * Provision-time param binding: a param may be bound to a literal (schema-
- * validated when config is built, see lowering.test.ts's buildConfig suite)
- * or to an opaque `ParamSource` (core forwards it, never inspects it) — the
- * non-secret sibling of ADR-0029's secret need/source split.
- */
 import { describe, expect, test } from 'bun:test';
 import { blindCast } from '@internal/foundation/casts';
 import { string } from '../config.ts';

@@ -424,7 +424,7 @@ describe('buildConfig — provision-time param binding', () => {
     });
   });
 
-  test('an unbound required param fails, saying to bind a literal value or a value known only at boot', () => {
+  test('an unbound required param fails, saying to bind a literal value or a value the deploy has', () => {
     const auth = app('fake/compute', {}, { token: string() });
     const root = module('shop', {}, (h) => {
       h.provision(auth, { id: 'auth' });
@@ -493,7 +493,7 @@ describe('buildConfig — provision-time param binding', () => {
     expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(/"port"/);
   });
 
-  test('a param claiming BOTH a provision need and a provision-time binding is a LowerError naming the param and both sources', () => {
+  test('a param claiming BOTH a provision need and a provision-time binding is a LowerError naming the param and the provision need', () => {
     const brand = Symbol.for('test:both-sources');
     const auth = app('fake/compute', {}, { token: string({ provision: provisionNeed(brand) }) });
     const root = module('shop', {}, (h) => {
@@ -504,7 +504,7 @@ describe('buildConfig — provision-time param binding', () => {
     const graph = Load(root);
     expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(LowerError);
     expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(
-      /"token".*two sources.*a literal bound at provision.*test:both-sources/,
+      'Param "token" of "shop.auth" (service "test-service") is bound at provision and also declares a framework provision need ("Symbol(test:both-sources)"). Remove the binding or the `provision` facet.',
     );
   });
 });
@@ -1453,7 +1453,7 @@ describe('deploymentResult', () => {
     });
     const unset = {
       name: 'MAIL_KEY',
-      readers: [{ kind: 'unread', node: 'shop.mailKey', nodeKind: 'resource' }] as const,
+      readers: [{ kind: 'unread', node: 'shop.mailKey' }] as const,
       commands: ["prisma project env add 'MAIL_KEY=<value>' --project 'proj' --role production"],
     };
 

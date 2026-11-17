@@ -104,6 +104,14 @@ describe("a source in a service's param", () => {
     expect(() => Load(root)).toThrow(refusal('the variable "G"'));
   });
 
+  test('a source built without a label is named "a source"', () => {
+    const root = module('shop', ({ provision }) => {
+      provision(echoService(), { input: {}, params: { label: paramSource({}) as never } });
+    });
+
+    expect(() => Load(root)).toThrow(refusal('a source'));
+  });
+
   test('a secret source a cast gets past the types fails Load', () => {
     const root = module('shop', ({ provision }) => {
       provision(echoService(), { input: {}, params: { label: pointer('K') as never } });
@@ -127,7 +135,7 @@ describe("a source in a service's param", () => {
   });
 });
 
-describe('real values', () => {
+describe('a resolve() function that returns a source', () => {
   test('a resolve() function that returns a source fails', () => {
     const root = module('shop', ({ environment, provision }) => {
       const key = resolve([environment.name], () => ({ a: paramSource({ name: 'X' }) }));

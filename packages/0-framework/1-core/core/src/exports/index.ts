@@ -22,8 +22,6 @@ export {
   inputManifest,
   number,
   param,
-  paramManifest,
-  secretSourceManifest,
   string,
 } from '../config.ts';
 export type { Contract, ContractStyle } from '../contract.ts';

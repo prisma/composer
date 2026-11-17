@@ -127,11 +127,6 @@ export interface InputBindingUse {
   readonly binding: unknown;
 }
 
-/**
- * A resolved param binding: a `provision()` call bound a service's param
- * slot to a literal value. A param may fall back to its own `default`, so
- * this list only carries the ones a `provision()` call actually bound.
- */
 export interface ParamBinding {
   /** The graph address of the service that declares the param. */
   readonly serviceAddress: NodeId;

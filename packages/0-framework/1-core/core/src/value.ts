@@ -69,11 +69,8 @@ export type InputOrigin = Extract<ValueOrigin<unknown>, { readonly kind: 'input'
 export type SourceOrigin = Extract<ValueOrigin<unknown>, { readonly kind: 'source' }>;
 
 /**
- * An opaque stand-in a module body can pass wherever a `T` is accepted
- * (ADR-0062). `environment.name` is one; each field of a module's `input` is
- * one; `resolve()` returns one computed from others; a deploy target's source
- * is one too. A deploy-time value's real
- * value is known by the end of Load; a runtime value's real value at deploy is a pointer.
+ * A stand-in a module body passes wherever a `T` is accepted (ADR-0062): `environment.name`, an input field, a `resolve()` result or a target's source.
+ * A deploy-time value is known by the end of Load; a runtime value's real value at deploy is a pointer.
  */
 export interface Value<T> {
   readonly [VALUE]: true;

@@ -1,17 +1,9 @@
 /**
- * The configuration model. Three components, each owned by exactly one
- * party: nodes DECLARE semantic params (pure data, no platform keys); core
- * builds the typed Config from the graph at deploy (buildConfig, in
- * deploy.ts) and consumes it at boot (hydrate, in hydrate.ts); the target
- * pack owns encoding — serializing that Config to the platform environment
- * and reversing it (see core-model.md § Runtime). Core never stringifies and
- * never touches an environment.
- *
- * Secrets are NOT params: a service takes its secrets as secret sources in its
- * input binding. A param is never secret.
+ * A node declares params; core builds the typed Config at deploy and hydrates it at boot; the target encodes it.
+ * A secret is never a param: a service takes its secrets in its input binding.
  */
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import type { Graph, InputBindingUse, ParamBinding, SecretSourceUse } from './graph-types.ts';
+import type { Graph, InputBindingUse } from './graph-types.ts';
 import type { ProvisionNeed, ServiceNode } from './node.ts';
 
 /**
@@ -58,12 +50,8 @@ export interface Connection<P extends Params = Params, C = unknown> {
 }
 
 /**
- * The enumerable config surface of a service — derivable from the graph
- * alone, nothing booted, no platform keys. The introspection artifact (values
- * absent). `schema` is a data-only projection of the param's Standard Schema
- * (JSON Schema when the vendor supports the optional conversion, a `{ vendor }`
- * tag otherwise) — never the param's functions. Physical locations are the
- * target pack's business. Secrets are not here: they are `secretString()` fields of a service's input, bound to secret sources.
+ * A service's config surface, read from the graph alone, without values. `schema` is a data-only projection of the param's schema:
+ * JSON Schema when the vendor converts, a `{ vendor }` tag otherwise.
  */
 export interface ConfigDeclaration {
   readonly owner: 'service' | { readonly input: string };
@@ -144,26 +132,6 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
  */
 export function inputManifest(graph: Graph): readonly InputBindingUse[] {
   return graph.inputBindings;
-}
-
-/**
- * The app's param-binding manifest: every param a `provision()` call bound,
- * at the address that declared it. The param sibling of `provisionManifest`, for a deploy
- * target's own preflight to consume. Pure graph introspection,
- * TARGET-AGNOSTIC; a param this manifest omits simply falls back to its own
- * `default` at `buildConfig`.
- */
-export function paramManifest(graph: Graph): readonly ParamBinding[] {
-  return graph.params;
-}
-
-/**
- * Every secret source a binding in the graph names, wherever it sits: what a
- * deploy target's preflight checks.
- * Pure graph introspection, TARGET-AGNOSTIC.
- */
-export function secretSourceManifest(graph: Graph): readonly SecretSourceUse[] {
-  return graph.secretSources;
 }
 
 // ——— Param constructors: plain data, target-agnostic (ADR-0018/0019). ———

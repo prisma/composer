@@ -16,16 +16,19 @@ const plain = valueResource({
 });
 declare const greetingSchema: StandardSchemaV1<{ greeting: string }>;
 declare const web: ServiceNode<Record<never, never>, Record<never, never>, Record<never, never>, typeof greetingSchema>;
+const child = module('child', { input: greetingSchema }, () => {});
 
 export const nested = module('nested', ({ provision }) => {
   provision(plain); // module-bare
   provision(plain, { id: 'x' }); // module-id
   provision(web, { input: { greeting: 5 } }); // module-service
+  provision(child, { input: { greeting: 5 } }); // module-module
 });
 
 export const root = appRoot('shop', ({ provision }) => {
   provision(plain, { id: 'x', input: {} }); // root-bad-option
   provision(web, { input: { greeting: 5 } }); // root-service
+  provision(child, { input: { greeting: 5 } }); // root-module
 });
 `;
 
@@ -83,8 +86,8 @@ describe('the compile error for a value resource', () => {
     expect(message).not.toContain('appRoot()');
   });
 
-  test('a bad service call reports the binding that does not fit, in both bodies, and not appRoot()', () => {
-    for (const marker of ['module-service', 'root-service']) {
+  test('a bad service or module call reports the binding that does not fit, in both bodies, and not appRoot()', () => {
+    for (const marker of ['module-service', 'root-service', 'module-module', 'root-module']) {
       expect(diagnostics.get(marker)).toBe(
         "No overload matches this call.\n  The last overload gave the following error.\n    Type 'number' is not assignable to type 'InputBinding<string>'.",
       );

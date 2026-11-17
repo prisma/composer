@@ -15,7 +15,7 @@ test('paramSource() is a ParamSource and a value', () => {
   expectTypeOf(paramSource('APP_ORIGIN')).toEqualTypeOf<ParamSource<string> & Value<unknown>>();
 });
 
-test('provisioning a service accepts a literal typed by the param schema, or a ParamSource — never an unrelated value', () => {
+test('provisioning a service accepts a literal typed by the param schema, and refuses a source or an unrelated value', () => {
   const svc = service({
     name: 'app',
     extension: 'test/pack',

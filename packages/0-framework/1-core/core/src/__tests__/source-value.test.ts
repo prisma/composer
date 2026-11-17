@@ -124,8 +124,8 @@ describe('reading a source', () => {
       });
     });
 
-    expect(loadError(() => Load(root)).message).toStartWith(
-      'The resolve() function for input key "greeting" of service "shop.echo" lists the variable "G"',
+    expect(loadError(() => Load(root)).message).toBe(
+      'The resolve() function for input key "greeting" of service "shop.echo" lists the variable "G", which is known only at boot. A resolve() dependency must be a deploy-time value. Bind the variable "G" directly into the input of the service that reads it.',
     );
   });
 });
