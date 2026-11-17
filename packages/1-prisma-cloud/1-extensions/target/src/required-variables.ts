@@ -68,19 +68,3 @@ export function checkRequirements(
       : [{ names: rest, serviceAddress, message: withoutAll.message, decidedBy: 'schema' }],
   );
 }
-
-export function paramIsRequired(node: ServiceNode, param: string): boolean {
-  const declared = node.params[param];
-  return declared !== undefined && declared.default === undefined && declared.optional !== true;
-}
-
-export const requiredParam = (param: {
-  readonly name: string;
-  readonly serviceAddress: string;
-  readonly param: string;
-}): MissingVariables => ({
-  names: [param.name],
-  serviceAddress: param.serviceAddress,
-  message: `per-key param "${param.param}" has no default and is not optional`,
-  decidedBy: 'rule',
-});

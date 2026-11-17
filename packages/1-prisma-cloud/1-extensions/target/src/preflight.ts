@@ -22,14 +22,9 @@ import { mapWithConcurrency } from './map-with-concurrency.ts';
 import { addReader, missingVariableNames, missingVariablesText } from './missing-variables-text.ts';
 import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
-import { inputVariableNames, perKeyVariableBindings, unreadVariables } from './preflight-names.ts';
+import { inputVariableNames, unreadVariables } from './preflight-names.ts';
 import { checkPublicUrls } from './public-url.ts';
-import {
-  checkRequirements,
-  type MissingVariables,
-  paramIsRequired,
-  requiredParam,
-} from './required-variables.ts';
+import { checkRequirements, type MissingVariables } from './required-variables.ts';
 
 type EnvClass = 'production' | 'preview';
 
@@ -294,7 +289,6 @@ export async function runPreflight(
     binding,
     names: inputVariableNames(binding, serviceAddress).map((variable) => variable.name),
   }));
-  const params = perKeyVariableBindings(input.graph);
   const unread = unreadVariables(input.graph).map(({ name, node }) => ({
     name,
     reader: { kind: 'unread', node, nodeKind: 'resource' } as const,
@@ -303,7 +297,6 @@ export async function runPreflight(
     ...new Set([
       ...services.flatMap((service) => service.names),
       ...unread.map((use) => use.name),
-      ...params.map((param) => param.name),
     ]),
   ];
   const clashes = findEnvKeyClashes(input.graph);
@@ -357,17 +350,6 @@ export async function runPreflight(
   }
   for (const use of unread) {
     if (unset.has(use.name)) addReader(readers, use.name, use.reader);
-  }
-  for (const param of params) {
-    if (!unset.has(param.name)) continue;
-    addReader(readers, param.name, {
-      kind: 'param',
-      service: param.serviceAddress,
-      param: param.param,
-    });
-    if (paramIsRequired(serviceNodeAt(input.graph, param.serviceAddress), param.param)) {
-      required.push(requiredParam(param));
-    }
   }
 
   const commandsFor = (name: string) => setCommands(name, projectId, branchId, input.environment);

@@ -307,7 +307,7 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
   });
 
   describe('the values a deployment is given', () => {
-    test('a plain marker and a per-key pointer take their text from the plain platform variable texts, and a secret marker from the named secrets', async () => {
+    test('a plain marker takes its text from the plain platform variable texts, and a secret marker from the named secrets', async () => {
       const { directory, devDir } = projectDir('values');
       await ensureServiceInstances(container, devDir, [QUOTES]);
       await envStore(devDir).update(() => ({
@@ -315,9 +315,8 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
           from: { $platform: { name: 'EMAIL_FROM' } },
           key: { $platform: { name: 'API_KEY', secret: true } },
         }),
-        COMPOSER_SHARED_APP_QUOTES_GREETING: '@composer-param-pointer:GREETING',
       }));
-      const names = ['EMAIL_FROM', 'GREETING', 'API_KEY'];
+      const names = ['EMAIL_FROM', 'API_KEY'];
       const provider = await Effect.runPromise(
         Deployment.Provider.pipe(
           Effect.provide(
@@ -326,7 +325,6 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
               devDir,
               plainVariableText: {
                 EMAIL_FROM: 'shop@example.com',
-                GREETING: 'hello',
                 API_KEY: 'plain',
               },
               namedSecrets: { API_KEY: 'sk_named', EMAIL_FROM: 'secret-from' },
@@ -347,7 +345,6 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       const node = await nodeOf(directory, QUOTES);
       expect(await (await fetch(`http://localhost:${String(node.port)}`)).json()).toEqual({
         EMAIL_FROM: 'shop@example.com',
-        GREETING: 'hello',
         API_KEY: 'sk_named',
       });
     }, 30_000);

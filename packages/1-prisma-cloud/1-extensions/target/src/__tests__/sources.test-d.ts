@@ -141,7 +141,7 @@ test("a service's binding refuses a wrong literal, a runtime value in a plain fi
   });
 });
 
-test('a plain node value fits a field() field and a per-key param, and a secret node value fits a secretString() field', () => {
+test('a plain node value fits a field() field, and a secret node value fits a secretString() field', () => {
   const relay = compute({
     name: 'relay',
     deps: {},
@@ -152,7 +152,19 @@ test('a plain node value fits a field() field and a per-key param, and a secret 
     const from = provision(variable({ name: 'EMAIL_FROM' }));
     const key = provision(variable.secret({ name: 'EMAIL_KEY' }));
     provision(relay, { input: { from, key } });
-    provision(compute({ name: 'web', deps: {}, build }), { id: 'web', params: { port: from } });
+  });
+});
+
+test('a per-key param takes no source: not a platform variable node value, generatedParam() or serviceOrigin()', () => {
+  const web = compute({ name: 'web', deps: {}, build });
+  appRoot('shop', ({ provision }) => {
+    // @ts-expect-error a per-key param takes a literal or a value the deploy has; a platform variable is known only at boot
+    provision(web, { params: { port: provision(variable({ name: 'WEB_PORT' })) } });
+    // @ts-expect-error a per-key param takes a literal or a value the deploy has; generatedParam() is known only at boot
+    provision(web, { params: { port: generatedParam({ redacted: false }) } });
+    // @ts-expect-error a per-key param takes a literal or a value the deploy has; serviceOrigin() is known only at boot
+    provision(web, { params: { port: serviceOrigin('shop.web') } });
+    provision(web, { params: { port: 8080 } });
   });
 });
 

@@ -21,18 +21,9 @@ import { configurationText } from '../configuration-text.ts';
 import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
 import { addReader, missingVariablesText } from '../missing-variables-text.ts';
 import { platformVariableNodes } from '../platform-variable.ts';
-import {
-  inputVariableNames,
-  perKeyVariableBindings,
-  type VariableName,
-} from '../preflight-names.ts';
+import { inputVariableNames, type VariableName } from '../preflight-names.ts';
 import { checkPublicUrls, publicUrlStrategies } from '../public-url.ts';
-import {
-  checkRequirements,
-  type MissingVariables,
-  paramIsRequired,
-  requiredParam,
-} from '../required-variables.ts';
+import { checkRequirements, type MissingVariables } from '../required-variables.ts';
 
 const isSet = (value: string | undefined): value is string =>
   value !== undefined && value.length > 0;
@@ -149,21 +140,6 @@ export async function runDevPreflight(input: PreflightInput): Promise<DevPreflig
       }
     }
     required.push(...decided.missing);
-  }
-
-  for (const param of perKeyVariableBindings(input.graph)) {
-    const value = plainVariableText[param.name];
-    if (isSet(value)) {
-      pointed.set(param.name, value);
-      continue;
-    }
-    if (!paramIsRequired(serviceNodeAt(input.graph, param.serviceAddress), param.param)) continue;
-    addReader(readers, param.name, {
-      kind: 'param',
-      service: param.serviceAddress,
-      param: param.param,
-    });
-    required.push(requiredParam(param));
   }
 
   const missing = required.length > 0 ? [missingVariablesText(required, readers)] : [];

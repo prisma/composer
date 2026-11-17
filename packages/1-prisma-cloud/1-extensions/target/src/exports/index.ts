@@ -14,7 +14,6 @@ export {
   generatedParam,
   isGeneratedParamSource,
   isOriginParamSource,
-  paramName,
   serviceOrigin,
 } from '../param.ts';
 export type { PlatformVariablePayload } from '../platform-variable.ts';

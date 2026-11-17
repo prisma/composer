@@ -1,11 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { type ConfigParam, number, param, service, string } from '@internal/core';
-import {
-  decodeParamPointer,
-  encodeParamPointer,
-  isParamPointerRow,
-} from '@internal/input-document';
-import type { StandardSchemaV1 } from '@standard-schema/spec';
+import { type ConfigParam, number, service, string } from '@internal/core';
 import { configKey } from '../config-key.ts';
 import {
   deserialize,
@@ -21,18 +15,6 @@ const build = {
   type: 'node',
   module: 'file:///test/service.ts',
   entry: 'server.js',
-};
-
-/** A string schema that rejects the empty string — used to prove empty-string handling is schema-driven, not hardcoded. */
-const nonEmptyString: StandardSchemaV1<string, string> = {
-  '~standard': {
-    version: 1,
-    vendor: 'test',
-    validate: (value: unknown) =>
-      typeof value === 'string' && value.length > 0
-        ? { value }
-        : { issues: [{ message: 'must be non-empty' }] },
-  },
 };
 
 const svc = (extra: Record<string, ConfigParam> = {}) =>
@@ -61,109 +43,15 @@ async function withEnv<T>(values: Record<string, string | undefined>, fn: () => 
   }
 }
 
-describe('param pointer rows', () => {
-  test('encodeParamPointer/decodeParamPointer round-trip; isParamPointerRow recognizes only pointer rows', () => {
-    const row = encodeParamPointer('APP_ORIGIN');
-    expect(isParamPointerRow(row)).toBe(true);
-    expect(decodeParamPointer(row)).toBe('APP_ORIGIN');
-  });
-
-  test('a JSON-encoded literal is never mistaken for a pointer row', () => {
-    expect(isParamPointerRow(encode('service', 'https://example.com'))).toBe(false);
-    expect(isParamPointerRow(encode('service', 42))).toBe(false);
-    expect(isParamPointerRow(encode('service', true))).toBe(false);
-    expect(isParamPointerRow(encode('service', { a: 1 }))).toBe(false);
-  });
-});
-
-describe('deserialize — a per-key param read through its pointer row at boot', () => {
+describe('deserialize', () => {
   const address = 'web';
   const key = configKey(address, { owner: 'service', name: 'appOrigin' });
-  const portKey = configKey(address, { owner: 'service', name: 'port' });
 
   beforeEach(() => {
     delete process.env[key];
-    delete process.env[portKey];
-    delete process.env['PLATFORM_APP_ORIGIN'];
   });
 
-  test('resolves a pointer row via double-lookup and validates the raw string with the param schema', async () => {
-    await withEnv(
-      {
-        [key]: encodeParamPointer('PLATFORM_APP_ORIGIN'),
-        PLATFORM_APP_ORIGIN: 'https://example.com',
-      },
-      () => {
-        const config = deserialize(svc(), address);
-        expect(config.service['appOrigin']).toBe('https://example.com');
-      },
-    );
-  });
-
-  test('a required param whose platform variable is unset or empty fails boot, saying to set the variable', async () => {
-    const expected =
-      'The param "appOrigin" of this service reads the platform variable "PLATFORM_APP_ORIGIN", which has no value. Set it with prisma project env add.';
-    await withEnv({ [key]: encodeParamPointer('PLATFORM_APP_ORIGIN') }, () => {
-      expect(() => deserialize(svc(), address)).toThrow(expected);
-    });
-    await withEnv(
-      { [key]: encodeParamPointer('PLATFORM_APP_ORIGIN'), PLATFORM_APP_ORIGIN: '' },
-      () => {
-        expect(() => deserialize(svc(), address)).toThrow(expected);
-      },
-    );
-  });
-
-  test('a param with a default takes the default when its platform variable is unset or empty', async () => {
-    const node = svc({ appOrigin: string({ default: 'https://default.example' }) });
-    for (const value of [undefined, '']) {
-      await withEnv(
-        { [key]: encodeParamPointer('PLATFORM_APP_ORIGIN'), PLATFORM_APP_ORIGIN: value },
-        () => {
-          expect(deserialize(node, address).service['appOrigin']).toBe('https://default.example');
-        },
-      );
-    }
-  });
-
-  test('an optional param is left out when its platform variable is unset or empty', async () => {
-    const node = svc({ appOrigin: string({ optional: true }) });
-    for (const value of [undefined, '']) {
-      await withEnv(
-        { [key]: encodeParamPointer('PLATFORM_APP_ORIGIN'), PLATFORM_APP_ORIGIN: value },
-        () => {
-          expect(Object.hasOwn(deserialize(node, address).service, 'appOrigin')).toBe(false);
-        },
-      );
-    }
-  });
-
-  test('a platform variable with text the schema rejects fails, whatever the default', async () => {
-    const node = svc({ appOrigin: param(nonEmptyString, { default: 'x' }) });
-    const rejecting = svc({
-      appOrigin: param(
-        {
-          '~standard': {
-            version: 1,
-            vendor: 'test',
-            validate: () => ({ issues: [{ message: 'must be a url' }] }),
-          },
-        },
-        { default: 'x' },
-      ),
-    });
-    await withEnv(
-      { [key]: encodeParamPointer('PLATFORM_APP_ORIGIN'), PLATFORM_APP_ORIGIN: 'not a url' },
-      () => {
-        expect(deserialize(node, address).service['appOrigin']).toBe('not a url');
-        expect(() => deserialize(rejecting, address)).toThrow(
-          /The param "appOrigin" reads the platform variable "PLATFORM_APP_ORIGIN", whose value is invalid/,
-        );
-      },
-    );
-  });
-
-  test('a literal-encoded row is unaffected — still JSON-decoded and validated as before', async () => {
+  test('a per-key param row is JSON-decoded and validated with the param schema', async () => {
     await withEnv({ [key]: encode('service', 'https://literal.example.com') }, () => {
       const config = deserialize(svc(), address);
       expect(config.service['appOrigin']).toBe('https://literal.example.com');
@@ -226,8 +114,10 @@ describe('stashRows — what run() writes, as a pure function of an environment 
     });
   const env = {
     [configKey(address, { owner: 'service', name: 'port' })]: '3007',
-    [configKey(address, { owner: 'service', name: 'appOrigin' })]: encodeParamPointer('APP_ORIGIN'),
-    APP_ORIGIN: 'https://shop.example',
+    [configKey(address, { owner: 'service', name: 'appOrigin' })]: encode(
+      'service',
+      'https://shop.example',
+    ),
     [inputKey(address)]: '{"apiKey":{"$platform":{"name":"STRIPE_KEY","secret":true}}}',
   };
 
@@ -246,7 +136,7 @@ describe('stashRows — what run() writes, as a pure function of an environment 
   });
 
   test('reads only the environment it is given, and writes nothing to process.env', async () => {
-    await withEnv({ APP_ORIGIN: undefined, PORT: undefined, COMPOSER_PORT: undefined }, () => {
+    await withEnv({ PORT: undefined, COMPOSER_PORT: undefined }, () => {
       stashRows(node(), address, env);
       expect(process.env['PORT']).toBeUndefined();
       expect(process.env['COMPOSER_PORT']).toBeUndefined();
@@ -254,9 +144,10 @@ describe('stashRows — what run() writes, as a pure function of an environment 
   });
 
   test("throws run()'s boot error for a row the service cannot read", () => {
-    const { APP_ORIGIN: _unset, ...withoutPlatformVar } = env;
-    expect(() => stashRows(node(), address, withoutPlatformVar)).toThrow(
-      /The param "appOrigin" of this service reads the platform variable "APP_ORIGIN", which has no value/,
+    const { [configKey(address, { owner: 'service', name: 'appOrigin' })]: _unset, ...without } =
+      env;
+    expect(() => stashRows(node(), address, without)).toThrow(
+      'missing required config param "appOrigin" (env COMPOSER_MY_SHOP_WEB_APPORIGIN)',
     );
   });
 });

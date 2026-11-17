@@ -1,13 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import {
-  appRoot,
-  isSecretPointer,
-  Load,
-  module,
-  secretSource,
-  service,
-  string,
-} from '@internal/core';
+import { appRoot, isSecretPointer, Load, module, secretSource } from '@internal/core';
 import type {
   AppConfiguration,
   AppSecrets,
@@ -211,34 +203,6 @@ const sharedNestedSecretGraph = (webRequires = false) =>
     }),
   );
 
-const defaultedParamGraph = () =>
-  Load(
-    appRoot('app', ({ provision }) => {
-      provision(compute({ name: 'web', deps: {}, build }), {
-        id: 'web',
-        params: { port: provision(variable({ name: 'APP_PORT' })) },
-      });
-    }),
-  );
-
-/** A per-key param with no default that is not optional: boot fails without its variable. */
-const requiredParamGraph = () =>
-  Load(
-    appRoot('app', ({ provision }) => {
-      provision(
-        service({
-          name: 'web',
-          extension: '@prisma/composer-prisma-cloud',
-          type: 'compute',
-          inputs: {},
-          params: { token: string() },
-          build,
-        }),
-        { id: 'web', params: { token: provision(variable({ name: 'API_TOKEN' })) } },
-      );
-    }),
-  );
-
 /** A literal-bound param never touches the platform — preflight must not check it. */
 const literalParamGraph = () =>
   Load(
@@ -378,16 +342,6 @@ describe('the deploy check reads which variables exist and sets none', () => {
       await preflightWith({ graph: secretGraph(), ...production }, { client: fakeClient(state) });
       await preflightWith(
         { graph: requiredSecretGraph(), ...preview },
-        { client: fakeClient(state) },
-      ).catch(() => undefined);
-    });
-    await withValues({ configuration: { APP_PORT: '3100', API_TOKEN: 'tok' } }, async () => {
-      await preflightWith(
-        { graph: defaultedParamGraph(), ...production },
-        { client: fakeClient(state) },
-      );
-      await preflightWith(
-        { graph: requiredParamGraph(), ...production },
         { client: fakeClient(state) },
       ).catch(() => undefined);
     });
@@ -720,41 +674,6 @@ describe('the deploy check reads which variables exist and sets none', () => {
     ];
 
     await preflightWith({ graph: secretGraph(), ...preview }, { client: fakeClient(state) });
-  });
-
-  test('a per-key param bound to a plain node with a default is reported, never required', async () => {
-    const result = await preflightWith(
-      { graph: defaultedParamGraph(), ...production },
-      { client: fakeClient(state) },
-    );
-
-    expect(result.findings.unset).toEqual([
-      {
-        name: 'APP_PORT',
-        readers: [{ kind: 'param', service: 'app.web', param: 'port' }],
-        commands: ["prisma project env add 'APP_PORT=<value>' --project 'proj' --role production"],
-      },
-    ]);
-  });
-
-  test('a per-key param bound to a plain node with no default that is not optional is required', async () => {
-    const message = await failureOf(
-      preflightWith({ graph: requiredParamGraph(), ...production }, { client: fakeClient(state) }),
-    );
-
-    expect(message).toContain(
-      '  - API_TOKEN  (read by service "app.web", per-key param "token")\n' +
-        '      required by service "app.web": per-key param "token" has no default and is not optional\n',
-    );
-  });
-
-  test('a per-key param bound to a plain node with a row passes', async () => {
-    state.rows = [{ projectId: 'proj', class: 'production', key: 'API_TOKEN', branchId: null }];
-
-    await preflightWith(
-      { graph: requiredParamGraph(), ...production },
-      { client: fakeClient(state) },
-    );
   });
 
   test('a literal-bound param never reaches the platform — no calls at all', async () => {
@@ -1205,45 +1124,6 @@ describe('the deploy check of platform variable nodes', () => {
 
     expect(result.findings.unset).toEqual([]);
     expect([...result.updatedAt.keys()].sort()).toEqual(['EMAIL_FROM', 'EMAIL_KEY']);
-  });
-
-  test('a plain node in a per-key param with no default is required, and one with a default is reported', async () => {
-    const graph = Load(
-      appRoot('shop', ({ provision }) => {
-        const token = provision(variable({ name: 'API_TOKEN' }));
-        const port = provision(variable({ name: 'APP_PORT' }));
-        provision(
-          service({
-            name: 'web',
-            extension: '@prisma/composer-prisma-cloud',
-            type: 'compute',
-            inputs: {},
-            params: { token: string() },
-            build,
-          }),
-          { params: { token } },
-        );
-        provision(compute({ name: 'api', deps: {}, build }), { params: { port } });
-      }),
-    );
-
-    const message = await failureOf(
-      preflightWith({ graph, ...production }, { client: fakeClient(state) }),
-    );
-    state.rows = [{ projectId: 'proj', class: 'production', key: 'API_TOKEN', branchId: null }];
-    const result = await preflightWith({ graph, ...production }, { client: fakeClient(state) });
-
-    expect(message).toContain(
-      '  - API_TOKEN  (read by service "shop.web", per-key param "token")\n' +
-        '      required by service "shop.web": per-key param "token" has no default and is not optional',
-    );
-    expect(result.findings.unset).toEqual([
-      {
-        name: 'APP_PORT',
-        readers: [{ kind: 'param', service: 'shop.api', param: 'port' }],
-        commands: commands('APP_PORT'),
-      },
-    ]);
   });
 
   test('an unread plain node, an unread secret node and a secret node only a module receives are each listed once, named by their node', async () => {

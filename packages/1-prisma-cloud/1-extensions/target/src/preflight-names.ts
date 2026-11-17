@@ -1,12 +1,7 @@
 import type { Graph } from '@internal/core';
-import { isParamSource, isSecretSource, paramManifest } from '@internal/core';
-import { isGeneratedParamSource, isOriginParamSource, paramName } from './param.ts';
-import {
-  bindingPlace,
-  isPlainVariableSource,
-  platformVariableName,
-  platformVariableNodes,
-} from './platform-variable.ts';
+import { isParamSource, isSecretSource } from '@internal/core';
+import { isGeneratedParamSource, isOriginParamSource } from './param.ts';
+import { bindingPlace, platformVariableName, platformVariableNodes } from './platform-variable.ts';
 
 const composerWritesItsValue = (binding: unknown): boolean =>
   isGeneratedParamSource(binding) || isOriginParamSource(binding);
@@ -53,20 +48,4 @@ export function unreadVariables(graph: Graph): readonly UnreadVariable[] {
   return platformVariableNodes(graph)
     .filter((node) => !read.has(node.address))
     .map((node) => ({ name: node.name, node: node.address }));
-}
-
-export interface PerKeyVariableBinding {
-  readonly name: string;
-  readonly serviceAddress: string;
-  readonly param: string;
-}
-
-export function perKeyVariableBindings(graph: Graph): readonly PerKeyVariableBinding[] {
-  return paramManifest(graph)
-    .filter((binding) => isPlainVariableSource(binding.binding))
-    .map((binding) => ({
-      name: paramName(binding),
-      serviceAddress: binding.serviceAddress,
-      param: binding.slot,
-    }));
 }

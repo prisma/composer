@@ -179,10 +179,6 @@ export function withUnsetVariables(message: string, unset: readonly string[]): s
     : `${message} (platform variables with no value: ${unset.join(', ')})`;
 }
 
-export function requiredParamUnsetMessage(param: string, name: string): string {
-  return `The param "${param}" of this service reads the platform variable "${name}", which has no value. Set it with prisma project env add.`;
-}
-
 export function describeDocument(document: unknown): string {
   const describe = (value: unknown): string => {
     if (isPlatformMarker(value)) return `$platform ${value.$platform.name}`;

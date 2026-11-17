@@ -30,7 +30,7 @@ export type PlainVariableValue = ParamSource<PlatformVariablePayload> & RuntimeV
 export type SecretVariableValue = SecretSource<PlatformVariablePayload> &
   RuntimeValue<SecretString>;
 
-export function isPlatformVariablePayload(payload: unknown): payload is PlatformVariablePayload {
+function isPlatformVariablePayload(payload: unknown): payload is PlatformVariablePayload {
   return (
     typeof payload === 'object' &&
     payload !== null &&
@@ -48,7 +48,7 @@ export function isPlainVariableSource(
 export const bindingPlace = (path: string, address: string): string =>
   path === '' ? `the input of service "${address}"` : `input key "${path}" of service "${address}"`;
 
-export const notAPlatformVariable = (where: string): string =>
+const notAPlatformVariable = (where: string): string =>
   `${where} is bound to a source that is not a platform variable. Provision variable() or variable.secret() from @prisma/composer-prisma-cloud in the app root and pass its value down.`;
 
 export function platformVariableName(source: SecretSource | ParamSource, where: string): string {

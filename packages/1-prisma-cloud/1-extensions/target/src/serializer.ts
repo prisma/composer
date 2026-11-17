@@ -28,15 +28,12 @@ import { blindCast } from '@internal/foundation/casts';
 import { SecretBox } from '@internal/foundation/secret';
 import {
   addressKeySegments,
-  decodeParamPointer,
   escapeKey,
   generatedMarker,
   INPUT_KEY_NAME,
-  isParamPointerRow,
   type PlatformMarkerUse,
   platformMarker,
   readDocument,
-  requiredParamUnsetMessage,
   withUnsetVariables,
 } from '@internal/input-document';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
@@ -108,39 +105,18 @@ function decode(owner: ParamEntry['owner'], raw: string): unknown {
   return owner === 'service' ? JSON.parse(raw) : raw;
 }
 
-function coerce(raw: string | undefined, d: ParamEntry, key: string, env: Env): unknown {
+function coerce(raw: string | undefined, d: ParamEntry, key: string): unknown {
   const present = raw !== undefined && raw !== '';
   if (!present) {
     if (d.param.default !== undefined) return d.param.default;
     if (d.param.optional === true) return undefined;
     throw new Error(`missing required config param "${d.name}" (env ${key})`);
   }
-  if (d.owner === 'service' && isParamPointerRow(raw)) {
-    return coercePointedParam(raw, d, env);
-  }
   try {
     return standardValidateSync(d.param.schema, decode(d.owner, raw));
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     throw new Error(`invalid value for config param "${d.name}" (env ${key}): ${message}`);
-  }
-}
-
-function coercePointedParam(raw: string, d: ParamEntry, env: Env): unknown {
-  const platformVar = decodeParamPointer(raw);
-  const value = env[platformVar];
-  if (value === undefined || value === '') {
-    if (d.param.default !== undefined) return d.param.default;
-    if (d.param.optional === true) return undefined;
-    throw new Error(requiredParamUnsetMessage(d.name, platformVar));
-  }
-  try {
-    return standardValidateSync(d.param.schema, value);
-  } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
-    throw new Error(
-      `The param "${d.name}" reads the platform variable "${platformVar}", whose value is invalid: ${message}`,
-    );
   }
 }
 
@@ -155,7 +131,7 @@ export const deserialize = (node: ServiceNode, address: string, env: Env = proce
 
   for (const d of paramEntries(node)) {
     const key = configKey(address, d);
-    const value = coerce(env[key], d, key, env);
+    const value = coerce(env[key], d, key);
     let target = service;
     if (d.owner !== 'service') {
       let bucket = inputs[d.owner.input];
@@ -213,7 +189,7 @@ export function stashRows(node: ServiceNode, address: string, env: Env): Record<
       param: { schema: entry.schema, optional: true },
     };
     const key = configKey(address, d);
-    const value = coerce(env[key], d, key, env);
+    const value = coerce(env[key], d, key);
     if (value === undefined) continue;
     rows[configKey('', d)] = encode('service', value);
   }
@@ -770,7 +746,7 @@ export function readOrigin(): string {
     param: { schema: type('string'), optional: true },
   };
   const key = configKey('', d);
-  const value = coerce(process.env[key], d, key, process.env);
+  const value = coerce(process.env[key], d, key);
   if (value === undefined) {
     throw new Error(
       "this service's origin is not available (env COMPOSER_ORIGIN is unset) — a deployed environment writes it automatically; a local harness must supply it like any other config value (set COMPOSER_ORIGIN to the JSON-encoded origin URL).",

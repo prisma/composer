@@ -42,7 +42,7 @@ function checkNodeAgainstRootInput(graph: Graph, nodes: readonly PlatformVariabl
 function checkWholeInputReads(graph: Graph, nodes: readonly PlatformVariableNode[]): void {
   const byAddress = new Map(nodes.map((node) => [node.address, node]));
   for (const read of graph.valueReads) {
-    if (read.site.kind !== 'serviceInput' || read.site.path !== '') continue;
+    if (read.path !== '') continue;
     const node = byAddress.get(read.resource);
     if (node === undefined) continue;
     throw new GraphCheckError(

@@ -1,19 +1,6 @@
-import {
-  isParamSource,
-  isSecretSource,
-  type ParamBinding,
-  type ParamSource,
-  type Pointer,
-  paramSource,
-  type RuntimeValue,
-} from '@internal/core';
+import { isParamSource, type ParamSource, type Pointer, paramSource, type RuntimeValue } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import type { SecretString } from '@internal/foundation/secret';
-import {
-  isPlainVariableSource,
-  isPlatformVariablePayload,
-  notAPlatformVariable,
-} from './platform-variable.ts';
 
 const PRISMA_CLOUD_GENERATED_PARAM_SOURCE: unique symbol = blindCast<
   never,
@@ -131,39 +118,4 @@ export function isOriginParamSource(value: unknown): value is ParamSource<Origin
     PRISMA_CLOUD_ORIGIN_PARAM_SOURCE in value.payload &&
     value.payload[PRISMA_CLOUD_ORIGIN_PARAM_SOURCE] === true
   );
-}
-
-/** The name of the plain platform variable a per-key param is bound to. Throws for any other bound source. */
-export function paramName(binding: ParamBinding): string {
-  const { binding: bound } = binding;
-  const where = `param slot "${binding.slot}" of service "${binding.serviceAddress}"`;
-  if (isSecretSource(bound) && isPlatformVariablePayload(bound.payload)) {
-    throw new Error(
-      `${where} is bound to the platform secret "${bound.payload.name}", and a per-key param takes a plain platform variable.`,
-    );
-  }
-  if (!isPlainVariableSource(bound)) throw new Error(notAPlatformVariable(where));
-  return bound.payload.name;
-}
-
-/**
- * Finds the manifest entry for one service param slot. `serialize` calls this
- * only after confirming `buildConfig` resolved the slot to a `ParamSource`
- * (`isParamSource(value)`), so a miss here means `graph.params` and the
- * resolved `Config` have drifted — a Load invariant violation, surfaced
- * loudly rather than producing a pointer row with an undefined name.
- */
-export function paramBindingFor(
-  bindings: readonly ParamBinding[],
-  serviceAddress: string,
-  slot: string,
-): ParamBinding {
-  const binding = bindings.find((b) => b.serviceAddress === serviceAddress && b.slot === slot);
-  if (binding === undefined) {
-    throw new Error(
-      `param slot "${slot}" of "${serviceAddress}" resolved to a source but has no bound entry in ` +
-        'the manifest — Load should have recorded it.',
-    );
-  }
-  return binding;
 }

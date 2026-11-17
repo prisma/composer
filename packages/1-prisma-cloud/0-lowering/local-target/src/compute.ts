@@ -17,9 +17,7 @@ import { computeClient } from '@internal/dev-emulators';
 import {
   collectPlatformMarkers,
   composerKey,
-  decodeParamPointer,
   INPUT_KEY_NAME,
-  isParamPointerRow,
   ownKeyPrefix,
 } from '@internal/input-document';
 import * as Provider from 'alchemy/Provider';
@@ -102,21 +100,16 @@ export function scopedEnvRows(
 export function pointedVariables(
   rows: Readonly<Record<string, string>>,
   address: string,
-): { readonly params: ReadonlySet<string>; readonly secrets: ReadonlySet<string> } {
-  const ownPrefix = ownKeyPrefix(address);
-  const params = new Set<string>();
+): { readonly plain: ReadonlySet<string>; readonly secrets: ReadonlySet<string> } {
+  const plain = new Set<string>();
   const secrets = new Set<string>();
-  for (const [key, value] of Object.entries(rows)) {
-    if (!key.startsWith(ownPrefix)) continue;
-    if (isParamPointerRow(value)) {
-      params.add(decodeParamPointer(value));
-    } else if (key === `${ownPrefix}${INPUT_KEY_NAME}`) {
-      for (const marker of collectPlatformMarkers(JSON.parse(value))) {
-        (marker.secret ? secrets : params).add(marker.name);
-      }
+  const document = rows[`${ownKeyPrefix(address)}${INPUT_KEY_NAME}`];
+  if (document !== undefined) {
+    for (const marker of collectPlatformMarkers(JSON.parse(document))) {
+      (marker.secret ? secrets : plain).add(marker.name);
     }
   }
-  return { params, secrets };
+  return { plain, secrets };
 }
 
 function manifestMissingAddressError(): Error {
@@ -172,7 +165,7 @@ export function readComputeManifest(artifactDir: string): {
 /**
  * The environment a service's deployment runs with: its own rows from
  * `env.json` (`scopedEnvRows`), `COMPOSER_<ADDRESS>_PORT`, the current values
- * of the variables its rows point at, and `PATH` and `HOME` from the shell.
+ * of the platform variables its input document names, and `PATH` and `HOME` from the shell.
  * The `Deployment` provider puts it with an artifact; a dev server is given it
  * too (ADR-0056).
  */
@@ -191,7 +184,7 @@ export async function materializeEnv(
     if (typeof value === 'string' && value.length > 0) env[name] = value;
   };
   for (const name of pointed.secrets) setIfText(name, secrets[name]);
-  for (const name of pointed.params) {
+  for (const name of pointed.plain) {
     if (!pointed.secrets.has(name)) setIfText(name, configuration[name]);
   }
   if (process.env['PATH'] !== undefined) env['PATH'] = process.env['PATH'];

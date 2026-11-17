@@ -1,15 +1,8 @@
 /** The `compute` node kind's descriptor: the four service hooks — provision, serialize, package, deploy — plus `reserve`, which stands in for the last two when the service runs a dev server (ADR-0056). */
 
 import * as Prisma from '@alchemy.run/prisma';
-import { isParamSource } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
-import {
-  decodeParamPointer,
-  describeDocument,
-  encodeParamPointer,
-  isParamPointerRow,
-  type PlatformMarkerUse,
-} from '@internal/input-document';
+import { describeDocument, type PlatformMarkerUse } from '@internal/input-document';
 import {
   ARTIFACT_CONTENT_TYPE,
   appAfterEnvironment,
@@ -29,7 +22,6 @@ import {
   legacyInputKey,
   legacyNodeResourceId,
 } from '../legacy-resource-ids.ts';
-import { paramBindingFor, paramName } from '../param.ts';
 import { provisionedEdges } from '../provisioned-edges.ts';
 import { resourceId } from '../resource-ids.ts';
 import { encode, type InputDocumentRow, paramEntries, serializeInput } from '../serializer.ts';
@@ -205,11 +197,7 @@ export function computeDescriptor(
           // Mirrors stash(), keeping writer and reader consistent.
           if (value === undefined) continue;
           const key = configKey(address, d);
-          const rowValue =
-            d.owner === 'service' && isParamSource(value)
-              ? encodeParamPointer(paramName(paramBindingFor(graph.params, address, d.name)))
-              : encode(d.owner, value);
-          const wrapped = envValue(rowValue);
+          const wrapped = envValue(encode(d.owner, value));
           const record = yield* Prisma.EnvironmentVariable(resourceId(address, 'env', key), {
             project: projectId,
             key,
@@ -217,18 +205,7 @@ export function computeDescriptor(
             class: cls,
             ...branch,
           }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyConfigKey(app, address, d))));
-          // A pointer row triggers on its text (the platform NAME); the pointed
-          // variable's own rotation joins as a `<name>:updatedAt` member.
-          const pointer =
-            d.owner === 'service' && isParamPointerRow(rowValue)
-              ? decodeParamPointer(rowValue)
-              : undefined;
-          rows.push({
-            record,
-            key,
-            value: wrapped,
-            ...(pointer !== undefined ? { pointers: [pointer] } : {}),
-          });
+          rows.push({ record, key, value: wrapped });
         }
 
         const inputRow = serializeInput(
