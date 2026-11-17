@@ -741,7 +741,7 @@ mailer.input().smtpPort   // 587, a number
   ```
 
 - **`prisma dev` checks the same way, before any service starts.** It decodes and validates each variable's text from your `config` adapters with the same code, and stops with the same message followed by `prisma dev cannot start, because service "shop.mailer" reads it.`
-- **Keep an identifier as text.** A whole number above 9007199254740991, such as a large order id, cannot be read exactly as a JavaScript number, so boot refuses it. Declare such a value as text.
+- **Keep an identifier as text.** A whole number above 9007199254740991, such as a large order id, cannot be read exactly as a JavaScript number, so boot refuses it. Declare such a value as text. A value nested more than 1,000 levels deep is refused too.
 
 **What a schema library loses on the way.** No library code runs on a platform variable's value, because the app's module code is not in the service. Composer asks the library for the plain JSON Schema it emits, and boot checks the text against that. Anything the JSON Schema cannot say does not run:
 
