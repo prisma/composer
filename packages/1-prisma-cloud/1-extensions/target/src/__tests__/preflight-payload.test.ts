@@ -85,7 +85,7 @@ async function cliProcess(updatedAt: string | undefined): Promise<Record<string,
  * members the deploy hook declares on `Prisma.Deployment` — what upstream's
  * fingerprint moves on.
  */
-function alchemyProcessPointerTriggers(env: Record<string, string>): Record<string, string> {
+function alchemyProcessVariableTriggers(env: Record<string, string>): Record<string, string> {
   const { platformVariableVersion } = transportedPreflight(() => undefined, env);
   return Object.fromEntries(
     platformVariables.map((name) => [`${name}:updatedAt`, platformVariableVersion(name) ?? '?']),
@@ -94,15 +94,15 @@ function alchemyProcessPointerTriggers(env: Record<string, string>): Record<stri
 
 describe('the rotation signal across the CLI → alchemy process boundary', () => {
   test('a secret rotated on the platform moves the trigger member in the alchemy process', async () => {
-    const before = alchemyProcessPointerTriggers(await cliProcess('2026-05-05T12:00:00.000Z'));
-    const after = alchemyProcessPointerTriggers(await cliProcess('2026-07-07T09:15:00.000Z'));
+    const before = alchemyProcessVariableTriggers(await cliProcess('2026-05-05T12:00:00.000Z'));
+    const after = alchemyProcessVariableTriggers(await cliProcess('2026-07-07T09:15:00.000Z'));
 
     expect(after).not.toEqual(before);
   });
 
   test('an unchanged secret leaves it standing still — the deployment is reused', async () => {
-    const first = alchemyProcessPointerTriggers(await cliProcess('2026-05-05T12:00:00.000Z'));
-    const second = alchemyProcessPointerTriggers(await cliProcess('2026-05-05T12:00:00.000Z'));
+    const first = alchemyProcessVariableTriggers(await cliProcess('2026-05-05T12:00:00.000Z'));
+    const second = alchemyProcessVariableTriggers(await cliProcess('2026-05-05T12:00:00.000Z'));
 
     expect(second).toEqual(first);
   });
@@ -120,17 +120,17 @@ describe('the rotation signal across the CLI → alchemy process boundary', () =
     const env = await cliProcess(undefined);
 
     expect(env).toEqual({});
-    expect(alchemyProcessPointerTriggers(env)).toEqual({ 'STRIPE_SECRET_KEY:updatedAt': '?' });
+    expect(alchemyProcessVariableTriggers(env)).toEqual({ 'STRIPE_SECRET_KEY:updatedAt': '?' });
   });
 
   test('without the transport the alchemy process learns nothing — the trigger cannot move', async () => {
     // What the child saw before the timestamps were transported at all: every
     // name unknown, so a rotation is invisible. This is the failure the
     // transport exists to prevent.
-    const untransported = alchemyProcessPointerTriggers({});
-    const rotated = alchemyProcessPointerTriggers(await cliProcess('2026-07-07T09:15:00.000Z'));
+    const untransported = alchemyProcessVariableTriggers({});
+    const rotated = alchemyProcessVariableTriggers(await cliProcess('2026-07-07T09:15:00.000Z'));
 
-    expect(alchemyProcessPointerTriggers({})).toEqual(untransported);
+    expect(alchemyProcessVariableTriggers({})).toEqual(untransported);
     expect(rotated).not.toEqual(untransported);
   });
 });

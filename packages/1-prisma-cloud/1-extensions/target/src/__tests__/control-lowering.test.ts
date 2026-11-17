@@ -1072,10 +1072,6 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           key: 'COMPOSER_SHOP_AUTH_ORIGIN',
         },
       ]);
-      // The same three rows as the deploy hook declares them on
-      // `Deployment.triggers`: one member per row, carrying the SAME value
-      // the row writes (Redacted; under these mocks already resolved). No
-      // platform variable here, so none rides along.
       expect(unwrapTriggers(result.triggers)).toEqual({
         COMPOSER_SHOP_AUTH_DB_URL: 'postgres://real-db',
         COMPOSER_SHOP_AUTH_PORT: '3000',
@@ -1265,10 +1261,6 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         });
         // No serialized EnvironmentVariable output carries the secret's value.
         expect(JSON.stringify(writes)).not.toContain('sk_live');
-        // Neither does what the deploy hook declares as triggers: the
-        // document rides as its own (secret-free) text, and the platform
-        // variable it points at is named in `platformVariables`, so its rotation
-        // timestamp can join the triggers — the VALUE is nowhere near it.
         expect(unwrapTriggers(result.triggers)['COMPOSER_SHOP_INGEST_INPUT']).toBe(
           '{"stripeEnabled":true,"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
         );
@@ -1282,8 +1274,6 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
             '{"stripeEnabled":true,"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
           absent: [],
           generated: [],
-          // The platform variable the document names, so the deploy hook can fold its
-          // rotation timestamp into the deployment triggers.
           markers: [{ name: 'STRIPE_SECRET_KEY', path: 'stripeKey', secret: true, inArray: false }],
         });
       },

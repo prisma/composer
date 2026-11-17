@@ -874,7 +874,7 @@ describe('schemas see pointers at deploy', () => {
   test('a schema that mints its own secret box beside a secret pointer is refused for minting, not for copying', () => {
     const minting = svc(returning((value) => ({ ...value, other: new SecretBox('minted') })));
     expect(() => serializeInput(minting, 'web', { key: secretVariable('KEY') })).toThrow(
-      "input key \"other\" of service \"web\" validated to a SecretString that the binding did not supply. A schema's default or transform cannot create a secret, because no platform variable holds it. Provision variable.secret({ name: 'NAME' }) in the app root and bind its value to the field.",
+      'input key "other" of service "web" validated to a SecretString that the binding did not supply. A schema\'s default or transform cannot create a secret, because no platform variable holds it. Provision variable.secret({ name: \'NAME\' }) in the app root and bind its value to the field.',
     );
   });
 });
