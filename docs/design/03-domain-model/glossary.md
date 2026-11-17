@@ -180,6 +180,14 @@ The node that declares a [platform variable](#platform-variable), built with `va
 
 What the deploy writes in a service's input document in place of a platform variable's value: `{ "$platform": { "name": "SMTP_PORT" } }`. A platform secret's marker adds `"secret": true`. The marker of a plain variable declared with a `schema` adds `"schema"`, the variable's JSON Schema, and boot uses it to decode and validate the variable's text. A marker with both `secret` and `schema`, or whose schema accepts both text and other values, is malformed and refused wherever a document is read. See [ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md).
 
+### The variable's JSON Schema
+
+The plain JSON Schema a [platform variable node](#platform-variable-node) keeps in its `props` as `schema`, when `variable()` is given one. The constructor asks the schema's library for the JSON Schema it emits through Standard JSON Schema, keeps only the keywords of draft 2020-12 that validate, and renames its `$defs` entries `d0`, `d1` and so on. The [`$platform` marker](#platform-marker) carries it, and boot and `prisma dev` validate the variable's decoded value against it ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)). In code: `VariableJsonSchema`.
+
+### Kind of a variable's JSON Schema
+
+What decides how a typed platform variable's text is read, decided from [the variable's JSON Schema](#the-variables-json-schema) alone by one function, `schemaKind()`. A **text-only** schema accepts only text, such as a string or a string enum, and the value is the text exactly. A **never-text** schema accepts no text, such as a number, a boolean, an object, an array or `number | null`, and the text is read as JSON. A **mixed** schema accepts both, or its kind cannot be told, such as `string | number`, `string | null` or an empty schema; the constructor refuses it, and a marker that holds one is malformed ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)).
+
 ### Platform secret
 
 A [platform variable](#platform-variable) whose value is handled as a secret: boxed in the service and redacted wherever Composer prints. Built with `variable.secret({ name })`. The term marks the variables whose text must never appear in output ([ADR-0029](../90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md)).
