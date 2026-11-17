@@ -144,6 +144,7 @@ function fakeConfig(
             package: unused,
             deploy: unused,
           },
+          'fixture/variable': Object.assign(unused, { kind: 'resource' as const }),
         },
         container: fakeContainerDescriptor(containerOpts),
         ...(hooks.teardown !== undefined ? { teardown: hooks.teardown } : {}),
@@ -1917,6 +1918,47 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
 
     expect(env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_EXTENSION']).toBe('dev:{"absentVariables":[]}');
   }, 15_000);
+
+  test.each([
+    ['a string', 'dev:{"absentVariables":[]}'],
+    ['undefined', undefined],
+  ])(
+    'a local target whose dev preflight returns %s, as one built for an older core does, fails dev naming the extension',
+    async (_, returned) => {
+      const app = makeAppDir('hello-dev');
+      let converged = false;
+      const result = await silently(() =>
+        devWithDeps(
+          {
+            config: composerConfig(
+              devConfigWith(runningAttachment, [], localContainer, () =>
+                Promise.resolve(returned as never),
+              ),
+            ),
+            entry: app.entryPath,
+            cwd: app.dir,
+            detach: true,
+          },
+          {
+            runAssembler: fakeAssembler,
+            alchemy: async () => {
+              converged = true;
+              return { exitCode: 0, signal: null };
+            },
+          },
+        ),
+      );
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('unreachable');
+      expect(result.failure.code).toBe('DEV.PREFLIGHT_FAILED');
+      expect(result.failure.message).toBe(
+        'The extension "fixture-extension" returned a dev preflight result prisma dev cannot read: its local target was built for an older @prisma/composer. Upgrade "fixture-extension" to a version built for the @prisma/composer this app uses.',
+      );
+      expect(converged).toBe(false);
+    },
+    15_000,
+  );
 
   test('a stale payload in the shell is blanked for every configured extension', async () => {
     const saved = {
@@ -4259,12 +4301,22 @@ describe.skipIf(process.platform === 'win32')(
   },
 );
 
-function makeSecondProcessAppDir(secretsKey = 'S13_SECRET'): { dir: string; entryPath: string } {
+function makeSecondProcessAppDir(
+  secretsKey = 'S13_SECRET',
+  secretAt: 'binding' | 'unbound node' = 'binding',
+): { dir: string; entryPath: string } {
   const app = makeAppDir('hello-second');
+  const key = `secret(${JSON.stringify(secretsKey)})`;
+  const provisionSecret =
+    secretAt === 'binding'
+      ? []
+      : [
+          `  provision(valueResource({ name: 'secretNode', extension: 'fixture-extension', type: 'fixture/variable', value: ${key} }));`,
+        ];
   fs.writeFileSync(
     app.entryPath,
     [
-      `import { appRoot, secretSource, service } from ${JSON.stringify(coreIndex)};`,
+      `import { appRoot, secretSource, service, valueResource } from ${JSON.stringify(coreIndex)};`,
       `import { type } from ${JSON.stringify(arktypeEntry)};`,
       '',
       'const secret = (key) => secretSource({ key }, { label: "secret(\'" + key + "\')", secretsKey: key });',
@@ -4282,8 +4334,11 @@ function makeSecondProcessAppDir(secretsKey = 'S13_SECRET'): { dir: string; entr
       "export default appRoot('hello-second', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {",
       '  provision(app, {',
       "    id: 'app',",
-      `    input: { greeting: input.GREETING, key: secret(${JSON.stringify(secretsKey)}) },`,
+      secretAt === 'binding'
+        ? `    input: { greeting: input.GREETING, key: ${key} },`
+        : '    input: { greeting: input.GREETING },',
       '  });',
+      ...provisionSecret,
       '});',
       '',
     ].join('\n'),
@@ -4686,88 +4741,98 @@ describe('no known secret is printed', () => {
     expect(failed.seen.stdout).toBe('[redacted] and more\n');
   }, 15_000);
 
-  test('with the default lists, a secret known only because a secret source names it reaches no file, report, reporter, error or output', async () => {
-    const sentinel = 'default-SENTINEL-7c1e';
-    const app = makeSecondProcessAppDir('MAILER_X');
-    const finished: string[] = [];
-    const reporter: NonNullable<ExtensionDescriptor['reporter']> = {
-      begin: async () => ({
-        childEnv: () => ({}),
-        attach: async () => {},
-        finish: async (outcome) => void finished.push(JSON.stringify(outcome)),
-      }),
-    };
-    const seen = { configurationFile: '', stdout: '', stderr: '' };
-    const outputs = {
-      stdout: { write: (text: string) => (seen.stdout += text) },
-      stderr: { write: (text: string) => (seen.stderr += text) },
-    };
-    const names = ['GREETING', 'APP_ORIGIN', 'MAILER_X'] as const;
-    const previous = names.map((name) => process.env[name]);
-    Object.assign(process.env, {
-      GREETING: 'hello',
-      APP_ORIGIN: 'https://origin.example',
-      MAILER_X: sentinel,
-    });
-    const reportPath = path.join(app.dir, 'report.json');
-    let result: Awaited<ReturnType<typeof deployWithDeps>>;
-    try {
-      result = await silently(() =>
-        deployWithDeps(
-          {
-            config: composerConfig(fakeConfig({ reporter })),
-            entry: app.entryPath,
-            environment: 'staging',
-            cwd: app.dir,
-            reportPath,
-          },
-          {
-            runAssembler: fakeAssembler,
-            alchemy: async (input) => {
-              const configurationFile = input.env[APP_CONFIGURATION_FILE_ENV];
-              const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
-              if (configurationFile === undefined || resultFile === undefined) {
-                throw new Error('the second process was not told where its files are');
-              }
-              seen.configurationFile = fs.readFileSync(configurationFile, 'utf8');
-              await spawnCommandLine(
-                {
-                  command: process.execPath,
-                  args: ['-e', `process.stdout.write(${JSON.stringify(`printed ${sentinel}\n`)})`],
-                  cwd: app.dir,
-                  env: input.env,
-                },
-                input.redactedValues,
-                outputs,
-              );
-              fs.writeFileSync(engineFailureFilePath(resultFile), `error: rejected ${sentinel}`);
-              return { exitCode: 1, signal: null };
-            },
-          },
-        ),
-      );
-    } finally {
-      names.forEach((name, index) => {
-        const value = previous[index];
-        if (value === undefined) delete process.env[name];
-        else process.env[name] = value;
+  test.each([
+    ['a secret source in a binding names it', 'binding'],
+    ['a secret value resource no binding reads names it', 'unbound node'],
+  ] as const)(
+    'with the default lists, a secret known only because %s reaches no file, report, reporter, error or output',
+    async (_, secretAt) => {
+      const sentinel = 'default-SENTINEL-7c1e';
+      const app = makeSecondProcessAppDir('MAILER_X', secretAt);
+      const finished: string[] = [];
+      const reporter: NonNullable<ExtensionDescriptor['reporter']> = {
+        begin: async () => ({
+          childEnv: () => ({}),
+          attach: async () => {},
+          finish: async (outcome) => void finished.push(JSON.stringify(outcome)),
+        }),
+      };
+      const seen = { configurationFile: '', stdout: '', stderr: '' };
+      const outputs = {
+        stdout: { write: (text: string) => (seen.stdout += text) },
+        stderr: { write: (text: string) => (seen.stderr += text) },
+      };
+      const names = ['GREETING', 'APP_ORIGIN', 'MAILER_X'] as const;
+      const previous = names.map((name) => process.env[name]);
+      Object.assign(process.env, {
+        GREETING: 'hello',
+        APP_ORIGIN: 'https://origin.example',
+        MAILER_X: sentinel,
       });
-    }
+      const reportPath = path.join(app.dir, 'report.json');
+      let result: Awaited<ReturnType<typeof deployWithDeps>>;
+      try {
+        result = await silently(() =>
+          deployWithDeps(
+            {
+              config: composerConfig(fakeConfig({ reporter })),
+              entry: app.entryPath,
+              environment: 'staging',
+              cwd: app.dir,
+              reportPath,
+            },
+            {
+              runAssembler: fakeAssembler,
+              alchemy: async (input) => {
+                const configurationFile = input.env[APP_CONFIGURATION_FILE_ENV];
+                const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
+                if (configurationFile === undefined || resultFile === undefined) {
+                  throw new Error('the second process was not told where its files are');
+                }
+                seen.configurationFile = fs.readFileSync(configurationFile, 'utf8');
+                await spawnCommandLine(
+                  {
+                    command: process.execPath,
+                    args: [
+                      '-e',
+                      `process.stdout.write(${JSON.stringify(`printed ${sentinel}\n`)})`,
+                    ],
+                    cwd: app.dir,
+                    env: input.env,
+                  },
+                  input.redactedValues,
+                  outputs,
+                );
+                fs.writeFileSync(engineFailureFilePath(resultFile), `error: rejected ${sentinel}`);
+                return { exitCode: 1, signal: null };
+              },
+            },
+          ),
+        );
+      } finally {
+        names.forEach((name, index) => {
+          const value = previous[index];
+          if (value === undefined) delete process.env[name];
+          else process.env[name] = value;
+        });
+      }
 
-    if (result.ok) throw new Error('the deploy should fail');
-    expect(finished).toHaveLength(1);
-    const texts = [
-      seen.configurationFile,
-      seen.stdout,
-      seen.stderr,
-      fs.readFileSync(reportPath, 'utf8'),
-      ...finished,
-      JSON.stringify(result.failure.toEnvelope()),
-      String(result.failure.meta?.['engineCause']),
-    ];
-    for (const text of texts) expect(text).not.toContain('SENTINEL');
-    expect(seen.stdout).toBe('printed [redacted]\n');
-  }, 15_000);
+      if (result.ok) throw new Error('the deploy should fail');
+      expect(finished).toHaveLength(1);
+      const texts = [
+        seen.configurationFile,
+        seen.stdout,
+        seen.stderr,
+        fs.readFileSync(reportPath, 'utf8'),
+        ...finished,
+        JSON.stringify(result.failure.toEnvelope()),
+        String(result.failure.meta?.['engineCause']),
+      ];
+      for (const text of texts) expect(text).not.toContain('SENTINEL');
+      expect(seen.stdout).toBe('printed [redacted]\n');
+    },
+    15_000,
+  );
 
   test('with dotenv() and environmentVariables() in both lists, only the value a secret source names is redacted', async () => {
     const app = makeAppDir('hello-email');

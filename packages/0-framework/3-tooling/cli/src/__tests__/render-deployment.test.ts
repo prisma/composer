@@ -173,7 +173,7 @@ describe('renderDeployment', () => {
           },
           {
             name: 'AUDIT_TOKEN',
-            readers: [{ kind: 'unread', node: 'shop.auditToken', nodeKind: 'resource' }],
+            readers: [{ kind: 'unread', node: 'shop.auditToken' }],
             commands: [
               "prisma project env add 'AUDIT_TOKEN=<value>' --project 'proj_1' --role production",
             ],

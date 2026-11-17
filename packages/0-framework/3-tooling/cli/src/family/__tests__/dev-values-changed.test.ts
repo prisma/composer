@@ -1,4 +1,3 @@
-/** How `prisma dev` renders a change in what the config or secrets adapters return, or in the platform variables the app reads. */
 import { describe, expect, test } from 'bun:test';
 import type { EngineEvent } from '@prisma/cli-engine';
 import { createTestCli } from '@prisma/cli-engine/testing';

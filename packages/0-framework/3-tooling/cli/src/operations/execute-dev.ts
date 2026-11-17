@@ -20,7 +20,11 @@ import {
 } from '@internal/core/config';
 import type { DevServer } from '@internal/core/deploy';
 import { nodeAddresses, secretsKeys } from '@internal/core/deploy';
-import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
+import type {
+  DevPreflightResult,
+  LocalTargetAttachment,
+  LocalTargetDescriptor,
+} from '@internal/core/local-target';
 import { devEnvironmentDir, resolveLocalTargets } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
@@ -138,7 +142,6 @@ function assertDevServersSupported(
   }
 }
 
-/** Runs the full dev pipeline; resolves to a running session or a structured failure. */
 /** The file's content hash; undefined when it cannot be read, which counts as a change. */
 function contentHash(file: string): string | undefined {
   try {
@@ -155,6 +158,24 @@ function sameValues(started: PipelineResult, now: PipelineResult): boolean {
   );
 }
 
+function isDevPreflightResult(value: unknown): value is DevPreflightResult {
+  if (typeof value !== 'object' || value === null) return false;
+  if (!('payload' in value) || !('plainVariableText' in value)) return false;
+  const { payload, plainVariableText } = value;
+  return (
+    (payload === undefined || typeof payload === 'string') &&
+    typeof plainVariableText === 'object' &&
+    plainVariableText !== null &&
+    Object.values(plainVariableText).every((text) => typeof text === 'string')
+  );
+}
+
+const olderLocalTargetError = (id: string): Error =>
+  new Error(
+    `The extension "${id}" returned a dev preflight result prisma dev cannot read: its local target was built for an older @prisma/composer. Upgrade "${id}" to a version built for the @prisma/composer this app uses.`,
+  );
+
+/** Runs the full dev pipeline; resolves to a running session or a structured failure. */
 export async function executeDev(
   input: DevInput,
   deps: OperationDeps,
@@ -269,7 +290,7 @@ async function executeDevInner(
     for (const [id, dev] of resolved) {
       if (dev.preflight === undefined) continue;
       try {
-        const found = await dev.preflight({
+        const found: unknown = await dev.preflight({
           graph,
           container: containers.get(id),
           environment,
@@ -277,6 +298,7 @@ async function executeDevInner(
           secrets: pipeline.secrets,
           warn: (message) => emit({ kind: 'target-warning', message }),
         });
+        if (!isDevPreflightResult(found)) throw olderLocalTargetError(id);
         if (found.payload !== undefined) preflightPayloads.set(id, found.payload);
         Object.assign(plainVariableText, found.plainVariableText);
       } catch (error) {

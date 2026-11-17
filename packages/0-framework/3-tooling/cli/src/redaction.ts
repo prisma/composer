@@ -232,7 +232,7 @@ function redactReader(
         path: redaction.redact(reader.path),
       };
     case 'unread':
-      return { kind: 'unread', node: redaction.redact(reader.node), nodeKind: reader.nodeKind };
+      return { kind: 'unread', node: redaction.redact(reader.node) };
   }
 }
 

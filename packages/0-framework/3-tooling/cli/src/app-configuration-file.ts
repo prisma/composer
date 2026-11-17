@@ -152,10 +152,8 @@ export interface SecondProcessHandover {
 }
 
 /**
- * First process: the handover to the second process (ADR-0062). The app configuration file holds
- * what Load read, the text of each plain platform variable, and the graph's node addresses; under
- * `prisma dev` the environment also carries the named secrets. Refuses a file that would hold any
- * of `knownSecrets`.
+ * First process: the app configuration file and the environment the second process starts with (ADR-0062).
+ * Refuses a file that would hold any of `knownSecrets`.
  */
 export function prepareSecondProcess(input: {
   readonly file: string;
