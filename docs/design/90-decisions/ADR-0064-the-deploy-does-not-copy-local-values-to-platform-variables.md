@@ -74,7 +74,7 @@ A variable on the platform holds text. Without `schema`, a plain platform variab
 
 - `schema` may be an object or a function; an ArkType schema is a function. A schema with no `~standard.jsonSchema` does not compile, and through a cast it fails when the root's body runs: `The schema of the platform variable "SMTP_PORT" does not implement Standard JSON Schema. Use a schema from a library that does, such as ArkType or Zod.`
 - `variable.secret()` takes no schema. Passing one does not compile, and through a cast it fails when the root's body runs: `variable.secret({ name: "API_KEY" }) takes no schema. A platform secret's value is always text; check its content in the service's secret field.`
-- The constructor calls `schema['~standard'].jsonSchema.input({ target: 'draft-2020-12' })` and then `.output({ target: 'draft-2020-12' })`, each at most once. It never calls the library's `validate`, because the app's module code is not in the service: the library's schema cannot run on the value.
+- The constructor calls `schema['~standard'].jsonSchema.input({ target: 'draft-2020-12' })` and then `.output({ target: 'draft-2020-12' })`, each once; when `.input()` throws, `.output()` is not called. It never calls the library's `validate`, because the app's module code is not in the service: the library's schema cannot run on the value.
 
 #### The variable's JSON Schema
 
