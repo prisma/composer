@@ -16,7 +16,7 @@ async function warningsFor(event: DevEvent, expected: string) {
   const family = createComposerFamily({ operations: double.operations });
   const cli = createTestCli({
     commandFamilies: [family],
-    commands: { deploy: commandAt(family, 'deploy'), dev: commandAt(family, 'dev') },
+    ...mountAsHost(family),
     config: { composer: validComposerSection() },
   });
   const interrupt = new AbortController();
