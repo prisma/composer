@@ -21,6 +21,7 @@ import {
   INPUT_KEY_NAME,
   ownKeyPrefix,
 } from '@internal/input-document';
+import { readComputeInputDocument } from '@internal/lowering/compute';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
@@ -102,13 +103,18 @@ export function platformVariables(
   rows: Readonly<Record<string, string>>,
   address: string,
 ): { readonly plain: ReadonlySet<string>; readonly secrets: ReadonlySet<string> } {
+  const document = rows[`${ownKeyPrefix(address)}${INPUT_KEY_NAME}`];
+  return variablesNamedBy(document === undefined ? undefined : JSON.parse(document));
+}
+
+function variablesNamedBy(document: unknown): {
+  readonly plain: ReadonlySet<string>;
+  readonly secrets: ReadonlySet<string>;
+} {
   const plain = new Set<string>();
   const secrets = new Set<string>();
-  const document = rows[`${ownKeyPrefix(address)}${INPUT_KEY_NAME}`];
-  if (document !== undefined) {
-    for (const marker of collectPlatformMarkers(JSON.parse(document))) {
-      (marker.secret ? secrets : plain).add(marker.name);
-    }
+  for (const marker of collectPlatformMarkers(document)) {
+    (marker.secret ? secrets : plain).add(marker.name);
   }
   return { plain, secrets };
 }
@@ -165,7 +171,9 @@ export function readComputeManifest(artifactDir: string): {
 
 /**
  * A deployment's environment: its own rows, its port, the platform variables its input document names, and `PATH` and `HOME`.
- * A dev server is given the same (ADR-0056).
+ * For a service that runs its `artifact`, the `env.json` input entry is stale and left out, and the
+ * platform variables come from the artifact's `inputDocument`. A dev server has no `artifact` and is
+ * given the same otherwise (ADR-0056).
  */
 export async function materializeEnv(
   devDir: string,
@@ -173,11 +181,17 @@ export async function materializeEnv(
   port: number,
   configuration: Readonly<Record<string, unknown>>,
   secrets: Readonly<Record<string, string>>,
+  artifact?: { readonly inputDocument?: unknown },
 ): Promise<Record<string, string>> {
-  const rows = await envStore(devDir).read();
-  const env: Record<string, string> = scopedEnvRows(rows, address);
+  const rows = scopedEnvRows(await envStore(devDir).read(), address);
+  const inputKey = composerKey(address, INPUT_KEY_NAME);
+  if (artifact !== undefined) delete rows[inputKey];
+  const env: Record<string, string> = { ...rows };
   env[composerKey(address, 'PORT')] = JSON.stringify(port);
-  const named = platformVariables(rows, address);
+  const named =
+    artifact === undefined
+      ? platformVariables(rows, address)
+      : variablesNamedBy(artifact.inputDocument);
   const setIfText = (name: string, value: unknown): void => {
     if (typeof value === 'string' && value.length > 0) env[name] = value;
   };
@@ -296,9 +310,9 @@ export function LocalEnvironmentVariableProvider(
 
 /**
  * `Prisma.Deployment` → unpacks the artifact once per hash, finds the
- * service's emulator instance and its port, materializes the child's full env (env store +
- * the current values of the variables its rows point at + the port override +
- * `PATH`/`HOME`), and puts the deployment — the
+ * service's emulator instance and its port, builds the child's env with
+ * `materializeEnv` from the input document the artifact carries, and puts the
+ * deployment — the
  * emulator (re)starts the child only when the hash or env actually changed.
  * `portMapping` is ignored on purpose: the emulator owns port allocation, and
  * the child learns its port from `COMPOSER_<ADDRESS>_PORT` in the env this
@@ -331,6 +345,7 @@ export function LocalDeploymentProvider(
             instance.port,
             input.plainVariableText,
             input.namedSecrets,
+            { inputDocument: readComputeInputDocument(artifactDir) },
           );
           try {
             await computeClient().putDeployment(instance.id, {

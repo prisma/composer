@@ -233,7 +233,7 @@ The values one command knows are secrets: the value under each secrets key of th
 
 ### The app configuration file
 
-The JSON file a command's first process writes for its second process. It holds what Load read from the app configuration (the root input fields the root's body passes on), the first process's node addresses, and `plainVariableText`. Under `prisma dev`, `plainVariableText` holds the text of each plain [platform variable](#platform-variable) a service reads, by name; destroy writes it empty. It never holds a secret: Load and the CLI refuse to write one into it, and the CLI checks every plain value in it, each `plainVariableText` member included, against the known secrets. Destroy writes it to `.prisma-composer/app-configuration-<pid>-<uuid>.json` and deletes it when the run ends. Deploy writes none: it runs Alchemy in its first process and hands `lower()` what Load read as a value (ADR-0065). `prisma dev` writes it to `<dev environment dir>/app-configuration-<pid>.json` before each converge and deletes it as soon as that converge ends. Only its owner can read it. The CLI also deletes it when its process exits. A file left by a process killed outright is deleted at the start of a later deploy, destroy or `prisma dev`, once it is ten minutes old. It is not `prisma.config.ts`, which is "the config file". In code: `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, `AppConfigurationRead`, `readAppConfigurationFile`.
+The JSON file a command's first process writes for its second process. It holds what Load read from the app configuration (the root input fields the root's body passes on), the first process's node addresses, and `plainVariableText`. Under `prisma dev`, `plainVariableText` holds the text of each plain [platform variable](#platform-variable) a service reads, by name; destroy writes it empty. It never holds a secret: Load and the CLI refuse to write one into it, and the CLI checks every plain value in it, each `plainVariableText` member included, against the known secrets. Destroy writes it to `.prisma-composer/app-configuration-<pid>-<uuid>.json` and deletes it when the run ends. Deploy writes none: it runs Alchemy in its first process and hands `lower()` what Load read as a value (ADR-0066). `prisma dev` writes it to `<dev environment dir>/app-configuration-<pid>.json` before each converge and deletes it as soon as that converge ends. Only its owner can read it. The CLI also deletes it when its process exits. A file left by a process killed outright is deleted at the start of a later deploy, destroy or `prisma dev`, once it is ten minutes old. It is not `prisma.config.ts`, which is "the config file". In code: `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, `AppConfigurationRead`, `readAppConfigurationFile`.
 
 ### Config adapter
 
@@ -362,7 +362,7 @@ to a plan.
 
 ### Converge
 
-Making an environment match the lowered stack: Alchemy plans what to create, update, replace and delete, then applies it. Converging is plan and apply only; lowering comes before it. `prisma deploy` converges in its own process through Alchemy's programmatic API; `prisma dev` and `destroy` converge in an Alchemy child process. The *app converge entry* is the app install's `lower` and its in-process converge, which `deploy` loads from `@prisma/composer/internal/converge` (in code: `AppConvergeEntry`) ([ADR-0065](../90-decisions/ADR-0065-deploy-runs-alchemy-in-process.md)). Codes: `DEV.CONVERGE_FAILED`, `DEPLOY.CONVERGE_RUNNING`, `DEPS.CONVERGE_UNRESOLVABLE`, `DEPS.CONVERGE_CONTRACT_MISMATCH`.
+Making an environment match the lowered stack: Alchemy plans what to create, update, replace and delete, then applies it. Converging is plan and apply only; lowering comes before it. `prisma deploy` converges in its own process through Alchemy's programmatic API; `prisma dev` and `destroy` converge in an Alchemy child process. The *app converge entry* is the app install's `lower` and its in-process converge, which `deploy` loads from `@prisma/composer/internal/converge` (in code: `AppConvergeEntry`) ([ADR-0066](../90-decisions/ADR-0066-deploy-runs-alchemy-in-process.md)). Codes: `DEV.CONVERGE_FAILED`, `DEPLOY.CONVERGE_RUNNING`, `DEPS.CONVERGE_UNRESOLVABLE`, `DEPS.CONVERGE_CONTRACT_MISMATCH`.
 
 ### Control plane / Execution plane
 
@@ -412,7 +412,7 @@ inside them and never creates or destroys a container itself.
 
 ### Caller credentials
 
-What the caller of a deploy or destroy has already authenticated: a workspace and a platform API client (`CallerCredentials`). For `prisma deploy` they are the active credential's workspace and the engine's `ctx.api`. The framework hands them unchanged to every extension hook that talks to the platform: the container lifecycle, `preflight`, reporters, `providers` and the state store. When the caller has none, each extension uses its own credential protocol, for Prisma Cloud `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` ([ADR-0065](../90-decisions/ADR-0065-deploy-runs-alchemy-in-process.md)).
+What the caller of a deploy or destroy has already authenticated: a workspace and a platform API client (`CallerCredentials`). For `prisma deploy` they are the active credential's workspace and the engine's `ctx.api`. The framework hands them unchanged to every extension hook that talks to the platform: the container lifecycle, `preflight`, reporters, `providers` and the state store. When the caller has none, each extension uses its own credential protocol, for Prisma Cloud `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` ([ADR-0066](../90-decisions/ADR-0066-deploy-runs-alchemy-in-process.md)).
 
 ## Authoring surface — the next layer
 
@@ -474,11 +474,14 @@ The Module-scoped operator that turns a dependency descriptor into an **owned Re
 ### run — the boot loop
 
 The boot method the platform runs, carried on the pack's runnable service node
-(`main.run(address)`, called by the deploy-printed bootstrap). **Core owns
+(`main.run(address, boot)`, called by the deploy-printed bootstrap; on Prisma
+Cloud the bootstrap also passes the service's input document from the
+artifact's `compute.bootstrap.json`). **Core owns
 structure, the pack owns encoding.** Core enumerates the config shape (semantic
 names + type tags — no platform keys in the graph) via `configOf`; the pack's
-`run` **deserializes** the platform environment into a typed `Config` by its own
-serializer (keyed from the address), the single sanctioned environment read; then
+`run` **deserializes** the platform environment, with the artifact's input
+document in place of any variable under its key, into a typed `Config` by its own serializer (keyed from the address), the single
+sanctioned environment read; then
 core's `hydrate` turns each dependency's typed values into a client — with the
 app-supplied driver factory — and calls the handler. Config validation is the
 pack reversing its own serialization (present, right type), failing loudly. A

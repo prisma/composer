@@ -1,4 +1,4 @@
-# ADR-0065: `deploy` runs Alchemy in the `prisma` process
+# ADR-0066: `deploy` runs Alchemy in the `prisma` process
 
 ## Decision
 

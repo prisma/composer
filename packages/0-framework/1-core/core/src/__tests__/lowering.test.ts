@@ -121,6 +121,7 @@ type Call =
       readonly id: string;
       readonly assembled: Bundle;
       readonly address: string;
+      readonly environment: unknown;
     }
   | {
       readonly phase: 'deploy';
@@ -195,12 +196,13 @@ function fakeExtension(
           );
           return Effect.succeed({ environment: records });
         },
-        package: (ctx, input) => {
+        package: (ctx, input, serialized) => {
           calls.push({
             phase: 'package',
             id: ctx.id,
             assembled: input.assembled,
             address: input.address,
+            environment: serialized.environment,
           });
           return Effect.succeed({ path: `/tmp/${ctx.id}.tar.gz`, sha256: `sha-${ctx.id}` });
         },
@@ -787,6 +789,17 @@ describe('lowering a module root — a single service', () => {
 
     const pkg = calls.find((c) => c.phase === 'package');
     expect(pkg).toMatchObject({ assembled: bundle, address: 'hello.svc' });
+  });
+
+  test("package receives the service's serialize product", () => {
+    const { config, calls } = fakeExtension();
+
+    run(lowering(singleServiceWithDbModule(), config, opts(svcBundles)));
+
+    const pkg = calls.find((c) => c.phase === 'package');
+    expect(pkg).toMatchObject({
+      environment: [{ input: 'db', name: 'url', value: 'db://hello.db' }],
+    });
   });
 
   test("the environment edge: deploy's `environment` IS serialize's returned records (by recording, not order)", () => {

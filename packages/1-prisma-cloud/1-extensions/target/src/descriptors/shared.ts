@@ -152,6 +152,14 @@ export function cloudApplicationOf(application: unknown): CloudApplication {
   return application;
 }
 
+/** The class, and on a preview environment the branch, of a variable a service writes. */
+export function variableClassAndBranch(
+  application: unknown,
+): { readonly class: 'preview'; readonly branchId: string } | { readonly class: 'production' } {
+  const { branchId } = cloudApplicationOf(application);
+  return branchId ? { class: 'preview', branchId } : { class: 'production' };
+}
+
 export function projectIdOf(application: unknown): string {
   return cloudApplicationOf(application).projectId;
 }

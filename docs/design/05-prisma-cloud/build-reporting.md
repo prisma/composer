@@ -46,7 +46,7 @@ The CLI calls the hook three times:
    `state` (`succeeded`, `failed` or `cancelled`), `failingStep` (Composer's
    error code, capped at 500 characters) and `errorMessage` (capped at 5000).
 
-The session also hands the apply its environment through `childEnv()`: `PRISMA_BUILD_ID`, so reporting inside the apply finds the run. `deploy` runs the apply in its own process and sets these variables in `process.env` for the length of the apply ([ADR-0065](../90-decisions/ADR-0065-deploy-runs-alchemy-in-process.md)).
+The session also hands the apply its environment through `childEnv()`: `PRISMA_BUILD_ID`, so reporting inside the apply finds the run. `deploy` runs the apply in its own process and sets these variables in `process.env` for the length of the apply ([ADR-0066](../90-decisions/ADR-0066-deploy-runs-alchemy-in-process.md)).
 
 The reporter installs no signal handlers. The CLI engine owns signals, and an
 interrupt reaches the reporter as `cancelled` on the ordinary `finish` path.

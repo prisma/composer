@@ -33,6 +33,7 @@ import {
   projectIdOf,
   type ResolvedCloudOptions,
   validatePlatformName,
+  variableClassAndBranch,
 } from './shared.ts';
 
 /** `compute({ listens: false })`, read structurally: the node may be a copy made by another bundle of this package, so `instanceof` cannot be relied on. */
@@ -129,7 +130,6 @@ interface EnvRow {
   readonly record: Prisma.EnvironmentVariable;
   readonly key: string;
   readonly value: Redacted.Redacted<string> | Output.Output<Redacted.Redacted<string>>;
-  readonly platformVariables?: readonly string[];
 }
 
 const sortedMarkerNames = (markers: readonly PlatformMarkerUse[]): string[] =>
@@ -180,9 +180,7 @@ export function computeDescriptor(
       Effect.gen(function* () {
         const { address, node, graph } = ctx;
         const app = graph.root.id;
-        const branchId = cloudApplicationOf(ctx.application).branchId;
-        const cls = branchId ? ('preview' as const) : ('production' as const);
-        const branch = branchId !== undefined ? { branchId } : {};
+        const classAndBranch = variableClassAndBranch(ctx.application);
         const projectId = provisioned.projectId;
         if (node.kind !== 'service') {
           throw new Error(`prisma-cloud: cannot serialize non-service node "${address}".`);
@@ -203,8 +201,7 @@ export function computeDescriptor(
             project: projectId,
             key,
             value: wrapped,
-            class: cls,
-            ...branch,
+            ...classAndBranch,
           }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyConfigKey(app, address, d))));
           rows.push({ record, key, value: wrapped });
         }
@@ -216,19 +213,6 @@ export function computeDescriptor(
           { absentVariables: preflightView(ctx.preflight).absentVariables },
         );
         if (inputRow !== undefined) {
-          const inputValue = envValue(inputRow.value);
-          rows.push({
-            record: yield* Prisma.EnvironmentVariable(resourceId(address, 'env', inputRow.key), {
-              project: projectId,
-              key: inputRow.key,
-              value: inputValue,
-              class: cls,
-              ...branch,
-            }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(app, address)))),
-            key: inputRow.key,
-            value: inputValue,
-            platformVariables: sortedMarkerNames(inputRow.markers),
-          });
           // Each generated leaf: generate its value ONCE (the resource keeps it
           // stable across redeploys via its persisted output) and provision it
           // under the framework var the document's `$generated` pointer names.
@@ -251,8 +235,7 @@ export function computeDescriptor(
                 project: projectId,
                 key: leaf.varName,
                 value: generatedValue,
-                class: cls,
-                ...branch,
+                ...classAndBranch,
               }).pipe(
                 asOwnRow,
                 fromLegacyId(legacyEnvVarId(legacyGeneratedParamVarName(app, address, leaf.path))),
@@ -325,8 +308,7 @@ export function computeDescriptor(
               project: projectId,
               key,
               value: providerValue,
-              class: cls,
-              ...branch,
+              ...classAndBranch,
             }).pipe(
               asOwnRow,
               fromLegacyId(
@@ -348,7 +330,7 @@ export function computeDescriptor(
           environment: rows.map((r) => r.record),
           // Keys are unique per row (one env var each), so no member collides.
           triggers: Object.fromEntries(rows.map((r) => [r.key, r.value])),
-          platformVariables: [...new Set(rows.flatMap((r) => r.platformVariables ?? []))],
+          platformVariables: inputRow !== undefined ? sortedMarkerNames(inputRow.markers) : [],
           port,
           ...(inputRow !== undefined ? { input: inputRow } : {}),
         };
@@ -356,7 +338,7 @@ export function computeDescriptor(
 
     // Deterministic tar.gz (fixed mtimes/ordering) so unchanged inputs hash
     // identically; the fs/tar work itself lives in @internal/lowering.
-    package: ({ id, node }, { assembled, address }) =>
+    package: ({ id, node }, { assembled, address }, serialized) =>
       Effect.try(() =>
         packageComputeArtifact({
           id,
@@ -364,6 +346,9 @@ export function computeDescriptor(
           appEntry: assembled.entry,
           address,
           ...(declaresNoListening(node) ? { listens: false } : {}),
+          ...(serialized.input !== undefined
+            ? { inputDocument: JSON.parse(serialized.input.value) }
+            : {}),
         }),
       ),
 
@@ -436,8 +421,18 @@ export function computeDescriptor(
     // `Deployment` removed: the URL comes from the App, which locally is the
     // same `http://localhost:<port>` the Deployment would report, so
     // dependents' rows do not change between a served and an assembled run.
-    reserve: (_ctx, provisioned, serialized) =>
-      Effect.sync(() => {
+    // With no artifact to carry it, the input document is a variable.
+    reserve: ({ address, application, graph }, provisioned, serialized) =>
+      Effect.gen(function* () {
+        const { input } = serialized;
+        if (input !== undefined) {
+          yield* Prisma.EnvironmentVariable(resourceId(address, 'env', input.key), {
+            project: provisioned.projectId,
+            key: input.key,
+            value: envValue(input.value),
+            ...variableClassAndBranch(application),
+          }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(graph.root.id, address))));
+        }
         const url = Output.map(provisioned.endpointDomain, (domain) => {
           if (domain === undefined) {
             throw new Error(

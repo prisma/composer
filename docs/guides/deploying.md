@@ -198,8 +198,11 @@ Console changes nothing.
 
 Compute deployments capture their environment when they are created. Composer
 waits for its environment-variable updates to finish before creating a
-deployment, including updates to an existing input document. Later variable
-updates do not change an already-created deployment's environment.
+deployment. Later variable updates do not change an already-created
+deployment's environment. A service's input document is not an environment
+variable: the deploy writes it into the service's artifact, in
+`compute.bootstrap.json`, so it is not limited to a variable's 8 KB, and changing it gives the
+service a new artifact and a new deployment.
 
 After a deploy, each service is a Compute service in the Project; its public
 URL is its service endpoint domain — printed when the deploy finishes, and
@@ -555,9 +558,10 @@ What deployed apps actually run into, and what to do about it:
   authenticated for you, and your `curl` isn't one of the services the app
   connected to it — so it's turned away, and a provider with no consumers turns
   away everyone. Reach it through a consumer instead.
-- **The `COMPOSER_*` variables in your project belong to the deploy.** Config,
-  secret pointers, and service keys all land there, and every deploy rewrites
-  them — editing one by hand doesn't survive.
+- **The `COMPOSER_*` variables in your project belong to the deploy.** Ports,
+  connection settings, generated values and service keys all land there, and
+  every deploy rewrites them — editing one by hand doesn't survive. A service's
+  input document is not among them: it travels in the service's artifact.
 - **Calls into a sleeping service can get `ECONNRESET`** while it cold-starts.
   Retry them.
 - **The `cron` scheduler stays awake on purpose.** It holds Compute's
@@ -576,6 +580,19 @@ What deployed apps actually run into, and what to do about it:
 When something misbehaves in ways these don't explain, check
 [`gotchas.md`](../../gotchas.md) at the repo root — the catalogue of platform
 footguns with diagnoses, kept current as we hit them.
+
+## Upgrading to input documents in the artifact
+
+Earlier versions wrote each service's input document as an environment
+variable, `COMPOSER_<ADDRESS>_INPUT`. This version writes it into the service's
+artifact. The first deploy with this version gives every service a new
+deployment that reads its input from its artifact, then deletes the
+`COMPOSER_<ADDRESS>_INPUT` variables. Nothing else changes, and there is
+nothing to do yourself.
+
+Don't put a deployment made before the upgrade back into service afterwards,
+for example by promoting it in the Console: its artifact has no input document,
+and the variable it read is gone.
 
 ## Upgrading from stages to environments
 

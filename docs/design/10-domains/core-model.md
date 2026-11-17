@@ -25,6 +25,8 @@ Two methods hang off the service node and bridge the two:
 - **`run(address, boot)`** — the process controller. At boot it resolves the
   service's config from the environment, stashes it under process-local keys, then
   calls `boot()` to start the app's entry. It is what the deployed artifact runs.
+  A pack's node may take more from its own bootstrap: the Prisma Cloud node takes
+  the service's input document from the artifact as a third argument.
 - **`load()`** — called from *inside* the app's entry (or a Next page). It reads
   the stash and returns each dependency's **binding** — the most-derived value
   its contract can construct (ADR-0015): a derived client for a protocol-owned
@@ -587,21 +589,23 @@ interface ServiceLowering<P = unknown, S = unknown> {
   // references — the whole stack effect runs before Alchemy applies anything.
   provision(ctx: LowerContext): Effect.Effect<P, unknown, unknown>
   // serialize: encode the typed Config core built into the service's runtime
-  // environment (on Prisma Cloud: EnvironmentVariables on the project), keyed by
-  // the deployment address. The pack owns the encoding; run()'s deserialize
-  // reverses it through the same serializer, so writer and reader cannot drift.
-  // Leaf values are provisioning refs → the env writes depend on the
-  // resources/producer (the ordering edges). Returns the env-var records so
-  // `deploy` can reference them (the environment edge — see alchemy-lowering.md).
+  // environment (on Prisma Cloud: EnvironmentVariables on the project, and the
+  // input document for the artifact), keyed by the deployment address.
+  // The pack owns the encoding; run()'s deserialize reverses it through the same
+  // serializer, so writer and reader cannot drift. Leaf values are provisioning
+  // refs → the env writes depend on the resources/producer (the ordering edges).
+  // Returns the env-var records so `deploy` can reference them (the environment
+  // edge — see alchemy-lowering.md), and whatever `package` puts in the artifact.
   serialize(ctx: LowerContext, provisioned: P, config: Config):
     Effect.Effect<S, unknown, unknown>
   // package: assemble the deployable artifact from the build adapter's normalized
-  // bundle dir and print the bootstrap (address + the boot import baked in). The
-  // envelope is target vocabulary and the pack's business (Compute: bootstrap.js +
+  // bundle dir and `serialized`, and print the bootstrap. The envelope is target
+  // vocabulary and the pack's business (Compute: bootstrap.js +
+  // compute.bootstrap.json with the address and the input document as nested JSON +
   // compute.manifest.json + tar.gz). MUST be byte-deterministic (fixed tar
   // mtimes/ordering): identical inputs yield an identical hash, so an unchanged
   // service noops on redeploy.
-  package(ctx: LowerContext, input: PackageInput):
+  package(ctx: LowerContext, input: PackageInput, serialized: S):
     Effect.Effect<Artifact, unknown, unknown>
   // deploy: ship the packaged artifact into the provisioned thing and run it
   // (create → upload → start → promote). Builds the deployment's props out of
@@ -621,17 +625,18 @@ interface LoweredResult {
 
 // package input: the build adapter's assembled output plus the address. The
 // bootstrap the pack prints is the ONLY runnable code the framework adds to the artifact.
-// It imports the wrapper and calls run with the address AND a boot thunk that
-// imports the app's built entry — a printed, literal dynamic import of a runtime
-// path (never a bundled reference, so no bundler ever follows it):
-//   import main from "./main.js"
-//   await main.run("<address>", () => import("./server.js"))
+// On Compute it is constant code: it reads compute.bootstrap.json, imports the
+// wrapper, and calls run with the address, a boot thunk that dynamically imports
+// the app's built entry (a runtime path, never a bundled reference, so no bundler
+// ever follows it), and the service's input document:
+//   const boot = JSON.parse(await readFile("./compute.bootstrap.json"))
+//   await (await import(boot.moduleEntrypoint)).default.run(boot.address, () => import(boot.appEntrypoint), boot.inputDocument)
 // The entrypoint takes its deployment identity as a parameter; deploy is the
 // caller. The pack owns the printer and the node owns run(), so any
 // environment-specific data passes through this closed channel.
 interface PackageInput {
   readonly assembled: Bundle            // the build adapter's product (dir + entry)
-  readonly address: string              // the node's graph address — baked into the bootstrap
+  readonly address: string              // the node's graph address — written into the bootstrap's data
 }
 
 // One node's realization. Runs inside the Alchemy stack effect; yields the
@@ -769,10 +774,12 @@ nodes are edges only and never lower. Then for each service:
    not strings.
 3. `serialize(config)` — the pack encodes that typed Config into the service's
    runtime environment (Prisma Cloud: one env write per leaf, keyed by the
-   pack's own naming from the address, value = the ref). Never the platform default.
-4. `package({ assembled, address })` — the build adapter's assembler has produced
-   the normalized bundle dir; the pack prints the bootstrap (address + boot import
-   baked in, § below) and wraps it in the target envelope.
+   pack's own naming from the address, value = the ref; the input document
+   is returned for the artifact instead). Never the platform default.
+4. `package({ assembled, address }, serialized)` — the build adapter's assembler
+   has produced the normalized bundle dir; the pack prints the bootstrap, writes
+   the address and the input document, as nested JSON, into `compute.bootstrap.json`
+   (§ below), and wraps it in the target envelope.
 5. `deploy(artifact)` — the first version snapshots an environment that is already
    complete.
 
@@ -803,11 +810,12 @@ the [input glossary entry](../03-domain-model/glossary.md#input)).
 ```
 server.js              ← the app's OWN built entry (Hono bundle / Next standalone). Calls service.load().
 main.js                ← framework wrapper: the service module bundled, core inlined ONCE. Inert on import.
-bootstrap.js           ← pack-printed: `import main from "./main.js"; await main.run("<address>", () => import("./server.js"))`
+bootstrap.js           ← pack-printed constant code: reads compute.bootstrap.json, then `main.run(address, () => import(appEntrypoint), inputDocument)`
+compute.bootstrap.json ← pack-written data: the wrapper and entry paths, the address, and `inputDocument` (the input document as nested JSON; absent for a service with no input)
 compute.manifest.json  ← pack-written envelope; entrypoint = bootstrap.js
 ```
 
-The node carries its own runner: the pack's service node has `run(address, boot)` and `load()` (§ Runtime), so the wrapper already contains the boot loop — the bootstrap is a two-line sliver that imports `./main.js` and dynamically imports the app's entry, and the artifact holds a single copy of core. There is **no import cycle**: the app's entry imports the service module (for `load()`), and the bootstrap imports the wrapper and dynamically imports the entry — nothing imports the bootstrap, and the serve code lives in the app's entry, never in the service module. Every byte is deterministic — the app's built entry, the framework's wrapper, the printed bootstrap — so unchanged services hash identically and noop, once the app's build is itself deterministic (the Next standalone case is a named follow-up). Because the same Load walk feeds both `serialize`'s env keys and the bootstrap's address (and the pack derives config keys from that address on both sides), the config writer and the boot-time reader cannot drift. An address changes only when the graph position changes (a changed provision ID, a move into another module, or a different deployed app name), which correctly cascades: new keys, new bootstrap, new version.
+The node carries its own runner: the pack's service node has `run(address, boot, inputDocument)` and `load()` (§ Runtime), so the wrapper already contains the boot loop. The bootstrap is constant code that reads `compute.bootstrap.json`, imports the wrapper it names, dynamically imports the app's entry, and calls `run`, and the artifact holds a single copy of core. There is **no import cycle**: the app's entry imports the service module (for `load()`), and the bootstrap imports the wrapper and dynamically imports the entry — nothing imports the bootstrap, and the serve code lives in the app's entry, never in the service module. Every byte is deterministic — the app's built entry, the framework's wrapper, the printed bootstrap and its data — so unchanged services hash identically and noop, once the app's build is itself deterministic (the Next standalone case is a named follow-up). Because the same Load walk feeds both `serialize`'s env keys and the address in the bootstrap's data (and the pack derives config keys from that address on both sides), the config writer and the boot-time reader cannot drift. An address changes only when the graph position changes (a changed provision ID, a move into another module, or a different deployed app name), which correctly cascades: new keys, new bootstrap, new version.
 
 The address is also the node's identity on the platform. Composer writes it as the `logicalId` of the node's platform row and of its node in the application topology, and builds the node's Alchemy resource IDs from it (`shop.catalog`, `shop.catalog.connection`), so a changed address is a different entity there too ([ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md)).
 
@@ -827,7 +835,8 @@ Notes:
 ## Runtime: booting a service (`run`, `load`, core's shape and hydrate)
 
 At boot, the deployed artifact runs the bootstrap, which calls the node's
-`run(address, boot)`. The split is **core owns structure, the pack owns encoding**:
+`run(address, boot)`; on Prisma Cloud it also passes the input document its
+`compute.bootstrap.json` holds. The split is **core owns structure, the pack owns encoding**:
 
 - **`run(address, boot)`** — the process controller, on the pack's service node.
   It deserializes this service's environment into a typed `Config` (its own
@@ -956,11 +965,13 @@ export const compute = <D extends Deps>(def: {
   let loaded: Loaded<D, typeof computeParams> | undefined   // per-process memo for load()
   return Object.freeze({
     ...node,
-    // Controller: resolve config from the address-keyed env, re-emit it under
+    // Controller: resolve config from the address-keyed env, with the artifact's
+    // input document in place of any variable under its key, re-emit it under
     // address-free keys (the stash), then boot the app's entry.
-    async run(address: string, boot: () => Promise<unknown>) {
+    async run(address: string, boot: () => Promise<unknown>, inputDocument?: unknown) {
       const shape = configOf(node)
-      stash(shape, deserialize(shape, address))   // the pack's ONE env read + coercion → address-free env
+      const env = inputDocument === undefined ? process.env : { ...process.env, [inputKey(address)]: JSON.stringify(inputDocument) }
+      stash(shape, deserialize(shape, address, env))   // the pack's ONE env read + coercion → address-free env
       return boot()
     },
     // Hydrate on demand from the stash; memoize per process.
@@ -985,7 +996,7 @@ export const compute = <D extends Deps>(def: {
 export const configKey = (address: string, d: ConfigDeclaration): string => /* UPPER_SNAKE(address ▸ owner ▸ name) */
 
 // Boot readers/writers — process.env is touched ONLY here in the pack.
-const deserialize = (shape: readonly ConfigDeclaration[], address: string): Config => { /* read + coerce */ }
+const deserialize = (shape: readonly ConfigDeclaration[], address: string, env = process.env): Config => { /* read + coerce */ }
 const stash = (shape: readonly ConfigDeclaration[], config: Config): void => { /* re-emit under address-free keys, the medium the framework's forks inherit */ }
 ```
 
@@ -1094,7 +1105,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         // the provisioning refs core built the Config from, so each env var depends
         // on its resource/producer (the ordering edges). Returns the records deploy
         // must depend on, plus the resolved listen port.
-        serialize: ({ address, node }, provisioned, config) =>
+        serialize: ({ address, node, graph }, provisioned, config) =>
           Effect.gen(function* () {
             const records = []
             for (const d of configOf(node)) {
@@ -1105,16 +1116,20 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
                 value: Redacted.make(encode(d.owner, value)), class: "production",
               }))
             }
+            // The input document is not a variable: its text travels in the artifact.
+            const binding = graph.inputBindings.find((b) => b.serviceAddress === address)?.binding
+            const input = serializeInput(node, address, binding)
             const port = typeof config.service.port === "number" ? config.service.port : 3000
-            return { environment: records, port }   // : ComputeSerialized → deploy's edges
+            return { environment: records, port, ...(input !== undefined ? { input } : {}) }   // : ComputeSerialized → deploy's edges, package's document
           }),
 
-        // Print the bootstrap (address + boot import baked in) and assemble the
-        // deployable artifact from the build adapter's normalized bundle dir:
-        // bootstrap.js + compute.manifest.json beside the app's entry + wrapper,
-        // deterministic tar.gz. The whole envelope is the pack's — target vocabulary.
-        package: ({ id }, { assembled, address }) =>
-          Effect.try(() => Prisma.packageComputeArtifact({ id, bundleDir: assembled.dir, appEntry: assembled.entry, address })),
+        // Print the bootstrap and assemble the deployable artifact from the build
+        // adapter's normalized bundle dir: bootstrap.js + compute.bootstrap.json
+        // (the address and the input document as nested JSON) + compute.manifest.json
+        // beside the app's entry + wrapper, deterministic tar.gz. The whole envelope
+        // is the pack's — target vocabulary.
+        package: ({ id }, { assembled, address }, serialized) =>
+          Effect.try(() => Prisma.packageComputeArtifact({ id, bundleDir: assembled.dir, appEntry: assembled.entry, address, inputDocument: serialized.input && JSON.parse(serialized.input.value) })),
 
         // create → upload → start → promote. The app id is read through
         // serialize's env-var records, so the deployment depends on them — the
@@ -1142,10 +1157,10 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
 ```
 
 There is **no public runtime entry**: the boot loop rides on the node itself
-(`compute()` returns the runnable subclass; `.run(address, boot)` + `.load()` are
+(`compute()` returns the runnable subclass; `.run(address, boot, inputDocument)` + `.load()` are
 the whole thing), so the wrapper bundle carries the runtime with a single copy of
-core and the bootstrap needs nothing but `./main.js` and a dynamic import of the
-app's entry.
+core and the bootstrap needs nothing but its data, the wrapper and a dynamic import
+of the app's entry.
 
 ## The build adapter — worked instances
 
@@ -1316,7 +1331,9 @@ provision → build the storefront's `Config` (auth's deploy URL fills the
 `auth.url` leaf) → `serialize` (the pack encodes it under its address-prefixed
 keys) → `nextjs` assembler → package → storefront deploy — the first VM boots with
 its config present. At boot, `bootstrap.js` calls `main.run(address, () =>
-import("./server.js"))`: `run` deserializes the storefront's env, re-emits it under
+import("./server.js"), inputDocument)`: `run` deserializes the storefront's env,
+with the artifact's input document in place of any variable under its key,
+re-emits it under
 address-free stash keys, then boots the Next server; the page's `service.load()`
 reads the stash and hydrates the `auth` leaf — a protocol-owned kind, so its
 binding IS a client (ADR-0015), unlike the Hono entry's `db`, whose binding is
@@ -1349,6 +1366,17 @@ producer from a resource — one mechanism.
    Drivers and server APIs enter only from app files; the adapters' `/control`
    entries may use `node:fs` (deploy machine only); the import-guard test extends
    to `"bun"`/`node:` tokens for every execution-plane entry.
+6. **An artifact holds no secret and no value the deploy has not resolved.**
+   `ServiceLowering.package` receives `serialize`'s product, and its contract
+   forbids writing either into the artifact. A target keeps to it by writing only
+   values that are neither secret nor issued during the deploy, in a place that
+   can hold only those values. For Prisma Cloud that is the input document, in
+   one field of `compute.bootstrap.json`; `serializeInput` builds the document and
+   refuses a secret's value, a secret box the binding did not supply, and anything
+   that is not plain data. The compute descriptor test that checks the artifact
+   holds only the input document, and the input serializer's tests that it
+   refuses a secret, prove it
+   ([ADR-0065](../90-decisions/ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)).
 
 ## Extension points (designed for, not yet built)
 

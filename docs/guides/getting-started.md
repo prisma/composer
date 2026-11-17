@@ -305,13 +305,17 @@ build-and-restart loop by running a dev server instead: add
 that command, with its output in your terminal
 ([Dev servers](running-locally.md#dev-servers)).
 
-Under the hood the local providers write the same `COMPOSER_*` environment
-variables a deploy writes, each keyed by the service's address, which starts
-with the app name (`my-app.quotes`, with `-` turned into `_`) —
-`COMPOSER_MY_APP_QUOTES_PORT` for the `quotes` service's own `port`,
-`COMPOSER_MY_APP_QUOTES_INPUT` for its input document,
-`COMPOSER_MY_APP_GATEWAY_QUOTES_URL` for the gateway's `quotes` dependency's URL — so `service.load()`, `service.input()`, and
-`service.port()` read exactly what they'll read in production. You never set
+Under the hood the local providers write the same `COMPOSER_*` values a deploy
+writes, each keyed by the service's address, which starts with the app name
+(`my-app.quotes`, with `-` turned into `_`). Most are environment variables:
+`COMPOSER_MY_APP_QUOTES_PORT` for the `quotes` service's own `port`, and
+`COMPOSER_MY_APP_GATEWAY_QUOTES_URL` for the gateway's `quotes` dependency's
+URL. The input document travels inside the service's artifact instead, in its
+`compute.bootstrap.json`. A service that runs a dev server has no artifact, so
+`dev` writes its input document as the variable `COMPOSER_MY_APP_QUOTES_INPUT`.
+So `service.load()`,
+`service.input()`, and `service.port()` read exactly what they'll read in
+production. You never set
 them by hand locally; `dev` *is* the deploy. Full workflow (logs, `--fresh`,
 what persists) in
 [Running locally](running-locally.md).

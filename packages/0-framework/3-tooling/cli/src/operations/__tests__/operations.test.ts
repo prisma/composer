@@ -4604,8 +4604,9 @@ describe('the second process reads what the first process read', () => {
     }
   }, 20_000);
 
-  const holdingTheSecret = () => ({ ...values(), GREETING: 'plain-SECRET-91' });
-  const theSecret = () => ({ S13_SECRET: 'plain-SECRET-91' });
+  const secretText = ['plain', 'SECRET', '91'].join('-');
+  const holdingTheSecret = () => ({ ...values(), GREETING: secretText });
+  const theSecret = () => ({ S13_SECRET: secretText });
 
   test('deploy refuses a root input field holding the text under a secrets key, before creating anything or running the converge', async () => {
     const app = makeSecondProcessAppDir();

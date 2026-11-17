@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
-import { packageComputeArtifact } from '../compute/artifact.ts';
+import { packageComputeArtifact, readComputeInputDocument } from '../compute/artifact.ts';
 
 function makeBundle(files: Record<string, string>): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-test-'));
@@ -97,7 +97,9 @@ describe('packageComputeArtifact', () => {
     expect(bootstrap).toContain('for (const constructor of [URL, URLSearchParams])');
     expect(bootstrap).toContain('Object.defineProperty(this, inspect');
     expect(bootstrap).toContain('const main = (await import(boot.moduleEntrypoint)).default;');
-    expect(bootstrap).toContain('await main.run(boot.address, () => import(boot.appEntrypoint));');
+    expect(bootstrap).toContain(
+      'await main.run(boot.address, () => import(boot.appEntrypoint), boot.inputDocument);',
+    );
     expect(JSON.parse(read('compute.bootstrap.json'))).toEqual({
       moduleEntrypoint: './main.js',
       appEntrypoint: './server.js',
@@ -105,10 +107,60 @@ describe('packageComputeArtifact', () => {
     });
   });
 
+  test('writes the input document into the bootstrap data as nested JSON', () => {
+    const bundleDir = makeBundle({ 'main.js': 'export default {};' });
+
+    const artifact = packageComputeArtifact({
+      id: 'web',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'shop.web',
+      inputDocument: { siteName: 'Shop', greeting: { $platform: { name: 'WEB_GREETING' } } },
+    });
+    const { read } = readTar(fs.readFileSync(artifact.path));
+
+    expect(JSON.parse(read('compute.bootstrap.json')).inputDocument).toEqual({
+      siteName: 'Shop',
+      greeting: { $platform: { name: 'WEB_GREETING' } },
+    });
+  });
+
+  test('packing the same input document twice yields identical bytes', () => {
+    const bundleDir = makeBundle({ 'main.js': 'export default {};' });
+    const pack = () =>
+      packageComputeArtifact({
+        id: 'web',
+        bundleDir,
+        appEntry: 'server.js',
+        address: 'shop.web',
+        inputDocument: { siteName: 'Shop' },
+      });
+
+    const first = pack();
+    const second = pack();
+
+    expect(first.path).toBe(second.path);
+    expect(first.sha256).toBe(second.sha256);
+  });
+
+  test('a changed input document yields a different path', () => {
+    const bundleDir = makeBundle({ 'main.js': 'export default {};' });
+    const pack = (siteName: string) =>
+      packageComputeArtifact({
+        id: 'web',
+        bundleDir,
+        appEntry: 'server.js',
+        address: 'shop.web',
+        inputDocument: { siteName },
+      });
+
+    expect(pack('Shop').path).not.toBe(pack('Shop and more').path);
+  });
+
   test('executes the generated data-backed bootstrap under Bun', () => {
     const bundleDir = makeBundle({
       'main.js':
-        'export default { run: async (address, boot) => { await boot(); console.log(`address:${address}`); } };',
+        'export default { run: async (address, boot, inputDocument) => { await boot(); console.log(`address:${address}`); console.log(`input:${JSON.stringify(inputDocument)}`); } };',
       'server.js': 'console.log("server:booted");',
     });
     const artifact = packageComputeArtifact({
@@ -116,6 +168,7 @@ describe('packageComputeArtifact', () => {
       bundleDir,
       appEntry: 'server.js',
       address: 'auth',
+      inputDocument: { greeting: 'hi' },
     });
     const archive = readTar(fs.readFileSync(artifact.path));
     const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-bootstrap-run-'));
@@ -130,13 +183,16 @@ describe('packageComputeArtifact', () => {
     expect(child.exitCode, stderr).toBe(0);
     expect(stdout).toContain('server:booted');
     expect(stdout).toContain('address:auth');
+    expect(stdout).toContain('input:{"greeting":"hi"}');
   });
 
-  test('keeps caller-provided entry and address strings out of executable JavaScript', () => {
+  test('keeps caller-provided entry, address and input document strings out of executable JavaScript', () => {
     const marker = 'globalThis.COMPROMISED = true';
     const bundleEntry = `main\`; ${marker}; \`.js`;
     const appEntry = `server\`; ${marker}; \`.js`;
     const address = `auth\`); ${marker}; (\``;
+    const hostile = `"\`); ${marker}; (\`"`;
+    const inputDocument = { [hostile]: hostile };
     const bundleDir = makeBundle({
       [bundleEntry]: 'export default {};',
       [appEntry]: 'export default {};',
@@ -148,6 +204,7 @@ describe('packageComputeArtifact', () => {
       bundleEntry,
       appEntry,
       address,
+      inputDocument,
     });
     const { read } = readTar(fs.readFileSync(artifact.path));
 
@@ -156,6 +213,7 @@ describe('packageComputeArtifact', () => {
       moduleEntrypoint: `./${bundleEntry}`,
       appEntrypoint: `./${appEntry}`,
       address,
+      inputDocument,
     });
   });
 
@@ -509,5 +567,54 @@ describe('packageComputeArtifact', () => {
     });
 
     expect(artifact).toEqual({ path: '', sha256: 'absent' });
+  });
+});
+
+describe('readComputeInputDocument', () => {
+  const unpacked = (bootData: string | undefined): string => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-boot-data-'));
+    if (bootData !== undefined)
+      fs.writeFileSync(path.join(dir, 'compute.bootstrap.json'), bootData);
+    return dir;
+  };
+
+  test('returns the input document a packaged artifact carries', () => {
+    const artifact = packageComputeArtifact({
+      id: 'web',
+      bundleDir: makeBundle({ 'main.js': 'export default {};' }),
+      appEntry: 'server.js',
+      address: 'shop.web',
+      inputDocument: { siteName: 'Shop' },
+    });
+    const { read } = readTar(fs.readFileSync(artifact.path));
+
+    expect(readComputeInputDocument(unpacked(read('compute.bootstrap.json')))).toEqual({
+      siteName: 'Shop',
+    });
+  });
+
+  test('returns nothing for a service that declares no input', () => {
+    expect(readComputeInputDocument(unpacked('{"address":"shop.web"}'))).toBeUndefined();
+  });
+
+  test('fails for a missing boot file', () => {
+    expect(() => readComputeInputDocument(unpacked(undefined))).toThrow(/the file is missing/);
+  });
+
+  test('fails for a boot file that cannot be read, naming the error code', () => {
+    const dir = unpacked(undefined);
+    fs.mkdirSync(path.join(dir, 'compute.bootstrap.json'));
+
+    expect(() => readComputeInputDocument(dir)).toThrow(/the file could not be read \(EISDIR\)/);
+  });
+
+  test('fails for a boot file that is not JSON', () => {
+    expect(() => readComputeInputDocument(unpacked('{not json'))).toThrow(/it is not JSON/);
+  });
+
+  test('fails for a boot file that is not a JSON object', () => {
+    for (const bootData of ['[]', 'null']) {
+      expect(() => readComputeInputDocument(unpacked(bootData))).toThrow(/it is not a JSON object/);
+    }
   });
 });

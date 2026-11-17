@@ -65,7 +65,7 @@ describe('extractComputeArtifact', () => {
     expect(fs.readlinkSync(path.join(destDir, 'nested', 'asset-link.txt'))).toBe('asset.txt');
     expect(fs.statSync(path.join(destDir, 'nested', 'run.sh')).mode & 0o100).toBe(sourceExecutable);
     expect(extracted['bootstrap.js']).toContain(
-      'await main.run(boot.address, () => import(boot.appEntrypoint));',
+      'await main.run(boot.address, () => import(boot.appEntrypoint), boot.inputDocument);',
     );
     expect(JSON.parse(extracted['compute.bootstrap.json'] ?? '{}')).toEqual({
       moduleEntrypoint: './main.js',
