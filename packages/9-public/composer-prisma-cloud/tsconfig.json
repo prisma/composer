@@ -1,4 +1,7 @@
 {
   "extends": "../../../tsconfig.base.json",
-  "include": ["src", "tsdown.config.ts"]
+  "compilerOptions": {
+    "types": ["bun-types"]
+  },
+  "include": ["src", "test", "tsdown.config.ts"]
 }

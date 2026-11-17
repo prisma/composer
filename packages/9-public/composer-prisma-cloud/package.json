@@ -37,6 +37,7 @@
   "scripts": {
     "build": "tsdown && node scripts/rewrite-internal-dts.mjs",
     "clean": "rm -rf dist",
+    "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -81,6 +82,7 @@
     "@internal/streams": "workspace:0.39.0",
     "@internal/tsdown-config": "workspace:0.39.0",
     "@prisma/orm-postgres": "8.0.0-rc.23",
+    "@types/bun": "^1.3.13",
     "@types/node": "^26.0.1",
     "typescript": "^6.0.3"
   },
