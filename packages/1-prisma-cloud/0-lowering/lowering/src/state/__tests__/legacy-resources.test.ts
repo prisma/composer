@@ -1,8 +1,9 @@
 /**
  * Legacy state rows — written by Composer's own deleted `Prisma.Database` /
  * `Prisma.Connection` / `Prisma.ComputeService` / `Prisma.Deployment` /
- * `Prisma.EnvironmentVariable` resources — must round-trip through the hosted
- * state store into shapes upstream alchemy's providers ACCEPT. On the
+ * `Prisma.EnvironmentVariable` resources, and by upstream's `Prisma.App` /
+ * `Prisma.Deployment` before upstream renamed them — must round-trip through
+ * the hosted state store into shapes upstream alchemy's providers ACCEPT. On the
  * unchanged path that means: the provider's `diff` plans no action (so no
  * create and no replace), its `read` finds the physical resource instead of
  * returning `undefined` (which would plan a create), and `reconcile` keeps the
@@ -28,6 +29,7 @@ import {
   type StateService,
 } from 'alchemy/State';
 import { PlatformServices } from 'alchemy/Util/PlatformServices';
+import { sha256, sha256Object } from 'alchemy/Util/sha256';
 import * as ConfigProvider from 'effect/ConfigProvider';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
@@ -452,55 +454,57 @@ describe('legacy compute-family rows against upstream providers', () => {
     updatedAt: '2025-01-01T00:00:00.000Z',
   };
 
+  const apiBranch = {
+    id: 'branch_1',
+    type: 'branch',
+    url: 'https://api.prisma.test/v1/branches/branch_1',
+    gitName: 'main',
+    isDefault: true,
+    role: 'production',
+    createdAt: '2025-01-01T00:00:00.000Z',
+    updatedAt: '2025-01-01T00:00:00.000Z',
+    project: {
+      id: 'proj-1',
+      url: 'https://api.prisma.test/v1/projects/proj-1',
+      name: 'app',
+    },
+  };
+
   const computeApi = fakeManagementApi(({ method, path }) =>
     Effect.succeed(
       method === 'GET' && path === '/v1/services/app-1'
         ? data(apiApp)
         : method === 'GET' && path.startsWith('/v1/projects/proj-1/branches?')
-          ? page([
-              {
-                id: 'branch_1',
-                type: 'branch',
-                url: 'https://api.prisma.test/v1/branches/branch_1',
-                gitName: 'main',
-                isDefault: true,
-                role: 'production',
-                createdAt: '2025-01-01T00:00:00.000Z',
-                updatedAt: '2025-01-01T00:00:00.000Z',
-                project: {
-                  id: 'proj-1',
-                  url: 'https://api.prisma.test/v1/projects/proj-1',
-                  name: 'app',
-                },
-              },
-            ])
-          : method === 'GET' && path.startsWith('/v1/services/app-1/deployments')
-            ? page([apiDeployment])
-            : method === 'GET' && path === '/v1/deployments/dep-1'
-              ? data(apiDeployment)
-              : method === 'GET' && path === '/v1/environment-variables/var-1'
-                ? data(apiVariable)
-                : Response.json(
-                    { error: { code: 'unhandled', message: `${method} ${path}` } },
-                    { status: 400 },
-                  ),
+          ? page([apiBranch])
+          : method === 'GET' && path === '/v1/branches/branch_1'
+            ? data(apiBranch)
+            : method === 'GET' && path.startsWith('/v1/services/app-1/deployments')
+              ? page([apiDeployment])
+              : method === 'GET' && path === '/v1/deployments/dep-1'
+                ? data(apiDeployment)
+                : method === 'GET' && path === '/v1/environment-variables/var-1'
+                  ? data(apiVariable)
+                  : Response.json(
+                      { error: { code: 'unhandled', message: `${method} ${path}` } },
+                      { status: 400 },
+                    ),
     ),
   );
 
   const appService = () =>
     Effect.runPromise(
-      Prisma.App.Provider.pipe(
+      Prisma.ComputeService.Provider.pipe(
         Effect.flatMap((provider) => provider.modes?.live ?? Effect.die('Missing live provider')),
-        Effect.provide(Prisma.AppProvider().pipe(Layer.provide(computeApi))),
-      ) as Effect.Effect<Provider.ProviderService<Prisma.App>, never, never>,
+        Effect.provide(Prisma.ComputeServiceProvider().pipe(Layer.provide(computeApi))),
+      ) as Effect.Effect<Provider.ProviderService<Prisma.ComputeService>, never, never>,
     );
 
   const deploymentService = () =>
     Effect.runPromise(
-      Prisma.Deployment.Provider.pipe(
+      Prisma.ComputeVersion.Provider.pipe(
         Effect.flatMap((provider) => provider.modes?.live ?? Effect.die('Missing live provider')),
-        Effect.provide(Prisma.DeploymentProvider().pipe(Layer.provide(computeApi))),
-      ) as Effect.Effect<Provider.ProviderService<Prisma.Deployment>, never, never>,
+        Effect.provide(Prisma.ComputeVersionProvider().pipe(Layer.provide(computeApi))),
+      ) as Effect.Effect<Provider.ProviderService<Prisma.ComputeVersion>, never, never>,
     );
 
   const environmentVariableService = () =>
@@ -511,22 +515,25 @@ describe('legacy compute-family rows against upstream providers', () => {
       ) as Effect.Effect<Provider.ProviderService<Prisma.EnvironmentVariable>, never, never>,
     );
 
-  test('maps a legacy ComputeService row onto Prisma.App, idempotently', () => {
+  test('maps a legacy ComputeService row onto upstream Prisma.ComputeService, idempotently', () => {
     const migrated = migrateLegacyResourceState(legacyAppRow('branch_1')) as MigratedRow;
-    expect(migrated.resourceType).toBe('Prisma.App');
+    expect(migrated.resourceType).toBe('Prisma.ComputeService');
     expect(migrated.props).toEqual({
       project: 'proj-1',
       displayName: 'auth',
       regionId: 'us-east-1',
       branchId: 'branch_1',
     });
-    expect(migrated.attr).toMatchObject({
-      appId: 'app-1',
+    expect(migrated.attr).toEqual({
+      serviceId: 'app-1',
       name: 'auth',
       projectId: 'proj-1',
       regionId: 'us-east-1',
       branchId: 'branch_1',
-      appEndpointDomain: 'auth.prisma.app',
+      activeVersionId: null,
+      serviceEndpointDomain: 'auth.prisma.app',
+      url: 'https://auth.prisma.app',
+      createdAt: '1970-01-01T00:00:00.000Z',
     });
     expect(migrateLegacyResourceState(migrated)).toEqual(migrated);
   });
@@ -564,7 +571,7 @@ describe('legacy compute-family rows against upstream providers', () => {
         } as never)
         .pipe(Effect.provide(computeApi)),
     );
-    expect(read).toMatchObject({ appId: 'app-1', projectId: 'proj-1' });
+    expect(read).toMatchObject({ serviceId: 'app-1', projectId: 'proj-1' });
   });
 
   test('App on production: diff plans an UPDATE — the one-time branch-id repair, never a replace', async () => {
@@ -591,24 +598,20 @@ describe('legacy compute-family rows against upstream providers', () => {
     expect(diff).toEqual({ action: 'update' });
   });
 
-  test('maps a legacy Deployment row onto upstream props/attrs, idempotently', () => {
+  test('maps a legacy Deployment row onto upstream Prisma.ComputeVersion, idempotently', () => {
     const migrated = migrateLegacyResourceState(
       legacyDeploymentRow('/tmp/auth.tar.gz'),
     ) as MigratedRow;
-    expect(migrated.resourceType).toBe('Prisma.Deployment');
+    expect(migrated.resourceType).toBe('Prisma.ComputeVersion');
     expect(migrated.props).toEqual({
-      app: 'app-1',
+      service: 'app-1',
       artifactPath: '/tmp/auth.tar.gz',
       artifactContentType: 'application/gzip',
       portMapping: { http: 8080 },
       start: true,
-      promote: true,
     });
-    expect(migrated.attr).toMatchObject({
-      deploymentId: 'dep-1',
-      appId: 'app-1',
-      appEndpointDomain: 'auth.prisma.app',
-    });
+    expect(migrated.attr).toMatchObject({ versionId: 'dep-1', serviceId: 'app-1' });
+    expect(migrated.attr).not.toHaveProperty('appEndpointDomain');
     // Absent, not invented: upstream recovers a lost deployment by Foundry
     // version id, and a made-up one could claim a stranger's deployment.
     expect(migrated.attr['foundryVersionId']).toBeUndefined();
@@ -643,7 +646,7 @@ describe('legacy compute-family rows against upstream providers', () => {
         >,
       );
       // Read adopts the live deployment — no create planned for it.
-      expect(read).toMatchObject({ deploymentId: 'dep-1', appId: 'app-1', status: 'running' });
+      expect(read).toMatchObject({ versionId: 'dep-1', serviceId: 'app-1', status: 'running' });
 
       const diff = await Effect.runPromise(
         service
@@ -666,8 +669,208 @@ describe('legacy compute-family rows against upstream providers', () => {
       // Pinned, not tolerated silently: upstream's fingerprint hashes the
       // artifact digest with the content type, which a legacy row cannot
       // reproduce, so the first deploy after migration ships one fresh
-      // deployment per service (create-before-delete, artifact unchanged).
+      // version per service (create-before-delete, artifact unchanged).
       expect(diff).toEqual({ action: 'replace' });
+    } finally {
+      fs.rmSync(artifactPath, { force: true });
+    }
+  });
+
+  // The rows today's Composer writes: upstream's `Prisma.App` and
+  // `Prisma.Deployment`, before upstream renamed them.
+  const appRow = (): CreatedResourceState => ({
+    resourceType: 'Prisma.App',
+    namespace: undefined,
+    fqn: 'shop.auth',
+    logicalId: 'shop.auth',
+    instanceId: 'inst-app',
+    providerVersion: 0,
+    status: 'created',
+    downstream: ['shop.auth.deployment'],
+    bindings: [],
+    removalPolicy: 'destroy',
+    props: {
+      project: 'proj-1',
+      displayName: 'shop.auth',
+      regionId: 'us-east-1',
+      branchId: 'branch_1',
+      logicalId: 'shop.auth',
+    },
+    attr: {
+      appId: 'app-1',
+      name: 'shop.auth',
+      projectId: 'proj-1',
+      regionId: 'us-east-1',
+      branchId: 'branch_1',
+      latestDeploymentId: 'dep-0',
+      appEndpointDomain: 'auth.prisma.app',
+      createdAt: '2025-01-01T00:00:00.000Z',
+      logicalId: 'shop.auth',
+    },
+  });
+
+  const deploymentRow = (artifactPath: string, artifactHash: string): CreatedResourceState => ({
+    resourceType: 'Prisma.Deployment',
+    namespace: undefined,
+    fqn: 'shop.auth.deployment',
+    logicalId: 'shop.auth.deployment',
+    instanceId: 'inst-deploy',
+    providerVersion: 0,
+    status: 'created',
+    downstream: [],
+    bindings: [],
+    removalPolicy: 'destroy',
+    props: {
+      app: 'app-1',
+      artifactPath,
+      artifactContentType: 'application/gzip',
+      portMapping: { http: 8080 },
+      start: true,
+      promote: true,
+    },
+    attr: {
+      deploymentId: 'dep-1',
+      appId: 'app-1',
+      foundryVersionId: 'fv-1',
+      status: 'running',
+      previewDomain: 'dep-1.preview.prisma.app',
+      artifactHash,
+      appEndpointDomain: 'auth.prisma.app',
+      createdAt: '2025-01-01T00:00:00.000Z',
+    },
+  });
+
+  test('a Prisma.App row becomes a Prisma.ComputeService row with renamed attributes, idempotently', () => {
+    const migrated = migrateLegacyResourceState(appRow()) as MigratedRow;
+    expect(migrated.resourceType).toBe('Prisma.ComputeService');
+    expect(migrated.props).toEqual(appRow().props);
+    expect(migrated.attr).toEqual({
+      serviceId: 'app-1',
+      name: 'shop.auth',
+      projectId: 'proj-1',
+      regionId: 'us-east-1',
+      branchId: 'branch_1',
+      // Recorded when the App was last reconciled, so it says nothing about
+      // what the service serves now.
+      activeVersionId: null,
+      serviceEndpointDomain: 'auth.prisma.app',
+      url: 'https://auth.prisma.app',
+      createdAt: '2025-01-01T00:00:00.000Z',
+      logicalId: 'shop.auth',
+    });
+    expect(migrated['removalPolicy']).toBe('destroy');
+    expect(migrateLegacyResourceState(migrated)).toEqual(migrated);
+  });
+
+  test('a Prisma.Deployment row becomes a kept Prisma.ComputeVersion row without promote, idempotently', () => {
+    const migrated = migrateLegacyResourceState(
+      deploymentRow('/tmp/auth.tar.gz', 'sha-auth'),
+    ) as MigratedRow;
+    expect(migrated.resourceType).toBe('Prisma.ComputeVersion');
+    expect(migrated.props).toEqual({
+      service: 'app-1',
+      artifactPath: '/tmp/auth.tar.gz',
+      artifactContentType: 'application/gzip',
+      portMapping: { http: 8080 },
+      start: true,
+    });
+    expect(migrated.attr).toEqual({
+      versionId: 'dep-1',
+      serviceId: 'app-1',
+      foundryVersionId: 'fv-1',
+      status: 'running',
+      previewDomain: 'dep-1.preview.prisma.app',
+      artifactHash: 'sha-auth',
+      url: 'https://dep-1.preview.prisma.app',
+      createdAt: '2025-01-01T00:00:00.000Z',
+    });
+    // A replaced version stays on the platform for its rollback.
+    expect(migrated['removalPolicy']).toBe('retain');
+    expect(migrateLegacyResourceState(migrated)).toEqual(migrated);
+  });
+
+  test('a replaced Prisma.Deployment row renames its displaced generation too, and keeps it', () => {
+    const replaced = {
+      ...deploymentRow('/tmp/auth-2.tar.gz', 'sha-2'),
+      status: 'replaced',
+      old: deploymentRow('/tmp/auth-1.tar.gz', 'sha-1'),
+    };
+    const migrated = migrateLegacyResourceState(replaced) as MigratedRow & { old: MigratedRow };
+    expect(migrated.resourceType).toBe('Prisma.ComputeVersion');
+    expect(migrated.old.resourceType).toBe('Prisma.ComputeVersion');
+    expect(migrated.old.props).toMatchObject({
+      service: 'app-1',
+      artifactPath: '/tmp/auth-1.tar.gz',
+    });
+    expect(migrated.old.props).not.toHaveProperty('promote');
+    expect(migrated.old.attr).toMatchObject({ versionId: 'dep-1', serviceId: 'app-1' });
+    expect(migrated.old['removalPolicy']).toBe('retain');
+  });
+
+  test('a migrated Prisma.App row attached to a version plans an in-place update that keeps its ID and URL', async () => {
+    const migrated = migrateLegacyResourceState(appRow()) as MigratedRow;
+    const service = await appService();
+    if (service.diff === undefined) throw new Error('upstream provider must expose diff');
+    const diff = await Effect.runPromise(
+      service
+        .diff({
+          id: 'shop.auth',
+          fqn: 'shop.auth',
+          instanceId: 'inst-app',
+          olds: migrated.props,
+          news: migrated.props,
+          output: migrated.attr,
+          session: undefined,
+          bindings: [],
+          newBindings: [
+            {
+              sid: 'Prisma.ComputeService.ActiveVersion(shop.auth.deployment)',
+              data: { versionId: 'dep-1' },
+            },
+          ],
+        } as never)
+        .pipe(Effect.provide(computeApi)),
+    );
+    expect(diff).toMatchObject({ action: 'update' });
+    expect((diff as { stables: string[] }).stables).toEqual(
+      expect.arrayContaining(['serviceId', 'url', 'serviceEndpointDomain']),
+    );
+  });
+
+  test('a migrated Prisma.Deployment row with unchanged artifact plans an update, never a new version', async () => {
+    const artifactPath = path.join(os.tmpdir(), `renamed-artifact-${process.pid}.tar.gz`);
+    fs.writeFileSync(artifactPath, 'artifact-bytes');
+    try {
+      const artifactHash = await Effect.runPromise(
+        Effect.gen(function* () {
+          const digest = yield* sha256(fs.readFileSync(artifactPath));
+          return yield* sha256Object({ artifact: digest, contentType: 'application/gzip' });
+        }),
+      );
+      const migrated = migrateLegacyResourceState(
+        deploymentRow(artifactPath, artifactHash),
+      ) as MigratedRow;
+      const service = await deploymentService();
+      if (service.diff === undefined) throw new Error('upstream provider must expose diff');
+      const diff = await Effect.runPromise(
+        service
+          .diff({
+            id: 'shop.auth.deployment',
+            fqn: 'shop.auth.deployment',
+            instanceId: 'inst-deploy',
+            olds: migrated.props,
+            news: migrated.props,
+            output: migrated.attr,
+            session: undefined,
+            bindings: [],
+          } as never)
+          .pipe(Effect.provide(PlatformServices), Effect.provide(computeApi)) as Effect.Effect<
+          unknown,
+          never,
+          never
+        >,
+      );
+      expect(diff).toEqual({ action: 'update' });
     } finally {
       fs.rmSync(artifactPath, { force: true });
     }
@@ -830,7 +1033,7 @@ describe('legacy compute-family rows against upstream providers', () => {
       resourceType: 'PrismaComposer.ComputeService',
     };
     expect((migrateLegacyResourceState(composerEra) as MigratedRow).resourceType).toBe(
-      'Prisma.App',
+      'Prisma.ComputeService',
     );
     const composerEnv = {
       ...legacyEnvRow('COMPOSER_AUTH_PORT'),

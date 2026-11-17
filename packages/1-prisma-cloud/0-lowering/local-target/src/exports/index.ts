@@ -13,4 +13,5 @@ export * from '../pre-environment-dev-state.ts';
 export * from '../prisma-dev-module.ts';
 export * from '../providers.ts';
 export * from '../resolve-package-entry.ts';
+export * from '../retired-compute-rows.ts';
 export * from '../teardown.ts';

@@ -7,6 +7,18 @@
  * carried are left absent — upstream recomputes them from observed API state.
  * Legacy `DATABASE_URL` claim rows are retired ({@link retireDatabaseUrlClaimRow}).
  *
+ * Upstream renamed `Prisma.App` to `Prisma.ComputeService` and
+ * `Prisma.Deployment` to `Prisma.ComputeVersion`, with `app`, `appId`,
+ * `deploymentId` and `appEndpointDomain` renamed to `service`, `serviceId`,
+ * `versionId` and `serviceEndpointDomain`. Upstream reads rows of the old
+ * types itself, but a service and the version attached to it with
+ * `Prisma.activateVersion` form a cycle, and for a cycle the engine hands the
+ * service's saved attributes to the version before the service's provider
+ * renames them: the version would receive no service id and the deploy would
+ * stop with `ComputeServiceIdUnavailable`. So every row of either type, in any
+ * shape an earlier Composer wrote, is rewritten here to the new type and
+ * names before Alchemy plans.
+ *
  * Operator-visible one-time effects of the first migrated deploy (non-production
  * environment database rename + default-connection rotation, one fresh deployment per
  * service) are documented in docs/guides/deploying.md. Hosted state only:
@@ -44,6 +56,7 @@ type Family =
   | 'BucketAccessKey';
 
 const FAMILY_BY_LEGACY_TYPE: Readonly<Record<string, Family>> = {
+  'Prisma.App': 'App',
   'Prisma.Project': 'Project',
   'Prisma.Database': 'Database',
   'Prisma.Connection': 'Connection',
@@ -67,18 +80,19 @@ const UPSTREAM_TYPE: Readonly<Record<Family, string>> = {
   Project: 'Prisma.Project',
   Database: 'Prisma.Database',
   Connection: 'Prisma.Connection',
-  App: 'Prisma.App',
-  Deployment: 'Prisma.Deployment',
+  App: 'Prisma.ComputeService',
+  Deployment: 'Prisma.ComputeVersion',
   EnvironmentVariable: 'Prisma.EnvironmentVariable',
   Bucket: 'Prisma.Bucket',
   BucketAccessKey: 'Prisma.BucketAccessKey',
 };
 
 /**
- * Four of the six families keep the type-id they always had, so the type-id
- * alone cannot say whether a row is legacy or already upstream's. Each shape
- * is told apart by a props field only the legacy one has, which is also what
- * makes the whole rewrite idempotent.
+ * Several families keep a type-id an earlier shape also used (`Prisma.ComputeService`
+ * was Composer's own type-id before it was upstream's), so the type-id alone
+ * cannot say whether a row is legacy or already upstream's. Each shape is told
+ * apart by a props field only the legacy one has, which is also what makes the
+ * whole rewrite idempotent.
  */
 const isLegacyProps = (family: Family, props: Record<string, unknown>): boolean => {
   switch (family) {
@@ -101,8 +115,22 @@ const isLegacyProps = (family: Family, props: Record<string, unknown>): boolean 
   }
 };
 
+/**
+ * `Prisma.Deployment`'s props under `Prisma.ComputeVersion`'s names: `app` is
+ * `service`, and `promote` is gone, because the service now makes its attached
+ * version live. Dropping it also keeps the first deploy from planning a change
+ * for a prop that no longer exists.
+ */
+const versionProps = (props: Record<string, unknown>): Record<string, unknown> => {
+  if (!('app' in props)) return props;
+  const { app, promote: _promotedItself, ...rest } = props;
+  return { ...rest, service: app };
+};
+
 const migrateProps = (family: Family, props: unknown): unknown => {
-  if (!isRecord(props) || !isLegacyProps(family, props)) return props;
+  if (!isRecord(props)) return props;
+  if (family === 'Deployment' && !isLegacyProps(family, props)) return versionProps(props);
+  if (!isLegacyProps(family, props)) return props;
   switch (family) {
     case 'Project':
       // Upstream ProjectProps carry no workspaceId; keep only the name.
@@ -124,17 +152,16 @@ const migrateProps = (family: Family, props: unknown): unknown => {
         ...(props['branchId'] !== undefined ? { branchId: props['branchId'] } : {}),
       };
     case 'Deployment':
-      // The legacy `environment` prop is dropped: upstream's Deployment has no
-      // such prop, and the ordering edge it carried rides `app` instead (see
-      // compute/deployment-edge.ts). `start`/`promote` are what the legacy
-      // provider always did unconditionally.
+      // The legacy `environment` prop is dropped: upstream's version has no
+      // such prop, and the ordering edge it carried rides `service` instead
+      // (see compute/deployment-edge.ts). `start` is what the legacy provider
+      // always did unconditionally.
       return {
-        app: props['computeServiceId'],
+        service: props['computeServiceId'],
         artifactPath: props['artifactPath'],
         artifactContentType: ARTIFACT_CONTENT_TYPE,
         ...(props['port'] !== undefined ? { portMapping: { http: props['port'] } } : {}),
         start: true,
-        promote: true,
       };
     case 'EnvironmentVariable': {
       const value = props['value'];
@@ -206,6 +233,50 @@ const claimedKeyOf = (family: Family, props: unknown, attr: unknown): string | u
   return typeof key === 'string' && CLAIMED_DATABASE_URL_KEYS.has(key) ? key : undefined;
 };
 
+/** An HTTPS URL from a platform domain, as upstream builds a service's `url`. */
+const httpsUrl = (domain: unknown): string | undefined =>
+  typeof domain !== 'string' || domain === ''
+    ? undefined
+    : domain.startsWith('http://') || domain.startsWith('https://')
+      ? domain
+      : `https://${domain}`;
+
+/**
+ * `Prisma.App`'s attributes under `Prisma.ComputeService`'s names.
+ * `latestDeploymentId` is not carried over as the active version: `Prisma.App`
+ * recorded it when it was last reconciled, usually at create, so it does not
+ * say what the service serves now. Upstream makes the same choice for the rows
+ * it reads itself, and observes the live version before every promotion.
+ */
+const serviceAttr = (attr: Record<string, unknown>): Record<string, unknown> => {
+  if (!('appId' in attr)) return attr;
+  const { appId, latestDeploymentId: _recordedAtCreate, appEndpointDomain, ...rest } = attr;
+  const url = httpsUrl(appEndpointDomain);
+  return {
+    ...rest,
+    serviceId: appId,
+    activeVersionId: null,
+    ...(appEndpointDomain !== undefined ? { serviceEndpointDomain: appEndpointDomain } : {}),
+    ...(url !== undefined ? { url } : {}),
+  };
+};
+
+/**
+ * `Prisma.Deployment`'s attributes under `Prisma.ComputeVersion`'s names. A
+ * version no longer records the service's stable domain; its `url` is its own
+ * preview URL.
+ */
+const versionAttr = (attr: Record<string, unknown>): Record<string, unknown> => {
+  if (!('deploymentId' in attr)) return attr;
+  const { deploymentId, appId, appEndpointDomain: _promotedTo, ...rest } = attr;
+  return {
+    ...rest,
+    versionId: deploymentId,
+    serviceId: appId,
+    url: httpsUrl(rest['previewDomain']),
+  };
+};
+
 const migrateAttr = (family: Family, attr: unknown, props: unknown): unknown => {
   if (!isRecord(attr)) return attr;
   const oldProps = isRecord(props) ? props : {};
@@ -247,8 +318,10 @@ const migrateAttr = (family: Family, attr: unknown, props: unknown): unknown => 
       };
     }
     case 'App': {
-      if (typeof attr['id'] !== 'string' || 'appId' in attr) return attr;
-      return {
+      if (typeof attr['id'] !== 'string' || 'appId' in attr || 'serviceId' in attr) {
+        return serviceAttr(attr);
+      }
+      return serviceAttr({
         appId: attr['id'],
         name: attr['name'] ?? oldProps['name'],
         projectId: oldProps['projectId'],
@@ -266,11 +339,11 @@ const migrateAttr = (family: Family, attr: unknown, props: unknown): unknown => 
           ? { appEndpointDomain: attr['endpointDomain'] }
           : {}),
         createdAt: EPOCH,
-      };
+      });
     }
     case 'Deployment': {
-      if (typeof attr['deploymentId'] !== 'string' || 'appId' in attr) return attr;
-      return {
+      if (typeof attr['deploymentId'] !== 'string' || 'appId' in attr) return versionAttr(attr);
+      return versionAttr({
         deploymentId: attr['deploymentId'],
         appId: oldProps['computeServiceId'],
         // `foundryVersionId` is deliberately absent, not invented: upstream
@@ -281,7 +354,7 @@ const migrateAttr = (family: Family, attr: unknown, props: unknown): unknown => 
         previewDomain: undefined,
         appEndpointDomain: attr['deployedUrl'],
         createdAt: undefined,
-      };
+      });
     }
     case 'EnvironmentVariable': {
       if (typeof attr['id'] !== 'string' || 'environmentVariableId' in attr) return attr;
@@ -361,6 +434,11 @@ const migrateResourceRow = (row: Record<string, unknown>): Record<string, unknow
     resourceType: UPSTREAM_TYPE[family],
     ...('props' in row ? { props: migrateProps(family, row['props']) } : {}),
     ...('attr' in row ? { attr: migrateAttr(family, row['attr'], row['props']) } : {}),
+    // A version's removal policy is `retain`, so the version a deploy replaces
+    // stays on the platform for its rollback. A row the engine wrote for a
+    // `Prisma.Deployment` recorded the old default, `destroy`; read as written,
+    // the first deploy after the rename could delete the replaced version.
+    ...(family === 'Deployment' && 'removalPolicy' in row ? { removalPolicy: 'retain' } : {}),
   };
 
   // Replacement rows nest the displaced generation under `old` (a full row);

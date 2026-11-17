@@ -16,8 +16,10 @@ import {
   movePreEnvironmentDevState,
   readOrCreateFingerprintKey,
   removeRetiredSecretsFile,
+  renameRetiredComputeRows,
 } from '@internal/local-target';
 import { configurationText } from '../configuration-text.ts';
+import { prismaCloudContainerOf } from '../container.ts';
 import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
 import { addReader, missingVariablesText } from '../missing-variables-text.ts';
 import { platformVariableNodes } from '../platform-variable.ts';
@@ -99,6 +101,8 @@ export async function runDevPreflight(input: PreflightInput): Promise<DevPreflig
   // No `node:path` import (invariant 5) — local dev is POSIX-only (spec's
   // Windows note), so a plain `/`-join is exact, not an approximation.
   movePreEnvironmentDevState(process.cwd());
+  const app = prismaCloudContainerOf(input.container).input.appName;
+  renameRetiredComputeRows(`${process.cwd()}/.alchemy/state/${app}/${input.environment}`);
   const devDir = `${process.cwd()}/${devEnvironmentDir(input.environment)}`;
   await removeRetiredSecretsFile(`${process.cwd()}/${DEV_DIR}`);
   await removeRetiredSecretsFile(devDir);
