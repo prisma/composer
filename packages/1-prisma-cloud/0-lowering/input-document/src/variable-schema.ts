@@ -1,4 +1,4 @@
-import { type OutputUnit, type Schema, Validator } from '@cfworker/json-schema';
+import { type OutputUnit, Validator } from '@cfworker/json-schema';
 import { isPlainObject } from './plain-object.ts';
 
 export type JsonSchema = Readonly<Record<string, unknown>>;
@@ -125,6 +125,16 @@ const doesNotFitError = (name: string, failure: OutputUnit): Error =>
 const uncheckedError = (name: string): Error =>
   new Error(`The platform variable "${name}" could not be checked against its schema.`);
 
+function refuseInexactNumbers(name: string, value: unknown): void {
+  let exact: boolean;
+  try {
+    exact = holdsOnlyExactNumbers(value);
+  } catch {
+    throw uncheckedError(name);
+  }
+  if (!exact) throw inexactNumberError(name);
+}
+
 function holdsOnlyExactNumbers(value: unknown): boolean {
   if (typeof value === 'number') {
     return Number.isFinite(value) && (!Number.isInteger(value) || Number.isSafeInteger(value));
@@ -137,15 +147,12 @@ function holdsOnlyExactNumbers(value: unknown): boolean {
 const STOP_KEYWORDS: ReadonlySet<string> = new Set(['anyOf', 'oneOf', 'not', 'if']);
 
 function namedFailure(errors: readonly OutputUnit[]): OutputUnit | undefined {
+  const failures = errors.filter((failure) => failure.keyword !== 'false');
   let index = 0;
-  let current = errors[index];
+  let current = failures[index];
   while (current !== undefined && !STOP_KEYWORDS.has(current.keyword)) {
-    const next = errors[index + 1];
-    if (
-      next === undefined ||
-      next.keyword === 'false' ||
-      !next.keywordLocation.startsWith(`${current.keywordLocation}/`)
-    ) {
+    const next = failures[index + 1];
+    if (next === undefined || !next.keywordLocation.startsWith(`${current.keywordLocation}/`)) {
       break;
     }
     index += 1;
@@ -162,10 +169,27 @@ function parseJson(name: string, text: string, schema: JsonSchema): unknown {
   }
 }
 
+function copyOfValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(copyOfValue);
+  return isPlainObject(value) ? copyOfSchema(value) : value;
+}
+
+function copyOfSchema(schema: JsonSchema): Record<string, unknown> {
+  const copy: Record<string, unknown> = {};
+  for (const [key, member] of Object.entries(schema)) {
+    Object.defineProperty(copy, key, {
+      value: copyOfValue(member),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  }
+  return copy;
+}
+
 function failureOf(schema: JsonSchema, value: unknown): OutputUnit | 'valid' | 'unchecked' {
   try {
-    const detached: Schema = JSON.parse(JSON.stringify(schema));
-    const result = new Validator(detached, '2020-12', true).validate(value);
+    const result = new Validator(copyOfSchema(schema), '2020-12', true).validate(value);
     if (result.valid) return 'valid';
     return namedFailure(result.errors) ?? 'unchecked';
   } catch {
@@ -184,13 +208,7 @@ export function decodeVariableText(
   let value: unknown = text;
   if (kind === 'never-text') {
     value = parseJson(name, text, schema);
-    let exact: boolean;
-    try {
-      exact = holdsOnlyExactNumbers(value);
-    } catch {
-      throw uncheckedError(name);
-    }
-    if (!exact) throw inexactNumberError(name);
+    refuseInexactNumbers(name, value);
   }
   const failure = failureOf(schema, value);
   if (failure === 'unchecked') throw uncheckedError(name);

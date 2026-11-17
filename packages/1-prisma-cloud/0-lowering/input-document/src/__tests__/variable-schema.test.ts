@@ -302,11 +302,27 @@ describe('boot refuses a typed platform variable whose text does not decode or f
   });
 
   test('a document nested too deeply to check fails with the fixed message', () => {
-    const depth = 50_000;
-    const text = `${'['.repeat(depth)}1${']'.repeat(depth)}`;
-    expect(bootFailure(RECURSIVE_UNION_SELF_REF, text)).toBe(
-      'The platform variable "SMTP_PORT" could not be checked against its schema.',
+    const nested = (depth: number) => `${'['.repeat(depth)}1${']'.repeat(depth)}`;
+    const message = 'The platform variable "SMTP_PORT" could not be checked against its schema.';
+    expect(bootFailure(RECURSIVE_UNION_SELF_REF, nested(50_000))).toBe(message);
+    expect(bootFailure({ type: 'array' }, nested(200_000))).toBe(message);
+  });
+
+  test('a failure under a false schema is never named, so its value-built location stays out', () => {
+    const fails = (rest: string) =>
+      `The platform variable "SMTP_PORT" does not fit its schema: it fails ${rest}.`;
+    expect(bootFailure({ type: 'array', contains: false, minContains: 1 }, '[1]')).toBe(
+      fails('"minContains" at #/minContains'),
     );
+    expect(
+      bootFailure(
+        {
+          type: 'object',
+          additionalProperties: { type: 'array', contains: false, minContains: 1 },
+        },
+        '{"additionalProperties":[1]}',
+      ),
+    ).toBe(fails('"minContains" at #/additionalProperties/minContains'));
   });
 });
 
