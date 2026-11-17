@@ -407,6 +407,12 @@ await main.run(boot.address, () => import(boot.appEntrypoint), boot.inputDocumen
   return { path: outPath, sha256 };
 }
 
+function errorCode(error: unknown): string | undefined {
+  return error instanceof Error && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : undefined;
+}
+
 function bootDataUnreadableError(artifactDir: string, reason: string): Error {
   return new Error(
     `the artifact unpacked in ${artifactDir} has an unreadable compute.bootstrap.json (${reason}) — repackage it with a current @prisma/composer.`,
@@ -422,8 +428,14 @@ export function readComputeInputDocument(artifactDir: string): string | undefine
   let text: string;
   try {
     text = fs.readFileSync(path.join(artifactDir, 'compute.bootstrap.json'), 'utf8');
-  } catch {
-    throw bootDataUnreadableError(artifactDir, 'the file is missing');
+  } catch (error) {
+    const code = errorCode(error);
+    throw bootDataUnreadableError(
+      artifactDir,
+      code === 'ENOENT'
+        ? 'the file is missing'
+        : `the file could not be read (${code ?? String(error)})`,
+    );
   }
   let parsed: unknown;
   try {

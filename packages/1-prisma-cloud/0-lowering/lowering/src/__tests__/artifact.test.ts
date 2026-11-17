@@ -597,6 +597,13 @@ describe('readComputeInputDocument', () => {
     expect(() => readComputeInputDocument(unpacked(undefined))).toThrow(/the file is missing/);
   });
 
+  test('fails for a boot file that cannot be read, naming the error code', () => {
+    const dir = unpacked(undefined);
+    fs.mkdirSync(path.join(dir, 'compute.bootstrap.json'));
+
+    expect(() => readComputeInputDocument(dir)).toThrow(/the file could not be read \(EISDIR\)/);
+  });
+
   test('fails for a boot file that is not JSON', () => {
     expect(() => readComputeInputDocument(unpacked('{not json'))).toThrow(/it is not JSON/);
   });
