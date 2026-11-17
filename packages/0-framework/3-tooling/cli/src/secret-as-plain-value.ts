@@ -33,7 +33,7 @@ export function refuseSecretsInRootInput(
     if (name === undefined) continue;
     throw new CliStructuredError(
       'CONFIG.SECRET_AS_PLAIN_VALUE',
-      `${where} holds the value of the secret "${name}", which a platform secret in the graph reads. ${consequence}`,
+      `${where} holds the value of the platform secret "${name}". ${consequence}`,
       {
         fix: `Pass the value of the platform secret "${name}" to where this value is used, or give this plain value text that does not contain the value of "${name}".`,
       },
@@ -51,7 +51,7 @@ export function refuseSecretsInPlainVariables(
     if (name === undefined) continue;
     throw new CliStructuredError(
       'CONFIG.SECRET_AS_PLAIN_VALUE',
-      `The platform variable "${variable}", which prisma dev read from the \`config\` adapters, holds the value of the secret "${name}". Composer hands the second process every plain value in a file, and never writes a secret to a file.`,
+      `The platform variable "${variable}", which prisma dev read from the \`config\` adapters, holds the value of the platform secret "${name}". Composer hands the second process every plain value in a file, and never writes a secret to a file.`,
       {
         fix: `Keep the value of "${name}" out of the platform variable "${variable}", or give "${variable}" a different value.`,
       },

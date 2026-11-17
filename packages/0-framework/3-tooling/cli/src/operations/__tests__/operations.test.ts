@@ -4604,105 +4604,138 @@ describe('the second process reads what the first process read', () => {
     }
   }, 20_000);
 
-  const refusedPlainValues = [
-    {
-      what: 'a root input field holding the text under a secrets key',
-      configuration: { ...values(), GREETING: 'plain-SECRET-91' },
-      secrets: { S13_SECRET: 'plain-SECRET-91' },
-      where: 'Root input field input.GREETING',
-    },
-  ];
-  for (const { what, configuration, secrets, where } of refusedPlainValues) {
-    test(`deploy refuses ${what}, before creating anything or running the converge`, async () => {
+  const holdingTheSecret = () => ({ ...values(), GREETING: 'plain-SECRET-91' });
+  const theSecret = () => ({ S13_SECRET: 'plain-SECRET-91' });
+
+  test('deploy refuses a root input field holding the text under a secrets key, before creating anything or running the converge', async () => {
+    const app = makeSecondProcessAppDir();
+    const containerCalls: ContainerCall[] = [];
+    let converged = false;
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig({
+            ...fakeConfig({}, { calls: containerCalls }),
+            config: [holdingTheSecret],
+            secrets: [theSecret],
+          }),
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          appConvergeEntry: {
+            lower: () => {
+              throw new Error('lower() must not run');
+            },
+            converge: async () => {
+              converged = true;
+              return APPLIED;
+            },
+          },
+        },
+      ),
+    );
+
+    if (result.ok) throw new Error('the deploy should fail');
+    expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
+    expect(result.failure.message).toBe(
+      'Root input field input.GREETING holds the value of the platform secret "S13_SECRET". A deploy sends every plain value Load read to the platform as plain configuration, and never sends a secret that way.',
+    );
+    expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
+    expect(containerCalls).toEqual([]);
+    expect(converged).toBe(false);
+  });
+
+  test('destroy refuses a root input field holding a secret the `config` adapters also hold, before writing any file or starting the second process', async () => {
+    const app = makeSecondProcessAppDir();
+    fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
+    fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
+    let started = false;
+
+    const result = await silently(() =>
+      destroyWithDeps(
+        {
+          config: composerConfig({
+            ...fakeConfig(),
+            config: [() => ({ ...holdingTheSecret(), ...theSecret() })],
+            secrets: [throwingAdapter('destroy must not read secrets')],
+          }),
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => {
+            started = true;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    if (result.ok) throw new Error('the destroy should fail');
+    expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
+    expect(result.failure.message).toBe(
+      'Root input field input.GREETING holds the value of the platform secret "S13_SECRET". Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.',
+    );
+    expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
+    expect(started).toBe(false);
+    expect(
+      filesUnder(app.dir).filter((file) => path.basename(file).startsWith('app-configuration')),
+    ).toEqual([]);
+  });
+
+  test.skipIf(process.platform === 'win32')(
+    'dev refuses a root input field holding the text under a secrets key, before writing any file or starting the second process',
+    async () => {
       const app = makeSecondProcessAppDir();
-      const containerCalls: ContainerCall[] = [];
-      let converged = false;
+      const attachment: LocalTargetAttachment = {
+        startServices: () => Promise.resolve(),
+        stopApp: () => Promise.resolve(),
+        endpoints: () => Promise.resolve([]),
+        logs: async function* () {},
+      };
+      let started = false;
 
       const result = await silently(() =>
-        deployWithDeps(
+        devWithDeps(
           {
             config: composerConfig({
-              ...fakeConfig({}, { calls: containerCalls }),
-              config: [() => configuration],
-              secrets: [() => secrets],
+              ...devConfigWith(attachment),
+              config: [holdingTheSecret],
+              secrets: [theSecret],
             }),
             entry: app.entryPath,
-            environment: 'staging',
             cwd: app.dir,
+            detach: true,
           },
           {
             runAssembler: fakeAssembler,
-            appConvergeEntry: {
-              lower: () => {
-                throw new Error('lower() must not run');
-              },
-              converge: async () => {
-                converged = true;
-                return APPLIED;
-              },
+            alchemy: async () => {
+              started = true;
+              return { exitCode: 0, signal: null };
             },
           },
         ),
       );
 
-      if (result.ok) throw new Error('the deploy should fail');
+      if (result.ok) throw new Error('dev should fail');
       expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
       expect(result.failure.message).toBe(
-        `${where} holds the value of the secret "S13_SECRET", which a platform secret in the graph reads. A deploy sends every plain value Load read to the platform as plain configuration, and never sends a secret that way.`,
+        'Root input field input.GREETING holds the value of the platform secret "S13_SECRET". Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.',
       );
       expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
-      expect(containerCalls).toEqual([]);
-      expect(converged).toBe(false);
-    });
-
-    test.skipIf(process.platform === 'win32')(
-      `dev refuses ${what}, before writing any file or starting the second process`,
-      async () => {
-        const app = makeSecondProcessAppDir();
-        const attachment: LocalTargetAttachment = {
-          startServices: () => Promise.resolve(),
-          stopApp: () => Promise.resolve(),
-          endpoints: () => Promise.resolve([]),
-          logs: async function* () {},
-        };
-        let started = false;
-
-        const result = await silently(() =>
-          devWithDeps(
-            {
-              config: composerConfig({
-                ...devConfigWith(attachment),
-                config: [() => configuration],
-                secrets: [() => secrets],
-              }),
-              entry: app.entryPath,
-              cwd: app.dir,
-              detach: true,
-            },
-            {
-              runAssembler: fakeAssembler,
-              alchemy: async () => {
-                started = true;
-                return { exitCode: 0, signal: null };
-              },
-            },
-          ),
-        );
-
-        if (result.ok) throw new Error('dev should fail');
-        expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
-        expect(result.failure.message).toBe(
-          `${where} holds the value of the secret "S13_SECRET", which a platform secret in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
-        );
-        expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
-        expect(started).toBe(false);
-        expect(
-          filesUnder(app.dir).filter((file) => path.basename(file).startsWith('app-configuration')),
-        ).toEqual([]);
-      },
-      15_000,
-    );
-  }
+      expect(started).toBe(false);
+      expect(
+        filesUnder(app.dir).filter((file) => path.basename(file).startsWith('app-configuration')),
+      ).toEqual([]);
+    },
+    15_000,
+  );
 
   test('a known limit: an adapter failure before Load is not redacted by a value only a secret source names', async () => {
     const app = makeSecondProcessAppDir();

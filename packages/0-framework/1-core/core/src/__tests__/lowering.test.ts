@@ -44,11 +44,7 @@ import {
   resource,
   service,
 } from '../node.ts';
-import {
-  PREFLIGHT_FINDINGS_ENV_VAR,
-  type PreflightFindings,
-  preflightEnvVarName,
-} from '../preflight-transport.ts';
+import { preflightEnvVarName } from '../preflight-transport.ts';
 import { resolve } from '../value.ts';
 import { anyInputSchema, conn, plainValue, providerContract } from './helpers.ts';
 
@@ -655,7 +651,7 @@ describe('lowering a module root — a single service', () => {
         ),
       ),
     ).toThrow(
-      'The deploy\'s second process built a different graph from the one Composer checked in its first process. Only in the second process: "shop.echo". Only in the first process: "shop.gone". A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
+      'lower() built a different graph from the one Composer checked first. Only in the graph lower() built: "shop.echo". Only in the graph Composer checked: "shop.gone". A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
     );
   });
 
@@ -1740,24 +1736,14 @@ describe('container threading through lowering() (the parent→child transport r
     expect(seen).toEqual(['passed', undefined]);
   });
 
-  test('transportedLowerInputs reads the three transports a generated stack file was given', () => {
+  test('transportedLowerInputs reads the two transports a generated stack file was given', () => {
     const { descriptor, config } = fakeExtensionWithContainer();
     const instanceInput = { appName: 'shop', environment: 'production' };
-    const findings: PreflightFindings = {
-      unset: [
-        {
-          name: 'MAIL_KEY',
-          readers: [{ kind: 'unread', node: 'shop.mail' }],
-          commands: ["prisma project env add 'MAIL_KEY=<value>' --project 'proj'"],
-        },
-      ],
-    };
 
     const inputs = withEnv(
       {
         [containerEnvVarName(descriptor.id)]: JSON.stringify(instanceInput),
         [preflightEnvVarName(descriptor.id)]: 'payload',
-        [PREFLIGHT_FINDINGS_ENV_VAR]: JSON.stringify(findings),
       },
       () => transportedLowerInputs(config),
     );
@@ -1765,37 +1751,14 @@ describe('container threading through lowering() (the parent→child transport r
       {
         [containerEnvVarName(descriptor.id)]: undefined,
         [preflightEnvVarName(descriptor.id)]: '',
-        [PREFLIGHT_FINDINGS_ENV_VAR]: '',
       },
       () => transportedLowerInputs(config),
     );
 
     expect(inputs.containers.get(descriptor.id)).toEqual(new FakeContainerInstance(instanceInput));
     expect([...inputs.preflightPayloads]).toEqual([[descriptor.id, 'payload']]);
-    expect(inputs.findings).toEqual(findings);
     expect(blanked.containers.size).toBe(0);
     expect(blanked.preflightPayloads.size).toBe(0);
-    expect(blanked.findings).toEqual({ unset: [] });
-  });
-
-  test('findings that do not decode fail lowering before any node is lowered, for a caller that passes no containers or preflight payloads', () => {
-    const { config, seen } = fakeExtensionWithContainer();
-
-    withEnv({ [PREFLIGHT_FINDINGS_ENV_VAR]: 'not json' }, () => {
-      expect(() =>
-        run(lowering(dbModule(), config, { name: 'hello', bundles: {}, report: () => undefined })),
-      ).toThrow(/could not be read in the second process/);
-    });
-    expect(seen).toEqual([]);
-  });
-
-  test('a caller that passes both containers and preflight payloads never reads the findings variable', () => {
-    const { config, seen } = fakeExtensionWithContainer();
-
-    withEnv({ [PREFLIGHT_FINDINGS_ENV_VAR]: 'not json' }, () => {
-      run(lowering(dbModule(), config, opts()));
-    });
-    expect(seen).toHaveLength(2);
   });
 
   test.each([
@@ -1804,16 +1767,14 @@ describe('container threading through lowering() (the parent→child transport r
   ] as const)('a caller that passes only %s is refused, naming %s', (passed, missing, given) => {
     const { config, seen } = fakeExtensionWithContainer();
 
-    withEnv({ [PREFLIGHT_FINDINGS_ENV_VAR]: '' }, () => {
-      expect(() =>
-        run(lowering(dbModule(), config, { name: 'hello', bundles: {}, ...given })),
-      ).toThrow(
-        `lower() was passed ${passed} without ${missing}. Pass both, or neither to read both from the environment.`,
-      );
-      expect(() => lower(dbModule(), config, { name: 'hello', bundles: {}, ...given })).toThrow(
-        `without ${missing}`,
-      );
-    });
+    expect(() =>
+      run(lowering(dbModule(), config, { name: 'hello', bundles: {}, ...given })),
+    ).toThrow(
+      `lower() was passed ${passed} without ${missing}. Pass both, or neither to read both from the environment.`,
+    );
+    expect(() => lower(dbModule(), config, { name: 'hello', bundles: {}, ...given })).toThrow(
+      `without ${missing}`,
+    );
     expect(seen).toEqual([]);
   });
 

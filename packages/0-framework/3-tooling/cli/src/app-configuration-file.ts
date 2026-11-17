@@ -157,7 +157,7 @@ export function prepareSecondProcess(input: {
 }
 
 function missingVariable(name: string, what: string): string {
-  return `${name} is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which ${what}.`;
+  return `${name} is not set. This stack file runs as the second process of a Composer destroy or prisma dev, which ${what}.`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -216,7 +216,9 @@ export function readAppConfigurationFile(
     );
   }
   const notComposers = (what: string) =>
-    new Error(`The app configuration file ${file} is not one Composer wrote: ${what}.`);
+    new Error(
+      `The app configuration file ${file} is not in the shape this version of Composer reads: ${what}. The usual cause is a \`prisma\` CLI and an app on different Composer versions. Put the \`prisma\` CLI and the app's \`@prisma/composer\` on the same version.`,
+    );
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
