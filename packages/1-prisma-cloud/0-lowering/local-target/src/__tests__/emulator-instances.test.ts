@@ -67,7 +67,11 @@ function artifactFor(address: string, version: string): string {
   return packageComputeArtifact({ id: address, bundleDir, appEntry: 'server.js', address }).path;
 }
 
-function envEchoArtifactFor(address: string, names: readonly string[]): string {
+function envEchoArtifactFor(
+  address: string,
+  names: readonly string[],
+  inputDocument?: string,
+): string {
   const bundleDir = fs.mkdtempSync(path.join(root, `bundle-${address}-`));
   fs.writeFileSync(
     path.join(bundleDir, 'main.js'),
@@ -79,7 +83,13 @@ function envEchoArtifactFor(address: string, names: readonly string[]): string {
 `,
   );
   fs.writeFileSync(path.join(bundleDir, 'server.js'), '');
-  return packageComputeArtifact({ id: address, bundleDir, appEntry: 'server.js', address }).path;
+  return packageComputeArtifact({
+    id: address,
+    bundleDir,
+    appEntry: 'server.js',
+    address,
+    ...(inputDocument !== undefined ? { inputDocument } : {}),
+  }).path;
 }
 
 /** A packaged artifact whose service exits before it listens. */
@@ -310,12 +320,10 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
     test('a plain marker takes its text from the plain platform variable texts, and a secret marker from the named secrets', async () => {
       const { directory, devDir } = projectDir('values');
       await ensureServiceInstances(container, devDir, [QUOTES]);
-      await envStore(devDir).update(() => ({
-        COMPOSER_SHARED_APP_QUOTES_INPUT: JSON.stringify({
-          from: { $platform: { name: 'EMAIL_FROM' } },
-          key: { $platform: { name: 'API_KEY', secret: true } },
-        }),
-      }));
+      const inputDocument = JSON.stringify({
+        from: { $platform: { name: 'EMAIL_FROM' } },
+        key: { $platform: { name: 'API_KEY', secret: true } },
+      });
       const names = ['EMAIL_FROM', 'API_KEY'];
       const provider = await Effect.runPromise(
         Deployment.Provider.pipe(
@@ -337,7 +345,7 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
         provider.reconcile(
           reconcileInput(`${QUOTES}-deployment`, {
             app: QUOTES,
-            artifactPath: envEchoArtifactFor(QUOTES, names),
+            artifactPath: envEchoArtifactFor(QUOTES, names, inputDocument),
           }),
         ),
       );
@@ -346,6 +354,57 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       expect(await (await fetch(`http://localhost:${String(node.port)}`)).json()).toEqual({
         EMAIL_FROM: 'shop@example.com',
         API_KEY: 'sk_named',
+      });
+    }, 30_000);
+
+    test("an artifact's input document gives it the platform variables it names, and no others, over a stale one in env.json", async () => {
+      const { directory, devDir } = projectDir('artifact-input');
+      await ensureServiceInstances(container, devDir, [QUOTES]);
+      await envStore(devDir).update(() => ({
+        COMPOSER_SHARED_APP_QUOTES_INPUT: JSON.stringify({
+          old: { $platform: { name: 'OLD_SECRET', secret: true } },
+        }),
+      }));
+      const inputDocument = JSON.stringify({
+        key: { $platform: { name: 'API_KEY', secret: true } },
+        from: { $platform: { name: 'EMAIL_FROM' } },
+      });
+      const names = [
+        'API_KEY',
+        'EMAIL_FROM',
+        'UNREAD',
+        'OLD_SECRET',
+        'COMPOSER_SHARED_APP_QUOTES_INPUT',
+      ];
+      const provider = await Effect.runPromise(
+        Deployment.Provider.pipe(
+          Effect.provide(
+            LocalDeploymentProvider({
+              container,
+              devDir,
+              plainVariableText: { EMAIL_FROM: 'shop@example.com', UNREAD: 'not read' },
+              namedSecrets: { API_KEY: 'sk_named', UNREAD: 'not read', OLD_SECRET: 'sk_old' },
+            }),
+          ),
+        ),
+      );
+
+      await Effect.runPromise(
+        provider.reconcile(
+          reconcileInput(`${QUOTES}-deployment`, {
+            app: QUOTES,
+            artifactPath: envEchoArtifactFor(QUOTES, names, inputDocument),
+          }),
+        ),
+      );
+
+      const node = await nodeOf(directory, QUOTES);
+      expect(await (await fetch(`http://localhost:${String(node.port)}`)).json()).toEqual({
+        API_KEY: 'sk_named',
+        EMAIL_FROM: 'shop@example.com',
+        UNREAD: null,
+        OLD_SECRET: null,
+        COMPOSER_SHARED_APP_QUOTES_INPUT: null,
       });
     }, 30_000);
   });

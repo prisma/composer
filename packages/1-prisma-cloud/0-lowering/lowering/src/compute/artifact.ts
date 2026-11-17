@@ -32,6 +32,8 @@ export interface PackageComputeArtifactOptions {
   readonly address: string;
   /** `false` for a service that does not listen on its port — recorded in the manifest only then, so other artifacts are unchanged. */
   readonly listens?: boolean;
+  /** The service's input document, written into the bootstrap data and passed to `run()` at boot. Left out for a service that declares no input. */
+  readonly inputDocument?: string;
 }
 
 export interface ComputeArtifact {
@@ -282,6 +284,7 @@ export function packageComputeArtifact(opts: PackageComputeArtifactOptions): Com
       moduleEntrypoint: `./${entryFile}`,
       appEntrypoint: `./${opts.appEntry}`,
       address: opts.address,
+      ...(opts.inputDocument !== undefined ? { inputDocument: opts.inputDocument } : {}),
     },
     null,
     2,
@@ -313,7 +316,7 @@ if (process.versions.bun !== undefined) {
 }
 
 const main = (await import(boot.moduleEntrypoint)).default;
-await main.run(boot.address, () => import(boot.appEntrypoint));
+await main.run(boot.address, () => import(boot.appEntrypoint), boot.inputDocument);
 `;
   // `address` is intrinsic artifact metadata, not dev config. It is recorded
   // twice: bootstrap data drives the boot path, while the manifest serves a
@@ -402,4 +405,38 @@ await main.run(boot.address, () => import(boot.appEntrypoint));
   fs.renameSync(tmpPath, outPath);
 
   return { path: outPath, sha256 };
+}
+
+function bootDataUnreadableError(artifactDir: string, reason: string): Error {
+  return new Error(
+    `the artifact unpacked in ${artifactDir} has an unreadable compute.bootstrap.json (${reason}) — repackage it with a current @prisma/composer.`,
+  );
+}
+
+/**
+ * The input document that `packageComputeArtifact` wrote into an unpacked
+ * artifact's `compute.bootstrap.json`, or `undefined` for a service that
+ * declares no input.
+ */
+export function readComputeInputDocument(artifactDir: string): string | undefined {
+  let text: string;
+  try {
+    text = fs.readFileSync(path.join(artifactDir, 'compute.bootstrap.json'), 'utf8');
+  } catch {
+    throw bootDataUnreadableError(artifactDir, 'the file is missing');
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw bootDataUnreadableError(artifactDir, 'it is not JSON');
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw bootDataUnreadableError(artifactDir, 'it is not a JSON object');
+  }
+  if (!('inputDocument' in parsed)) return undefined;
+  if (typeof parsed.inputDocument !== 'string') {
+    throw bootDataUnreadableError(artifactDir, 'its inputDocument is not a string');
+  }
+  return parsed.inputDocument;
 }

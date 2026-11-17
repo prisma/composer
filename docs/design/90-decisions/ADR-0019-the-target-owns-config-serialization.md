@@ -112,7 +112,16 @@ engine resolves through. The target writes these rows as environment-variable
 resources that **Alchemy** — the infrastructure-provisioning engine the
 framework's deploy lowers onto — creates on the platform.
 
-That the medium here is key/value strings is *this target's* choice. A different
+A service's input document ([ADR-0042](ADR-0042-service-input-is-one-standard-schema.md))
+is the one value that is not a variable. It is not secret and the deploy knows
+it before it builds the artifact, so the target writes its text into the
+service's artifact, in the `inputDocument` field of `compute.bootstrap.json`,
+and the artifact's bootstrap passes it to `run()` at boot
+([ADR-0065](ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)).
+The target owns both ends of that medium too: its packer writes the field, and
+the same package exports the reader for it.
+
+That the medium here is key/value strings in variables, and one text field in the artifact, is *this target's* choice. A different
 target is free to store the same `Config` however it likes; nothing about the
 medium is fixed by the framework.
 

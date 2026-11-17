@@ -147,6 +147,33 @@ describe.skipIf(process.platform === 'win32')('serving a dev server on an instan
     expect(env).toMatchObject({ STRIPE_KEY: 'sk_rotated' });
   });
 
+  test('a changed input document restarts the dev server with the new document', async () => {
+    const attachment = await attach();
+    const { instance } = await ensureServiceInstance(
+      { devDir, app: APP, environment: 'dev' },
+      'gateway',
+    );
+    const serve = () =>
+      attachment.serve?.({
+        address: 'gateway',
+        node: gateway,
+        server: server(['bun', 'server.js']),
+        configuration: {},
+        secrets,
+      });
+
+    await serve();
+    fs.writeFileSync(
+      path.join(devDir, 'env.json'),
+      JSON.stringify({ COMPOSER_GATEWAY_INPUT: '{"apiKey":"changed"}' }),
+    );
+    const changed = await serve();
+
+    expect(changed?.restarted).toBe(true);
+    const env = await (await fetch(`http://127.0.0.1:${String(instance.port)}`)).json();
+    expect(env).toMatchObject({ COMPOSER_INPUT: '{"apiKey":"changed"}' });
+  });
+
   test('an unset secret is not given to the dev server', async () => {
     delete secrets['STRIPE_KEY'];
     const attachment = await attach();

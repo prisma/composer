@@ -466,11 +466,14 @@ The Module-scoped operator that turns a dependency descriptor into an **owned Re
 ### run — the boot loop
 
 The boot method the platform runs, carried on the pack's runnable service node
-(`main.run(address)`, called by the deploy-printed bootstrap). **Core owns
+(`main.run(address, boot)`, called by the deploy-printed bootstrap; on Prisma
+Cloud the bootstrap also passes the service's input document from the
+artifact's `compute.bootstrap.json`). **Core owns
 structure, the pack owns encoding.** Core enumerates the config shape (semantic
 names + type tags — no platform keys in the graph) via `configOf`; the pack's
-`run` **deserializes** the platform environment into a typed `Config` by its own
-serializer (keyed from the address), the single sanctioned environment read; then
+`run` **deserializes** the platform environment, with the artifact's input
+document in place of any variable under its key, into a typed `Config` by its own serializer (keyed from the address), the single
+sanctioned environment read; then
 core's `hydrate` turns each dependency's typed values into a client — with the
 app-supplied driver factory — and calls the handler. Config validation is the
 pack reversing its own serialization (present, right type), failing loudly. A

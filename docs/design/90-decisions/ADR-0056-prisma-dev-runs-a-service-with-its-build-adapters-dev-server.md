@@ -82,11 +82,11 @@ This amends [ADR-0041](ADR-0041-local-dev-runs-the-deploy-pipeline-against-local
 
 ADR-0041 made `prisma dev` run the same pipeline as `prisma deploy` against local emulators. For each service it *assembles* an artifact from the author's built output, the way the service's build adapter says to, and the Compute emulator runs that artifact. Running the artifact was the simplest thing that worked: every service already had a documented way to be built and started, so nothing framework-specific was needed to run it locally. The cost is the loop. A Next.js service needs `next build`, a re-assembly, a converge and a cold restart for every edit, when the framework ships a dev server with hot module replacement.
 
-The obvious fix, running `next dev` in another terminal, fails for a reason that is by design. A Composer service never reads `process.env` itself ([architectural principles](../01-principles/architectural-principles.md), "No globals"). Its configuration reaches it through the artifact's bootstrap, which calls the node's `run(address, boot)`. A deploy writes the service's rows keyed by its address; `run()` reads them and writes them back without the address, and that address-free copy, the *stash*, is what `service.load()` and `service.input()` read:
+The obvious fix, running `next dev` in another terminal, fails for a reason that is by design. A Composer service never reads `process.env` itself ([architectural principles](../01-principles/architectural-principles.md), "No globals"). Its configuration reaches it through the artifact's bootstrap, which calls the node's `run(address, boot, inputDocument)`. A deploy writes the service's values keyed by its address: its input document into the `inputDocument` field of the artifact's `compute.bootstrap.json`, which the bootstrap passes to `run()` ([ADR-0065](ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)), and every other value as a variable. `run()` reads them and writes them back without the address, and that address-free copy, the *stash*, is what `service.load()` and `service.input()` read:
 
 ```text
-COMPOSER_WEB_API_URL=http://localhost:3000   # written by the deploy, keyed by the address "web"
-COMPOSER_WEB_INPUT={"...":"..."}
+COMPOSER_WEB_API_URL=http://localhost:3000   # a variable written by the deploy, keyed by the address "web"
+COMPOSER_WEB_INPUT={"...":"..."}             # the artifact's inputDocument, in place of any variable under this key
 
 COMPOSER_API_URL=http://localhost:3000       # written by run() at boot: the stash
 COMPOSER_INPUT={"...":"..."}                 # what load() and input() read
@@ -192,7 +192,7 @@ export interface AssembledServices {
 
 An address is in exactly one of the two. A `serve` that throws is structured as `DEV.DEV_SERVER_UNAVAILABLE` with the address and the thrown message, and `prisma dev` fails before anything starts, as an assembly failure does today.
 
-**Lower.** Lowering a service has four steps: `provision` creates its identity (locally, its instance on the Compute emulator); `serialize` writes its environment rows; `package` turns the bundle into an artifact; `deploy` ships the artifact as a `Deployment` and returns the service's URL and entities. A service with a dev server needs the first two and has nothing for the third. `LowerOptions` gains:
+**Lower.** Lowering a service has four steps: `provision` creates its identity (locally, its instance on the Compute emulator); `serialize` writes its variables and returns its input document's text; `package` turns the bundle and the input document into an artifact; `deploy` ships the artifact as a `Deployment` and returns the service's URL and entities. A service with a dev server needs the first two and has nothing for the third. `LowerOptions` gains:
 
 ```ts
 export interface LowerOptions {
@@ -214,7 +214,7 @@ export interface ServiceLowering<P = unknown, S = unknown> {
 
 In core's lowering loop, for an address in `unassembled`: `provision` and `serialize` run as always; the bundle lookup and `missingBundleError` are skipped; `package` is not called; `reserve` is called with the same `ctx`, `provisioned` and `serialized` that `deploy` would get; its result is stored in `lowered` and `entries` exactly as `deploy`'s is. A descriptor without `reserve` fails the lowering with a `LowerError` whose message is ``service "<address>" runs a dev server but its descriptor (<extension>/<type>) has no `reserve` step``, which `prisma dev` reports as `DEV.DEV_SERVER_UNSUPPORTED`. An address in `unassembled` that is also in `bundles`, or that is not a service, is a `LowerError` naming it.
 
-The Prisma Cloud compute descriptor's `reserve` returns what its `deploy` returns with the `Deployment` removed: `outputs: { url: provisioned.app.appEndpointDomain, projectId: provisioned.projectId }` and the one `compute-service` entity with `id: provisioned.serviceId`, `url` the same, and the `details` built from `serialized.input` exactly as in `deploy`. Locally the App's `appEndpointDomain` is `http://localhost:<port>` from the instance, the same string the `Deployment` would have reported, so dependents' rows do not change between a run that serves a service and one that does not, and dependents do not restart.
+The Prisma Cloud compute descriptor's `reserve` creates the service's input document as a variable, `COMPOSER_<ADDRESS>_INPUT`, because there is no artifact to carry it, and returns what its `deploy` returns with the `Deployment` removed: `outputs: { url: provisioned.app.appEndpointDomain, projectId: provisioned.projectId }` and the one `compute-service` entity with `id: provisioned.serviceId`, `url` the same, and the `details` built from `serialized.input` exactly as in `deploy`. Locally the App's `appEndpointDomain` is `http://localhost:<port>` from the instance, the same string the `Deployment` would have reported, so dependents' rows do not change between a run that serves a service and one that does not, and dependents do not restart.
 
 The dev stack file renders `unassembled` from `Object.keys(assembled.devServers)`:
 
@@ -255,7 +255,7 @@ export interface LocalTargetAttachment {
 The Prisma Cloud target's `serve`:
 
 1. Finds the service's instance through the directory's record (`ensureServiceInstance(scope, address)`, which creates none here because the converge already did), taking its `id` and `port`.
-2. Materializes the deployment environment with the existing `materializeEnv(devDir, address, port)`: the service's own rows from `env.json` (`scopedEnvRows`), `COMPOSER_<ADDRESS>_PORT`, the current values of the variables its rows point at (every value in `secrets.json` until [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-app-secrets-and-never-invents-them.md)), and `PATH` and `HOME` from the shell.
+2. Materializes the deployment environment with the existing `materializeEnv(devDir, address, port)`: the service's own rows from `env.json` (`scopedEnvRows`), `COMPOSER_<ADDRESS>_PORT`, the current values of the variables its rows point at (every value in `secrets.json` until [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-app-secrets-and-never-invents-them.md)), and `PATH` and `HOME` from the shell. The service's rows include its input document, which `reserve` wrote.
 3. Applies the stash to it (next section), producing the address-free rows, `PORT` and `HOST`.
 4. Builds the command's environment as `{ ...process.env, ...materialized, ...stashed }`, in that order, dropping entries whose value is `undefined`.
 5. Calls `server.argv({ port, host: '0.0.0.0' })`.
@@ -290,7 +290,7 @@ export function stashRows(
 ): Record<string, string>;
 ```
 
-`run()` becomes `Object.assign(process.env, stashRows(this, address, process.env))` followed by `boot()`, and behaves exactly as before. The target's `serve` calls `stashRows(node, address, materialized)`. `deserialize`, `coerce`, `coerceEnvSourcedParam` and `stashInput` take the environment as a parameter instead of reading `process.env`; `serializeInput` already does. `load()` and `input()` still read `process.env`, which is where `run()` and the emulator's spawn both put the rows.
+`run(address, boot, inputDocument)` becomes `Object.assign(process.env, stashRows(this, address, env))` followed by `boot()`, where `env` is `process.env` with the artifact's input document, when it has one, under the service's input key `COMPOSER_<ADDRESS>_INPUT`. The target's `serve` calls `stashRows(node, address, materialized)`. `deserialize`, `coerce`, `coerceEnvSourcedParam` and `stashInput` take the environment as a parameter instead of reading `process.env`; `serializeInput` already does. `load()` and `input()` still read `process.env`, which is where `run()` and the emulator's spawn both put the rows.
 
 The command's environment is the shell's, then the materialized deployment environment, then the stash rows, later entries winning. A deployed artifact gets only `PATH` and `HOME` from the shell, but a dev server needs more (`NODE_OPTIONS`, a framework's own `.env` loading, the developer's proxy settings), and it runs on the developer's machine anyway. Composer's values are laid last, so a stale `COMPOSER_…` export in the shell cannot shadow them, and Next's `.env` loading, which never overrides a variable already set, cannot either.
 
@@ -404,4 +404,5 @@ Both new codes are registered under ADR-0044's `DEV` namespace. A dev server tha
 - [ADR-0044](ADR-0044-errors-are-structural-envelopes-with-dotted-namespace-codes.md) — where the error codes are registered.
 - [local-dev.md](../10-domains/local-dev.md) — the mechanics of `prisma dev`.
 - [core-model.md](../10-domains/core-model.md) — `run()`, `load()` and the stash.
+- [ADR-0065](ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md) — the input document travels in the artifact, and `reserve` writes it as a variable for a dev server.
 - [Architectural principles](../01-principles/architectural-principles.md) — no globals; no bundling and no guessing; code over configuration.
