@@ -55,6 +55,15 @@ const ZOD_RECORD_OF_ENUM_KEYS = {
 };
 
 describe('schemaKind', () => {
+  test('a member is judged against the root it came from', () => {
+    const root = {
+      anyOf: [{ $ref: '#/$defs/d0' }, { type: 'null' }],
+      $defs: { d0: { type: 'string' } },
+    };
+    expect(schemaKind(root.anyOf[0], root)).toBe('text-only');
+    expect(schemaKind(root.anyOf[0])).toBe('mixed');
+  });
+
   const cases: [string, unknown, SchemaKind][] = [
     ['type string', { type: 'string' }, 'text-only'],
     ['type ["string"]', { type: ['string'] }, 'text-only'],

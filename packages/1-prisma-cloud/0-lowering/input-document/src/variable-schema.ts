@@ -67,8 +67,8 @@ function kindAt(schema: unknown, root: unknown, followed: ReadonlySet<string>): 
   return textOnly ? 'text-only' : 'never-text';
 }
 
-export function schemaKind(schema: unknown): SchemaKind {
-  return kindAt(schema, schema, new Set());
+export function schemaKind(schema: unknown, root: unknown = schema): SchemaKind {
+  return kindAt(schema, root, new Set());
 }
 
 export function schemaWord(schema: JsonSchema): string {

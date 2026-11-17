@@ -26,6 +26,7 @@ export {
   INPUT_KEY_NAME,
   ownKeyPrefix,
 } from '../env-keys.ts';
+export { isPlainObject } from '../plain-object.ts';
 export {
   decodeVariableText,
   type JsonSchema,
