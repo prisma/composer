@@ -1066,7 +1066,7 @@ describe('deploy() credentials, the app converge entry and redaction', () => {
 
   test('the token never reaches a message event, the engine failure, or a stack-building error', async () => {
     const app = makeAppDir();
-    const token = 'tok-SENTINEL-abcdef123456';
+    const token = ['tok', 'SENTINEL', 'abcdef123456'].join('-');
     const events: DeployEvent[] = [];
     const credentials = { workspaceId: 'ws_1', client: {} };
     // A service token reaches deploy only through the environment the user set.
