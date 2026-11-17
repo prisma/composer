@@ -288,7 +288,7 @@ them:
 | Missing extension env | the exact variable(s) the extension factory needed |
 | Built output missing | the expected path, and "run your build" |
 | An extension's graph check refuses the graph (`COMPOSE.GRAPH_INVALID`) | the extension's message: for Prisma Cloud, a platform variable declared by two nodes, a name used by both a plain platform variable node and a root input field, or a node bound as a service's whole input, naming the variable and every address involved |
-| A platform variable a service needs has no value (`DEPLOY.PREFLIGHT_FAILED`) | each variable, the service and field that reads it, and the `prisma project env add` commands: `--role production` for production, otherwise `--role preview` then `--role preview --branch` |
+| A platform variable a service needs has no value (`DEPLOY.PREFLIGHT_FAILED`) | each variable, the service and field that reads it, and the `prisma project env add` commands: `--role production` for production, otherwise `--role preview` then `--branch` |
 | A platform variable the app reads is managed by Prisma Cloud (`DEPLOY.PREFLIGHT_FAILED`) | the variable, and to rename it in the app |
 | Root's input refused by its schema | the schema's messages, and that a root's input is the app configuration for the environment |
 | A config adapter throws or returns something other than an object (`CONFIG.ADAPTER_FAILED`, `CONFIG.ADAPTER_INVALID`) | which list and position, and the fix |

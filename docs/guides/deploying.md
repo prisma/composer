@@ -300,7 +300,7 @@ prisma project env add 'EMAIL_API_KEY=<value>' --project '<project id>' --role p
 # every preview environment
 prisma project env add 'EMAIL_API_KEY=<value>' --project '<project id>' --role preview
 # one preview environment only, overriding the preview-wide value
-prisma project env add 'EMAIL_API_KEY=<value>' --project '<project id>' --role preview --branch 'staging'
+prisma project env add 'EMAIL_API_KEY=<value>' --project '<project id>' --branch 'staging'
 ```
 
 `update`, `list` and `delete` take the same flags. A deployment receives every variable of its class with its own branch's overrides on top, so a preview-wide value reaches every new preview environment.
@@ -319,7 +319,7 @@ The `check environment variables` step looks up every platform variable the app 
 
   Set it on the platform, then deploy again:
     - prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_…' --role preview
-    - prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_…' --role preview --branch 'staging'
+    - prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_…' --branch 'staging'
   ```
 
   For `production` the command uses `--role production`. For any other environment the preview-wide command comes first, so that the next preview environment has the value too.

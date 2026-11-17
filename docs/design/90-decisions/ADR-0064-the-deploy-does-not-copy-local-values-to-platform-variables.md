@@ -18,7 +18,7 @@ $ prisma deploy --environment staging
 Platform variables with no value:
   - EMAIL_API_KEY  (read by service "shop.email", field "apiKey")
     prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_…' --role preview
-    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_…' --role preview --branch 'staging'
+    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_…' --branch 'staging'
 ```
 
 ## Decision
@@ -45,7 +45,7 @@ The environment's facts, such as `environment.name`, and the values Composer cre
 - **A key is upper case or it does not exist.** The platform refuses a key that does not match `[A-Z_][A-Z0-9_]*`, on write and in the list filter.
 - **A value is never empty.** The platform refuses an empty value, so a variable is either present with text or absent.
 - **A read returns metadata, never a value.** It returns `updatedAt`, and `isManagedBySystem` for a row the platform owns.
-- **The operator sets a row with the `prisma` CLI.** `prisma project env add 'NAME=<value>' --project <id> --role production` sets the production row. `--role preview` sets the preview-wide row that every preview branch shares. `--role preview --branch <environment>` sets one branch's override. `update`, `list` and `delete` take the same scopes.
+- **The operator sets a row with the `prisma` CLI.** `prisma project env add 'NAME=<value>' --project <id> --role production` sets the production row. `--role preview` sets the preview-wide row that every preview branch shares. `--branch <environment>` sets one branch's override. `update`, `list` and `delete` take the same scopes.
 - **A process that exits at boot is reported running.** The deployment is started and promoted as soon as it is created. The platform reports it `running`, `prisma deploy` succeeds, and the crashing deployment is promoted. Each request to the service boots it once and gets a 502. The boot error is only in the logs: `prisma service logs <service> --project <id>`.
 
 ### The node
@@ -122,7 +122,7 @@ Preflight runs after the deploy has resolved the app's Project and Branch, and b
 
   Set it on the platform, then deploy again:
     - prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_…' --role preview
-    - prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_…' --role preview --branch 'staging'
+    - prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_…' --branch 'staging'
   ```
 
   For production the one command is `--role production`. For every other environment the preview-wide command comes first, so the next preview branch is not missing it too, and the branch command second. A variable that an array position makes required has a second line with the reason, and a line for a service that needs some of several variables ends with the schema's message.
