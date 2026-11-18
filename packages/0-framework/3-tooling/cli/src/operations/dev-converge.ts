@@ -71,6 +71,8 @@ export type DevConvergeResult =
   | {
       readonly kind: 'error';
       readonly error: CliErrorEnvelope;
+      /** Set when the runtime keeps the failed lookup of a directory import that would now succeed, so only a new process loads it. */
+      readonly lookupKept?: true;
       readonly appFiles: readonly string[];
     }
   | {

@@ -232,6 +232,7 @@ describe.skipIf(process.platform === 'win32')('a dev converge in a worker thread
     expect(result.error.code).toBe('COMPOSE.ENTRY_UNLOADABLE');
     expect(result.error.summary).toStartWith(`Failed to import entry module "${app.entry}": `);
     expect(result.appFiles).toContain(app.labelFile);
+    expect(result.lookupKept).toBeUndefined();
   }, 60_000);
 
   test("a structured error from loading the app's converge entry keeps its code, why and fix", async () => {
@@ -437,7 +438,7 @@ describe.skipIf(process.platform === 'win32')('dev with its converge in a worker
       );
       expect(messages[0]).not.toContain('Restart `prisma dev` to load it.');
       expect(messages[1]).toContain(
-        'The file exists now, but Bun keeps a failed lookup of a directory import for as long as the process runs. Restart `prisma dev` to load it.',
+        'The directory this import names has an `index.ts` now, but Bun keeps a failed lookup of a directory import for as long as the process runs. Restart `prisma dev` to load it.',
       );
     },
     60_000,

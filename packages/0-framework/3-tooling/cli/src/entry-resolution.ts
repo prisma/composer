@@ -95,17 +95,28 @@ function pathOfFileUrl(url: string): string | undefined {
  * returned: in its place come the files the hook would try inside it. Follows `cause`.
  */
 export function appFilesNamedBy(error: unknown): readonly string[] {
+  const named = appPathNamedBy(error);
+  return named === undefined ? [] : filesFor(named);
+}
+
+/** Whether an import error names a directory of the app that holds an `index.ts`, which the import should have loaded. */
+export function namesDirectoryWithIndex(error: unknown): boolean {
+  const named = appPathNamedBy(error);
+  return named !== undefined && isDirectory(named) && filesFor(named).some(existsSync);
+}
+
+function appPathNamedBy(error: unknown): string | undefined {
   const visited = new Set<object>();
   for (let current = error; typeof current === 'object' && current !== null; ) {
     if (visited.has(current)) break;
     visited.add(current);
     const named = fileNamedBy(current);
     if (named !== undefined && !named.split(path.sep).includes('node_modules')) {
-      return filesFor(path.resolve(named));
+      return path.resolve(named);
     }
     current = 'cause' in current ? current.cause : undefined;
   }
-  return [];
+  return undefined;
 }
 
 function filesFor(named: string): readonly string[] {

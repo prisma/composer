@@ -229,10 +229,14 @@ type ConvergeFailure = {
 };
 
 /** How a rebuild reports a structured error its worker raised before the converge began. */
-function errorFailure(error: CliErrorEnvelope, redact: (text: string) => string): ConvergeFailure {
+function errorFailure(
+  error: CliErrorEnvelope,
+  redact: (text: string) => string,
+  lookupKept: boolean,
+): ConvergeFailure {
   return {
     code: 'DEV.CONVERGE_FAILED',
-    message: redact(withHelp(error)),
+    message: lookupKept ? `${redact(withHelp(error))}\n${LOOKUP_KEPT}` : redact(withHelp(error)),
     reasons: [{ tag: error.code, message: redact(error.summary) }],
   };
 }
@@ -277,6 +281,9 @@ function rootInputUnreadReason(outcome: FailedConverge): ConvergeFailureReason |
     ? undefined
     : outcome.reasons.find(({ tag }) => tag === ROOT_INPUT_UNREAD_ERROR);
 }
+
+const LOOKUP_KEPT =
+  'The directory this import names has an `index.ts` now, but Bun keeps a failed lookup of a directory import for as long as the process runs. Restart `prisma dev` to load it.';
 
 const NODES_CHANGED =
   'The app now has a node added or removed. A running `prisma dev` keeps the nodes it started with, so restart `prisma dev` to apply the change.';
@@ -856,7 +863,10 @@ async function executeDevInner(
           return;
         }
         if (result.kind === 'error') {
-          emit({ kind: 'converge-failed', ...errorFailure(result.error, redact) });
+          emit({
+            kind: 'converge-failed',
+            ...errorFailure(result.error, redact, result.lookupKept === true),
+          });
           return;
         }
         const { outcome } = result;

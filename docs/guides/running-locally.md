@@ -62,17 +62,7 @@ and watches the file. When the file changes, `dev` prints that it changed and
 must be restarted, and it stops rebuilding: until you stop `dev` and start it
 again, a build change only repeats that notice.
 
-`dev` also watches your app definition files: your entry module and
-every file of yours it imports, directly or through other files, such as
-each module's `module.ts`, each `service.ts` and their helpers (files in
-`node_modules` are not included). When one of them changes, `dev` rebuilds
-and applies the change: an edit to wiring, an input or a binding takes effect
-without a restart. An edit that adds or removes a service, a database or
-another node, or that makes your root pass on an input field it did not pass
-on before, fails that rebuild with a message that says to restart `dev`;
-the running app is left as it was. An edit that changes which platform
-variables your app reads pauses rebuilds, with a message, until you restart
-`dev`. A file that an edit newly imports is watched from then on. Under Bun, one such import needs a restart: an import of a directory (`./lib`, meaning `lib/index.ts`) that you write before the directory or its `index.ts` exists. `dev` says so when you create the file.
+`dev` also watches your app definition files: your entry module and every file of yours it imports, directly or through other files, such as each module's `module.ts`, each `service.ts` and their helpers (files in `node_modules` are not included). When one of them changes, `dev` rebuilds and applies the change: an edit to wiring, an input or a binding takes effect without a restart. An edit that adds or removes a service, a database or another node, or that makes your root pass on an input field it did not pass on before, fails that rebuild with a message that says to restart `dev`; the running app is left as it was. An edit that changes which platform variables your app reads pauses rebuilds, with a message, until you restart `dev`. A file that an edit newly imports is watched from then on. Under Bun, one such import needs a restart: an import of a directory (`./lib`, meaning `lib/index.ts`) that you write before the directory or its `index.ts` exists. `dev` says so when you create the file.
 
 `Ctrl-C` stops your app's service processes and its local Postgres servers,
 and exits; so does `dev` ending on SIGTERM or a failure. The data stays, and
