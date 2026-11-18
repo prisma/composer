@@ -43,15 +43,15 @@ Live QA of slice 4 passed (`reviews/slice-4/manual-qa.md`). The QA environment's
 
 In process, Node and Bun cache the app's definition modules, so a rebuild would re-apply the graph loaded at start. #411 currently detects edits to any app file the entry loaded (`recordAppFiles` in `entry-resolution.ts`, `files` on `LoadedEntry`) and emits `definition-changed`, which pauses rebuilds and tells the user to restart dev.
 
-**Will agreed on 2026-11-11 to option C:** on a definition change, load the app definition in a short-lived child process or worker that hands the graph back; the converge itself stays in process. Same behaviour on Node and Bun, and wiring edits keep applying live as ADR-0056 promised. Do not do "restart required" (Will rejected it: the CLI keeps emulators running, possibly detached) and not Node-only live reload.
+**Superseded on 2026-11-18.** On 2026-11-11 Will agreed to load the definition in a short-lived child or worker that hands the graph back, with the converge in the main process. That cannot be built: a loaded app is made of functions (module bodies, `resolve()` callbacks, schemas, contract checks) and symbol-branded objects, so the graph cannot cross a thread or process boundary, and `lower()` runs Load on the root module again anyway.
 
-To do for slice 3:
+**Decided with Will on 2026-11-18:** each dev converge runs in a new worker thread inside the `prisma` process. The worker imports the config and the app, runs Load, `lower()`, plan and apply, and ends. A new worker has its own module cache under Node 24 and Bun 1.3 (`wip/spike-worker/`). Inputs cross as plain data in memory; events, output text and the outcome come back as messages. No child process. Deploy stays on the main thread.
 
-1. Design the loader (child vs worker; how the graph crosses the boundary; what happens to `files` tracking; error reporting for a broken edit). Check the graph is serialisable or what has to be reconstructed; if it is not, bring the finding to Will before building.
-2. Implement on `claude/alchemy-dev-in-process`, replacing the `definition-changed` pause.
-3. Record the decision in a new ADR that amends ADR-0056; point to it from ADR-0064's dev amendment (review S08).
-4. Address the rest of `reviews/slice-3/`: F02 (Ctrl-C during a rebuild waits for the pipeline), F03 (resource steps left open after a failed converge), S03 (docs over-claim detection; four names for one concept), S05–S07, S09 (an integration test that edits a definition file while dev runs, under Node and Bun if CI runs Bun). F01/S01 are mostly superseded by option C. S04 is done (contract stays 2).
-5. `/drive-code-review` round 2, fix, then manual QA of `prisma dev` (foreground and `--detach`).
+Known limit kept from `main`: the main thread's own graph is the one from start, so adding or removing a node still needs `prisma dev` restarted. Removing that limit (the worker sends back the plain facts the session needs) is a later step.
+
+State on 2026-11-18: `main` is merged into the branch (`75dcba77`). The worker is being built from `wip/briefs/dev-converge-worker.md`. After it: a new ADR that amends ADR-0056 and ADR-0066, the dev documents (the branch's earlier document changes are saved in `wip/merge-411/dev-docs.diff`), `/drive-code-review`, manual QA of `prisma dev` in the foreground and with `--detach`.
+
+The Composer release waits until this project is complete (Will, 2026-11-18).
 
 ## Other remaining work
 
