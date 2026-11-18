@@ -62,3 +62,4 @@ Origin: manual QA after the #431 merge.
 - **`DevStep` ids are strings the command parses** (`dev.rebuild.N`), where `DeployStep` is structural. Origin: review S11.
 - **The main thread loads the app's whole converge entry only to check it** before anything local is created; the worker loads it again. A lighter check (the contract entry alone) would do. Origin: review S12.
 - **The session's own view of the app is the one from start.** Adding or removing a node needs `prisma dev` restarted. The worker could send back the plain facts the session needs (addresses, kinds, dev servers, watch paths). Origin: ADR-0067.
+- **The worker Loads the app twice per converge**, once to compare the reads of platform variables and once inside `lower()`, so every module body runs twice. Move the comparison into `lower()` when the converge contract shapes next change. Origin: round-2 review S21.

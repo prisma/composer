@@ -68,7 +68,8 @@ each module's `module.ts`, each `service.ts` and their helpers (files in
 `node_modules` are not included). When one of them changes, `dev` rebuilds
 and applies the change: an edit to wiring, an input or a binding takes effect
 without a restart. An edit that adds or removes a service, a database or
-another node fails that rebuild with a message that says to restart `dev`;
+another node, or that makes your root pass on an input field it did not pass
+on before, fails that rebuild with a message that says to restart `dev`;
 the running app is left as it was. An edit that changes which platform
 variables your app reads pauses rebuilds, with a message, until you restart
 `dev`. A file that an edit newly imports is watched from then on.
