@@ -99,13 +99,19 @@ jobs:
       - name: Test
         env:
           STATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
-        run: pnpm turbo run test --filter='!@internal/local-target'
+        run: pnpm turbo run test --filter='!@internal/local-target' --filter='!@internal/prisma-cloud'
       # local-target's drift suite talks to the machine-global postgres emulator, the
       # same daemon the dev-emulators suite restarts, so it runs alone after the rest.
       - name: Test local-target
         env:
           STATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: pnpm turbo run test --filter=@internal/local-target
+      # The Prisma Cloud target's suite starts the same machine-global emulators, so it
+      # also runs alone.
+      - name: Test the Prisma Cloud target
+        env:
+          STATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: pnpm turbo run test --filter=@internal/prisma-cloud
       - name: Type-only tests (vitest --typecheck)
         run: pnpm turbo run test:types
       - name: Test scripts (cast-ratchet unit tests)
