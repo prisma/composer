@@ -63,10 +63,13 @@ describe('appFilesNamedBy()', () => {
       url: 'file:///lib%2Fhelpers.ts',
       cause: { specifier: './helpers.ts', referrer: 'file:///lib%2Flabel.ts' },
     };
-    const outer = { cause: error, url: pathToFileURL(path.join(dir, 'x.ts')).href };
+    const skipped = {
+      url: 'file:///lib%2Fhelpers.ts',
+      cause: { url: pathToFileURL(path.join(dir, 'x.ts')).href },
+    };
 
     expect(appFilesNamedBy(error)).toEqual([]);
-    expect(appFilesNamedBy(outer)[0]).toBe(path.join(dir, 'x.ts'));
+    expect(appFilesNamedBy(skipped)).toEqual([path.join(dir, 'x.ts')]);
   });
 
   test('a missing import that already has a TypeScript extension is named alone', () => {
@@ -74,6 +77,13 @@ describe('appFilesNamedBy()', () => {
     const error = { specifier: './helpers.ts', referrer: path.join(dir, 'label.ts') };
 
     expect(appFilesNamedBy(error)).toEqual([path.join(dir, 'helpers.ts')]);
+  });
+
+  test('a missing import whose name has a dot in it names its TypeScript file too', () => {
+    const dir = appDir();
+    const error = { specifier: './app.config', referrer: path.join(dir, 'label.ts') };
+
+    expect(appFilesNamedBy(error)).toContain(path.join(dir, 'app.config.ts'));
   });
 
   describe('an import that names an existing directory names the index file inside it, never the directory', () => {

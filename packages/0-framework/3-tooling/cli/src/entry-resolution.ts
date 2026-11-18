@@ -108,14 +108,12 @@ export function appFilesNamedBy(error: unknown): readonly string[] {
   return [];
 }
 
-const HOOK_MAPPED_EXTENSIONS: ReadonlySet<string> = new Set(['', '.js', '.mjs', '.cjs']);
-
 function filesFor(named: string): readonly string[] {
   const candidates = () => sourceCandidates(pathToFileURL(named)).map((url) => fileURLToPath(url));
   if (isDirectory(named)) {
     return candidates().filter((candidate) => candidate.startsWith(named + path.sep));
   }
-  if (existsSync(named) || !HOOK_MAPPED_EXTENSIONS.has(path.extname(named))) return [named];
+  if (existsSync(named)) return [named];
   return [named, ...candidates()];
 }
 
@@ -201,10 +199,11 @@ export function registerEntryResolution(): void {
  * produce the source candidates to probe. Format-specific: `.mjs` maps only
  * to `.mts`; `.cjs` maps only to `.cts`; `.js` and extensionless probe
  * `.ts`, `.mts`, `.tsx` (keeping `.tsx` so the JSX diagnostic fires), then
- * `./index.ts`.
+ * `./index.ts`. A URL that already has a TypeScript extension has none.
  */
 function sourceCandidates(resolved: URL): URL[] {
   const href = resolved.href;
+  if (/\.(ts|mts|cts|tsx)$/.test(href)) return [];
   if (href.endsWith('.mjs')) {
     const base = href.slice(0, -4);
     return [new URL(`${base}.mts`)];

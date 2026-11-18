@@ -182,7 +182,7 @@ export interface Graph {
  * Thrown by Load when the graph is malformed. Structured at origin
  * (base-type rule 6) under one type-level code. Not every error Load throws
  * is one: a Load that needs a root input field an earlier Load did not read
- * throws an error named `ROOT_INPUT_UNREAD_ERROR`. The `name` stays
+ * throws an error whose name is the value of `ROOT_INPUT_UNREAD_ERROR`. The `name` stays
  * `CliStructuredError` — structural recognition depends on it.
  */
 export class LoadError extends CliStructuredError {

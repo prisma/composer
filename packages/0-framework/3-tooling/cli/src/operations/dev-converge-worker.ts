@@ -4,6 +4,7 @@
  * and the app as they are on disk now. It receives a `DevConvergeJob` as its
  * `workerData` and posts `WorkerMessage`s back.
  */
+import { existsSync } from 'node:fs';
 import { Writable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { format } from 'node:util';
@@ -154,8 +155,33 @@ async function run(job: DevConvergeJob): Promise<DevConvergeResult> {
       controller.signal,
     );
   } catch (error) {
-    return thrownResult(error, [...recorded, ...appFilesNamedBy(error)]);
+    const named = appFilesNamedBy(error);
+    const result = thrownResult(error, [...recorded, ...named]);
+    return result.kind === 'error' && bunKeepsTheFailedLookup(error, named)
+      ? {
+          ...result,
+          error: { ...result.error, summary: `${result.error.summary}\n${RESTART_FOR_LOOKUP}` },
+        }
+      : result;
   }
+}
+
+const RESTART_FOR_LOOKUP =
+  'The file exists now, but Bun keeps a failed lookup of a directory import for as long as the process runs. Restart `prisma dev` to load it.';
+
+function bunKeepsTheFailedLookup(error: unknown, named: readonly string[]): boolean {
+  return process.versions.bun !== undefined && moduleNotFound(error) && named.some(existsSync);
+}
+
+function moduleNotFound(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current = error;
+  while (typeof current === 'object' && current !== null && !seen.has(current)) {
+    if ('specifier' in current && typeof current.specifier === 'string') return true;
+    seen.add(current);
+    current = 'cause' in current ? current.cause : undefined;
+  }
+  return false;
 }
 
 const job: DevConvergeJob = workerData;

@@ -415,6 +415,34 @@ describe.skipIf(process.platform === 'win32')('dev with its converge in a worker
     }, 60_000);
   }
 
+  test.skipIf(process.versions.bun === undefined)(
+    'under Bun, a directory import that failed once keeps failing after its index file is created, and the rebuild says to restart',
+    async () => {
+      const app = workerApp('v1');
+      const index = path.join(app.dir, 'lib', 'index.ts');
+      const events: DevEvent[] = [];
+
+      const { session, change } = await devSession(app, events);
+      fs.writeFileSync(app.labelFile, "export { label } from './lib';\n");
+      change();
+      await waitUntil(() => countOf(events, 'converge-failed') === 1);
+      fs.mkdirSync(path.dirname(index));
+      fs.writeFileSync(index, "export const label = 'v2';\n");
+      change(index);
+      await waitUntil(() => countOf(events, 'converge-failed') === 2);
+      await session.stop();
+
+      const messages = events.flatMap((event) =>
+        event.kind === 'converge-failed' ? [event.message] : [],
+      );
+      expect(messages[0]).not.toContain('Restart `prisma dev` to load it.');
+      expect(messages[1]).toContain(
+        'The file exists now, but Bun keeps a failed lookup of a directory import for as long as the process runs. Restart `prisma dev` to load it.',
+      );
+    },
+    60_000,
+  );
+
   test('with the real file watch, a file an edit imports as ./lib/helpers before it or its directory exists is picked up once it is created', async () => {
     const app = workerApp('v1');
     const helpers = path.join(app.dir, 'lib', 'helpers.ts');
