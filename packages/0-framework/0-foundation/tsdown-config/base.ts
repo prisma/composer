@@ -60,11 +60,6 @@ export const baseConfig: UserConfig = {
   sourcemap: true,
 };
 
-export const internalPackagesAndTheirDependencies: readonly RegExp[] = [
-  /^@internal\//,
-  /^@cfworker\//,
-];
-
 /**
  * Extend/use the base `tsdown` config with custom settings.
  *

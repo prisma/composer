@@ -1208,6 +1208,9 @@ importers:
         specifier: 8.22.0
         version: 8.22.0
     devDependencies:
+      '@internal/input-document':
+        specifier: workspace:0.39.0
+        version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
@@ -1251,6 +1254,9 @@ importers:
         specifier: ^2.2.3
         version: 2.2.7
     devDependencies:
+      '@internal/input-document':
+        specifier: workspace:0.39.0
+        version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
@@ -1291,6 +1297,9 @@ importers:
         specifier: ^9.0.3
         version: 9.0.3
     devDependencies:
+      '@internal/input-document':
+        specifier: workspace:0.39.0
+        version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
@@ -1334,6 +1343,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.1085.0
         version: 3.1087.0
+      '@internal/input-document':
+        specifier: workspace:0.39.0
+        version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
@@ -1380,6 +1392,9 @@ importers:
       '@durable-streams/server-conformance-tests':
         specifier: 0.2.3
         version: 0.2.3(@types/node@26.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@internal/input-document':
+        specifier: workspace:0.39.0
+        version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config

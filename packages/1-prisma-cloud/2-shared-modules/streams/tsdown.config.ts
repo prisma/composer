@@ -1,4 +1,5 @@
-import { baseConfig, internalPackagesAndTheirDependencies } from '@internal/tsdown-config';
+import { inputDocumentRuntimeDependencies } from '@internal/input-document/bundling';
+import { baseConfig } from '@internal/tsdown-config';
 import { defineConfig } from 'tsdown';
 
 // Mirrors storage's three passes. index + streams-service share the dist root
@@ -30,7 +31,8 @@ export default defineConfig([
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
     noExternal: [
-      ...internalPackagesAndTheirDependencies,
+      /^@internal\//,
+      ...inputDocumentRuntimeDependencies,
       /^@prisma\/(?!orm-)/,
       /^arktype/,
       /^@standard-schema\//,
@@ -51,7 +53,8 @@ export default defineConfig([
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
     noExternal: [
-      ...internalPackagesAndTheirDependencies,
+      /^@internal\//,
+      ...inputDocumentRuntimeDependencies,
       /^@prisma\/(?!orm-)/,
       /^fastq/,
       /^reusify/,

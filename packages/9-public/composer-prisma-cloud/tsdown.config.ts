@@ -1,4 +1,5 @@
-import { baseConfig, internalPackagesAndTheirDependencies } from '@internal/tsdown-config';
+import { inputDocumentRuntimeDependencies } from '@internal/input-document/bundling';
+import { baseConfig } from '@internal/tsdown-config';
 import { defineConfig } from 'tsdown';
 
 // Cloud-domain internals (@internal/lowering, /prisma-cloud, /cron) are
@@ -79,7 +80,7 @@ export default defineConfig([
     exports: false,
     clean: true,
     skipNodeModulesBundle: false,
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework],
   },
   {
@@ -89,7 +90,7 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework],
   },
   {
@@ -103,7 +104,7 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework],
   },
   {
@@ -130,7 +131,7 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework],
   },
   {
@@ -140,7 +141,7 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework],
   },
   {
@@ -156,7 +157,7 @@ export default defineConfig([
     skipNodeModulesBundle: false,
     // `bun` is a runtime builtin — keep it external in the re-emitted entrypoint.
     external: [/^bun$/, /^bun:/],
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework],
   },
   {
@@ -169,7 +170,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework],
   },
   {
@@ -179,7 +180,7 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework],
   },
   {
@@ -198,7 +199,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework],
   },
   {
@@ -211,7 +212,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework],
   },
   {
@@ -221,7 +222,7 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework, externalizeEmailToSelf],
   },
   {
@@ -241,7 +242,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework],
   },
   {
@@ -254,7 +255,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework, externalizeEmailToSelf],
   },
   {
@@ -264,7 +265,7 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework],
   },
   {
@@ -282,7 +283,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework],
   },
   {
@@ -295,7 +296,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [...internalPackagesAndTheirDependencies],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
     plugins: [externalizeFramework],
   },
 ]);

@@ -1,4 +1,5 @@
-import { baseConfig, internalPackagesAndTheirDependencies } from '@internal/tsdown-config';
+import { inputDocumentRuntimeDependencies } from '@internal/input-document/bundling';
+import { baseConfig } from '@internal/tsdown-config';
 import { defineConfig } from 'tsdown';
 
 // Mirrors storage's multi-pass shape (storage/tsdown.config.ts): index +
@@ -26,7 +27,8 @@ export default defineConfig([
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
     noExternal: [
-      ...internalPackagesAndTheirDependencies,
+      /^@internal\//,
+      ...inputDocumentRuntimeDependencies,
       /^@prisma\/(?!orm-)/,
       /^arktype/,
       /^@standard-schema\//,
@@ -44,6 +46,6 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [...internalPackagesAndTheirDependencies, /^@prisma\/(?!orm-)/],
+    noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies, /^@prisma\/(?!orm-)/],
   },
 ]);
