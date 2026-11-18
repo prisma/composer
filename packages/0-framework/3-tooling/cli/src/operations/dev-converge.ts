@@ -1,15 +1,25 @@
 /**
  * One `prisma dev` converge as plain data, and the steps that run it: Load,
  * `lower()` against the local target, then Alchemy's plan and apply. The
- * default runs it in a new worker thread (`converge-in-worker.ts`), so each
+ * default runs it in a new worker thread (`dev-converge-in-worker.ts`), so each
  * converge imports the app's definition files as they are on disk.
  */
-import type { AppConfigurationRead, AppRootNode, ModuleNode } from '@internal/core';
+import { type AppConfigurationRead, type AppRootNode, Load, type ModuleNode } from '@internal/core';
 import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
-import type { Bundle } from '@internal/core/deploy';
 import { resolveLocalTargets } from '@internal/core/local-target';
+import { CliStructuredError } from '@internal/foundation/errors';
 import type { AppConvergeEntry } from '../app-converge.ts';
-import type { ConvergeEvent, ConvergeOutcome } from '../converge-in-process.ts';
+import {
+  type ConvergeEvent,
+  type ConvergeOutcome,
+  failureReasonOf,
+} from '../converge-in-process.ts';
+import {
+  type ValueReadsChange,
+  type ValueReadsSnapshot,
+  valueReadsChange,
+  valueReadsSnapshot,
+} from '../dev/value-reads-change.ts';
 
 /** Everything a dev converge needs from the session, as data a worker thread can receive. */
 export interface DevConvergeJob {
@@ -23,7 +33,8 @@ export interface DevConvergeJob {
   readonly name: string;
   readonly environment: string;
   readonly appConfigurationRead: AppConfigurationRead;
-  readonly bundles: Readonly<Record<string, Bundle>>;
+  /** Each service's assembled bundle: only the fields lowering reads. */
+  readonly bundles: Readonly<Record<string, { readonly dir: string; readonly entry: string }>>;
   readonly unassembled: readonly string[];
   /** Each extension's local container, as its `serialize()` text, by extension id. */
   readonly containers: Readonly<Record<string, string>>;
@@ -33,6 +44,8 @@ export interface DevConvergeJob {
   readonly namedSecrets: Readonly<Record<string, string>>;
   /** The node addresses of the graph the session started with. */
   readonly nodeAddresses: readonly string[];
+  /** The value reads of the graph the session started with. */
+  readonly valueReads: ValueReadsSnapshot;
 }
 
 /** Where a dev converge reports what happens while it runs. */
@@ -42,29 +55,61 @@ export interface DevConvergeReport {
   readonly output: (text: string) => void;
 }
 
-/** Runs one dev converge and reports its events. Never throws: a failure is an outcome. */
+/** A structured error thrown before the converge began, as data: its code, message, why and fix. */
+export interface DevConvergeError {
+  readonly code: string;
+  readonly message: string;
+  readonly why?: string | undefined;
+  readonly fix?: string | undefined;
+}
+
+/**
+ * What one dev converge came to. `converged` carries the converge's outcome, and `error` when a
+ * structured error stopped it before it began. `value-reads-changed` means the app now reads
+ * other platform variables than the session prepared for, so nothing was converged.
+ * `appFiles` lists the app files the converge's import loaded.
+ */
+export type DevConvergeResult =
+  | {
+      readonly kind: 'converged';
+      readonly outcome: ConvergeOutcome;
+      readonly error?: DevConvergeError | undefined;
+      readonly appFiles: readonly string[];
+    }
+  | {
+      readonly kind: 'value-reads-changed';
+      readonly change: ValueReadsChange;
+      readonly appFiles: readonly string[];
+    };
+
+/** Runs one dev converge and reports its events. Never rejects: every failure is a result. */
 export type RunDevConverge = (
   job: DevConvergeJob,
   report: DevConvergeReport,
   signal?: AbortSignal,
-) => Promise<ConvergeOutcome>;
+) => Promise<DevConvergeResult>;
 
-/** What a dev converge imported: the config, the app root and the app's converge entry. */
+/** What a dev converge imported: the config, the app root, the app's converge entry, and the app files the import loaded. */
 export interface LoadedDevApp {
   readonly config: PrismaAppConfig;
   readonly root: ModuleNode | AppRootNode;
   readonly entry: AppConvergeEntry;
+  readonly appFiles: readonly string[];
 }
 
 export function thrownOutcome(error: unknown): ConvergeOutcome {
+  return { kind: 'failed', reasons: [failureReasonOf(error)] };
+}
+
+/** `error` as a failed result, keeping a structured error's code, why and fix. */
+export function thrownResult(error: unknown, appFiles: readonly string[] = []): DevConvergeResult {
   return {
-    kind: 'failed',
-    reasons: [
-      {
-        tag: error instanceof Error ? error.name : 'Unknown',
-        message: error instanceof Error ? error.message : String(error),
-      },
-    ],
+    kind: 'converged',
+    outcome: thrownOutcome(error),
+    ...(CliStructuredError.is(error)
+      ? { error: { code: error.code, message: error.message, why: error.why, fix: error.fix } }
+      : {}),
+    appFiles,
   };
 }
 
@@ -80,14 +125,27 @@ function containersOf(
   return containers;
 }
 
-/** Lowers `app` against the local target and plans and applies it, as `job` describes. */
+/**
+ * Lowers `app` against the local target and plans and applies it, as `job` describes. First it
+ * Loads the app as `lower()` will, and refuses to converge when its value reads differ from the
+ * ones the session started with.
+ */
 export async function convergeDevJob(
   job: DevConvergeJob,
   app: LoadedDevApp,
   report: DevConvergeReport,
   signal: AbortSignal | undefined,
-): Promise<ConvergeOutcome> {
+): Promise<DevConvergeResult> {
   try {
+    const graph = Load(app.root, {
+      id: job.name,
+      environment: { name: job.environment },
+      appConfigurationRead: job.appConfigurationRead,
+    });
+    const change = valueReadsChange(job.valueReads, valueReadsSnapshot(graph));
+    if (change !== undefined) {
+      return { kind: 'value-reads-changed', change, appFiles: app.appFiles };
+    }
     const resolved = await resolveLocalTargets(app.config);
     const containers = containersOf(job, resolved);
     const stack = app.entry.lower(app.root, app.config, {
@@ -108,7 +166,7 @@ export async function convergeDevJob(
       ),
       state: app.entry.devState(),
     });
-    return await app.entry.converge({
+    const outcome = await app.entry.converge({
       operation: 'deploy',
       stack,
       stage: job.environment,
@@ -118,7 +176,8 @@ export async function convergeDevJob(
       onEvent: report.onEvent,
       output: report.output,
     });
+    return { kind: 'converged', outcome, appFiles: app.appFiles };
   } catch (error) {
-    return thrownOutcome(error);
+    return thrownResult(error, app.appFiles);
   }
 }

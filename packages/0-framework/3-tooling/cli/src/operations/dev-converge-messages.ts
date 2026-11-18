@@ -1,16 +1,17 @@
 /** The messages between `prisma dev`'s main thread and its converge worker. */
-import type { ConvergeEvent, ConvergeOutcome } from '../converge-in-process.ts';
+import type { ConvergeEvent } from '../converge-in-process.ts';
+import type { DevConvergeResult } from './dev-converge.ts';
 
 /** From the main thread: stop the converge. */
 export interface AbortMessage {
   readonly kind: 'abort';
 }
 
-/** From the worker, in order: any number of `event` and `output`, then one `outcome`. */
+/** From the worker, in order: any number of `event` and `output`, then one `result`. */
 export type WorkerMessage =
   | { readonly kind: 'event'; readonly event: ConvergeEvent }
   | { readonly kind: 'output'; readonly text: string }
-  | { readonly kind: 'outcome'; readonly outcome: ConvergeOutcome };
+  | { readonly kind: 'result'; readonly result: DevConvergeResult };
 
 function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
   return typeof value === 'object' && value !== null;
@@ -27,8 +28,8 @@ export function isWorkerMessage(value: unknown): value is WorkerMessage {
       return isRecord(value['event']);
     case 'output':
       return typeof value['text'] === 'string';
-    case 'outcome':
-      return isRecord(value['outcome']) && typeof value['outcome']['kind'] === 'string';
+    case 'result':
+      return isRecord(value['result']) && typeof value['result']['kind'] === 'string';
     default:
       return false;
   }

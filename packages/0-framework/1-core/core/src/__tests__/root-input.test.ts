@@ -289,7 +289,7 @@ describe('what Load reads from the app configuration', () => {
     );
 
     expect(loadError(() => Load(root, { configuration: { WHEN: '2026-01-01' } })).message).toBe(
-      'input.WHEN of root module "shop" holds an object that is not plain data, which JSON cannot hold exactly. `prisma dev` and `destroy` hand the root\'s input to their second process in a JSON file, so a field the root\'s body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.',
+      'input.WHEN of root module "shop" holds an object that is not plain data, which JSON cannot hold exactly. `destroy` hands the root\'s input to its second process in a JSON file, so a field the root\'s body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.',
     );
   });
 

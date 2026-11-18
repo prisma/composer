@@ -152,10 +152,10 @@ function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
 }
 
 /** One error as a reason. A wrapped provider failure reports the error it wraps, and a structured error reports its code as its tag. */
-function reasonOf(error: unknown): ConvergeFailureReason {
+export function failureReasonOf(error: unknown): ConvergeFailureReason {
   if (!isRecord(error)) return { tag: 'Unknown', message: textOf(error) };
   const wrapped = wrappedProviderError(error);
-  if (wrapped !== undefined) return reasonOf(wrapped);
+  if (wrapped !== undefined) return failureReasonOf(wrapped);
   const message = typeof error['message'] === 'string' ? error['message'] : undefined;
   const tag = CliStructuredError.is(error)
     ? error.code
@@ -171,7 +171,7 @@ function reasonOf(error: unknown): ConvergeFailureReason {
 export function failureReasons(cause: Cause.Cause<unknown>): readonly ConvergeFailureReason[] {
   const reasons = cause.reasons.flatMap((reason): ConvergeFailureReason[] => {
     if (Cause.isInterruptReason(reason)) return [];
-    return [reasonOf(Cause.isFailReason(reason) ? reason.error : reason.defect)];
+    return [failureReasonOf(Cause.isFailReason(reason) ? reason.error : reason.defect)];
   });
   const unique = new Map(reasons.map((reason) => [`${reason.tag}\0${reason.message}`, reason]));
   return unique.size > 0
@@ -219,7 +219,7 @@ function program(request: ConvergeRequest, emit: (event: ConvergeEvent) => void)
 
 /**
  * Plans and applies `stack` in this process, as `alchemy deploy --yes` would.
- * The plan's scope, and the state-store lease it holds, closes before this
+ * The plan's scope, and the state-store lease it holds when the store has one, closes before this
  * returns, including when `signal` interrupts it. One converge runs at a time
  * per process, across every install of this module: a second call while one
  * runs is refused.
@@ -249,6 +249,6 @@ export const convergeInProcess: Converge = async (request) => {
     });
     return held.held ? held.value : { kind: 'refused', reason: 'already-running' };
   } catch (error) {
-    return { kind: 'failed', reasons: [reasonOf(error)] };
+    return { kind: 'failed', reasons: [failureReasonOf(error)] };
   }
 };

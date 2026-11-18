@@ -141,7 +141,7 @@ describe('localTargetProviders', () => {
 });
 
 describe('devState()', () => {
-  test('is a state layer the dev stack passes to lower()', () => {
+  test('is a state layer prisma dev passes to lower()', () => {
     expect(Layer.isLayer(devState())).toBe(true);
   });
 });

@@ -249,8 +249,9 @@ export const createDevCommand = (operations: ComposerOperations) =>
         'this machine.',
       description:
         'Runs credential-free and watches the app for changes, reconverging when a ' +
-        "service's build output changes. An edit to an app definition file (the entry module, " +
-        'or any other app file it loaded) needs a restart of dev, which says so. ' +
+        "service's build output or an app definition file (the entry module, or any app file " +
+        'it loaded) changes. An edit that adds or removes a node, or changes which platform ' +
+        'variables the app reads, needs a restart of dev, which says so. ' +
         "A service whose build adapter declares a dev server (Next.js's `next dev`, or the " +
         '`dev` command written on node()) runs that instead of its build, and its output is ' +
         'shown here, prefixed with its address. ' +

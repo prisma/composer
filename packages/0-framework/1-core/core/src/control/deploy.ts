@@ -229,7 +229,7 @@ export interface DeploymentResult {
 export interface LowerOptions {
   /** Stack + root node id. */
   readonly name: string;
-  /** The environment being deployed, as `--environment` gave it. Required by any value over `environment.name`; the generated stack files always pass it. */
+  /** The environment being deployed, as `--environment` gave it. Required by any value over `environment.name`; every caller passes it. */
   readonly environment?: string;
   /** What the caller's Load read from the app configuration (ADR-0062). Load takes the root's input from it. */
   readonly appConfigurationRead?: AppConfigurationRead;
@@ -240,7 +240,7 @@ export interface LowerOptions {
   readonly bundles: Record<string, Bundle>;
   /** Alchemy state store for the stack. Defaults to the config's own state layer. */
   readonly state?: AlchemyStateLayer;
-  /** Explicit provider set for the stack. Defaults to the config's own merged `providers()` (`mergedProviders`) — the same override precedence as `state`. The dev stack module passes `localTargetProviders(...)` here (ADR-0041); `lower()` itself learns nothing about the local target. */
+  /** Explicit provider set for the stack. Defaults to the config's own merged `providers()` (`mergedProviders`) — the same override precedence as `state`. `prisma dev` passes `localTargetProviders(...)` here (ADR-0041); `lower()` itself learns nothing about the local target. */
   readonly providers?: Layer.Layer<never>;
   /**
    * Invoked once per deploy, during apply, with the Deploy operation's result
@@ -250,7 +250,7 @@ export interface LowerOptions {
    * declared at all.
    */
   readonly report?: (result: DeploymentResult) => void;
-  /** Addresses lowered without an artifact: `package` and `deploy` are skipped and `reserve` runs instead (ADR-0056). Only the dev stack file sets it. */
+  /** Addresses lowered without an artifact: `package` and `deploy` are skipped and `reserve` runs instead (ADR-0056). Only `prisma dev` sets it. */
   readonly unassembled?: readonly string[];
   /** Each extension's resolved container, by extension id. Pass both `containers` and `preflightPayloads`, or neither. When both are absent, `lower()` reads both from the environment transports through `transportedLowerInputs(config)`. When exactly one is passed, `lower()` throws. */
   readonly containers?: ReadonlyMap<string, ContainerInstance> | undefined;

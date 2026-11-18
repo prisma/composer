@@ -44,7 +44,7 @@ export interface ProvisionedModuleInput {
   readonly binding: unknown;
   /** True for the root, whose binding is the app configuration. */
   readonly isLoadRoot: boolean;
-  /** For the root in the second process: its fields as the first process checked them. The root's schema does not run. */
+  /** For the root in a Load that takes what an earlier Load read: its fields as that Load checked them. The root's schema does not run. */
   readonly checked?: readonly RootInputField[];
 }
 
@@ -691,7 +691,7 @@ export function resolveValues(input: {
           path: field.path,
         });
         throw new LoadError(
-          `${label} of root module "${rootModuleAddress()}" reads "${key}" from the app configuration, and ${origin.label} names "${key}" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which \`prisma deploy\` sends to the platform as plain configuration, and \`prisma dev\` and \`destroy\` hand to their second process in a file. Read the secret with ${origin.label} only, or give the plain value a different name.`,
+          `${label} of root module "${rootModuleAddress()}" reads "${key}" from the app configuration, and ${origin.label} names "${key}" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which \`prisma deploy\` sends to the platform as plain configuration, and \`prisma dev\` hands to its converge worker thread, and \`destroy\` hands to its second process in a file. Read the secret with ${origin.label} only, or give the plain value a different name.`,
         );
       }
     }
@@ -699,7 +699,7 @@ export function resolveValues(input: {
       const kind = 'value' in field ? jsonInexactKind(field.value) : undefined;
       if (kind !== undefined) {
         throw new LoadError(
-          `${inputFieldLabel({ kind: 'input', module: rootModuleAddress(), path: field.path })} of root module "${rootModuleAddress()}" holds ${kind}, which JSON cannot hold exactly. \`prisma dev\` and \`destroy\` hand the root's input to their second process in a JSON file, so a field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.`,
+          `${inputFieldLabel({ kind: 'input', module: rootModuleAddress(), path: field.path })} of root module "${rootModuleAddress()}" holds ${kind}, which JSON cannot hold exactly. \`destroy\` hands the root's input to its second process in a JSON file, so a field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.`,
         );
       }
     }

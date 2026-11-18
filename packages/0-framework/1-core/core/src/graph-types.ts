@@ -22,9 +22,10 @@ export interface RootInputField {
 }
 
 /**
- * What a Load read from the app configuration (ADR-0062). The deploy's and `prisma dev`'s
- * first process writes it to the app configuration file, and their second process Loads with
- * it in place of the app configuration.
+ * What a Load read from the app configuration (ADR-0062). A later Load takes it in place of the
+ * app configuration: `lower()` under `deploy` (on the main thread) and `prisma dev` (in its
+ * converge worker thread), and `destroy`'s second process, which reads it from the app
+ * configuration file.
  */
 export interface AppConfigurationRead {
   /** Each field of the root's input that its body names, as the root's schema produced it. Empty when the root declares no input. */
@@ -38,17 +39,17 @@ interface CommonLoadOptions {
   readonly environment?: EnvironmentRealValues;
 }
 
-/** Load's options in the first process, or wherever the app configuration is at hand. */
+/** Load's options wherever the app configuration is at hand: the first Load of a command. */
 export interface FirstProcessLoadOptions extends CommonLoadOptions {
   /** The app configuration (ADR-0062): what the `config` adapters return. It is the root's input, which the root's schema checks. */
   readonly configuration?: Readonly<Record<string, unknown>>;
   readonly appConfigurationRead?: never;
 }
 
-/** Load's options in the deploy's and dev's second process. */
+/** Load's options in a Load that takes what an earlier Load read: `lower()` under `deploy` and `prisma dev`, and `destroy`'s second process. */
 export interface SecondProcessLoadOptions extends CommonLoadOptions {
   readonly configuration?: never;
-  /** What the first process's Load read, from the app configuration file. Load takes each root field from it without running the root's schema. */
+  /** What the earlier Load read. Load takes each root field from it without running the root's schema. */
   readonly appConfigurationRead: AppConfigurationRead;
 }
 

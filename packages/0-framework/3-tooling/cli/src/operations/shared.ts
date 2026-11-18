@@ -46,7 +46,7 @@ export interface OperationDeps {
   readonly alchemy?: RunAlchemy | undefined;
   /** The `lower` and converge functions `deploy` runs; defaults to the app's own install (`loadAppConvergeEntry`). Tests substitute it. */
   readonly appConvergeEntry?: AppConvergeEntry | undefined;
-  /** Runs one `dev` converge and reports its events; defaults to a new worker thread per converge (`convergeInWorker`). Tests substitute it. */
+  /** Runs one `dev` converge and reports its events; defaults to a new worker thread per converge (`runDevConvergeInWorker`). Tests substitute it. */
   readonly runDevConverge?: RunDevConverge | undefined;
   /** What `deploy` and `dev` redact from everything they report. Defaults to one built from `process.env`; the CLI passes its own so its console redirect redacts the same values. */
   readonly redaction?: SecretRedaction | undefined;

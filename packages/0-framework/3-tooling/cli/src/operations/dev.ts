@@ -92,7 +92,7 @@ export interface DevInput {
   readonly detach?: boolean | undefined;
   readonly cwd?: string | undefined;
   readonly onEvent?: ((event: DevEvent) => void) | undefined;
-  /** Interrupts a running converge. The first converge then fails with `DEV.INTERRUPTED`; a rebuild's ends quietly. It does not stop the session: `stop()` does. One process runs one converge at a time, so a `deploy` in the same process while a converge runs is refused, and so is a dev converge while a deploy runs. */
+  /** Interrupts a running converge and stops dev. During the first converge, dev then fails with `DEV.INTERRUPTED`; once the session has started, it stops as `stop()` stops it. One process runs one converge at a time, so a `deploy` in the same process while a converge runs is refused, and so is a dev converge while a deploy runs. */
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -101,7 +101,7 @@ export interface DevSession {
   /** The initial front door, already merged across attachments. */
   readonly endpoints: readonly ServiceEndpoint[];
   /** Stop the watch loop and the app's services (emulators and data stay up).
-   * A converge still running is interrupted and awaited first, so its state lease is released.
+   * A converge still running is interrupted, and its worker thread ends before the services stop.
    * Idempotent; emits 'stopping'/'stopped'; resolves `closed`. A no-op for a detached session. */
   stop(): Promise<void>;
   /** Settles when the session has fully stopped (via stop()); already settled for a detached session. */

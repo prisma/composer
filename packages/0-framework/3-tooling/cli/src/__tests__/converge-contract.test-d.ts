@@ -1,12 +1,17 @@
 // Contract 2's shapes, opaque ones by reference: on a failure update the copy, and bump CONVERGE_CONTRACT if the other side cannot read the new shape.
 import { expectTypeOf, test } from 'bun:test';
-import type { CallerCredentials, ContainerInstance } from '@internal/core/config';
+import type {
+  CallerCredentials,
+  ContainerInstance,
+  LocalTargetDescriptor,
+} from '@internal/core/config';
 import type {
   AlchemyStateLayer,
   DeployedNode,
   DeploymentResult,
   LowerOptions,
 } from '@internal/core/deploy';
+import type { devState, localTargetProviders } from '@internal/core/local-target';
 import type * as Layer from 'effect/Layer';
 import type { CONVERGE_CONTRACT } from '../converge-contract.ts';
 import type {
@@ -117,4 +122,14 @@ test('converge contract 2 covers these shapes, unchanged', () => {
     readonly message: string;
   }>();
   expectTypeOf<ResourcePhase>().toEqualTypeOf<'pending' | 'running' | 'done' | 'failed'>();
+  expectTypeOf<typeof localTargetProviders>().toEqualTypeOf<
+    (
+      resolved: ReadonlyMap<string, LocalTargetDescriptor>,
+      containers: ReadonlyMap<string, ContainerInstance>,
+      devDir: string,
+      plainVariableText: Readonly<Record<string, string>>,
+      namedSecrets: Readonly<Record<string, string>>,
+    ) => Layer.Layer<never>
+  >();
+  expectTypeOf<typeof devState>().toEqualTypeOf<() => AlchemyStateLayer>();
 });

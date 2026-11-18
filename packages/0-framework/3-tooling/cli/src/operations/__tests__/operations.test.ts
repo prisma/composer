@@ -50,7 +50,7 @@ import { unsetPlatformVariablesText } from '../../unset-platform-variables.ts';
 import { type DeployEvent, deployWithDeps } from '../deploy.ts';
 import { type DestroyInput, destroyWithDeps } from '../destroy.ts';
 import { type DevEvent, type DevInput, devWithDeps } from '../dev.ts';
-import { convergeDevJob, type RunDevConverge } from '../dev-converge.ts';
+import { convergeDevJob, type RunDevConverge, thrownResult } from '../dev-converge.ts';
 import { devStop, devUrl } from '../dev-current.ts';
 import { LOG_QUEUE_LIMIT } from '../execute-log.ts';
 import { type LogLine, logWithDeps } from '../log.ts';
@@ -237,11 +237,25 @@ function appConvergeEntry(converge: Converge): AppConvergeEntry {
   return { lower, converge, localTargetProviders, devState };
 }
 
-/** Runs dev's converge in this thread through `entry`, as its worker would: a stubbed `lower` or converge cannot cross to a worker. */
+/**
+ * Runs dev's converge in this thread through `entry`, as its worker would: a stubbed `lower` or
+ * converge cannot cross to a worker. The job goes through `structuredClone`, so every test also
+ * proves it can cross to one.
+ */
 function inThisThread(config: PrismaAppConfig, entry: AppConvergeEntry): RunDevConverge {
   return async (job, report, signal) => {
-    const { root } = await loadEntry(job.entry, job.cwd);
-    return convergeDevJob(job, { config, root, entry }, report, signal);
+    const crossed = structuredClone(job);
+    try {
+      const { root, files } = await loadEntry(crossed.entry, crossed.cwd);
+      return await convergeDevJob(
+        crossed,
+        { config, root, entry, appFiles: files },
+        report,
+        signal,
+      );
+    } catch (error) {
+      return thrownResult(error);
+    }
   };
 }
 
@@ -2017,8 +2031,15 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     readonly lowered: LowerOptions[];
     readonly requests: ConvergeRequest[];
     readonly spawned: number;
+    readonly providerCalls: Parameters<typeof localTargetProviders>[];
+    readonly providers: ReturnType<typeof localTargetProviders>;
+    readonly state: ReturnType<typeof devState>;
+    readonly appDir: string;
   }> {
     const app = makeAppDir('hello-dev');
+    const providers = Layer.empty;
+    const state = devState();
+    const providerCalls: Parameters<typeof localTargetProviders>[] = [];
     const lowered: LowerOptions[] = [];
     const requests: ConvergeRequest[] = [];
     let spawned = 0;
@@ -2045,12 +2066,17 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
               lowered.push(opts);
               return lower(root, config, opts);
             },
+            localTargetProviders: (...args) => {
+              providerCalls.push(args);
+              return providers;
+            },
+            devState: () => state,
           },
         },
       ),
     );
     expect(result.ok).toBe(true);
-    return { lowered, requests, spawned };
+    return { lowered, requests, spawned, providerCalls, providers, state, appDir: app.dir };
   }
 
   test("the dev preflight's payload reaches lower() as a value, and the converge sets no environment variable", async () => {
@@ -2108,13 +2134,17 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
   );
 
   test('dev lowers against the local providers and state store, and converges as a deploy in this process, starting no Alchemy child', async () => {
-    const { lowered, requests, spawned } = await convergedDev(() =>
-      Promise.resolve({ payload: undefined, plainVariableText: {} }),
-    );
+    const { lowered, requests, spawned, providerCalls, providers, state, appDir } =
+      await convergedDev(() => Promise.resolve({ payload: undefined, plainVariableText: {} }));
 
     expect(spawned).toBe(0);
-    expect(lowered[0]?.providers).toBeDefined();
-    expect(lowered[0]?.state).toBeDefined();
+    expect(lowered[0]?.providers).toBe(providers);
+    expect(lowered[0]?.state).toBe(state);
+    expect(providerCalls).toHaveLength(1);
+    const [resolved, containers, devDir] = providerCalls[0] ?? [];
+    expect([...(resolved?.keys() ?? [])]).toEqual(['fixture-extension']);
+    expect(containers?.get('fixture-extension')?.serialize()).toBe('dev');
+    expect(devDir).toBe(path.join(appDir, '.prisma-composer', 'dev', 'dev'));
     expect(lowered[0]?.environment).toBe('dev');
     expect(requests.map(({ operation, stage }) => ({ operation, stage }))).toEqual([
       { operation: 'deploy', stage: 'dev' },
@@ -2787,6 +2817,35 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     if (result.ok) throw new Error('expected an interruption');
     expect(result.failure.code).toBe('DEV.INTERRUPTED');
     expect(stops).toBe(1);
+  }, 15_000);
+
+  test("aborting dev's signal after the session started stops the session once, as stop() does", async () => {
+    const app = makeAppDir('hello-dev');
+    const interrupt = new AbortController();
+    const events: DevEvent[] = [];
+    let converges = 0;
+
+    await silently(async () => {
+      const { start, change, stops } = await devWithBuildWatch(
+        app,
+        async () => {
+          converges += 1;
+          return APPLIED;
+        },
+        events,
+        { signal: interrupt.signal },
+      );
+      if (!start.ok) throw start.failure;
+      interrupt.abort();
+      await start.value.closed;
+      change();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(stops()).toBe(1);
+    });
+
+    expect(events.filter((event) => event.kind === 'stopping')).toHaveLength(1);
+    expect(events.at(-1)).toEqual({ kind: 'stopped' });
+    expect(converges).toBe(1);
   }, 15_000);
 
   test('a failed first converge carries its reasons, without a stack file or reproduce command', async () => {

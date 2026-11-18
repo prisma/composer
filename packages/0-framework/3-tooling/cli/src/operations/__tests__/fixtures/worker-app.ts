@@ -1,9 +1,11 @@
 /**
- * An app on disk for `prisma dev`'s converge worker: a `prisma.config.ts`
- * whose one extension lowers a resource by appending its `label` and the
- * working directory to `seen.txt`, an entry that takes the label from
- * `label.ts` and a service that deploys nothing, and a `@prisma/composer` install that re-exports this
- * package's own converge entry from source.
+ * An app on disk for `prisma dev`'s converge worker. Its `prisma.config.ts`
+ * has one extension that lowers a resource by appending the resource's
+ * `label` and the working directory to `seen.txt`; the config imports a
+ * sibling `.ts` file by a `.js` specifier. The entry takes the label from
+ * `label.ts` and provisions a service that deploys nothing. Its
+ * `@prisma/composer` install re-exports this package's own converge entry
+ * from source.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -18,11 +20,18 @@ const url = (specifier: string): string => JSON.stringify(import.meta.resolve(sp
 
 const fileUrl = (file: string): string => JSON.stringify(pathToFileURL(file).href);
 
-const CONFIG = `import * as fs from 'node:fs';
+const RECORD = `import * as fs from 'node:fs';
 import * as path from 'node:path';
+
+export const record = (line: string): void =>
+  fs.appendFileSync(path.join(process.cwd(), 'seen.txt'), line + '\\n');
+`;
+
+const CONFIG = `import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as Effect from ${url('effect/Effect')};
 import * as Layer from ${url('effect/Layer')};
+import { record } from './record.js';
 
 const container = { input: { appName: 'shop', environment: 'dev' }, serialize: () => 'dev' };
 const attachment = {
@@ -31,13 +40,29 @@ const attachment = {
   endpoints: async () => [],
   logs: async function* () {},
 };
-const record = (line) => fs.appendFileSync(path.join(process.cwd(), 'seen.txt'), line + '\\n');
+
+const printEverywhere = (token) => {
+  console.log('log ' + token);
+  console.dir({ dir: token });
+  console.table([{ table: token }]);
+  console.count('count ' + token);
+  console.assert(false, 'assert ' + token);
+  process.emitWarning('warning ' + token);
+};
 
 const thing = Object.assign(
   (ctx) => {
     const { label } = ctx.node.props;
+    const token = process.env.FIXTURE_API_TOKEN;
     if (label === 'exit') process.exit(7);
-    if (label === 'print') console.log('the token is ' + process.env.FIXTURE_API_TOKEN);
+    if (label === 'print') console.log('the token is ' + token);
+    if (label === 'print-all') printEverywhere(token);
+    if (label === 'throw-later') {
+      setTimeout(() => {
+        throw new Error('thrown outside the converge');
+      }, 0);
+      return Effect.never;
+    }
     if (label === 'fail') return Effect.fail(new Error('the thing refused'));
     if (label === 'block' || label === 'stubborn') {
       const blocked = Effect.sync(() => record('blocking')).pipe(Effect.andThen(Effect.never));
@@ -50,6 +75,10 @@ const thing = Object.assign(
   },
   { kind: 'resource' },
 );
+
+const variable = Object.assign(() => Effect.succeed({ outputs: {}, entities: [] }), {
+  kind: 'resource',
+});
 
 const done = () => Effect.succeed({});
 const web = {
@@ -66,7 +95,7 @@ export default {
     extensions: [
       {
         id: 'fixture-extension',
-        nodes: { 'fake/thing': thing, 'fake/web': web },
+        nodes: { 'fake/thing': thing, 'fake/web': web, 'fake/variable': variable },
         localTarget: async () => ({
           providers: () => Layer.empty,
           container: {
@@ -85,19 +114,34 @@ export default {
 };
 `;
 
-/** The entry's source, provisioning one resource per id, each with `label.ts`'s label. */
-export function entrySource(ids: readonly string[] = ['thing']): string {
+export interface EntryShape {
+  /** The resources, each with `label.ts`'s label. */
+  readonly ids?: readonly string[];
+  /** Whether the service reads the platform variable `SMTP_PORT`. */
+  readonly readsVariable?: boolean;
+}
+
+/** The entry's source. */
+export function entrySource(shape: EntryShape = {}): string {
+  const ids = shape.ids ?? ['thing'];
   return [
-    `import { module, resource, service } from ${url('@internal/core')};`,
+    `import { appRoot, paramSource, resource, service, valueResource } from ${url('@internal/core')};`,
     "import { label } from './label.ts';",
     '',
-    "export default module('shop', {}, (h) => {",
+    "export default appRoot('shop', ({ provision }) => {",
     ...ids.map(
       (id) =>
-        `  h.provision(resource({ name: ${JSON.stringify(id)}, extension: 'fixture-extension', type: 'fake/thing', props: { label } }), { id: ${JSON.stringify(id)} });`,
+        `  provision(resource({ name: ${JSON.stringify(id)}, extension: 'fixture-extension', type: 'fake/thing', props: { label } }), { id: ${JSON.stringify(id)} });`,
     ),
-    "  h.provision(service({ name: 'web', extension: 'fixture-extension', type: 'fake/web', inputs: {}, params: {}, build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' } }), { id: 'web' });",
-    '  return {};',
+    ...(shape.readsVariable === true
+      ? [
+          "  const port = provision(valueResource({ name: 'smtp-port', extension: 'fixture-extension', type: 'fake/variable', props: { name: 'SMTP_PORT' }, value: paramSource({ name: 'SMTP_PORT' }, { label: 'the variable SMTP_PORT' }) }), { id: 'smtpPort' });",
+        ]
+      : []),
+    "  const web = service({ name: 'web', extension: 'fixture-extension', type: 'fake/web', inputs: {}, params: {}, input: { '~standard': { version: 1, vendor: 'fixture', validate: (value) => ({ value }) } }, build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' } });",
+    shape.readsVariable === true
+      ? "  provision(web, { id: 'web', input: { port } });"
+      : "  provision(web, { id: 'web', input: {} });",
     '});',
     '',
   ].join('\n');
@@ -143,6 +187,7 @@ export function makeWorkerApp(label = 'v1'): WorkerApp {
     path.join(composer, 'contract.mjs'),
     `export * from ${fileUrl(path.join(SOURCE, 'exports', 'converge-contract.ts'))};\n`,
   );
+  fs.writeFileSync(path.join(dir, 'record.ts'), RECORD);
   const configFile = path.join(dir, 'prisma.config.ts');
   fs.writeFileSync(configFile, CONFIG);
   const entry = path.join(dir, 'module.ts');
@@ -177,9 +222,10 @@ export function jobFor(app: WorkerApp, cwd: string = app.dir): DevConvergeJob {
     unassembled: [],
     containers: { 'fixture-extension': 'dev' },
     preflightPayloads: {},
-    devDir: path.join(cwd, '.prisma-composer', 'dev', 'dev'),
+    devDir: path.join(app.dir, '.prisma-composer', 'dev', 'dev'),
     plainVariableText: {},
     namedSecrets: {},
     nodeAddresses: ['shop', 'shop.thing', 'shop.web'],
+    valueReads: { reads: [], props: {} },
   };
 }

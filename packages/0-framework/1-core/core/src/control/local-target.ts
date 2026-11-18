@@ -27,9 +27,9 @@ function noLocalTargetSupportError(id: string): CliStructuredError {
  * resources or services and is skipped entirely — never even checked for a
  * `localTarget` thunk. Every other configured extension must be
  * local-target-capable, or the dev command cannot bring the app up at all,
- * so a missing thunk throws naming the extension. The generated dev stack
- * module calls this once and threads the resolved map through every
- * subsequent hook, including `localTargetProviders`.
+ * so a missing thunk throws naming the extension. `prisma dev` calls this
+ * once on its main thread for the session's hooks, and once in each converge
+ * worker thread for `localTargetProviders`.
  */
 export async function resolveLocalTargets(
   config: PrismaAppConfig,
@@ -48,7 +48,7 @@ export async function resolveLocalTargets(
  * All configured extensions' local-target providers merged, config array
  * order (ADR-0041), from the ALREADY-RESOLVED descriptor map
  * (`resolveLocalTargets`'s product — this function itself never touches a
- * `localTarget` thunk). The generated dev stack module is this
+ * `localTarget` thunk). `prisma dev`'s converge worker thread is this
  * aggregator's one caller, passing the result as `LowerOptions.providers`.
  */
 export function localTargetProviders(
