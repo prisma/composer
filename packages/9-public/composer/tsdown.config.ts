@@ -18,6 +18,7 @@ export default defineConfig({
     'internal-converge': 'src/exports/internal-converge.ts',
     'internal-converge-contract': 'src/exports/internal-converge-contract.ts',
     control: 'src/exports/control.ts',
+    'dev-converge-worker': 'src/exports/dev-converge-worker.ts',
     deploy: 'src/exports/deploy.ts',
     'local-target': 'src/exports/local-target.ts',
     report: 'src/exports/report.ts',

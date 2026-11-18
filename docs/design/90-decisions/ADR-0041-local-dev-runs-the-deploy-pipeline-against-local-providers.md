@@ -1,5 +1,7 @@
 # ADR-0041: Local dev runs the deploy pipeline against local providers
 
+Amended by [ADR-0067](ADR-0067-prisma-dev-converges-in-a-worker-thread.md): each converge of `prisma dev` runs in a new worker thread of the `prisma` process, with no generated stack file and no Alchemy child.
+
 Amended 2026-10-23: `prisma dev` takes no positional entry; the entry is `entry` in the `composer` section of `prisma.config.ts`, or `--entry <path>` ([ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)).
 
 Amended by [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md): local dev runs as an environment the user names, `dev` by default.

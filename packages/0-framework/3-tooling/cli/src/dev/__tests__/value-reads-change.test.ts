@@ -10,12 +10,15 @@ import {
 } from '@internal/core';
 import type { Pointer } from '@internal/foundation/pointer';
 import type { SecretString } from '@internal/foundation/secret';
-import { valueReadsChange } from '../value-reads-change.ts';
+import { valueReadsChange, valueReadsSnapshot } from '../value-reads-change.ts';
 
 interface NodeSpec {
   readonly id: string;
   readonly name: string;
   readonly secret?: boolean;
+  /** Whether the node's props hold an object branded under a symbol key, which `structuredClone` drops. */
+  readonly brandedProp?: boolean;
+  readonly extra?: Readonly<Record<string, unknown>>;
   readonly schema?: PlainData;
 }
 
@@ -44,6 +47,10 @@ const reader = (name: string) =>
     build: { extension: 'test/build', type: 'node', module: 'file:///test/app.ts', entry: 'x.js' },
   });
 
+function readsOf(nodes: readonly NodeSpec[], reads: readonly ReadSpec[]) {
+  return valueReadsSnapshot(graphOf(nodes, reads));
+}
+
 function graphOf(nodes: readonly NodeSpec[], reads: readonly ReadSpec[]) {
   return Load(
     appRoot('shop', ({ provision }) => {
@@ -63,10 +70,15 @@ function graphOf(nodes: readonly NodeSpec[], reads: readonly ReadSpec[]) {
           name: node.id,
           extension: 'test/pack',
           type: 'variable',
-          props:
-            node.schema === undefined
-              ? { name: node.name, secret: node.secret === true }
-              : { name: node.name, secret: node.secret === true, schema: node.schema },
+          props: {
+            name: node.name,
+            secret: node.secret === true,
+            ...(node.schema === undefined ? {} : { schema: node.schema }),
+            ...(node.brandedProp === true
+              ? { kind: { [Symbol.for('test:brand')]: true, name: 'variable' } }
+              : {}),
+            ...node.extra,
+          },
           value,
         });
         values.set(node.id, provision(resource, { id: node.id }));
@@ -86,14 +98,20 @@ const emailFrom: NodeSpec = { id: 'emailFrom', name: 'EMAIL_FROM' };
 const unread: NodeSpec = { id: 'unread', name: 'UNREAD' };
 
 describe('valueReadsChange', () => {
+  test('a snapshot whose read node holds a symbol-branded object in its props is no change from its own structured clone', () => {
+    const started = readsOf([{ ...emailFrom, brandedProp: true }], [fromRead]);
+
+    expect(valueReadsChange(structuredClone(started), started)).toBeUndefined();
+  });
+
   test('identical graphs built in another order are no change', () => {
     const token: NodeSpec = { id: 'token', name: 'API_TOKEN' };
     const tokenRead: ReadSpec = { reader: 'digest', node: 'token', path: 'token' };
 
     expect(
       valueReadsChange(
-        graphOf([emailFrom, token], [fromRead, tokenRead]),
-        graphOf([token, emailFrom], [tokenRead, fromRead]),
+        readsOf([emailFrom, token], [fromRead, tokenRead]),
+        readsOf([token, emailFrom], [tokenRead, fromRead]),
       ),
     ).toBeUndefined();
   });
@@ -101,8 +119,8 @@ describe('valueReadsChange', () => {
   test('a new reader of a node already read is an added read', () => {
     expect(
       valueReadsChange(
-        graphOf([emailFrom], [fromRead]),
-        graphOf([emailFrom], [fromRead, { ...fromRead, reader: 'digest' }]),
+        readsOf([emailFrom], [fromRead]),
+        readsOf([emailFrom], [fromRead, { ...fromRead, reader: 'digest' }]),
       ),
     ).toEqual({ added: ['shop.emailFrom'], removed: [], changed: [] });
   });
@@ -110,8 +128,8 @@ describe('valueReadsChange', () => {
   test('a reader removed while another stays is a removed read', () => {
     expect(
       valueReadsChange(
-        graphOf([emailFrom], [fromRead, { ...fromRead, reader: 'digest' }]),
-        graphOf([emailFrom], [fromRead]),
+        readsOf([emailFrom], [fromRead, { ...fromRead, reader: 'digest' }]),
+        readsOf([emailFrom], [fromRead]),
       ),
     ).toEqual({ added: [], removed: ['shop.emailFrom'], changed: [] });
   });
@@ -119,8 +137,8 @@ describe('valueReadsChange', () => {
   test('a read that moves to another field of the same service is a change', () => {
     expect(
       valueReadsChange(
-        graphOf([emailFrom], [fromRead]),
-        graphOf([emailFrom], [{ ...fromRead, path: 'sender' }]),
+        readsOf([emailFrom], [fromRead]),
+        readsOf([emailFrom], [{ ...fromRead, path: 'sender' }]),
       ),
     ).toEqual({ added: [], removed: [], changed: ['shop.emailFrom'] });
   });
@@ -130,8 +148,8 @@ describe('valueReadsChange', () => {
 
     expect(
       valueReadsChange(
-        graphOf([emailFrom, key], [fromRead]),
-        graphOf([emailFrom, key], [fromRead, { ...fromRead, node: 'key', path: 'key' }]),
+        readsOf([emailFrom, key], [fromRead]),
+        readsOf([emailFrom, key], [fromRead, { ...fromRead, node: 'key', path: 'key' }]),
       ),
     ).toEqual({ added: ['shop.key'], removed: [], changed: [] });
   });
@@ -139,8 +157,8 @@ describe('valueReadsChange', () => {
   test('changed props on a read node are a change', () => {
     expect(
       valueReadsChange(
-        graphOf([emailFrom], [fromRead]),
-        graphOf([{ ...emailFrom, name: 'EMAIL_SENDER' }], [fromRead]),
+        readsOf([emailFrom], [fromRead]),
+        readsOf([{ ...emailFrom, name: 'EMAIL_SENDER' }], [fromRead]),
       ),
     ).toEqual({ added: [], removed: [], changed: ['shop.emailFrom'] });
   });
@@ -151,26 +169,26 @@ describe('valueReadsChange', () => {
 
     expect(
       valueReadsChange(
-        graphOf([port], [portRead]),
-        graphOf([{ ...port, schema: { type: 'integer' } }], [portRead]),
+        readsOf([port], [portRead]),
+        readsOf([{ ...port, schema: { type: 'integer' } }], [portRead]),
       ),
     ).toEqual({ added: [], removed: [], changed: ['shop.smtpPort'] });
     expect(
       valueReadsChange(
-        graphOf([port], [portRead]),
-        graphOf([{ id: port.id, name: port.name }], [portRead]),
+        readsOf([port], [portRead]),
+        readsOf([{ id: port.id, name: port.name }], [portRead]),
       ),
     ).toEqual({ added: [], removed: [], changed: ['shop.smtpPort'] });
     expect(
-      valueReadsChange(graphOf([port], [portRead]), graphOf([port], [portRead])),
+      valueReadsChange(readsOf([port], [portRead]), readsOf([port], [portRead])),
     ).toBeUndefined();
   });
 
   test('changed props on a node no service reads are no change', () => {
     expect(
       valueReadsChange(
-        graphOf([emailFrom, unread], [fromRead]),
-        graphOf([emailFrom, { ...unread, secret: true }], [fromRead]),
+        readsOf([emailFrom, unread], [fromRead]),
+        readsOf([emailFrom, { ...unread, secret: true }], [fromRead]),
       ),
     ).toBeUndefined();
   });
@@ -182,12 +200,21 @@ describe('valueReadsChange', () => {
 
     expect(
       valueReadsChange(
-        graphOf([emailFrom, sender, port], [fromRead, senderRead]),
-        graphOf(
+        readsOf([emailFrom, sender, port], [fromRead, senderRead]),
+        readsOf(
           [emailFrom, { ...sender, secret: true }, port],
           [senderRead, { reader: 'mail', node: 'smtpPort', path: 'port' }],
         ),
       ),
     ).toEqual({ added: ['shop.smtpPort'], removed: ['shop.emailFrom'], changed: ['shop.sender'] });
+  });
+
+  test("two different dates in a read node's props are a change", () => {
+    expect(
+      valueReadsChange(
+        readsOf([{ ...emailFrom, extra: { since: new Date(1) } }], [fromRead]),
+        readsOf([{ ...emailFrom, extra: { since: new Date(2) } }], [fromRead]),
+      ),
+    ).toEqual({ added: [], removed: [], changed: ['shop.emailFrom'] });
   });
 });

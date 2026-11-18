@@ -10,6 +10,7 @@
     "./control": "./dist/control.mjs",
     "./converge": "./dist/converge.mjs",
     "./converge-contract": "./dist/converge-contract.mjs",
+    "./dev-converge-worker": "./dist/dev-converge-worker.mjs",
     "./family": "./dist/family.mjs",
     "./report": "./dist/report.mjs",
     "./testing": "./dist/testing.mjs",

@@ -44,7 +44,7 @@ export interface ProvisionedModuleInput {
   readonly binding: unknown;
   /** True for the root, whose binding is the app configuration. */
   readonly isLoadRoot: boolean;
-  /** For the root in the second process: its fields as the first process checked them. The root's schema does not run. */
+  /** For the root in a Load that takes what an earlier Load read: its fields as that Load checked them. The root's schema does not run. */
   readonly checked?: readonly RootInputField[];
 }
 
@@ -149,6 +149,16 @@ function jsonInexactKind(value: unknown): string | undefined {
     return undefined;
   }
   return describeNotPlain(value) ?? describeKind(value);
+}
+
+/** The `name` of the error a Load that takes what an earlier Load read fails with when it needs a root input field that Load did not read. */
+export const ROOT_INPUT_UNREAD_ERROR = 'RootInputUnreadError';
+
+class RootInputUnreadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = ROOT_INPUT_UNREAD_ERROR;
+  }
 }
 
 const SAME_GRAPH_ADVICE =
@@ -631,8 +641,8 @@ export function resolveValues(input: {
             (candidate) => candidate.path.join('\0') === origin.path.join('\0'),
           );
           if (field === undefined) {
-            throw new LoadError(
-              `${inputFieldLabel(origin)} of root module "${origin.module}" is not in the app configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. ${SAME_GRAPH_ADVICE}`,
+            throw new RootInputUnreadError(
+              `${inputFieldLabel(origin)} of root module "${origin.module}" was not read when this command started, so it has no value here. ${SAME_GRAPH_ADVICE}`,
             );
           }
           result = field.value;
@@ -691,7 +701,7 @@ export function resolveValues(input: {
           path: field.path,
         });
         throw new LoadError(
-          `${label} of root module "${rootModuleAddress()}" reads "${key}" from the app configuration, and ${origin.label} names "${key}" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which \`prisma deploy\` sends to the platform as plain configuration, and \`prisma dev\` and \`destroy\` hand to their second process in a file. Read the secret with ${origin.label} only, or give the plain value a different name.`,
+          `${label} of root module "${rootModuleAddress()}" reads "${key}" from the app configuration, and ${origin.label} names "${key}" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which \`prisma deploy\` sends to the platform as plain configuration, \`prisma dev\` gives to the local services as plain configuration, and \`destroy\` writes to a file. Read the secret with ${origin.label} only, or give the plain value a different name.`,
         );
       }
     }
@@ -699,7 +709,7 @@ export function resolveValues(input: {
       const kind = 'value' in field ? jsonInexactKind(field.value) : undefined;
       if (kind !== undefined) {
         throw new LoadError(
-          `${inputFieldLabel({ kind: 'input', module: rootModuleAddress(), path: field.path })} of root module "${rootModuleAddress()}" holds ${kind}, which JSON cannot hold exactly. \`prisma dev\` and \`destroy\` hand the root's input to their second process in a JSON file, so a field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.`,
+          `${inputFieldLabel({ kind: 'input', module: rootModuleAddress(), path: field.path })} of root module "${rootModuleAddress()}" holds ${kind}, which JSON cannot hold exactly. \`destroy\` hands the root's input to its second process in a JSON file, so a field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.`,
         );
       }
     }

@@ -1,5 +1,7 @@
 # ADR-0066: `deploy` runs Alchemy in the `prisma` process
 
+Extended to `prisma dev` by [ADR-0067](ADR-0067-prisma-dev-converges-in-a-worker-thread.md): each dev converge runs in a new worker thread of the `prisma` process. Where this record says `destroy` and `prisma dev` keep the generated stack file and the Alchemy child, that now holds for `destroy` only.
+
 ## Decision
 
 `prisma deploy`, and the `deploy` operation on `@prisma/composer/control`, run Alchemy's plan and apply in the process that runs the deploy, through Alchemy's programmatic API (`alchemy/Alchemist`). Deploy writes no `.prisma-composer/alchemy.run.ts` and starts no Alchemy child.

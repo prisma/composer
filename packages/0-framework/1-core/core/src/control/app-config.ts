@@ -72,10 +72,10 @@ export interface ExtensionDescriptor {
    * platform variable a service needs has a value) and throws to abort the
    * deploy. Async: it talks to the platform (ADR-0064).
    *
-   * What it returns is carried to the alchemy process for this same extension
-   * to read back there (preflight-transport.ts) — preflight runs in the CLI
-   * parent, and the alchemy child re-imports the config from scratch, so
-   * anything the lowering needs from it must ride that transport. The payload
+   * What it returns reaches this same extension's lowering as
+   * `LowerContext.preflight`: as a value under `deploy` and `prisma dev`, and
+   * through the environment (preflight-transport.ts) for `destroy`'s alchemy
+   * child, which re-imports the config from scratch. The payload
    * is the extension's own opaque string; the framework never reads it, and a
    * secret value must never go in it. What it hands `input.report` reaches the
    * deploy report through the framework's own transport, not this payload.
@@ -362,7 +362,7 @@ export interface LocalTargetProvidersInput {
   readonly devDir: string;
   /** The text of each plain platform variable a service reads, by name. Never a secret. */
   readonly plainVariableText: Readonly<Record<string, string>>;
-  /** The app secrets the graph's platform secrets name, which the first process handed the second. A local deployment takes the text its secret `$platform` markers name from it. */
+  /** The app secrets the graph's platform secrets name, which `prisma dev` hands its converge worker thread in memory. A local deployment takes the text its secret `$platform` markers name from it. */
   readonly namedSecrets: NamedSecrets;
 }
 
@@ -487,10 +487,10 @@ export type ConfigAdapter = (input: ConfigAdapterInput) => ConfigValues | Promis
 /** The app configuration (ADR-0062): what the `config` adapters return, merged by top-level key, a later adapter winning. It is the root's input, and under `prisma dev` it also holds the text of each plain platform variable. */
 export type AppConfiguration = Readonly<Record<string, unknown>>;
 
-/** The app secrets (ADR-0062): what the `secrets` adapters return, merged the same way. Every value is text. Nothing fills a platform variable from them. `prisma dev` hands its second process the values under the secrets keys of the graph's secret sources, and Composer redacts those values wherever it prints. */
+/** The app secrets (ADR-0062): what the `secrets` adapters return, merged the same way. Every value is text. Nothing fills a platform variable from them. `prisma dev` hands the local target's providers the values under the secrets keys of the graph's secret sources, and Composer redacts those values wherever it prints. */
 export type AppSecrets = Readonly<Record<string, string>>;
 
-/** The app secrets under the secrets keys of the graph's secret sources, each with text. `prisma dev`'s first process hands them to its second process in `PRISMA_COMPOSER_NAMED_SECRETS`. */
+/** The app secrets under the secrets keys of the graph's secret sources, each with text. `prisma dev` hands them to the local target's providers, in memory. */
 export type NamedSecrets = Readonly<Record<string, string>>;
 
 /**

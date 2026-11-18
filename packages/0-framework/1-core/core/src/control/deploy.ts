@@ -229,7 +229,7 @@ export interface DeploymentResult {
 export interface LowerOptions {
   /** Stack + root node id. */
   readonly name: string;
-  /** The environment being deployed, as `--environment` gave it. Required by any value over `environment.name`; the generated stack files always pass it. */
+  /** The environment being deployed, as `--environment` gave it. Required by any value over `environment.name`; every caller passes it. */
   readonly environment?: string;
   /** What the caller's Load read from the app configuration (ADR-0062). Load takes the root's input from it. */
   readonly appConfigurationRead?: AppConfigurationRead;
@@ -240,7 +240,7 @@ export interface LowerOptions {
   readonly bundles: Record<string, Bundle>;
   /** Alchemy state store for the stack. Defaults to the config's own state layer. */
   readonly state?: AlchemyStateLayer;
-  /** Explicit provider set for the stack. Defaults to the config's own merged `providers()` (`mergedProviders`) — the same override precedence as `state`. The dev stack module passes `localTargetProviders(...)` here (ADR-0041); `lower()` itself learns nothing about the local target. */
+  /** Explicit provider set for the stack. Defaults to the config's own merged `providers()` (`mergedProviders`) — the same override precedence as `state`. `prisma dev` passes `localTargetProviders(...)` here (ADR-0041); `lower()` itself learns nothing about the local target. */
   readonly providers?: Layer.Layer<never>;
   /**
    * Invoked once per deploy, during apply, with the Deploy operation's result
@@ -250,7 +250,7 @@ export interface LowerOptions {
    * declared at all.
    */
   readonly report?: (result: DeploymentResult) => void;
-  /** Addresses lowered without an artifact: `package` and `deploy` are skipped and `reserve` runs instead (ADR-0056). Only the dev stack file sets it. */
+  /** Addresses lowered without an artifact: `package` and `deploy` are skipped and `reserve` runs instead (ADR-0056). Only `prisma dev` sets it. */
   readonly unassembled?: readonly string[];
   /** Each extension's resolved container, by extension id. Pass both `containers` and `preflightPayloads`, or neither. When both are absent, `lower()` reads both from the environment transports through `transportedLowerInputs(config)`. When exactly one is passed, `lower()` throws. */
   readonly containers?: ReadonlyMap<string, ContainerInstance> | undefined;
@@ -321,13 +321,23 @@ export class LowerError extends Error {
   }
 }
 
+/** The `name` of the error `lower()` fails with when it builds a graph whose node addresses differ from `firstProcessNodeAddresses`. */
+export const GRAPH_CHANGED_ERROR = 'GraphChangedError';
+
+class GraphChangedError extends LowerError {
+  constructor(message: string) {
+    super(message);
+    this.name = GRAPH_CHANGED_ERROR;
+  }
+}
+
 function assertSameNodeAddresses(built: readonly string[], firstProcess: readonly string[]): void {
   const onlyBuilt = built.filter((address) => !firstProcess.includes(address));
   const onlyFirst = firstProcess.filter((address) => !built.includes(address));
   if (onlyBuilt.length === 0 && onlyFirst.length === 0) return;
   const list = (addresses: readonly string[]) =>
     addresses.length === 0 ? 'none' : addresses.map((address) => `"${address}"`).join(', ');
-  throw new LowerError(
+  throw new GraphChangedError(
     `lower() built a different graph from the one Composer checked first. Only in the graph lower() built: ${list(onlyBuilt)}. Only in the graph Composer checked: ${list(onlyFirst)}. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.`,
   );
 }

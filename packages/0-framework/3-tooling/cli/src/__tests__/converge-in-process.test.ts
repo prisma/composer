@@ -19,6 +19,7 @@ import {
   lower,
   toProviderError,
 } from '@internal/core/deploy';
+import { devState, localTargetProviders } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import * as Alchemist from 'alchemy/Alchemist';
 import * as Interaction from 'alchemy/Interaction';
@@ -505,7 +506,7 @@ describe('deploy with the real in-process converge', () => {
       },
       {
         runAssembler: async () => ({ dir, entry: 'server.js' }),
-        appConvergeEntry: { lower, converge: convergeInProcess },
+        appConvergeEntry: { lower, converge: convergeInProcess, localTargetProviders, devState },
         credentials: { workspaceId: 'ws_1', client: {} },
       },
     );

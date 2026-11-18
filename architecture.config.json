@@ -829,6 +829,18 @@
       "plane": "control"
     },
     {
+      "glob": "packages/9-public/composer/src/exports/dev-converge-worker.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "control"
+    },
+    {
+      "glob": "packages/9-public/composer-cli/src/exports/dev-converge-worker.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "control"
+    },
+    {
       "glob": "packages/9-public/composer-cli/src/exports/family.ts",
       "domain": "public",
       "layer": "public",
