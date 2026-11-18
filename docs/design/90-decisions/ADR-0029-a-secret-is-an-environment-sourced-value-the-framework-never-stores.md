@@ -58,7 +58,7 @@ At boot the framework swaps each pointer for a redacting box over the named vari
 - A secret field is required unless the schema makes it optional; presence is the schema's call.
 - Rotation is: change the value on the platform, then redeploy. A running instance's environment is frozen when the instance is created.
 - A platform secret and a generated param never share a variable: a generated variable's name starts with `COMPOSER_`, which `variable.secret()` refuses. Two fields bound to one platform secret's value read one variable. Two nodes with one name fail the Prisma Cloud graph check ([ADR-0064](ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)).
-- A name may not be both a platform secret and a root input field: Load refuses it, also when no service reads the secret, because the deploy hands its second process every plain value it reads, in a file.
+- A name may not be both a platform secret and a root input field: Load refuses it, also when no service reads the secret, because a root input field is a plain value: `prisma deploy` sends it to the platform as plain configuration, and `prisma dev` and `destroy` hand it to their second process in a file.
 - A short secret is redacted at any length, so a one-character secret blanks that character in everything Composer prints.
 
 ## Alternatives considered

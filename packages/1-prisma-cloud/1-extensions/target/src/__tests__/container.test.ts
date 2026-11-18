@@ -314,6 +314,47 @@ describe('containerDescriptor().ensure()', () => {
   });
 });
 
+describe('a supplied client and PRISMA_API_URL', () => {
+  const urls = (apiUrl: string | undefined) => ({
+    PRISMA_API_URL: apiUrl,
+    PRISMA_MANAGEMENT_API_URL: 'https://api.staging.test',
+  });
+
+  test('naming another host than the client, ensure and locate fail with a structured error before any request', async () => {
+    const state = newFakeState();
+    await withEnv(urls('https://api.prisma.io'), async () => {
+      const descriptor = containerDescriptor();
+      const credentials = { workspaceId: 'ws-1', client: fakeClient(state) };
+      for (const call of [
+        () => descriptor.ensure({ appName: 'storefront', environment: 'staging' }, credentials),
+        () => descriptor.locate({ appName: 'storefront', environment: 'staging' }, credentials),
+      ]) {
+        const error = await call().then(
+          () => undefined,
+          (thrown: unknown) => thrown,
+        );
+        expect(error).toMatchObject({
+          code: 'DEPLOY.MANAGEMENT_API_URL_CONFLICT',
+          message: expect.stringContaining('https://api.staging.test'),
+          fix: expect.stringContaining('PRISMA_MANAGEMENT_API_URL'),
+        });
+      }
+      expect(state.projectCreateCalls).toBe(0);
+    });
+  });
+
+  test("naming the client's own host, ensure proceeds", async () => {
+    const state = newFakeState();
+    await withEnv(urls('https://api.staging.test/'), async () => {
+      const instance = await containerDescriptor({ region: () => 'us-east-1' }).ensure(
+        { appName: 'storefront', environment: 'staging' },
+        { workspaceId: 'ws-1', client: fakeClient(state) },
+      );
+      expect(instance.projectId).toBe('proj-1');
+    });
+  });
+});
+
 describe('a request from an older CLI, with no environment name', () => {
   const olderInput = { appName: 'storefront', stage: 'staging' } as unknown as LocateContainerInput;
 

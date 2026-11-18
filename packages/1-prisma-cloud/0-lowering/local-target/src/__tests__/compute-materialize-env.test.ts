@@ -115,7 +115,7 @@ test('a plain platform variable whose value is not text is left out', async () =
   expect('APP_ORIGIN' in web).toBe(false);
 });
 
-test('a typed plain platform variable keeps its schema in the document, so the local service decodes the same text', async () => {
+test('a dev server reads a typed variable from its env.json document, schema included, and decodes the same text', async () => {
   const document = JSON.stringify({
     port: { $platform: { name: 'SMTP_PORT', schema: { type: 'number' } } },
   });
@@ -129,4 +129,85 @@ test('a typed plain platform variable keeps its schema in the document, so the l
     readDocument(JSON.parse(input), { variable: (name) => mailer[name], secret: (text) => text })
       .value,
   ).toEqual({ port: 587 });
+});
+
+test("a service that runs its artifact gets a typed variable's text, and decodes it by the artifact document's schema", async () => {
+  const inputDocument = {
+    port: { $platform: { name: 'SMTP_PORT', schema: { type: 'number' } } },
+  };
+
+  const mailer = await materializeEnv(
+    devDir,
+    'mailer',
+    4000,
+    { SMTP_PORT: '587' },
+    {},
+    { inputDocument },
+  );
+
+  expect(mailer['SMTP_PORT']).toBe('587');
+  expect('COMPOSER_MAILER_INPUT' in mailer).toBe(false);
+  expect(
+    readDocument(inputDocument, { variable: (name) => mailer[name], secret: (text) => text }).value,
+  ).toEqual({ port: 587 });
+});
+
+test("a service gets the variables its artifact's input document names, and not the document itself", async () => {
+  await writeRows({ COMPOSER_WEB_PORT: '3000' });
+  const inputDocument = {
+    stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+    origin: { $platform: { name: 'APP_ORIGIN' } },
+  };
+
+  const web = await materializeEnv(
+    devDir,
+    'web',
+    4000,
+    { APP_ORIGIN: 'http://localhost:3000', UNREAD_NAME: 'not read' },
+    { STRIPE_SECRET_KEY: 'sk_test_1', MAILER_KEY: 'mk_1' },
+    { inputDocument },
+  );
+
+  expect(web['STRIPE_SECRET_KEY']).toBe('sk_test_1');
+  expect(web['APP_ORIGIN']).toBe('http://localhost:3000');
+  expect('MAILER_KEY' in web).toBe(false);
+  expect('UNREAD_NAME' in web).toBe(false);
+  expect('COMPOSER_WEB_INPUT' in web).toBe(false);
+});
+
+test('a stale input document in env.json gives the service nothing when its artifact carries one', async () => {
+  await writeRows({
+    COMPOSER_WEB_INPUT: JSON.stringify({
+      old: { $platform: { name: 'OLD_SECRET', secret: true } },
+    }),
+  });
+  const inputDocument = {
+    stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+  };
+
+  const web = await materializeEnv(
+    devDir,
+    'web',
+    4000,
+    {},
+    { OLD_SECRET: 'sk_old', STRIPE_SECRET_KEY: 'sk_test_1' },
+    { inputDocument },
+  );
+
+  expect('OLD_SECRET' in web).toBe(false);
+  expect(web['STRIPE_SECRET_KEY']).toBe('sk_test_1');
+  expect('COMPOSER_WEB_INPUT' in web).toBe(false);
+});
+
+test('a stale input document in env.json gives the service nothing when its artifact carries none', async () => {
+  await writeRows({
+    COMPOSER_WEB_INPUT: JSON.stringify({
+      old: { $platform: { name: 'OLD_SECRET', secret: true } },
+    }),
+  });
+
+  const web = await materializeEnv(devDir, 'web', 4000, {}, { OLD_SECRET: 'sk_old' }, {});
+
+  expect('OLD_SECRET' in web).toBe(false);
+  expect('COMPOSER_WEB_INPUT' in web).toBe(false);
 });

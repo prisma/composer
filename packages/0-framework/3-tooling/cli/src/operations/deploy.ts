@@ -13,13 +13,27 @@ import type { ComposerConfigSource } from '../composer-config.ts';
 import type { DeploymentSummary } from '../deployment-summary.ts';
 import { executorLoadFailure, type OperationDeps } from './shared.ts';
 
-/** A deploy step. `assemble-service` steps run inside `assemble`, one per service. */
+/** A deploy step. `assemble-service` steps run inside `assemble`, one per service, and `apply-resource` steps inside `apply`, one per resource Alchemy touches. */
 export type DeployStep =
   | { readonly name: 'prepare' | 'assemble' | 'connect' | 'preflight' | 'apply' | 'record' }
-  | { readonly name: 'assemble-service'; readonly address: string };
+  | { readonly name: 'assemble-service'; readonly address: string }
+  | {
+      readonly name: 'apply-resource';
+      /** The resource's ID (ADR-0057): its node's address, or the address and the resource's role in that node. */
+      readonly resourceId: string;
+      readonly resourceType: string;
+      /** Alchemy's word for what is happening to the resource, such as `creating` or `created`, for people to read. It changes between a step's start and finish, and its values are Alchemy's, so do not branch on it. */
+      readonly status: string;
+    };
 
 export type DeployEvent =
   | { readonly kind: 'step-started'; readonly step: DeployStep }
+  | {
+      readonly kind: 'message';
+      readonly severity: 'info' | 'warn' | 'verbose';
+      /** A line Alchemy logged while it planned or applied. */
+      readonly text: string;
+    }
   | {
       readonly kind: 'step-finished';
       readonly step: DeployStep;
@@ -63,11 +77,12 @@ export interface DeployInput {
   readonly reportId?: string | undefined;
   /** Each step as it starts and finishes, in real time. Rendering is the host's. */
   readonly onEvent?: ((event: DeployEvent) => void) | undefined;
+  /** Interrupts the plan or apply when it aborts. The deploy then fails with `DEPLOY.INTERRUPTED`, after releasing the environment's state lease. */
+  readonly signal?: AbortSignal | undefined;
 }
 
 export interface DeploySuccess {
-  /** Parsed from the alchemy child's result file. Undefined when the child
-   * did not write one (injected fake alchemy, or a report-less apply). */
+  /** What the apply deployed. Undefined when the apply produced no report. */
   readonly summary: DeploymentSummary | undefined;
   /** How long the whole deploy took, from the call to its result. */
   readonly durationMs: number;

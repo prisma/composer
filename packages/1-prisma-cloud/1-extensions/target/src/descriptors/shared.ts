@@ -6,7 +6,6 @@ import { adopt } from 'alchemy/AdoptPolicy';
 import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
-import type { TransportedPreflight } from '../control/preflight-payload.ts';
 import { fromLegacyId, legacyNodeResourceId } from '../legacy-resource-ids.ts';
 import { resourceId } from '../resource-ids.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
@@ -81,12 +80,6 @@ export interface ResolvedCloudOptions {
    * place a brand is named).
    */
   readonly providerParams: ReadonlyMap<symbol, ProviderParam | ServiceProviderParam>;
-  /**
-   * What the preflight of this run sent, not options the user gave: a version
-   * of each variable a row points at (the rotation signal the compute deploy
-   * hook folds into its triggers), and the secrets `prisma dev` found unset.
-   */
-  readonly preflight: TransportedPreflight;
 }
 
 /**
@@ -157,6 +150,14 @@ export function cloudApplicationOf(application: unknown): CloudApplication {
     );
   }
   return application;
+}
+
+/** The class, and on a preview environment the branch, of a variable a service writes. */
+export function variableClassAndBranch(
+  application: unknown,
+): { readonly class: 'preview'; readonly branchId: string } | { readonly class: 'production' } {
+  const { branchId } = cloudApplicationOf(application);
+  return branchId ? { class: 'preview', branchId } : { class: 'production' };
 }
 
 export function projectIdOf(application: unknown): string {

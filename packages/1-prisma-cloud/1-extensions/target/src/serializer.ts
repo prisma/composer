@@ -379,7 +379,7 @@ export function resolveInputBinding(
   };
 }
 
-/** One serialized input document, ready to write as an env row. */
+/** One serialized input document, ready to write as a row: into the artifact, or as a variable for a service with no artifact. */
 export interface InputDocumentRow {
   readonly key: string;
   /** The JSON document: defaults applied, each secret leaf a `$platform` marker, each generated leaf a `$generated` marker, never a secret's value. */

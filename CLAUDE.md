@@ -13,6 +13,22 @@ stays inside the bundle, and never dereferenced)
 amended by
 [ADR-0047](docs/design/90-decisions/ADR-0047-compute-assembly-preserves-safe-runtime-topology.md)).
 
+## A layer does not know what is built on it
+
+This is an
+[architectural principle](docs/design/01-principles/architectural-principles.md#a-layer-does-not-know-what-is-built-on-it),
+and it is the one agents most often break without noticing. It comes up as a
+shortcut: code in a higher layer needs a value, the only thing it holds is a
+lower layer's interface, and one more member on that interface is the shortest
+way. Stop there and read the principle.
+
+If the member would exist for one kind of Connection, one deployment target or
+one Module, do not build it. Do not offer it to the operator as an option
+either, whether the idea is yours or a subagent's: the operator would have to
+catch the problem themselves, and the gap in the design you found would go
+unreported. Report the gap instead: what the higher layer needs, and why
+nothing that exists carries it.
+
 ## Read the design docs before any design discussion
 
 Before your first reply that offers an opinion, a proposal, or an answer to a

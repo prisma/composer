@@ -1,19 +1,14 @@
 /**
- * The deploy result's cross-process protocol, whole in one place: the
- * serializable shape, the env var that names the carrier file, the writer the
- * report hook calls from inside the alchemy child, and the reader the deploy
- * operation runs after the child exits. `DeploymentResult` itself cannot
- * cross the boundary — its `DeployedNode` entries hold live graph-node
- * references (ADR-0033) — so the writer projects it down to what CAN.
- *
- * The summary is best-effort by contract: the writer never fails the child
- * over it, and the reader maps absent or malformed to `undefined`. So is the
- * failure cause the child leaves beside it when it exits non-zero.
+ * The deploy result as data, and what a stack file run as a child hands back
+ * to the CLI: the summary file the report hook writes, and the failure cause
+ * the child records when it exits non-zero. `DeploymentResult` holds live
+ * graph nodes (ADR-0033), so the summary keeps only what can be serialized.
+ * Both files are best-effort: a write failure never fails the child.
  */
 import * as fs from 'node:fs';
 import { format, stripVTControlCharacters } from 'node:util';
+import type { PreflightFindings } from '@internal/core/config';
 import type { DeployedEntity, DeploymentResult } from '@internal/core/deploy';
-import { blindCast } from '@internal/foundation/casts';
 import { redactCredentialLooking } from './redaction.ts';
 
 /** Env var the deploy operation sets on the alchemy child: when present,
@@ -30,13 +25,16 @@ export interface DeployedNodeSummary {
 export interface DeploymentSummary {
   readonly app: string;
   readonly nodes: readonly DeployedNodeSummary[];
+  /** The platform variables with no value that the deploy preflight found. */
+  readonly findings: PreflightFindings;
 }
 
-/** Pure projection: keeps app + each node's address/entities, drops the in-process `node`. */
+/** Pure projection: keeps app, each node's address/entities and the findings, drops the in-process `node`. */
 export function toDeploymentSummary(result: DeploymentResult): DeploymentSummary {
   return {
     app: result.app,
     nodes: result.nodes.map((node) => ({ address: node.address, entities: node.entities })),
+    findings: result.findings,
   };
 }
 
@@ -53,54 +51,6 @@ export function writeDeploymentSummaryFile(result: DeploymentResult): void {
   } catch {
     // The console rendering already happened; the summary is a convenience.
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-/**
- * Reader half, run by the deploy operation after the child exits. Absent or
- * malformed → undefined — the summary is best-effort, never a deploy failure.
- */
-export function readDeploymentSummary(resultFilePath: string): DeploymentSummary | undefined {
-  let raw: string;
-  try {
-    raw = fs.readFileSync(resultFilePath, 'utf8');
-  } catch {
-    return undefined;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
-  if (!isRecord(parsed) || typeof parsed['app'] !== 'string' || !Array.isArray(parsed['nodes'])) {
-    return undefined;
-  }
-  for (const node of parsed['nodes']) {
-    if (
-      !isRecord(node) ||
-      typeof node['address'] !== 'string' ||
-      !Array.isArray(node['entities'])
-    ) {
-      return undefined;
-    }
-    for (const entity of node['entities']) {
-      if (
-        !isRecord(entity) ||
-        typeof entity['kind'] !== 'string' ||
-        typeof entity['id'] !== 'string'
-      ) {
-        return undefined;
-      }
-    }
-  }
-  return blindCast<
-    DeploymentSummary,
-    'the field-by-field checks above validate the runtime shape (string app, nodes with string addresses and kind/id-carrying entities); optional entity fields (url, details) are presentation-only strings the writer serialized from the same type'
-  >(parsed);
 }
 
 /** The child's failure cause rides beside the result file, so the one env var names both and the parent's cleanup removes both. */
@@ -235,6 +185,13 @@ export function engineFailureCause(
   const kept = start === -1 ? lines.slice(-5) : lines.slice(start).filter((line) => !line.info);
   if (kept.length === 0) return undefined;
   const cause = redactCredentialLooking(kept.map((line) => line.text).join('\n'), env);
+  return cause.length <= ENGINE_FAILURE_CAUSE_LIMIT
+    ? cause
+    : `${cause.slice(0, ENGINE_FAILURE_CAUSE_LIMIT - 1)}…`;
+}
+
+/** A failure cause capped to fit the platform build's error message. */
+export function capFailureCause(cause: string): string {
   return cause.length <= ENGINE_FAILURE_CAUSE_LIMIT
     ? cause
     : `${cause.slice(0, ENGINE_FAILURE_CAUSE_LIMIT - 1)}…`;

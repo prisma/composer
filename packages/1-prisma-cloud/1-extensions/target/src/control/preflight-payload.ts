@@ -1,14 +1,23 @@
-// A deploy payload is JSON `{ updatedAt }`; a `prisma dev` payload is `dev:` then JSON
-// `{ absentVariables, platformVariableVersions }`. Names, times and keyed hashes only, never a value.
-import { readPreflightPayload } from '@internal/core/config';
-import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
+/**
+ * What this extension's preflight hands the lowering, which reads it as
+ * `LowerContext.preflight`. One payload carries either kind:
+ *
+ * - deploy: a JSON object holding `updatedAt`, which maps each platform
+ *   variable a service reads to the `updatedAt` of the row the platform resolves;
+ * - `prisma dev`: `dev:` followed by JSON naming the unset platform variables and an
+ *   HMAC-SHA256 of the current value of each platform variable a service reads.
+ *
+ * A deploy payload always starts with `{`, so the prefix tells them apart.
+ * Names, times and keyed hashes only, never a value.
+ */
 
 /** A value that changes when the platform variable's value changes: the platform `updatedAt` on deploy, an HMAC of the value under `prisma dev`. Undefined when unknown. */
 export type PlatformVariableVersion = (name: string) => string | undefined;
 
-/** What the preflight of this run sent, as the lowering reads it. */
-export interface TransportedPreflight {
+/** What this run's preflight returned, decoded for the lowering. */
+export interface PreflightView {
   readonly platformVariableVersion: PlatformVariableVersion;
+  /** The platform variables `prisma dev` found unset; their leaves are left out of the input document. Always empty for a deploy. */
   readonly absentVariables: ReadonlySet<string>;
 }
 
@@ -101,36 +110,31 @@ export function decodePreflightPayload(payload: string | undefined): DecodedPref
 
 const deployPayloadError = (reason: string): Error =>
   new Error(
-    `prisma-cloud: the deploy check's payload could not be read in the second process: ${reason}. ` +
+    `prisma-cloud: the deploy check's payload could not be read: ${reason}. ` +
       'This is a Composer bug; deploying again will not fix it.',
   );
 
 const devPayloadError = (reason: string): Error =>
   new Error(
-    `prisma-cloud: the \`prisma dev\` check's payload could not be read in the second process: ${reason}. ` +
+    `prisma-cloud: the \`prisma dev\` check's payload could not be read: ${reason}. ` +
       'This is a Composer bug; running `prisma dev` again will not fix it.',
   );
 
-export function transportedPreflight(
-  own: () => ReadonlyMap<string, string> | undefined,
-  env: Readonly<Record<string, string | undefined>>,
-): TransportedPreflight {
+/** The lowering's view of `LowerContext.preflight`, decoded once on first use. */
+export function preflightView(payload: string | undefined): PreflightView {
   let decoded: DecodedPreflightPayload | undefined;
-  const decode = () =>
-    (decoded ??= decodePreflightPayload(readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, env)));
+  const decode = () => (decoded ??= decodePreflightPayload(payload));
   const noVariables: ReadonlySet<string> = new Set();
   return {
     platformVariableVersion: (name) => {
-      const snapshot = own();
-      if (snapshot !== undefined) return snapshot.get(name);
-      const payload = decode();
-      if (payload.kind === 'deploy') return payload.updatedAt.get(name);
-      if (payload.kind === 'dev') return payload.platformVariableVersions.get(name);
+      const sent = decode();
+      if (sent.kind === 'deploy') return sent.updatedAt.get(name);
+      if (sent.kind === 'dev') return sent.platformVariableVersions.get(name);
       return undefined;
     },
     get absentVariables() {
-      const payload = decode();
-      return payload.kind === 'dev' ? payload.absentVariables : noVariables;
+      const sent = decode();
+      return sent.kind === 'dev' ? sent.absentVariables : noVariables;
     },
   };
 }

@@ -4,7 +4,12 @@ import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import { deploySourceHeaders, managementApiBaseUrl, PrismaCredentials } from './credentials.ts';
+import {
+  deploySourceHeaders,
+  fromEnv,
+  PrismaCredentials,
+  tokenClientOrigin,
+} from './credentials.ts';
 
 export type ManagementApiClient = ReturnType<typeof createManagementApiClient>;
 
@@ -18,10 +23,8 @@ export class ManagementClient extends Context.Service<ManagementClient, Manageme
 ) {}
 
 /**
- * By default the base URL comes from `managementApiBaseUrl()` — the SAME
- * resolver upstream's providers use (see providers.ts), so `PRISMA_API_URL`
- * can never split the postgres family and the compute/bucket/state clients
- * across hosts. `apiOrigin` overrides it (tests point it at a fake).
+ * A client built from the resolved token, on `apiOrigin`, or on
+ * `tokenClientOrigin()` when none is given.
  */
 export const layer = (options?: {
   readonly apiOrigin?: string;
@@ -30,7 +33,7 @@ export const layer = (options?: {
     ManagementClient,
     Effect.gen(function* () {
       const { token } = yield* PrismaCredentials;
-      const baseUrl = options?.apiOrigin ?? (yield* managementApiBaseUrl());
+      const baseUrl = options?.apiOrigin ?? (yield* tokenClientOrigin());
       return createManagementApiClient({
         token: Redacted.value(token),
         baseUrl,
@@ -38,3 +41,12 @@ export const layer = (options?: {
       });
     }),
   );
+
+/** The caller's already-authenticated client, or one built from `PRISMA_SERVICE_TOKEN` on `apiOrigin` when the caller supplies none. */
+export const suppliedOrFromEnv = (
+  supplied: ManagementApiClient | undefined,
+  apiOrigin: string,
+): Layer.Layer<ManagementClient, Config.ConfigError | Error> =>
+  supplied === undefined
+    ? layer({ apiOrigin }).pipe(Layer.provide(fromEnv()))
+    : Layer.succeed(ManagementClient, supplied);

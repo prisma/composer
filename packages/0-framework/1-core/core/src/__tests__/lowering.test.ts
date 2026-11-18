@@ -31,6 +31,7 @@ import {
   type ProvisionerDescriptor,
   resolveStateLayer,
   type ServiceLowering,
+  transportedLowerInputs,
 } from '../control/deploy.ts';
 import { Load, nodeAddresses } from '../graph.ts';
 import {
@@ -43,7 +44,7 @@ import {
   resource,
   service,
 } from '../node.ts';
-import { PREFLIGHT_FINDINGS_ENV_VAR } from '../preflight-transport.ts';
+import { preflightEnvVarName } from '../preflight-transport.ts';
 import { resolve } from '../value.ts';
 import { anyInputSchema, conn, plainValue, providerContract } from './helpers.ts';
 
@@ -94,6 +95,8 @@ const stateSentinel = (tag: string): AlchemyStateLayer =>
 const opts = (extra: Partial<LowerOptions> = {}): LowerOptions => ({
   name: 'hello',
   bundles: {},
+  containers: new Map(),
+  preflightPayloads: new Map(),
   ...extra,
 });
 
@@ -118,6 +121,7 @@ type Call =
       readonly id: string;
       readonly assembled: Bundle;
       readonly address: string;
+      readonly environment: unknown;
     }
   | {
       readonly phase: 'deploy';
@@ -192,12 +196,13 @@ function fakeExtension(
           );
           return Effect.succeed({ environment: records });
         },
-        package: (ctx, input) => {
+        package: (ctx, input, serialized) => {
           calls.push({
             phase: 'package',
             id: ctx.id,
             assembled: input.assembled,
             address: input.address,
+            environment: serialized.environment,
           });
           return Effect.succeed({ path: `/tmp/${ctx.id}.tar.gz`, sha256: `sha-${ctx.id}` });
         },
@@ -637,14 +642,18 @@ describe('lowering a module root — a single service', () => {
 
     expect(() =>
       run(
-        lowering(root, config, {
-          name: 'shop',
-          bundles,
-          firstProcessNodeAddresses: ['shop', 'shop.gone'],
-        }),
+        lowering(
+          root,
+          config,
+          opts({
+            name: 'shop',
+            bundles,
+            firstProcessNodeAddresses: ['shop', 'shop.gone'],
+          }),
+        ),
       ),
     ).toThrow(
-      'The deploy\'s second process built a different graph from the one Composer checked in its first process. Only in the second process: "shop.echo". Only in the first process: "shop.gone". A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
+      'lower() built a different graph from the one Composer checked first. Only in the graph lower() built: "shop.echo". Only in the graph Composer checked: "shop.gone". A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
     );
   });
 
@@ -658,11 +667,15 @@ describe('lowering a module root — a single service', () => {
 
     expect(() =>
       run(
-        lowering(root, config, {
-          name: 'shop',
-          bundles,
-          firstProcessNodeAddresses: [...addresses].reverse(),
-        }),
+        lowering(
+          root,
+          config,
+          opts({
+            name: 'shop',
+            bundles,
+            firstProcessNodeAddresses: [...addresses].reverse(),
+          }),
+        ),
       ),
     ).not.toThrow();
   });
@@ -753,6 +766,7 @@ describe('lowering a module root — a single service', () => {
       opts: opts(),
       application: undefined,
       container: undefined,
+      preflight: undefined,
       lowered,
       provisioned: new Map(),
     };
@@ -775,6 +789,17 @@ describe('lowering a module root — a single service', () => {
 
     const pkg = calls.find((c) => c.phase === 'package');
     expect(pkg).toMatchObject({ assembled: bundle, address: 'hello.svc' });
+  });
+
+  test("package receives the service's serialize product", () => {
+    const { config, calls } = fakeExtension();
+
+    run(lowering(singleServiceWithDbModule(), config, opts(svcBundles)));
+
+    const pkg = calls.find((c) => c.phase === 'package');
+    expect(pkg).toMatchObject({
+      environment: [{ input: 'db', name: 'url', value: 'db://hello.db' }],
+    });
   });
 
   test("the environment edge: deploy's `environment` IS serialize's returned records (by recording, not order)", () => {
@@ -899,13 +924,17 @@ describe('lowering a module root — a provisioned resource and two connected se
     const { config, calls } = fakeExtension();
 
     run(
-      lowering(twoServiceModule(), config, {
-        name: 'shop',
-        bundles: {
-          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
-        },
-      }),
+      lowering(
+        twoServiceModule(),
+        config,
+        opts({
+          name: 'shop',
+          bundles: {
+            'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+            'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          },
+        }),
+      ),
     );
 
     expect(calls.filter((c) => c.phase === 'application')).toHaveLength(1);
@@ -929,13 +958,17 @@ describe('lowering a module root — a provisioned resource and two connected se
     const { config, calls } = fakeExtension();
 
     run(
-      lowering(twoServiceModule(), config, {
-        name: 'shop',
-        bundles: {
-          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
-        },
-      }),
+      lowering(
+        twoServiceModule(),
+        config,
+        opts({
+          name: 'shop',
+          bundles: {
+            'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+            'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          },
+        }),
+      ),
     );
 
     const auth = calls.find((c) => c.phase === 'serialize' && c.id === 'shop.auth');
@@ -952,13 +985,17 @@ describe('lowering a module root — a provisioned resource and two connected se
     const { config, calls } = fakeExtension();
 
     run(
-      lowering(twoServiceModule(), config, {
-        name: 'shop',
-        bundles: {
-          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
-        },
-      }),
+      lowering(
+        twoServiceModule(),
+        config,
+        opts({
+          name: 'shop',
+          bundles: {
+            'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+            'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          },
+        }),
+      ),
     );
 
     const authProvision = calls.find((c) => c.phase === 'provision' && c.id === 'shop.auth');
@@ -973,13 +1010,17 @@ describe('lowering a module root — a provisioned resource and two connected se
     const { config, calls } = fakeExtension();
 
     run(
-      lowering(twoServiceModule(), config, {
-        name: 'shop',
-        bundles: {
-          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
-        },
-      }),
+      lowering(
+        twoServiceModule(),
+        config,
+        opts({
+          name: 'shop',
+          bundles: {
+            'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+            'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          },
+        }),
+      ),
     );
 
     const authSerialize = calls.find((c) => c.phase === 'serialize' && c.id === 'shop.auth');
@@ -992,13 +1033,17 @@ describe('lowering a module root — a provisioned resource and two connected se
     const { config, calls } = fakeExtension();
 
     run(
-      lowering(twoServiceModule(), config, {
-        name: 'shop',
-        bundles: {
-          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
-        },
-      }),
+      lowering(
+        twoServiceModule(),
+        config,
+        opts({
+          name: 'shop',
+          bundles: {
+            'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+            'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          },
+        }),
+      ),
     );
 
     const storefrontSerialize = calls.find(
@@ -1013,13 +1058,17 @@ describe('lowering a module root — a provisioned resource and two connected se
     const { config, calls } = fakeExtension();
 
     run(
-      lowering(twoServiceModule(), config, {
-        name: 'shop',
-        bundles: {
-          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
-        },
-      }),
+      lowering(
+        twoServiceModule(),
+        config,
+        opts({
+          name: 'shop',
+          bundles: {
+            'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+            'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          },
+        }),
+      ),
     );
 
     const authDeploy = calls.find((c) => c.phase === 'deploy' && c.id === 'shop.auth');
@@ -1051,13 +1100,17 @@ describe('lowering a module root — a provisioned resource and two connected se
     });
 
     run(
-      lowering(root, config, {
-        name: 'shop',
-        bundles: {
-          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
-        },
-      }),
+      lowering(
+        root,
+        config,
+        opts({
+          name: 'shop',
+          bundles: {
+            'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+            'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          },
+        }),
+      ),
     );
 
     const authDeploy = calls.findIndex((c) => c.phase === 'deploy' && c.id === 'shop.auth');
@@ -1079,10 +1132,14 @@ describe('lowering a module root — a provisioned resource and two connected se
     const { config } = fakeExtension();
 
     const error = runError(
-      lowering(twoServiceModule(), config, {
-        name: 'shop',
-        bundles: { 'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' } },
-      }),
+      lowering(
+        twoServiceModule(),
+        config,
+        opts({
+          name: 'shop',
+          bundles: { 'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' } },
+        }),
+      ),
     );
 
     expect(error).toBeInstanceOf(LowerError);
@@ -1093,13 +1150,17 @@ describe('lowering a module root — a provisioned resource and two connected se
     const { config } = fakeExtension();
 
     const result = run(
-      lowering(twoServiceModule(), config, {
-        name: 'shop',
-        bundles: {
-          'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-          'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
-        },
-      }),
+      lowering(
+        twoServiceModule(),
+        config,
+        opts({
+          name: 'shop',
+          bundles: {
+            'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+            'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+          },
+        }),
+      ),
     );
 
     expect(result).toBeUndefined();
@@ -1119,7 +1180,7 @@ describe('lowering a module root — a provisioned resource and two connected se
       return {};
     });
 
-    const error = runError(lowering(root, config, { name: 'shop', bundles: {} }));
+    const error = runError(lowering(root, config, opts({ name: 'shop' })));
 
     expect(error).toBeInstanceOf(LowerError);
     expect(error.message).toContain('fake/unknown');
@@ -1139,13 +1200,13 @@ describe('lowering a module root — one resource shared by two consumers', () =
       return {};
     });
 
-  const sharedOpts = {
+  const sharedOpts = opts({
     name: 'shop',
     bundles: {
       'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
       'shop.billing': { dir: 'modules/billing/dist/bundle', entry: 'server.js' },
     },
-  };
+  });
 
   test('the resource is lowered exactly once, regardless of consumer count', () => {
     const { config, calls } = fakeExtension();
@@ -1197,13 +1258,13 @@ describe('provision phase (ADR-0031): resolving a provisioned param against the 
     return { descriptor, calls };
   }
 
-  const provisionBundles = {
+  const provisionBundles = opts({
     name: 'shop',
     bundles: {
       'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
       'shop.consumer': { dir: 'modules/consumer/dist/bundle', entry: 'server.js' },
     },
-  };
+  });
 
   test("a resolved edge mints once and fills the consumer's param in buildConfig", () => {
     const provisioner = fakeProvisioner((edge) => `minted:${edge.edgeId}`);
@@ -1517,18 +1578,6 @@ describe('lowering() — the report path', () => {
       (reports[0] as { nodes: { address: string }[] }).nodes.map(({ address }) => address),
     ).toEqual(['hello.db']);
   });
-
-  test('findings that do not decode fail lowering before any node is lowered', () => {
-    const { config, calls } = fakeExtension();
-    const root = singleServiceWithDbModule();
-
-    withEnv({ [PREFLIGHT_FINDINGS_ENV_VAR]: 'not json' }, () => {
-      expect(() =>
-        run(lowering(root, config, opts({ ...svcBundles, report: () => undefined }))),
-      ).toThrow(/could not be read in the second process/);
-    });
-    expect(calls).toEqual([]);
-  });
 });
 
 describe('lower()', () => {
@@ -1645,29 +1694,137 @@ describe('container threading through lowering() (the parent→child transport r
       return {};
     });
 
-  test("a stub extension's application and resource contexts observe ctx.container as the deserialized instance", () => {
+  test("a stub extension's application and resource contexts observe ctx.container as the instance passed in", () => {
     const { descriptor, config, seen } = fakeExtensionWithContainer();
-    const instanceInput = { appName: 'shop', environment: 'production' };
+    const passed = new FakeContainerInstance({ appName: 'shop', environment: 'staging' });
 
-    withEnv({ [containerEnvVarName(descriptor.id)]: JSON.stringify(instanceInput) }, () => {
-      run(lowering(dbModule(), config, opts()));
+    withEnv({ [containerEnvVarName(descriptor.id)]: JSON.stringify({ stale: true }) }, () => {
+      run(lowering(dbModule(), config, opts({ containers: new Map([[descriptor.id, passed]]) })));
     });
 
     expect(seen).toEqual([
-      { phase: 'application', container: new FakeContainerInstance(instanceInput) },
-      { phase: 'resource', container: new FakeContainerInstance(instanceInput) },
+      { phase: 'application', container: passed },
+      { phase: 'resource', container: passed },
     ]);
   });
 
-  test('the same extension with its transport var unset sees ctx.container as undefined', () => {
-    const { config, seen } = fakeExtensionWithContainer();
+  test('an extension with no container passed sees ctx.container as undefined, whatever the environment holds', () => {
+    const { descriptor, config, seen } = fakeExtensionWithContainer();
 
-    run(lowering(dbModule(), config, opts()));
+    withEnv({ [containerEnvVarName(descriptor.id)]: JSON.stringify({ appName: 'shop' }) }, () => {
+      run(lowering(dbModule(), config, opts()));
+    });
 
     expect(seen).toEqual([
       { phase: 'application', container: undefined },
       { phase: 'resource', container: undefined },
     ]);
+  });
+
+  test("each context carries its own extension's preflight payload from the values passed in", () => {
+    const seen: unknown[] = [];
+    const descriptor: ExtensionDescriptor = {
+      id: 'test/preflight-pack',
+      application: {
+        provision: (ctx) => {
+          seen.push(ctx.preflight);
+          return Effect.succeed(undefined);
+        },
+      },
+      nodes: {},
+    };
+    const config: PrismaAppConfig = {
+      extensions: [descriptor],
+      state: { extension: descriptor.id, create: () => stateSentinel('config') },
+    };
+    const root = module('shop', {}, () => ({}));
+
+    withEnv({ [preflightEnvVarName(descriptor.id)]: 'from-env' }, () => {
+      run(
+        lowering(root, config, opts({ preflightPayloads: new Map([[descriptor.id, 'passed']]) })),
+      );
+      run(lowering(root, config, opts()));
+    });
+
+    expect(seen).toEqual(['passed', undefined]);
+  });
+
+  test('transportedLowerInputs reads the two transports a generated stack file was given', () => {
+    const { descriptor, config } = fakeExtensionWithContainer();
+    const instanceInput = { appName: 'shop', environment: 'production' };
+
+    const inputs = withEnv(
+      {
+        [containerEnvVarName(descriptor.id)]: JSON.stringify(instanceInput),
+        [preflightEnvVarName(descriptor.id)]: 'payload',
+      },
+      () => transportedLowerInputs(config),
+    );
+    const blanked = withEnv(
+      {
+        [containerEnvVarName(descriptor.id)]: undefined,
+        [preflightEnvVarName(descriptor.id)]: '',
+      },
+      () => transportedLowerInputs(config),
+    );
+
+    expect(inputs.containers.get(descriptor.id)).toEqual(new FakeContainerInstance(instanceInput));
+    expect([...inputs.preflightPayloads]).toEqual([[descriptor.id, 'payload']]);
+    expect(blanked.containers.size).toBe(0);
+    expect(blanked.preflightPayloads.size).toBe(0);
+  });
+
+  test.each([
+    ['containers', 'preflightPayloads', { containers: new Map() }],
+    ['preflightPayloads', 'containers', { preflightPayloads: new Map() }],
+  ] as const)('a caller that passes only %s is refused, naming %s', (passed, missing, given) => {
+    const { config, seen } = fakeExtensionWithContainer();
+
+    expect(() =>
+      run(lowering(dbModule(), config, { name: 'hello', bundles: {}, ...given })),
+    ).toThrow(
+      `lower() was passed ${passed} without ${missing}. Pass both, or neither to read both from the environment.`,
+    );
+    expect(() => lower(dbModule(), config, { name: 'hello', bundles: {}, ...given })).toThrow(
+      `without ${missing}`,
+    );
+    expect(seen).toEqual([]);
+  });
+
+  test('a caller that passes no containers or preflight payloads, such as a stack file an older CLI generated, gets both from the environment', () => {
+    const { descriptor, config, seen } = fakeExtensionWithContainer();
+    const instanceInput = { appName: 'shop', environment: 'staging' };
+    const payloads: unknown[] = [];
+    const recording: PrismaAppConfig = {
+      ...config,
+      extensions: [
+        {
+          ...descriptor,
+          application: {
+            provision: (ctx) => {
+              payloads.push(ctx.preflight);
+              return descriptor.application?.provision(ctx) ?? Effect.succeed(undefined);
+            },
+          },
+        },
+      ],
+    };
+
+    withEnv(
+      {
+        [containerEnvVarName(descriptor.id)]: JSON.stringify(instanceInput),
+        [preflightEnvVarName(descriptor.id)]: 'from-env',
+      },
+      () => {
+        run(lowering(dbModule(), recording, { name: 'hello', bundles: {} }));
+      },
+    );
+
+    expect(seen).toEqual([
+      { phase: 'application', container: new FakeContainerInstance(instanceInput) },
+      { phase: 'resource', container: new FakeContainerInstance(instanceInput) },
+    ]);
+    expect(payloads).toEqual(['from-env']);
   });
 
   test('an extension declaring no container descriptor at all sees ctx.container as undefined', () => {
@@ -1861,11 +2018,15 @@ describe('lowering a service that runs a dev server (ADR-0056)', () => {
     const { config, calls } = fakeExtension();
 
     run(
-      lowering(twoServiceModule(), config, {
-        name: 'shop',
-        bundles: storefrontBundle,
-        unassembled: ['shop.auth'],
-      }),
+      lowering(
+        twoServiceModule(),
+        config,
+        opts({
+          name: 'shop',
+          bundles: storefrontBundle,
+          unassembled: ['shop.auth'],
+        }),
+      ),
     );
 
     const order = calls.map((c) => (c.phase === 'application' ? c.phase : `${c.phase}:${c.id}`));
@@ -1889,11 +2050,15 @@ describe('lowering a service that runs a dev server (ADR-0056)', () => {
     const { config, calls } = fakeExtension();
 
     run(
-      lowering(twoServiceModule(), config, {
-        name: 'shop',
-        bundles: storefrontBundle,
-        unassembled: ['shop.auth'],
-      }),
+      lowering(
+        twoServiceModule(),
+        config,
+        opts({
+          name: 'shop',
+          bundles: storefrontBundle,
+          unassembled: ['shop.auth'],
+        }),
+      ),
     );
 
     expect(calls.find((c) => c.phase === 'serialize' && c.id === 'shop.storefront')).toMatchObject({
@@ -1905,11 +2070,15 @@ describe('lowering a service that runs a dev server (ADR-0056)', () => {
     const { config } = fakeExtension({ noReserve: true });
 
     const error = runError(
-      lowering(twoServiceModule(), config, {
-        name: 'shop',
-        bundles: storefrontBundle,
-        unassembled: ['shop.auth'],
-      }),
+      lowering(
+        twoServiceModule(),
+        config,
+        opts({
+          name: 'shop',
+          bundles: storefrontBundle,
+          unassembled: ['shop.auth'],
+        }),
+      ),
     );
 
     expect(error).toBeInstanceOf(LowerError);
@@ -1922,11 +2091,15 @@ describe('lowering a service that runs a dev server (ADR-0056)', () => {
     const { config } = fakeExtension();
 
     const error = runError(
-      lowering(twoServiceModule(), config, {
-        name: 'shop',
-        bundles: { ...storefrontBundle, 'shop.auth': { dir: 'x', entry: 'y' } },
-        unassembled: ['shop.auth'],
-      }),
+      lowering(
+        twoServiceModule(),
+        config,
+        opts({
+          name: 'shop',
+          bundles: { ...storefrontBundle, 'shop.auth': { dir: 'x', entry: 'y' } },
+          unassembled: ['shop.auth'],
+        }),
+      ),
     );
 
     expect(error).toBeInstanceOf(LowerError);
@@ -1937,11 +2110,15 @@ describe('lowering a service that runs a dev server (ADR-0056)', () => {
     const { config } = fakeExtension();
 
     const error = runError(
-      lowering(twoServiceModule(), config, {
-        name: 'shop',
-        bundles: { ...storefrontBundle, 'shop.auth': { dir: 'x', entry: 'y' } },
-        unassembled: ['shop.db'],
-      }),
+      lowering(
+        twoServiceModule(),
+        config,
+        opts({
+          name: 'shop',
+          bundles: { ...storefrontBundle, 'shop.auth': { dir: 'x', entry: 'y' } },
+          unassembled: ['shop.db'],
+        }),
+      ),
     );
 
     expect(error).toBeInstanceOf(LowerError);

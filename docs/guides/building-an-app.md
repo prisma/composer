@@ -768,9 +768,10 @@ A field bound to a platform variable whose value is unset (or empty) resolves to
 ### What travels
 
 The deploy validates the resolved binding, applies the schema's defaults,
-and serializes the result into one document row, with each secret as a
+and serializes the result into one document, with each secret as a
 pointer naming the platform variable that holds the value — never the value
-itself:
+itself. The deploy writes the document into the service's artifact, not into
+an environment variable:
 
 ```json
 { "stripeEnabled": true, "stripeSecretKey": { "$platform": { "name": "STRIPE_SECRET_KEY", "secret": true } } }
@@ -962,11 +963,11 @@ Pass the root's input fields on by name, as `from: input.EMAIL_FROM` is above. N
 
 The root's schema checks the app configuration before anything is created, so a missing value fails with the schema's message.
 
-A deploy reads the adapters once, in the command's own process. `prisma dev` reads them at start and again at each rebuild. The deploy engine runs in a second process, which runs no adapter. It reads the values it needs from the app configuration file, which the first process writes to `.prisma-composer/`. Only you can read that file, and it is deleted when the deploy ends. It is not `prisma.config.ts`. A root field your body passes on must hold data JSON can hold exactly: text, numbers, booleans, null, arrays and plain objects.
+A deploy reads the adapters once, in the command's own process, and runs the deploy engine in that process too. `prisma dev` reads them at start and again at each rebuild. `prisma dev` and the `destroy` operation run the deploy engine in a second process, which runs no adapter. It reads the values it needs from the app configuration file, which the first process writes. Only you can read that file, and it is deleted when the run ends. It is not `prisma.config.ts`. A root field your body passes on must hold data JSON can hold exactly: text, numbers, booleans, null, arrays and plain objects.
 
-The app configuration file never holds a secret. A deploy fails if a root field your body passes on has the same name as a platform secret in the graph, or if any value in the file contains a secret's value, such as the password in a URL (`CONFIG.SECRET_AS_PLAIN_VALUE`). A secret shorter than eight characters, such as a `dev` placeholder, counts only when it is the whole value, so it does not refuse `dev@example.com`. The error names the field and the secret's name, never the value. The fix it gives: pass the value of the platform secret to where the plain value is used, or give the plain value text that does not contain the secret's value.
+A plain value never carries a secret: a deploy never sends one to the platform as plain configuration, and the app configuration file never holds one. `prisma deploy` fails before it creates anything, and `destroy` and `prisma dev` before they hand your values to Alchemy, if a root field your body passes on has the same name as a platform secret in the graph, or if any root input value contains a secret's value, such as the password in a URL (`CONFIG.SECRET_AS_PLAIN_VALUE`). `prisma dev` also fails if a plain platform variable's value contains one. `destroy` reads your `config` list and not your `secrets` list, so it knows a secret only when the `config` list holds its value too. A secret shorter than eight characters, such as a `dev` placeholder, counts only when it is the whole value, so it does not refuse `dev@example.com`. The error names the field and the secret's name, never the value. The fix it gives: pass the value of the platform secret to where the plain value is used, or give the plain value text that does not contain the secret's value.
 
-Composer replaces a secret's value with `[redacted]` wherever it prints. The secrets it knows are the values under the names of the graph's platform secrets, in either list, including one no service reads. The lists' other values, such as `EMAIL_FROM` in `.env` or the shell's `SHLVL`, are not secrets and print as they are, apart from values that look like credentials. The deploy engine's own output is not redacted yet; Composer redacts its failure message. Nothing is redacted by the known secrets before Load has named them: an adapter that throws, and a root schema failure that echoes a field's value, are redacted only by the credential-looking rule.
+Composer replaces a secret's value with `[redacted]` wherever it prints. The secrets it knows are the values under the names of the graph's platform secrets, in either list, including one no service reads. The lists' other values, such as `EMAIL_FROM` in `.env` or the shell's `SHLVL`, are not secrets and print as they are, apart from values that look like credentials. Under `prisma deploy`, the deploy engine's progress and log lines reach you through Composer and are redacted. Under `prisma dev`, the engine's own output is not redacted yet; Composer redacts its failure message. Nothing is redacted by the known secrets before Load has named them: an adapter that throws, and a root schema failure that echoes a field's value, are redacted only by the credential-looking rule.
 
 A value in `.env` or `.env.local` is read by every environment, including a
 `prisma deploy` to `production` from your machine.

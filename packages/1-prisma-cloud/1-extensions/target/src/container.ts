@@ -8,7 +8,7 @@
  * not import.
  */
 import type {
-  ContainerCredentials,
+  CallerCredentials,
   ContainerDescriptor,
   ContainerInstance,
   LocateContainerInput,
@@ -23,6 +23,7 @@ import {
   managementClientLayer,
   type ProjectRegion,
   resolveContainer,
+  suppliedClientOrigin,
 } from '@internal/lowering';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
@@ -147,7 +148,7 @@ export function deserialize(serialized: string): PrismaCloudContainer {
 }
 
 /** The credentials this extension's container lifecycle accepts per call. */
-type PrismaCloudCredentials = ContainerCredentials<ManagementApiClient>;
+type PrismaCloudCredentials = CallerCredentials<ManagementApiClient>;
 
 /** Construction-time injection. Per-call credentials outrank it wherever both are present. */
 interface ContainerDeps {
@@ -185,6 +186,11 @@ function requireTokenUnlessInjected(client: ManagementApiClient | undefined): vo
   }
 }
 
+/** A supplied client sends to its own host, so a `PRISMA_API_URL` naming another one fails here, before anything is created or planned. */
+function requireOneManagementApiOrigin(credentials: PrismaCloudCredentials | undefined): void {
+  if (credentials?.client !== undefined) suppliedClientOrigin(process.env);
+}
+
 function clientFor(
   credentials: PrismaCloudCredentials | undefined,
   deps: ContainerDeps | undefined,
@@ -220,6 +226,7 @@ async function ensureContainer(
   deps: ContainerDeps | undefined,
 ): Promise<PrismaCloudContainer> {
   requireEnvironmentName(input);
+  requireOneManagementApiOrigin(credentials);
   const workspaceId = requireWorkspaceId(credentials);
   const client = clientFor(credentials, deps);
   requireTokenUnlessInjected(client);
@@ -262,6 +269,7 @@ async function locateContainer(
   deps: ContainerDeps | undefined,
 ): Promise<PrismaCloudContainer | undefined> {
   requireEnvironmentName(input);
+  requireOneManagementApiOrigin(credentials);
   const workspaceId = requireWorkspaceId(credentials);
   const client = clientFor(credentials, deps);
   requireTokenUnlessInjected(client);

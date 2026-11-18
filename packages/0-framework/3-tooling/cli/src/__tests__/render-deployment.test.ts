@@ -239,6 +239,7 @@ describe('toDeploymentSummary', () => {
         },
         { address: 'app.db', entities: [] },
       ],
+      findings: { unset: [] },
     });
     expect(JSON.parse(JSON.stringify(summary))).toEqual(summary);
     for (const node of summary.nodes) {

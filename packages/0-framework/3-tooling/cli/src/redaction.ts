@@ -1,3 +1,4 @@
+import { inspect } from 'node:util';
 import type {
   AppConfiguration,
   AppSecrets,
@@ -25,10 +26,16 @@ export function credentialLookingValues(variables: Readonly<Record<string, unkno
   );
 }
 
+/** `value` as it appears inside a string that `JSON.stringify` or `util.inspect` printed, where a newline, quote or backslash is escaped. */
+function escapedForms(value: string): string[] {
+  return [value, JSON.stringify(value).slice(1, -1), inspect(value).slice(1, -1)];
+}
+
 /**
- * Finds every secret in a text: one regular expression for all of them, built once. A match
- * is the span of the longest secret that starts at a position, and spans that overlap are
- * merged, so two overlapping secrets are hidden whole.
+ * Finds every secret in a text, as written or as `JSON.stringify` and `util.format` escape it:
+ * one regular expression for all of them, built once. A match is the span of the longest
+ * secret that starts at a position, and spans that overlap are merged, so two overlapping
+ * secrets are hidden whole.
  */
 export class SecretMatcher {
   private readonly starts: RegExp | undefined;
@@ -36,7 +43,7 @@ export class SecretMatcher {
   private readonly longestPrefix: number;
 
   constructor(values: Iterable<string>) {
-    const sorted = [...new Set(values)]
+    const sorted = [...new Set([...values].flatMap(escapedForms))]
       .filter((value) => value.length > 0)
       .sort((a, b) => b.length - a.length);
     this.starts =
@@ -391,6 +398,11 @@ export function redactSummary(
   if (summary === undefined) return undefined;
   return {
     app: summary.app,
+    findings: {
+      unset: summary.findings.unset.map((variable) =>
+        redactUnsetPlatformVariable(variable, redaction),
+      ),
+    },
     nodes: summary.nodes.map((node) => ({
       address: node.address,
       entities: node.entities.map((entity) => ({

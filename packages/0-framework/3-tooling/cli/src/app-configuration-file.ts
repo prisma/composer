@@ -2,8 +2,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AppConfigurationRead, RootInputField } from '@internal/core';
 import { type AppSecrets, DEV_DIR, type NamedSecrets } from '@internal/core/config';
-import { CliStructuredError } from '@internal/foundation/errors';
 import type { KnownSecrets } from './redaction.ts';
+import {
+  refuseSecretsInPlainVariables,
+  refuseSecretsInRootInput,
+} from './secret-as-plain-value.ts';
 
 /** Names the app configuration file the first process wrote for this run (ADR-0062). */
 export const APP_CONFIGURATION_FILE_ENV = 'PRISMA_COMPOSER_APP_CONFIGURATION_FILE';
@@ -87,60 +90,6 @@ export function removeLeftoverAppConfigurationFiles(cwd: string): void {
   }
 }
 
-function textIn(value: unknown, at: readonly string[]): { at: readonly string[]; text: string }[] {
-  if (typeof value === 'string') return [{ at, text: value }];
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-    return [{ at, text: String(value) }];
-  }
-  if (Array.isArray(value)) {
-    return value.flatMap((member, index) => textIn(member, [...at, String(index)]));
-  }
-  if (typeof value === 'object' && value !== null) {
-    return Object.entries(value).flatMap(([key, member]) => textIn(member, [...at, key]));
-  }
-  return [];
-}
-
-/**
- * Refuses when the file would hold a known secret in a plain value, a number or a boolean
- * compared as its text (`KnownSecrets.nameIn`). The message names where and the secrets key,
- * never the value.
- */
-function refuseSecretsIn(
-  read: AppConfigurationRead,
-  plainVariableText: Readonly<Record<string, string>>,
-  knownSecrets: KnownSecrets,
-): void {
-  const readPlaces = read.rootInput.flatMap((field) =>
-    textIn(field.value, field.path).map(({ at, text }) => ({
-      where: `Root input field input.${at.join('.')}`,
-      text,
-    })),
-  );
-  for (const { where, text } of readPlaces) {
-    const name = knownSecrets.nameIn(text);
-    if (name === undefined) continue;
-    throw new CliStructuredError(
-      'CONFIG.SECRET_AS_PLAIN_VALUE',
-      `${where} holds the value of the secret "${name}", which a platform secret in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
-      {
-        fix: `Pass the value of the platform secret "${name}" to where this value is used, or give this plain value text that does not contain the value of "${name}".`,
-      },
-    );
-  }
-  for (const [variable, text] of Object.entries(plainVariableText)) {
-    const name = knownSecrets.nameIn(text);
-    if (name === undefined) continue;
-    throw new CliStructuredError(
-      'CONFIG.SECRET_AS_PLAIN_VALUE',
-      `The platform variable "${variable}", which prisma dev read from the \`config\` adapters, holds the value of the secret "${name}". Composer hands the second process every plain value in a file, and never writes a secret to a file.`,
-      {
-        fix: `Keep the value of "${name}" out of the platform variable "${variable}", or give "${variable}" a different value.`,
-      },
-    );
-  }
-}
-
 /** What the first process hands the second: the app configuration file, and the environment that names it. */
 export interface SecondProcessHandover {
   /** What the first process adds to the second process's environment. */
@@ -165,7 +114,12 @@ export function prepareSecondProcess(input: {
   readonly appSecrets?: AppSecrets;
 }): SecondProcessHandover {
   const { file, appSecrets } = input;
-  refuseSecretsIn(input.appConfigurationRead, input.plainVariableText, input.knownSecrets);
+  refuseSecretsInRootInput(
+    input.appConfigurationRead,
+    input.knownSecrets,
+    'Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.',
+  );
+  refuseSecretsInPlainVariables(input.plainVariableText, input.knownSecrets);
   const contents: AppConfigurationFile = {
     appConfigurationRead: input.appConfigurationRead,
     plainVariableText: input.plainVariableText,
@@ -203,7 +157,7 @@ export function prepareSecondProcess(input: {
 }
 
 function missingVariable(name: string, what: string): string {
-  return `${name} is not set. This stack file runs as the second process of a Composer deploy, destroy or prisma dev, which ${what}.`;
+  return `${name} is not set. This stack file runs as the second process of a Composer destroy or prisma dev, which ${what}.`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -262,7 +216,9 @@ export function readAppConfigurationFile(
     );
   }
   const notComposers = (what: string) =>
-    new Error(`The app configuration file ${file} is not one Composer wrote: ${what}.`);
+    new Error(
+      `The app configuration file ${file} is not in the shape this version of Composer reads: ${what}. The usual cause is a \`prisma\` CLI and an app on different Composer versions. Put the \`prisma\` CLI and the app's \`@prisma/composer\` on the same version.`,
+    );
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);

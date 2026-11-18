@@ -32,6 +32,8 @@ export interface PackageComputeArtifactOptions {
   readonly address: string;
   /** `false` for a service that does not listen on its port — recorded in the manifest only then, so other artifacts are unchanged. */
   readonly listens?: boolean;
+  /** The service's input document as a JSON value, written into the bootstrap data as nested JSON and passed to `run()` at boot. Left out for a service that declares no input. */
+  readonly inputDocument?: unknown;
 }
 
 export interface ComputeArtifact {
@@ -282,6 +284,7 @@ export function packageComputeArtifact(opts: PackageComputeArtifactOptions): Com
       moduleEntrypoint: `./${entryFile}`,
       appEntrypoint: `./${opts.appEntry}`,
       address: opts.address,
+      ...(opts.inputDocument !== undefined ? { inputDocument: opts.inputDocument } : {}),
     },
     null,
     2,
@@ -313,7 +316,7 @@ if (process.versions.bun !== undefined) {
 }
 
 const main = (await import(boot.moduleEntrypoint)).default;
-await main.run(boot.address, () => import(boot.appEntrypoint));
+await main.run(boot.address, () => import(boot.appEntrypoint), boot.inputDocument);
 `;
   // `address` is intrinsic artifact metadata, not dev config. It is recorded
   // twice: bootstrap data drives the boot path, while the manifest serves a
@@ -402,4 +405,46 @@ await main.run(boot.address, () => import(boot.appEntrypoint));
   fs.renameSync(tmpPath, outPath);
 
   return { path: outPath, sha256 };
+}
+
+function errorCode(error: unknown): string | undefined {
+  return error instanceof Error && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : undefined;
+}
+
+function bootDataUnreadableError(artifactDir: string, reason: string): Error {
+  return new Error(
+    `the artifact unpacked in ${artifactDir} has an unreadable compute.bootstrap.json (${reason}) — repackage it with a current @prisma/composer.`,
+  );
+}
+
+/**
+ * The input document, as a JSON value, that `packageComputeArtifact` wrote
+ * into an unpacked artifact's `compute.bootstrap.json`, or `undefined` for a
+ * service that declares no input.
+ */
+export function readComputeInputDocument(artifactDir: string): unknown {
+  let text: string;
+  try {
+    text = fs.readFileSync(path.join(artifactDir, 'compute.bootstrap.json'), 'utf8');
+  } catch (error) {
+    const code = errorCode(error);
+    throw bootDataUnreadableError(
+      artifactDir,
+      code === 'ENOENT'
+        ? 'the file is missing'
+        : `the file could not be read (${code ?? String(error)})`,
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw bootDataUnreadableError(artifactDir, 'it is not JSON');
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw bootDataUnreadableError(artifactDir, 'it is not a JSON object');
+  }
+  return 'inputDocument' in parsed ? parsed.inputDocument : undefined;
 }

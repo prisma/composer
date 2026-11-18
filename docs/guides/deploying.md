@@ -16,10 +16,7 @@
 The `prisma` commands and the operations you call from a script sign in
 differently:
 
-- **`prisma deploy`** signs in the way every `prisma` command does. On your
-  machine, run `prisma auth login` once; it opens a browser and stores a
-  session for one workspace. In CI, set `PRISMA_SERVICE_TOKEN` instead; it
-  overrides any stored session. `prisma dev` needs no sign-in.
+- **`prisma deploy`** signs in the way every `prisma` command does. On your machine, run `prisma auth login` once; it opens a browser and stores a session for one workspace. In CI, set `PRISMA_SERVICE_TOKEN` instead; it overrides any stored session. `prisma dev` needs no sign-in.
 - **The operations of `@prisma/composer/control`**, and so a destroy script,
   never use a `prisma auth login` session. `deploy` and `destroy` read two
   environment variables, and each is required once the operation reaches
@@ -39,11 +36,11 @@ entry module (`module.ts` here) and every module it imports, so those modules de
 `prisma` needs. Run it with your package manager by default:
 `pnpm prisma deploy` or `npx prisma deploy`.
 
-Composer starts Alchemy's launcher with Node: the Node `prisma` runs on, or
+`prisma deploy` runs Alchemy inside the `prisma` process, so Alchemy runs under whatever `prisma` runs under. `prisma dev`, and the `destroy` operation, start Alchemy's launcher as a separate process, with Node: the Node `prisma` runs on, or
 the first `node` on PATH when `prisma` runs under Bun (`DEPLOY.NODE_MISSING`
 if there is none). Alchemy's launcher then moves itself to Bun when the
 package-manager environment says Bun invoked it, which `bunx` and `bun run`
-do. So the invocation decides where each ends up:
+do. So for those, the invocation decides where each ends up:
 
 | Invocation | `prisma` runs under | Alchemy runs under |
 | --- | --- | --- |
@@ -201,8 +198,11 @@ Console changes nothing.
 
 Compute deployments capture their environment when they are created. Composer
 waits for its environment-variable updates to finish before creating a
-deployment, including updates to an existing input document. Later variable
-updates do not change an already-created deployment's environment.
+deployment. Later variable updates do not change an already-created
+deployment's environment. A service's input document is not an environment
+variable: the deploy writes it into the service's artifact, in
+`compute.bootstrap.json`, so it is not limited to a variable's 8 KB, and changing it gives the
+service a new artifact and a new deployment.
 
 After a deploy, each service is a Compute service in the Project; its public
 URL is its service endpoint domain — printed when the deploy finishes, and
@@ -241,10 +241,10 @@ Assembling is one step per service. A Node service with
 `dependencies: 'external'` can take minutes here, because its runtime
 dependencies are traced and copied into the deploy artifact (see
 [Building an app § Builds](building-an-app.md#builds)).
-Planning and applying run in one deploy engine process, so they are one step.
+Inside `plan and apply`, each resource the deploy engine creates, updates or deletes is a step of its own, such as `▸ creating storefront-auth.web` and `✔ created storefront-auth.web (12.0s)`, and the engine's log lines print between them.
 The last line is the whole deploy, from start to finish.
 
-With `--json`, each step is a `step-started` and a `step-finished` line on stdout, followed by an `endpoint` line per public URL and the `result` line. A `step-finished` line carries `data.durationMs`. An assemble step's `data` also holds whatever the service's build adapter reports, and the `check environment variables` step's `data` holds `checked` and `unset`, how many platform variables it checked and how many have no value. When some have no value and no service needs them, a `message` line follows the step, whose `data.unset` lists each one with its readers and commands ([Platform variables](#platform-variables)). The build adapter's fields vary by adapter, so read them as information, not as a stable format. The `result` line has the deploy's total `durationMs` beside `summary`.
+With `--json`, each step is a `step-started` and a `step-finished` line on stdout, followed by an `endpoint` line per public URL and the `result` line. A `step-finished` line carries `data.durationMs`. An assemble step's `data` also holds whatever the service's build adapter reports, and the `check environment variables` step's `data` holds `checked` and `unset`, how many platform variables it checked and how many have no value. When some have no value and no service needs them, a `message` line follows the step, whose `data.unset` lists each one with its readers and commands ([Platform variables](#platform-variables)). The build adapter's fields vary by adapter, so read them as information, not as a stable format. The `result` line has the deploy's total `durationMs` beside `summary`, whose `findings.unset` lists the platform variables with no value again.
 
 A deploy ends by printing your app's own topology — the names you authored,
 what each one became on the platform, and the public URLs:
@@ -558,9 +558,10 @@ What deployed apps actually run into, and what to do about it:
   authenticated for you, and your `curl` isn't one of the services the app
   connected to it — so it's turned away, and a provider with no consumers turns
   away everyone. Reach it through a consumer instead.
-- **The `COMPOSER_*` variables in your project belong to the deploy.** Config,
-  secret pointers, and service keys all land there, and every deploy rewrites
-  them — editing one by hand doesn't survive.
+- **The `COMPOSER_*` variables in your project belong to the deploy.** Ports,
+  connection settings, generated values and service keys all land there, and
+  every deploy rewrites them — editing one by hand doesn't survive. A service's
+  input document is not among them: it travels in the service's artifact.
 - **Calls into a sleeping service can get `ECONNRESET`** while it cold-starts.
   Retry them.
 - **The `cron` scheduler stays awake on purpose.** It holds Compute's
@@ -579,6 +580,19 @@ What deployed apps actually run into, and what to do about it:
 When something misbehaves in ways these don't explain, check
 [`gotchas.md`](../../gotchas.md) at the repo root — the catalogue of platform
 footguns with diagnoses, kept current as we hit them.
+
+## Upgrading to input documents in the artifact
+
+Earlier versions wrote each service's input document as an environment
+variable, `COMPOSER_<ADDRESS>_INPUT`. This version writes it into the service's
+artifact. The first deploy with this version gives every service a new
+deployment that reads its input from its artifact, then deletes the
+`COMPOSER_<ADDRESS>_INPUT` variables. Nothing else changes, and there is
+nothing to do yourself.
+
+Don't put a deployment made before the upgrade back into service afterwards,
+for example by promoting it in the Console: its artifact has no input document,
+and the variable it read is gone.
 
 ## Upgrading from stages to environments
 
@@ -745,7 +759,8 @@ const result = await deploy({
 });
 if (result.ok) {
   // result.value.summary — the deployed topology (app name + each node's
-  // address and entities), when the deploy engine reported one.
+  // address and entities) and the platform variables with no value
+  // (`findings`), when the deploy engine reported one.
 } else {
   console.error(result.failure.message); // same fix-naming text the CLI prints
 }
@@ -780,21 +795,10 @@ What to know before embedding it:
   deploy engine ran and failed (`DEPLOY.ENGINE_FAILED`), the message ends with
   the engine's own error lines — the failed resource and the error it
   printed, with every secret Composer knows redacted, and capped at 1000 characters — which a
-  deploy reporting to Prisma Cloud also records on the build. Its optional
-  `diagnostics` object carries the exit code and an exact reproduce command —
-  details of the current execution mechanism, handy for printing a hint but
-  not something to build on; branch on `message`/`cause` for anything
-  durable. Importing the module executes nothing until you call an operation.
-- The deploy engine's own output passes through Composer on its way to your terminal, with every secret Composer knows replaced by `[redacted]`: the value under the name of each platform secret your app declares, in your `config` and `secrets` lists, however short. Other values in those lists, such as the shell's, are printed as they are, apart from values that look like credentials, such as a long value under a name containing `TOKEN` or `KEY`. So the engine shows plain progress lines, without colour.
-- **`onEvent` reports each step.** Pass `onEvent` to `deploy` to receive a `step-started` and a `step-finished` event per step (`prepare`, `assemble`, one `assemble-service` per service, `connect`, `preflight`, `apply`, `record`), as they happen. A finished step has `outcome`, `durationMs` and the `data` described in [What a deploy prints](#what-a-deploy-prints). Right after `preflight`, a `preflight-findings` event lists the platform variables with no value that no service needs, when there are any. When a step fails, it and the steps around it finish as `failed`; `record` still runs. An `onEvent` that throws does not fail the deploy. A successful result's `durationMs` is the whole deploy's total.
-- **`summary` is best-effort.** It rides a result file the deploy engine's
-  child process writes; a deploy that converged without writing one still
-  succeeds, with `summary: undefined`.
-- **The engine's own output still streams to your process's stdio.** That is
-  the current mechanism, not a promise: the operations return structured
-  results but don't capture the live deploy output; run them where that
-  output belongs, or with stdio redirected. Capturing it would be a new
-  option on the operations.
+  deploy reporting to Prisma Cloud also records on the build. A `deploy` stopped by its `signal` fails with `DEPLOY.INTERRUPTED`, after it has released the environment's lease. A failed `destroy` also carries an optional `diagnostics` object with the exit code and an exact reproduce command — details of the current execution mechanism, handy for printing a hint but not something to build on; branch on `message`/`cause` for anything durable. Importing the module executes nothing until you call an operation.
+- Composer replaces every secret it knows with `[redacted]` in the deploy engine's output: the value under the name of each platform secret your app declares, in your `config` and `secrets` lists, however short. Other values in those lists, such as the shell's, are printed as they are, apart from values that look like credentials, such as a long value under a name containing `TOKEN` or `KEY`. `deploy` redacts each engine event and log line before `onEvent` receives it. `destroy` passes its engine child's output through Composer on its way to your terminal, so that engine shows plain progress lines, without colour.
+- **`onEvent` reports each step.** Pass `onEvent` to `deploy` to receive a `step-started` and a `step-finished` event per step (`prepare`, `assemble`, one `assemble-service` per service, `connect`, `preflight`, `apply`, one `apply-resource` per resource the engine touches, with its `resourceId` and the engine's `status` word, which is for people to read, `record`), as they happen, and a `message` event for each line the engine logs. A finished step has `outcome`, `durationMs` and the `data` described in [What a deploy prints](#what-a-deploy-prints). Right after `preflight`, a `preflight-findings` event lists the platform variables with no value that no service needs, when there are any. When a step fails, it and the steps around it finish as `failed`; `record` still runs. An `onEvent` that throws does not fail the deploy. A successful result's `durationMs` is the whole deploy's total.
+- **`deploy` runs the engine in your process.** It returns `summary` as a value and reports the engine's progress through `onEvent`; it prints nothing. While it plans and applies it sets each deploy reporter's variables in `process.env` and changes to `cwd` when your process is elsewhere, then restores both, so a process runs one deploy at a time (`DEPLOY.CONVERGE_RUNNING`), and from a worker thread `cwd` must be the process's working directory (`DEPLOY.WORKER_THREAD`). Deploy uses the lowering and the converge from the app's own install of `@prisma/composer`, found beside its `prisma.config.ts`, which must speak the same converge contract as the Composer running the deploy (`DEPS.CONVERGE_CONTRACT_MISMATCH` otherwise); the package versions may differ. Pass `signal` to interrupt it. `destroy` still runs the engine as a child process.
 - **`dev` resolves to `{ ok: true, value: session }` or a failure** —
   never an exit code. The session is `{ endpoints, stop(), closed }`, with
   progress (`ready`, `converge-failed`, `config-changed`, `watch-error`, …) delivered through

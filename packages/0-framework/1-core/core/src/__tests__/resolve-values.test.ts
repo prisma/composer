@@ -575,7 +575,7 @@ describe("a core message that names a value resource's value", () => {
 
 describe('a root input field and a secret value resource with one name', () => {
   const message =
-    'input.API_KEY of root module "shop" reads "API_KEY" from the app configuration, and the test secret "API_KEY" names "API_KEY" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy\'s second process every root input field the root\'s body passes on, in a file, and never writes a secret to a file. Read the secret with the test secret "API_KEY" only, or give the plain value a different name.';
+    'input.API_KEY of root module "shop" reads "API_KEY" from the app configuration, and the test secret "API_KEY" names "API_KEY" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which `prisma deploy` sends to the platform as plain configuration, and `prisma dev` and `destroy` hand to their second process in a file. Read the secret with the test secret "API_KEY" only, or give the plain value a different name.';
 
   test('fail at Load when a service reads the secret', () => {
     const root = appRoot('shop', { input: anyInputSchema }, ({ input, provision }) => {

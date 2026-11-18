@@ -10,6 +10,8 @@ export default defineConfig({
     config: 'src/exports/config.ts',
     'app-configuration-file': 'src/exports/app-configuration-file.ts',
     control: 'src/exports/control.ts',
+    converge: 'src/exports/converge.ts',
+    'converge-contract': 'src/exports/converge-contract.ts',
     family: 'src/exports/family.ts',
     testing: 'src/exports/testing.ts',
   },

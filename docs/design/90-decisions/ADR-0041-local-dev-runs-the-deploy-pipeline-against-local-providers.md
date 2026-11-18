@@ -134,11 +134,15 @@ involved — `tsdown --watch`, `bun build --watch`, whatever their build does)
 produces the rebuild, and dev responds by re-running assemble and converge.
 
 **A service boots exactly as deployed.** The artifact's bootstrap calls
-`run(address, boot)` against the same `COMPOSER_*` environment protocol a
-deploy's platform injection produces — the local `Deployment` provider
-materializes that environment from the same `EnvironmentVariable` records the
-lowering emitted. Deserialization, stashing, `load()`/`config()`/`secrets()`
-all execute the deployed code path.
+`run(address, boot, inputDocument)` with the input document the artifact's
+`compute.bootstrap.json` holds
+([ADR-0065](ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)),
+against the same `COMPOSER_*` environment protocol a deploy's platform
+injection produces — the local `Deployment` provider materializes that
+environment from the same `EnvironmentVariable` records the lowering emitted,
+and reads the artifact's input document to work out which platform variables
+the service's process receives. Deserialization, stashing,
+`load()`/`config()`/`secrets()` all execute the deployed code path.
 
 ## Reasoning
 
