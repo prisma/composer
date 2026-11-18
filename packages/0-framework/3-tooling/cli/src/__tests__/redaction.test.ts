@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { format } from 'node:util';
 import { CliStructuredError } from '@internal/foundation/errors';
 import type { DeploymentSummary } from '../deployment-summary.ts';
 import type { DevEvent } from '../operations/dev.ts';
@@ -51,6 +52,21 @@ describe('SecretRedaction', () => {
     expect(redaction.knownSecrets.values().size).toBe(0);
   });
 
+  test('SecretRedaction keeps a <value> placeholder after a name that contains SECRET', () => {
+    const text = "set 'AUTH_SIGNING_SECRET=<value>' first";
+
+    expect(new SecretRedaction({}).redact(text)).toBe(text);
+    expect(new SecretRedaction({}).redact('AUTH_SIGNING_SECRET=sk_live_abc')).toBe(
+      'AUTH_SIGNING_SECRET=[redacted]',
+    );
+  });
+
+  test('SecretRedaction redacts a real value that only starts with the placeholder', () => {
+    for (const text of ['SECRET=<value>abc123', 'SECRET=<value>-real', 'password=<value>s3cret']) {
+      expect(new SecretRedaction({}).redact(text)).not.toContain('<value>');
+    }
+  });
+
   test('SecretRedaction hides a value added after it first redacted', () => {
     const redaction = knowing('first-secret');
     expect(redaction.redact('first-secret later-secret')).toBe('[redacted] later-secret');
@@ -58,6 +74,29 @@ describe('SecretRedaction', () => {
     redaction.addKnownSecrets([{ name: 'LATER', value: 'later-secret' }]);
 
     expect(redaction.redact('first-secret later-secret')).toBe('[redacted] [redacted]');
+  });
+
+  const multiLine = '-----BEGIN KEY-----\nabc"def\\ghi\n-----END KEY-----';
+
+  test('SecretRedaction removes a multi-line secret from the JSON of a thrown plain object', () => {
+    const text = JSON.stringify({ status: 500, body: { key: multiLine } });
+
+    expect(knowing(multiLine).redact(text)).toBe('{"status":500,"body":{"key":"[redacted]"}}');
+  });
+
+  test('SecretRedaction removes a multi-line secret from what util.format prints for an object', () => {
+    const text = format('failed: %o', { key: multiLine });
+
+    expect(text).not.toContain(multiLine);
+    expect(knowing(multiLine).redact(text)).not.toContain('abc');
+    expect(knowing(multiLine).redact(format({ key: multiLine }))).toBe("{ key: '[redacted]' }");
+  });
+
+  test('SecretRedaction still redacts a plain secret once, in plain text and in JSON', () => {
+    expect(knowing('plain-secret-1').redact('x plain-secret-1 y')).toBe('x [redacted] y');
+    expect(knowing('plain-secret-1').redact(JSON.stringify({ k: 'plain-secret-1' }))).toBe(
+      '{"k":"[redacted]"}',
+    );
   });
 });
 
@@ -283,7 +322,7 @@ describe('redacting what a command returns', () => {
     expect(redactDevEvent(untouched, known)).toBe(untouched);
   });
 
-  test('redactSummary redacts entity ids, urls and details', () => {
+  test('redactSummary redacts entity ids, urls, details and findings', () => {
     const summary: DeploymentSummary = {
       app: 'shop',
       nodes: [
@@ -300,6 +339,15 @@ describe('redacting what a command returns', () => {
           ],
         },
       ],
+      findings: {
+        unset: [
+          {
+            name: 'MAIL_KEY',
+            readers: [{ kind: 'unread', node: 'shop.mail' }],
+            commands: ["prisma project env add 'MAIL_KEY=hunter2'"],
+          },
+        ],
+      },
     };
 
     expect(redactSummary(summary, knowing('hunter2'))).toEqual({
@@ -318,6 +366,15 @@ describe('redacting what a command returns', () => {
           ],
         },
       ],
+      findings: {
+        unset: [
+          {
+            name: 'MAIL_KEY',
+            readers: [{ kind: 'unread', node: 'shop.mail' }],
+            commands: ["prisma project env add 'MAIL_KEY=[redacted]'"],
+          },
+        ],
+      },
     });
     expect(redactSummary(undefined, knowing('hunter2'))).toBeUndefined();
   });

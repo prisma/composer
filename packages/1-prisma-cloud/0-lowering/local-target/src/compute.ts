@@ -13,7 +13,15 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { App, Deployment, EnvironmentVariable, Project } from '@alchemy.run/prisma';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
+import { toProviderError } from '@internal/core/deploy';
 import { computeClient } from '@internal/dev-emulators';
+import {
+  collectPlatformMarkers,
+  composerKey,
+  INPUT_KEY_NAME,
+  ownKeyPrefix,
+} from '@internal/input-document';
+import { readComputeInputDocument } from '@internal/lowering/compute';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
@@ -67,32 +75,6 @@ async function artifactSha256(artifactPath: string): Promise<string> {
   return digest;
 }
 
-/**
- * The env-var key the app's own boot-side `deserialize()` reads for its
- * `port` service param — `COMPOSER_<ADDRESS SEGMENTS>_PORT`. Mirrors
- * `@prisma/composer-prisma-cloud`'s serializer.ts `configKey(address, {
- * owner: 'service', name: 'port' })` byte-for-byte; duplicated rather than
- * imported because `@internal/local-target` sits below the extensions layer
- * and cannot import a target's serializer (ADR-0028's layer order) — the two
- * encode one shared wire protocol (ADR-0029) and must never diverge.
- */
-function servicePortEnvKey(address: string): string {
-  return ['COMPOSER', ...addressKeySegments(address), 'PORT'].join('_').toUpperCase();
-}
-
-/** The `COMPOSER_<ADDRESS SEGMENTS>_` prefix every env row this address OWNS carries — `configKey`'s convention (see `servicePortEnvKey`'s doc comment). */
-function ownEnvKeyPrefix(address: string): string {
-  return `${['COMPOSER', ...addressKeySegments(address)].join('_').toUpperCase()}_`;
-}
-
-/** The serializer's `addressKeySegments`, duplicated for the same reason as `servicePortEnvKey`: `-` in the app name becomes `_`. */
-function addressKeySegments(address: string): string[] {
-  return address
-    .split('.')
-    .filter((s) => s.length > 0)
-    .map((s) => s.replaceAll('-', '_'));
-}
-
 const COMPOSER_NAMESPACE_PREFIX = 'COMPOSER_';
 
 /**
@@ -107,7 +89,7 @@ export function scopedEnvRows(
   allRows: Readonly<Record<string, string>>,
   address: string,
 ): Record<string, string> {
-  const ownPrefix = ownEnvKeyPrefix(address);
+  const ownPrefix = ownKeyPrefix(address);
   const scoped: Record<string, string> = {};
   for (const [key, value] of Object.entries(allRows)) {
     if (key.startsWith(ownPrefix) || !key.startsWith(COMPOSER_NAMESPACE_PREFIX)) {
@@ -117,43 +99,24 @@ export function scopedEnvRows(
   return scoped;
 }
 
-// The pointer formats of `@prisma/composer-prisma-cloud`'s serializer.ts,
-// duplicated for the same layer-order reason as `servicePortEnvKey`.
-const PARAM_POINTER_PREFIX = '@composer-param-pointer:';
-const SECRET_MARKER = '$secret';
-const INPUT_KEY_NAME = 'INPUT';
-
-function collectSecretPointers(value: unknown, out: Set<string>): void {
-  if (Array.isArray(value)) {
-    for (const member of value) collectSecretPointers(member, out);
-    return;
-  }
-  if (!Predicate.isObject(value)) return;
-  const pointer = value[SECRET_MARKER];
-  if (Object.keys(value).length === 1 && typeof pointer === 'string') {
-    out.add(pointer);
-    return;
-  }
-  for (const member of Object.values(value)) collectSecretPointers(member, out);
-}
-
-/** The variables this service's own rows point at: its param pointer rows, and its input document's `$secret` pointers. */
-export function pointedVariables(
+export function platformVariables(
   rows: Readonly<Record<string, string>>,
   address: string,
-): { readonly params: ReadonlySet<string>; readonly secrets: ReadonlySet<string> } {
-  const ownPrefix = ownEnvKeyPrefix(address);
-  const params = new Set<string>();
+): { readonly plain: ReadonlySet<string>; readonly secrets: ReadonlySet<string> } {
+  const document = rows[`${ownKeyPrefix(address)}${INPUT_KEY_NAME}`];
+  return variablesNamedBy(document === undefined ? undefined : JSON.parse(document));
+}
+
+function variablesNamedBy(document: unknown): {
+  readonly plain: ReadonlySet<string>;
+  readonly secrets: ReadonlySet<string>;
+} {
+  const plain = new Set<string>();
   const secrets = new Set<string>();
-  for (const [key, value] of Object.entries(rows)) {
-    if (!key.startsWith(ownPrefix)) continue;
-    if (value.startsWith(PARAM_POINTER_PREFIX)) {
-      params.add(value.slice(PARAM_POINTER_PREFIX.length));
-    } else if (key === `${ownPrefix}${INPUT_KEY_NAME}`) {
-      collectSecretPointers(JSON.parse(value), secrets);
-    }
+  for (const marker of collectPlatformMarkers(document)) {
+    (marker.secret ? secrets : plain).add(marker.name);
   }
-  return { params, secrets };
+  return { plain, secrets };
 }
 
 function manifestMissingAddressError(): Error {
@@ -207,11 +170,10 @@ export function readComputeManifest(artifactDir: string): {
 }
 
 /**
- * The environment a service's deployment runs with: its own rows from
- * `env.json` (`scopedEnvRows`), `COMPOSER_<ADDRESS>_PORT`, the current values
- * of the variables its rows point at, and `PATH` and `HOME` from the shell.
- * The `Deployment` provider puts it with an artifact; a dev server is given it
- * too (ADR-0056).
+ * A deployment's environment: its own rows, its port, the platform variables its input document names, and `PATH` and `HOME`.
+ * For a service that runs its `artifact`, the `env.json` input entry is stale and left out, and the
+ * platform variables come from the artifact's `inputDocument`. A dev server has no `artifact` and is
+ * given the same otherwise (ADR-0056).
  */
 export async function materializeEnv(
   devDir: string,
@@ -219,17 +181,23 @@ export async function materializeEnv(
   port: number,
   configuration: Readonly<Record<string, unknown>>,
   secrets: Readonly<Record<string, string>>,
+  artifact?: { readonly inputDocument?: unknown },
 ): Promise<Record<string, string>> {
-  const rows = await envStore(devDir).read();
-  const env: Record<string, string> = scopedEnvRows(rows, address);
-  env[servicePortEnvKey(address)] = JSON.stringify(port);
-  const pointed = pointedVariables(rows, address);
+  const rows = scopedEnvRows(await envStore(devDir).read(), address);
+  const inputKey = composerKey(address, INPUT_KEY_NAME);
+  if (artifact !== undefined) delete rows[inputKey];
+  const env: Record<string, string> = { ...rows };
+  env[composerKey(address, 'PORT')] = JSON.stringify(port);
+  const named =
+    artifact === undefined
+      ? platformVariables(rows, address)
+      : variablesNamedBy(artifact.inputDocument);
   const setIfText = (name: string, value: unknown): void => {
     if (typeof value === 'string' && value.length > 0) env[name] = value;
   };
-  for (const name of pointed.secrets) setIfText(name, secrets[name]);
-  for (const name of pointed.params) {
-    if (!pointed.secrets.has(name)) setIfText(name, configuration[name]);
+  for (const name of named.secrets) setIfText(name, secrets[name]);
+  for (const name of named.plain) {
+    if (!named.secrets.has(name)) setIfText(name, configuration[name]);
   }
   if (process.env['PATH'] !== undefined) env['PATH'] = process.env['PATH'];
   if (process.env['HOME'] !== undefined) env['HOME'] = process.env['HOME'];
@@ -275,7 +243,7 @@ export function LocalAppProvider(
             logicalId: null,
           } satisfies App['Attributes'];
         },
-        catch: (cause) => cause,
+        catch: toProviderError,
       }),
     diff: ({ output }) =>
       Effect.tryPromise({
@@ -285,12 +253,12 @@ export function LocalAppProvider(
           if (live?.url === output.appEndpointDomain) return undefined;
           return { action: 'update' as const };
         },
-        catch: (cause) => cause,
+        catch: toProviderError,
       }),
     delete: ({ output }) =>
       Effect.tryPromise({
         try: () => deleteNodeInstance(appScopeOf(input), output.name),
-        catch: (cause) => cause,
+        catch: toProviderError,
       }),
     read: ({ output }) => Effect.succeed(output),
   };
@@ -323,7 +291,7 @@ export function LocalEnvironmentVariableProvider(
             updatedAt: DEV_TIMESTAMP,
           } satisfies EnvironmentVariable['Attributes'];
         },
-        catch: (cause) => cause,
+        catch: toProviderError,
       }),
     delete: ({ output }) =>
       Effect.tryPromise({
@@ -334,7 +302,7 @@ export function LocalEnvironmentVariableProvider(
             return next;
           });
         },
-        catch: (cause) => cause,
+        catch: toProviderError,
       }),
   };
   return Provider.effect(EnvironmentVariable, Effect.succeed(service));
@@ -342,9 +310,9 @@ export function LocalEnvironmentVariableProvider(
 
 /**
  * `Prisma.Deployment` → unpacks the artifact once per hash, finds the
- * service's emulator instance and its port, materializes the child's full env (env store +
- * the current values of the variables its rows point at + the port override +
- * `PATH`/`HOME`), and puts the deployment — the
+ * service's emulator instance and its port, builds the child's env with
+ * `materializeEnv` from the input document the artifact carries, and puts the
+ * deployment — the
  * emulator (re)starts the child only when the hash or env actually changed.
  * `portMapping` is ignored on purpose: the emulator owns port allocation, and
  * the child learns its port from `COMPOSER_<ADDRESS>_PORT` in the env this
@@ -375,8 +343,9 @@ export function LocalDeploymentProvider(
             input.devDir,
             address,
             instance.port,
-            input.configurationKeyText,
+            input.plainVariableText,
             input.namedSecrets,
+            { inputDocument: readComputeInputDocument(artifactDir) },
           );
           try {
             await computeClient().putDeployment(instance.id, {
@@ -404,7 +373,7 @@ export function LocalDeploymentProvider(
             createdAt: DEV_TIMESTAMP,
           } satisfies Deployment['Attributes'];
         },
-        catch: (cause) => cause,
+        catch: toProviderError,
       }),
     // An instance that no longer runs this deployment — re-created after the
     // emulator lost it, or never deployed — needs the deployment again, even
@@ -421,7 +390,7 @@ export function LocalDeploymentProvider(
             artifactHash === undefined || fs.existsSync(artifactDirOf(input.devDir, artifactHash));
           return unpacked ? undefined : { action: 'update' as const };
         },
-        catch: (cause) => cause,
+        catch: toProviderError,
       }),
     // Content-addressed, cheap to leave unpacked; `--fresh` removes the whole
     // dev dir, and deleting the App deletes the emulator's instance.

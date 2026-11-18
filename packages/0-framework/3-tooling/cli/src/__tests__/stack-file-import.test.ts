@@ -43,7 +43,7 @@ function runStack(stackFile: string) {
 
 describe('the generated stack file, evaluated', () => {
   const file = {
-    appConfigurationRead: { rootInput: [], configurationKeyText: { read: 'from-file' } },
+    appConfigurationRead: { rootInput: [{ path: ['read'], value: 'from-file' }] },
     nodeAddresses: ['stub-address'],
   };
 

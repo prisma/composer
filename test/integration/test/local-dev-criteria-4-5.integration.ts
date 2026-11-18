@@ -1,11 +1,6 @@
 /**
- * The plan-S5 proving script for acceptance criteria 4 and 5 (spec's
- * acceptance criteria list): drives the installed `prisma` host's `dev`
- * against the S4 fixture (`test/fixtures/local-dev/`), extended for this
- * proof with a bucket consumer flow on `web` and secrets and an env-sourced
- * param on `bkg` (module.ts's binding). Same pattern as
- * `local-dev-store.integration.ts` — a real child process, teed output,
- * bounded waits.
+ * Drives the installed `prisma dev` against `test/fixtures/local-dev/`, as a
+ * real child process with teed output and bounded waits.
  *
  * Criterion 4 (bucket round-trip): PUT an object through the app's own
  * `/blobs/:key` route, confirm it lands as a plain file under
@@ -15,8 +10,8 @@
  *
  * Criterion 5 (value sourcing): every value comes from the environment of
  * the run, either the shell or a `.env` the fixture's `prisma.config.ts`
- * loads. A required secret or env-sourced param that is unset or empty stops
- * dev with an error naming it. An optional secret that is unset or empty
+ * loads. A required secret that is unset or empty stops dev with an error
+ * naming it. An optional secret that is unset or empty
  * reaches the service as absent. A value changed between two runs reaches
  * the running service on the next warm start.
  *
@@ -278,7 +273,7 @@ async function expectPreflightFailure(env: NodeJS.ProcessEnv): Promise<string> {
 
 function assertNamesMissing(log: string, variable: string, service: string): void {
   // In the structured frame the quotes around the service name arrive JSON-escaped.
-  const named = new RegExp(`${variable}\\s+\\(required by service \\\\?"${service}\\\\?"`);
+  const named = new RegExp(`${variable}\\s+\\(read by service \\\\?"${service}\\\\?"`);
   assert(named.test(log), `the error must name ${variable} and service "${service}"`);
   assert(
     log.includes('environmentVariables() reads the shell you run `prisma dev` from'),
@@ -325,16 +320,6 @@ async function main(): Promise<void> {
     }
     console.log('[proving] PASS: a required secret that is unset or empty stops dev, naming it');
 
-    // ——— Criterion 5: a required env-sourced param that is unset stops dev ———
-    const paramLog = await expectPreflightFailure(
-      baseEnv({
-        LOCALDEV_FIXTURE_API_KEY: 'a-real-looking-key',
-        LOCALDEV_FIXTURE_GREETING: undefined,
-      }),
-    );
-    assertNamesMissing(paramLog, 'LOCALDEV_FIXTURE_GREETING', 'localdevs4fixture.bkg');
-    console.log('[proving] PASS: an unset env-sourced param stops dev, naming it');
-
     // ——— Criterion 5: a value loaded by prisma.config.ts reaches the service; an unset optional secret arrives absent ———
     fs.writeFileSync(envFile, 'LOCALDEV_FIXTURE_API_KEY=from-the-config-file\n');
     session = await startDevUntilReady(
@@ -357,6 +342,19 @@ async function main(): Promise<void> {
     // ——— Criterion 4: bucket round-trip through the app ———
     const web = session.endpoints.find((e) => e.address === 'localdevs4fixture.web');
     assert(web !== undefined, 'the web service must appear in the front door');
+    const health = await waitForAsync(
+      () =>
+        fetch(`${web.url}/health`).then((r) =>
+          r.ok ? (r.json() as Promise<{ readonly greeting: string | null }>) : undefined,
+        ),
+      15_000,
+    );
+    assertEqual(
+      health.greeting,
+      GREETING.LOCALDEV_FIXTURE_GREETING,
+      'the plain platform variable the shell holds reaches the web service',
+    );
+    console.log('[proving] PASS: a plain platform variable reaches the service that reads it');
 
     const putRes = await waitForAsync(
       () =>

@@ -12,9 +12,10 @@ import type {
 } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
-import type { AppConverge } from '../app-converge.ts';
+import type { AppConvergeEntry } from '../app-converge.ts';
 import type { ConvergeFailureReason } from '../converge-in-process.ts';
 import type { startWatch } from '../dev/watch.ts';
+import type { SecretRedaction } from '../redaction.ts';
 import type { RunAlchemy } from '../run-alchemy.ts';
 
 /** The `id` of an ExtensionDescriptor — what keys the executors' per-extension maps. */
@@ -42,8 +43,10 @@ export interface OperationDeps {
   readonly runAssembler?: RunAssembler | undefined;
   /** Starts the converge child for `destroy`; defaults to `spawnAlchemy`. Tests substitute it. */
   readonly alchemy?: RunAlchemy | undefined;
-  /** Lowers and converges the stack for `deploy` and `dev`; defaults to the app's own install (`loadAppConverge`). Tests substitute it. */
-  readonly converge?: AppConverge | undefined;
+  /** The `lower`, converge and local target functions `deploy` and `dev` run; defaults to the app's own install (`loadAppConvergeEntry`). Tests substitute it. */
+  readonly appConvergeEntry?: AppConvergeEntry | undefined;
+  /** What `deploy` and `dev` redact from everything they report. Defaults to one built from `process.env`; the CLI passes its own so its console redirect redacts the same values. */
+  readonly redaction?: SecretRedaction | undefined;
   /** Starts a file watch for `dev`; defaults to chokidar-backed `startWatch`. Tests substitute it to drive changes directly. */
   readonly watch?: typeof startWatch | undefined;
   /**

@@ -45,7 +45,7 @@ describe('preflightEnv()', () => {
           ['acme/widgets', 'b'],
         ]),
       ),
-    ).toThrow(/"acme\.widgets" and "acme\/widgets" both map to the preflight transport variable/);
+    ).toThrow(/"acme\.widgets" and "acme\/widgets" both use the environment variable/);
   });
 });
 

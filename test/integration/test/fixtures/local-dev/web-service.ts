@@ -9,11 +9,14 @@
  * the repo's `.gitignore` excludes every `dist/` directory, and this one must
  * be committed.)
  */
+import { field } from '@prisma/composer/arktype';
 import node from '@prisma/composer/node';
 import { bucket, compute, rawPostgres } from '@prisma/composer-prisma-cloud';
+import { type } from 'arktype';
 
 export default compute({
   name: 'web',
   deps: { db: rawPostgres(), store: bucket() },
+  input: type({ 'greeting?': field(type('string')) }),
   build: node({ module: import.meta.url, entry: 'built/web-server.mjs' }),
 });

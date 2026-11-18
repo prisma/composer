@@ -9,9 +9,9 @@ import type { SecretString } from '@internal/core';
 import { secretString } from '@internal/foundation/arktype';
 import { type } from 'arktype';
 import { compute } from '../compute.ts';
-import { envSecret } from '../secret.ts';
 import { inputKey } from '../serializer.ts';
 import { bootstrapService } from '../testing.ts';
+import { secretVariable } from './variable-values.ts';
 
 const build = {
   extension: '@prisma/composer/node',
@@ -84,7 +84,7 @@ describe('bootstrapService', () => {
           {
             service: { port: 4712 },
             inputs: {},
-            input: { greeting: 'hello', apiKey: envSecret('TEST_BOOTSTRAP_API_KEY') },
+            input: { greeting: 'hello', apiKey: secretVariable('TEST_BOOTSTRAP_API_KEY') },
           },
           async () => {
             rowAtBoot = process.env[inputKey('')];
@@ -92,7 +92,9 @@ describe('bootstrapService', () => {
           },
         ),
     );
-    expect(rowAtBoot).toBe('{"greeting":"hello","apiKey":{"$secret":"TEST_BOOTSTRAP_API_KEY"}}');
+    expect(rowAtBoot).toBe(
+      '{"greeting":"hello","apiKey":{"$platform":{"name":"TEST_BOOTSTRAP_API_KEY","secret":true}}}',
+    );
     expect(readBack?.greeting).toBe('hello');
     expect(readBack?.apiKey.expose()).toBe('sk_test_boot');
   });

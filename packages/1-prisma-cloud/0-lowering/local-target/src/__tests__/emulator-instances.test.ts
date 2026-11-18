@@ -20,6 +20,7 @@ import { packageComputeArtifact } from '@internal/lowering/compute';
 import * as Effect from 'effect/Effect';
 import { ensureAppInstances } from '../app-instances.ts';
 import { LocalAppProvider, LocalDeploymentProvider } from '../compute.ts';
+import { envStore } from '../dev-store.ts';
 import {
   type AppInstances,
   deleteAppInstances,
@@ -66,6 +67,31 @@ function artifactFor(address: string, version: string): string {
   return packageComputeArtifact({ id: address, bundleDir, appEntry: 'server.js', address }).path;
 }
 
+function envEchoArtifactFor(
+  address: string,
+  names: readonly string[],
+  inputDocument?: unknown,
+): string {
+  const bundleDir = fs.mkdtempSync(path.join(root, `bundle-${address}-`));
+  fs.writeFileSync(
+    path.join(bundleDir, 'main.js'),
+    `export default { run: async (address) => {
+  const port = Number(process.env['COMPOSER_' + address.replace(/[.-]/g, '_').toUpperCase() + '_PORT']);
+  const names = ${JSON.stringify(names)};
+  Bun.serve({ port, fetch: () => Response.json(Object.fromEntries(names.map((name) => [name, process.env[name] ?? null]))) });
+} };
+`,
+  );
+  fs.writeFileSync(path.join(bundleDir, 'server.js'), '');
+  return packageComputeArtifact({
+    id: address,
+    bundleDir,
+    appEntry: 'server.js',
+    address,
+    ...(inputDocument !== undefined ? { inputDocument } : {}),
+  }).path;
+}
+
 /** A packaged artifact whose service exits before it listens. */
 function crashingArtifactFor(address: string): string {
   const bundleDir = fs.mkdtempSync(path.join(root, `bundle-${address}-`));
@@ -102,7 +128,7 @@ async function deploy(
         LocalDeploymentProvider({
           container: forContainer,
           devDir,
-          configurationKeyText: {},
+          plainVariableText: {},
           namedSecrets: {},
         }),
       ),
@@ -122,7 +148,12 @@ async function deploymentDiff(devDir: string, output: Deployment['Attributes']):
   const provider = await Effect.runPromise(
     Deployment.Provider.pipe(
       Effect.provide(
-        LocalDeploymentProvider({ container, devDir, configurationKeyText: {}, namedSecrets: {} }),
+        LocalDeploymentProvider({
+          container,
+          devDir,
+          plainVariableText: {},
+          namedSecrets: {},
+        }),
       ),
     ),
   );
@@ -135,7 +166,12 @@ async function appProvider(devDir: string) {
   return Effect.runPromise(
     App.Provider.pipe(
       Effect.provide(
-        LocalAppProvider({ container, devDir, configurationKeyText: {}, namedSecrets: {} }),
+        LocalAppProvider({
+          container,
+          devDir,
+          plainVariableText: {},
+          namedSecrets: {},
+        }),
       ),
     ),
   );
@@ -278,6 +314,99 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
         ' v2',
       );
     }, 60_000);
+  });
+
+  describe('the values a deployment is given', () => {
+    test('a plain marker takes its text from the plain platform variable texts, and a secret marker from the named secrets', async () => {
+      const { directory, devDir } = projectDir('values');
+      await ensureServiceInstances(container, devDir, [QUOTES]);
+      const inputDocument = {
+        from: { $platform: { name: 'EMAIL_FROM' } },
+        key: { $platform: { name: 'API_KEY', secret: true } },
+      };
+      const names = ['EMAIL_FROM', 'API_KEY'];
+      const provider = await Effect.runPromise(
+        Deployment.Provider.pipe(
+          Effect.provide(
+            LocalDeploymentProvider({
+              container,
+              devDir,
+              plainVariableText: {
+                EMAIL_FROM: 'shop@example.com',
+                API_KEY: 'plain',
+              },
+              namedSecrets: { API_KEY: 'sk_named', EMAIL_FROM: 'secret-from' },
+            }),
+          ),
+        ),
+      );
+
+      await Effect.runPromise(
+        provider.reconcile(
+          reconcileInput(`${QUOTES}-deployment`, {
+            app: QUOTES,
+            artifactPath: envEchoArtifactFor(QUOTES, names, inputDocument),
+          }),
+        ),
+      );
+
+      const node = await nodeOf(directory, QUOTES);
+      expect(await (await fetch(`http://localhost:${String(node.port)}`)).json()).toEqual({
+        EMAIL_FROM: 'shop@example.com',
+        API_KEY: 'sk_named',
+      });
+    }, 30_000);
+
+    test("an artifact's input document gives it the platform variables it names, and no others, over a stale one in env.json", async () => {
+      const { directory, devDir } = projectDir('artifact-input');
+      await ensureServiceInstances(container, devDir, [QUOTES]);
+      await envStore(devDir).update(() => ({
+        COMPOSER_SHARED_APP_QUOTES_INPUT: JSON.stringify({
+          old: { $platform: { name: 'OLD_SECRET', secret: true } },
+        }),
+      }));
+      const inputDocument = {
+        key: { $platform: { name: 'API_KEY', secret: true } },
+        from: { $platform: { name: 'EMAIL_FROM' } },
+      };
+      const names = [
+        'API_KEY',
+        'EMAIL_FROM',
+        'UNREAD',
+        'OLD_SECRET',
+        'COMPOSER_SHARED_APP_QUOTES_INPUT',
+      ];
+      const provider = await Effect.runPromise(
+        Deployment.Provider.pipe(
+          Effect.provide(
+            LocalDeploymentProvider({
+              container,
+              devDir,
+              plainVariableText: { EMAIL_FROM: 'shop@example.com', UNREAD: 'not read' },
+              namedSecrets: { API_KEY: 'sk_named', UNREAD: 'not read', OLD_SECRET: 'sk_old' },
+            }),
+          ),
+        ),
+      );
+
+      await Effect.runPromise(
+        provider.reconcile(
+          reconcileInput(`${QUOTES}-deployment`, {
+            app: QUOTES,
+            artifactPath: envEchoArtifactFor(QUOTES, names, inputDocument),
+          }),
+        ),
+      );
+
+      const node = await nodeOf(directory, QUOTES);
+      expect(await (await fetch(`http://localhost:${String(node.port)}`)).json()).toEqual({
+        API_KEY: 'sk_named',
+        EMAIL_FROM: 'shop@example.com',
+        UNREAD: null,
+        OLD_SECRET: null,
+        COMPOSER_SHARED_APP_QUOTES_INPUT: null,
+      });
+    }, 30_000);
   });
 
   describe('reusing the recorded instances', () => {

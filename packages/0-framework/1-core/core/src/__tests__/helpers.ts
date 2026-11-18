@@ -1,6 +1,9 @@
+import type { Pointer } from '@internal/foundation/pointer';
+import type { SecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { ConfigDeclaration, Connection, Params, Values } from '../config.ts';
 import type { Contract } from '../contract.ts';
+import { paramSource, secretSource, valueResource } from '../node.ts';
 
 /** A pass-anything Standard Schema for input-schema tests — Load never validates a binding; the deploy target does. */
 export const anyInputSchema: StandardSchemaV1<unknown, unknown> = {
@@ -39,3 +42,31 @@ export function scalarDeclaration(
     default: opts.default,
   };
 }
+
+interface TestPayload {
+  readonly name: string;
+}
+
+export const plainValue = (name: string, id = name.toLowerCase().replaceAll('_', '')) =>
+  valueResource({
+    name: id,
+    extension: 'test/pack',
+    type: 'test-value',
+    props: { name },
+    value: paramSource<TestPayload, Pointer<string>>(
+      { name },
+      { label: `the test value "${name}"` },
+    ),
+  });
+
+export const secretValue = (name: string, id = name.toLowerCase().replaceAll('_', '')) =>
+  valueResource({
+    name: id,
+    extension: 'test/pack',
+    type: 'test-value',
+    props: { name },
+    value: secretSource<TestPayload, Pointer<SecretString>>(
+      { name },
+      { label: `the test secret "${name}"`, secretsKey: name },
+    ),
+  });

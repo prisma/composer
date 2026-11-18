@@ -1,0 +1,26 @@
+{
+  "name": "@prisma/example-root-input",
+  "version": "0.39.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "rm -rf dist && bun build src/server.ts --target=bun --outdir dist/server && cp -R src/assets dist/server/assets",
+    "typecheck": "tsc --noEmit",
+    "dev": "bun run src/server.ts",
+    "smoke:deployed": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun scripts/smoke.ts )",
+    "deploy": "pnpm turbo run build --filter @prisma/example-root-input... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../node_modules/.bin/prisma deploy ${ROOT_INPUT_STACK_NAME:+--name \"$ROOT_INPUT_STACK_NAME\"} --environment \"${ROOT_INPUT_ENVIRONMENT:-production}\" --report \"${ROOT_INPUT_REPORT:-.prisma/deploy-report.json}\" )",
+    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts --environment production ${ROOT_INPUT_STACK_NAME:+--name \"$ROOT_INPUT_STACK_NAME\"} )",
+    "destroy:environment": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts --environment \"${ROOT_INPUT_ENVIRONMENT:?ROOT_INPUT_ENVIRONMENT is required}\" ${ROOT_INPUT_STACK_NAME:+--name \"$ROOT_INPUT_STACK_NAME\"} )"
+  },
+  "dependencies": {
+    "@prisma/composer": "workspace:0.39.0",
+    "@prisma/composer-cli": "workspace:0.39.0",
+    "@prisma/composer-prisma-cloud": "workspace:0.39.0",
+    "arktype": "^2.2.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.13",
+    "prisma": "catalog:",
+    "typescript": "^6.0.3"
+  }
+}

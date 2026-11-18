@@ -4,7 +4,7 @@
  * topology (compute × 2, postgres, bucket) lowered against the local target
  * and converged in this process, the way `prisma dev` converges: `lower`,
  * `localTargetProviders`, `devState` and `convergeInProcess` from
- * `@prisma/composer/internal/converge` (ADR-0064).
+ * `@prisma/composer/internal/converge` (ADR-0066).
  *
  * Only `@prisma/composer`, `@prisma/composer-cli` and `@prisma/composer-prisma-cloud` (9-public) are
  * imported (ADR-0028: examples/website/test import only the published
@@ -173,12 +173,13 @@ async function assembleFixture(): Promise<Record<string, FixtureBundle>> {
 
 interface DevConvergeInput {
   readonly containers: ReadonlyMap<string, ContainerInstance>;
-  readonly preflight: ReadonlyMap<string, string>;
+  readonly preflightPayloads: ReadonlyMap<string, string>;
+  readonly plainVariableText: Readonly<Record<string, string>>;
   readonly graph: ReturnType<typeof Load>;
   readonly appSecrets: Readonly<Record<string, string>>;
 }
 
-/** The app secrets the graph's `envSecret()`s name, as `prisma dev` hands them to the local providers. */
+/** The app secrets under the graph's secrets keys, as `prisma dev` hands them to the local providers. */
 function namedSecrets(input: DevConvergeInput): Record<string, string> {
   return Object.fromEntries(
     secretsKeys(input.graph).flatMap((key) => {
@@ -212,12 +213,12 @@ async function converge(
     appConfigurationRead: input.graph.appConfigurationRead,
     bundles,
     containers: input.containers,
-    preflight: input.preflight,
+    preflightPayloads: input.preflightPayloads,
     providers: localTargetProviders(
       resolved,
       input.containers,
       devDir,
-      input.graph.appConfigurationRead.configurationKeyText,
+      input.plainVariableText,
       namedSecrets(input),
     ),
     state: devState(),
@@ -453,14 +454,13 @@ async function main(): Promise<void> {
     // 4. Assemble both services (real build adapter, hand-written "built" entries).
     const bundles = await assembleFixture();
 
-    // 5. Preflight — the fixture's secret/env-param proof lives in the
-    // dedicated S5 script (local-dev-criteria-4-5.integration.ts), which
-    // deliberately runs WITHOUT these set; this script sets both in step 3 so its own
-    // (unrelated) proofs keep passing regardless of shell state.
-    const preflightPayload =
+    // 5. Preflight. Step 3 sets the fixture's values, so this passes whatever the
+    // shell holds; local-dev-criteria-4-5.integration.ts proves them unset.
+    const preflightResult =
       dev.preflight === undefined
         ? undefined
         : await dev.preflight({ graph, container: devContainer, environment: 'dev', ...read });
+    const preflightPayload = preflightResult?.payload;
     process.chdir(originalCwd);
 
     // 6. Emulators — ensures compute always, buckets because the graph has
@@ -478,9 +478,10 @@ async function main(): Promise<void> {
     // 7. Converge in this process, as `prisma dev` does.
     const convergeInput: DevConvergeInput = {
       containers: new Map([[descriptor.id, devContainer]]),
-      preflight:
+      preflightPayloads:
         preflightPayload === undefined ? new Map() : new Map([[descriptor.id, preflightPayload]]),
       graph,
+      plainVariableText: preflightResult?.plainVariableText ?? {},
       appSecrets: read.secrets,
     };
     const first = await converge(bundles, convergeInput);
@@ -504,11 +505,23 @@ async function main(): Promise<void> {
     const health = (await waitFor(
       () => fetch(`${web.url}/health`).then((r) => (r.ok ? r.json() : undefined)),
       15_000,
-    )) as { ok: boolean; version: string; db: boolean; store: boolean; portEnv: string | null };
+    )) as {
+      ok: boolean;
+      version: string;
+      db: boolean;
+      store: boolean;
+      greeting: string | null;
+      portEnv: string | null;
+    };
     assertEqual(
       { ok: health.ok, version: health.version, db: health.db, store: health.store },
       { ok: true, version: 'v1', db: true, store: true },
       'the web service /health round-trip',
+    );
+    assertEqual(
+      health.greeting,
+      'hello',
+      'the web service reads the plain platform variable LOCALDEV_FIXTURE_GREETING from the app configuration',
     );
 
     // 9. Emulator listing correct: both services running, stable ports/pids present.

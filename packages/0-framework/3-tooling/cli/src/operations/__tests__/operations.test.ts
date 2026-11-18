@@ -19,8 +19,9 @@ import type {
   LocateContainerInput,
   PrismaAppConfig,
   RunOutcome,
+  UnsetPlatformVariable,
 } from '@internal/core/config';
-import { type LowerOptions, lower } from '@internal/core/deploy';
+import { type LowerOptions, lower, nodeAddresses } from '@internal/core/deploy';
 import {
   devState,
   type LocalTargetAttachment,
@@ -34,14 +35,17 @@ import {
   APP_CONFIGURATION_FILE_ENV,
   LEFTOVER_APP_CONFIGURATION_FILE_AGE_MS,
 } from '../../app-configuration-file.ts';
-import { type AppConverge, HOST_COMPOSER_VERSION } from '../../app-converge.ts';
+import { type AppConvergeEntry, HOST_COMPOSER_VERSION } from '../../app-converge.ts';
 import type { ComposerConfigSource } from '../../composer-config.ts';
 import { dotenv, environmentVariables } from '../../config-adapters.ts';
 import { CONVERGE_CONTRACT } from '../../converge-contract.ts';
 import type { Converge, ConvergeOutcome, ConvergeRequest } from '../../converge-in-process.ts';
 import { DEPLOYMENT_RESULT_FILE_ENV, engineFailureFilePath } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
+import { SecretRedaction } from '../../redaction.ts';
+import { renderDeployment } from '../../render-deployment.ts';
 import { RUN_REPORT_VERSION } from '../../run-report.ts';
+import { unsetPlatformVariablesText } from '../../unset-platform-variables.ts';
 import { type DeployEvent, deployWithDeps } from '../deploy.ts';
 import { type DestroyInput, destroyWithDeps } from '../destroy.ts';
 import { type DevEvent, devWithDeps } from '../dev.ts';
@@ -139,6 +143,7 @@ function fakeConfig(
             package: unused,
             deploy: unused,
           },
+          'fixture/variable': Object.assign(unused, { kind: 'resource' as const }),
         },
         container: fakeContainerDescriptor(containerOpts),
         ...(hooks.teardown !== undefined ? { teardown: hooks.teardown } : {}),
@@ -226,7 +231,7 @@ const FAILED: ConvergeOutcome = {
 };
 
 /** Core's own `lower` with a stand-in for Alchemy's plan and apply: deploy tests never run the real Alchemy here. */
-function appConverge(converge: Converge): AppConverge {
+function appConvergeEntry(converge: Converge): AppConvergeEntry {
   return { lower, converge, localTargetProviders, devState };
 }
 
@@ -269,7 +274,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(recordingConverge(requests)),
+          appConvergeEntry: appConvergeEntry(recordingConverge(requests)),
           alchemy: async () => {
             spawned = true;
             return { exitCode: 0, signal: null };
@@ -306,7 +311,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(recordingConverge(requests)),
+          appConvergeEntry: appConvergeEntry(recordingConverge(requests)),
           credentials: { workspaceId: 'ws_handler', client: {} },
         },
       ),
@@ -338,7 +343,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             ran = true;
             return APPLIED;
           }),
@@ -367,7 +372,7 @@ describe('deploy()', () => {
             ...(input.entry === undefined ? {} : { entry: input.entry }),
             cwd: app.dir,
           },
-          { runAssembler: fakeAssembler, converge: appConverge(applied) },
+          { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
         ),
       );
 
@@ -399,7 +404,7 @@ describe('deploy()', () => {
         { config: composerConfig(fakeConfig()), cwd: app.dir },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             ran = true;
             return APPLIED;
           }),
@@ -429,7 +434,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(recordingConverge(requests)),
+          appConvergeEntry: appConvergeEntry(recordingConverge(requests)),
         },
       ),
     );
@@ -456,7 +461,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -487,7 +492,7 @@ describe('deploy()', () => {
             assembled = true;
             return fakeAssembler(node);
           },
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             convergeRan = true;
             return APPLIED;
           }),
@@ -514,7 +519,7 @@ describe('deploy()', () => {
           { config, entry: app.entryPath, cwd: app.dir },
           {
             runAssembler: fakeAssembler,
-            converge: appConverge(async () => {
+            appConvergeEntry: appConvergeEntry(async () => {
               convergeRan = true;
               return APPLIED;
             }),
@@ -633,7 +638,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             convergeRan = true;
             return APPLIED;
           }),
@@ -661,7 +666,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => ({
+          appConvergeEntry: appConvergeEntry(async () => ({
             kind: 'failed',
             reasons: [
               {
@@ -684,11 +689,11 @@ describe('deploy()', () => {
     expect(executionDiagnostics(result.failure)).toBeUndefined();
   });
 
-  test('an engine failure cause never carries a known secret read from a dotenv file, and keeps a dotenv value no envSecret() names', async () => {
+  test('an engine failure cause never carries a known secret read from a dotenv file, and keeps a dotenv value no secret source names', async () => {
     const app = makeAppDir('fixture-app', 'WEBHOOK_SIG');
     const onlyInDotenvFile = 'dotenv-only-SENTINEL-4f1c';
     const inBothPools = 'shared-name-SENTINEL-77ab';
-    const secretNamedConfigValue = 'secret-named-SENTINEL-90cd';
+    const namedSecretConfigValue = 'secret-named-SENTINEL-90cd';
     fs.writeFileSync(
       path.join(app.dir, '.env.ci-7.local'),
       `SIGNING_SALT=${onlyInDotenvFile}\nWEBHOOK_SIG=${inBothPools}\n`,
@@ -703,7 +708,7 @@ describe('deploy()', () => {
           config: {
             value: {
               ...fakeConfig(),
-              config: [() => ({ WEBHOOK_SIG: inBothPools, STRIPE_KEY: secretNamedConfigValue })],
+              config: [() => ({ WEBHOOK_SIG: inBothPools, STRIPE_KEY: namedSecretConfigValue })],
               secrets: [dotenv()],
             },
             file: path.join(app.dir, 'prisma.config.ts'),
@@ -711,12 +716,12 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => ({
+          appConvergeEntry: appConvergeEntry(async () => ({
             kind: 'failed',
             reasons: [
               {
                 tag: 'Error',
-                message: `error: rejected ${onlyInDotenvFile}, ${inBothPools} and ${secretNamedConfigValue}`,
+                message: `error: rejected ${onlyInDotenvFile}, ${inBothPools} and ${namedSecretConfigValue}`,
               },
             ],
           })),
@@ -730,7 +735,7 @@ describe('deploy()', () => {
       `error: rejected ${onlyInDotenvFile}, [redacted] and [redacted]`,
     );
     expect(JSON.stringify(result.failure)).not.toContain(inBothPools);
-    expect(JSON.stringify(result.failure)).not.toContain(secretNamedConfigValue);
+    expect(JSON.stringify(result.failure)).not.toContain(namedSecretConfigValue);
   });
 
   test('an interrupted converge is DEPLOY.INTERRUPTED, and the apply step closes as failed', async () => {
@@ -751,7 +756,7 @@ describe('deploy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(recordingConverge(requests, { kind: 'interrupted' })),
+          appConvergeEntry: appConvergeEntry(recordingConverge(requests, { kind: 'interrupted' })),
         },
       ),
     );
@@ -833,16 +838,19 @@ describe('deploy()', () => {
 /** Each event as `kind name[:address] outcome`, for asserting order without timings. */
 function stepLine(event: DeployEvent): string {
   if (event.kind === 'message') return `message ${event.text}`;
+  if (event.kind === 'preflight-findings') {
+    return `findings ${event.findings.unset.map((variable) => variable.name).join(', ')}`;
+  }
   const name =
     event.step.name === 'assemble-service'
       ? `assemble-service:${event.step.address}`
       : event.step.name === 'apply-resource'
-        ? `apply-resource:${event.step.fqn}`
+        ? `apply-resource:${event.step.resourceId}`
         : event.step.name;
   return event.kind === 'step-started' ? `started ${name}` : `finished ${name} ${event.outcome}`;
 }
 
-describe('deploy() credentials, app converge and redaction', () => {
+describe('deploy() credentials, the app converge entry and redaction', () => {
   const deployWith = (
     app: { dir: string; entryPath: string },
     deps: Parameters<typeof deployWithDeps>[1],
@@ -872,8 +880,8 @@ describe('deploy() credentials, app converge and redaction', () => {
     const result = await deployWith(
       app,
       {
-        converge: {
-          ...appConverge(recordingConverge(requests)),
+        appConvergeEntry: {
+          ...appConvergeEntry(recordingConverge(requests)),
           lower: (root, config, opts) => {
             lowered.push(opts);
             return lower(root, config, opts);
@@ -888,6 +896,112 @@ describe('deploy() credentials, app converge and redaction', () => {
     expect(containerCalls.map((call) => call.op)).toEqual(['ensure']);
     expect(lowered[0]?.credentials).toBe(credentials);
     expect(requests[0]?.env).toEqual({});
+  });
+
+  test('deploy passes the containers, preflight payloads and node addresses it resolved to lower(), so lower() never reads them from the environment', async () => {
+    const app = makeAppDir();
+    const lowered: LowerOptions[] = [];
+    let graph: Graph | undefined;
+
+    const result = await deployWith(
+      app,
+      {
+        appConvergeEntry: {
+          localTargetProviders,
+          devState,
+          lower: (root, config, opts) => {
+            lowered.push(opts);
+            return lower(root, config, opts);
+          },
+          converge: applied,
+        },
+      },
+      fakeConfig({
+        preflight: async (input) => {
+          graph = input.graph;
+          return 'payload';
+        },
+      }),
+    );
+
+    if (!result.ok) throw result.failure;
+    if (graph === undefined) throw new Error('the preflight did not run');
+    expect(lowered[0]?.containers?.get('fixture-extension')).toBeDefined();
+    expect([...(lowered[0]?.preflightPayloads ?? [])]).toEqual([['fixture-extension', 'payload']]);
+    expect(lowered[0]?.firstProcessNodeAddresses).toEqual(nodeAddresses(graph));
+  });
+
+  test('a structured error that lower() throws keeps its code', async () => {
+    const app = makeAppDir();
+
+    const result = await deployWith(app, {
+      appConvergeEntry: {
+        localTargetProviders,
+        devState,
+        lower: () => {
+          throw new CliStructuredError('DEPLOY.MANAGEMENT_API_URL_CONFLICT', 'two hosts');
+        },
+        converge: applied,
+      },
+    });
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure.code).toBe('DEPLOY.MANAGEMENT_API_URL_CONFLICT');
+    expect(result.failure.message).toBe('two hosts');
+  });
+
+  test('what Alchemy writes to the terminal itself becomes one redacted message per line, even when a secret is split across writes, and the operation prints nothing', async () => {
+    const app = makeAppDir();
+    const token = 'tok-terminal-secret-91';
+    const redaction = new SecretRedaction({});
+    redaction.addCredentialLookingValues([token]);
+    const events: DeployEvent[] = [];
+    const stderr = spyOn(process.stderr, 'write');
+    const stdout = spyOn(process.stdout, 'write');
+    try {
+      const result = await deployWith(
+        app,
+        {
+          appConvergeEntry: appConvergeEntry(async (request) => {
+            request.output?.(`first ${token.slice(0, 8)}`);
+            request.output?.(`${token.slice(8)} done\nsecond`);
+            request.output?.(' line\nno line break');
+            return APPLIED;
+          }),
+          redaction,
+        },
+        fakeConfig(),
+        (event) => events.push(event),
+      );
+      if (!result.ok) throw result.failure;
+      expect(stderr).not.toHaveBeenCalled();
+      expect(stdout).not.toHaveBeenCalled();
+    } finally {
+      stderr.mockRestore();
+      stdout.mockRestore();
+    }
+    const messages = events.flatMap((event) => (event.kind === 'message' ? [event.text] : []));
+    expect(messages).toEqual(['first [redacted] done', 'second line', 'no line break']);
+  });
+
+  test('the last line of terminal text is sent when the converge fails', async () => {
+    const app = makeAppDir();
+    const events: DeployEvent[] = [];
+
+    const result = await deployWith(
+      app,
+      {
+        appConvergeEntry: appConvergeEntry(async (request) => {
+          request.output?.('half a line');
+          throw new Error('engine gone');
+        }),
+      },
+      fakeConfig(),
+      (event) => events.push(event),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(events).toContainEqual({ kind: 'message', severity: 'info', text: 'half a line' });
   });
 
   test('an app with no installed @prisma/composer fails with DEPS.CONVERGE_UNRESOLVABLE before any container is ensured', async () => {
@@ -950,7 +1064,7 @@ describe('deploy() credentials, app converge and redaction', () => {
     const app = makeAppDir();
 
     const result = await deployWith(app, {
-      converge: appConverge(async () => {
+      appConvergeEntry: appConvergeEntry(async () => {
         throw new TypeError('outcome.reasons is not iterable');
       }),
     });
@@ -962,7 +1076,7 @@ describe('deploy() credentials, app converge and redaction', () => {
 
   test('the token never reaches a message event, the engine failure, or a stack-building error', async () => {
     const app = makeAppDir();
-    const token = 'tok-SENTINEL-abcdef123456';
+    const token = ['tok', 'SENTINEL', 'abcdef123456'].join('-');
     const events: DeployEvent[] = [];
     const credentials = { workspaceId: 'ws_1', client: {} };
     // A service token reaches deploy only through the environment the user set.
@@ -973,7 +1087,7 @@ describe('deploy() credentials, app converge and redaction', () => {
         app,
         {
           credentials,
-          converge: appConverge(async (request) => {
+          appConvergeEntry: appConvergeEntry(async (request) => {
             request.onEvent?.({ kind: 'log', severity: 'warn', text: `retrying with ${token}` });
             request.onEvent?.({
               kind: 'resource',
@@ -997,8 +1111,8 @@ describe('deploy() credentials, app converge and redaction', () => {
         app,
         {
           credentials,
-          converge: {
-            ...appConverge(applied),
+          appConvergeEntry: {
+            ...appConvergeEntry(applied),
             lower: () => {
               throw new Error(`state store refused ${token}`);
             },
@@ -1021,7 +1135,9 @@ describe('deploy() credentials, app converge and redaction', () => {
   test('a refused converge is DEPLOY.CONVERGE_RUNNING or DEPLOY.WORKER_THREAD', async () => {
     const app = makeAppDir();
     const refused = (reason: 'already-running' | 'worker-thread') =>
-      deployWith(app, { converge: appConverge(async () => ({ kind: 'refused', reason })) });
+      deployWith(app, {
+        appConvergeEntry: appConvergeEntry(async () => ({ kind: 'refused', reason })),
+      });
 
     const running = await refused('already-running');
     const worker = await refused('worker-thread');
@@ -1031,6 +1147,12 @@ describe('deploy() credentials, app converge and redaction', () => {
     expect(worker.failure.code).toBe('DEPLOY.WORKER_THREAD');
   });
 });
+
+const EMAIL_API_KEY_UNSET: UnsetPlatformVariable = {
+  name: 'EMAIL_API_KEY',
+  readers: [{ kind: 'field', service: 'shop.email', path: 'apiKey' }],
+  commands: ["prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role production"],
+};
 
 describe('deploy() step events', () => {
   test('a successful deploy reports every step in order, each with a duration and its data', async () => {
@@ -1043,7 +1165,7 @@ describe('deploy() step events', () => {
           config: composerConfig(
             fakeConfig({
               preflight: async (input) => {
-                input.report?.({ checked: 3, filled: 1, missing: 0 });
+                input.report?.({ checked: 3, unset: [EMAIL_API_KEY_UNSET] });
                 return undefined;
               },
             }),
@@ -1059,7 +1181,7 @@ describe('deploy() step events', () => {
             report?.({ bytes: 4096 });
             return fakeAssembler(node);
           },
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -1076,6 +1198,7 @@ describe('deploy() step events', () => {
       'finished connect ok',
       'started preflight',
       'finished preflight ok',
+      'findings EMAIL_API_KEY',
       'started apply',
       'finished apply ok',
       'started record',
@@ -1089,7 +1212,11 @@ describe('deploy() step events', () => {
     expect(finished('assemble-service')).toMatchObject({
       data: { strategy: 'traced', filesTraced: 975, bytes: 4096 },
     });
-    expect(finished('preflight')).toMatchObject({ data: { checked: 3, filled: 1, missing: 0 } });
+    expect(finished('preflight')).toMatchObject({ data: { checked: 3, unset: 1 } });
+    expect(events).toContainEqual({
+      kind: 'preflight-findings',
+      findings: { unset: [EMAIL_API_KEY_UNSET] },
+    });
     if (!result.ok) throw new Error('unreachable');
     expect(result.value.durationMs).toBeGreaterThanOrEqual(0);
   });
@@ -1117,7 +1244,7 @@ describe('deploy() step events', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async (request) => {
+          appConvergeEntry: appConvergeEntry(async (request) => {
             request.onEvent?.(resource('pending', 'pending'));
             request.onEvent?.(resource('creating', 'running'));
             request.onEvent?.({ kind: 'log', severity: 'info', text: 'uploading 3 files' });
@@ -1139,7 +1266,9 @@ describe('deploy() step events', () => {
       'finished apply-resource:hello-resources.app ok',
       'finished apply ok',
     ]);
-    expect(applyEvents[1]).toMatchObject({ step: { status: 'creating' } });
+    expect(applyEvents[1]).toMatchObject({
+      step: { resourceId: 'hello-resources.app', status: 'creating' },
+    });
     expect(applyEvents[3]).toMatchObject({ step: { status: 'created' } });
   });
 
@@ -1158,7 +1287,7 @@ describe('deploy() step events', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async (request) => {
+          appConvergeEntry: appConvergeEntry(async (request) => {
             request.onEvent?.({
               kind: 'resource',
               fqn: 'site',
@@ -1217,7 +1346,7 @@ describe('deploy() step events', () => {
           cwd: app.dir,
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       ).catch((error: unknown) => error),
     );
 
@@ -1250,7 +1379,7 @@ describe('deploy() step events', () => {
           onEvent: (event) => events.push(event),
         },
         {
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
           runAssembler: async () => {
             throw new Error('no built entry');
           },
@@ -1287,7 +1416,7 @@ describe('deploy() step events', () => {
           reportPath: path.join(app.dir, 'package.json', 'report.json'),
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       );
     } finally {
       warnSpy.mockRestore();
@@ -1311,7 +1440,7 @@ describe('deploy() step events', () => {
             throw new Error('renderer bug');
           },
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       ),
     );
 
@@ -1518,7 +1647,7 @@ describe('destroy()', () => {
         ran.push('alchemy');
         return { exitCode: 0, signal: null };
       },
-      converge: appConverge(async () => {
+      appConvergeEntry: appConvergeEntry(async () => {
         ran.push('alchemy');
         return APPLIED;
       }),
@@ -1794,7 +1923,7 @@ function devConfigWith(
     },
     preflight: (input) => {
       environments.push(`preflight:${input.environment}`);
-      return preflight?.(input) ?? Promise.resolve(undefined);
+      return preflight?.(input) ?? Promise.resolve({ payload: undefined, plainVariableText: {} });
     },
     emulators: (input) => {
       environments.push(`emulators:${input.devDir}`);
@@ -1886,8 +2015,8 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
             spawned += 1;
             return { exitCode: 0, signal: null };
           },
-          converge: {
-            ...appConverge(async (request) => {
+          appConvergeEntry: {
+            ...appConvergeEntry(async (request) => {
               requests.push(request);
               return APPLIED;
             }),
@@ -1905,19 +2034,62 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
 
   test("the dev preflight's payload reaches lower() as a value, and the converge sets no environment variable", async () => {
     const { lowered, requests } = await convergedDev(() =>
-      Promise.resolve('dev:{"absentSecrets":[]}'),
+      Promise.resolve({ payload: 'dev:{"absentVariables":[]}', plainVariableText: {} }),
     );
 
     expect(lowered).toHaveLength(1);
-    expect(lowered[0]?.preflight).toEqual(
-      new Map([['fixture-extension', 'dev:{"absentSecrets":[]}']]),
+    expect(lowered[0]?.preflightPayloads).toEqual(
+      new Map([['fixture-extension', 'dev:{"absentVariables":[]}']]),
     );
-    expect(lowered[0]?.containers.get('fixture-extension')?.serialize()).toBe('dev');
+    expect(lowered[0]?.containers?.get('fixture-extension')?.serialize()).toBe('dev');
     expect(requests.map((request) => request.env)).toEqual([{}]);
   }, 15_000);
 
+  test.each([
+    ['a string', 'dev:{"absentVariables":[]}'],
+    ['undefined', undefined],
+  ])(
+    'a local target whose dev preflight returns %s, as one built for an older core does, fails dev naming the extension',
+    async (_, returned) => {
+      const app = makeAppDir('hello-dev');
+      let converged = false;
+      const result = await silently(() =>
+        devWithDeps(
+          {
+            config: composerConfig(
+              devConfigWith(runningAttachment, [], localContainer, () =>
+                Promise.resolve(returned as never),
+              ),
+            ),
+            entry: app.entryPath,
+            cwd: app.dir,
+            detach: true,
+          },
+          {
+            runAssembler: fakeAssembler,
+            appConvergeEntry: appConvergeEntry(async () => {
+              converged = true;
+              return APPLIED;
+            }),
+          },
+        ),
+      );
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('unreachable');
+      expect(result.failure.code).toBe('DEV.PREFLIGHT_FAILED');
+      expect(result.failure.message).toBe(
+        'The extension "fixture-extension" returned a dev preflight result prisma dev cannot read: its local target was built for an older @prisma/composer. Upgrade "fixture-extension" to a version built for the @prisma/composer this app uses.',
+      );
+      expect(converged).toBe(false);
+    },
+    15_000,
+  );
+
   test('dev lowers against the local providers and state store, and converges as a deploy in this process, starting no Alchemy child', async () => {
-    const { lowered, requests, spawned } = await convergedDev(() => Promise.resolve(undefined));
+    const { lowered, requests, spawned } = await convergedDev(() =>
+      Promise.resolve({ payload: undefined, plainVariableText: {} }),
+    );
 
     expect(spawned).toBe(0);
     expect(lowered[0]?.providers).toBeDefined();
@@ -1950,7 +2122,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => APPLIED),
+          appConvergeEntry: appConvergeEntry(async () => APPLIED),
         },
       ),
     );
@@ -1976,7 +2148,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async (input) => {
+          appConvergeEntry: appConvergeEntry(async (input) => {
             stages.push(input.stage);
             return FAILED;
           }),
@@ -2011,7 +2183,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
           fresh: true,
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, converge: appConverge(async () => APPLIED) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(async () => APPLIED) },
       ),
     );
 
@@ -2041,7 +2213,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async (request) => {
+          appConvergeEntry: appConvergeEntry(async (request) => {
             runs.push({ stage: request.stage, cwd: request.cwd });
             return FAILED;
           }),
@@ -2090,7 +2262,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
           },
           {
             runAssembler: fakeAssembler,
-            converge: appConverge(async () => {
+            appConvergeEntry: appConvergeEntry(async () => {
               converged = true;
               return APPLIED;
             }),
@@ -2133,7 +2305,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => FAILED),
+          appConvergeEntry: appConvergeEntry(async () => FAILED),
         },
       ),
     );
@@ -2166,7 +2338,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             throw new Error('outcome.reasons is not iterable');
           }),
         },
@@ -2204,7 +2376,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => APPLIED),
+          appConvergeEntry: appConvergeEntry(async () => APPLIED),
         },
       ),
     );
@@ -2253,7 +2425,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
             ...(await fakeAssembler(node)),
             watch: [buildOutput],
           }),
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             converges += 1;
             return APPLIED;
           }),
@@ -2316,7 +2488,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
             ...(await fakeAssembler(node)),
             watch: [path.join(app.dir, 'built.txt')],
           }),
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             converges += 1;
             running += 1;
             mostRunning = Math.max(mostRunning, running);
@@ -2380,7 +2552,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       },
       {
         runAssembler: fakeAssembler,
-        converge: appConverge(converge),
+        appConvergeEntry: appConvergeEntry(converge),
         watch: (targets, onChange) => {
           if (targets.some((target) => target.paths.includes(app.entryPath))) change = onChange;
           return { ready: Promise.resolve(), stop: () => undefined };
@@ -2440,7 +2612,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const resource = (converge: string, status: string) => ({
       name: 'apply-resource',
       converge,
-      fqn: 'hello-dev.app',
+      resourceId: 'hello-dev.app',
       resourceType: 'Local.Compute',
       status,
     });
@@ -2481,7 +2653,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
             if (assembles > 1) await assembling;
             return fakeAssembler(node);
           },
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             converges += 1;
             return APPLIED;
           }),
@@ -2799,7 +2971,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
             ...(await fakeAssembler(node)),
             watch: [path.join(app.dir, 'built.txt')],
           }),
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             converges += 1;
             return APPLIED;
           }),
@@ -2898,7 +3070,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => APPLIED),
+          appConvergeEntry: appConvergeEntry(async () => APPLIED),
         },
       );
       if (!start.ok) throw new Error('expected a started session');
@@ -2941,7 +3113,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => APPLIED),
+          appConvergeEntry: appConvergeEntry(async () => APPLIED),
         },
       );
       if (!start.ok) throw new Error('expected a started session');
@@ -2994,7 +3166,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => APPLIED),
+          appConvergeEntry: appConvergeEntry(async () => APPLIED),
           watch: () => {
             watches += 1;
             throw new Error('a detached session must not watch');
@@ -3033,7 +3205,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => APPLIED),
+          appConvergeEntry: appConvergeEntry(async () => APPLIED),
         },
       );
       if (!start.ok) throw new Error('expected a started session');
@@ -3065,7 +3237,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             convergeRan = true;
             return APPLIED;
           }),
@@ -3483,7 +3655,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(recordingConverge(requests)),
+          appConvergeEntry: appConvergeEntry(recordingConverge(requests)),
         },
       ),
     );
@@ -3512,7 +3684,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
           credentials: { workspaceId: 'ws-1', client: {} },
         },
       ),
@@ -3551,7 +3723,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -3577,7 +3749,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => ({ kind: 'interrupted' })),
+          appConvergeEntry: appConvergeEntry(async () => ({ kind: 'interrupted' })),
         },
       ),
     );
@@ -3606,7 +3778,7 @@ describe('deploy-run reporting', () => {
         { entry: app.entryPath, environment: 'ci-6', cwd: app.dir, config: composerConfig(config) },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => ({
+          appConvergeEntry: appConvergeEntry(async () => ({
             kind: 'failed',
             reasons: [{ tag: 'PrismaApiError', message: '409 Conflict' }],
           })),
@@ -3636,7 +3808,7 @@ describe('deploy-run reporting', () => {
           },
           {
             runAssembler: fakeAssembler,
-            converge: appConverge(applied),
+            appConvergeEntry: appConvergeEntry(applied),
           },
         ),
       );
@@ -3683,7 +3855,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -3711,7 +3883,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -3812,8 +3984,8 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
         {
           runAssembler: () =>
             Promise.reject(new Error('a service with a dev server is not assembled')),
-          converge: {
-            ...appConverge(async () => {
+          appConvergeEntry: {
+            ...appConvergeEntry(async () => {
               order.push('converge');
               return APPLIED;
             }),
@@ -3882,7 +4054,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             converges += 1;
             return APPLIED;
           }),
@@ -3924,7 +4096,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             converges += 1;
             return APPLIED;
           }),
@@ -3954,7 +4126,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             converges += 1;
             return APPLIED;
           }),
@@ -3996,7 +4168,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
           entry: app.entryPath,
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, converge: appConverge(async () => APPLIED) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(async () => APPLIED) },
       ),
     );
 
@@ -4067,7 +4239,7 @@ describe('the operations read the app configuration and the app secrets from the
         },
         {
           runAssembler: fakeAssembler,
-          converge: appConverge(applied),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -4097,7 +4269,7 @@ describe('the operations read the app configuration and the app secrets from the
           environment: 'staging',
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       ),
     );
 
@@ -4137,7 +4309,7 @@ describe('the operations read the app configuration and the app secrets from the
   });
 
   test('an app secrets value appears in no event, result or report', async () => {
-    const app = makeAppDir();
+    const app = makeAppDir('fixture-app', 'S4_SENTINEL');
     const sentinel = 'never-printed-7f3a';
     const events: DeployEvent[] = [];
     const received: string[] = [];
@@ -4151,7 +4323,15 @@ describe('the operations read the app configuration and the app secrets from the
               preflight: async (input) => {
                 const value = input.secrets['S4_SENTINEL'];
                 if (value !== undefined) received.push(value);
-                input.report?.({ checked: 1, filled: 1, missing: 0 });
+                input.report?.({
+                  checked: 2,
+                  unset: [
+                    {
+                      ...EMAIL_API_KEY_UNSET,
+                      readers: [{ kind: 'field', service: 'app', path: `config.${sentinel}` }],
+                    },
+                  ],
+                });
                 return undefined;
               },
             }),
@@ -4163,7 +4343,7 @@ describe('the operations read the app configuration and the app secrets from the
           reportPath,
           onEvent: (event) => events.push(event),
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       ),
     );
 
@@ -4171,6 +4351,15 @@ describe('the operations read the app configuration and the app secrets from the
     expect(received).toEqual([sentinel]);
     expect(events.length).toBeGreaterThan(0);
     for (const event of events) expect(JSON.stringify(event)).not.toContain(sentinel);
+    const findings = events.find((event) => event.kind === 'preflight-findings');
+    if (findings?.kind !== 'preflight-findings') throw new Error('expected the findings event');
+    const block = unsetPlatformVariablesText(findings.findings.unset);
+    expect(block).toContain('EMAIL_API_KEY');
+    expect(block).toContain('config.[redacted]');
+    expect(block).not.toContain(sentinel);
+    expect(renderDeployment({ app: 'app', nodes: [], findings: findings.findings })).not.toContain(
+      sentinel,
+    );
     expect(JSON.stringify(result)).not.toContain(sentinel);
     expect(fs.readFileSync(reportPath, 'utf8')).not.toContain(sentinel);
   });
@@ -4190,7 +4379,7 @@ describe('the operations read the app configuration and the app secrets from the
           environment: 'staging',
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       ),
     );
 
@@ -4293,7 +4482,7 @@ describe.skipIf(process.platform === 'win32')(
               ...(await localTarget()),
               preflight: async (input) => {
                 seen.preflight = { configuration: input.configuration, secrets: input.secrets };
-                return undefined;
+                return { payload: undefined, plainVariableText: {} };
               },
             }),
           },
@@ -4304,7 +4493,7 @@ describe.skipIf(process.platform === 'win32')(
       const result = await silently(() =>
         devWithDeps(
           { config: composerConfig(config), entry: app.entryPath, cwd: app.dir, detach: true },
-          { runAssembler: fakeAssembler, converge: appConverge(async () => APPLIED) },
+          { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(async () => APPLIED) },
         ),
       );
 
@@ -4344,7 +4533,7 @@ describe.skipIf(process.platform === 'win32')(
               assembles += 1;
               return { ...(await fakeAssembler(node)), watch: [buildOutput] };
             },
-            converge: appConverge(async () => {
+            appConvergeEntry: appConvergeEntry(async () => {
               converges += 1;
               return APPLIED;
             }),
@@ -4371,16 +4560,311 @@ describe.skipIf(process.platform === 'win32')(
   },
 );
 
-/** An app whose root declares `input: type({ GREETING: 'string' })` and binds it, the configuration key `APP_ORIGIN` and the secrets key `secretsKey` into its service. */
-function makeSecondProcessAppDir(secretsKey = 'S13_SECRET'): { dir: string; entryPath: string } {
-  const app = makeAppDir('hello-second');
+interface VariantNode {
+  readonly id: string;
+  readonly name: string;
+  readonly secret: boolean;
+}
+
+interface ReadsVariant {
+  readonly nodes: readonly VariantNode[];
+  readonly reads: readonly { readonly field: string; readonly node: string }[];
+}
+
+// The root's body reads variant.json on every Load, so rewriting it changes what a rebuild builds.
+function makeReadsAppDir(variant: ReadsVariant): {
+  dir: string;
+  entryPath: string;
+  write: (next: ReadsVariant) => void;
+} {
+  const app = makeAppDir('shop');
+  const variantFile = path.join(app.dir, 'variant.json');
+  const write = (next: ReadsVariant) => fs.writeFileSync(variantFile, JSON.stringify(next));
+  write(variant);
   fs.writeFileSync(
     app.entryPath,
     [
-      `import { appRoot, paramSource, secretSource, service } from ${JSON.stringify(coreIndex)};`,
+      "import * as fs from 'node:fs';",
+      `import { appRoot, paramSource, secretSource, service, valueResource } from ${JSON.stringify(coreIndex)};`,
+      '',
+      'const app = service({',
+      "  name: 'app',",
+      "  extension: 'fixture-extension',",
+      "  type: 'fixture/compute',",
+      '  inputs: {},',
+      '  params: {},',
+      "  input: { '~standard': { version: 1, vendor: 'fixture', validate: (value) => ({ value }) } },",
+      "  build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
+      '});',
+      '',
+      "export default appRoot('shop', ({ provision }) => {",
+      `  const variant = JSON.parse(fs.readFileSync(${JSON.stringify(variantFile)}, 'utf8'));`,
+      '  const values = {};',
+      '  for (const node of variant.nodes) {',
+      '    const payload = { name: node.name };',
+      '    const value = node.secret',
+      "      ? secretSource(payload, { label: 'the secret ' + node.name, secretsKey: node.name })",
+      "      : paramSource(payload, { label: 'the variable ' + node.name });",
+      '    values[node.id] = provision(',
+      "      valueResource({ name: node.name.toLowerCase(), extension: 'fixture-extension', type: 'fixture/variable', props: { name: node.name, secret: node.secret }, value }),",
+      '      { id: node.id },',
+      '    );',
+      '  }',
+      '  const input = {};',
+      '  for (const read of variant.reads) input[read.field] = values[read.node];',
+      "  provision(app, { id: 'app', input });",
+      '});',
+      '',
+    ].join('\n'),
+  );
+  return { ...app, write };
+}
+
+describe.skipIf(process.platform === 'win32')(
+  'dev() and the platform variables the app reads',
+  () => {
+    const runningAttachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+    const variableDescriptor = Object.assign(() => unused(), { kind: 'resource' as const });
+
+    const configFor = (preflight: LocalTargetDescriptor['preflight']): PrismaAppConfig => {
+      const base = devConfigWith(runningAttachment, [], localContainer, preflight);
+      return {
+        ...base,
+        extensions: base.extensions.map((extension) =>
+          extension.id === 'fixture-extension'
+            ? {
+                ...extension,
+                nodes: { ...extension.nodes, 'fixture/variable': variableDescriptor },
+              }
+            : extension,
+        ),
+      };
+    };
+
+    const until = async (done: () => boolean) => {
+      for (let waited = 0; !done() && waited < 5_000; waited += 50) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    };
+
+    const emailFrom: VariantNode = { id: 'emailFrom', name: 'EMAIL_FROM', secret: false };
+    const smtpPort: VariantNode = { id: 'smtpPort', name: 'SMTP_PORT', secret: false };
+    const sender: VariantNode = { id: 'sender', name: 'EMAIL_SENDER', secret: false };
+    const started: ReadsVariant = {
+      nodes: [emailFrom, sender],
+      reads: [
+        { field: 'from', node: 'emailFrom' },
+        { field: 'sender', node: 'sender' },
+      ],
+    };
+
+    async function rebuildWith(
+      rebuilt: ReadsVariant,
+      preflight: LocalTargetDescriptor['preflight'] = async () => ({
+        payload: undefined,
+        plainVariableText: {},
+      }),
+    ): Promise<{ events: DevEvent[]; converged: unknown[]; later: () => Promise<number> }> {
+      const app = makeReadsAppDir(started);
+      const buildOutput = path.join(app.dir, 'built.txt');
+      fs.writeFileSync(buildOutput, 'v1');
+      const events: DevEvent[] = [];
+      const converged: unknown[] = [];
+      let provided: unknown;
+      let assembles = 0;
+      let stop: () => Promise<void> = async () => undefined;
+
+      await silently(async () => {
+        const start = await devWithDeps(
+          {
+            config: composerConfig(configFor(preflight)),
+            entry: app.entryPath,
+            cwd: app.dir,
+            onEvent: (event) => void events.push(event),
+          },
+          {
+            runAssembler: async (node: ServiceNode) => {
+              assembles += 1;
+              return { ...(await fakeAssembler(node)), watch: [buildOutput] };
+            },
+            appConvergeEntry: {
+              ...appConvergeEntry(applied),
+              localTargetProviders: (resolved, containers, devDir, plainVariableText, named) => {
+                provided = plainVariableText;
+                return localTargetProviders(resolved, containers, devDir, plainVariableText, named);
+              },
+              lower: (root, config, options) => {
+                converged.push({
+                  appConfigurationRead: options.appConfigurationRead,
+                  plainVariableText: provided,
+                });
+                return lower(root, config, options);
+              },
+            },
+          },
+        );
+        if (!start.ok) throw new Error(`expected a started session: ${start.failure.message}`);
+        stop = async () => {
+          await start.value.stop();
+          await start.value.closed;
+        };
+
+        app.write(rebuilt);
+        fs.writeFileSync(buildOutput, 'v2');
+        await until(
+          () =>
+            converged.length >= 2 || events.some((event) => event.kind === 'value-reads-changed'),
+        );
+      });
+
+      const later = async () => {
+        const before = assembles;
+        fs.writeFileSync(buildOutput, 'v3');
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        await stop();
+        return assembles - before;
+      };
+      return { events, converged, later };
+    }
+
+    const readsChanges = (events: readonly DevEvent[]) =>
+      events.filter((event) => event.kind === 'value-reads-changed');
+
+    test('the local providers get the texts the start-time preflight found, on the first converge and on a rebuild', async () => {
+      let preflights = 0;
+      const { converged, events, later } = await rebuildWith(started, async () => {
+        preflights += 1;
+        return {
+          payload: undefined,
+          plainVariableText: { EMAIL_FROM: `shop-${preflights}@x.dev` },
+        };
+      });
+      await later();
+
+      expect(readsChanges(events)).toEqual([]);
+      expect(preflights).toBe(1);
+      expect(converged.length).toBeGreaterThanOrEqual(2);
+      for (const lowered of converged) {
+        expect(lowered).toMatchObject({
+          appConfigurationRead: { rootInput: [] },
+          plainVariableText: { EMAIL_FROM: 'shop-1@x.dev' },
+        });
+      }
+    }, 20_000);
+
+    test('a plain platform variable text that holds the value of a known secret stops dev with CONFIG.SECRET_AS_PLAIN_VALUE, before any converge', async () => {
+      let converged = false;
+      const app = makeReadsAppDir({
+        nodes: [emailFrom, { id: 'credential', name: 'EMAIL_CREDENTIAL', secret: true }],
+        reads: [
+          { field: 'from', node: 'emailFrom' },
+          { field: 'credential', node: 'credential' },
+        ],
+      });
+
+      const result = await silently(() =>
+        devWithDeps(
+          {
+            config: composerConfig({
+              ...configFor(async () => ({
+                payload: undefined,
+                plainVariableText: { EMAIL_FROM: 'from <cred-secret-77>' },
+              })),
+              secrets: [() => ({ EMAIL_CREDENTIAL: 'cred-secret-77' })],
+            }),
+            entry: app.entryPath,
+            cwd: app.dir,
+            detach: true,
+          },
+          {
+            runAssembler: fakeAssembler,
+            appConvergeEntry: appConvergeEntry(async () => {
+              converged = true;
+              return APPLIED;
+            }),
+          },
+        ),
+      );
+
+      if (result.ok) throw new Error('expected dev to fail');
+      expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
+      expect(result.failure.message).toBe(
+        'The platform variable "EMAIL_FROM", which prisma dev read from the `config` adapters, holds the value of the platform secret "EMAIL_CREDENTIAL". prisma dev hands every plain value to the local services as plain configuration, and never hands a secret that way.',
+      );
+      expect(converged).toBe(false);
+      expect(JSON.stringify(result.failure)).not.toContain('cred-secret-77');
+    }, 15_000);
+
+    const pausedCases: readonly [
+      string,
+      ReadsVariant,
+      Omit<Extract<DevEvent, { kind: 'value-reads-changed' }>, 'kind'>,
+    ][] = [
+      [
+        'an added read',
+        {
+          nodes: [emailFrom, sender, smtpPort],
+          reads: [...started.reads, { field: 'port', node: 'smtpPort' }],
+        },
+        { added: ['shop.smtpPort'], removed: [], changed: [] },
+      ],
+      [
+        'a plain node changed to a secret under the same id',
+        { nodes: [emailFrom, { ...sender, secret: true }], reads: started.reads },
+        { added: [], removed: [], changed: ['shop.sender'] },
+      ],
+    ];
+
+    for (const [what, rebuilt, change] of pausedCases) {
+      test(`${what} does not converge, is reported once, and pauses rebuilds until dev restarts`, async () => {
+        const { events, converged, later } = await rebuildWith(rebuilt);
+        const assemblesAfterPause = await later();
+
+        expect(readsChanges(events)).toEqual([{ kind: 'value-reads-changed', ...change }]);
+        expect(converged).toHaveLength(1);
+        expect(assemblesAfterPause).toBe(0);
+      }, 20_000);
+    }
+
+    test('reordering two provision() calls and their reads changes nothing, and the rebuild converges', async () => {
+      const { events, converged, later } = await rebuildWith({
+        nodes: [sender, emailFrom],
+        reads: [
+          { field: 'sender', node: 'sender' },
+          { field: 'from', node: 'emailFrom' },
+        ],
+      });
+      await later();
+
+      expect(readsChanges(events)).toEqual([]);
+      expect(converged.length).toBeGreaterThanOrEqual(2);
+    }, 20_000);
+  },
+);
+
+function makeSecondProcessAppDir(
+  secretsKey = 'S13_SECRET',
+  secretAt: 'binding' | 'unbound node' = 'binding',
+): { dir: string; entryPath: string } {
+  const app = makeAppDir('hello-second');
+  const key = `secret(${JSON.stringify(secretsKey)})`;
+  const provisionSecret =
+    secretAt === 'binding'
+      ? []
+      : [
+          `  provision(valueResource({ name: 'secretNode', extension: 'fixture-extension', type: 'fixture/variable', value: ${key} }));`,
+        ];
+  fs.writeFileSync(
+    app.entryPath,
+    [
+      `import { appRoot, secretSource, service, valueResource } from ${JSON.stringify(coreIndex)};`,
       `import { type } from ${JSON.stringify(arktypeEntry)};`,
       '',
-      'const configured = (key) => paramSource({ key }, { label: "configured(\'" + key + "\')", configurationKey: key });',
       'const secret = (key) => secretSource({ key }, { label: "secret(\'" + key + "\')", secretsKey: key });',
       '',
       'const app = service({',
@@ -4396,8 +4880,11 @@ function makeSecondProcessAppDir(secretsKey = 'S13_SECRET'): { dir: string; entr
       "export default appRoot('hello-second', { input: type({ GREETING: 'string' }) }, ({ input, provision }) => {",
       '  provision(app, {',
       "    id: 'app',",
-      `    input: { greeting: input.GREETING, origin: configured('APP_ORIGIN'), key: secret(${JSON.stringify(secretsKey)}) },`,
+      secretAt === 'binding'
+        ? `    input: { greeting: input.GREETING, key: ${key} },`
+        : '    input: { greeting: input.GREETING },',
       '  });',
+      ...provisionSecret,
       '});',
       '',
     ].join('\n'),
@@ -4443,8 +4930,8 @@ describe('the second process reads what the first process read', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: {
-            ...appConverge(applied),
+          appConvergeEntry: {
+            ...appConvergeEntry(applied),
             lower: (root, config, options) => {
               lowered.push(options);
               return lower(root, config, options);
@@ -4462,10 +4949,7 @@ describe('the second process reads what the first process read', () => {
 
     if (!result.ok) throw result.failure;
     expect(lowered.map((options) => options.appConfigurationRead)).toEqual([
-      {
-        rootInput: [{ path: ['GREETING'], value: 'hello' }],
-        configurationKeyText: { APP_ORIGIN: 'https://origin.example' },
-      },
+      { rootInput: [{ path: ['GREETING'], value: 'hello' }] },
     ]);
     expect(writtenDuringConverge).toEqual([]);
   });
@@ -4505,8 +4989,8 @@ describe('the second process reads what the first process read', () => {
     expect(json).toEqual({
       appConfigurationRead: {
         rootInput: [{ path: ['GREETING'], value: 'hello' }],
-        configurationKeyText: { APP_ORIGIN: 'https://origin.example' },
       },
+      plainVariableText: {},
       nodeAddresses: ['hello-second', 'hello-second.app'],
     });
     if (file === undefined) throw new Error('the destroy did not run');
@@ -4539,7 +5023,7 @@ describe('the second process reads what the first process read', () => {
             environment: 'staging',
             cwd: dir,
           },
-          { runAssembler: fakeAssembler, converge: appConverge(applied) },
+          { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
         ),
       destroy: (dir: string) =>
         destroyWithDeps(
@@ -4559,7 +5043,7 @@ describe('the second process reads what the first process read', () => {
             cwd: dir,
             detach: true,
           },
-          { runAssembler: fakeAssembler, converge: appConverge(applied) },
+          { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
         ),
     };
 
@@ -4580,55 +5064,144 @@ describe('the second process reads what the first process read', () => {
     }
   }, 20_000);
 
-  const refusedPlainValues = [
-    {
-      what: 'a root input field holding the text under a secrets key',
-      configuration: { ...values(), GREETING: 'plain-SECRET-91', S13_SECRET: 'plain-SECRET-91' },
-      where: 'Root input field input.GREETING',
-    },
-    {
-      what: 'a configuration key holding the text under a secrets key',
-      configuration: { ...values(), APP_ORIGIN: 'plain-SECRET-91', S13_SECRET: 'plain-SECRET-91' },
-      where: 'Configuration key "APP_ORIGIN"',
-    },
-  ];
-  for (const { what, configuration, where } of refusedPlainValues) {
-    test(`destroy refuses ${what}, before writing any file or starting the second process`, async () => {
+  const secretText = ['plain', 'SECRET', '91'].join('-');
+  const holdingTheSecret = () => ({ ...values(), GREETING: secretText });
+  const theSecret = () => ({ S13_SECRET: secretText });
+
+  test('deploy refuses a root input field holding the text under a secrets key, before creating anything or running the converge', async () => {
+    const app = makeSecondProcessAppDir();
+    const containerCalls: ContainerCall[] = [];
+    let converged = false;
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig({
+            ...fakeConfig({}, { calls: containerCalls }),
+            config: [holdingTheSecret],
+            secrets: [theSecret],
+          }),
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          appConvergeEntry: {
+            localTargetProviders,
+            devState,
+            lower: () => {
+              throw new Error('lower() must not run');
+            },
+            converge: async () => {
+              converged = true;
+              return APPLIED;
+            },
+          },
+        },
+      ),
+    );
+
+    if (result.ok) throw new Error('the deploy should fail');
+    expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
+    expect(result.failure.message).toBe(
+      'Root input field input.GREETING holds the value of the platform secret "S13_SECRET". A deploy sends every plain value Load read to the platform as plain configuration, and never sends a secret that way.',
+    );
+    expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
+    expect(containerCalls).toEqual([]);
+    expect(converged).toBe(false);
+  });
+
+  test('destroy refuses a root input field holding a secret the `config` adapters also hold, before writing any file or starting the second process', async () => {
+    const app = makeSecondProcessAppDir();
+    fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
+    fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
+    let started = false;
+
+    const result = await silently(() =>
+      destroyWithDeps(
+        {
+          config: composerConfig({
+            ...fakeConfig(),
+            config: [() => ({ ...holdingTheSecret(), ...theSecret() })],
+            secrets: [throwingAdapter('destroy must not read secrets')],
+          }),
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => {
+            started = true;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    if (result.ok) throw new Error('the destroy should fail');
+    expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
+    expect(result.failure.message).toBe(
+      'Root input field input.GREETING holds the value of the platform secret "S13_SECRET". Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.',
+    );
+    expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
+    expect(started).toBe(false);
+    expect(
+      filesUnder(app.dir).filter((file) => path.basename(file).startsWith('app-configuration')),
+    ).toEqual([]);
+  });
+
+  test.skipIf(process.platform === 'win32')(
+    'dev refuses a root input field holding the text under a secrets key, before writing any file or converging',
+    async () => {
       const app = makeSecondProcessAppDir();
+      const attachment: LocalTargetAttachment = {
+        startServices: () => Promise.resolve(),
+        stopApp: () => Promise.resolve(),
+        endpoints: () => Promise.resolve([]),
+        logs: async function* () {},
+      };
       let started = false;
 
       const result = await silently(() =>
-        destroyWithDeps(
+        devWithDeps(
           {
-            config: composerConfig({ ...fakeConfig(), config: [() => configuration] }),
+            config: composerConfig({
+              ...devConfigWith(attachment),
+              config: [holdingTheSecret],
+              secrets: [theSecret],
+            }),
             entry: app.entryPath,
-            environment: 'staging',
             cwd: app.dir,
+            detach: true,
           },
           {
             runAssembler: fakeAssembler,
-            alchemy: async () => {
+            appConvergeEntry: appConvergeEntry(async () => {
               started = true;
-              return { exitCode: 0, signal: null };
-            },
+              return APPLIED;
+            }),
           },
         ),
       );
 
-      if (result.ok) throw new Error('destroy should fail');
+      if (result.ok) throw new Error('dev should fail');
       expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
       expect(result.failure.message).toBe(
-        `${where} holds the value of the secret "S13_SECRET", which an envSecret() in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
+        'Root input field input.GREETING holds the value of the platform secret "S13_SECRET". prisma dev hands every plain value to the local services as plain configuration, and never hands a secret that way.',
       );
       expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
       expect(started).toBe(false);
       expect(
         filesUnder(app.dir).filter((file) => path.basename(file).startsWith('app-configuration')),
       ).toEqual([]);
-    });
-  }
+      expect(fs.existsSync(path.join(app.dir, '.prisma-composer', 'dev', 'dev'))).toBe(false);
+    },
+    15_000,
+  );
 
-  test('a known limit: an adapter failure before Load is not redacted by a value only an envSecret() names', async () => {
+  test('a known limit: an adapter failure before Load is not redacted by a value only a secret source names', async () => {
     const app = makeSecondProcessAppDir();
 
     const result = await silently(() =>
@@ -4643,7 +5216,7 @@ describe('the second process reads what the first process read', () => {
           environment: 'staging',
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       ),
     );
 
@@ -4663,7 +5236,7 @@ describe('the second process reads what the first process read', () => {
         logs: async function* () {},
       };
       const lowered: LowerOptions[] = [];
-      const provided: { configurationKeyText: unknown; namedSecrets: unknown }[] = [];
+      const provided: { plainVariableText: unknown; namedSecrets: unknown }[] = [];
       let writtenDuringConverge: string[] | undefined;
 
       const result = await silently(() =>
@@ -4680,8 +5253,8 @@ describe('the second process reads what the first process read', () => {
           },
           {
             runAssembler: fakeAssembler,
-            converge: {
-              ...appConverge(async () => {
+            appConvergeEntry: {
+              ...appConvergeEntry(async () => {
                 writtenDuringConverge = filesUnder(app.dir).filter(
                   (file) =>
                     path.basename(file).startsWith('app-configuration') ||
@@ -4693,15 +5266,9 @@ describe('the second process reads what the first process read', () => {
                 lowered.push(options);
                 return lower(root, config, options);
               },
-              localTargetProviders: (resolved, containers, devDir, configurationKeyText, named) => {
-                provided.push({ configurationKeyText, namedSecrets: named });
-                return localTargetProviders(
-                  resolved,
-                  containers,
-                  devDir,
-                  configurationKeyText,
-                  named,
-                );
+              localTargetProviders: (resolved, containers, devDir, plainVariableText, named) => {
+                provided.push({ plainVariableText, namedSecrets: named });
+                return localTargetProviders(resolved, containers, devDir, plainVariableText, named);
               },
             },
           },
@@ -4710,16 +5277,10 @@ describe('the second process reads what the first process read', () => {
 
       if (!result.ok) throw result.failure;
       expect(lowered.map((options) => options.appConfigurationRead)).toEqual([
-        {
-          rootInput: [{ path: ['GREETING'], value: 'hello' }],
-          configurationKeyText: { APP_ORIGIN: 'https://origin.example' },
-        },
+        { rootInput: [{ path: ['GREETING'], value: 'hello' }] },
       ]);
       expect(provided).toEqual([
-        {
-          configurationKeyText: { APP_ORIGIN: 'https://origin.example' },
-          namedSecrets: { S13_SECRET: 'dev-secret-value' },
-        },
+        { plainVariableText: {}, namedSecrets: { S13_SECRET: 'dev-secret-value' } },
       ]);
       expect(writtenDuringConverge).toEqual([]);
     },
@@ -4760,8 +5321,8 @@ describe('no known secret is printed', () => {
           },
           {
             runAssembler: fakeAssembler,
-            converge: {
-              ...appConverge(applied),
+            appConvergeEntry: {
+              ...appConvergeEntry(applied),
               lower: (root, config, options) => {
                 lowered = options;
                 return lower(root, config, options);
@@ -4779,6 +5340,7 @@ describe('no known secret is printed', () => {
                       ],
                     },
                   ],
+                  findings: { unset: [] },
                 });
                 written = filesUnder(app.dir).filter((file) =>
                   /^(app-configuration|alchemy\.run)/.test(path.basename(file)),
@@ -4820,76 +5382,83 @@ describe('no known secret is printed', () => {
     }
   }, 15_000);
 
-  test('with the default lists, a secret known only because an envSecret() names it reaches no event, report, reporter or error', async () => {
-    const sentinel = 'default-SENTINEL-7c1e';
-    const app = makeSecondProcessAppDir('MAILER_X');
-    const finished: string[] = [];
-    const events: DeployEvent[] = [];
-    const reporter: NonNullable<ExtensionDescriptor['reporter']> = {
-      begin: async () => ({
-        childEnv: () => ({}),
-        attach: async () => {},
-        finish: async (outcome) => void finished.push(JSON.stringify(outcome)),
-      }),
-    };
-    const names = ['GREETING', 'APP_ORIGIN', 'MAILER_X'] as const;
-    const previous = names.map((name) => process.env[name]);
-    Object.assign(process.env, {
-      GREETING: 'hello',
-      APP_ORIGIN: 'https://origin.example',
-      MAILER_X: sentinel,
-    });
-    const reportPath = path.join(app.dir, 'report.json');
-    let result: Awaited<ReturnType<typeof deployWithDeps>>;
-    try {
-      result = await silently(() =>
-        deployWithDeps(
-          {
-            config: composerConfig(fakeConfig({ reporter })),
-            entry: app.entryPath,
-            environment: 'staging',
-            cwd: app.dir,
-            reportPath,
-            onEvent: (event) => void events.push(event),
-          },
-          {
-            runAssembler: fakeAssembler,
-            converge: appConverge(async (request) => {
-              request.onEvent?.({ kind: 'log', severity: 'info', text: `printed ${sentinel}` });
-              return {
-                kind: 'failed',
-                reasons: [{ tag: 'Error', message: `error: rejected ${sentinel}` }],
-              };
-            }),
-          },
-        ),
-      );
-    } finally {
-      names.forEach((name, index) => {
-        const value = previous[index];
-        if (value === undefined) delete process.env[name];
-        else process.env[name] = value;
+  test.each([
+    ['a secret source in a binding names it', 'binding'],
+    ['a secret value resource no binding reads names it', 'unbound node'],
+  ] as const)(
+    'with the default lists, a secret known only because %s reaches no event, report, reporter or error',
+    async (_, secretAt) => {
+      const sentinel = 'default-SENTINEL-7c1e';
+      const app = makeSecondProcessAppDir('MAILER_X', secretAt);
+      const finished: string[] = [];
+      const events: DeployEvent[] = [];
+      const reporter: NonNullable<ExtensionDescriptor['reporter']> = {
+        begin: async () => ({
+          childEnv: () => ({}),
+          attach: async () => {},
+          finish: async (outcome) => void finished.push(JSON.stringify(outcome)),
+        }),
+      };
+      const names = ['GREETING', 'APP_ORIGIN', 'MAILER_X'] as const;
+      const previous = names.map((name) => process.env[name]);
+      Object.assign(process.env, {
+        GREETING: 'hello',
+        APP_ORIGIN: 'https://origin.example',
+        MAILER_X: sentinel,
       });
-    }
+      const reportPath = path.join(app.dir, 'report.json');
+      let result: Awaited<ReturnType<typeof deployWithDeps>>;
+      try {
+        result = await silently(() =>
+          deployWithDeps(
+            {
+              config: composerConfig(fakeConfig({ reporter })),
+              entry: app.entryPath,
+              environment: 'staging',
+              cwd: app.dir,
+              reportPath,
+              onEvent: (event) => void events.push(event),
+            },
+            {
+              runAssembler: fakeAssembler,
+              appConvergeEntry: appConvergeEntry(async (request) => {
+                request.onEvent?.({ kind: 'log', severity: 'info', text: `printed ${sentinel}` });
+                return {
+                  kind: 'failed',
+                  reasons: [{ tag: 'Error', message: `error: rejected ${sentinel}` }],
+                };
+              }),
+            },
+          ),
+        );
+      } finally {
+        names.forEach((name, index) => {
+          const value = previous[index];
+          if (value === undefined) delete process.env[name];
+          else process.env[name] = value;
+        });
+      }
 
-    if (result.ok) throw new Error('the deploy should fail');
-    expect(finished).toHaveLength(1);
-    const texts = [
-      JSON.stringify(events),
-      fs.readFileSync(reportPath, 'utf8'),
-      ...finished,
-      JSON.stringify(result.failure.toEnvelope()),
-      String(result.failure.meta?.['engineCause']),
-    ];
-    for (const text of texts) expect(text).not.toContain('SENTINEL');
-    expect(events).toContainEqual({
-      kind: 'message',
-      severity: 'info',
-      text: 'printed [redacted]',
-    });
-  }, 15_000);
+      if (result.ok) throw new Error('the deploy should fail');
+      expect(finished).toHaveLength(1);
+      const texts = [
+        JSON.stringify(events),
+        fs.readFileSync(reportPath, 'utf8'),
+        ...finished,
+        JSON.stringify(result.failure.toEnvelope()),
+        String(result.failure.meta?.['engineCause']),
+      ];
+      for (const text of texts) expect(text).not.toContain('SENTINEL');
+      expect(events).toContainEqual({
+        kind: 'message',
+        severity: 'info',
+        text: 'printed [redacted]',
+      });
+    },
+    15_000,
+  );
 
-  test('with dotenv() and environmentVariables() in both lists, only the value an envSecret() names is redacted', async () => {
+  test('with dotenv() and environmentVariables() in both lists, only the value a secret source names is redacted', async () => {
     const app = makeAppDir('hello-email');
     fs.writeFileSync(
       app.entryPath,
@@ -4913,7 +5482,7 @@ describe('no known secret is printed', () => {
         '    input: {',
         '      mode: input.EMAIL_DELIVERY_MODE,',
         '      from: input.EMAIL_FROM,',
-        "      credential: secretSource({ key: 'EMAIL_DELIVERY_CREDENTIAL' }, { label: \"envSecret('EMAIL_DELIVERY_CREDENTIAL')\", secretsKey: 'EMAIL_DELIVERY_CREDENTIAL' }),",
+        "      credential: secretSource({ key: 'EMAIL_DELIVERY_CREDENTIAL' }, { label: \"secret('EMAIL_DELIVERY_CREDENTIAL')\", secretsKey: 'EMAIL_DELIVERY_CREDENTIAL' }),",
         '    },',
         '  });',
         '});',
@@ -4946,8 +5515,8 @@ describe('no known secret is printed', () => {
         },
         {
           runAssembler: fakeAssembler,
-          converge: {
-            ...appConverge(applied),
+          appConvergeEntry: {
+            ...appConvergeEntry(applied),
             lower: (root, config, options) => {
               lowered.push(options);
               return lower(root, config, options);
@@ -5018,7 +5587,7 @@ describe('no known secret is printed', () => {
           environment: 'staging',
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, converge: appConverge(applied) },
+        { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
       ),
     ).catch((error: unknown) => error);
 
@@ -5055,7 +5624,7 @@ describe('no known secret is printed', () => {
           },
           {
             runAssembler: fakeAssembler,
-            converge: appConverge(async (request) => {
+            appConvergeEntry: appConvergeEntry(async (request) => {
               request.onEvent?.({ kind: 'log', severity: 'info', text: 'key dev-SENTINEL-73' });
               return {
                 kind: 'failed',
@@ -5105,7 +5674,7 @@ describe('no known secret is printed', () => {
           {
             runAssembler: () =>
               Promise.reject(new Error('a service with a dev server is not assembled')),
-            converge: appConverge(applied),
+            appConvergeEntry: appConvergeEntry(applied),
           },
         );
         if (!start.ok) throw new Error(`expected a started session: ${start.failure.message}`);

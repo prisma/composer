@@ -3,6 +3,7 @@ import { string } from '../config.ts';
 import { Load, LoadError } from '../graph.ts';
 import {
   type AnyContract,
+  appRoot,
   dependency,
   freezeNode,
   isNode,
@@ -15,7 +16,7 @@ import {
   service,
 } from '../node.ts';
 import { resolve, type Value } from '../value.ts';
-import { anyInputSchema, conn, providerContract } from './helpers.ts';
+import { anyInputSchema, conn, plainValue, providerContract, secretValue } from './helpers.ts';
 
 const build = {
   extension: '@prisma/composer/node',
@@ -252,8 +253,7 @@ describe("Load's second pass", () => {
 
     expect(loadError(() => Load(returning(secretSource({ name: 'X' })), staging)).message).toBe(
       'The resolve() function for input key "greeting" of service "shop.echo" returned a source, ' +
-        'such as envSecret() or envParam() called inside the function. resolve() returns plain ' +
-        'data; bind a source directly.',
+        'a value known only at boot. resolve() returns plain data; bind the source directly.',
     );
     expect(
       loadError(() =>
@@ -539,5 +539,64 @@ describe('where a value is refused', () => {
       'The deps for "shop.web.db" are bound to a value. A value can configure a node, never ' +
         'decide its edges: the graph is the same whatever inputs Composer is given (ADR-0062).',
     );
+  });
+});
+
+describe("a core message that names a value resource's value", () => {
+  test('a resolve() dependency names it by its label', () => {
+    const root = appRoot('shop', ({ provision }) => {
+      const greeting = provision(plainValue('EMAIL_FROM'));
+      provision(echoService(), { input: { from: resolve([greeting as never], ([v]) => v) } });
+    });
+
+    expect(loadError(() => Load(root)).message).toBe(
+      'The resolve() function for input key "from" of service "shop.echo" lists the test value "EMAIL_FROM", which is known only at boot. A resolve() dependency must be a deploy-time value. Bind the test value "EMAIL_FROM" directly into the input of the service that reads it.',
+    );
+  });
+
+  test("a resource's props name it by its label", () => {
+    const root = appRoot('shop', ({ provision }) => {
+      const greeting = provision(plainValue('EMAIL_FROM'));
+      provision(
+        resource({
+          name: 'store',
+          extension: 'test/pack',
+          type: 'store',
+          props: { from: greeting as never },
+        }),
+      );
+    });
+
+    expect(loadError(() => Load(root)).message).toBe(
+      'prop "from" of resource "shop.store" is bound to the test value "EMAIL_FROM", which is known only at boot. A resource\'s props are read at deploy; bind a value known at deploy.',
+    );
+  });
+});
+
+describe('a root input field and a secret value resource with one name', () => {
+  const message =
+    'input.API_KEY of root module "shop" reads "API_KEY" from the app configuration, and the test secret "API_KEY" names "API_KEY" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which `prisma deploy` sends to the platform as plain configuration, and `prisma dev` and `destroy` hand to their second process in a file. Read the secret with the test secret "API_KEY" only, or give the plain value a different name.';
+
+  test('fail at Load when a service reads the secret', () => {
+    const root = appRoot('shop', { input: anyInputSchema }, ({ input, provision }) => {
+      provision(echoService(), { id: 'plain', input: { key: (input as never)['API_KEY'] } });
+      const key = provision(secretValue('API_KEY'), { id: 'apiKey' });
+      provision(echoService(), { id: 'secret', input: { key } });
+    });
+
+    expect(
+      loadError(() => Load(root, { configuration: { API_KEY: 'a-made-up-secret' } })).message,
+    ).toBe(message);
+  });
+
+  test('fail at Load when no service reads the secret', () => {
+    const root = appRoot('shop', { input: anyInputSchema }, ({ input, provision }) => {
+      provision(echoService(), { id: 'plain', input: { key: (input as never)['API_KEY'] } });
+      provision(secretValue('API_KEY'), { id: 'apiKey' });
+    });
+
+    expect(
+      loadError(() => Load(root, { configuration: { API_KEY: 'a-made-up-secret' } })).message,
+    ).toBe(message);
   });
 });

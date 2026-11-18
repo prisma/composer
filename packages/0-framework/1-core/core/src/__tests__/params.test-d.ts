@@ -1,9 +1,3 @@
-/**
- * Type-level rules for provision-time param binding (env-sourced config
- * params): `paramSource()` is a `ParamSource`, and `provision()` accepts a
- * literal typed by the param's own schema OR a `ParamSource` — never a value
- * the schema doesn't produce. Type-only (vitest `--typecheck`, never executed).
- */
 import { expectTypeOf, test } from 'vitest';
 import { number, string } from '../config.ts';
 import type { BuildAdapter, ParamSource } from '../node.ts';
@@ -21,7 +15,7 @@ test('paramSource() is a ParamSource and a value', () => {
   expectTypeOf(paramSource('APP_ORIGIN')).toEqualTypeOf<ParamSource<string> & Value<unknown>>();
 });
 
-test('provisioning a service accepts a literal typed by the param schema, or a ParamSource — never an unrelated value', () => {
+test('provisioning a service accepts a literal typed by the param schema, and refuses a source or an unrelated value', () => {
   const svc = service({
     name: 'app',
     extension: 'test/pack',
@@ -37,6 +31,7 @@ test('provisioning a service accepts a literal typed by the param schema, or a P
     // fallback / optionality make binding genuinely optional per param).
     provision(svc, { id: 'app' });
     provision(svc, { id: 'app', params: { origin: 'https://example.com' } });
+    // @ts-expect-error a param takes a literal or a deploy-time value, never a source
     provision(svc, { id: 'app', params: { origin: paramSource('APP_ORIGIN') } });
     provision(svc, { id: 'app', params: { port: 8080 } });
     // @ts-expect-error a string param rejects a number literal

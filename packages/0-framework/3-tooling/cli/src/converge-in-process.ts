@@ -1,15 +1,17 @@
 /**
  * Runs a lowered stack's plan and apply in this process through Alchemy's
  * programmatic API (`alchemy/Alchemist`). Alchemy's typed events and log
- * lines come back as {@link ConvergeEvent}s, and Alchemy's own output goes to
- * stderr, so the caller renders progress in its own format.
+ * lines come back as {@link ConvergeEvent}s, and what Alchemy writes to the
+ * terminal itself goes to the request's `output`, so the caller renders
+ * progress in its own format.
  *
  * Published as `@prisma/composer/internal/converge`: the CLI loads it from
  * the app's install, so it runs on the app's copy of alchemy and effect.
  */
 import { isMainThread } from 'node:worker_threads';
-import type { lower } from '@internal/core/deploy';
+import { type lower, wrappedProviderError } from '@internal/core/deploy';
 import { blindCast } from '@internal/foundation/casts';
+import { CliStructuredError } from '@internal/foundation/errors';
 import * as Alchemist from 'alchemy/Alchemist';
 import * as Interaction from 'alchemy/Interaction';
 import { recordOf } from 'alchemy/Util/LogRecord';
@@ -41,7 +43,6 @@ export type ConvergeEvent =
     };
 
 export interface ConvergeRequest {
-  /** What to plan and apply. Only `deploy` today; `prisma dev` adds its own. */
   readonly operation: 'deploy';
   readonly stack: LoweredStack;
   readonly stage: string;
@@ -51,6 +52,8 @@ export interface ConvergeRequest {
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly signal?: AbortSignal | undefined;
   readonly onEvent?: ((event: ConvergeEvent) => void) | undefined;
+  /** Receives what Alchemy writes to the terminal itself. A throw from it is ignored. Absent means stderr. */
+  readonly output?: ((text: string) => void) | undefined;
 }
 
 /** One error a failed converge ended with: the error's tag or class name, and its message. */
@@ -133,16 +136,42 @@ function logEvents(emit: (event: ConvergeEvent) => void) {
   });
 }
 
+function textOf(value: unknown): string {
+  if (typeof value === 'string') return value;
+  try {
+    const json = JSON.stringify(value);
+    if (json !== undefined) return json;
+  } catch {
+    // Not JSON-serializable, such as a cycle.
+  }
+  return String(value);
+}
+
+function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** One error as a reason. A wrapped provider failure reports the error it wraps, and a structured error reports its code as its tag. */
+function reasonOf(error: unknown): ConvergeFailureReason {
+  if (!isRecord(error)) return { tag: 'Unknown', message: textOf(error) };
+  const wrapped = wrappedProviderError(error);
+  if (wrapped !== undefined) return reasonOf(wrapped);
+  const message = typeof error['message'] === 'string' ? error['message'] : undefined;
+  const tag = CliStructuredError.is(error)
+    ? error.code
+    : typeof error['_tag'] === 'string'
+      ? error['_tag']
+      : error instanceof Error
+        ? error.name
+        : 'Unknown';
+  return { tag, message: message ?? textOf(error) };
+}
+
 /** The errors a converge failed with, one per distinct error, interruptions left out. */
 export function failureReasons(cause: Cause.Cause<unknown>): readonly ConvergeFailureReason[] {
   const reasons = cause.reasons.flatMap((reason): ConvergeFailureReason[] => {
     if (Cause.isInterruptReason(reason)) return [];
-    const error = Cause.isFailReason(reason) ? reason.error : reason.defect;
-    if (error instanceof Error) {
-      const tag = '_tag' in error && typeof error._tag === 'string' ? error._tag : error.name;
-      return [{ tag, message: error.message }];
-    }
-    return [{ tag: 'Unknown', message: typeof error === 'string' ? error : String(error) }];
+    return [reasonOf(Cause.isFailReason(reason) ? reason.error : reason.defect)];
   });
   const unique = new Map(reasons.map((reason) => [`${reason.tag}\0${reason.message}`, reason]));
   return unique.size > 0
@@ -197,7 +226,22 @@ async function withProcessState<T>(
   }
 }
 
+/** A stream for Alchemy's terminal output that hands each write to `write`; it reports the terminal's size and colours as stderr does. */
+function writingTo(write: (text: string) => void): NodeJS.WriteStream {
+  const stream: NodeJS.WriteStream = Object.create(process.stderr);
+  stream.write = (chunk: string | Uint8Array) => {
+    try {
+      write(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+    } catch {
+      // Rendering is the caller's; its failures are not the deploy's.
+    }
+    return true;
+  };
+  return stream;
+}
+
 function program(request: ConvergeRequest, emit: (event: ConvergeEvent) => void) {
+  const terminal = request.output === undefined ? process.stderr : writingTo(request.output);
   return Effect.gen(function* () {
     const plan = yield* Alchemist.plan({
       stack: request.stack,
@@ -215,7 +259,7 @@ function program(request: ConvergeRequest, emit: (event: ConvergeEvent) => void)
     ),
     Effect.scoped,
     Effect.provide(Logger.layer([logEvents(emit)])),
-    Effect.provide(Interaction.layerNonInteractive({ stdout: process.stderr })),
+    Effect.provide(Interaction.layerNonInteractive({ stdout: terminal, stderr: terminal })),
     Effect.provide(Alchemist.layer()),
   );
 }
@@ -252,15 +296,7 @@ export const convergeInProcess: Converge = async (request) => {
       return { kind: 'failed', reasons: failureReasons(exit.cause) } as const;
     });
   } catch (error) {
-    return {
-      kind: 'failed',
-      reasons: [
-        {
-          tag: error instanceof Error ? error.name : 'Unknown',
-          message: error instanceof Error ? error.message : String(error),
-        },
-      ],
-    };
+    return { kind: 'failed', reasons: [reasonOf(error)] };
   } finally {
     flag[RUNNING] = false;
   }

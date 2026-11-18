@@ -2,7 +2,7 @@ import * as Effect from 'effect/Effect';
 import * as HttpClient from 'effect/http/HttpClient';
 import * as HttpClientRequest from 'effect/http/HttpClientRequest';
 import * as Stream from 'effect/Stream';
-import { deployHttpClientLayer } from '../../deploy-http-client.ts';
+import { managementApiHttpClientLayer } from '../../management-api-http-client.ts';
 import { refreshingEngineClient } from './refreshing-engine-client.ts';
 
 const origin = process.argv[2] ?? '';
@@ -19,7 +19,7 @@ const status = await Effect.runPromise(
       ),
     );
     return response.status;
-  }).pipe(Effect.scoped, Effect.provide(deployHttpClientLayer(client, origin))),
+  }).pipe(Effect.scoped, Effect.provide(managementApiHttpClientLayer(client, origin))),
 );
 
 process.stdout.write(JSON.stringify({ status, received }));

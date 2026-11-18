@@ -1,8 +1,8 @@
 /** The `compute` node kind's descriptor: the four service hooks — provision, serialize, package, deploy — plus `reserve`, which stands in for the last two when the service runs a dev server (ADR-0056). */
 
 import * as Prisma from '@alchemy.run/prisma';
-import { isParamSource } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
+import { describeDocument, type PlatformMarkerUse } from '@internal/input-document';
 import {
   ARTIFACT_CONTENT_TYPE,
   appAfterEnvironment,
@@ -11,7 +11,8 @@ import {
 import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
-import { transportedPreflight } from '../control/preflight-payload.ts';
+import { configKey } from '../config-key.ts';
+import { preflightView } from '../control/preflight-payload.ts';
 import { GeneratedParam } from '../generated-param-resource.ts';
 import {
   fromLegacyId,
@@ -22,19 +23,9 @@ import {
   legacyInputKey,
   legacyNodeResourceId,
 } from '../legacy-resource-ids.ts';
-import { paramBindingFor, paramName } from '../param.ts';
 import { provisionedEdges } from '../provisioned-edges.ts';
 import { resourceId } from '../resource-ids.ts';
-import {
-  configKey,
-  decodeParamPointer,
-  encode,
-  encodeParamPointer,
-  type InputDocumentRow,
-  isParamPointerRow,
-  paramEntries,
-  serializeInput,
-} from '../serializer.ts';
+import { encode, type InputDocumentRow, paramEntries, serializeInput } from '../serializer.ts';
 import {
   asOwnRow,
   cloudApplicationOf,
@@ -42,6 +33,7 @@ import {
   projectIdOf,
   type ResolvedCloudOptions,
   validatePlatformName,
+  variableClassAndBranch,
 } from './shared.ts';
 
 /** `compute({ listens: false })`, read structurally: the node may be a copy made by another bundle of this package, so `instanceof` cannot be relied on. */
@@ -80,18 +72,11 @@ export interface ComputeSerialized {
    * replacement. Alchemy also writes the members to its state as given,
    * `Redacted` values in plain text included. Because upstream resolves the actual
    * values, a value re-issued under a stable resource identity (a connection
-   * rotated in place, a re-minted service key) moves the fingerprint too —
-   * closing the blind spot the deleted Composer-side fingerprint had to accept
-   * (ADR-0048 recorded it).
+   * rotated in place, a re-minted service key) moves the fingerprint too.
    */
   readonly triggers: Readonly<Record<string, unknown>>;
-  /**
-   * Operator-owned platform variables the environment POINTS at and Composer
-   * never writes — no value ever exists to trigger on, so each contributes its
-   * preflight `updatedAt` as a `<name>:updatedAt` trigger member at deploy
-   * time, and an out-of-band rotation still replaces the deployment.
-   */
-  readonly pointers: readonly string[];
+  /** Platform variables the service reads and Composer does not write; each joins the triggers as `<name>:updatedAt`. */
+  readonly platformVariables: readonly string[];
   readonly port: number;
   readonly input?: InputDocumentRow;
 }
@@ -145,23 +130,18 @@ interface EnvRow {
   readonly record: Prisma.EnvironmentVariable;
   readonly key: string;
   readonly value: Redacted.Redacted<string> | Output.Output<Redacted.Redacted<string>>;
-  readonly pointers?: readonly string[];
 }
 
-/**
- * The report's two lines of honesty (ADR-0042): the serialized input
- * document (secret-free by construction — every secret leaf is a `$secret`
- * pointer) and every binding key that resolved absent in the app configuration (a
- * possible typo'd variable name). Newlines in a detail value render as one
- * line per entry.
- */
+const sortedMarkerNames = (markers: readonly PlatformMarkerUse[]): string[] =>
+  [...new Set(markers.map((marker) => marker.name))].sort();
+
 function inputDetails(serialized: ComputeSerialized): {
   readonly details?: Readonly<Record<string, string>>;
 } {
   if (serialized.input === undefined) return {};
   return {
     details: {
-      input: serialized.input.value,
+      input: describeDocument(JSON.parse(serialized.input.value)),
       ...(serialized.input.absent.length > 0 ? { absent: serialized.input.absent.join('\n') } : {}),
     },
   };
@@ -196,18 +176,11 @@ export function computeDescriptor(
         return { serviceId: svc.appId, projectId, endpointDomain: svc.appEndpointDomain };
       }),
 
-    // Two channels of rows: PARAMS (reserved-param literals JSON-encoded;
-    // dependency provisioning refs passed through, keeping their ordering
-    // edge) and the INPUT document (one JSON row per service, secret leaves
-    // as `$secret` pointers, never a value — ADR-0042). The class/branch
-    // scope is identical for both.
     serialize: (ctx, provisioned, config) =>
       Effect.gen(function* () {
         const { address, node, graph } = ctx;
         const app = graph.root.id;
-        const branchId = cloudApplicationOf(ctx.application).branchId;
-        const cls = branchId ? ('preview' as const) : ('production' as const);
-        const branch = branchId !== undefined ? { branchId } : {};
+        const classAndBranch = variableClassAndBranch(ctx.application);
         const projectId = provisioned.projectId;
         if (node.kind !== 'service') {
           throw new Error(`prisma-cloud: cannot serialize non-service node "${address}".`);
@@ -223,67 +196,23 @@ export function computeDescriptor(
           // Mirrors stash(), keeping writer and reader consistent.
           if (value === undefined) continue;
           const key = configKey(address, d);
-          // A service's own param resolved (buildConfig) to an opaque
-          // ParamSource — env-sourced (ADR-0029's param sibling) — writes a
-          // POINTER row (the bound platform NAME), never a value; everything
-          // else (literals; dependency-input provisioning refs) is unchanged.
-          const rowValue =
-            d.owner === 'service' && isParamSource(value)
-              ? encodeParamPointer(paramName(paramBindingFor(graph.params, address, d.name)))
-              : encode(d.owner, value);
-          const wrapped = envValue(rowValue);
+          const wrapped = envValue(encode(d.owner, value));
           const record = yield* Prisma.EnvironmentVariable(resourceId(address, 'env', key), {
             project: projectId,
             key,
             value: wrapped,
-            class: cls,
-            ...branch,
+            ...classAndBranch,
           }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyConfigKey(app, address, d))));
-          // A pointer row triggers on its text (the platform NAME); the pointed
-          // variable's own rotation joins as a `<name>:updatedAt` member.
-          const pointer =
-            d.owner === 'service' && isParamPointerRow(rowValue)
-              ? decodeParamPointer(rowValue)
-              : undefined;
-          rows.push({
-            record,
-            key,
-            value: wrapped,
-            ...(pointer !== undefined ? { pointers: [pointer] } : {}),
-          });
+          rows.push({ record, key, value: wrapped });
         }
 
         const inputRow = serializeInput(
           svc,
           address,
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
-          {
-            absentSecrets: transportedPreflight(ctx.preflight).absentSecrets,
-            ...(ctx.opts.appConfigurationRead !== undefined
-              ? { env: ctx.opts.appConfigurationRead.configurationKeyText }
-              : {}),
-          },
+          { absentVariables: preflightView(ctx.preflight).absentVariables },
         );
         if (inputRow !== undefined) {
-          // Each `$secret` pointer in the document names an OPERATOR-owned
-          // platform variable Composer never writes, so its rotation shows up
-          // only as that variable's `updatedAt`.
-          const inputValue = envValue(inputRow.value);
-          rows.push({
-            record: yield* Prisma.EnvironmentVariable(resourceId(address, 'env', inputRow.key), {
-              project: projectId,
-              key: inputRow.key,
-              // The defaults-applied document — secret leaves are `$secret`
-              // pointers, generated leaves are `$generated` pointers, naming
-              // platform vars, never values (ADR-0042).
-              value: inputValue,
-              class: cls,
-              ...branch,
-            }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(app, address)))),
-            key: inputRow.key,
-            value: inputValue,
-            pointers: inputRow.secrets,
-          });
           // Each generated leaf: generate its value ONCE (the resource keeps it
           // stable across redeploys via its persisted output) and provision it
           // under the framework var the document's `$generated` pointer names.
@@ -306,8 +235,7 @@ export function computeDescriptor(
                 project: projectId,
                 key: leaf.varName,
                 value: generatedValue,
-                class: cls,
-                ...branch,
+                ...classAndBranch,
               }).pipe(
                 asOwnRow,
                 fromLegacyId(legacyEnvVarId(legacyGeneratedParamVarName(app, address, leaf.path))),
@@ -380,8 +308,7 @@ export function computeDescriptor(
               project: projectId,
               key,
               value: providerValue,
-              class: cls,
-              ...branch,
+              ...classAndBranch,
             }).pipe(
               asOwnRow,
               fromLegacyId(
@@ -403,7 +330,7 @@ export function computeDescriptor(
           environment: rows.map((r) => r.record),
           // Keys are unique per row (one env var each), so no member collides.
           triggers: Object.fromEntries(rows.map((r) => [r.key, r.value])),
-          pointers: [...new Set(rows.flatMap((r) => r.pointers ?? []))],
+          platformVariables: inputRow !== undefined ? sortedMarkerNames(inputRow.markers) : [],
           port,
           ...(inputRow !== undefined ? { input: inputRow } : {}),
         };
@@ -411,7 +338,7 @@ export function computeDescriptor(
 
     // Deterministic tar.gz (fixed mtimes/ordering) so unchanged inputs hash
     // identically; the fs/tar work itself lives in @internal/lowering.
-    package: ({ id, node }, { assembled, address }) =>
+    package: ({ id, node }, { assembled, address }, serialized) =>
       Effect.try(() =>
         packageComputeArtifact({
           id,
@@ -419,12 +346,15 @@ export function computeDescriptor(
           appEntry: assembled.entry,
           address,
           ...(declaresNoListening(node) ? { listens: false } : {}),
+          ...(serialized.input !== undefined
+            ? { inputDocument: JSON.parse(serialized.input.value) }
+            : {}),
         }),
       ),
 
     deploy: ({ address, graph, preflight }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
-        const { pointerVersion } = transportedPreflight(preflight);
+        const { platformVariableVersion } = preflightView(preflight);
         // Env keys never contain ':', so a `<name>:updatedAt` member cannot
         // collide with a row's own trigger member. The key name is historical:
         // under `prisma dev` the member holds an HMAC of the value, and
@@ -432,7 +362,10 @@ export function computeDescriptor(
         const triggers = {
           ...serialized.triggers,
           ...Object.fromEntries(
-            serialized.pointers.map((name) => [`${name}:updatedAt`, pointerVersion(name) ?? '?']),
+            serialized.platformVariables.map((name) => [
+              `${name}:updatedAt`,
+              platformVariableVersion(name) ?? '?',
+            ]),
           ),
         };
         const app = graph.root.id;
@@ -488,8 +421,18 @@ export function computeDescriptor(
     // `Deployment` removed: the URL comes from the App, which locally is the
     // same `http://localhost:<port>` the Deployment would report, so
     // dependents' rows do not change between a served and an assembled run.
-    reserve: (_ctx, provisioned, serialized) =>
-      Effect.sync(() => {
+    // With no artifact to carry it, the input document is a variable.
+    reserve: ({ address, application, graph }, provisioned, serialized) =>
+      Effect.gen(function* () {
+        const { input } = serialized;
+        if (input !== undefined) {
+          yield* Prisma.EnvironmentVariable(resourceId(address, 'env', input.key), {
+            project: provisioned.projectId,
+            key: input.key,
+            value: envValue(input.value),
+            ...variableClassAndBranch(application),
+          }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(graph.root.id, address))));
+        }
         const url = Output.map(provisioned.endpointDomain, (domain) => {
           if (domain === undefined) {
             throw new Error(

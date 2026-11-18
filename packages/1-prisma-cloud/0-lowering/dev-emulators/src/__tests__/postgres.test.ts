@@ -405,9 +405,6 @@ describe("a stale @prisma/dev record claiming a port in the daemon's database ra
     // Seen on CI in the store test's --fresh cycle: `@prisma/dev`'s own
     // aux-port picker walks upward from 51213 and after a few servers
     // crosses 51300.
-    // Unique per run: a failed earlier run on this machine may have left
-    // this very name's lock behind (the phenomenon under test).
-    const squatterName = `pcdev-pgtest-squatter-${String(process.pid)}`;
     const prismaDev = (await import(pathToFileURL(prismaDevModulePath()).href)) as {
       startPrismaDevServer(options: {
         name: string;
@@ -421,16 +418,31 @@ describe("a stale @prisma/dev record claiming a port in the daemon's database ra
     // pick consults the records up front, the same way the fixed daemon
     // does.
     const state = (await import('@prisma/dev/internal/state')) as unknown as RegistryScanHost;
-    const claimed = [...(await registryClaimedPorts(state, squatterName))];
-    const squatterPort = await getPort({ port: portNumbers(51_300, 65_535), exclude: claimed });
-    const squatter = await prismaDev.startPrismaDevServer({
-      name: squatterName,
-      databasePort: squatterPort,
-      persistenceMode: 'stateful',
-    });
+    const startSquatter = async (attempt: number) => {
+      const name = `pcdev-pgtest-squatter-${String(process.pid)}-${String(attempt)}`;
+      const claimed = [...(await registryClaimedPorts(state, name))];
+      const port = await getPort({ port: portNumbers(51_300, 65_535), exclude: claimed });
+      try {
+        const server = await prismaDev.startPrismaDevServer({
+          name,
+          databasePort: port,
+          persistenceMode: 'stateful',
+        });
+        return { name, port, server };
+      } catch (error) {
+        const claimedMeanwhile =
+          error instanceof Error && error.name === 'PortBelongsToAnotherServerError';
+        if (claimedMeanwhile && attempt < 5) return undefined;
+        throw error;
+      }
+    };
+    let squatter: Awaited<ReturnType<typeof startSquatter>>;
+    for (let attempt = 1; squatter === undefined; attempt++)
+      squatter = await startSquatter(attempt);
+    const { name: squatterName, port: squatterPort } = squatter;
     // Close WITHOUT deleting: the record survives, still claiming the
     // port, while the port itself is free again — the trap is armed.
-    await squatter.close();
+    await squatter.server.close();
 
     try {
       const client = await startedClient();

@@ -518,7 +518,7 @@ All in the same pull request (`.agents/rules/user-facing-surface-changes.mdc`).
 
    The older form of input is a service's per-key `params`, each bound to a
    literal or a source
-   ([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)).
+   ([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md)).
    ```
 
    The paragraphs from `Two properties fall out of the source, and neither is its own category:` to the end of the entry stay as they are.

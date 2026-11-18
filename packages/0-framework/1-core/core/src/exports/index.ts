@@ -22,8 +22,6 @@ export {
   inputManifest,
   number,
   param,
-  paramManifest,
-  secretSourceManifest,
   string,
 } from '../config.ts';
 export type { Contract, ContractStyle } from '../contract.ts';
@@ -41,9 +39,11 @@ export type {
   PortEndpoint,
   RootInputField,
   SecretSourceUse,
+  ValueRead,
 } from '../graph.ts';
 export {
   assertAppName,
+  GraphCheckError,
   Load,
   LoadError,
   RESOURCE_OUT_PORT,
@@ -83,6 +83,8 @@ export type {
   SecretSourceOptions,
   ServiceNode,
   SourceOptions,
+  SourceValue,
+  ValueResourceNode,
 } from '../node.ts';
 export {
   appRoot,
@@ -92,6 +94,7 @@ export {
   isParamSource,
   isProvisionNeed,
   isSecretSource,
+  isValueResource,
   module,
   paramSource,
   provisionNeed,
@@ -100,6 +103,14 @@ export {
   secretSource,
   service,
   slotsOf,
+  valueResource,
 } from '../node.ts';
-export type { EnvironmentFacts, PlainData, RealValuesOf, RuntimeValue, Value } from '../value.ts';
+export type {
+  EnvironmentFacts,
+  PlainData,
+  RealValuesOf,
+  RuntimeValue,
+  VALUE_RESOURCE,
+  Value,
+} from '../value.ts';
 export { isValue, resolve } from '../value.ts';

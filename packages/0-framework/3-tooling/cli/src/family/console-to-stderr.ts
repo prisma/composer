@@ -1,17 +1,22 @@
-/**
- * Runs `run` with `console`'s stdout methods writing to stderr, and restores
- * them after. `prisma deploy` wraps its operation in this: stdout carries the
- * command's data lines and JSON frames, and a provider's `console.log`
- * during the apply must not land among them. A host calling the operation
- * directly keeps its own `console`.
- */
-const STDOUT_METHODS = ['log', 'info', 'debug', 'dir', 'table'] as const;
+import { format } from 'node:util';
 
-export async function withConsoleOnStderr<T>(run: () => Promise<T>): Promise<T> {
-  const saved = STDOUT_METHODS.map((method) => [method, console[method]] as const);
+const METHODS = ['log', 'info', 'debug', 'dir', 'table', 'warn', 'error'] as const;
+
+/**
+ * Runs `run` with every `console` method writing to stderr through `redact`,
+ * and restores them after: stdout carries the command's data lines and JSON
+ * frames, so a provider's `console.log` during the apply must not land among
+ * them.
+ */
+export async function withConsoleOnStderr<T>(
+  redact: (text: string) => string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const saved = METHODS.map((method) => [method, console[method]] as const);
+  const error = console.error;
   try {
-    for (const method of STDOUT_METHODS) {
-      console[method] = (...args: unknown[]) => console.error(...args);
+    for (const method of METHODS) {
+      console[method] = (...args: unknown[]) => error.call(console, redact(format(...args)));
     }
     return await run();
   } finally {

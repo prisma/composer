@@ -56,9 +56,8 @@
  *      front door succeeds (the services genuinely serve after the resume;
  *      port-stability alone missed a live resume bug — spec § Acceptance).
  *
- * Not proved here (see the S5 report): criteria 4/5 (bucket, placeholder/
- * env-param) are proved against the S4 fixture instead — store declares
- * neither a bucket nor a secret/env-param.
+ * Buckets and platform variables are proved in local-dev-criteria-4-5.integration.ts:
+ * the store example has neither.
  *
  * WHY THIS IS A STANDALONE SCRIPT, NOT bun:test: same reasoning as
  * local-dev.integration.ts — a detached grandchild a converge causes to

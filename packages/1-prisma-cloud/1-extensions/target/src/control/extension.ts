@@ -26,6 +26,7 @@ import {
 import { bucketDescriptor } from '../descriptors/bucket.ts';
 import { computeDescriptor } from '../descriptors/compute.ts';
 import { postgresDescriptor } from '../descriptors/orm-postgres.ts';
+import { platformVariableDescriptor } from '../descriptors/platform-variable.ts';
 import { publicUrlDescriptor } from '../descriptors/public-url.ts';
 import { rawPostgresDescriptor } from '../descriptors/raw-postgres.ts';
 import { s3CredentialsDescriptor } from '../descriptors/s3-credentials.ts';
@@ -37,6 +38,7 @@ import type {
   ServiceProviderParam,
 } from '../descriptors/shared.ts';
 import { GeneratedParamProvider } from '../generated-param-resource.ts';
+import { checkGraph } from '../graph-check.ts';
 import { fromLegacyId, legacyServiceKeyId, legacyStreamsKeyId } from '../legacy-resource-ids.ts';
 import { SELF_ORIGIN } from '../origin-key.ts';
 import { OrmMigrationProvider } from '../orm-migration-resource.ts';
@@ -337,6 +339,8 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
 
     container: containerDescriptor({ region: () => o().region }),
 
+    checkGraph,
+
     providers: ({ credentials }: ProvidersInput<Prisma.ManagementApiClient>) =>
       asProvidersLayer(
         Layer.mergeAll(
@@ -349,12 +353,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         ),
       ),
 
-    // Deploy-time prerequisite check (ADR-0029): verify every pointer secret in
-    // the provision manifest exists for the resolved environment, filling absent-but-
-    // in-shell names via a direct API POST — before Alchemy runs. The
-    // timestamps reach the lowering as its `preflight` payload. The parameter
-    // annotation is what recovers this extension's own client type from the
-    // framework's erased one; without it `input.credentials` arrives as `unknown`.
+    // The annotation recovers this extension's client type from the framework's erased one.
     preflight: (input: PrismaCloudPreflightInput) =>
       runPreflight(input).then(serializeDeployPreflightPayload),
 
@@ -399,6 +398,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
       // bucket descriptor registers under 's3', not 'bucket'.
       s3: bucketDescriptor(o),
       'public-url': publicUrlDescriptor(),
+      'platform-variable': platformVariableDescriptor(),
     },
 
     // A lazy reference, not the descriptor (ADR-0041, operator directive):

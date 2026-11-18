@@ -7,6 +7,7 @@
 import * as path from 'node:path';
 import { Bucket, BucketAccessKey } from '@alchemy.run/prisma';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
+import { toProviderError } from '@internal/core/deploy';
 import { bucketsClient } from '@internal/dev-emulators';
 import { mintKeyPair } from '@internal/s3-protocol';
 import * as Provider from 'alchemy/Provider';
@@ -72,7 +73,7 @@ export function LocalBucketProvider(
             logicalId: null,
           };
         },
-        catch: (cause) => cause,
+        catch: toProviderError,
       }),
     diff: ({ output }) =>
       Effect.tryPromise({
@@ -81,7 +82,7 @@ export function LocalBucketProvider(
           const recorded = await recordedInstanceId(appScopeOf(input), output.name);
           return recorded === output.bucketId ? undefined : { action: 'update' as const };
         },
-        catch: (cause) => cause,
+        catch: toProviderError,
       }),
     // Objects belong to the developer; only `--fresh` removes them.
     delete: () => Effect.void,
@@ -124,7 +125,7 @@ export function LocalBucketAccessKeyProvider(
             bucketName: bucketId,
           };
         },
-        catch: (cause) => cause,
+        catch: toProviderError,
       }),
     delete: () => Effect.void,
     read: ({ output }) => Effect.succeed(output),

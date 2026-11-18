@@ -141,7 +141,7 @@ describe("invariant 2: the '.' authoring entry bundles lean", () => {
 });
 
 describe('invariant 4: core touches the environment only to read back the transports it wrote', () => {
-  test("the process-env token appears only in control/deploy.ts's transportedLowerInputs (the container and preflight transports a generated stack file reads back — never a target's own vars)", () => {
+  test("core reads the process environment only in control/deploy.ts's transportedLowerInputs, for a caller that passes no containers or preflight payloads", () => {
     const sources = shippedSources();
     expect(sources.length).toBeGreaterThan(0);
 

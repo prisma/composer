@@ -105,7 +105,7 @@ and hooks receive, and it is Alchemy's stage, so Alchemy keeps each copy's
 state at `.alchemy/state/<app>/<environment>`. Every other local file that
 belongs to one copy lives in `.prisma-composer/dev/<environment>/`: the record
 of instances, the environment variable values, the fingerprint key
-(ADR-0058), the artifacts and the bucket objects. The folder name is
+(ADR-0058), the generated stack file, the artifacts and the bucket objects. The folder name is
 the environment name, encoded, because an environment name may contain `/`.
 Alchemy keeps the stage `feature/x` inside the folder of the stage `feature`,
 so `--fresh` removes only the files directly in its own stage's folder.
@@ -160,12 +160,12 @@ Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
    A recorded database the last session stopped is started here: on a warm
    start the converge may change nothing and never call the Database
    provider.
-5. **Lower + converge** — in the `prisma` process
-   ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)): `lower()` with the
-   extensions' `localTarget.providers()` layers (`localTargetProviders`) and `devState()` (Alchemy's built-in file store), all from the app's install of `@prisma/composer/internal/converge`,
-   then Alchemy's plan and apply with the environment name as Alchemy's stage. No stack file is written and no child is started. Providers provision emulator instances (a running
+5. **Lower + converge** — a dev-generated stack file (ADR-0007's pattern, at
+   `.prisma-composer/dev/<environment>/alchemy.run.ts`), driven with the extension's
+   `localTarget.providers()` layer and `devState()` (Alchemy's built-in file store, exported by `@prisma/composer/local-target`),
+   with the environment name as Alchemy's stage. Providers provision emulator instances (a running
    service, a database, a bucket) by talking to the emulators; converge
-   terminates as always, and the Compute emulator keeps serving. `lower()` gets what Load read from the app configuration as a value, and the local providers get the configuration key text and the named secrets (the app secrets an `envSecret()` in the graph names) as values; no app configuration file is written. Each rebuild converges the same way, one at a time; Alchemy's progress, its log lines and its failure reasons reach the user through the dev operation's events and errors, with every known secret and credential-looking value removed (ADR-0062).
+   terminates as always, and the Compute emulator keeps serving. The dev stack file runs no adapter: it reads what Load read from the app configuration, the plain platform variable texts (`plainVariableText`) and the first process's node addresses from the app configuration file, and the named secrets (the app secrets under the names of the graph's platform secrets) from `PRISMA_COMPOSER_NAMED_SECRETS`. It passes the local providers `plainVariableText` and `namedSecrets`.
 6. **Attach** — new, dev-only: through `localTarget.attach`, render the front
    door (every service's endpoint) and watch for rebuilds, loop. Ctrl-C,
    SIGTERM or a failure stops the app's service processes and database
@@ -219,7 +219,10 @@ service's instance, and the emulator owns the processes:
 
 - **New or changed deployment** (artifact hash or env changed) → stop the
   old child if any, spawn the artifact's `bootstrap.js` under bun with the
-  materialized env. Only the changed service restarts — Alchemy's diff
+  materialized env. The bootstrap passes the service's input document, which
+  the artifact carries in the `inputDocument` field of `compute.bootstrap.json`, to `run()`
+  ([ADR-0065](../90-decisions/ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)),
+  so a changed input document is a changed artifact hash. Only the changed service restarts — Alchemy's diff
   already limited which deployments were re-put.
 - **Readiness** → a service declared `compute({ ..., listens: false })` (the cron scheduler, which receives no requests) is `running` as soon as its process is spawned; the descriptor records `listens: false` in the artifact's `compute.manifest.json`, the local `Deployment` provider reads it from there and sends it with the deployment, and the emulator stores it with the instance; it is a property of the deployment, not of an app or address. Every other service is `running` only once its port accepts a TCP connection on loopback (IPv4 or IPv6). The emulator probes the port every 50 ms until it does, so a service that counts connections sees a few extra ones. The compute emulator's `--ready-poll-ms` argument changes that interval; the CLI never passes it, and the emulator's own tests use it to widen the moment between a process exiting and its start noticing. The deployment PUT and the session-resume start return only then, so a converge, and the `ready` line after it, finish only when every URL answers. A redeploy of a running service sets it to `stopped` once the old process has exited, and back to `running` when the new one listens. A child that exits before it listens fails the call with its address, exit code, and log path. A child that does not listen within the readiness timeout (30 seconds; `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS`, which the CLI passes to the compute emulator as `--ready-timeout-ms` when it starts the emulator) is stopped, and the call fails with its address, port, log path and the variable's name. A crash-backoff restart that times out ends `held`, like other crash loops.
 - **Concurrent starts and stops** → a service has at most one process and at most one start in flight; the rules are in [Concurrent starts and stops](#concurrent-starts-and-stops) below.
@@ -431,9 +434,9 @@ instances had generated ids is discarded when it loads.
 
 ### Process lifetimes
 
-1. **Converge-scoped** — each converge's scope, in the `prisma` process
-   (ADR-0064). Providers run here, and the state lease is held only while a
-   converge runs; nothing started here outlives the scope.
+1. **Converge-scoped** — the Alchemy child (ADR-0007), started as
+   [deploy-cli.md § Runtime](deploy-cli.md) describes. Providers run here;
+   nothing started here survives its exit.
 2. **Machine-scoped emulators** — one per node kind per registry root,
    multi-tenant, holding every long-lived process: the Compute emulator
    (service children), the Postgres emulator (one `@prisma/dev` server per
@@ -482,7 +485,7 @@ semantics):
 | `Database` | the database instance the directory's record names for the resource, on its own `@prisma/dev` server hosted by the Postgres emulator; started if stopped, created when missing; `databaseId` is the instance id |
 | `Connection` | the URL of the database instance its `Database` names |
 | `App` | finds the service's Compute instance through the directory's record, creating it when there is none; the instance holds the service's port; `appEndpointDomain = http://localhost:<port>` — which makes origin (ADR-0039) work unchanged. Deleting it deletes the instance |
-| `Deployment` | unpacks the artifact once per hash, materializes the env, and puts the deployment at the service's Compute instance, which (re)starts the child; updated when its instance does not run the recorded artifact |
+| `Deployment` | unpacks the artifact once per hash, reads the input document from its `compute.bootstrap.json`, materializes the env, and puts the deployment at the service's Compute instance, which (re)starts the child; updated when its instance does not run the recorded artifact |
 | `EnvironmentVariable` | a key→value row in the dev state store |
 | `Bucket` | the bucket instance the directory's record names for the resource, over a directory under `.prisma-composer/dev/<environment>/buckets/<app>/<bucket>/`, served by the bucket emulator; `bucketId` is the instance id, also its S3 name |
 | `BucketKey` | credentials registered with the bucket emulator for its bucket |
@@ -543,14 +546,22 @@ The same table the port's hand-rolled script implemented, now standard:
 | --- | --- |
 | dependency connection values (URLs) | the local provider's resolved value, through the normal lowering |
 | service params | bound literals / defaults, identical to deploy |
-| `envParam` sources (ADR-0032) | the app configuration, same names; missing → a hard error listing the names (params feed boot-time schema validation — junk there is a confusing crash, not a legible degraded mode) |
-| secrets (ADR-0029, ADR-0058) | the app secrets: by default the shell, or `dotenv()` in the `secrets` list. Unset or empty counts as missing. A missing secret the service's schema requires is a hard error naming the variable, the service and both ways to set it; a missing optional secret is left out of the service's input. No value is reused from an earlier run. |
+| plain platform variables (ADR-0064) | the app configuration, under the variable's name, read once per node by the target's dev preflight at start. A service reads one only through a field of its input. An unset or empty value is left out of the input document, and the schema decides, as for a secret. A value that is not text is a hard error naming the variable, the node, the services that read it and the kind of value |
+| platform secrets (ADR-0029, ADR-0058) | the app secrets: by default the shell, or `dotenv()` in the `secrets` list. Unset or empty counts as missing. A missing secret the service's schema requires, or that an array position reads, is a hard error naming the variable, the service and both ways to set it; a missing optional secret is left out of the service's input. No value is reused from an earlier run. |
 | minted needs (ADR-0030/0031: service keys, streams keys) | minted locally by the unchanged provisioners |
 | origin (ADR-0039) | `http://localhost:<port>` via the unchanged origin channel |
 
-Whether a missing secret is required is decided by validation, not by reading the schema (ADR-0042): the dev preflight validates each service's input with every missing secret left out, and then with each one left out alone, and names as required only the secrets whose absence alone fails. The preflight hands the lowering, as its payload, the names of the absent secrets and an HMAC-SHA256 fingerprint of the value of each variable that a service's input or params point at, keyed by the environment's own `.prisma-composer/dev/<environment>/fingerprint.key`. The serializer leaves out the absent secrets, and the fingerprint fills each deployment's `<name>:updatedAt` trigger member, so a value changed between two runs redeploys exactly the services that read it. The local `Deployment` provider reads current values from the configuration key text and the named secrets dev read, and gives each service only the variables its own input and params point at.
+Whether a missing platform variable in a service's input is required is decided by validation, not by reading the schema (ADR-0042). The dev preflight validates each service's input with every missing variable left out, then with each one left out alone. It names as required only the variables whose absence alone fails. A variable an array position reads is required without a check, because an array position cannot be left out. The error opens with `1 platform variable a service needs has no value:` (or the count of them).
 
-To load `.env` files, list `dotenv()` in `config` and `secrets`, with `environmentVariables()` after it to keep the shell. It reads `.env`, `.env.local`, `.env.<environment>` and `.env.<environment>.local` beside `prisma.config.ts`, through `dotenv-flow`, and skips `.env.local` for the environment `test`. Values in `.env.dev` are read only by the environment `dev`; values in `.env` and `.env.local` are read by every environment, `prisma deploy` to `production` included, whose preflight uploads any secret the environment does not have yet. `import 'dotenv/config'` at the top of `prisma.config.ts` still works with the default lists; remove it when you list `dotenv()`.
+The preflight returns two things. Its payload reaches the second process in an environment variable: the names of the absent platform variables, plain and secret (`absentVariables`), and an HMAC-SHA256 fingerprint of the value of each variable a service's input document names. The fingerprint is keyed by the environment's own `.prisma-composer/dev/<environment>/fingerprint.key`. The serializer leaves out the absent variables. Its `plainVariableText`, the text of each plain platform variable a service reads, reaches the second process in the app configuration file. Each fingerprint fills the `<name>:updatedAt` trigger of the deployments that read the variable, so a value changed between two runs redeploys exactly the services that read it.
+
+The second process of `prisma dev` runs no adapter. It reads three things from the app configuration file, `.prisma-composer/dev/<environment>/app-configuration-<pid>.json`: what Load read from the app configuration, `plainVariableText`, and the first process's node addresses. `prisma dev` writes that file before each converge and deletes it as soon as the converge ends; it writes the texts the dev preflight found at start, on the first converge and on every rebuild, after checking each against the known secrets. The second process receives the named secrets in `PRISMA_COMPOSER_NAMED_SECRETS`: the app secrets under the secrets keys of the graph's platform secrets. The local target fills a plain `$platform` marker from `plainVariableText`, and a secret marker from the named secrets.
+
+A rebuild runs no dev preflight, so a read of a platform variable that a code change adds would have no value. After a rebuild's Load, `prisma dev` compares the graph's reads of platform variable nodes (`valueReads`: reader, node and path) and each read node's address and `props` with those at start. If either differs, it does not converge, emits the `value-reads-changed` event with the nodes whose reads were added, removed or changed, and pauses rebuilds until it is restarted. The CLI prints a warning: `The platform variables the app reads changed since dev started: reads of "shop.smtpPort" were added, reads of "shop.emailFrom" were removed, and "shop.sender" was changed. Restart dev to apply them; rebuilds are paused until then.` Known limit: on a rebuild, the first process loads the entry again with `import()`, and the runtime returns the modules it loaded at start, so after an edit to `module.ts` the first process still holds the graph from the start and this comparison sees no change. The second process does load the edited code: an edit that adds or removes a node fails the converge with the error that the two processes built different graphs, and an edit that changes only a read converges with the values worked out at start. This is how `prisma dev` handles every edit to the graph today.
+
+The local `Deployment` provider gives each service only the variables its own input reads: the `$platform` markers in its input document, at any depth. For a service that runs its artifact, it reads the input document for this from the unpacked artifact's `compute.bootstrap.json`, with the reader `@internal/lowering` exports next to the packer. It ignores a `COMPOSER_<ADDRESS>_INPUT` entry in `env.json` for such a service, whether or not the artifact holds a document, and does not put that key into the process's environment, because the artifact's bootstrap passes the document to `run()`. For a service that runs a dev server, which has no artifact, the compute descriptor's `reserve` writes the input document as a `COMPOSER_<ADDRESS>_INPUT` variable, which the local target keeps in `env.json` with the service's other rows. This isolation is a requirement of the local target only. On Prisma Cloud every deployment receives every variable of its class.
+
+To load `.env` files, list `dotenv()` in `config` and `secrets`, with `environmentVariables()` after it to keep the shell. It reads `.env`, `.env.local`, `.env.<environment>` and `.env.<environment>.local` beside `prisma.config.ts`, through `dotenv-flow`, and skips `.env.local` for the environment `test`. Values in `.env.dev` are read only by the environment `dev`; values in `.env` and `.env.local` are read by every environment, `prisma deploy` to `production` included. The deploy does not copy a secret to the platform, but a plain value there reaches the root's input in every environment. `import 'dotenv/config'` at the top of `prisma.config.ts` still works with the default lists; remove it when you list `dotenv()`.
 
 ## Scheduled work
 
@@ -575,12 +586,7 @@ Deploy's rule holds: every failure names its fix.
 | a `@prisma/dev` server fails to start | the underlying error, sanitized — connection-URL credentials are masked before embedding |
 | port conflict on a persisted allocation | which service, which port, and how to free or re-allocate (`--fresh`) |
 | required secret unset or empty | hard error listing every missing variable, the service that needs it, the schema's message, and where an adapter in `secrets` reads it; an optional one is not an error |
-| env-sourced param unbound | hard error listing the missing names, deploy-preflight style |
 | an adapter returns different values at a rebuild than at start | that the values changed and rebuilds are paused until dev restarts |
-| an app definition file (an app file the entry loaded) changes while dev runs | which files changed, that dev cannot load them again, and that rebuilds are paused until dev restarts |
-| the first converge fails | `DEV.CONVERGE_FAILED`, with Alchemy's errors in the message and in `meta.reasons`; `dev` stops the app's services before it returns the failure |
-| a rebuild's converge fails or is refused | a warning with the code and Alchemy's errors; the running app is kept and dev keeps watching |
-| Ctrl-C during the first converge | `DEV.INTERRUPTED`, reported as a message; `prisma dev` exits 130 |
 | a service exits before it listens, or does not listen within the readiness timeout | the address, the port, the exit code if it exited, and the log path; `dev` stops the app's services before it returns the failure |
 | an emulator does not accept connections (retried briefly; an error response from the emulator is never retried) | `DEV.EMULATOR_UNREACHABLE`, with the emulator's URL, from `dev` and `log` alike |
 | `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` is not a positive whole number | `DEV.SERVICE_READY_TIMEOUT_INVALID`, with the value |
@@ -632,14 +638,13 @@ The design's founding claim was proven against open-chat — a real, pre-existin
   loop picks rebuilds up on its own. A build descriptor that still returns
   no `watch` entries reports `[dev] <address> has no watchable inputs` at
   startup and needs its rebuilds triggered manually.
-- **An edit to an app definition file needs a restart.** The entry module is
-  imported once per process, and the converge runs in that process, so a
-  rebuild cannot see an edit to it. The app definition files are every app
-  file (outside `node_modules`) that importing the entry loaded, plus each
-  service's authoring module. Dev records them while it imports the entry,
-  hashes and watches them, and when one changes it says so and pauses
-  rebuilds until `prisma dev` is restarted (ADR-0064). A file already loaded
-  before the entry, such as one `prisma.config.ts` imports, is not recorded.
+- **A topology edit reconverges, but the session's own view of the app is
+  the one it started with.** The entry module is imported once per process,
+  so after an edit to `module.ts` or a `service.ts` the Alchemy child (a fresh
+  process) converges the new topology while the session keeps the graph, the
+  bundles and the dev servers it loaded. Edits that keep the set of services
+  and their build adapters — wiring, inputs, bindings — apply fully; adding,
+  removing or re-adapting a service needs `prisma dev` restarted.
 - **App-owned migrations are not run by `dev`** (by design — ADR-0022, spec
   § 4's `OrmMigration` line is for framework-run migrations only). An app that
   runs its own migrations (e.g. via `prisma db init`, like the

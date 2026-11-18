@@ -9,6 +9,7 @@
  */
 import type { DeployedEntity, DeployedNode, DeploymentResult } from '@internal/core/deploy';
 import { writeDeploymentSummaryFile } from './deployment-summary.ts';
+import { unsetPlatformVariablesText } from './unset-platform-variables.ts';
 
 /** Gap between the deepest tree label and the entity column. */
 const LABEL_GAP = 3;
@@ -115,6 +116,8 @@ export function renderDeployment(result: DeploymentResult): string {
       }
     });
   }
+  const unset = unsetPlatformVariablesText(result.findings.unset);
+  if (unset !== undefined) lines.push('', unset);
   return lines.join('\n');
 }
 

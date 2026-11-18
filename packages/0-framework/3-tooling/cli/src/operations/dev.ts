@@ -20,8 +20,8 @@ export type DevStep =
       readonly name: 'apply-resource';
       /** The id of the converge step it belongs to. */
       readonly converge: string;
-      /** The resource's id in the stack. */
-      readonly fqn: string;
+      /** The resource's ID (ADR-0057): its node's address, or the address and the resource's role in that node. */
+      readonly resourceId: string;
       readonly resourceType: string;
       /** Alchemy's status word for what is happening to it, such as `creating` or `created`. */
       readonly status: string;
@@ -42,6 +42,13 @@ export type DevEvent =
   | { readonly kind: 'config-changed'; readonly file: string }
   /** What the `config` or `secrets` adapters return changed since the session started. The session keeps the values it started with and stops rebuilding until it is restarted. */
   | { readonly kind: 'values-changed' }
+  /** The value resources the app reads changed since the session started. `added` holds the nodes whose reads were only added, `removed` those whose reads were only removed, and `changed` every other changed node, each by address. The session stops rebuilding until it is restarted. */
+  | {
+      readonly kind: 'value-reads-changed';
+      readonly added: readonly string[];
+      readonly removed: readonly string[];
+      readonly changed: readonly string[];
+    }
   /** An app definition file changed: one of the app files the entry module loaded when the session started. The session keeps the app it loaded and stops rebuilding until it is restarted. */
   | { readonly kind: 'definition-changed'; readonly files: readonly string[] }
   /** A rebuild's converge failed, or was refused because another converge holds this process. The app keeps running, still watching. */

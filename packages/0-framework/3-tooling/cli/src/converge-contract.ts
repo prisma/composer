@@ -4,7 +4,8 @@
  * `LowerOptions`, `ConvergeRequest`, `ConvergeOutcome`, `ConvergeEvent`,
  * `DeploymentResult`, and the functions the entry exports (`lower`,
  * `convergeInProcess`, `localTargetProviders`, `devState`). Bump it only
- * when one of them changes in a way the other side cannot read. Imports
+ * when one of them changes in a way the other side cannot read;
+ * `converge-contract.test-d.ts` fails on any change to the shapes. Imports
  * nothing, so a host can read it before loading the converge.
  */
 export const CONVERGE_CONTRACT = 2;

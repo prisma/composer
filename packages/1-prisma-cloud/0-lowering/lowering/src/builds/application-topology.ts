@@ -12,7 +12,13 @@
  * and `family` values are this tool's vocabulary, stored uninterpreted.
  */
 import { createHash } from 'node:crypto';
-import type { AuthoredEdge, ContractStyle, Graph, PortEndpoint } from '@internal/core';
+import {
+  type AuthoredEdge,
+  type ContractStyle,
+  type Graph,
+  isValueResource,
+  type PortEndpoint,
+} from '@internal/core';
 import type { ManagementApiClient } from '../client.ts';
 
 export interface ApplicationTopologyNodeBody {
@@ -101,6 +107,7 @@ export function composeApplicationTopology(graph: Graph): ApplicationTopologyBod
   for (const entry of graph.nodes) {
     const node = entry.node;
     if (node.kind !== 'module' && node.kind !== 'service' && node.kind !== 'resource') continue;
+    if (isValueResource(node)) continue;
     kinds.set(entry.id, node.kind);
     nodes.push({
       logicalId: entry.id,

@@ -24,10 +24,12 @@ async function writeRows(rows: Record<string, string>): Promise<void> {
 test('each service gets the current values of only the variables its own rows point at', async () => {
   await writeRows({
     COMPOSER_BILLING_INPUT: JSON.stringify({
-      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
-      nested: [{ origin: { $secret: 'APP_ORIGIN' } }],
+      stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+      nested: [{ origin: { $platform: { name: 'APP_ORIGIN', secret: true } } }],
     }),
-    COMPOSER_MAILER_INPUT: JSON.stringify({ key: { $secret: 'MAILER_KEY' } }),
+    COMPOSER_MAILER_INPUT: JSON.stringify({
+      key: { $platform: { name: 'MAILER_KEY', secret: true } },
+    }),
   });
   const secrets = {
     STRIPE_SECRET_KEY: 'sk_test_1',
@@ -47,23 +49,11 @@ test('each service gets the current values of only the variables its own rows po
   expect(billing['UNRELATED_SECRET']).toBeUndefined();
 });
 
-test('a param pointer row gives the service the current value of the variable it names', async () => {
-  await writeRows({ COMPOSER_WEB_ORIGIN: '@composer-param-pointer:APP_ORIGIN' });
-
-  const web = await materializeEnv(
-    devDir,
-    'web',
-    4000,
-    { APP_ORIGIN: 'http://localhost:3000' },
-    {},
-  );
-
-  expect(web['APP_ORIGIN']).toBe('http://localhost:3000');
-});
-
 test('a value changed in the app secrets reaches the service on the next materialization', async () => {
   await writeRows({
-    COMPOSER_BILLING_INPUT: JSON.stringify({ stripeKey: { $secret: 'STRIPE_SECRET_KEY' } }),
+    COMPOSER_BILLING_INPUT: JSON.stringify({
+      stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+    }),
   });
   await materializeEnv(devDir, 'billing', 4000, {}, { STRIPE_SECRET_KEY: 'sk_test_old' });
 
@@ -78,11 +68,11 @@ test('a value changed in the app secrets reaches the service on the next materia
   expect(billing['STRIPE_SECRET_KEY']).toBe('sk_test_new');
 });
 
-test('a pointed variable that is unset or empty is not given to the service', async () => {
+test('a platform variable that is unset or empty is not given to the service', async () => {
   await writeRows({
     COMPOSER_BILLING_INPUT: JSON.stringify({
-      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
-      mailer: { $secret: 'MAILER_KEY' },
+      stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+      mailer: { $platform: { name: 'MAILER_KEY', secret: true } },
     }),
   });
 
@@ -92,10 +82,12 @@ test('a pointed variable that is unset or empty is not given to the service', as
   expect('MAILER_KEY' in billing).toBe(false);
 });
 
-test('a local deployment takes its secrets from the app secrets and its param pointers from the app configuration, never the shell', async () => {
+test('a local deployment takes its secrets from the app secrets and its plain platform variables from their texts, never the shell', async () => {
   await writeRows({
-    COMPOSER_BILLING_INPUT: JSON.stringify({ stripeKey: { $secret: 'STRIPE_SECRET_KEY' } }),
-    COMPOSER_BILLING_ORIGIN: '@composer-param-pointer:APP_ORIGIN',
+    COMPOSER_BILLING_INPUT: JSON.stringify({
+      stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+      origin: { $platform: { name: 'APP_ORIGIN' } },
+    }),
   });
   process.env['STRIPE_SECRET_KEY'] = 'shell';
   process.env['APP_ORIGIN'] = 'shell';
@@ -112,10 +104,72 @@ test('a local deployment takes its secrets from the app secrets and its param po
   expect(billing['APP_ORIGIN']).toBe('https://pool.example');
 });
 
-test('a param pointer whose app configuration value is not text is left out', async () => {
-  await writeRows({ COMPOSER_WEB_ORIGIN: '@composer-param-pointer:APP_ORIGIN' });
+test('a plain platform variable whose value is not text is left out', async () => {
+  await writeRows({
+    COMPOSER_WEB_INPUT: JSON.stringify({ origin: { $platform: { name: 'APP_ORIGIN' } } }),
+  });
 
   const web = await materializeEnv(devDir, 'web', 4000, { APP_ORIGIN: { host: 'x' } }, {});
 
   expect('APP_ORIGIN' in web).toBe(false);
+});
+
+test("a service gets the variables its artifact's input document names, and not the document itself", async () => {
+  await writeRows({ COMPOSER_WEB_PORT: '3000' });
+  const inputDocument = {
+    stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+    origin: { $platform: { name: 'APP_ORIGIN' } },
+  };
+
+  const web = await materializeEnv(
+    devDir,
+    'web',
+    4000,
+    { APP_ORIGIN: 'http://localhost:3000', UNREAD_NAME: 'not read' },
+    { STRIPE_SECRET_KEY: 'sk_test_1', MAILER_KEY: 'mk_1' },
+    { inputDocument },
+  );
+
+  expect(web['STRIPE_SECRET_KEY']).toBe('sk_test_1');
+  expect(web['APP_ORIGIN']).toBe('http://localhost:3000');
+  expect('MAILER_KEY' in web).toBe(false);
+  expect('UNREAD_NAME' in web).toBe(false);
+  expect('COMPOSER_WEB_INPUT' in web).toBe(false);
+});
+
+test('a stale input document in env.json gives the service nothing when its artifact carries one', async () => {
+  await writeRows({
+    COMPOSER_WEB_INPUT: JSON.stringify({
+      old: { $platform: { name: 'OLD_SECRET', secret: true } },
+    }),
+  });
+  const inputDocument = {
+    stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
+  };
+
+  const web = await materializeEnv(
+    devDir,
+    'web',
+    4000,
+    {},
+    { OLD_SECRET: 'sk_old', STRIPE_SECRET_KEY: 'sk_test_1' },
+    { inputDocument },
+  );
+
+  expect('OLD_SECRET' in web).toBe(false);
+  expect(web['STRIPE_SECRET_KEY']).toBe('sk_test_1');
+  expect('COMPOSER_WEB_INPUT' in web).toBe(false);
+});
+
+test('a stale input document in env.json gives the service nothing when its artifact carries none', async () => {
+  await writeRows({
+    COMPOSER_WEB_INPUT: JSON.stringify({
+      old: { $platform: { name: 'OLD_SECRET', secret: true } },
+    }),
+  });
+
+  const web = await materializeEnv(devDir, 'web', 4000, {}, { OLD_SECRET: 'sk_old' }, {});
+
+  expect('OLD_SECRET' in web).toBe(false);
+  expect('COMPOSER_WEB_INPUT' in web).toBe(false);
 });

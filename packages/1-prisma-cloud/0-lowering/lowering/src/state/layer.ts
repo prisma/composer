@@ -16,7 +16,8 @@ import { BUILD_ID_ENV } from '../builds/resources.ts';
 import { withResourceReporting } from '../builds/state-store.ts';
 import * as client from '../client.ts';
 import { resolveDefaultBranchId } from '../container.ts';
-import { deployHttpClientLayer } from '../deploy-http-client.ts';
+import { suppliedClientOrigin, tokenClientOrigin } from '../credentials.ts';
+import { managementApiHttpClientLayer } from '../management-api-http-client.ts';
 import { failOnEmptyScopeWithLiveResources, scopeOccupied } from './empty-scope.ts';
 import { hostedStateBootstrapError } from './errors.ts';
 import {
@@ -57,12 +58,14 @@ export const prismaStateLayer = (
     readonly defaultBranchId?: string;
   },
   supplied?: client.ManagementApiClient,
-): Layer.Layer<State, never, StackServices> =>
-  Layer.unwrap(
-    client
-      .managementApiOrigin(supplied)
-      .pipe(Effect.map((origin) => stateLayerAgainst(origin, ids, supplied))),
+): Layer.Layer<State, never, StackServices> => {
+  const suppliedOrigin = supplied === undefined ? undefined : suppliedClientOrigin(process.env);
+  return Layer.unwrap(
+    (suppliedOrigin === undefined ? tokenClientOrigin() : Effect.succeed(suppliedOrigin)).pipe(
+      Effect.map((origin) => stateLayerAgainst(origin, ids, supplied)),
+    ),
   ).pipe(Layer.orDie);
+};
 
 /**
  * The stock service with legacy Composer resource rows rewritten to the
@@ -145,14 +148,14 @@ export const stateLayerAgainst = (
         );
       }
 
-      // `mgmt` authenticates the store's requests, and the deploy's HttpClient
-      // drops the empty bearer header the store sets from `authToken`.
+      // `mgmt` authenticates the store's requests, and the HttpClient drops
+      // the empty bearer header the store sets from `authToken`.
       const service = yield* makeHttpStateStore({
         url: `${apiOrigin}/v1/projects/${projectId}/branches/${stateBranchId}/alchemy-state`,
         authToken: '',
         transformClient: HttpClientRequest.setHeader(LEASE_HEADER, Redacted.value(lease.leaseId)),
         id: 'prisma-postgres',
-      }).pipe(Effect.provide(deployHttpClientLayer(mgmt, apiOrigin)));
+      }).pipe(Effect.provide(managementApiHttpClientLayer(mgmt, apiOrigin)));
 
       const migrated = migrateRowsOnRead(service);
 

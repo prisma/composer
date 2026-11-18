@@ -8,9 +8,19 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { type Contract, module, resource } from '@internal/core';
-import type { ExtensionDescriptor, PrismaAppConfig } from '@internal/core/config';
-import { type DeploymentResult, type LowerOptions, lower } from '@internal/core/deploy';
+import type {
+  ExtensionDescriptor,
+  PrismaAppConfig,
+  UnsetPlatformVariable,
+} from '@internal/core/config';
+import {
+  type DeploymentResult,
+  type LowerOptions,
+  lower,
+  toProviderError,
+} from '@internal/core/deploy';
 import { devState, localTargetProviders } from '@internal/core/local-target';
+import { CliStructuredError } from '@internal/foundation/errors';
 import * as Alchemist from 'alchemy/Alchemist';
 import * as Interaction from 'alchemy/Interaction';
 import * as State from 'alchemy/State';
@@ -27,6 +37,7 @@ import {
   toConvergeEvent,
 } from '../converge-in-process.ts';
 import { deployWithDeps } from '../operations/deploy.ts';
+import { SecretRedaction } from '../redaction.ts';
 
 const thingContract: Contract<'fake/thing', unknown> = Object.freeze({
   kind: 'fake/thing',
@@ -92,7 +103,7 @@ function request(
       name: 'shop',
       bundles: {},
       containers: new Map(),
-      preflight: new Map(),
+      preflightPayloads: new Map(),
       ...extra,
     }),
     stage: 'test',
@@ -231,6 +242,64 @@ describe('convergeInProcess', () => {
     }
   });
 
+  test("Alchemy's interaction output goes to the request's output when it has one", async () => {
+    const { config } = fixture(
+      Object.assign(
+        () =>
+          Effect.gen(function* () {
+            const interaction = yield* Interaction.Interaction;
+            yield* interaction.output.info('state store bootstrapped');
+            return { outputs: {}, entities: [] };
+          }),
+        { kind: 'resource' as const },
+      ),
+    );
+    const written: string[] = [];
+    const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      expect(
+        await convergeInProcess(request(config, {}, { output: (text) => written.push(text) })),
+      ).toEqual({ kind: 'applied' });
+      expect(written.join('')).toContain('state store bootstrapped');
+      expect(stderr.mock.calls.map(([chunk]) => String(chunk)).join('')).not.toContain(
+        'state store bootstrapped',
+      );
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  test("a throw from the request's output does not fail the apply", async () => {
+    const { config } = fixture(
+      Object.assign(
+        () =>
+          Effect.gen(function* () {
+            const interaction = yield* Interaction.Interaction;
+            yield* interaction.output.info('state store bootstrapped');
+            return { outputs: {}, entities: [] };
+          }),
+        { kind: 'resource' as const },
+      ),
+    );
+    let calls = 0;
+
+    const outcome = await convergeInProcess(
+      request(
+        config,
+        {},
+        {
+          output: () => {
+            calls += 1;
+            throw new Error('closed pipe');
+          },
+        },
+      ),
+    );
+
+    expect(outcome).toEqual({ kind: 'applied' });
+    expect(calls).toBeGreaterThan(0);
+  });
+
   test('one converge per process holds across two copies of the module', async () => {
     const copy: typeof import('../converge-in-process.ts') = await import(
       `../converge-in-process.ts?copy=${String(Date.now())}`
@@ -367,7 +436,12 @@ describe('convergeInProcess', () => {
 const coreIndex = path.resolve(import.meta.dir, '../../../../1-core/core/src/exports/index.ts');
 
 describe('deploy with the real in-process converge', () => {
-  test('returns the summary as a value, writes no stack file and needs no alchemy bin', async () => {
+  test("returns the summary, with the preflight's findings, as a value, writes no stack file and needs no alchemy bin", async () => {
+    const unset: UnsetPlatformVariable = {
+      name: 'EMAIL_API_KEY',
+      readers: [{ kind: 'field', service: 'shop.api', path: 'apiKey' }],
+      commands: ["prisma project env add 'EMAIL_API_KEY=<value>'"],
+    };
     const dir = tmpDir();
     fs.writeFileSync(path.join(dir, 'prisma.config.ts'), 'export default {};\n');
     const entry = path.join(dir, 'module.ts');
@@ -390,6 +464,10 @@ describe('deploy with the real in-process converge', () => {
       extensions: [
         {
           id: 'test/pack',
+          preflight: async (input) => {
+            input.report?.({ checked: 1, unset: [unset] });
+            return undefined;
+          },
           nodes: {
             'fake/service': {
               kind: 'service',
@@ -428,7 +506,7 @@ describe('deploy with the real in-process converge', () => {
       },
       {
         runAssembler: async () => ({ dir, entry: 'server.js' }),
-        converge: { lower, converge: convergeInProcess, localTargetProviders, devState },
+        appConvergeEntry: { lower, converge: convergeInProcess, localTargetProviders, devState },
         credentials: { workspaceId: 'ws_1', client: {} },
       },
     );
@@ -442,6 +520,7 @@ describe('deploy with the real in-process converge', () => {
           entities: [{ kind: 'service', id: 'svc-1', url: 'https://api.example' }],
         },
       ],
+      findings: { unset: [unset] },
     });
     expect(fs.existsSync(path.join(dir, '.prisma-composer', 'alchemy.run.ts'))).toBe(false);
   });
@@ -502,5 +581,52 @@ describe('failureReasons', () => {
 
   test('a non-error failure is kept as text', () => {
     expect(failureReasons(Cause.fail('plain'))).toEqual([{ tag: 'Unknown', message: 'plain' }]);
+  });
+
+  test('a tagged object that is not an Error keeps its tag and message', () => {
+    expect(failureReasons(Cause.fail({ _tag: 'QuotaExceeded', message: 'too many apps' }))).toEqual(
+      [{ tag: 'QuotaExceeded', message: 'too many apps' }],
+    );
+  });
+
+  test('an object with no message is shown as JSON, not as [object Object]', () => {
+    expect(failureReasons(Cause.fail({ _tag: 'Refused' }))).toEqual([
+      { tag: 'Refused', message: '{"_tag":"Refused"}' },
+    ]);
+    expect(failureReasons(Cause.fail({ status: 503 }))).toEqual([
+      { tag: 'Unknown', message: '{"status":503}' },
+    ]);
+  });
+
+  test("a multi-line secret in an object's JSON is redacted by the host's redaction", () => {
+    const secret = '-----BEGIN KEY-----\nabc"def\\ghi\n-----END KEY-----';
+    const redaction = new SecretRedaction({});
+    redaction.addKnownSecrets([{ name: 'KEY', value: secret }]);
+
+    const [reason] = failureReasons(Cause.fail({ status: 500, body: { key: secret } }));
+
+    expect(redaction.redact(reason?.message ?? '')).toBe(
+      '{"status":500,"body":{"key":"[redacted]"}}',
+    );
+  });
+
+  test('a wrapped provider failure reports the error it wraps, never the wrapper', () => {
+    expect(failureReasons(Cause.fail(toProviderError(new Error('boom'))))).toEqual([
+      { tag: 'Error', message: 'boom' },
+    ]);
+    expect(failureReasons(Cause.fail(toProviderError('connection refused')))).toEqual([
+      { tag: 'Unknown', message: 'connection refused' },
+    ]);
+  });
+
+  test('a structured error thrown inside a provider keeps its code as the tag', () => {
+    const structured = new CliStructuredError('DEPLOY.MANAGEMENT_API_URL_CONFLICT', 'two hosts');
+
+    expect(failureReasons(Cause.fail(toProviderError(structured)))).toEqual([
+      { tag: 'DEPLOY.MANAGEMENT_API_URL_CONFLICT', message: 'two hosts' },
+    ]);
+    expect(failureReasons(Cause.die(structured))).toEqual([
+      { tag: 'DEPLOY.MANAGEMENT_API_URL_CONFLICT', message: 'two hosts' },
+    ]);
   });
 });

@@ -2,15 +2,19 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AppConfigurationRead, RootInputField } from '@internal/core';
 import { DEV_DIR } from '@internal/core/config';
-import { CliStructuredError } from '@internal/foundation/errors';
 import type { KnownSecrets } from './redaction.ts';
+import {
+  refuseSecretsInPlainVariables,
+  refuseSecretsInRootInput,
+} from './secret-as-plain-value.ts';
 
 /** Names the app configuration file the first process wrote for this run (ADR-0062). */
 export const APP_CONFIGURATION_FILE_ENV = 'PRISMA_COMPOSER_APP_CONFIGURATION_FILE';
 
-/** What the app configuration file holds: what the first process's Load read from the app configuration, and the node addresses of the graph it built. */
+/** What the app configuration file holds: what the first process's Load read, the plain platform variable texts, and the graph's node addresses. */
 export interface AppConfigurationFile {
   readonly appConfigurationRead: AppConfigurationRead;
+  readonly plainVariableText: Readonly<Record<string, string>>;
   readonly nodeAddresses: readonly string[];
 }
 
@@ -79,51 +83,6 @@ export function removeLeftoverAppConfigurationFiles(cwd: string): void {
   }
 }
 
-function textIn(value: unknown, at: readonly string[]): { at: readonly string[]; text: string }[] {
-  if (typeof value === 'string') return [{ at, text: value }];
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-    return [{ at, text: String(value) }];
-  }
-  if (Array.isArray(value)) {
-    return value.flatMap((member, index) => textIn(member, [...at, String(index)]));
-  }
-  if (typeof value === 'object' && value !== null) {
-    return Object.entries(value).flatMap(([key, member]) => textIn(member, [...at, key]));
-  }
-  return [];
-}
-
-/**
- * Refuses when the file would hold a known secret in a plain value, a number or a boolean
- * compared as its text (`KnownSecrets.nameIn`). The message names where and the secrets key,
- * never the value.
- */
-function refuseSecretsIn(read: AppConfigurationRead, knownSecrets: KnownSecrets): void {
-  const places = [
-    ...read.rootInput.flatMap((field) =>
-      textIn(field.value, field.path).map(({ at, text }) => ({
-        where: `Root input field input.${at.join('.')}`,
-        text,
-      })),
-    ),
-    ...Object.entries(read.configurationKeyText).map(([key, text]) => ({
-      where: `Configuration key "${key}"`,
-      text,
-    })),
-  ];
-  for (const { where, text } of places) {
-    const name = knownSecrets.nameIn(text);
-    if (name === undefined) continue;
-    throw new CliStructuredError(
-      'CONFIG.SECRET_AS_PLAIN_VALUE',
-      `${where} holds the value of the secret "${name}", which an envSecret() in the graph reads. Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.`,
-      {
-        fix: `Read the secret with envSecret('${name}') where it is used, or give this plain value text that does not contain the value of "${name}".`,
-      },
-    );
-  }
-}
-
 /** What the first process hands the second: the app configuration file, and the environment that names it. */
 export interface SecondProcessHandover {
   /** What the first process adds to the second process's environment. */
@@ -135,20 +94,30 @@ export interface SecondProcessHandover {
 }
 
 /**
- * First process: the handover to the second process (ADR-0062). The app configuration file at
- * `file` holds what Load read and the graph's node addresses. Refuses when the file would hold
- * any of `knownSecrets`.
+ * First process: the app configuration file and the environment the second process starts with (ADR-0062).
+ * Refuses a file that would hold any of `knownSecrets`.
  */
 export function prepareSecondProcess(input: {
   readonly file: string;
   readonly appConfigurationRead: AppConfigurationRead;
+  readonly plainVariableText: Readonly<Record<string, string>>;
   readonly nodeAddresses: readonly string[];
   readonly knownSecrets: KnownSecrets;
 }): SecondProcessHandover {
   const { file } = input;
-  refuseSecretsIn(input.appConfigurationRead, input.knownSecrets);
+  refuseSecretsInRootInput(
+    input.appConfigurationRead,
+    input.knownSecrets,
+    'Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.',
+  );
+  refuseSecretsInPlainVariables(
+    input.plainVariableText,
+    input.knownSecrets,
+    'Composer hands the second process every plain value in a file, and never writes a secret to a file.',
+  );
   const contents: AppConfigurationFile = {
     appConfigurationRead: input.appConfigurationRead,
+    plainVariableText: input.plainVariableText,
     nodeAddresses: input.nodeAddresses,
   };
   const env: Record<string, string> = { [APP_CONFIGURATION_FILE_ENV]: file };
@@ -234,7 +203,9 @@ export function readAppConfigurationFile(
     );
   }
   const notComposers = (what: string) =>
-    new Error(`The app configuration file ${file} is not one Composer wrote: ${what}.`);
+    new Error(
+      `The app configuration file ${file} is not in the shape this version of Composer reads: ${what}. The usual cause is a \`prisma\` CLI and an app on different Composer versions. Put the \`prisma\` CLI and the app's \`@prisma/composer\` on the same version.`,
+    );
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -246,11 +217,15 @@ export function readAppConfigurationFile(
   if (!isRecord(read)) throw notComposers('appConfigurationRead is not an object');
   const rootInput = rootFieldsOf(read['rootInput']);
   if (rootInput === undefined) throw notComposers('rootInput is not a list of fields');
-  const configurationKeyText = textByKeyOf(read['configurationKeyText']);
-  if (configurationKeyText === undefined) {
-    throw notComposers('configurationKeyText is not an object of text');
+  const plainVariableText = textByKeyOf(parsed['plainVariableText']);
+  if (plainVariableText === undefined) {
+    throw notComposers('plainVariableText is not an object of text');
   }
   const addresses = parsed['nodeAddresses'];
   if (!isTextList(addresses)) throw notComposers('nodeAddresses is not a list of node addresses');
-  return { appConfigurationRead: { rootInput, configurationKeyText }, nodeAddresses: addresses };
+  return {
+    appConfigurationRead: { rootInput },
+    plainVariableText,
+    nodeAddresses: addresses,
+  };
 }

@@ -1,10 +1,6 @@
 /**
  * `deploy` — a result command that runs Alchemy's plan and apply in this
  * process and reports its progress as step events.
- *
- * `--production` is gone. It was accepted and then always errored ("only
- * valid with destroy"), so no invocation using it could ever have succeeded;
- * deploy targets the environment production when no `--environment` is given.
  */
 import type { EngineEvent } from '@prisma/cli-engine';
 import { defineCommand, flag } from '@prisma/cli-engine';
@@ -14,6 +10,8 @@ import {
   type DeployEvent,
   type DeployStep,
 } from '../../operations/deploy.ts';
+import { SecretRedaction } from '../../redaction.ts';
+import { unsetPlatformVariablesText } from '../../unset-platform-variables.ts';
 import { withConsoleOnStderr } from '../console-to-stderr.ts';
 import { dataLine } from '../data-lines.ts';
 import type { ComposerOperations } from '../family.ts';
@@ -34,7 +32,7 @@ function stepLabel(step: DeployStep): string {
     case 'assemble-service':
       return `assemble ${step.address}`;
     case 'apply-resource':
-      return `${step.status} ${step.fqn}`;
+      return `${step.status} ${step.resourceId}`;
     default:
       return STEP_LABELS[step.name];
   }
@@ -45,7 +43,7 @@ function stepId(step: DeployStep): string {
     case 'assemble-service':
       return `deploy.assemble.${step.address}`;
     case 'apply-resource':
-      return `deploy.apply.${step.fqn}`;
+      return `deploy.apply.${step.resourceId}`;
     default:
       return `deploy.${step.name}`;
   }
@@ -70,10 +68,16 @@ function formatDuration(ms: number): string {
   return `${String(Math.floor(seconds / 60))}m ${String(seconds % 60)}s`;
 }
 
-/** The operation's step events as engine events. The engine prints only `step`, so a finished step carries its duration in the text too. */
-function toEngineEvent(event: DeployEvent): EngineEvent {
+/** The operation's events as engine events. The engine prints only `step`, so a finished step carries its duration in the text too. */
+function toEngineEvent(event: DeployEvent): EngineEvent | undefined {
   if (event.kind === 'message') {
     return { kind: 'message', severity: event.severity, text: event.text };
+  }
+  if (event.kind === 'preflight-findings') {
+    const text = unsetPlatformVariablesText(event.findings.unset);
+    return text === undefined
+      ? undefined
+      : { kind: 'message', severity: 'warn', text, data: event.findings };
   }
   const id = stepId(event.step);
   if (event.kind === 'step-started') {
@@ -153,26 +157,33 @@ export const createDeployCommand = (operations: ComposerOperations) =>
       // which authenticates and refreshes; the workspace is the same
       // credential's.
       const credential = await ctx.activeCredential();
-      const result = await withConsoleOnStderr(() =>
-        operations.deploy(
-          {
-            entry: args.flags.entry,
-            config: ctx.config,
-            name: args.flags.name,
-            environment: args.flags.environment,
-            cwd: ctx.cwd,
-            reportPath: args.flags.report,
-            reportId: args.flags.buildId,
-            onEvent: (event) => ctx.report(toEngineEvent(event)),
-            signal: ctx.signal,
-          },
-          {
-            credentials: {
-              workspaceId: credential?.workspaceId,
-              client: ctx.api,
+      const redaction = new SecretRedaction(process.env);
+      const result = await withConsoleOnStderr(
+        (text) => redaction.redact(text),
+        () =>
+          operations.deploy(
+            {
+              entry: args.flags.entry,
+              config: ctx.config,
+              name: args.flags.name,
+              environment: args.flags.environment,
+              cwd: ctx.cwd,
+              reportPath: args.flags.report,
+              reportId: args.flags.buildId,
+              onEvent: (event) => {
+                const engineEvent = toEngineEvent(event);
+                if (engineEvent !== undefined) ctx.report(engineEvent);
+              },
+              signal: ctx.signal,
             },
-          },
-        ),
+            {
+              credentials: {
+                workspaceId: credential?.workspaceId,
+                client: ctx.api,
+              },
+              redaction,
+            },
+          ),
       );
       if (!result.ok) {
         // An interrupted run settles as the signal it is: the engine exits
@@ -192,6 +203,8 @@ export const createDeployCommand = (operations: ComposerOperations) =>
       }
 
       const { summary, durationMs } = result.value;
+      const unsetText =
+        summary === undefined ? undefined : unsetPlatformVariablesText(summary.findings.unset);
       const target = `to ${args.flags.environment ?? DEFAULT_DEPLOY_ENVIRONMENT} in ${formatDuration(durationMs)}`;
       for (const node of summary?.nodes ?? []) {
         for (const entity of node.entities) {
@@ -204,15 +217,15 @@ export const createDeployCommand = (operations: ComposerOperations) =>
         ctx.present(
           { data: { summary: summary ?? null, durationMs } },
           {
-            human: (ui) =>
-              summary === undefined
-                ? [{ kind: 'summary', status: 'ok', text: `Deployed ${target}.` }]
+            human: (ui) => [
+              ...(summary === undefined
+                ? [{ kind: 'summary', status: 'ok', text: `Deployed ${target}.` } as const]
                 : [
                     {
                       kind: 'summary',
                       status: 'ok',
                       text: `Deployed ${ui.emphasize(summary.app)} ${target}.`,
-                    },
+                    } as const,
                     {
                       kind: 'table',
                       columns: ['Address', 'Deployed'],
@@ -220,8 +233,12 @@ export const createDeployCommand = (operations: ComposerOperations) =>
                         node.address,
                         node.entities.map((entity) => `${entity.kind} ${entity.id}`).join(', '),
                       ]),
-                    },
-                  ],
+                    } as const,
+                  ]),
+              ...(unsetText === undefined
+                ? []
+                : [{ kind: 'drawing', lines: unsetText.split('\n') } as const]),
+            ],
             stdout: () =>
               (summary?.nodes ?? []).flatMap((node) =>
                 node.entities.map((entity) =>

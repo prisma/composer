@@ -11,20 +11,22 @@ import type {
   CallerCredentials,
   ContainerDescriptor,
   LocateContainerInput,
+  PreflightFindings,
   PrismaAppConfig,
 } from '@internal/core/config';
 import { lower } from '@internal/core/deploy';
 import { devState, localTargetProviders } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok } from '@internal/foundation/result';
+import type { NextAction } from '@prisma/cli-engine/protocol';
 import type { TestCli } from '@prisma/cli-engine/testing';
 import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
 import * as Layer from 'effect/Layer';
 import { deployWithDeps } from '../../operations/deploy.ts';
 import { createOperationsDouble, type OperationsDouble } from '../../testing/operations-double.ts';
 import { createComposerFamily } from '../family.ts';
-import { commandAt } from './command-at.ts';
 import { validComposerSection } from './fixtures/composer-section.ts';
+import { mountAsHost } from './host-mount.ts';
 
 type Fixtures = Parameters<typeof createOperationsDouble>[0];
 
@@ -60,10 +62,7 @@ function composerCli(
   const family = createComposerFamily({ operations: double.operations });
   const cli = createTestCli({
     commandFamilies: [family],
-    // The two product verbs, at the root. `dev url` and `dev stop` mount
-    // beneath `dev`, which needs an engine that lets a command also be a
-    // group; their own tests mount them alone.
-    commands: { deploy: commandAt(family, 'deploy'), dev: commandAt(family, 'dev') },
+    ...mountAsHost(family),
     config: { composer: validComposerSection() },
     ...(spec.signedIn === false
       ? {}
@@ -152,9 +151,16 @@ describe('argument validation', () => {
     if (last?.kind !== 'result' || last.envelope.ok) throw new Error('expected an errored result');
     expect(last.envelope.error.code).toBe('CLI.COMMAND_MOVED');
     expect(last.envelope.error.summary).toBe('`--stage` on `deploy` has been replaced');
-    expect(last.envelope.nextActions).toEqual([
-      expect.objectContaining({ command: expect.stringContaining('deploy --environment <name>') }),
-    ]);
+    expect(last.envelope.error.why).toBe('A place the app runs is now called an environment.');
+    const nextActions: NextAction[] = [
+      {
+        kind: 'run-command',
+        label: 'Use the replacement',
+        command: 'prisma-test deploy --environment <name>',
+      },
+    ];
+    expect(last.envelope.nextActions).toEqual(nextActions);
+    expect(last.envelope.error.nextActions).toEqual(nextActions);
     expect(double.calls.deploy).toEqual([]);
   });
 
@@ -252,7 +258,8 @@ describe('credentials', () => {
     ]);
   });
 
-  test("a provider's console.log during the operation goes to stderr, and console is restored after", async () => {
+  test("a provider's console output during the operation goes to stderr, redacted like the deploy's own, and console is restored after", async () => {
+    const multiLine = '-----BEGIN KEY-----\nabc"def\\ghi\n-----END KEY-----';
     const log = console.log;
     const stdoutWrite = spyOn(process.stdout, 'write');
     const consoleError = spyOn(console, 'error').mockImplementation(() => {});
@@ -263,21 +270,29 @@ describe('credentials', () => {
         operations: {
           ...operations.operations,
           deploy: async (input, deps) => {
+            deps.redaction?.addCredentialLookingValues(['provider-secret-91', multiLine]);
             console.log('provider chatter');
             console.table([{ a: 1 }]);
+            console.warn('token %s', 'provider-secret-91');
+            console.error({ key: multiLine });
             return deploy(input, deps);
           },
         },
       });
       const probe = createTestCli({
-        commands: { deploy: commandAt(family, 'deploy') },
+        ...mountAsHost(family),
         config: { composer: validComposerSection() },
         environmentCredential: activeCredential(),
       });
       await probe.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
 
       expect(stdoutWrite).not.toHaveBeenCalled();
-      expect(consoleError.mock.calls.map((call) => call[0])).toContain('provider chatter');
+      const printed = consoleError.mock.calls.map((call) => call[0]);
+      expect(printed).toContain('provider chatter');
+      expect(printed).toContain('token [redacted]');
+      expect(printed).toContain("{ key: '[redacted]' }");
+      expect(JSON.stringify(printed)).not.toContain('provider-secret-91');
+      expect(JSON.stringify(printed)).not.toContain('BEGIN KEY');
     } finally {
       stdoutWrite.mockRestore();
       consoleError.mockRestore();
@@ -369,7 +384,7 @@ describe('a stored session', () => {
           deployWithDeps(input, {
             ...deps,
             runAssembler: async () => ({ dir: app.dir, entry: 'server.js' }),
-            converge: {
+            appConvergeEntry: {
               lower,
               localTargetProviders,
               devState,
@@ -387,7 +402,7 @@ describe('a stored session', () => {
     });
     const cli = createTestCli({
       commandFamilies: [family],
-      commands: { deploy: commandAt(family, 'deploy') },
+      ...mountAsHost(family),
       config: { composer: section },
       credential: activeCredential(),
     });
@@ -485,7 +500,7 @@ describe('Ctrl-C', () => {
       },
     });
     return createTestCli({
-      commands: { deploy: commandAt(family, 'deploy') },
+      ...mountAsHost(family),
       config: { composer: validComposerSection() },
       environmentCredential: activeCredential(),
     });
@@ -530,6 +545,7 @@ describe('what a successful run presents', () => {
               { address: 'catalog.service', entities: [{ kind: 'Worker', id: 'catalog-worker' }] },
               { address: 'orders.service', entities: [{ kind: 'Worker', id: 'orders-worker' }] },
             ],
+            findings: { unset: [] },
           },
           durationMs: 575_000,
         }),
@@ -548,6 +564,7 @@ describe('what a successful run presents', () => {
           { address: 'catalog.service', entities: [{ kind: 'Worker', id: 'catalog-worker' }] },
           { address: 'orders.service', entities: [{ kind: 'Worker', id: 'orders-worker' }] },
         ],
+        findings: { unset: [] },
       },
       durationMs: 575_000,
     });
@@ -576,6 +593,7 @@ describe('what a successful run presents', () => {
               },
               { address: 'catalog.credentials', entities: [] },
             ],
+            findings: { unset: [] },
           },
           durationMs: 575_000,
         }),
@@ -613,6 +631,18 @@ describe('what a successful run presents', () => {
 });
 
 describe('step events', () => {
+  const findings: PreflightFindings = {
+    unset: [
+      {
+        name: 'EMAIL_API_KEY',
+        readers: [{ kind: 'field', service: 'shop.email', path: 'apiKey' }],
+        commands: [
+          "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview",
+          "prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --branch 'pr-7'",
+        ],
+      },
+    ],
+  };
   const deployEvents: NonNullable<Fixtures>['deployEvents'] = [
     { kind: 'step-started', step: { name: 'assemble' } },
     { kind: 'step-started', step: { name: 'assemble-service', address: 'console' } },
@@ -630,8 +660,9 @@ describe('step events', () => {
       step: { name: 'preflight' },
       outcome: 'ok',
       durationMs: 38_170,
-      data: { checked: 53, filled: 0, missing: 0 },
+      data: { checked: 53, unset: 1 },
     },
+    { kind: 'preflight-findings', findings },
     { kind: 'step-started', step: { name: 'record' } },
     { kind: 'step-finished', step: { name: 'record' }, outcome: 'failed', durationMs: 850 },
   ];
@@ -647,11 +678,12 @@ describe('step events', () => {
         },
         { address: 'db', entities: [{ kind: 'postgres', id: 'db_1' }] },
       ],
+      findings,
     },
     durationMs: 12_300,
   });
 
-  test('a person sees each step start and finish with its duration, then the URLs and the total', async () => {
+  test('a person sees each step start and finish with its duration, then the URLs, the total and the platform variables with no value again', async () => {
     const { cli } = composerCli({ fixtures: { deploy, deployEvents } });
     const result = await cli.run(
       ['deploy', '--entry', 'src/service.ts', '--environment', 'pr-7'],
@@ -660,6 +692,12 @@ describe('step events', () => {
 
     expect(result.exitCode).toBe(0);
     const lines = plain(result.stderr).split('\n');
+    const unsetBlock = [
+      'Platform variables with no value:',
+      '  - EMAIL_API_KEY  (read by service "shop.email", field "apiKey")',
+      "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --role preview",
+      "    prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_1' --branch 'pr-7'",
+    ];
     const expected = [
       '▸ assemble services',
       '▸ assemble console',
@@ -667,18 +705,22 @@ describe('step events', () => {
       '✔ assemble services (3m 42s)',
       '▸ check environment variables',
       '✔ check environment variables (38.2s)',
+      ...unsetBlock,
       '▸ record result',
       '✘ record result (850ms)',
       'console: https://console.ewr.prisma.build',
+      ...unsetBlock,
     ];
     expect(lines.filter((line) => expected.includes(line))).toEqual(expected);
-    expect(plain(result.stderr)).toContain('Deployed shop to pr-7 in 12.3s.');
+    expect(
+      lines.findIndex((line) => line.includes('Deployed shop to pr-7 in 12.3s.')),
+    ).toBeLessThan(lines.lastIndexOf('Platform variables with no value:'));
   });
 
   test("each resource Alchemy applies is a step under apply, and Alchemy's log lines are messages", async () => {
     const step = {
       name: 'apply-resource',
-      fqn: 'shop.api',
+      resourceId: 'shop.api',
       resourceType: 'Prisma.Deployment',
     } as const;
     const { cli } = composerCli({
@@ -718,6 +760,48 @@ describe('step events', () => {
     });
   });
 
+  test('the closing list of platform variables comes from the summary, not from the preflight event', async () => {
+    const fromSummary: PreflightFindings = {
+      unset: [
+        {
+          name: 'MAIL_FROM',
+          readers: [{ kind: 'unread', node: 'shop.mail' }],
+          commands: ["prisma project env add 'MAIL_FROM=<value>' --project 'proj_1'"],
+        },
+      ],
+    };
+    const { cli } = composerCli({
+      fixtures: {
+        deploy: ok({ summary: { app: 'shop', nodes: [], findings: fromSummary }, durationMs: 0 }),
+        deployEvents: [{ kind: 'preflight-findings', findings }],
+      },
+    });
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
+
+    const lines = plain(result.stderr).split('\n');
+    const deployed = lines.findIndex((line) => line.includes('Deployed shop'));
+    const before = lines.slice(0, deployed).join('\n');
+    const after = lines.slice(deployed).join('\n');
+    expect(deployed).toBeGreaterThan(-1);
+    expect(before).toContain('EMAIL_API_KEY');
+    expect(before).not.toContain('MAIL_FROM');
+    expect(after).toContain('  - MAIL_FROM  (named by resource "shop.mail", read by no service)');
+    expect(after).not.toContain('EMAIL_API_KEY');
+  });
+
+  test('nothing prints for findings that list no variable', async () => {
+    const { cli } = composerCli({
+      fixtures: {
+        deploy: ok({ summary: { app: 'shop', nodes: [], findings: { unset: [] } }, durationMs: 0 }),
+        deployEvents: [{ kind: 'preflight-findings', findings: { unset: [] } }],
+      },
+    });
+    const result = await cli.run(['deploy', '--entry', 'src/service.ts'], AS_TTY);
+
+    expect(result.exitCode).toBe(0);
+    expect(plain(result.stderr)).not.toContain('Platform variables');
+  });
+
   test("a finished step's durationMs is the measured one, even when the adapter reported its own", async () => {
     const { cli } = composerCli({
       fixtures: {
@@ -751,6 +835,7 @@ describe('step events', () => {
       'step-finished',
       'step-started',
       'step-finished',
+      'message',
       'step-started',
       'step-finished',
       'endpoint',
@@ -770,16 +855,20 @@ describe('step events', () => {
     });
     expect(result.json[5]).toMatchObject({
       id: 'deploy.preflight',
-      data: { durationMs: 38_170, checked: 53, filled: 0, missing: 0 },
+      data: { durationMs: 38_170, checked: 53, unset: 1 },
     });
-    expect(result.json[8]).toMatchObject({
+    expect(result.json[6]).toMatchObject({
+      kind: 'message',
+      data: { unset: [{ name: 'EMAIL_API_KEY', readers: [{ service: 'shop.email' }] }] },
+    });
+    expect(result.json[9]).toMatchObject({
       kind: 'endpoint',
       name: 'console',
       url: 'https://console.ewr.prisma.build',
     });
-    expect(result.json[9]).toMatchObject({
+    expect(result.json[10]).toMatchObject({
       kind: 'result',
-      envelope: { ok: true, result: { summary: { app: 'shop' }, durationMs: 12_300 } },
+      envelope: { ok: true, result: { summary: { app: 'shop', findings }, durationMs: 12_300 } },
     });
   });
 });

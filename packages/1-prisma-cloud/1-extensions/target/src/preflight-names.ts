@@ -1,102 +1,51 @@
-/**
- * The platform env-var NAMES deploy preflight and dev preflight must both
- * check — extracted so the two walks (`runPreflight`, `runDevPreflight`)
- * cannot drift (local-dev spec § 5). Deploy checks secrets and env-sourced
- * params identically (one platform-existence check per name); dev applies a
- * DIFFERENT policy to each (a missing secret is an error only when the
- * service's schema rejects its absence, a missing env-sourced param always
- * is), so the two lists stay separate here rather than merged into one.
- *
- * Secrets are the `envSecret` leaves of every service's input binding
- * (ADR-0042); env-sourced params are the `envParam`-bound reserved params.
- * Secrets also include every secret source the graph names elsewhere
- * (secretSourceManifest): one in a module's input that no service receives.
- */
+import type { Graph } from '@internal/core';
+import { isParamSource, isSecretSource } from '@internal/core';
+import { isGeneratedParamSource, isOriginParamSource } from './param.ts';
+import { bindingPlace, platformVariableName, platformVariableNodes } from './platform-variable.ts';
 
-import type { Graph, SecretSourceUse } from '@internal/core';
-import { inputManifest, isSecretSource, paramManifest, secretSourceManifest } from '@internal/core';
-import {
-  isEnvParamSource,
-  isGeneratedParamSource,
-  isOriginParamSource,
-  paramName,
-} from './param.ts';
-import { secretName } from './secret.ts';
+const composerWritesItsValue = (binding: unknown): boolean =>
+  isGeneratedParamSource(binding) || isOriginParamSource(binding);
 
-export interface PreflightName {
+export interface VariableName {
   readonly name: string;
-  /** The node that uses the name: a service whose binding holds it, or, when no service receives it, the module whose input holds it. */
-  readonly address: string;
-  readonly nodeKind: SecretSourceUse['nodeKind'];
+  readonly secret: boolean;
 }
 
-/** An env-sourced param's app configuration value that preflight cannot write to a platform variable. */
-export const envParamNotTextError = (name: string, address: string, kind: string): Error =>
-  new Error(
-    `The \`config\` adapters return ${kind} for "${name}", not text, so preflight cannot set the platform variable envParam('${name}') of service "${address}" reads. Make the adapter return a string.`,
-  );
-
-export interface PreflightNames {
-  /** Every secret source in a service's input binding or in `graph.secretSources`, deduped by name; the first entry wins the reported address. */
-  readonly secrets: readonly PreflightName[];
-  /** Every env-sourced param binding's platform var name (envParam-bound only — a literal-bound param never touches the platform), deduped the same way. */
-  readonly envParams: readonly PreflightName[];
-}
-
-function dedupedNames(entries: Iterable<PreflightName>): readonly PreflightName[] {
-  const byName = new Map<string, PreflightName>();
-  for (const entry of entries) {
-    if (!byName.has(entry.name)) byName.set(entry.name, entry);
-  }
-  return [...byName.values()];
-}
-
-/** Every `envSecret` leaf of one input binding: its platform name, found by the same dumb recursive descent the serializer uses (ADR-0042). */
-function collectSecretLeafNames(binding: unknown, serviceAddress: string, out: string[]): void {
-  // A generated leaf provisions its own platform var at deploy — nothing for an
-  // operator to seed, nothing to check here. Skip it before the object descent
-  // (it is a ParamSource object, so an unskipped walk would recurse pointlessly
-  // into its payload).
-  if (isGeneratedParamSource(binding) || isOriginParamSource(binding)) return;
-  if (isSecretSource(binding)) {
-    out.push(secretName(binding, `an input-binding secret leaf of service "${serviceAddress}"`));
+function collectVariableNames(
+  binding: unknown,
+  serviceAddress: string,
+  path: string,
+  out: Map<string, VariableName>,
+): void {
+  if (composerWritesItsValue(binding)) return;
+  if (isSecretSource(binding) || isParamSource(binding)) {
+    const name = platformVariableName(binding, bindingPlace(path, serviceAddress));
+    out.set(name, { name, secret: isSecretSource(binding) });
     return;
   }
   if (typeof binding !== 'object' || binding === null) return;
-  const members = Array.isArray(binding) ? binding : Object.values(binding);
-  for (const member of members) collectSecretLeafNames(member, serviceAddress, out);
+  for (const [key, member] of Object.entries(binding)) {
+    collectVariableNames(member, serviceAddress, path === '' ? key : `${path}.${key}`, out);
+  }
 }
 
-/** The distinct `envSecret` names one service's input binding points at. */
-export function inputSecretNames(binding: unknown, serviceAddress: string): readonly string[] {
-  const leafNames: string[] = [];
-  collectSecretLeafNames(binding, serviceAddress, leafNames);
-  return [...new Set(leafNames)];
+export function inputVariableNames(
+  binding: unknown,
+  serviceAddress: string,
+): readonly VariableName[] {
+  const names = new Map<string, VariableName>();
+  collectVariableNames(binding, serviceAddress, '', names);
+  return [...names.values()];
 }
 
-/** Walks each service's input binding for `envSecret` leaves, then `graph.secretSources`, and `graph.params` for env-sourced params (ADR-0042). */
-export function collectPreflightNames(graph: Graph): PreflightNames {
-  const secretEntries: PreflightName[] = [];
-  for (const { serviceAddress, binding } of inputManifest(graph)) {
-    for (const name of inputSecretNames(binding, serviceAddress)) {
-      secretEntries.push({ name, address: serviceAddress, nodeKind: 'service' });
-    }
-  }
-  for (const use of secretSourceManifest(graph)) {
-    secretEntries.push({
-      name: secretName(use.source, `a secret source of ${use.nodeKind} "${use.address}"`),
-      address: use.address,
-      nodeKind: use.nodeKind,
-    });
-  }
-  const envParams = dedupedNames(
-    paramManifest(graph)
-      .filter((binding) => isEnvParamSource(binding.binding))
-      .map((binding) => ({
-        name: paramName(binding),
-        address: binding.serviceAddress,
-        nodeKind: 'service' as const,
-      })),
-  );
-  return { secrets: dedupedNames(secretEntries), envParams };
+export interface UnreadVariable {
+  readonly name: string;
+  readonly node: string;
+}
+
+export function unreadVariables(graph: Graph): readonly UnreadVariable[] {
+  const read = new Set(graph.valueReads.map((entry) => entry.resource));
+  return platformVariableNodes(graph)
+    .filter((node) => !read.has(node.address))
+    .map((node) => ({ name: node.name, node: node.address }));
 }

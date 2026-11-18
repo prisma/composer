@@ -50,7 +50,7 @@ You'll need:
 - [Bun](https://bun.sh) — Prisma Compute runs Bun, so that's what the server
   code targets (`Bun.serve`), and it's the fastest way to run things locally.
 - pnpm (or npm).
-- For the deploy at the end: a Prisma Cloud workspace and a service token for it.
+- For the deploy at the end: a Prisma Cloud workspace you can sign in to with `prisma auth login`.
   (Naming, once: **Prisma Cloud** is the platform; **Prisma Compute** runs
   your services on it, and **Prisma Postgres** hosts the databases.)
 
@@ -305,13 +305,17 @@ build-and-restart loop by running a dev server instead: add
 that command, with its output in your terminal
 ([Dev servers](running-locally.md#dev-servers)).
 
-Under the hood the local providers write the same `COMPOSER_*` environment
-variables a deploy writes, each keyed by the service's address, which starts
-with the app name (`my-app.quotes`, with `-` turned into `_`) —
-`COMPOSER_MY_APP_QUOTES_PORT` for the `quotes` service's own `port`,
-`COMPOSER_MY_APP_QUOTES_INPUT` for its input document,
-`COMPOSER_MY_APP_GATEWAY_QUOTES_URL` for the gateway's `quotes` dependency's URL — so `service.load()`, `service.input()`, and
-`service.port()` read exactly what they'll read in production. You never set
+Under the hood the local providers write the same `COMPOSER_*` values a deploy
+writes, each keyed by the service's address, which starts with the app name
+(`my-app.quotes`, with `-` turned into `_`). Most are environment variables:
+`COMPOSER_MY_APP_QUOTES_PORT` for the `quotes` service's own `port`, and
+`COMPOSER_MY_APP_GATEWAY_QUOTES_URL` for the gateway's `quotes` dependency's
+URL. The input document travels inside the service's artifact instead, in its
+`compute.bootstrap.json`. A service that runs a dev server has no artifact, so
+`dev` writes its input document as the variable `COMPOSER_MY_APP_QUOTES_INPUT`.
+So `service.load()`,
+`service.input()`, and `service.port()` read exactly what they'll read in
+production. You never set
 them by hand locally; `dev` *is* the deploy. Full workflow (logs, `--fresh`,
 what persists) in
 [Running locally](running-locally.md).
@@ -421,13 +425,16 @@ your built server file, then make three changes to the server itself:
 
 1. Read the port from `service.port()` (never `process.env`), and bind
    `0.0.0.0`.
-2. Replace every other `process.env` read with what it really is: a field of
-   the service's input schema for config and credentials, or a dependency
-   for anything another service provides. If a value differs per environment — an
-   app origin, an external URL — bind it with `envParam`; a credential, with
-   `envSecret`. [Building an app § Service
-   input](building-an-app.md#service-input) has the how-to-choose table and
-   both shapes.
+2. Replace every other `process.env` read with what it really is: a field of the service's input schema for config and credentials, or a dependency for anything another service provides. If a value differs per environment and the deploy reads it — an external URL, a sender address — declare it as a field of your root's `input`. If the service reads it at boot, such as a credential, declare a platform variable in your root and pass its value in:
+
+   ```ts
+   export default appRoot('shop', ({ provision }) => {
+     const apiKey = provision(variable.secret({ name: 'STRIPE_SECRET_KEY' }));
+     provision(web, { input: { apiKey } });
+   });
+   ```
+
+   `variable` comes from `@prisma/composer-prisma-cloud`; `variable({ name })` declares a plain value, `variable.secret({ name })` a secret. You set its value on the platform with `prisma project env add`. [Building an app § Two ways to get a value](building-an-app.md#two-ways-to-get-a-value) has the how-to-choose table and both shapes.
 3. If it talks to Postgres: declare `deps: { db: rawPostgres() }` and build your
    existing client (`pg`, Bun's `SQL`, whatever you use today) from the
    injected `db.url` instead of a connection-string env var.

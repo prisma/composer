@@ -685,7 +685,7 @@ describe('provision() with an inferred id (the id-less overloads)', () => {
     });
   });
 
-  test('two same-named nodes provisioned by inference raise the existing Duplicate provision id error', () => {
+  test('two same-named nodes provisioned by inference fail with the duplicate-id error naming the node already at the id', () => {
     const root = module('shop', {}, ({ provision }) => {
       provision(producer());
       provision(producer());
@@ -693,7 +693,9 @@ describe('provision() with an inferred id (the id-less overloads)', () => {
     });
 
     expect(() => Load(root)).toThrow(LoadError);
-    expect(() => Load(root)).toThrow('Duplicate provision id "worker" in module "shop".');
+    expect(() => Load(root)).toThrow(
+      'Duplicate provision id "worker" in module "shop": "shop.worker" already holds service "worker", and service "worker" takes the same id. Give one of them a different id with provision(node, { id: \'…\' }).',
+    );
   });
 
   test('provision(resource) infers the id from the resource name', () => {

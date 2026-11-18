@@ -12,11 +12,7 @@ Alchemy research write-up lives in `../04-inspirations/Alchemy/glossary.md`.
 
 ## Core nouns
 
-Every element the framework provisions carries a **managed lifecycle** — it can be
-recreated in a fresh environment and stood up in the local emulator. Two kinds
-carry that lifecycle: **Services** (your code) and **Resources** (managed
-dependencies); **Modules** group them into bounded contexts. Anything without a
-lifecycle — an API key, an external URL — is part of a node's **[Input](#input)**, not a node.
+A node either has a **managed lifecycle**, or names a value the platform holds and the operator sets. A node with a managed lifecycle can be recreated in a fresh environment and stood up in the local emulator. **Services** (your code) carry that lifecycle, and so do **Resources** (managed dependencies), except a [value resource](#value-resource); **Modules** group them into bounded contexts. A value resource, such as a [platform variable node](#platform-variable-node), is the second kind: Composer lists the value it names and checks that it has one, and never creates it. Anything else without a lifecycle, such as an external URL, is part of a node's **[Input](#input)**, not a node.
 
 ### Module
 
@@ -40,13 +36,13 @@ distinct type, with composition behaviours a Service doesn't have.
   transparent: the framework sees its dependencies and exposed interfaces *and* the internal topology it owns. The
   Module decides how the Services, Resources, and Modules it wraps connect; its
   knowledge ends at its boundary.
-- **The App is the outermost Module.** The whole application is itself a Module — the outermost one, and what you deploy — owning the top-level topology: the Module-to-Module wiring and any shared Resources. A shared database, for instance, is owned by the outermost Module, which wires it to each consumer's data dependency (and owns its migration — see Aggregate Contract). It is written with `appRoot()`, which builds an [app root](#app-root): a module node in every other respect, but one that nothing can provision, so it is never nested. A root written with `module()` is still accepted.
+- **The App is the outermost Module.** The whole application is itself a Module — the outermost one, and what you deploy — owning the top-level topology: the Module-to-Module wiring and any shared Resources. A shared database, for instance, is owned by the outermost Module, which wires it to each consumer's data dependency (and owns its migration — see Aggregate Contract). It is written with `appRoot()`, which builds an [app root](#app-root): a module node in every other respect, but one that nothing can provision, so it is never nested, and the only module that can provision a [value resource](#value-resource), such as a platform variable node. A root written with `module()` is still accepted, but it cannot provision a value resource.
 
 ### App root
 
 The **root** is a position: the outermost module, the one the entry default-exports and nothing provisions. The **root module** and the **root node** are other names for that position. A node built with `module()` can hold it: an entry that default-exports one is still accepted as the root.
 
-The **app root** is a type: `AppRootNode`, built with `appRoot()`. It is the only node this repository's guidance puts in the root position. It takes what `module()` takes minus `deps` and `expose`, because nothing provisions it, so nothing can wire into it or consume from it. Its body receives `input`, `environment` and `provision`. `provision()` refuses an app root, at compile time and at Load, so it is never nested. In code: `appRoot()`, `AppRootNode`, `AppRootContext`, and `isRoot()` on every module node, which answers `true` only for an app root, even when a `module()` node holds the root position.
+The **app root** is a type: `AppRootNode`, built with `appRoot()`. It is the only node this repository's guidance puts in the root position. It takes what `module()` takes minus `deps` and `expose`, because nothing provisions it, so nothing can wire into it or consume from it. Its body receives `input`, `environment` and `provision`. Its `provision()` is the only one that accepts a [value resource](#value-resource): in a `module()` body, provisioning one fails to compile with an error that names `appRoot()`. `provision()` refuses an app root, at compile time and at Load, so it is never nested. In code: `appRoot()`, `AppRootNode`, `AppRootContext`, and `isRoot()` on every module node, which answers `true` only for an app root, even when a `module()` node holds the root position.
 
 ### Service
 
@@ -59,12 +55,7 @@ another target's equivalent (Alchemy calls it a Platform).
 
 ### Resource
 
-A **node whose lifecycle a provider manages**: the framework can create, update and
-delete it. Most Resources hold **state**, such as a database, a bucket or a cache.
-Surfaced as a typed **capability** (via an Alchemy Layer): the Resource exposes it as
-an interface, a Module depends on one, and the wire is valid iff the exposed interface
-satisfies the dependency. A Resource may expose nothing: a public URL offers a hostname
-to the internet, which is outside the graph, so no node can depend on it.
+A **node that is not the app's own code**: either something a provider manages for the app, which the framework can create, update and delete, or a [value resource](#value-resource), which names a value the platform holds and which the framework lists and never creates, such as a platform variable node. Most managed Resources hold **state**, such as a database, a bucket or a cache. Surfaced as a typed **capability** (via an Alchemy Layer): the Resource exposes it as an interface, a Module depends on one, and the wire is valid iff the exposed interface satisfies the dependency. A Resource may expose nothing: a public URL offers a hostname to the internet, which is outside the graph, so no node can depend on it.
 
 The lifecycle can be implemented by cloud APIs *or* third-party/partner APIs, so a
 provisioned third-party account is a Resource too — a Stripe product, a Tigris
@@ -115,17 +106,7 @@ code never reads the environment (no-globals). Each key of a binding takes:
   the provisioning module's own input;
 - a **source**: target-provided logic that turns what the author supplies
   into data. A source is a value too. Prisma Cloud's:
-  - **`envParam(NAME)`** — the author supplies an environment-variable name.
-    Where the value goes depends on where it is bound. In a service's input,
-    the deploy reads `NAME` from the [app configuration](#the-app-configuration) and writes
-    the value into the service's input document, so every deploy reads it
-    again. In a service's per-key params, the deploy writes a pointer row to
-    a platform variable, and the service reads that variable at boot. Either
-    way it varies by environment, not by deployment logic.
-  - **`envSecret(NAME)`** — the author supplies a name; the target reads the
-    platform's secret store. The value **never enters deploy state**, and it
-    is **redacted**. **This is the only thing the framework calls a
-    secret.**
+  - **a [platform variable node](#platform-variable-node)'s value** — the app root provisions `variable({ name })` or `variable.secret({ name })` and passes the value down. The service reads the variable at boot. Its value **never enters deploy state**. A [platform secret](#platform-secret)'s value is also **redacted**.
   - **`generatedParam(...)`** — the author supplies generation parameters;
     the **target generates the value at deploy** and **persists it in deploy
     state**, stable across redeploys. A generated value can act as
@@ -135,33 +116,18 @@ code never reads the environment (no-globals). Each key of a binding takes:
     the environment being deployed, which exists only once the deploy has
     created that service.
 
-A binding is typed from the schema's input type, for a Service as for a Module. In a binding, a field typed `secretString()` takes only a secret: the secret pointer of `envSecret()` or a redacted `generatedParam()`, or a module's own secret field passed on. A secret box written in a binding fails to compile, because a secret's value never sits in the code, and no pointer is ever written as a literal. A [wrapped field](#field) also takes a plain runtime value, from `serviceOrigin()` or a plain `generatedParam()`. A plain field takes neither, and a binding that gives it one fails to compile. Where the compiler sees no type, such as a schema without type information or a cast, the deploy checks each value known only at boot as its pointer, so a plain field bound to one fails the deploy.
+A value the operator supplies and the deploy reads is a [root input field](#root-input-field), which the root passes down like any other value.
 
-The older form of input is a service's per-key `params`, each bound to a
-literal or a source
-([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)).
+A binding is typed from the schema's input type, for a Service as for a Module. In a binding, a field typed `secretString()` takes only a secret: a platform secret's value or a redacted `generatedParam()`, or a module's own secret field passed on. A secret box written in a binding fails to compile, because a secret's value never sits in the code, and no pointer is ever written as a literal. A [wrapped field](#field) also takes a plain runtime value: a plain platform variable's value, `serviceOrigin()` or a plain `generatedParam()`. A plain field takes neither, and a binding that gives it one fails to compile. Where the compiler sees no type, such as a schema without type information or a cast, the deploy checks each value known only at boot as its pointer, so a plain field bound to one fails the deploy.
+
+A service also has per-key `params`, each bound to a literal or a deploy-time value, never a source. A compute service declares one, the reserved `port` ([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-to-a-literal-or-a-deploy-time-value.md)).
 
 Two properties fall out of the source, and neither is its own category:
 
-- **Persistence follows the source.** Environment sources re-resolve per
-  environment. `envSecret` never enters deploy state; `envParam` is read again
-  on every deploy into a service's input document, or at boot through a
-  param's pointer row.
-  Generated and literal values live in the deployment. Persistence is a
-  *consequence* of where the value comes from, not a flag.
-- **Redaction is an orthogonal facet** — whether a value is printed in the
-  deploy report and logs, or masked. `envSecret` is always redacted; a
-  generated param may be redacted (a signing key) or plain (a generated id).
-  Redaction is about *display*; it does not make a value a secret. A value is a
-  secret only when it is *externally sourced and never in state* — `envSecret`.
+- **Persistence follows the source.** A platform variable's value never enters deploy state: the service reads it at boot, from its input document's marker. A root input field is read again on every deploy. Generated and literal values live in the deployment. Persistence is a *consequence* of where the value comes from, not a flag.
+- **Redaction is an orthogonal facet** — whether a value is printed in the deploy report and logs, or masked. A platform secret is always redacted; a generated param may be redacted (a signing key) or plain (a generated id). Redaction is about *display*; it does not make a value a secret. A value is a secret when it is held outside Composer and the deploy never holds it: today that is a [platform secret](#platform-secret), which is *externally sourced and never in state*.
 
-**The framework never produces a secret.** It resolves environment sources
-(carrying only the name), and it generates config params (which it may store).
-The only secret in the system is one the author wired from the environment with
-`envSecret`. Much of what the framework writes is neither — it is
-**graph-materialized** config (a connection or resource address computed from
-the topology); a wire's change is a graph event, detected by provenance, never
-by inspecting the value.
+**The framework never produces a secret.** It names platform variables (carrying only the name), and it generates config params (which it may store). The secrets in the system are the platform secrets the app root declares. Much of what the framework writes is neither — it is **graph-materialized** config (a connection or resource address computed from the topology); a wire's change is a graph event, detected by provenance, never by inspecting the value.
 
 To pull an unmanaged external dependency *into* the topology as a reproducible node,
 provision it (making it a Resource) or wrap it in a Service that exposes your domain
@@ -182,44 +148,19 @@ whatever inputs Composer is given
 The data a value stands for is its **real value**.
 
 - **Provided or computed.** A provided value is handed to the module body: `environment.name` is one, a deploy-time fact of the environment, and each field of a module's `input` is another, whose real value is read from the module's input after its schema has validated it. The `input` itself is a dictionary of these values, not a value, so no binding accepts it. A root's input is the [app configuration](#the-app-configuration). A computed value is what `resolve(dependencies, fn)` returns; Load runs `fn` with its dependencies' real values after every module body has run, with `provision` disabled. `resolve()` declares a computed value; Load resolves every value.
-- **Deploy-time or runtime.** A deploy-time value has its real value by the
-  end of Load: `environment.name`, a `resolve()` result, `envParam()`, whose
-  real value is the variable's value at deploy, and a module input field
-  bound to one of these. `envSecret()`, `generatedParam()` and
-  `serviceOrigin()` give [runtime values](#runtimevalue): the platform holds
-  the data, or the deploy creates it later, so Load holds a pointer in its
-  place. A `resolve()` lists deploy-time values only: listing a runtime
-  value fails to compile, and Load refuses a dependency whose real value is
-  a pointer or holds one.
-- **Sources are values.** `envParam()`, `envSecret()`, `generatedParam()` and
-  `serviceOrigin()` each return one object that is a value and the deploy
-  target's source. Where a service's binding takes a source, the target
-  receives that object.
+- **Deploy-time or runtime.** A deploy-time value has its real value by the end of Load: `environment.name`, a `resolve()` result, a [root input field](#root-input-field), and a module input field bound to one of these. A platform variable node's value, `generatedParam()` and `serviceOrigin()` give [runtime values](#runtimevalue): the platform holds the data, or the deploy creates it later, so Load holds a pointer in its place. A `resolve()` lists deploy-time values only: listing a runtime value fails to compile, and Load refuses a dependency whose real value is a pointer or holds one.
+- **Sources are values.** `generatedParam()`, `serviceOrigin()` and the `provision()` of a platform variable node each return one object that is a value and the deploy target's source. Where a service's binding takes a source, the target receives that object.
 
-In code the type is `Value<T>`, and `RealValuesOf<D>` is the tuple of
-real-value types `fn` receives for a dependency tuple `D`. A source's type is
-the source and a value at once, such as `SecretSource & RuntimeValue<SecretString>`
-for `envSecret()`.
-A value is not a node: it has no lifecycle and no address. Elsewhere
-in this glossary "value" in lower case keeps its ordinary meaning, plain data
-such as a param's value.
+In code the type is `Value<T>`, and `RealValuesOf<D>` is the tuple of real-value types `fn` receives for a dependency tuple `D`. A source's type is the source and a value at once, such as `SecretSource & RuntimeValue<SecretString>` for a platform secret's value. A value is not a node: it has no lifecycle and no address. Elsewhere in this glossary "value" in lower case keeps its ordinary meaning, plain data such as a param's value.
 
 ### RuntimeValue
 
-A [value](#value) whose data exists only on the platform the app is
-deployed to: the service reads it at boot. `envSecret()`, `generatedParam()`
-and `serviceOrigin()` give one. In code a runtime value is
-`RuntimeValue<T>`, which is `Value<Pointer<T>>`.
+A [value](#value) whose data exists only on the platform the app is deployed to: the service reads it at boot. A platform variable node's value, `generatedParam()` and `serviceOrigin()` give one. In code a runtime value is `RuntimeValue<T>`, which is `Value<Pointer<T>>`.
 
-At deploy its real value is a **pointer**: an object that names the
-platform variable holding the data. The deploy writes the pointer into the
-service's input document, and the service reads the variable at boot. A
-pointer has one of two kinds, which it records in its data:
+At deploy its real value is a **pointer**: an object that names the [variable on the platform](#a-variable-on-the-platform) holding the data. For a platform variable node's value that is the platform variable; for `generatedParam()` and `serviceOrigin()` it is one of Composer's own `COMPOSER_` rows. The deploy writes the pointer into the service's input document, and the service reads the variable at boot. A pointer has one of two kinds, which it records in its data:
 
-- a **secret pointer**, typed `Pointer<SecretString>`, from `envSecret()`
-  and a redacted `generatedParam()`;
-- a **plain pointer**, typed `Pointer<string>`, from `serviceOrigin()` and
-  a plain `generatedParam()`.
+- a **secret pointer**, typed `Pointer<SecretString>`, from a platform secret's value and a redacted `generatedParam()`;
+- a **plain pointer**, typed `Pointer<string>`, from a plain platform variable's value, `serviceOrigin()` and a plain `generatedParam()`.
 
 A pointer is typed by the variable's text, so every plain pointer is a
 `Pointer<string>`. `isSecretPointer(x)` and `isPlainPointer(x)` from
@@ -246,33 +187,53 @@ schema whose leaves are wrapped. For another Standard Schema library,
 `@prisma/composer` exports `Pointer`, `isPlainPointer()` and
 `isSecretPointer()`, with which an author writes the same two helpers. A service reads a wrapped field as `Out`: `service.input()` returns the schema's output with every pointer removed, because at boot each pointer has been replaced by the text of the variable it names.
 
+### Platform variable
+
+A variable on the platform that a service reads by name at boot. The app declares each one with a [platform variable node](#platform-variable-node) in its root, so every message can name the node. The service reads it through a field of its `input`. "Plain platform variable" means the non-secret kind; the secret kind is a [platform secret](#platform-secret). A deploy does not copy its value from the developer's local environment and does not read it: the platform hands it to the running service. For now the operator sets it with `prisma project env add`. Under `prisma dev`, the local target plays the platform's part: it reads a plain platform variable's value from the app configuration and a platform secret's from the app secrets, and hands it to the local service. A variable has a class row (production or preview) and, on a preview environment, may have a branch row for one branch; the branch row wins ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)). Composer's own `COMPOSER_` rows are [variables on the platform](#a-variable-on-the-platform) but not platform variables, because the app does not declare them. In code: `PlatformVariableReader`, `UnsetPlatformVariable`, `PlatformVariableCheck`.
+
+### Platform variable node
+
+The node that declares a [platform variable](#platform-variable), built with `variable({ name })` or `variable.secret({ name })` from `@prisma/composer-prisma-cloud` and provisioned in the [app root](#app-root). `provision()` returns the variable's value, with `id` on it, and the root passes that value down through module inputs to the services that read it. The value goes into a field of a service's or a module's `input` only, never a per-key param. It is a [value resource](#value-resource) of type `platform-variable`: it creates nothing, writes no row, and is not sent to the application topology. Its default provision id is the variable's name in camel case (`EMAIL_FROM` gives `emailFrom`). The loaded graph lists every node and, in `valueReads`, each service that reads it and the path in its input binding ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)).
+
+### Platform secret
+
+A [platform variable](#platform-variable) whose value is handled as a secret: boxed in the service and redacted wherever Composer prints. Built with `variable.secret({ name })`. The term marks the variables whose text must never appear in output ([ADR-0029](../90-decisions/ADR-0029-a-secret-is-an-environment-sourced-value-the-framework-never-stores.md)).
+
+### A variable on the platform
+
+Any entry, or **row**, in a Prisma Cloud project's environment variables: a name and a non-empty text, at a class and optionally a branch. That includes Composer's own `COMPOSER_` rows, which are not [platform variables](#platform-variable). The term names the platform's storage, as distinct from what the app reads. Prisma Cloud calls these rows environment variables.
+
+### Value resource
+
+Core's name for a [Resource](#resource) node that is also a value: provisioning it returns a [value](#value), not a reference to an interface. Only the [app root](#app-root) can provision one. It provides no interface and has no dependencies. A platform variable node is the one value resource today. The term lets core state its rules without knowing about Prisma Cloud ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). In code: `valueResource()`, `isValueResource()`, `ValueResourceNode`, and `Graph.valueReads`, whose entries are `{ reader, resource, path }`.
+
+### Root input field
+
+A field of the app root's `input`. The `config` adapters fill it when the deploy or `prisma dev` runs. It is the one way for the operator to supply a value the deploy reads; a value the service reads at boot is a [platform variable](#platform-variable) instead ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). In code: `AppConfigurationRead.rootInput`.
+
 ### The app configuration
 
-The merged values the `config` adapters return for the environment, a later adapter winning by top-level key. "App" is what Composer calls the application, the outermost module, whose input it fills. It is the root module's input, checked by the root's schema, and what an `envParam('NAME')` reads `NAME` from, wherever it sits; the name a source reads is its **configuration key** (`paramSource()`'s `configurationKey`). With no `config` list it is the process environment, secrets included, so only the root fields its body passes on by name reach the graph. Only a command's first process reads it; the deploy's and `prisma dev`'s second process reads what the first process's Load read from the **app configuration file**. In code: `AppConfiguration`, `LoadOptions.configuration`.
-
-### Configuration key
-
-The name in the app configuration that a param source reads: `envParam('NAME')` reads `NAME`. See [the app configuration](#the-app-configuration). In code: `paramSource()`'s `configurationKey`, and `AppConfigurationRead.configurationKeyText`, the text the first process read under each one.
+The merged values the `config` adapters return for the environment, a later adapter winning by top-level key. "App" is what Composer calls the application, the outermost module, whose input it fills. It fills the root's input, checked by the root's schema: each [root input field](#root-input-field) comes from it. Under `prisma dev`, the target's dev preflight also reads each plain [platform variable](#platform-variable) a service reads from it, under the variable's name. No source reads it, and on a deploy nothing fills a platform variable from it: the operator sets a platform variable on the platform. With no `config` list it is the process environment, secrets included, so only the root fields its body passes on by name reach the graph. Only a command's first process reads it; the deploy's and `prisma dev`'s second process reads the **app configuration file** instead. In code: `AppConfiguration`, `LoadOptions.configuration`.
 
 ### The app secrets
 
-The merged values the `secrets` adapters return, text only. The name a secret source reads is its **secrets key** (`secretSource()`'s `secretsKey`; `envSecret('NAME')` passes `NAME`). Deploy preflight fills a missing `envSecret()` platform variable from it. `prisma dev` hands the local providers only the **named secrets**, the values under the secrets keys the graph's `envSecret()`s name, as a value in memory (in code: `NamedSecrets`). The app secrets hold values Composer may carry; only the values under the secrets keys the graph names become known secrets. `prisma dev` compares the whole app secrets between rebuilds to notice a change, which reads them without making them known secrets. Composer never passes the app secrets to Load or a schema, never writes their values to a file, and redacts the values under the secrets keys wherever it prints. With no `secrets` list it is the process environment. In code: `AppSecrets`.
+The merged values the `secrets` adapters return, text only. The name a secret source reads is its **secrets key** (`secretSource()`'s `secretsKey`; `variable.secret({ name: 'NAME' })` passes `NAME`). The deploy does not copy the app secrets to a [platform variable](#platform-variable): the operator sets a platform variable on the platform, and the deploy reads the app secrets only to know which values to redact and to refuse in a root input field. `prisma dev` hands its second process only the **named secrets**, the values under the secrets keys of the graph's [platform secrets](#platform-secret), in one environment variable, `PRISMA_COMPOSER_NAMED_SECRETS` (in code: `NamedSecrets`). The app secrets hold values Composer may carry; only the values under the secrets keys the graph names become known secrets. `prisma dev` compares the whole app secrets between rebuilds to notice a change, which reads them without making them known secrets. Composer never passes the app secrets to Load or a schema, never writes their values to a file, and redacts the values under the secrets keys wherever it prints. With no `secrets` list it is the process environment. In code: `AppSecrets`.
 
 ### Secrets key
 
-The name in the app secrets that a secret source reads: `envSecret('NAME')` reads `NAME`. See [the app secrets](#the-app-secrets). In code: `secretSource()`'s `secretsKey`, and `secretsKeys(graph)`, every secrets key a graph reads.
+The name in the app secrets that a secret source reads: `variable.secret({ name: 'NAME' })` reads `NAME`, which is also the name of the [platform secret](#platform-secret) the service reads at boot. Nothing writes the value under it to the platform. See [the app secrets](#the-app-secrets). In code: `secretSource()`'s `secretsKey`, and `secretsKeys(graph)`, every secrets key of the graph's secret sources, which includes every platform secret the root provisions, also one that no service reads.
 
 ### Named secrets
 
-The app secrets under the secrets keys the graph reads, each with text. Only `prisma dev` hands them on, to the local providers, as a value in memory. See [the app secrets](#the-app-secrets). In code: `NamedSecrets`.
+The app secrets under the secrets keys of the graph's [platform secrets](#platform-secret), each with text. Only `prisma dev` hands them to its second process, in one environment variable, and the local target gives each service the ones its own markers name. Nothing fills a [platform variable](#platform-variable) from them. See [the app secrets](#the-app-secrets). In code: `NamedSecrets`, `PRISMA_COMPOSER_NAMED_SECRETS`.
 
 ### Known secrets
 
-The values one command knows are secrets: the value under each secrets key the graph's `envSecret()`s name, in the app secrets or the app configuration. Nothing else is a known secret: a plain value in the same `.env` file, or the shell's `SHLVL=1` under `secrets: [dotenv(), environmentVariables()]`, is not. The CLI refuses to write the app configuration file when a value in it contains a known secret: one of eight characters or more anywhere in the value, a shorter one only as the whole value. The CLI redacts the known secrets wherever it prints, together with **credential-looking values**: text of eight characters or more under a variable name that looks like a credential's, which might not be secrets ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). In code: `KnownSecrets`, and `SecretRedaction`, which holds both kinds.
+The values one command knows are secrets: the value under each secrets key of the graph's [platform secrets](#platform-secret), in the app secrets or the app configuration. On a deploy Composer uses them to redact its output and to refuse a root input field that holds one; nothing fills a [platform variable](#platform-variable) from them. Nothing else is a known secret: a plain value in the same `.env` file, or the shell's `SHLVL=1` under `secrets: [dotenv(), environmentVariables()]`, is not. A deploy refuses a root input field, and the CLI refuses to write the app configuration file, when a value contains a known secret: one of eight characters or more anywhere in the value, a shorter one only as the whole value. The CLI redacts the known secrets wherever it prints, together with **credential-looking values**: text of eight characters or more under a variable name that looks like a credential's, which might not be secrets ([ADR-0062](../90-decisions/ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). In code: `KnownSecrets`, and `SecretRedaction`, which holds both kinds.
 
 ### The app configuration file
 
-The JSON file a command's first process writes for its second process. It holds what Load read from the app configuration (the root input fields the root's body passes on, and the text of each configuration key the graph reads) and the first process's node addresses. It never holds a secret: Load and the CLI refuse to write one into it. Destroy writes it to `.prisma-composer/app-configuration-<pid>-<uuid>.json` and deletes it when the run ends. Deploy and `prisma dev` write none: they run Alchemy in their first process and hand `lower()` what Load read as a value (ADR-0064). Only its owner can read it. The CLI also deletes it when its process exits. A file left by a process killed outright is deleted at the start of a later deploy, destroy or `prisma dev`, once it is ten minutes old. It is not `prisma.config.ts`, which is "the config file". In code: `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, `AppConfigurationRead`, `readAppConfigurationFile`.
+The JSON file a command's first process writes for its second process. It holds what Load read from the app configuration (the root input fields the root's body passes on), the first process's node addresses, and `plainVariableText`. Under `prisma dev`, `plainVariableText` holds the text of each plain [platform variable](#platform-variable) a service reads, by name; destroy writes it empty. It never holds a secret: Load and the CLI refuse to write one into it, and the CLI checks every plain value in it, each `plainVariableText` member included, against the known secrets. Destroy writes it to `.prisma-composer/app-configuration-<pid>-<uuid>.json` and deletes it when the run ends. Deploy writes none: it runs Alchemy in its first process and hands `lower()` what Load read as a value (ADR-0066). `prisma dev` writes it to `<dev environment dir>/app-configuration-<pid>.json` before each converge and deletes it as soon as that converge ends. Only its owner can read it. The CLI also deletes it when its process exits. A file left by a process killed outright is deleted at the start of a later deploy, destroy or `prisma dev`, once it is ten minutes old. It is not `prisma.config.ts`, which is "the config file". In code: `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`, `AppConfigurationRead`, `readAppConfigurationFile`.
 
 ### Config adapter
 
@@ -288,14 +249,11 @@ The graph of Modules and Resources wired together through their dependencies and
 The framework infers it from TypeScript and emits it as a static artifact for the
 platform to provision.
 
-Every node in the topology has a managed lifecycle — which is exactly what lets the
-whole graph be recreated in a fresh environment and reproduced in the local
-emulator (see the [goals](../00-purpose/goals.md)). Anything without a lifecycle is
-part of a node's [Input](#input), not a node.
+Every node in the topology either has a managed lifecycle or names a value the operator sets on the platform. The first kind is what lets the whole graph be recreated in a fresh environment and reproduced in the local emulator (see the [goals](../00-purpose/goals.md)). The second kind is a [value resource](#value-resource), such as a [platform variable node](#platform-variable-node): Composer cannot create its value, so a new environment needs it set first, and preflight lists it by name before anything is created. Anything else without a lifecycle is part of a node's [Input](#input), not a node.
 
 ### Address and logical ID
 
-A node's **address** is its identity: the path of provision IDs starting at the root, assigned by Load (`shop`, `shop.catalog`, `shop.auth.api`). The root's address is the deployed app name, so every address starts with it. A provision ID is the node's name (`publicUrl()` takes it as `id`) unless `provision()` sets an `id`, so a node's name is, by default, part of its identity. The app name starts with a letter or digit and contains only letters, digits, `-` and `_`; below the root, provision IDs contain only letters and digits. Every platform **name** Composer writes (an App's display name, a Connection's, Bucket's or access key's `name`) is the address too; it is a label, never identity. On the platform a Connection's name is the address followed by `-` and a 12-character token that upstream adds. On Prisma Cloud the address is the node's **logical ID** (`logicalId`): Composer writes it, byte for byte, on the node's topology entry and on the node's one platform row (Project, App, Database or Bucket). The same node on two branches has the same logical ID. A **display name** is a label only and never identity. An **Alchemy resource ID** names one of the resources a node lowers to: the address for the node's main resource (`shop.catalog`), and the address plus `.` and a role for its other pieces (`shop.catalog.connection`, `shop.web.deployment`). Alchemy's own docs call it a "logical ID"; it is a different field from the platform's `logicalId`. Composer's environment variable keys are `COMPOSER_` plus the address upper-cased, with `.` and `-` turned into `_` (`COMPOSER_SHOP_WEB_…`). Changing a node's address, including by changing its name, makes it a different entity; it is not a rename. See [ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md).
+A node's **address** is its identity: the path of provision IDs starting at the root, assigned by Load (`shop`, `shop.catalog`, `shop.auth.api`). The root's address is the deployed app name, so every address starts with it. A provision ID is the node's name (`publicUrl()` takes it as `id`) unless `provision()` sets an `id`, so a node's name is, by default, part of its identity. The app name starts with a letter or digit and contains only letters, digits, `-` and `_`; below the root, provision IDs contain only letters and digits. Every platform **name** Composer writes (an App's display name, a Connection's, Bucket's or access key's `name`) is the address too; it is a label, never identity. On the platform a Connection's name is the address followed by `-` and a 12-character token that upstream adds. On Prisma Cloud the address is the node's **logical ID** (`logicalId`): Composer writes it, byte for byte, on the node's topology entry and on the node's one platform row (Project, App, Database or Bucket). The same node on two branches has the same logical ID. A **display name** is a label only and never identity. An **Alchemy resource ID** names one of the resources a node lowers to: the address for the node's main resource (`shop.catalog`), and the address plus `.` and a role for its other pieces (`shop.catalog.connection`, `shop.web.deployment`). Alchemy's own docs call it a "logical ID"; it is a different field from the platform's `logicalId`. Composer's environment variable keys are `COMPOSER_` plus the address upper-cased, with `.` and `-` turned into `_` (`COMPOSER_SHOP_WEB_…`). Changing a node's address, including by changing its name, makes it a different entity; it is not a rename. A node that names something Composer does not own, such as a [platform variable node](#platform-variable-node), records no platform row and no topology node, and the thing it names keeps its owner's handle, such as the variable's name. See [ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md).
 
 ## Connections
 
@@ -404,11 +362,7 @@ to a plan.
 
 ### Converge
 
-Making an environment match the lowered stack: Alchemy plans what to create, update, replace and delete, then applies it. `prisma deploy` and `prisma dev` converge in their own process through Alchemy's programmatic API; `destroy` converges in an Alchemy child process. The *app converge* is the app install's `lower` and in-process converge, with the local target's providers and state store for dev, which `deploy` and `dev` load from `@prisma/composer/internal/converge` ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)). Codes: `DEV.CONVERGE_FAILED`, `DEV.INTERRUPTED`, `DEV.CONVERGE_RUNNING`, `DEV.WORKER_THREAD`, `DEPLOY.CONVERGE_RUNNING`, `DEPS.CONVERGE_UNRESOLVABLE`, `DEPS.CONVERGE_CONTRACT_MISMATCH`.
-
-### App definition files
-
-The files that define an app for `prisma dev`: every module outside `node_modules` that importing the entry module loaded, static and dynamic imports alike, plus each service's authoring module. Dev imports them once per process, so an edit to one cannot reach a rebuild; dev reports it (`definition-changed`) and pauses rebuilds until it is restarted ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)).
+Making an environment match the lowered stack: Alchemy plans what to create, update, replace and delete, then applies it. Converging is plan and apply only; lowering comes before it. `prisma deploy` converges in its own process through Alchemy's programmatic API; `prisma dev` and `destroy` converge in an Alchemy child process. The *app converge entry* is the app install's `lower` and its in-process converge, which `deploy` loads from `@prisma/composer/internal/converge` (in code: `AppConvergeEntry`) ([ADR-0066](../90-decisions/ADR-0066-deploy-runs-alchemy-in-process.md)). Codes: `DEV.CONVERGE_FAILED`, `DEPLOY.CONVERGE_RUNNING`, `DEPS.CONVERGE_UNRESOLVABLE`, `DEPS.CONVERGE_CONTRACT_MISMATCH`.
 
 ### Control plane / Execution plane
 
@@ -458,7 +412,7 @@ inside them and never creates or destroys a container itself.
 
 ### Caller credentials
 
-What the caller of a deploy or destroy has already authenticated: a workspace and a platform API client (`CallerCredentials`). For `prisma deploy` they are the active credential's workspace and the engine's `ctx.api`. The framework hands them unchanged to every extension hook that talks to the platform: the container lifecycle, `preflight`, reporters, `providers` and the state store. When the caller has none, each extension uses its own credential protocol, for Prisma Cloud `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` ([ADR-0064](../90-decisions/ADR-0064-deploy-runs-alchemy-in-process.md)).
+What the caller of a deploy or destroy has already authenticated: a workspace and a platform API client (`CallerCredentials`). For `prisma deploy` they are the active credential's workspace and the engine's `ctx.api`. The framework hands them unchanged to every extension hook that talks to the platform: the container lifecycle, `preflight`, reporters, `providers` and the state store. When the caller has none, each extension uses its own credential protocol, for Prisma Cloud `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` ([ADR-0066](../90-decisions/ADR-0066-deploy-runs-alchemy-in-process.md)).
 
 ## Authoring surface — the next layer
 
@@ -515,20 +469,19 @@ conform (dependency inversion).
 
 ### provision
 
-The Module-scoped operator that turns a dependency descriptor into an **owned
-Resource** (`provision(rawPostgres())`) or instantiates and wires an owned node
-(`provision(svc, { db })`). Ownership and provisioning are a Module concern; a
-Service only *requires*. Forwarding is just passing a Module's dependencies down and
-returning owned nodes' exposed interfaces up.
+The Module-scoped operator that turns a dependency descriptor into an **owned Resource** (`provision(rawPostgres())`) or instantiates and wires an owned node (`provision(svc, { db })`). In an app root, provisioning a [value resource](#value-resource) returns its value with `id` on it (`provision(variable({ name: 'EMAIL_FROM' }))`). Ownership and provisioning are a Module concern; a Service only *requires*. Forwarding is just passing a Module's dependencies down and returning owned nodes' exposed interfaces up.
 
 ### run — the boot loop
 
 The boot method the platform runs, carried on the pack's runnable service node
-(`main.run(address)`, called by the deploy-printed bootstrap). **Core owns
+(`main.run(address, boot)`, called by the deploy-printed bootstrap; on Prisma
+Cloud the bootstrap also passes the service's input document from the
+artifact's `compute.bootstrap.json`). **Core owns
 structure, the pack owns encoding.** Core enumerates the config shape (semantic
 names + type tags — no platform keys in the graph) via `configOf`; the pack's
-`run` **deserializes** the platform environment into a typed `Config` by its own
-serializer (keyed from the address), the single sanctioned environment read; then
+`run` **deserializes** the platform environment, with the artifact's input
+document in place of any variable under its key, into a typed `Config` by its own serializer (keyed from the address), the single
+sanctioned environment read; then
 core's `hydrate` turns each dependency's typed values into a client — with the
 app-supplied driver factory — and calls the handler. Config validation is the
 pack reversing its own serialization (present, right type), failing loudly. A

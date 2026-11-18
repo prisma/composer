@@ -53,7 +53,7 @@ const shopWith = (child: ModuleNode, input: unknown): ModuleNode =>
 const bindingOf = (graph: Graph, index = 0): Record<string, unknown> =>
   graph.inputBindings[index]?.binding as unknown as Record<string, unknown>;
 
-const pointer = (name: string) => secretSource({ name }, { label: `envSecret('${name}')` });
+const pointer = (name: string) => secretSource({ name }, { label: `the secret "${name}"` });
 
 const origin = () => paramSource({}, { label: "serviceOrigin('shop.web')" });
 
@@ -77,13 +77,9 @@ describe('the kind of pointer a source is', () => {
     expect(kinds(pointer('K'))).toEqual([true, false]);
   });
 
-  test('paramSource() without a configuration key is a plain pointer, or a secret pointer when redacted', () => {
+  test('paramSource() is a plain pointer, or a secret pointer when redacted', () => {
     expect(kinds(paramSource({}))).toEqual([false, true]);
     expect(kinds(paramSource({}, { redacted: true }))).toEqual([true, false]);
-  });
-
-  test('paramSource() with a configuration key is no pointer', () => {
-    expect(kinds(paramSource({}, { configurationKey: 'X' }))).toEqual([false, false]);
   });
 
   test('the kind is data on the source, under the registered symbol prisma:pointer', () => {
@@ -274,7 +270,7 @@ describe("a module's schema sees pointers at Load", () => {
     const moving = relay(returning((value) => ({ base: value['key'] })));
 
     expect(loadError(() => Load(shopWith(moving, { base: 'x', key: pointer('K') }))).message).toBe(
-      'The input schema of module "shop.email" moved envSecret(\'K\') to input key "base". Its value is known only at boot, so a module\'s schema may check the field but never replace or move it.',
+      'The input schema of module "shop.email" moved the secret "K" to input key "base". Its value is known only at boot, so a module\'s schema may check the field but never replace or move it.',
     );
   });
 });
@@ -294,9 +290,9 @@ describe('resolve() takes deploy-time values only', () => {
     const ran: boolean[] = [];
 
     expect(loadError(() => Load(listing(pointer('K'), ran))).message).toBe(
-      `The resolve() function for input key "url" of service "shop.echo" lists envSecret('K'), ` +
+      `The resolve() function for input key "url" of service "shop.echo" lists the secret "K", ` +
         'which is known only at boot. A resolve() dependency must be a deploy-time value. Bind ' +
-        "envSecret('K') directly into the input of the service that reads it.",
+        'the secret "K" directly into the input of the service that reads it.',
     );
     expect(ran).toEqual([]);
   });
@@ -365,7 +361,7 @@ describe('resolve() takes deploy-time values only', () => {
     ).message;
 
     expect(message).toContain(
-      `lists input.smtp of module "shop.email", which holds envSecret('SMTP_PASSWORD') at input.smtp.password,`,
+      `lists input.smtp of module "shop.email", which holds the secret "SMTP_PASSWORD" at input.smtp.password,`,
     );
     expect(message).toContain(
       'A secret has no deploy-time value: pass input.smtp.password on into a binding, and read it in the service.',

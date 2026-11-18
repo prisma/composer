@@ -6,6 +6,7 @@
  * fails to load comes back as a structured failure, never a throw out of
  * the host.
  */
+import type { PreflightFindings } from '@internal/core/config';
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../composer-config.ts';
@@ -19,14 +20,17 @@ export type DeployStep =
   | { readonly name: 'assemble-service'; readonly address: string }
   | {
       readonly name: 'apply-resource';
-      /** The resource's id in the stack. */
-      readonly fqn: string;
+      /** The resource's ID (ADR-0057): its node's address, or the address and the resource's role in that node. */
+      readonly resourceId: string;
       readonly resourceType: string;
-      /** Alchemy's status word for what is happening to it, such as `creating` or `created`. */
+      /** Alchemy's word for what is happening to the resource, such as `creating` or `created`, for people to read. It changes between a step's start and finish, and its values are Alchemy's, so do not branch on it. */
       readonly status: string;
     };
 
-export type DeployEvent = StepEvent<DeployStep>;
+export type DeployEvent =
+  | StepEvent<DeployStep>
+  /** Right after the preflight step, when it found platform variables with no value that no service needs. */
+  | { readonly kind: 'preflight-findings'; readonly findings: PreflightFindings };
 
 /** The environment `deploy` targets when none is named. */
 export const DEFAULT_DEPLOY_ENVIRONMENT = 'production';

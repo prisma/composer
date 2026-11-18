@@ -96,9 +96,10 @@ only). No pack entry imports a runtime API or driver.
 Prisma Composer does not bundle app code. Turning the service module into a runnable
 bundle is the app's job, with the app's tool (tsdown, esbuild, whatever) — and
 the entry is a pure re-export of the Service node, nothing runs on import. The
-platform artifact *envelope* is the pack's: at deploy the pack prints a two-line
-bootstrap (`main.run(address)`) and assembles the target's package — for Compute,
-a tar with `compute.manifest.json`. Core ships no build step; printing a
+platform artifact *envelope* is the pack's: at deploy the pack prints a constant
+bootstrap that calls `main.run(address, boot, inputDocument)` and assembles the target's
+package — for Compute, a tar with `compute.bootstrap.json`, which holds the
+address and the service's input document, and `compute.manifest.json`. Core ships no build step; printing a
 bootstrap and assembling a tar is deploy-time assembly, not bundling.
 
 ## Why this is the correct boundary

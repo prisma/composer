@@ -11,6 +11,7 @@
 
 import * as Prisma from '@alchemy.run/prisma';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
+import { toProviderError } from '@internal/core/deploy';
 import { postgresClient } from '@internal/dev-emulators';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
@@ -72,7 +73,7 @@ export function LocalDatabaseProvider(
             password: undefined,
           } satisfies Prisma.Database['Attributes'];
         },
-        catch: (cause) => cause,
+        catch: toProviderError,
       }),
     diff: ({ output }) =>
       Effect.tryPromise({
@@ -81,7 +82,7 @@ export function LocalDatabaseProvider(
           const recorded = await recordedInstanceId(appScopeOf(input), output.databaseName);
           return recorded === output.databaseId ? undefined : { action: 'update' as const };
         },
-        catch: (cause) => cause,
+        catch: toProviderError,
       }),
     delete: () => Effect.void,
   };
@@ -129,7 +130,7 @@ export function LocalConnectionProvider(
             pooledOrigin: undefined,
           } satisfies Prisma.Connection['Attributes'];
         },
-        catch: (cause) => cause,
+        catch: toProviderError,
       }),
     delete: () => Effect.void,
   };

@@ -5,6 +5,7 @@
  */
 import type { ConvergeEvent } from '../converge-in-process.ts';
 import { withComposerAdvice } from '../deployment-summary.ts';
+import { type SecretRedaction, StreamRedactor } from '../redaction.ts';
 
 /** A step event, over the operation's own step type. */
 export type StepEvent<Step> =
@@ -26,22 +27,23 @@ export type StepEvent<Step> =
 
 /** One resource Alchemy is touching, as a converge event names it. */
 export interface ResourceStatus {
-  readonly fqn: string;
+  readonly resourceId: string;
   readonly resourceType: string;
   readonly status: string;
 }
 
 /**
  * Times each step for the host's `onEvent`. Steps are matched by `keyOf`, so
- * a step can finish under a newer status than it started with. A host
- * `onEvent` that throws is the host's bug and cannot fail the operation.
+ * a step can finish under a newer status than it started with. `emit` sends
+ * the operation's other events. A host `onEvent` that throws is the host's
+ * bug and cannot fail the operation.
  */
-export function stepTracker<Step>(
+export function stepTracker<Step, OtherEvent = never>(
   keyOf: (step: Step) => string,
-  onEvent: ((event: StepEvent<Step>) => void) | undefined,
+  onEvent: ((event: StepEvent<Step> | OtherEvent) => void) | undefined,
 ) {
   const open = new Map<string, { readonly step: Step; readonly startedAt: number }>();
-  const emit = (event: StepEvent<Step>): void => {
+  const emit = (event: StepEvent<Step> | OtherEvent): void => {
     try {
       onEvent?.(event);
     } catch {
@@ -80,6 +82,7 @@ export function stepTracker<Step>(
     message(severity: 'info' | 'warn' | 'verbose', text: string): void {
       emit({ kind: 'message', severity, text });
     },
+    emit,
   };
 }
 
@@ -97,7 +100,7 @@ export function reportConvergeEvent<Step>(
     return;
   }
   const step = resourceStep({
-    fqn: event.fqn,
+    resourceId: event.fqn,
     resourceType: event.resourceType,
     status: event.status,
   });
@@ -119,4 +122,25 @@ export function reportConvergeEvent<Step>(
     case 'pending':
       return;
   }
+}
+
+/**
+ * Alchemy's terminal text as `info` messages, one per complete line, redacted. A secret split
+ * across writes or lines is still found, because the text passes through a `StreamRedactor`
+ * before it is cut into lines. `end` sends the last line that has no line break.
+ */
+export function interactionMessages<Step>(steps: StepTracker<Step>, redaction: SecretRedaction) {
+  const stream = new StreamRedactor(redaction.allValues());
+  let partial = '';
+  const send = (text: string, last: boolean): void => {
+    const lines = (partial + text).split('\n');
+    partial = last ? '' : (lines.pop() ?? '');
+    for (const line of lines) {
+      if (line.trim() !== '') steps.message('info', redaction.redact(line));
+    }
+  };
+  return {
+    push: (text: string): void => send(stream.push(text), false),
+    end: (): void => send(stream.end(), true),
+  };
 }

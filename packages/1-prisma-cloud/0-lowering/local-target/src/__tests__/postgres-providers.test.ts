@@ -72,7 +72,7 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
     input = {
       container,
       devDir: path.join(root, 'project', '.prisma-composer', 'dev', 'dev'),
-      configurationKeyText: {},
+      plainVariableText: {},
       namedSecrets: {},
     };
   });

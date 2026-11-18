@@ -12,8 +12,11 @@ import type { Graph } from '@internal/core';
 import type {
   CallerCredentials,
   ContainerInstance,
+  PlatformVariableCheck,
+  PreflightFindings,
   ReporterDescriptor,
   RunReporter,
+  UnsetPlatformVariable,
 } from '@internal/core/config';
 import { containerEnv, preflightEnvVarName } from '@internal/core/config';
 import { nodeAddresses } from '@internal/core/deploy';
@@ -25,7 +28,7 @@ import {
   removeLeftoverAppConfigurationFiles,
   type SecondProcessHandover,
 } from '../app-configuration-file.ts';
-import { type AppConverge, loadAppConverge } from '../app-converge.ts';
+import { type AppConvergeEntry, loadAppConvergeEntry } from '../app-converge.ts';
 import type { ComposerConfigSource } from '../composer-config.ts';
 import type { ConvergeOutcome, LoweredStack } from '../converge-in-process.ts';
 import {
@@ -44,6 +47,7 @@ import {
   redactError,
   redactSummary,
   redactThrown,
+  redactUnsetPlatformVariable,
   SecretRedaction,
 } from '../redaction.ts';
 import {
@@ -58,6 +62,7 @@ import {
   toRunReport,
   writeRunReport,
 } from '../run-report.ts';
+import { refuseSecretsInRootInput } from '../secret-as-plain-value.ts';
 import { validateEnvironmentName } from '../validate-environment.ts';
 import {
   DEFAULT_DEPLOY_ENVIRONMENT,
@@ -74,7 +79,7 @@ import {
   requireContainerForEnvironment,
   toStructured,
 } from './shared.ts';
-import { reportConvergeEvent, stepTracker } from './steps.ts';
+import { interactionMessages, reportConvergeEvent, stepTracker } from './steps.ts';
 
 const ALCHEMY_STATE_DIR = '.alchemy';
 
@@ -86,12 +91,12 @@ function hasNoLocalDeployState(cwd: string): boolean {
 
 /** Times each deploy step for the host's `onEvent`. A step still open when the run fails is closed as failed, innermost first. */
 function deploySteps(onEvent: ((event: DeployEvent) => void) | undefined) {
-  return stepTracker<DeployStep>(
+  return stepTracker<DeployStep, Extract<DeployEvent, { readonly kind: 'preflight-findings' }>>(
     (step) =>
       step.name === 'assemble-service'
         ? `${step.name}:${step.address}`
         : step.name === 'apply-resource'
-          ? `${step.name}:${step.fqn}`
+          ? `${step.name}:${step.resourceId}`
           : step.name,
     onEvent,
   );
@@ -134,7 +139,7 @@ export async function executeDeploy(
     reportPath: resolveRunReportPath(input.reportPath, process.env[RUN_REPORT_FILE_ENV], cwd),
     steps: deploySteps(input.onEvent),
     signal: input.signal,
-    redaction: new SecretRedaction(process.env),
+    redaction: deps.redaction ?? new SecretRedaction(process.env),
   });
   if (!outcome.ok) return outcome;
   return ok({ summary: outcome.value });
@@ -226,7 +231,7 @@ async function attachReporters(
 }
 
 /** Every session's contribution to the apply's environment, so reporting that happens inside the apply can find the run. */
-function reporterChildEnv(
+function reporterEnv(
   reporters: readonly ExtensionReporter[],
   redaction: SecretRedaction,
 ): Record<string, string> {
@@ -381,11 +386,14 @@ async function runStackPipelineInner(
     throw error;
   }
 
-  let converge: ConvergeSetup | undefined;
+  let appConvergeEntry: AppConvergeEntry | undefined;
   if (action === 'deploy') {
-    const setup = await prepareConverge(deps, path.dirname(path.resolve(cwd, composerConfig.file)));
-    if (!setup.ok) return setup;
-    converge = setup.value;
+    const loaded = await prepareAppConvergeEntry(
+      deps,
+      path.dirname(path.resolve(cwd, composerConfig.file)),
+    );
+    if (!loaded.ok) return loaded;
+    appConvergeEntry = loaded.value;
   }
   const platformCredentials = deps.credentials;
 
@@ -402,6 +410,7 @@ async function runStackPipelineInner(
   let alchemyStage: string;
   // What each deploy preflight hands back, for the lowering.
   const preflightPayloads = new Map<string, string>();
+  const unset: UnsetPlatformVariable[] = [];
   const preflightTransportEnv: Record<string, string> = {};
 
   try {
@@ -449,6 +458,13 @@ async function runStackPipelineInner(
     steps.finish({ name: 'assemble' });
     const { graph, name: resolvedName } = pipeline;
     const config = pipeline.configSource.value;
+    if (action === 'deploy') {
+      refuseSecretsInRootInput(
+        graph.appConfigurationRead,
+        opts.redaction.knownSecrets,
+        'A deploy sends every plain value Load read to the platform as plain configuration, and never sends a secret that way.',
+      );
+    }
 
     steps.start({ name: 'connect' });
     // Open reporting BEFORE containers are resolved: creating them is the
@@ -530,18 +546,16 @@ async function runStackPipelineInner(
     alchemyStage = containers.get(config.state.extension)?.alchemyStage ?? environment;
     steps.finish({ name: 'connect' });
 
-    // Preflight (deploy only): each extension verifies its platform
-    // prerequisites — e.g. that every secret env var in the provision manifest
-    // exists for the resolved environment (ADR-0029) — BEFORE Alchemy runs, so
-    // a missing secret fails fast with nothing side-effected.
     if (action === 'deploy') {
       steps.start({ name: 'preflight' });
-      // Summed across extensions: each reports counts of its own checks.
-      const counts: Record<string, number> = {};
-      const report = (reported: Readonly<Record<string, number>>): void => {
-        for (const [key, value] of Object.entries(reported)) {
-          counts[key] = (counts[key] ?? 0) + value;
-        }
+      let checked = 0;
+      const report = (reported: PlatformVariableCheck): void => {
+        checked += reported.checked;
+        unset.push(
+          ...reported.unset.map((variable) =>
+            redactUnsetPlatformVariable(variable, opts.redaction),
+          ),
+        );
       };
       for (const extension of config.extensions) {
         if (extension.preflight === undefined) continue;
@@ -560,26 +574,30 @@ async function runStackPipelineInner(
           throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
         }
       }
-      steps.finish({ name: 'preflight' }, counts);
+      steps.finish({ name: 'preflight' }, { checked, unset: unset.length });
+      if (unset.length > 0) steps.emit({ kind: 'preflight-findings', findings: { unset } });
     }
     // Destroy's child inherits this process's environment and runs no
     // preflight, so every transport var is blanked — a stale value exported
     // into the shell must not read as this run's payload. The reader treats
     // an empty var as absent.
-    for (const extension of config.extensions) {
-      preflightTransportEnv[preflightEnvVarName(extension.id)] ??= '';
+    if (action === 'destroy') {
+      for (const extension of config.extensions) {
+        preflightTransportEnv[preflightEnvVarName(extension.id)] = '';
+      }
     }
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;
   }
 
-  if (converge !== undefined) {
-    return convergeDeploy(opts, pipeline, converge, {
+  if (appConvergeEntry !== undefined) {
+    return convergeDeploy(opts, pipeline, appConvergeEntry, {
       containers,
       stage: alchemyStage,
-      preflight: preflightPayloads,
-      env: reporterChildEnv(reporters, opts.redaction),
+      preflightPayloads,
+      findings: { unset },
+      env: reporterEnv(reporters, opts.redaction),
     });
   }
 
@@ -607,6 +625,7 @@ async function runStackPipelineInner(
       handover = prepareSecondProcess({
         file: deployAppConfigurationFile(cwd, randomUUID()),
         appConfigurationRead: pipeline.graph.appConfigurationRead,
+        plainVariableText: {},
         nodeAddresses: nodeAddresses(pipeline.graph),
         knownSecrets: opts.redaction.knownSecrets,
       });
@@ -633,7 +652,7 @@ async function runStackPipelineInner(
       containerEnv: containerEnv(containers),
       preflightEnv: preflightTransportEnv,
       env: {
-        ...reporterChildEnv(reporters, opts.redaction),
+        ...reporterEnv(reporters, opts.redaction),
         ...handover.env,
         [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath,
       },
@@ -776,17 +795,13 @@ async function runStackPipelineInner(
   }
 }
 
-interface ConvergeSetup {
-  readonly appConverge: AppConverge;
-}
-
-/** What deploy's converge needs before anything is created: the app's own install of the converge. */
-async function prepareConverge(
+/** Loaded before anything is created, so a missing or incompatible install fails first. */
+async function prepareAppConvergeEntry(
   deps: OperationDeps,
   appDir: string,
-): Promise<Result<ConvergeSetup, CliStructuredError>> {
+): Promise<Result<AppConvergeEntry, CliStructuredError>> {
   try {
-    return ok({ appConverge: deps.converge ?? (await loadAppConverge(appDir)) });
+    return ok(deps.appConvergeEntry ?? (await loadAppConvergeEntry(appDir)));
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;
@@ -853,11 +868,12 @@ function convergeFailure(
 async function convergeDeploy(
   opts: StackPipelineOptions,
   pipeline: PipelineResult,
-  setup: ConvergeSetup,
+  entry: AppConvergeEntry,
   resolved: {
     readonly containers: ReadonlyMap<ExtensionId, ContainerInstance>;
     readonly stage: string;
-    readonly preflight: ReadonlyMap<ExtensionId, string>;
+    readonly preflightPayloads: ReadonlyMap<ExtensionId, string>;
+    readonly findings: PreflightFindings;
     readonly env: Readonly<Record<string, string>>;
   },
 ): Promise<Result<DeploymentSummary | undefined, CliStructuredError>> {
@@ -875,13 +891,15 @@ async function convergeDeploy(
   steps.start({ name: 'apply' });
   let stack: LoweredStack;
   try {
-    stack = setup.appConverge.lower(root, config, {
+    stack = entry.lower(root, config, {
       name: pipeline.name,
       environment,
       appConfigurationRead: pipeline.graph.appConfigurationRead,
+      firstProcessNodeAddresses: nodeAddresses(pipeline.graph),
       bundles: pipeline.assembled.bundles,
       containers: resolved.containers,
-      preflight: resolved.preflight,
+      preflightPayloads: resolved.preflightPayloads,
+      findings: resolved.findings,
       credentials: opts.deps.credentials,
       report: (result) => {
         summary = toDeploymentSummary(result);
@@ -889,6 +907,7 @@ async function convergeDeploy(
     });
   } catch (error) {
     // An extension's state or providers factory threw while the stack was built.
+    if (CliStructuredError.is(error)) return notOk(error);
     return notOk(
       new CliStructuredError(
         'DEPLOY.ENGINE_FAILED',
@@ -896,9 +915,10 @@ async function convergeDeploy(
       ),
     );
   }
+  const output = interactionMessages(steps, opts.redaction);
   let outcome: ConvergeOutcome;
   try {
-    outcome = await setup.appConverge.converge({
+    outcome = await entry.converge({
       operation: 'deploy',
       stack,
       stage: resolved.stage,
@@ -915,6 +935,7 @@ async function convergeDeploy(
             ...resource,
           }),
         ),
+      output: (text) => output.push(text),
     });
   } catch (error) {
     return notOk(
@@ -925,6 +946,8 @@ async function convergeDeploy(
         ),
       ),
     );
+  } finally {
+    output.end();
   }
   if (outcome.kind !== 'applied') return notOk(convergeFailure(outcome, redact));
   steps.finish({ name: 'apply' });

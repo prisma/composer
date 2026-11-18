@@ -21,9 +21,10 @@ describe('renderStackFile() — a module root', () => {
       },
     });
 
-    expect(content).toContain(
-      "import { lower, transportedLowerInputs } from '@prisma/composer/deploy';",
-    );
+    expect(content).toContain("import { lower } from '@prisma/composer/deploy';");
+    // Only `lower`, so the file runs against an app on an older or newer Composer.
+    expect(content).not.toContain('transportedLowerInputs');
+    expect(content).not.toMatch(/containers:|preflightPayloads:/);
     expect(content).toContain('import prismaConfig from "../prisma.config.ts";');
     expect(content).toContain('const config = prismaConfig.composer;');
     expect(content).toContain('import app from "../module.ts";');
@@ -159,9 +160,7 @@ describe('renderStackFile() — a module root', () => {
     // The import lines (and everything after the header) must survive intact
     // — a block-comment header would have truncated the file right after the
     // embedded "*/" in the cwd, before these lines are even reached.
-    expect(content).toContain(
-      "import { lower, transportedLowerInputs } from '@prisma/composer/deploy';",
-    );
+    expect(content).toContain("import { lower } from '@prisma/composer/deploy';");
     expect(content).toContain('name: "app"');
   });
 });

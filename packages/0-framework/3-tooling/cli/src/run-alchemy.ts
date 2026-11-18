@@ -9,7 +9,7 @@
  * dependencies.
  *
  * Only `destroy` still runs Alchemy in a child; `deploy` and `dev` converge
- * in-process (ADR-0064). This module composes the invocation; `spawnAlchemy`
+ * in-process (ADR-0066). This module composes the invocation; `spawnAlchemy`
  * starts it, piping the child's output through the stream redactor
  * (ADR-0062), and tests substitute their own runner.
  */

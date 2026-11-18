@@ -1,14 +1,3 @@
-/**
- * Which copy of Composer's lowering and in-process converge runs `deploy`
- * and `prisma dev`:
- * the one the app installs, found from the directory of the app's
- * `prisma.config.ts`, the file its extensions are imported from. The stack,
- * Alchemy and the providers then share one copy of `alchemy` and `effect`
- * even when the `prisma` host pins another Composer (ADR-0050, ADR-0064).
- * The host calls that copy across a version boundary, so the two must speak
- * the same converge contract (`CONVERGE_CONTRACT`); their package versions
- * may differ.
- */
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
@@ -28,8 +17,8 @@ const ENTRY_FUNCTIONS = ['lower', 'convergeInProcess', 'localTargetProviders', '
 /** The Composer version this host runs; every Composer package carries the same one. */
 export const HOST_COMPOSER_VERSION: string = manifest.version;
 
-/** The app install's `lower`, `convergeInProcess`, and the local target's providers and state store for `prisma dev`. */
-export interface AppConverge {
+/** The app install's `lower`, its converge (`convergeInProcess`), and the local target's providers and state store for `prisma dev`. */
+export interface AppConvergeEntry {
   readonly lower: typeof lower;
   readonly converge: Converge;
   readonly localTargetProviders: typeof localTargetProviders;
@@ -96,19 +85,19 @@ function contractMismatch(
 }
 
 /**
- * The app's converge, from the install `appDir` resolves. Reads the app's
+ * The app's `lower`, converge and local target functions, from the install `appDir` resolves. Reads the app's
  * converge contract before loading anything else. Raises
  * DEPS.CONVERGE_UNRESOLVABLE when the install is missing or predates the
  * in-process converge, and DEPS.CONVERGE_CONTRACT_MISMATCH when it speaks
  * another contract than `host`.
  */
-export async function loadAppConverge(
+export async function loadAppConvergeEntry(
   appDir: string,
   host: { readonly contract: number; readonly version: string } = {
     contract: CONVERGE_CONTRACT,
     version: HOST_COMPOSER_VERSION,
   },
-): Promise<AppConverge> {
+): Promise<AppConvergeEntry> {
   const require = createRequire(path.join(appDir, 'package.json'));
   let contractFile: string;
   let file: string;
@@ -131,7 +120,7 @@ export async function loadAppConverge(
     throw unresolvable(appDir, `${file} exports no ${missing.join(', ')}.`);
   }
   return blindCast<
-    AppConverge,
+    AppConvergeEntry,
     "the typeof checks above prove each is a function, and the contract check proves the entry speaks this host's converge contract"
   >({
     lower: entry['lower'],

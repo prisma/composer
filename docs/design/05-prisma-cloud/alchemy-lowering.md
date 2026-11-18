@@ -59,19 +59,7 @@ away: the platform self-heals a missing `DATABASE_URL` template on the first
 Compute deploy, wiring it from any ready database on the Project (default
 first, then oldest) — on a Composer Project, one of the app's own databases.
 
-So the framework claims the keys first. `application.provision` writes
-`DATABASE_URL` and `DATABASE_URL_POOLED` (production and preview class,
-project-level) with the placeholder value `"-"` via create-only calls
-(`lowering/src/database-url-claim.ts`). The platform's writes are also
-create-only, so whoever writes first wins permanently: on a fresh Project the
-claim lands first and the self-heal never fires; on a Project whose variables
-the platform already seeded, the claim gets a 409 and no-ops. The rows are
-plain platform variables, never Alchemy resources — nothing enters deploy
-state and upstream's `EnvironmentVariable` never owns them. Alongside the
-claim, the authoring-side ban holds: `param.ts` and `secret.ts` reject both
-names, so no Composer-declared row can carry one. Every database URL a
-service actually consumes is an explicit, per-service variable the pack's
-`serialize` writes under its own named key, inside the `COMPOSER_` namespace.
+So the framework claims the keys first. `application.provision` writes `DATABASE_URL` and `DATABASE_URL_POOLED` (production and preview class, project-level) with the placeholder value `"-"` via create-only calls (`lowering/src/database-url-claim.ts`). The platform's writes are also create-only, so whoever writes first wins permanently: on a fresh Project the claim lands first and the self-heal never fires; on a Project whose variables the platform already seeded, the claim gets a 409 and no-ops. The rows are plain variables on the platform, never Alchemy resources — nothing enters deploy state and upstream's `EnvironmentVariable` never owns them. Alongside the claim, the authoring-side ban holds: `variable()` and `variable.secret()` reject both names (`variable-name.ts`), so no platform variable the app declares can carry one. Every database URL a service actually consumes is an explicit, per-service variable the pack's `serialize` writes under its own named key, inside the `COMPOSER_` namespace.
 
 A service that reads `process.env.DATABASE_URL` behind the framework's back
 therefore reads the placeholder `"-"` and fails loudly — or, on a Project the
@@ -285,7 +273,7 @@ which would skip the artifact comparison and silently drop a code change.
 `compute/deployment-edge.ts` records the full argument and its test drives
 upstream's real diff.
 
-**Change propagation is wired through `Prisma.Deployment.triggers`.** The platform freezes a deployment's environment at create, so a *value* change (a rotated URL) reaches a running service only through a new deployment. The compute descriptor declares one trigger member per environment row, carrying the same `Redacted` value the row writes; upstream folds the resolved members into a salted fingerprint inside its own encrypted state and plans a replacement exactly when one moved (and conservatively when a member cannot be resolved at plan time because the producing resource is itself changing). Unchanged service → same fingerprint → reuse; changed value or artifact → replace. Because upstream resolves the actual values, a value re-issued under a stable resource identity (a connection rotated in place, a re-minted service key) moves the fingerprint too. No plaintext lands in state — the members are `Redacted` in props and only the salted hash is persisted. A platform variable a row merely POINTS at (operator-owned; Composer never reads its value) contributes a `<name>:updatedAt` member instead, read at preflight and carried across the CLI→Alchemy process boundary on the framework's preflight-transport channel, so an out-of-band rotation still ships a new deployment.
+**Change propagation is wired through `Prisma.Deployment.triggers`.** The platform freezes a deployment's environment at create, so a *value* change (a rotated URL) reaches a running service only through a new deployment. The compute descriptor declares one trigger member per environment row, carrying the same `Redacted` value the row writes; upstream folds the resolved members into a salted fingerprint inside its own encrypted state and plans a replacement exactly when one moved (and conservatively when a member cannot be resolved at plan time because the producing resource is itself changing). Unchanged service → same fingerprint → reuse; changed value or artifact → replace. Because upstream resolves the actual values, a value re-issued under a stable resource identity (a connection rotated in place, a re-minted service key) moves the fingerprint too. No plaintext lands in state — the members are `Redacted` in props and only the salted hash is persisted. A platform variable a row merely POINTS at (operator-owned; Composer never reads its value) contributes a `<name>:updatedAt` member instead, read at preflight and carried across the CLI→Alchemy process boundary on the framework's preflight-transport channel, so an out-of-band rotation still ships a new deployment. A service's input document is not an environment row and has no trigger member: it travels in the service's artifact, in the `inputDocument` field of `compute.bootstrap.json` ([ADR-0065](../90-decisions/ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)), so a changed document changes the artifact's bytes and its content-addressed `artifactPath`, which replaces the deployment. A platform variable the document names is still a `<name>:updatedAt` member.
 
 The framework's core constructs these edges when lowering a connection (the
 `serialize` env-var records thread into `deploy` through the service SPI); no pack

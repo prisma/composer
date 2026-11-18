@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { blindCast } from '@internal/foundation/casts';
+import * as Alchemy from 'alchemy';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type { Config, Params } from '../config.ts';
@@ -16,6 +17,7 @@ import {
   type Bundle,
   buildConfig,
   connectionInputs,
+  deploymentResult,
   joinDeployment,
   type LowerContext,
   LowerError,
@@ -33,19 +35,18 @@ import {
 } from '../control/deploy.ts';
 import { Load, nodeAddresses } from '../graph.ts';
 import {
+  appRoot,
   type BuildAdapter,
   type Deps,
   dependency,
-  isParamSource,
   module,
-  paramSource,
   provisionNeed,
   resource,
   service,
 } from '../node.ts';
 import { preflightEnvVarName } from '../preflight-transport.ts';
 import { resolve } from '../value.ts';
-import { anyInputSchema, conn, providerContract } from './helpers.ts';
+import { anyInputSchema, conn, plainValue, providerContract } from './helpers.ts';
 
 const dbResource = () =>
   resource({
@@ -95,7 +96,7 @@ const opts = (extra: Partial<LowerOptions> = {}): LowerOptions => ({
   name: 'hello',
   bundles: {},
   containers: new Map(),
-  preflight: new Map(),
+  preflightPayloads: new Map(),
   ...extra,
 });
 
@@ -120,6 +121,7 @@ type Call =
       readonly id: string;
       readonly assembled: Bundle;
       readonly address: string;
+      readonly environment: unknown;
     }
   | {
       readonly phase: 'deploy';
@@ -194,12 +196,13 @@ function fakeExtension(
           );
           return Effect.succeed({ environment: records });
         },
-        package: (ctx, input) => {
+        package: (ctx, input, serialized) => {
           calls.push({
             phase: 'package',
             id: ctx.id,
             assembled: input.assembled,
             address: input.address,
+            environment: serialized.environment,
           });
           return Effect.succeed({ path: `/tmp/${ctx.id}.tar.gz`, sha256: `sha-${ctx.id}` });
         },
@@ -426,6 +429,19 @@ describe('buildConfig — provision-time param binding', () => {
     });
   });
 
+  test('an unbound required param fails, saying to bind a literal value or a value the deploy has', () => {
+    const auth = app('fake/compute', {}, { token: string() });
+    const root = module('shop', {}, (h) => {
+      h.provision(auth, { id: 'auth' });
+      return {};
+    });
+    const graph = Load(root);
+
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(
+      'Param "token" of "shop.auth" (service "test-service") has no default, is not optional, and was not bound at provision — bind it on its provision() call with a literal value or a value the deploy has, or give it a default.',
+    );
+  });
+
   test('an unbound param falls back to its default', () => {
     const auth = app('fake/compute', {}, { port: number({ default: 3000 }) });
     const root = module('shop', {}, (h) => {
@@ -469,20 +485,6 @@ describe('buildConfig — provision-time param binding', () => {
     });
   });
 
-  test('a ParamSource binding flows through to Config.service opaquely — buildConfig never validates it against the schema (the target resolves and validates at boot)', () => {
-    const auth = app('fake/compute', {}, { origin: string() });
-    const source = paramSource('APP_ORIGIN');
-    const root = module('shop', {}, (h) => {
-      h.provision(auth, { id: 'auth', params: { origin: source } });
-      return {};
-    });
-    const graph = Load(root);
-
-    const config = buildConfig(auth, 'shop.auth', graph, new Map(), new Map());
-    expect(isParamSource(config.service['origin'])).toBe(true);
-    expect(config.service['origin']).toBe(source);
-  });
-
   test('a literal that fails the param schema is a LowerError naming the param, the service, and the schema issue', () => {
     const auth = app('fake/compute', {}, { port: number({ default: 3000 }) });
     const root = module('shop', {}, (h) => {
@@ -496,29 +498,18 @@ describe('buildConfig — provision-time param binding', () => {
     expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(/"port"/);
   });
 
-  test('a param claiming BOTH a provision need and a provision-time binding is a LowerError naming the param and both sources', () => {
+  test('a param claiming BOTH a provision need and a provision-time binding is a LowerError naming the param and the provision need', () => {
     const brand = Symbol.for('test:both-sources');
     const auth = app('fake/compute', {}, { token: string({ provision: provisionNeed(brand) }) });
-    const asSource = module('shop', {}, (h) => {
-      h.provision(auth, { id: 'auth', params: { token: paramSource('TOKEN_VAR') } });
-      return {};
-    });
-    const asLiteral = module('shop', {}, (h) => {
+    const root = module('shop', {}, (h) => {
       h.provision(auth, { id: 'auth', params: { token: 'literal-token' } });
       return {};
     });
 
-    const sourceGraph = Load(asSource);
-    expect(() => buildConfig(auth, 'shop.auth', sourceGraph, new Map(), new Map())).toThrow(
-      LowerError,
-    );
-    expect(() => buildConfig(auth, 'shop.auth', sourceGraph, new Map(), new Map())).toThrow(
-      /"token".*two sources.*a param source.*test:both-sources/,
-    );
-
-    const literalGraph = Load(asLiteral);
-    expect(() => buildConfig(auth, 'shop.auth', literalGraph, new Map(), new Map())).toThrow(
-      /"token".*two sources.*a literal value.*test:both-sources/,
+    const graph = Load(root);
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(LowerError);
+    expect(() => buildConfig(auth, 'shop.auth', graph, new Map(), new Map())).toThrow(
+      'Param "token" of "shop.auth" (service "test-service") is bound at provision and also declares a framework provision need ("Symbol(test:both-sources)"). Remove the binding or the `provision` facet.',
     );
   });
 });
@@ -622,8 +613,8 @@ describe('lowering a module root — a single service', () => {
       const label = (input as never as { label: never }).label;
       provision(app('fake/compute', {}, { label: string() }), { id: 'svc', params: { label } });
     });
-    const root = module('hello', ({ provision }) => {
-      provision(relay, { input: { label: paramSource({ name: 'X' }, { configurationKey: 'X' }) } });
+    const root = module('hello', { input: anyInputSchema }, ({ input, provision }) => {
+      provision(relay, { input: { label: (input as never as { LABEL: never }).LABEL } });
     });
     const bundles = { 'hello.relay.svc': { dir: 'dist/bundle', entry: 'server.js' } };
 
@@ -633,7 +624,7 @@ describe('lowering a module root — a single service', () => {
         config,
         opts({
           bundles,
-          appConfigurationRead: { rootInput: [], configurationKeyText: { X: 'probe' } },
+          appConfigurationRead: { rootInput: [{ path: ['LABEL'], value: 'probe' }] },
         }),
       ),
     );
@@ -662,7 +653,7 @@ describe('lowering a module root — a single service', () => {
         ),
       ),
     ).toThrow(
-      'The deploy\'s second process built a different graph from the one Composer checked in its first process. Only in the second process: "shop.echo". Only in the first process: "shop.gone". A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
+      'lower() built a different graph from the one Composer checked first. Only in the graph lower() built: "shop.echo". Only in the graph Composer checked: "shop.gone". A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
     );
   });
 
@@ -798,6 +789,17 @@ describe('lowering a module root — a single service', () => {
 
     const pkg = calls.find((c) => c.phase === 'package');
     expect(pkg).toMatchObject({ assembled: bundle, address: 'hello.svc' });
+  });
+
+  test("package receives the service's serialize product", () => {
+    const { config, calls } = fakeExtension();
+
+    run(lowering(singleServiceWithDbModule(), config, opts(svcBundles)));
+
+    const pkg = calls.find((c) => c.phase === 'package');
+    expect(pkg).toMatchObject({
+      environment: [{ input: 'db', name: 'url', value: 'db://hello.db' }],
+    });
   });
 
   test("the environment edge: deploy's `environment` IS serialize's returned records (by recording, not order)", () => {
@@ -1488,6 +1490,44 @@ describe('joinDeployment', () => {
   });
 });
 
+const withEnv = <T>(values: Record<string, string | undefined>, fn: () => T): T => {
+  const previous = new Map(Object.keys(values).map((k) => [k, process.env[k]]));
+  for (const [k, v] of Object.entries(values)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  try {
+    return fn();
+  } finally {
+    for (const [k, v] of previous) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+};
+
+describe('deploymentResult', () => {
+  test('joins the deployed entries with the graph and carries the findings it is given', () => {
+    const root = module('shop', {}, (h) => {
+      h.provision(dbResource(), { id: 'db' });
+      return {};
+    });
+    const unset = {
+      name: 'MAIL_KEY',
+      readers: [{ kind: 'unread', node: 'shop.mailKey' }] as const,
+      commands: ["prisma project env add 'MAIL_KEY=<value>' --project 'proj' --role production"],
+    };
+
+    const result = deploymentResult('shop', Load(root), [{ address: 'shop.db', entities: [] }], {
+      unset: [unset],
+    });
+
+    expect(result.app).toBe('shop');
+    expect(result.nodes.map((node) => node.address)).toEqual(['shop.db']);
+    expect(result.findings).toEqual({ unset: [unset] });
+  });
+});
+
 describe('lowering() — the report path', () => {
   test('without opts.report, lowering declares no action and stays sync-runnable', () => {
     const { config } = fakeExtension();
@@ -1497,6 +1537,46 @@ describe('lowering() — the report path', () => {
     // would drag alchemy's Stack context into the requirements and runSync
     // would die. `run()` is Effect.runSync.
     expect(run(lowering(root, config, opts(svcBundles)))).toBeUndefined();
+  });
+
+  test('a value resource is lowered through its descriptor and adds no entry to the report', () => {
+    const { descriptor } = fakeExtension();
+    const loweredValues: string[] = [];
+    const lowerValue = Object.assign(
+      (ctx: LowerContext): Effect.Effect<LoweredResult, unknown, unknown> => {
+        loweredValues.push(ctx.id);
+        return Effect.succeed({ outputs: {}, entities: [] });
+      },
+      { kind: 'resource' as const },
+    );
+    const config: PrismaAppConfig = {
+      extensions: [{ ...descriptor, nodes: { ...descriptor.nodes, 'test-value': lowerValue } }],
+      state: { extension: descriptor.id, create: () => stateSentinel('config-default') },
+    };
+    const root = appRoot('hello', ({ provision }) => {
+      provision(plainValue('GREETING'));
+      provision(dbResource(), { id: 'db' });
+    });
+    const reports: unknown[] = [];
+    const stack: { actions: Record<string, Alchemy.Action>; resources: Record<string, unknown> } = {
+      actions: {},
+      resources: {},
+    };
+
+    Effect.runSync(
+      lowering(root, config, opts({ report: (result) => reports.push(result) })).pipe(
+        Effect.provideService(Alchemy.Stack, stack as never),
+        Effect.orDie,
+      ) as Effect.Effect<undefined>,
+    );
+    const action = stack.actions['composer-deployment-report'];
+    Effect.runSync(action?.Run(action.Input) as Effect.Effect<unknown>);
+
+    expect(loweredValues).toEqual(['hello.greeting']);
+    expect(reports).toHaveLength(1);
+    expect(
+      (reports[0] as { nodes: { address: string }[] }).nodes.map(({ address }) => address),
+    ).toEqual(['hello.db']);
   });
 });
 
@@ -1601,22 +1681,6 @@ describe('container threading through lowering() (the parent→child transport r
     return { descriptor, config, seen };
   }
 
-  const withEnv = <T>(values: Record<string, string | undefined>, fn: () => T): T => {
-    const previous = new Map(Object.keys(values).map((k) => [k, process.env[k]]));
-    for (const [k, v] of Object.entries(values)) {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
-    try {
-      return fn();
-    } finally {
-      for (const [k, v] of previous) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-      }
-    }
-  };
-
   const dbModule = () =>
     module('shop', {}, (h) => {
       h.provision(
@@ -1676,14 +1740,16 @@ describe('container threading through lowering() (the parent→child transport r
     const root = module('shop', {}, () => ({}));
 
     withEnv({ [preflightEnvVarName(descriptor.id)]: 'from-env' }, () => {
-      run(lowering(root, config, opts({ preflight: new Map([[descriptor.id, 'passed']]) })));
+      run(
+        lowering(root, config, opts({ preflightPayloads: new Map([[descriptor.id, 'passed']]) })),
+      );
       run(lowering(root, config, opts()));
     });
 
     expect(seen).toEqual(['passed', undefined]);
   });
 
-  test('transportedLowerInputs reads both transports a generated stack file was given', () => {
+  test('transportedLowerInputs reads the two transports a generated stack file was given', () => {
     const { descriptor, config } = fakeExtensionWithContainer();
     const instanceInput = { appName: 'shop', environment: 'production' };
 
@@ -1695,14 +1761,70 @@ describe('container threading through lowering() (the parent→child transport r
       () => transportedLowerInputs(config),
     );
     const blanked = withEnv(
-      { [containerEnvVarName(descriptor.id)]: undefined, [preflightEnvVarName(descriptor.id)]: '' },
+      {
+        [containerEnvVarName(descriptor.id)]: undefined,
+        [preflightEnvVarName(descriptor.id)]: '',
+      },
       () => transportedLowerInputs(config),
     );
 
     expect(inputs.containers.get(descriptor.id)).toEqual(new FakeContainerInstance(instanceInput));
-    expect([...inputs.preflight]).toEqual([[descriptor.id, 'payload']]);
+    expect([...inputs.preflightPayloads]).toEqual([[descriptor.id, 'payload']]);
     expect(blanked.containers.size).toBe(0);
-    expect(blanked.preflight.size).toBe(0);
+    expect(blanked.preflightPayloads.size).toBe(0);
+  });
+
+  test.each([
+    ['containers', 'preflightPayloads', { containers: new Map() }],
+    ['preflightPayloads', 'containers', { preflightPayloads: new Map() }],
+  ] as const)('a caller that passes only %s is refused, naming %s', (passed, missing, given) => {
+    const { config, seen } = fakeExtensionWithContainer();
+
+    expect(() =>
+      run(lowering(dbModule(), config, { name: 'hello', bundles: {}, ...given })),
+    ).toThrow(
+      `lower() was passed ${passed} without ${missing}. Pass both, or neither to read both from the environment.`,
+    );
+    expect(() => lower(dbModule(), config, { name: 'hello', bundles: {}, ...given })).toThrow(
+      `without ${missing}`,
+    );
+    expect(seen).toEqual([]);
+  });
+
+  test('a caller that passes no containers or preflight payloads, such as a stack file an older CLI generated, gets both from the environment', () => {
+    const { descriptor, config, seen } = fakeExtensionWithContainer();
+    const instanceInput = { appName: 'shop', environment: 'staging' };
+    const payloads: unknown[] = [];
+    const recording: PrismaAppConfig = {
+      ...config,
+      extensions: [
+        {
+          ...descriptor,
+          application: {
+            provision: (ctx) => {
+              payloads.push(ctx.preflight);
+              return descriptor.application?.provision(ctx) ?? Effect.succeed(undefined);
+            },
+          },
+        },
+      ],
+    };
+
+    withEnv(
+      {
+        [containerEnvVarName(descriptor.id)]: JSON.stringify(instanceInput),
+        [preflightEnvVarName(descriptor.id)]: 'from-env',
+      },
+      () => {
+        run(lowering(dbModule(), recording, { name: 'hello', bundles: {} }));
+      },
+    );
+
+    expect(seen).toEqual([
+      { phase: 'application', container: new FakeContainerInstance(instanceInput) },
+      { phase: 'resource', container: new FakeContainerInstance(instanceInput) },
+    ]);
+    expect(payloads).toEqual(['from-env']);
   });
 
   test('an extension declaring no container descriptor at all sees ctx.container as undefined', () => {

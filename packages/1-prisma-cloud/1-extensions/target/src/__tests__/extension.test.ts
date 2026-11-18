@@ -4,9 +4,10 @@ import { configOf, hydrateSync, isNode, number, param, service, string } from '@
 import { secretString } from '@internal/foundation/arktype';
 import { RPC_ACCEPTED_KEYS_ENV } from '@internal/service-rpc';
 import { type } from 'arktype';
+import { configKey } from '../config-key.ts';
 import { compute, rawPostgres, rawPostgresContract } from '../exports/index.ts';
 import { bootstrapService } from '../exports/testing.ts';
-import { configKey, deserialize, encode } from '../serializer.ts';
+import { deserialize, encode } from '../serializer.ts';
 import { RPC_ACCEPTED_KEYS_PARAM } from '../service-keys.ts';
 import { STREAMS_API_KEY_ENV, STREAMS_API_KEY_PARAM } from '../streams-keys.ts';
 
@@ -789,7 +790,8 @@ describe('the input document — run() re-stash → input() (ADR-0042)', () => {
     await withEnv(
       {
         // deploy-shaped document row (address-keyed) + the user-provisioned platform var:
-        COMPOSER_INGEST_INPUT: '{"stripeEnabled":true,"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+        COMPOSER_INGEST_INPUT:
+          '{"stripeEnabled":true,"stripeKey":{"$platform":{"name":"STRIPE_SECRET_KEY","secret":true}}}',
         STRIPE_SECRET_KEY: 'sk_live_trap',
         COMPOSER_INGEST_PORT: '',
         // address-free keys the stash (over)writes — tracked so withEnv restores them:
@@ -826,5 +828,96 @@ describe('the input document — run() re-stash → input() (ADR-0042)', () => {
   test('input() on a service with no declared schema is a loud authoring error', async () => {
     const app = compute({ name: 'plain', deps: {}, build });
     expect(() => app.input()).toThrow(/declares no input schema/);
+  });
+});
+
+describe("run(address, boot, inputDocument) — the artifact's input document over the environment", () => {
+  const inputSchema = type({ greeting: 'string' });
+  const stashedKeys = { COMPOSER_INPUT: '', COMPOSER_PORT: '', COMPOSER_GREET_PORT: '' };
+
+  test('the document given to run() is read through input(), and a row only in the environment still reaches load()', async () => {
+    const app = compute({ name: 'greet', deps: { db: rawPostgres() }, input: inputSchema, build });
+    let seen: unknown;
+    let loaded: unknown;
+    let environmentRow: string | undefined;
+    await withEnv(
+      {
+        ...stashedKeys,
+        COMPOSER_GREET_INPUT: undefined,
+        COMPOSER_GREET_DB_URL: 'postgres://from-the-environment',
+        COMPOSER_DB_URL: '',
+      },
+      () =>
+        app.run(
+          'greet',
+          async () => {
+            seen = app.input();
+            loaded = app.load();
+            environmentRow = process.env['COMPOSER_GREET_INPUT'];
+          },
+          { greeting: 'from the artifact' },
+        ),
+    );
+    expect(seen).toEqual({ greeting: 'from the artifact' });
+    expect(loaded).toEqual({ db: { url: 'postgres://from-the-environment' } });
+    expect(environmentRow).toBeUndefined();
+  });
+
+  test('where the environment holds a different document under the input key, the document given to run() is read', async () => {
+    const app = compute({ name: 'greet', deps: {}, input: inputSchema, build });
+    let seen: unknown;
+    await withEnv(
+      { ...stashedKeys, COMPOSER_GREET_INPUT: '{"greeting":"from the previous deploy"}' },
+      () =>
+        app.run(
+          'greet',
+          async () => {
+            seen = app.input();
+          },
+          { greeting: 'from the artifact' },
+        ),
+    );
+    expect(seen).toEqual({ greeting: 'from the artifact' });
+  });
+
+  test('a document given to run() as a JSON value reads the same through input() as its text in the environment', async () => {
+    const document = { greeting: 'hello', tags: ['a', 'b'], nested: { count: 2 } };
+    const schema = type({ greeting: 'string', tags: 'string[]', nested: { count: 'number' } });
+    const readThrough = async (
+      environmentRow: string | undefined,
+      givenToRun: unknown,
+    ): Promise<unknown> => {
+      const app = compute({ name: 'greet', deps: {}, input: schema, build });
+      let seen: unknown;
+      await withEnv({ ...stashedKeys, COMPOSER_GREET_INPUT: environmentRow }, () =>
+        app.run(
+          'greet',
+          async () => {
+            seen = app.input();
+          },
+          givenToRun,
+        ),
+      );
+      return seen;
+    };
+
+    const fromValue = await readThrough(undefined, document);
+    const fromText = await readThrough(JSON.stringify(document), undefined);
+
+    expect(fromValue).toEqual(document);
+    expect(fromValue).toEqual(fromText);
+  });
+
+  test('without a document, run() reads the input key from the environment', async () => {
+    const app = compute({ name: 'greet', deps: {}, input: inputSchema, build });
+    let seen: unknown;
+    await withEnv(
+      { ...stashedKeys, COMPOSER_GREET_INPUT: '{"greeting":"from the environment"}' },
+      () =>
+        app.run('greet', async () => {
+          seen = app.input();
+        }),
+    );
+    expect(seen).toEqual({ greeting: 'from the environment' });
   });
 });

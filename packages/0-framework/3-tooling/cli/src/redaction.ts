@@ -1,4 +1,10 @@
-import type { AppConfiguration, AppSecrets } from '@internal/core/config';
+import { inspect } from 'node:util';
+import type {
+  AppConfiguration,
+  AppSecrets,
+  PlatformVariableReader,
+  UnsetPlatformVariable,
+} from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import type { DeploymentSummary } from './deployment-summary.ts';
 import type { DevEvent } from './operations/dev.ts';
@@ -20,10 +26,16 @@ export function credentialLookingValues(variables: Readonly<Record<string, unkno
   );
 }
 
+/** `value` as it appears inside a string that `JSON.stringify` or `util.inspect` printed, where a newline, quote or backslash is escaped. */
+function escapedForms(value: string): string[] {
+  return [value, JSON.stringify(value).slice(1, -1), inspect(value).slice(1, -1)];
+}
+
 /**
- * Finds every secret in a text: one regular expression for all of them, built once. A match
- * is the span of the longest secret that starts at a position, and spans that overlap are
- * merged, so two overlapping secrets are hidden whole.
+ * Finds every secret in a text, as written or as `JSON.stringify` and `util.format` escape it:
+ * one regular expression for all of them, built once. A match is the span of the longest
+ * secret that starts at a position, and spans that overlap are merged, so two overlapping
+ * secrets are hidden whole.
  */
 export class SecretMatcher {
   private readonly starts: RegExp | undefined;
@@ -31,7 +43,7 @@ export class SecretMatcher {
   private readonly longestPrefix: number;
 
   constructor(values: Iterable<string>) {
-    const sorted = [...new Set(values)]
+    const sorted = [...new Set([...values].flatMap(escapedForms))]
       .filter((value) => value.length > 0)
       .sort((a, b) => b.length - a.length);
     this.starts =
@@ -87,14 +99,14 @@ export function redactValues(text: string, values: Iterable<string>): string {
   return new SecretMatcher(values).redact(text);
 }
 
-/** `text` with bearer and basic tokens, JWTs, the password in a URL, and `token=…`-style pairs replaced by `[redacted]`. */
+/** `text` with bearer and basic tokens, JWTs, the password in a URL, and `token=…`-style pairs replaced by `[redacted]`. The `<value>` placeholder in a printed command is kept. */
 function redactShapes(text: string): string {
   return text
     .replace(/\b(Bearer|Basic)\s+[\w.~+/=-]+/gi, `$1 ${REDACTED}`)
     .replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]*/g, REDACTED)
     .replace(/(\b[a-z][\w+.-]*:\/\/[^\s:/@]*:)[^\s/@]+@/gi, `$1${REDACTED}@`)
     .replace(
-      /\b((?:[\w-]*[_-])?(?:token|secret|password|passwd|api[_-]?key|access[_-]?key|private[_-]?key)["']?\s*[:=]\s*["']?)[^\s"',;&]+/gi,
+      /\b((?:[\w-]*[_-])?(?:token|secret|password|passwd|api[_-]?key|access[_-]?key|private[_-]?key)["']?\s*[:=]\s*["']?)(?!<value>(?:[\s"',;&]|$))[^\s"',;&]+/gi,
       `$1${REDACTED}`,
     );
 }
@@ -213,6 +225,34 @@ export function valuesUnderSecretsKeys(
       typeof value === 'string' ? [{ name, value }] : [],
     ),
   );
+}
+
+function redactReader(
+  reader: PlatformVariableReader,
+  redaction: SecretRedaction,
+): PlatformVariableReader {
+  switch (reader.kind) {
+    case 'field':
+      return {
+        kind: 'field',
+        service: redaction.redact(reader.service),
+        path: redaction.redact(reader.path),
+      };
+    case 'unread':
+      return { kind: 'unread', node: redaction.redact(reader.node) };
+  }
+}
+
+/** `variable` with every text in it redacted: its name, each reader's names and each command. */
+export function redactUnsetPlatformVariable(
+  variable: UnsetPlatformVariable,
+  redaction: SecretRedaction,
+): UnsetPlatformVariable {
+  return {
+    name: redaction.redact(variable.name),
+    readers: variable.readers.map((reader) => redactReader(reader, redaction)),
+    commands: variable.commands.map((command) => redaction.redact(command)),
+  };
 }
 
 function redactData(value: unknown, redaction: SecretRedaction): unknown {
@@ -369,6 +409,11 @@ export function redactSummary(
   if (summary === undefined) return undefined;
   return {
     app: summary.app,
+    findings: {
+      unset: summary.findings.unset.map((variable) =>
+        redactUnsetPlatformVariable(variable, redaction),
+      ),
+    },
     nodes: summary.nodes.map((node) => ({
       address: node.address,
       entities: node.entities.map((entity) => ({

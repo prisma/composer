@@ -3,12 +3,17 @@
  * data objects. A node's `extension` + `type` form its deploy-time registry key (ADR-0017).
  */
 import { blindCast } from '@internal/foundation/casts';
-import { POINTER, type Pointer, type PointerKind } from '@internal/foundation/pointer';
+import {
+  isSecretPointer,
+  POINTER,
+  type Pointer,
+  type PointerKind,
+} from '@internal/foundation/pointer';
 import type { SecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { ConfigParam, Connection, Params } from './config.ts';
 import type { Contract } from './contract.ts';
-import { LoadError } from './graph-types.ts';
+import { LoadError, type NodeId } from './graph-types.ts';
 import { type ModuleInput, type NotModuleInput, primitiveMisuse } from './module-input.ts';
 import {
   type EnvironmentFacts,
@@ -16,9 +21,11 @@ import {
   isValue,
   originOf,
   type PlainData,
+  type RuntimeValue,
   type SourceOrigin,
   VALUE,
   VALUE_ORIGIN,
+  VALUE_RESOURCE,
   type Value,
 } from './value.ts';
 
@@ -37,7 +44,7 @@ const SECRET_SOURCE: unique symbol = blindCast<never, 'unique-symbol brand for a
   Symbol.for('prisma:secret-source'),
 );
 
-/** A secret's source: a target-defined payload core forwards but never inspects. It is a value too, known only at boot; its real value at deploy is the source itself, a secret pointer. A target (e.g. @prisma/composer-prisma-cloud's `envSecret`) builds one with `secretSource()`. */
+/** A secret's source: a target-defined payload core forwards but never inspects. It is a value too, known only at boot; its real value at deploy is the source itself, a secret pointer. A target builds one with `secretSource()`. */
 export interface SecretSource<T = unknown> extends Value<unknown> {
   readonly [SECRET_SOURCE]: true;
   /** Target-defined. Core never reads this; the target that authored the source reads it back. */
@@ -46,30 +53,28 @@ export interface SecretSource<T = unknown> extends Value<unknown> {
 
 /** What a deploy target says about a source it builds. */
 export interface SourceOptions {
-  /** How errors name the source, e.g. `envSecret('STRIPE_KEY')`. Defaults to `a secret source` or `a param source`. */
+  /** How errors name the source. Defaults to `a source`. */
   readonly label?: string;
 }
 
 /** What a deploy target says about a secret source it builds. */
 export interface SecretSourceOptions extends SourceOptions {
-  /** The app secrets key that holds this secret's value, as `envSecret('NAME')`'s `NAME`. Composer redacts the value under it wherever it prints, and `prisma dev` hands it to its second process. */
+  /** The app secrets key that holds this secret's value. Composer redacts the value under it wherever it prints, and `prisma dev` hands it to its second process. */
   readonly secretsKey?: string;
 }
 
 /** What a deploy target says about a param source it builds. */
 export interface ParamSourceOptions extends SourceOptions {
-  /** The app configuration key whose text at deploy is the source's real value, as for `envParam()`. Without one the source is known only at boot, and its real value is the source itself, a pointer. */
-  readonly configurationKey?: string;
-  /** For a source known only at boot: `true` makes the source a secret pointer, whose variable holds a secret; otherwise it is a plain pointer. */
+  /** `true` makes the source a secret pointer, whose variable holds a secret; otherwise it is a plain pointer. */
   readonly redacted?: boolean;
 }
 
-/** Builds a secret source from a target-defined payload: the SPI a deploy target's own constructor (e.g. `envSecret`) calls. The source is a value whose real value at deploy is itself, a pointer. Core forwards it and never inspects the payload. */
+/** Builds a secret source from a target-defined payload: the SPI a deploy target's own constructor calls. The source is a value whose real value at deploy is itself, a pointer. Core forwards it and never inspects the payload. */
 export function secretSource<P, T = unknown>(
   payload: P,
   options?: SecretSourceOptions,
 ): SecretSource<P> & Value<T> {
-  const label = sourceLabel('secretSource', options?.label, 'a secret source');
+  const label = sourceLabel('secretSource', options?.label);
   const secretsKey = options?.secretsKey;
   if (secretsKey !== undefined && (typeof secretsKey !== 'string' || secretsKey.length === 0)) {
     throw new Error('secretSource() secretsKey must be a non-empty string.');
@@ -81,13 +86,13 @@ export function secretSource<P, T = unknown>(
     buildSource(
       SECRET_SOURCE,
       payload,
-      { kind: 'source', sourceKind: 'secret', label, secretsKey },
+      { kind: 'source', sourceKind: 'secret', label, secretsKey, resource: undefined },
       'secret',
     ),
   );
 }
 
-/** True if `value` is a secret source, such as an `envSecret()` result. */
+/** True if `value` is a secret source. */
 export function isSecretSource(value: unknown): value is SecretSource {
   return (
     typeof value === 'object' &&
@@ -139,32 +144,20 @@ const PARAM_SOURCE: unique symbol = blindCast<never, 'unique-symbol brand for a 
   Symbol.for('prisma:param-source'),
 );
 
-/** A param's source: a target-defined payload core forwards but never inspects. It is a value too: known at deploy when it names an app configuration key (`envParam`), otherwise known only at boot, with the source itself as its real value: a secret pointer when it is redacted, a plain pointer otherwise. A target builds one with `paramSource()`. */
+/** A param's source: a target-defined payload core forwards but never inspects. It is a value too, known only at boot, with the source itself as its real value: a secret pointer when it is redacted, a plain pointer otherwise. A target builds one with `paramSource()`. */
 export interface ParamSource<T = unknown> extends Value<unknown> {
   readonly [PARAM_SOURCE]: true;
   /** Target-defined. Core never reads this; the target that authored the source reads it back. */
   readonly payload: T;
 }
 
-/** Builds a param source from a target-defined payload: the SPI a deploy target's own constructor (e.g. `envParam`) calls. Core forwards it and never inspects the payload. */
+/** Builds a param source from a target-defined payload: the SPI a deploy target's own constructor calls. Core forwards it and never inspects the payload. */
 export function paramSource<P, T = unknown>(
   payload: P,
   options?: ParamSourceOptions,
 ): ParamSource<P> & Value<T> {
-  const label = sourceLabel('paramSource', options?.label, 'a param source');
-  const configurationKey = options?.configurationKey;
-  if (
-    configurationKey !== undefined &&
-    (typeof configurationKey !== 'string' || configurationKey.length === 0)
-  ) {
-    throw new Error('paramSource() configurationKey must be a non-empty string.');
-  }
+  const label = sourceLabel('paramSource', options?.label);
   const redacted = options?.redacted === true;
-  if (configurationKey !== undefined && redacted) {
-    throw new Error(
-      'paramSource() takes configurationKey, for a value known at deploy, or redacted, for a secret known only at boot, not both.',
-    );
-  }
   return blindCast<
     ParamSource<P> & Value<T>,
     'the frozen object carries the value brand, a source origin whose source is itself, the source brand and the payload, which is the ParamSource and Value shape'
@@ -172,14 +165,14 @@ export function paramSource<P, T = unknown>(
     buildSource(
       PARAM_SOURCE,
       payload,
-      { kind: 'source', sourceKind: 'param', label, configurationKey },
-      configurationKey !== undefined ? undefined : redacted ? 'secret' : 'plain',
+      { kind: 'source', sourceKind: 'param', label, resource: undefined },
+      redacted ? 'secret' : 'plain',
     ),
   );
 }
 
-function sourceLabel(factory: string, label: unknown, fallback: string): string {
-  if (label === undefined) return fallback;
+function sourceLabel(factory: string, label: unknown): string {
+  if (label === undefined) return 'a source';
   if (typeof label !== 'string' || label.length === 0) {
     throw new Error(`${factory}() label must be a non-empty string.`);
   }
@@ -196,17 +189,18 @@ function buildSource(
   brand: typeof SECRET_SOURCE | typeof PARAM_SOURCE,
   payload: unknown,
   origin: SourceOriginWithoutSource,
-  kind: PointerKind | undefined,
+  kind: PointerKind,
+  hidden: PropertyDescriptorMap = {},
 ): object {
   const source = {
     [VALUE]: true,
     [VALUE_ORIGIN]: origin,
     [brand]: true,
-    ...(kind === undefined ? {} : { [POINTER]: kind }),
+    [POINTER]: kind,
     payload,
   };
   Object.defineProperty(origin, 'source', { value: source });
-  Object.defineProperties(source, coercions(origin));
+  Object.defineProperties(source, { ...coercions(origin), ...hidden });
   Object.freeze(origin);
   return Object.freeze(source);
 }
@@ -231,12 +225,8 @@ const sourceMisuses = new WeakSet<LoadError>();
 function sourceMisuse(origin: SourceOriginWithoutSource, what: string): LoadError {
   const { label } = origin;
   const error = new LoadError(
-    origin.sourceKind === 'secret' || origin.configurationKey === undefined
-      ? `${label} is known only at boot: the deploy holds a pointer to it, never its value, and ${what}. ` +
-          'A module body can only pass it on, into a provision() binding; to compute with the value, do it in the service that reads it.'
-      : `${label} is a value, not its real value, and ${what}. ` +
-          'A module body can only pass it on: into a provision() binding or as a resolve() dependency. ' +
-          `To compute with it, list it: resolve([${label}], ([v]) => …).`,
+    `${label} is known only at boot: the deploy holds a pointer to it, never its value, and ${what}. ` +
+      'A module body can only pass it on, into a provision() binding; to compute with the value, do it in the service that reads it.',
   );
   sourceMisuses.add(error);
   return error;
@@ -254,7 +244,7 @@ export function sourceOriginOf(source: ParamSource | SecretSource): SourceOrigin
   return origin.kind === 'source' ? origin : undefined;
 }
 
-/** True if `value` is a param source, such as an `envParam()` result. */
+/** True if `value` is a param source. */
 export function isParamSource(value: unknown): value is ParamSource {
   return (
     typeof value === 'object' &&
@@ -265,11 +255,10 @@ export function isParamSource(value: unknown): value is ParamSource {
   );
 }
 
-/** What `provision(service, { params })` accepts per declared param: a literal (schema-validated when config is built) or an opaque `ParamSource`, taking precedence over `param.default`. Every entry is optional — an unbound param falls back to its `default`. */
+/** What `provision(service, { params })` accepts per declared param: a literal (schema-validated when config is built) or a deploy-time value, taking precedence over `param.default`. Every entry is optional — an unbound param falls back to its `default`. */
 export type ParamBindings<P extends Params> = {
   readonly [K in keyof P]?:
     | StandardSchemaV1.InferOutput<P[K]['schema']>
-    | ParamSource
     | (StandardSchemaV1.InferOutput<P[K]['schema']> extends PlainData
         ? Value<StandardSchemaV1.InferOutput<P[K]['schema']>>
         : never);
@@ -503,8 +492,8 @@ export interface AppRootContext<
   readonly input: I extends StandardSchemaV1 ? ModuleInput<I> : undefined;
   /** The deploy-time facts of the environment, each a value (ADR-0062). */
   readonly environment: EnvironmentFacts;
-  /** Registers an owned child (resource, service or module) under a stable id. */
-  readonly provision: ModuleBuilder['provision'];
+  /** Registers an owned child (resource, service, module or value resource) under a stable id. */
+  readonly provision: AppRootProvision;
 }
 
 /**
@@ -586,9 +575,9 @@ type ModuleProvisionArgs<
     ? [opts?: ModuleProvisionOptions<D, I>]
     : [opts: ModuleProvisionOptions<D, I>];
 
-/** The options `provision()` takes after a service or module node `N`. */
-type ProvisionArgs<N> =
-  N extends ServiceNode<infer D, infer P, Expose, infer I>
+type ProvisionArgs<N> = N extends ValueResourceNode
+  ? [opts?: { id?: string }]
+  : N extends ServiceNode<infer D, infer P, Expose, infer I>
     ? ServiceProvisionArgs<D, I, ParamBindings<P>>
     : N extends ModuleNode<infer D, Expose, infer I>
       ? ModuleProvisionArgs<D, I>
@@ -602,24 +591,22 @@ type ExposeOf<N> =
       ? E
       : never;
 
-export interface ModuleBuilder {
+type OnlyInAppRoot =
+  "Only appRoot() can provision a resource that is a value. Provision it in the app root and pass its value down through this module's input.";
+
+interface SharedProvision {
   /** Provisions an owned resource; its id defaults to the node's `name`. */
-  provision<C extends AnyContract | undefined>(
-    resource: ResourceNode<C>,
+  <C extends AnyContract | undefined>(
+    resource: ResourceNode<C> & { readonly [VALUE_RESOURCE]?: undefined },
     opts?: { id?: string },
   ): { readonly id: string } & (C extends AnyContract ? RefPort<C> : Record<never, never>);
-  /** Registers an owned service; its id defaults to the node's `name`; `deps`/`input` are required iff it declares them; a reserved param may be bound (literal or `ParamSource`), overriding its default. */
-  provision<
-    D extends Deps,
-    P extends Params,
-    E extends Expose,
-    I extends StandardSchemaV1 | undefined,
-  >(
+  /** Registers an owned service; its id defaults to the node's `name`; `deps`/`input` are required iff it declares them; a reserved param may be bound (literal or deploy-time value), overriding its default. */
+  <D extends Deps, P extends Params, E extends Expose, I extends StandardSchemaV1 | undefined>(
     service: ServiceNode<D, P, E, I>,
     ...args: ServiceProvisionArgs<D, I, ParamBindings<P>>
   ): ProvisionedRef<E>;
   /** Registers an owned child module; its id defaults to the node's `name`; `deps` and `input` are required iff it declares them. */
-  provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
+  <D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
     child: ModuleNode<D, E, I>,
     ...args: ModuleProvisionArgs<D, I>
   ): ProvisionedRef<E>;
@@ -630,12 +617,7 @@ export interface ModuleBuilder {
    * that call site resolves to this overload, or to the next one for a
    * service without an input schema.
    */
-  provision<
-    D extends Deps,
-    P extends Params,
-    E extends Expose,
-    I extends StandardSchemaV1 | undefined,
-  >(
+  <D extends Deps, P extends Params, E extends Expose, I extends StandardSchemaV1 | undefined>(
     service: ServiceNode<D, P, E, I>,
     opts: {
       id?: string;
@@ -644,29 +626,43 @@ export interface ModuleBuilder {
       params?: ParamBindings<P>;
     },
   ): ProvisionedRef<E>;
-  provision<D extends Deps, P extends Params, E extends Expose>(
+  <D extends Deps, P extends Params, E extends Expose>(
     service: ServiceNode<D, P, E, undefined>,
     opts: { id?: string; deps: DepBindings<D>; input?: never; params?: ParamBindings<P> },
   ): ProvisionedRef<E>;
   /** The child-module call with `deps` written out — the same generic-wrapper escape as the two service overloads above. */
-  provision<D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
+  <D extends Deps, E extends Expose, I extends StandardSchemaV1 | undefined>(
     child: ModuleNode<D, E, I>,
     opts: { id?: string; deps: DepBindings<D>; input: InputBindingOf<I> },
   ): ProvisionedRef<E>;
-  provision<D extends Deps, E extends Expose>(
+  <D extends Deps, E extends Expose>(
     child: ModuleNode<D, E, undefined>,
     opts: { id?: string; deps: DepBindings<D>; input?: never },
   ): ProvisionedRef<E>;
-  /**
-   * Any service or child module. Declared last, so a call no overload accepts
-   * reports this overload's error, which names the binding key that does not
-   * fit, or says a module's whole input is not a value.
-   */
-  provision<N extends ServiceNode | ModuleNode>(
-    node: N,
-    ...args: ProvisionArgs<N>
-  ): ProvisionedRef<ExposeOf<N>>;
 }
+
+type ProvisionInModule = <N extends ServiceNode | ModuleNode | ValueResourceNode>(
+  node: N extends ValueResourceNode ? OnlyInAppRoot : N,
+  ...args: ProvisionArgs<N>
+) => ProvisionedRef<ExposeOf<N>>;
+
+type ProvisionValue = <V extends SourceValue>(
+  node: ValueResourceNode<V>,
+  opts?: { readonly id?: string },
+) => V & { readonly id: string };
+
+type ProvisionInAppRoot = <N extends ServiceNode | ModuleNode | ValueResourceNode>(
+  node: N,
+  ...args: ProvisionArgs<N>
+) => ProvisionedRef<ExposeOf<N>>;
+
+export interface ModuleBuilder {
+  // The catch-all goes last: TypeScript reports the last overload's error.
+  /** Registers an owned child (resource, service or module) under a stable id. */
+  readonly provision: SharedProvision & ProvisionInModule;
+}
+
+type AppRootProvision = ProvisionValue & SharedProvision & ProvisionInAppRoot;
 
 /** Dependency map: name → the slot the service declares. Only declarations are admitted, never a concrete ResourceNode. */
 // biome-ignore lint/suspicious/noExplicitAny: `any` (not `unknown`) preserves loaded-dep inference from each entry's hydrate return.
@@ -951,6 +947,82 @@ export function resource<
   return new FrozenResourceNode(def);
 }
 
+/** What a value resource holds: a secret source or a param source, known only at boot. */
+export type SourceValue = (SecretSource | ParamSource) & RuntimeValue<unknown>;
+
+/** A resource node that is also a value. Only `provision()` in an app root's body takes its value out. It provides no contract and has no dependencies. */
+export type ValueResourceNode<V extends SourceValue = SourceValue> = ResourceNode<
+  undefined,
+  Record<never, never>
+> & { readonly [VALUE_RESOURCE]: V };
+
+function isSourceValue(value: unknown): value is SourceValue {
+  return (isSecretSource(value) || isParamSource(value)) && sourceOriginOf(value) !== undefined;
+}
+
+class FrozenValueResourceNode<V extends SourceValue> extends ResourceNodeBase<
+  undefined,
+  Record<never, never>,
+  ResourceProps
+> {
+  readonly [VALUE_RESOURCE]: V;
+
+  constructor(def: {
+    name: string;
+    extension: string;
+    type: string;
+    props?: ResourceProps;
+    value: V;
+  }) {
+    super(def);
+    this[VALUE_RESOURCE] = def.value;
+    freezeNode(this);
+  }
+}
+
+/** Builds a frozen resource node that is a value: `value`, a source built with `secretSource()` or `paramSource()`. It provides no contract and has no dependencies. */
+export function valueResource<V extends SourceValue>(def: {
+  readonly name: string;
+  readonly extension: string;
+  readonly type: string;
+  readonly props?: ResourceProps;
+  readonly value: V;
+}): ValueResourceNode<V> {
+  if (!isSourceValue(def.value)) {
+    throw new Error(
+      'valueResource() value must be a source, built with secretSource() or paramSource().',
+    );
+  }
+  return new FrozenValueResourceNode(def);
+}
+
+export function valueResourceOrigin(node: unknown): SourceOrigin | undefined {
+  if (!isNode(node) || node.kind !== 'resource' || !(VALUE_RESOURCE in node)) return undefined;
+  const value = node[VALUE_RESOURCE];
+  return isSecretSource(value) || isParamSource(value) ? sourceOriginOf(value) : undefined;
+}
+
+/** True for a resource node that is a value: one that holds a source under the value resource key. */
+export function isValueResource(node: unknown): node is ValueResourceNode {
+  return valueResourceOrigin(node) !== undefined;
+}
+
+export function provisionedValue(origin: SourceOrigin, address: NodeId): SourceValue {
+  const { source, ...kept } = origin;
+  return blindCast<
+    SourceValue,
+    "a new frozen source with the original source's brand, payload and pointer kind, and an origin that adds the address"
+  >(
+    buildSource(
+      isSecretSource(source) ? SECRET_SOURCE : PARAM_SOURCE,
+      source.payload,
+      { ...kept, resource: address },
+      isSecretPointer(source) ? 'secret' : 'plain',
+      { id: { value: address } },
+    ),
+  );
+}
+
 /**
  * Constructs a branded, frozen Service node — declarations only (inputs,
  * params, the input schema, build adapter, and the ports it exposes). Pure;
@@ -1183,6 +1255,8 @@ export function isNode(
 }
 
 /** A node's dependency slots. A resource node built by another installed copy of core may have no `inputs`; that means none. */
-export function slotsOf(node: ServiceNode | ResourceNode): ServiceNode['inputs'] {
+export function slotsOf(
+  node: ServiceNode | ResourceNode<AnyContract | undefined>,
+): ServiceNode['inputs'] {
   return node.kind === 'resource' ? (node.inputs ?? {}) : node.inputs;
 }

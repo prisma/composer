@@ -127,7 +127,40 @@ describe('Load of a module root', () => {
     });
 
     expect(() => Load(root)).toThrow(LoadError);
-    expect(() => Load(root)).toThrow(/Duplicate provision id "auth"/);
+    expect(() => Load(root)).toThrow(
+      'Duplicate provision id "auth" in module "shop": "shop.auth" already holds resource "db", and service "test-service" takes the same id. Give one of them a different id with provision(node, { id: \'…\' }).',
+    );
+  });
+
+  test('the duplicate-id error names the module by its full address and the node already at the id', () => {
+    const inner = module('inner', ({ provision }) => {
+      provision(dbResource(), { id: 'store' });
+      provision(
+        module('cache', () => {}),
+        { id: 'store' },
+      );
+    });
+    const root = module('shop', ({ provision }) => {
+      provision(inner, { id: 'auth' });
+    });
+
+    expect(() => Load(root)).toThrow(
+      'Duplicate provision id "store" in module "shop.auth": "shop.auth.store" already holds resource "db", and module "cache" takes the same id.',
+    );
+  });
+
+  test('the duplicate-id error names a module already at the id by its kind and name', () => {
+    const root = module('shop', ({ provision }) => {
+      provision(
+        module('cache', () => {}),
+        { id: 'store' },
+      );
+      provision(dbResource(), { id: 'store' });
+    });
+
+    expect(() => Load(root)).toThrow(
+      '"shop.store" already holds module "cache", and resource "db" takes the same id.',
+    );
   });
 
   test('a provision id containing "_" or "." is a LoadError naming the constraint', () => {

@@ -7,14 +7,14 @@ import { createTestCli } from '@prisma/cli-engine/testing';
 import type { DevEvent } from '../../operations/dev.ts';
 import { createOperationsDouble } from '../../testing/operations-double.ts';
 import { type ComposerOperations, createComposerFamily } from '../family.ts';
-import { commandAt } from './command-at.ts';
 import { validComposerSection } from './fixtures/composer-section.ts';
+import { mountAsHost } from './host-mount.ts';
 
 function cliWith(operations: ComposerOperations) {
   const family = createComposerFamily({ operations });
   return createTestCli({
     commandFamilies: [family],
-    commands: { deploy: commandAt(family, 'deploy'), dev: commandAt(family, 'dev') },
+    ...mountAsHost(family),
     config: { composer: validComposerSection() },
   });
 }
@@ -49,7 +49,7 @@ describe('dev — converging in process', () => {
 
     expect(double.calls.dev[0]?.signal).toBeInstanceOf(AbortSignal);
     expect(double.calls.deps.dev[0]?.alchemy).toBeUndefined();
-    expect(commandAt(createComposerFamily({ operations: double.operations }), 'dev').maySpawn).toBe(
+    expect(createComposerFamily({ operations: double.operations }).commands['dev']?.maySpawn).toBe(
       false,
     );
     expect(result.exitCode).toBe(130);
@@ -60,7 +60,7 @@ describe('dev — converging in process', () => {
     const web = {
       name: 'apply-resource',
       converge: 'dev.rebuild.2',
-      fqn: 'shop.web',
+      resourceId: 'shop.web',
       resourceType: 'Local.Compute',
     } as const;
     const { result } = await runWithEvents(

@@ -15,17 +15,39 @@
  * `dev` is credential-free: everything it starts runs on this machine.
  */
 import * as path from 'node:path';
+import { quotedList } from '@internal/foundation/errors';
 import type { EngineEvent } from '@prisma/cli-engine';
 import { defineSessionCommand, flag } from '@prisma/cli-engine';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
 import type { DevEvent, DevInput, DevStep } from '../../operations/dev.ts';
 import { DEV_ENVIRONMENT, type ServiceEndpoint } from '../../operations/shared.ts';
+import { SecretRedaction } from '../../redaction.ts';
 import { withConsoleOnStderr } from '../console-to-stderr.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
 import { toEngineError } from '../translate-error.ts';
 
 const STOP_STEP = "Stopping the app's services — emulators and data stay up";
+
+function valueReadsChangedText(
+  change: Extract<DevEvent, { readonly kind: 'value-reads-changed' }>,
+): string {
+  const clauses = [
+    ...(change.added.length > 0 ? [`reads of ${quotedList(change.added)} were added`] : []),
+    ...(change.removed.length > 0 ? [`reads of ${quotedList(change.removed)} were removed`] : []),
+    ...(change.changed.length > 0
+      ? [`${quotedList(change.changed)} ${change.changed.length === 1 ? 'was' : 'were'} changed`]
+      : []),
+  ];
+  const [first, second, third] = clauses;
+  const joined =
+    third !== undefined
+      ? `${first}, ${second}, and ${third}`
+      : second !== undefined
+        ? `${first} and ${second}`
+        : first;
+  return `The platform variables the app reads changed since dev started: ${joined}. Restart dev to apply them; rebuilds are paused until then.`;
+}
 
 /** Resolves when the run is asked to stop. */
 function stopRequested(signal: AbortSignal): Promise<void> {
@@ -36,11 +58,11 @@ function stopRequested(signal: AbortSignal): Promise<void> {
 }
 
 function devStepId(step: DevStep): string {
-  return step.name === 'converge' ? step.id : `${step.converge}.${step.fqn}`;
+  return step.name === 'converge' ? step.id : `${step.converge}.${step.resourceId}`;
 }
 
 function devStepLabel(step: DevStep): string {
-  if (step.name === 'apply-resource') return `${step.status} ${step.fqn}`;
+  if (step.name === 'apply-resource') return `${step.status} ${step.resourceId}`;
   return step.id === 'dev.converge' ? 'converge' : step.id.replace(/^dev\.rebuild\./, 'rebuild ');
 }
 
@@ -131,6 +153,10 @@ function reportDevEvent(
           severity: 'warn',
           text: 'The values the config or secrets adapters return changed since dev started. Restart dev to apply them; rebuilds are paused until then.',
         });
+        return;
+
+      case 'value-reads-changed':
+        report({ kind: 'message', severity: 'warn', text: valueReadsChangedText(event) });
         return;
 
       case 'watch-error':
@@ -291,57 +317,62 @@ export const createDevCommand = (operations: ComposerOperations) =>
       },
     },
     needs: { config: composerSection },
-    handler: (args, ctx) =>
-      withConsoleOnStderr(async () => {
-        const result = await operations.dev(
-          {
-            entry: args.flags.entry,
-            config: ctx.config,
-            name: args.flags.name,
-            environment: args.flags.environment,
-            fresh: args.flags.fresh,
-            detach: args.flags.detach,
-            cwd: ctx.cwd,
-            onEvent: reportDevEvent(ctx.report, ctx.cwd),
-            signal: ctx.signal,
-          },
-          {},
-        );
+    handler: (args, ctx) => {
+      const redaction = new SecretRedaction(process.env);
+      return withConsoleOnStderr(
+        (text) => redaction.redact(text),
+        async () => {
+          const result = await operations.dev(
+            {
+              entry: args.flags.entry,
+              config: ctx.config,
+              name: args.flags.name,
+              environment: args.flags.environment,
+              fresh: args.flags.fresh,
+              detach: args.flags.detach,
+              cwd: ctx.cwd,
+              onEvent: reportDevEvent(ctx.report, ctx.cwd),
+              signal: ctx.signal,
+            },
+            { redaction },
+          );
 
-        // Ctrl-C during the first converge: the engine settles 130 from its
-        // own record of the signal, so the interruption is only reported.
-        if (!result.ok) {
-          if (result.failure.code === 'DEV.INTERRUPTED' && ctx.signal.aborted) {
-            ctx.report({
-              kind: 'message',
-              severity: 'warn',
-              text: `${result.failure.message} ${result.failure.fix ?? ''}`.trim(),
-            });
+          // Ctrl-C during the first converge: the engine settles 130 from its
+          // own record of the signal, so the interruption is only reported.
+          if (!result.ok) {
+            if (result.failure.code === 'DEV.INTERRUPTED' && ctx.signal.aborted) {
+              ctx.report({
+                kind: 'message',
+                severity: 'warn',
+                text: `${result.failure.message} ${result.failure.fix ?? ''}`.trim(),
+              });
+              return ok(undefined);
+            }
+            return notOk(toEngineError(result.failure));
+          }
+
+          if (args.flags.detach) {
+            if (ctx.signal.aborted) {
+              await stopDetachedApp(
+                operations,
+                {
+                  entry: args.flags.entry,
+                  name: args.flags.name,
+                  environment: args.flags.environment,
+                },
+                ctx,
+              );
+            }
             return ok(undefined);
           }
-          return notOk(toEngineError(result.failure));
-        }
 
-        if (args.flags.detach) {
-          if (ctx.signal.aborted) {
-            await stopDetachedApp(
-              operations,
-              {
-                entry: args.flags.entry,
-                name: args.flags.name,
-                environment: args.flags.environment,
-              },
-              ctx,
-            );
-          }
+          await stopRequested(ctx.signal);
+          await result.value.stop();
+          // Ctrl-C settles 130 because the engine records the signal that fired and
+          // settles at 128 + it, including for a handler that cleaned up and
+          // returned. Reporting the termination is not this handler's to do.
           return ok(undefined);
-        }
-
-        await stopRequested(ctx.signal);
-        await result.value.stop();
-        // Ctrl-C settles 130 because the engine records the signal that fired and
-        // settles at 128 + it, including for a handler that cleaned up and
-        // returned. Reporting the termination is not this handler's to do.
-        return ok(undefined);
-      }),
+        },
+      );
+    },
   });

@@ -198,8 +198,11 @@ Console changes nothing.
 
 Compute deployments capture their environment when they are created. Composer
 waits for its environment-variable updates to finish before creating a
-deployment, including updates to an existing input document. Later variable
-updates do not change an already-created deployment's environment.
+deployment. Later variable updates do not change an already-created
+deployment's environment. A service's input document is not an environment
+variable: the deploy writes it into the service's artifact, in
+`compute.bootstrap.json`, so it is not limited to a variable's 8 KB, and changing it gives the
+service a new artifact and a new deployment.
 
 After a deploy, each service is a Compute service in the Project; its public
 URL is its service endpoint domain — printed when the deploy finishes, and
@@ -241,14 +244,7 @@ dependencies are traced and copied into the deploy artifact (see
 Inside `plan and apply`, each resource the deploy engine creates, updates or deletes is a step of its own, such as `▸ creating storefront-auth.web` and `✔ created storefront-auth.web (12.0s)`, and the engine's log lines print between them.
 The last line is the whole deploy, from start to finish.
 
-With `--json`, each step is a
-`step-started` and a `step-finished` line on stdout, followed by an
-`endpoint` line per public URL and the `result` line. A `step-finished` line
-carries `data.durationMs`. An assemble step's `data` also holds whatever the
-service's build adapter reports, and the env var check's `data` holds
-whatever the deploy target reports. Those extra fields vary by adapter and
-target, so read them as information, not as a stable format. The `result`
-line has the deploy's total `durationMs` beside `summary`.
+With `--json`, each step is a `step-started` and a `step-finished` line on stdout, followed by an `endpoint` line per public URL and the `result` line. A `step-finished` line carries `data.durationMs`. An assemble step's `data` also holds whatever the service's build adapter reports, and the `check environment variables` step's `data` holds `checked` and `unset`, how many platform variables it checked and how many have no value. When some have no value and no service needs them, a `message` line follows the step, whose `data.unset` lists each one with its readers and commands ([Platform variables](#platform-variables)). The build adapter's fields vary by adapter, so read them as information, not as a stable format. The `result` line has the deploy's total `durationMs` beside `summary`, whose `findings.unset` lists the platform variables with no value again.
 
 A deploy ends by printing your app's own topology — the names you authored,
 what each one became on the platform, and the public URLs:
@@ -282,6 +278,72 @@ A node that deployed but published nothing reportable is still listed, marked
 `{ outputs: {} }` blob from the underlying deploy engine — always empty, never
 about your app. It's gone, replaced by the tree above. Nothing you can
 configure printed it and nothing depended on it.
+
+## Platform variables
+
+A platform variable is a variable on Prisma Cloud that a service reads by name at boot. Your app root declares each one with a node, `variable({ name })` for a plain value or `variable.secret({ name })` for a secret, and passes its value to the services that read it ([Building an app § Platform variables](building-an-app.md#platform-variables)):
+
+```ts
+export default appRoot('shop', ({ provision }) => {
+  const apiKey = provision(variable.secret({ name: 'EMAIL_API_KEY' }));
+  provision(emailService, { input: { apiKey } });
+});
+```
+
+You set its value on the platform. The node creates nothing: the deploy report has no line for it. The deploy does not copy a value from `.env` or your shell to the platform, because that could push a local value into a remote environment by accident, and today it creates, changes and deletes no platform variable.
+
+Set a variable with the `prisma` CLI, at one of three scopes:
+
+```sh
+# production
+prisma project env add 'EMAIL_API_KEY=<value>' --project '<project id>' --role production
+# every preview environment
+prisma project env add 'EMAIL_API_KEY=<value>' --project '<project id>' --role preview
+# one preview environment only, overriding the preview-wide value
+prisma project env add 'EMAIL_API_KEY=<value>' --project '<project id>' --branch 'staging'
+```
+
+`update`, `list` and `delete` take the same flags. A deployment receives every variable of its class with its own branch's overrides on top, so a preview-wide value reaches every new preview environment.
+
+The platform copies the variables into a deployment when it creates it. A value you change reaches a service at its next deploy, and that deploy replaces exactly the services that read the variable.
+
+### What the deploy checks
+
+The `check environment variables` step looks up every platform variable the app reads, before any service or database is created. It reads whether a value exists, never the value.
+
+- **A variable a service needs that has no value fails the deploy.** Whether a service needs it is decided by the service's input schema: the deploy leaves the variable out and validates the input. A required field fails; an optional one does not.
+
+  ```text
+  Deploy failed. 1 platform variable a service needs has no value:
+    - EMAIL_API_KEY  (read by service "shop.email", field "apiKey")
+
+  Set it on the platform, then deploy again:
+    - prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_…' --role preview
+    - prisma project env add 'EMAIL_API_KEY=<value>' --project 'proj_…' --branch 'staging'
+  ```
+
+  For `production` the command uses `--role production`. For any other environment the preview-wide command comes first, so that the next preview environment has the value too.
+- **A variable nothing needs that has no value is listed, and the deploy goes on.** The list prints right after the step, and again at the end of the deploy output:
+
+  ```text
+  ✔ check environment variables (1.2s)
+  Platform variables with no value:
+    - STRIPE_WEBHOOK_SECRET  (read by service "shop.billing", field "webhookSecret")
+      prisma project env add 'STRIPE_WEBHOOK_SECRET=<value>' --project 'proj_…' --role production
+  ```
+
+  The service starts without that field, and its schema decides what that means. A platform variable node that no service reads is listed the same way, once, named by its node: `named by resource "shop.emailFrom", read by no service`. That includes a secret that a module receives and passes to no service.
+- **A variable Prisma Cloud manages itself** (`isManagedBySystem`) fails the deploy, naming it. Rename it in your app.
+
+A new app's first deploy creates its project, then stops at this step if a service needs a variable, with the commands and the new project id. Set the variables and deploy again.
+
+At boot, an unset or empty variable leaves its field out of the service's input, and the service's schema decides. A service whose schema refuses the input fails at boot, and the error ends with the names of the variables that had no value. **Prisma Cloud still reports a service that fails at boot as running, and the deploy promotes it**, so the deploy succeeds; the error is in `prisma service logs <service> --project <project id>`.
+
+Every deployment on Prisma Cloud receives every variable of its class, including the ones another service reads. Under `prisma dev` each service receives only its own.
+
+### Names
+
+A name is an upper-case letter followed by upper-case letters, digits and underscores, such as `STRIPE_SECRET_KEY`. These names are reserved: any name starting with `COMPOSER_`, `DATABASE_URL`, `DATABASE_URL_POOLED`, `PORT`, `PATH` and `HOME`. Each name is declared by one node: two nodes with one name fail, naming both addresses. A name has one meaning in an app: a platform variable and a field `X` of your root's input cannot share it. Each of these fails before anything is created, naming the variable and both places.
 
 ## Listing what is deployed
 
@@ -379,9 +441,7 @@ example `bun destroy-staging.ts`, or `node destroy-staging.ts` on a supported No
 
 The three teardown shapes differ in what happens to state. Destroying any environment other than production removes its resources, then deletes its Branch — and the Branch takes the environment's deploy state with it. Destroying **production** removes the resources and empties production's deploy state as it goes, but the production Branch survives, so an emptied state scope remains until the Project itself is removed. Deleting the **Project** (below, or from the Console) removes every Branch and all state in one stroke. Destroy never creates: tearing down an environment that was never deployed fails with "nothing deployed" rather than provisioning one first.
 
-Destroying production also removes the app's Project once nothing is left in
-it, so hand-run stacks don't pile up as empty Projects in your workspace. If
-the Project still holds another environment's resources, it's left in place.
+Destroying production also removes the app's Project, so hand-run stacks don't pile up as empty Projects in your workspace. If the Project still holds another environment's resources, it's left in place. Removing the Project deletes every variable on the platform set on it, platform variables included, so set them again after the next deploy creates the Project.
 
 ## CI
 
@@ -391,9 +451,9 @@ pattern: on push, run `prisma deploy --environment "pr-$PR_NUMBER"`; on
 close, run a script like the one under [Removing an app or an environment](#removing-an-app-or-an-environment)
 that passes that name, `environment: 'pr-42'` for PR 42.
 
-One extra: if your app binds `envSecret` (see [Building an app § Service input](building-an-app.md#service-input)), each environment keeps its own copy of those platform variables, and the platform copy is the store; the app secrets only seed it. A fresh environment (a new `pr-42`) has none of them yet, so CI must export the values (e.g. `AUTH_SIGNING_SECRET`) alongside the two credentials; preflight copies missing ones up on that first deploy. A name absent from both the platform and the app secrets fails the deploy early, naming the missing variable. An `envParam` input is different: the deploy reads it from the app configuration on every deploy, so CI exports it, or commits it in `.env.<environment>` and lists `dotenv()`, every time.
+One extra: if your app declares platform variables (see [Building an app § Platform variables](building-an-app.md#platform-variables)), they live on the platform, and CI does not supply them. Set each one once with `--role preview`, and every new `pr-42` environment reads it ([Platform variables](#platform-variables)). A variable a service needs that has no value fails the deploy, naming it. A root input field is different: the deploy reads it from the app configuration on every deploy, so CI exports it, or commits it in `.env.<environment>` and lists `dotenv()`, every time.
 
-A root's input and an `envParam()` can come from a committed `.env.<environment>` file per environment ([Values from outside the code](building-an-app.md#values-from-outside-the-code)). Keep secrets out of committed files: put them in CI's secret store and keep `environmentVariables()` in `secrets`.
+A root's input can come from a committed `.env.<environment>` file per environment ([Values from outside the code](building-an-app.md#values-from-outside-the-code)). Keep secrets out of committed files: put them in CI's secret store and keep `environmentVariables()` in `secrets`.
 
 ## When a deploy stops on a missing connection value
 
@@ -498,9 +558,10 @@ What deployed apps actually run into, and what to do about it:
   authenticated for you, and your `curl` isn't one of the services the app
   connected to it — so it's turned away, and a provider with no consumers turns
   away everyone. Reach it through a consumer instead.
-- **The `COMPOSER_*` variables in your project belong to the deploy.** Config,
-  secret pointers, and service keys all land there, and every deploy rewrites
-  them — editing one by hand doesn't survive.
+- **The `COMPOSER_*` variables in your project belong to the deploy.** Ports,
+  connection settings, generated values and service keys all land there, and
+  every deploy rewrites them — editing one by hand doesn't survive. A service's
+  input document is not among them: it travels in the service's artifact.
 - **Calls into a sleeping service can get `ECONNRESET`** while it cold-starts.
   Retry them.
 - **The `cron` scheduler stays awake on purpose.** It holds Compute's
@@ -519,6 +580,19 @@ What deployed apps actually run into, and what to do about it:
 When something misbehaves in ways these don't explain, check
 [`gotchas.md`](../../gotchas.md) at the repo root — the catalogue of platform
 footguns with diagnoses, kept current as we hit them.
+
+## Upgrading to input documents in the artifact
+
+Earlier versions wrote each service's input document as an environment
+variable, `COMPOSER_<ADDRESS>_INPUT`. This version writes it into the service's
+artifact. The first deploy with this version gives every service a new
+deployment that reads its input from its artifact, then deletes the
+`COMPOSER_<ADDRESS>_INPUT` variables. Nothing else changes, and there is
+nothing to do yourself.
+
+Don't put a deployment made before the upgrade back into service afterwards,
+for example by promoting it in the Console: its artifact has no input document,
+and the variable it read is gone.
 
 ## Upgrading from stages to environments
 
@@ -623,9 +697,9 @@ Legacy leftovers are inert and safe to remove whenever convenient — nothing re
 
 Framework versions that manage databases, apps, deployments, and environment variables through upstream alchemy's Prisma provider adopt each environment's existing resources in place — deploy state already in the platform state API is migrated automatically on read (rows written under retired type-ids), and existing databases and connections are adopted, never replaced. The first redeploy can still converge database *properties* in place — Branch attachment and display name — as the one-time effects below describe. Environments still on the older SQL state store are not migrated — destroy and redeploy them, as the section above describes.
 
-**A service's deployment is replaced exactly when its artifact or environment changed, and reused otherwise.** The platform freezes a deployment's environment when the deployment is created, so a changed value only takes effect through a new one — the framework declares each service's environment values as the deployment's replacement triggers (alchemy's `Prisma.Deployment.triggers`), so a changed variable, a value re-issued in place (a connection rotated in place, a re-minted service key), or an out-of-band rotation of a platform variable a row points at all ship a new deployment, and an unchanged service redeploys nothing. No plaintext lands in deploy state — alchemy persists only a salted fingerprint of the trigger values. A replacement uploads the artifact, starts it, moves the stable endpoint over, and removes the old deployment; your service's URL does not change.
+**A service's deployment is replaced exactly when its artifact or environment changed, and reused otherwise.** The platform freezes a deployment's environment when the deployment is created, so a changed value only takes effect through a new one — the framework declares each service's environment values as the deployment's replacement triggers (alchemy's `Prisma.Deployment.triggers`), so a changed variable, a value re-issued in place (a connection rotated in place, a re-minted service key), or an out-of-band rotation of a platform variable a service's input document names all ship a new deployment, and an unchanged service redeploys nothing. No plaintext lands in deploy state — alchemy persists only a salted fingerprint of the trigger values. A replacement uploads the artifact, starts it, moves the stable endpoint over, and removes the old deployment; your service's URL does not change.
 
-**`DATABASE_URL` and `DATABASE_URL_POOLED` hold the placeholder `"-"`, and the framework never modifies or deletes them.** At provision the framework claims both names (production and preview class, project level) with the placeholder, using create-only writes: if the variable already exists — yours, or one Prisma Cloud seeded — the claim does nothing. The placeholder is deliberate. Without it, Prisma Cloud fills a missing `DATABASE_URL` in on the first deploy with a live credential to one of your app's own databases, and anything reading `process.env.DATABASE_URL` directly would quietly work against a database it was never wired to. With it, a direct read fails loudly. Nothing you declare can carry those names — `envSecret`/`envParam` reject them — and every database URL your services use comes from the connection they declare.
+**`DATABASE_URL` and `DATABASE_URL_POOLED` hold the placeholder `"-"`, and the framework never modifies or deletes them.** At provision the framework claims both names (production and preview class, project level) with the placeholder, using create-only writes: if the variable already exists — yours, or one Prisma Cloud seeded — the claim does nothing. The placeholder is deliberate. Without it, Prisma Cloud fills a missing `DATABASE_URL` in on the first deploy with a live credential to one of your app's own databases, and anything reading `process.env.DATABASE_URL` directly would quietly work against a database it was never wired to. With it, a direct read fails loudly. Nothing you declare can carry those names — `variable()` and `variable.secret()` reject them — and every database URL your services use comes from the connection they declare.
 
 On the first deploy after the upgrade, the framework also **stops tracking** the two variables in deploy state. The deploy log reports them as `retained`: the entry is dropped from state and no call is made to Prisma Cloud.
 
@@ -685,7 +759,8 @@ const result = await deploy({
 });
 if (result.ok) {
   // result.value.summary — the deployed topology (app name + each node's
-  // address and entities), when the deploy engine reported one.
+  // address and entities) and the platform variables with no value
+  // (`findings`), when the deploy engine reported one.
 } else {
   console.error(result.failure.message); // same fix-naming text the CLI prints
 }
@@ -721,22 +796,14 @@ What to know before embedding it:
   the engine's own error lines — the failed resource and the error it
   printed, with every secret Composer knows redacted, and capped at 1000 characters — which a
   deploy reporting to Prisma Cloud also records on the build. A `deploy` stopped by its `signal` fails with `DEPLOY.INTERRUPTED`, after it has released the environment's lease. A failed `destroy` also carries an optional `diagnostics` object with the exit code and an exact reproduce command — details of the current execution mechanism, handy for printing a hint but not something to build on; branch on `message`/`cause` for anything durable. Importing the module executes nothing until you call an operation.
-- Composer replaces every secret it knows with `[redacted]` in the deploy engine's output: the value under each name an `envSecret()` names, in your `config` and `secrets` lists, however short. Other values in those lists, such as the shell's, are printed as they are, apart from values that look like credentials, such as a long value under a name containing `TOKEN` or `KEY`. `deploy` redacts each engine event and log line before `onEvent` receives it. `destroy` passes its engine child's output through Composer on its way to your terminal, so that engine shows plain progress lines, without colour.
-- **`onEvent` reports each step.** Pass `onEvent` to `deploy` to receive a
-  `step-started` and a `step-finished` event per step (`prepare`, `assemble`,
-  one `assemble-service` per service, `connect`, `preflight`, `apply`, one
-  `apply-resource` per resource the engine touches, `record`), as they happen,
-  and a `message` event for each line the engine logs. A finished step has `outcome`, `durationMs` and
-  the `data` described in [What a deploy prints](#what-a-deploy-prints). When
-  a step fails, it and the steps around it finish as `failed`; `record` still
-  runs. An `onEvent` that throws does not fail the deploy. A successful
-  result's `durationMs` is the whole deploy's total.
+- Composer replaces every secret it knows with `[redacted]` in the deploy engine's output: the value under the name of each platform secret your app declares, in your `config` and `secrets` lists, however short. Other values in those lists, such as the shell's, are printed as they are, apart from values that look like credentials, such as a long value under a name containing `TOKEN` or `KEY`. `deploy` redacts each engine event and log line before `onEvent` receives it. `destroy` passes its engine child's output through Composer on its way to your terminal, so that engine shows plain progress lines, without colour.
+- **`onEvent` reports each step.** Pass `onEvent` to `deploy` to receive a `step-started` and a `step-finished` event per step (`prepare`, `assemble`, one `assemble-service` per service, `connect`, `preflight`, `apply`, one `apply-resource` per resource the engine touches, with its `resourceId` and the engine's `status` word, which is for people to read, `record`), as they happen, and a `message` event for each line the engine logs. A finished step has `outcome`, `durationMs` and the `data` described in [What a deploy prints](#what-a-deploy-prints). Right after `preflight`, a `preflight-findings` event lists the platform variables with no value that no service needs, when there are any. When a step fails, it and the steps around it finish as `failed`; `record` still runs. An `onEvent` that throws does not fail the deploy. A successful result's `durationMs` is the whole deploy's total.
 - **`deploy` runs the engine in your process.** It returns `summary` as a value and reports the engine's progress through `onEvent`; it prints nothing. While it plans and applies it sets each deploy reporter's variables in `process.env` and changes to `cwd` when your process is elsewhere, then restores both, so a process runs one deploy at a time (`DEPLOY.CONVERGE_RUNNING`), and from a worker thread `cwd` must be the process's working directory (`DEPLOY.WORKER_THREAD`). Deploy uses the lowering and the converge from the app's own install of `@prisma/composer`, found beside its `prisma.config.ts`, which must speak the same converge contract as the Composer running the deploy (`DEPS.CONVERGE_CONTRACT_MISMATCH` otherwise); the package versions may differ. Pass `signal` to interrupt it. `destroy` still runs the engine as a child process.
 - **`dev` resolves to `{ ok: true, value: session }` or a failure** —
   never an exit code. The session is `{ endpoints, stop(), closed }`, with
-  progress (`ready`, `step-started`, `step-finished`, `converge-failed`, `config-changed`, `definition-changed`, `watch-error`, …) delivered through
+  progress (`ready`, `converge-failed`, `config-changed`, `watch-error`, …) delivered through
   `onEvent`. The operation never installs signal handlers; wiring Ctrl-C to
-  `session.stop()` is yours, and passing `signal` interrupts a running converge. Like `deploy`, `dev` runs the engine in your process, one converge at a time.
+  `session.stop()` is yours.
 - **`log` resolves to `{ ok: true, value: { appName, services, lines } }` or
   a failure.** `lines` is an `AsyncIterable` ended by an `AbortSignal` you
   own (stopping early — `break`, `lines.return()` — also ends it cleanly).

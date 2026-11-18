@@ -12,7 +12,7 @@ import type {
 import { hydrateSync, number, service } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { deserialize, readInput, readOrigin, stashRows } from './serializer.ts';
+import { deserialize, inputKey, readInput, readOrigin, stashRows } from './serializer.ts';
 
 const reservedParams = { port: number({ default: 3000 }) } as const;
 type ReservedParams = typeof reservedParams;
@@ -23,14 +23,17 @@ type ReservedParams = typeof reservedParams;
  * rides its own channel (ADR-0042 leaves it untouched); a dependency named
  * like it fails at authoring.
  *
- *   · run(address, boot) — the process controller: deserialize the platform
- *     environment (keyed off `address`, the extension's ONE env read) into a
- *     typed Config, re-emit it (and the input document row) under address-free
- *     process-local stash keys, then call boot() to start the app's entry.
+ *   · run(address, boot, inputDocument) — the process controller: deserialize
+ *     the platform environment (keyed off `address`, the extension's one
+ *     environment read) into a typed Config, with the artifact's input
+ *     document in place of any `COMPOSER_<ADDRESS>_INPUT` variable; re-emit it
+ *     (and the input document) under address-free process-local stash keys,
+ *     then call boot() to start the app's entry.
  *   · load() / input() — called from inside the app's entry: read the stash;
  *     load() hydrates + memoizes the deps, input() parses the input document,
- *     replaces each `$secret` pointer with a redacting box over the named
- *     platform var, validates with the declared schema, and memoizes (ADR-0042).
+ *     replaces each marker with its platform variable's value (a secret in a
+ *     redacting box, an unset one left out), validates with the declared
+ *     schema, and memoizes (ADR-0042).
  *   · origin() — this service's platform-assigned public origin, read from the
  *     stash `run()` populates; memoized per process.
  *   · port() — this service's resolved reserved port (the value `run()` routes
@@ -80,10 +83,12 @@ export class ComputeService<
     return this.#resolved;
   }
 
-  async run(address: string, boot: () => Promise<unknown>) {
+  async run(address: string, boot: () => Promise<unknown>, inputDocument?: unknown) {
+    const fromArtifact =
+      inputDocument === undefined ? {} : { [inputKey(address)]: JSON.stringify(inputDocument) };
     // The address-free stash, PORT and HOST — the same rows a dev server is
     // started with under `prisma dev` (ADR-0056), so the two cannot drift.
-    Object.assign(process.env, stashRows(this, address, process.env));
+    Object.assign(process.env, stashRows(this, address, { ...process.env, ...fromArtifact }));
     return boot();
   }
 

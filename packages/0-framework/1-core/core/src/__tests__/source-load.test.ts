@@ -73,9 +73,8 @@ const forwarding = (schema: StandardSchemaV1, keys: readonly string[]): ModuleNo
 const bindingOf = (graph: Graph, index = 0): Record<string, unknown> =>
   graph.inputBindings[index]?.binding as unknown as Record<string, unknown>;
 
-const pointer = (name: string) => secretSource({ name }, { label: `envSecret('${name}')` });
-const variable = (name: string) =>
-  paramSource({ name }, { label: `envParam('${name}')`, configurationKey: name });
+const pointer = (name: string) => secretSource({ name }, { label: `the secret "${name}"` });
+const variable = (name: string) => paramSource({ name }, { label: `the variable "${name}"` });
 
 const origin = () => paramSource({}, { label: "serviceOrigin('shop.web')" });
 
@@ -91,76 +90,52 @@ describe('sources a service takes stay in place', () => {
     expect(bindingOf(graph)['key']).toBe(key);
     expect(bindingOf(graph)['greeting']).toBe(greeting);
   });
+});
 
-  test("a source in a service's params reaches the graph as the same object, with no app configuration", () => {
-    const label = variable('G');
+describe("a source in a service's param", () => {
+  const refusal = (label: string) =>
+    `Service "shop.echo" binds its param "label" to ${label}, a value known only at boot. A param takes a literal or a value the deploy has. Bind the value to a field of the service's input instead.`;
+
+  test('a param source a cast gets past the types fails Load', () => {
     const root = module('shop', ({ provision }) => {
-      provision(echoService(), { input: {}, params: { label } });
+      provision(echoService(), { input: {}, params: { label: variable('G') as never } });
     });
 
-    const graph = Load(root);
+    expect(() => Load(root)).toThrow(refusal('the variable "G"'));
+  });
 
-    expect(graph.params[0]?.binding).toBe(label);
+  test('a source built without a label is named "a source"', () => {
+    const root = module('shop', ({ provision }) => {
+      provision(echoService(), { input: {}, params: { label: paramSource({}) as never } });
+    });
+
+    expect(() => Load(root)).toThrow(refusal('a source'));
+  });
+
+  test('a secret source a cast gets past the types fails Load', () => {
+    const root = module('shop', ({ provision }) => {
+      provision(echoService(), { input: {}, params: { label: pointer('K') as never } });
+    });
+
+    expect(() => Load(root)).toThrow(refusal('the secret "K"'));
+  });
+
+  test('a source that reaches a param through a module input field fails Load', () => {
+    const relay = module('relay', { input: anyInputSchema }, ({ input, provision }) => {
+      const fields = input as never as Record<string, unknown>;
+      provision(echoService(), { input: {}, params: { label: fields['label'] as never } });
+    });
+    const root = module('shop', ({ provision }) => {
+      provision(relay, { id: 'relay', input: { label: variable('G') } as never });
+    });
+
+    expect(() => Load(root)).toThrow(
+      refusal('the variable "G"').replace('"shop.echo"', '"shop.relay.echo"'),
+    );
   });
 });
 
-describe('real values', () => {
-  test("envParam() in a module's input is its app configuration value", () => {
-    const graph = Load(
-      shopWith(forwarding(type({ greeting: 'string' }), ['greeting']), { greeting: variable('G') }),
-      {
-        configuration: { G: 'hi' },
-      },
-    );
-
-    expect(bindingOf(graph)).toEqual({ greeting: 'hi' });
-  });
-
-  test("an unset or empty variable in a module's input leaves the key out", () => {
-    for (const configuration of [{}, { G: '' }]) {
-      const graph = Load(
-        shopWith(forwarding(type({ 'greeting?': 'string' }), ['greeting']), {
-          greeting: variable('G'),
-        }),
-        { configuration },
-      );
-
-      expect('greeting' in bindingOf(graph)).toBe(false);
-    }
-  });
-
-  test("a variable in a module's input fails when Load has no app configuration", () => {
-    const root = shopWith(forwarding(type({ greeting: 'string' }), ['greeting']), {
-      greeting: variable('G'),
-    });
-
-    expect(loadError(() => Load(root)).message).toBe(
-      `input key "greeting" of module "shop.email" depends on envParam('G'), but Load was given ` +
-        'no app configuration to read "G" from. Pass { configuration } to Load; ' +
-        'the deploy and dev ' +
-        'commands pass the values the `config` adapters return.',
-    );
-  });
-
-  test('resolve() over envParam() receives the string', () => {
-    const greeting = resolve([variable('G')], ([g]) => (g as string).toUpperCase());
-
-    const graph = Load(echoWith({ greeting }), { configuration: { G: 'hi' } });
-
-    expect(bindingOf(graph)['greeting']).toBe('HI');
-  });
-
-  test('resolve() over an unset variable fails naming it', () => {
-    const greeting = resolve([variable('G')], ([g]) => (g as string).toUpperCase());
-
-    expect(loadError(() => Load(echoWith({ greeting }), { configuration: {} })).message).toBe(
-      'The resolve() function for input key "greeting" of service "shop.echo" lists ' +
-        `envParam('G'), but "G" is unset or empty, so it has no real value. Set "G", or bind ` +
-        `envParam('G') directly into an input binding, where an absent value leaves the key out ` +
-        'and the schema decides.',
-    );
-  });
-
+describe('a resolve() function that returns a source', () => {
   test('a resolve() function that returns a source fails', () => {
     const root = module('shop', ({ environment, provision }) => {
       const key = resolve([environment.name], () => ({ a: paramSource({ name: 'X' }) }));
@@ -169,8 +144,7 @@ describe('real values', () => {
 
     expect(loadError(() => Load(root, staging)).message).toBe(
       'The resolve() function for input key "key" of service "shop.echo" returned a source at ' +
-        '"a", such as envSecret() or envParam() called inside the function. resolve() returns ' +
-        'plain data; bind a source directly.',
+        '"a", a value known only at boot. resolve() returns plain data; bind the source directly.',
     );
   });
 });
@@ -248,18 +222,9 @@ describe('props', () => {
       );
     });
 
-  test("envParam() in a resource's props is its app configuration value", () => {
-    const graph = Load(site({ url: variable('U') }), {
-      configuration: { U: 'https://shop.example' },
-    });
-
-    const node = graph.nodes.find((entry) => entry.id === 'shop.site')?.node;
-    expect(node?.kind === 'resource' ? node.props['url'] : undefined).toBe('https://shop.example');
-  });
-
   test("a runtime source in a resource's props fails", () => {
     expect(loadError(() => Load(site({ url: pointer('K') }))).message).toBe(
-      `prop "url" of resource "shop.site" is bound to envSecret('K'), which is known only at ` +
+      `prop "url" of resource "shop.site" is bound to the secret "K", which is known only at ` +
         "boot. A resource's props are read at deploy; bind a value known at deploy.",
     );
   });
@@ -268,9 +233,9 @@ describe('props', () => {
     const url = resolve([pointer('K')], () => 'https://shop.example');
 
     expect(loadError(() => Load(site({ url }))).message).toBe(
-      `The resolve() function for prop "url" of resource "shop.site" lists envSecret('K'), ` +
+      `The resolve() function for prop "url" of resource "shop.site" lists the secret "K", ` +
         'which is known only at boot. A resolve() dependency must be a deploy-time value. Bind ' +
-        "envSecret('K') directly into the input of the service that reads it.",
+        'the secret "K" directly into the input of the service that reads it.',
     );
   });
 });
@@ -328,59 +293,22 @@ describe('the secret list and forwarded slots', () => {
   });
 });
 
-describe('configuration keys Load reads', () => {
-  const configured = (key: string) =>
-    paramSource({ key }, { label: `configured('${key}')`, configurationKey: key });
+describe('what Load reads from the app configuration', () => {
   const secret = (key: string) =>
     secretSource({ key }, { label: `secret('${key}')`, secretsKey: key });
 
-  /** `shop` binds IN_MODULE into the module `email`'s input, which binds it, IN_SERVICE and IN_PARAM into `echo`. */
-  const threePlaces = (): ModuleNode => {
-    const email = module('email', { input: type({ 'm?': 'string' }) }, ({ input, provision }) => {
-      provision(echoService(), {
-        input: { m: input.m, s: configured('IN_SERVICE') } as never,
-        params: { label: configured('IN_PARAM') },
-      });
-    });
-    return shopWith(email, { m: configured('IN_MODULE') });
-  };
-
-  test("the graph records the text of every configuration key a source reads, in a module's input, a service's input and a service's params", () => {
-    const graph = Load(threePlaces(), {
-      configuration: { IN_MODULE: 'm', IN_SERVICE: 's', IN_PARAM: 'p', OTHER: 'o' },
+  test("the graph records the root's input fields its body passes on, and a param source reads nothing", () => {
+    const greeting = variable('G');
+    const root = module('shop', { input: type({ FROM: 'string' }) }, ({ input, provision }) => {
+      provision(echoService(), { input: { from: input.FROM, greeting } });
     });
 
-    expect(graph.appConfigurationRead.configurationKeyText).toEqual({
-      IN_MODULE: 'm',
-      IN_SERVICE: 's',
-      IN_PARAM: 'p',
+    const graph = Load(root, { configuration: { FROM: 'shop@example.com', G: 'hi' } });
+
+    expect(graph.appConfigurationRead).toEqual({
+      rootInput: [{ path: ['FROM'], value: 'shop@example.com' }],
     });
-  });
-
-  test('an unset or empty key is left out of the recorded values', () => {
-    const graph = Load(threePlaces(), { configuration: { IN_MODULE: 'm', IN_SERVICE: '' } });
-
-    expect(graph.appConfigurationRead.configurationKeyText).toEqual({ IN_MODULE: 'm' });
-  });
-
-  test("a configuration key in a service's input whose value is not text fails at Load", () => {
-    const run = () =>
-      Load(threePlaces(), { configuration: { IN_MODULE: 'm', IN_SERVICE: 4, IN_PARAM: 'p' } });
-
-    expect(loadError(run).message).toBe(
-      `the input binding of service "shop.email.echo" depends on configured('IN_SERVICE'), which reads "IN_SERVICE" from the values the \`config\` adapters return, but they return a number for it, not text. configured('IN_SERVICE') reads text; to pass other data, declare it in the root module's input.`,
-    );
-  });
-
-  test('a name read as a configuration key and named as a secrets key fails at Load', () => {
-    const run = () =>
-      Load(echoWith({ plain: configured('SHARED'), key: secret('SHARED') }), {
-        configuration: { SHARED: 'shared' },
-      });
-
-    expect(loadError(run).message).toBe(
-      `configured('SHARED') reads "SHARED" from the app configuration, and secret('SHARED') names "SHARED" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every plain value it reads, in a file, and never writes a secret to a file. Give the plain value and the secret different names.`,
-    );
+    expect(bindingOf(graph)['greeting']).toBe(greeting);
   });
 
   test('a root input field named as a secrets key fails at Load, and the message holds no value', () => {
@@ -392,16 +320,8 @@ describe('configuration keys Load reads', () => {
 
     const message = loadError(run).message;
     expect(message).toBe(
-      `input.API_KEY of root module "shop" reads "API_KEY" from the app configuration, and secret('API_KEY') names "API_KEY" as a secret. A name is a plain value or a secret, not both: Composer hands the deploy's second process every root input field the root's body passes on, in a file, and never writes a secret to a file. Read the secret with secret('API_KEY') only, or give the plain value a different name.`,
+      `input.API_KEY of root module "shop" reads "API_KEY" from the app configuration, and secret('API_KEY') names "API_KEY" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which \`prisma deploy\` sends to the platform as plain configuration, and \`prisma dev\` and \`destroy\` hand to their second process in a file. Read the secret with secret('API_KEY') only, or give the plain value a different name.`,
     );
     expect(message).not.toContain('sk_live_supersecret');
-  });
-
-  test('the second process reads configuration keys from what the first process read', () => {
-    const graph = Load(threePlaces(), {
-      appConfigurationRead: { rootInput: [], configurationKeyText: { IN_MODULE: 'from-file' } },
-    });
-
-    expect(bindingOf(graph)['m']).toBe('from-file');
   });
 });

@@ -13,14 +13,18 @@ import type { AppConfigurationRead } from '../graph-types.ts';
 import {
   type AppRootNode,
   type BuildAdapter,
-  isParamSource,
+  isValueResource,
   type ModuleNode,
   type ProvisionNeed,
   type ResourceNode,
   type ServiceNode,
   slotsOf,
 } from '../node.ts';
-import { type PreflightPayload, readPreflightPayload } from '../preflight-transport.ts';
+import {
+  type PreflightFindings,
+  type PreflightPayload,
+  readPreflightPayload,
+} from '../preflight-transport.ts';
 import type {
   CallerCredentials,
   ContainerInstance,
@@ -67,7 +71,7 @@ export interface ProvisionerDescriptor {
 /**
  * The phased service SPI. `P` and `S` are the descriptor's OWN intra-node
  * handoff types — provision's product consumed by serialize/deploy, and
- * serialize's product consumed by deploy. Core threads them through without
+ * serialize's product consumed by package/deploy. Core threads them through without
  * inspection; only the descriptor that writes them reads them.
  *
  * Method syntax (not property-arrow) is required: the heterogeneous
@@ -91,9 +95,14 @@ export interface ServiceLowering<P = unknown, S = unknown> {
   /**
    * Prints the bootstrap and assembles the deployable artifact from the
    * app-built bundle. Must be byte-deterministic: an unchanged service noops
-   * on redeploy.
+   * on redeploy. `serialized` is this service's `serialize` product. It must
+   * not write a secret, or a value the deploy has not resolved, into the artifact.
    */
-  package(ctx: LowerContext, input: PackageInput): Effect.Effect<Artifact, unknown, unknown>;
+  package(
+    ctx: LowerContext,
+    input: PackageInput,
+    serialized: S,
+  ): Effect.Effect<Artifact, unknown, unknown>;
   /** Ships the packaged artifact into the provisioned thing and runs it. Returns the node's outputs for dependents, plus the entities it became on the deployment target. */
   deploy(
     ctx: LowerContext,
@@ -142,10 +151,9 @@ export interface LowerContext {
    */
   readonly application: unknown;
   /**
-   * The owning extension's resolved container, deserialized from the
-   * framework transport; core never reads it — the extension narrows it
-   * with its own type guard. `undefined` when the extension declares no
-   * container descriptor.
+   * The owning extension's resolved container; core never reads it — the
+   * extension narrows it with its own type guard. `undefined` when the
+   * extension declares no container descriptor.
    */
   readonly container: ContainerInstance | undefined;
   /** What the owning extension's preflight handed back this run; `undefined` when it returned nothing or ran no preflight. Core never reads it. */
@@ -214,6 +222,8 @@ export interface DeployedNode {
 export interface DeploymentResult {
   readonly app: string;
   readonly nodes: readonly DeployedNode[];
+  /** What every extension's deploy preflight found that did not stop the deploy. */
+  readonly findings: PreflightFindings;
 }
 
 export interface LowerOptions {
@@ -221,9 +231,9 @@ export interface LowerOptions {
   readonly name: string;
   /** The environment being deployed, as `--environment` gave it. Required by any value over `environment.name`; the generated stack files always pass it. */
   readonly environment?: string;
-  /** What the first process's Load read from the app configuration (ADR-0062), from the app configuration file. Load takes the root's input and every configuration key's text from it, and the Prisma Cloud serializer reads a service's `envParam()` leaves from its `configurationKeyText`. The generated stack files pass it. */
+  /** What the caller's Load read from the app configuration (ADR-0062). Load takes the root's input from it. */
   readonly appConfigurationRead?: AppConfigurationRead;
-  /** The node addresses of the graph the first process built. When given, lowering refuses a graph whose addresses differ. The generated stack files pass them. */
+  /** The node addresses of the graph the caller built. When given, lowering refuses a graph whose addresses differ. */
   readonly firstProcessNodeAddresses?: readonly string[];
   // One assembled bundle per provisioned service, keyed by the service's
   // full hierarchical address (its graph id).
@@ -242,10 +252,12 @@ export interface LowerOptions {
   readonly report?: (result: DeploymentResult) => void;
   /** Addresses lowered without an artifact: `package` and `deploy` are skipped and `reserve` runs instead (ADR-0056). Only the dev stack file sets it. */
   readonly unassembled?: readonly string[];
-  /** Each extension's resolved container, by extension id. A generated stack file reads them with `transportedLowerInputs`. */
-  readonly containers: ReadonlyMap<string, ContainerInstance>;
-  /** Each extension's preflight payload, by extension id. A generated stack file reads them with `transportedLowerInputs`. */
-  readonly preflight: ReadonlyMap<string, string>;
+  /** Each extension's resolved container, by extension id. Pass both `containers` and `preflightPayloads`, or neither. When both are absent, `lower()` reads both from the environment transports through `transportedLowerInputs(config)`. When exactly one is passed, `lower()` throws. */
+  readonly containers?: ReadonlyMap<string, ContainerInstance> | undefined;
+  /** What each extension's preflight returned, by extension id. Each lowering context gets its own extension's entry as `LowerContext.preflight`. */
+  readonly preflightPayloads?: ReadonlyMap<string, string> | undefined;
+  /** The platform variables with no value that the deploy preflight found. The deploy report carries them. Absent means none. */
+  readonly findings?: PreflightFindings;
   /** What the caller already authenticated, handed to every extension's `providers()` and to the state descriptor's `create()`. Absent means each extension falls back to its own credential protocol. */
   readonly credentials?: CallerCredentials | undefined;
 }
@@ -316,27 +328,11 @@ function assertSameNodeAddresses(built: readonly string[], firstProcess: readonl
   const list = (addresses: readonly string[]) =>
     addresses.length === 0 ? 'none' : addresses.map((address) => `"${address}"`).join(', ');
   throw new LowerError(
-    `The deploy's second process built a different graph from the one Composer checked in its first process. Only in the second process: ${list(onlyBuilt)}. Only in the first process: ${list(onlyFirst)}. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.`,
+    `lower() built a different graph from the one Composer checked first. Only in the graph lower() built: ${list(onlyBuilt)}. Only in the graph Composer checked: ${list(onlyFirst)}. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.`,
   );
 }
 
-/**
- * Resolves one SERVICE-OWN param to its config value. The full resolution
- * order across both value channels:
- *
- * 1. A param claiming BOTH a provision-time binding and a `provision` need
- *    (ADR-0031) is a loud error — two sources for one value.
- * 2. A provision-time binding (a schema-validated literal, or an opaque
- *    `ParamSource` the target resolves at boot per ADR-0019) beats the
- *    declared `default`.
- * 3. A framework-minted `provision` need is resolved per dependency EDGE
- *    against the consumer extension's registry — that path fills CONNECTION
- *    params in `buildConfig`'s inputs loop, never this function. A
- *    service-own param has no edge to mint against, so an unbound need here
- *    falls through like any unbound param.
- * 4. The `default`, else absent (only legal when `optional`), else a loud
- *    error naming the param, the service, and the fix.
- */
+/** A service's own param: its binding, else its `default`, else absent when optional. A `provision` need (ADR-0031) is filled per edge in `buildConfig`, never here. */
 function resolveParam(
   node: ServiceNode,
   serviceId: NodeId,
@@ -347,13 +343,11 @@ function resolveParam(
   if (bound !== undefined) {
     if (param.provision !== undefined) {
       throw new LowerError(
-        `Param "${name}" of "${serviceId}" (service "${node.name}") has two sources claiming one ` +
-          `value: a provision-time binding (${isParamSource(bound) ? 'a param source' : 'a literal value'}) ` +
-          `AND a framework provision need ("${String(param.provision.brand)}") on its declaration — ` +
-          'remove the binding or drop the `provision` facet.',
+        `Param "${name}" of "${serviceId}" (service "${node.name}") is bound at provision and also ` +
+          `declares a framework provision need ("${String(param.provision.brand)}"). ` +
+          'Remove the binding or the `provision` facet.',
       );
     }
-    if (isParamSource(bound)) return bound;
     const result = param.schema['~standard'].validate(bound);
     if (result instanceof Promise) {
       throw new LowerError(
@@ -374,8 +368,8 @@ function resolveParam(
   if (param.optional === true) return undefined;
   throw new LowerError(
     `Param "${name}" of "${serviceId}" (service "${node.name}") has no default, is not optional, ` +
-      'and was not bound at provision — bind it with a literal value or a param source ' +
-      "(e.g. envParam('NAME')) on its provision() call, or give it a default.",
+      'and was not bound at provision — bind it on its provision() call with a literal value or a ' +
+      'value the deploy has, or give it a default.',
   );
 }
 
@@ -503,6 +497,16 @@ export function joinDeployment(
     nodes.push({ address: entry.address, node, entities: entry.entities });
   }
   return nodes;
+}
+
+/** The deploy report: every deployed node joined with its graph node, and the deploy preflight's findings. */
+export function deploymentResult(
+  app: string,
+  graph: Graph,
+  entries: readonly { address: string; entities: readonly DeployedEntity[] }[],
+  findings: PreflightFindings,
+): DeploymentResult {
+  return { app, nodes: joinDeployment(graph, entries), findings };
 }
 
 function missingBundleError(id: NodeId): LowerError {
@@ -697,8 +701,9 @@ export function lowering(
       assertSameNodeAddresses(nodeAddresses(graph), opts.firstProcessNodeAddresses);
     }
     const extensions = yield* extensionsById(config);
-    const containers = opts.containers;
-    const preflightOf = (extensionId: string): PreflightPayload => opts.preflight.get(extensionId);
+    const { containers, preflightPayloads, findings } = lowerInputs(config, opts);
+    const preflightOf = (extensionId: string): PreflightPayload =>
+      preflightPayloads.get(extensionId);
     const lowered = new Map<NodeId, Outputs>();
     // Each node's reported entities, in topo order — the loop is the only
     // party that holds both the node's identity and what it became. Collected
@@ -836,7 +841,7 @@ export function lowering(
       if (descriptor.kind === 'resource') {
         const result = yield* descriptor(ctx);
         lowered.set(id, result.outputs);
-        entries.push({ address: id, entities: result.entities });
+        if (!isValueResource(node)) entries.push({ address: id, entities: result.entities });
         continue;
       }
       if (descriptor.kind !== 'service') {
@@ -870,10 +875,11 @@ export function lowering(
       if (bundle === undefined) {
         return yield* Effect.fail(missingBundleError(id));
       }
-      const artifact = yield* descriptor.package(ctx, {
-        assembled: { dir: bundle.dir, entry: bundle.entry },
-        address: id,
-      });
+      const artifact = yield* descriptor.package(
+        ctx,
+        { assembled: { dir: bundle.dir, entry: bundle.entry }, address: id },
+        serialized,
+      );
       const result = yield* descriptor.deploy(ctx, provisionedNode, artifact, serialized);
       lowered.set(id, result.outputs);
       entries.push({ address: id, entities: result.entities });
@@ -893,7 +899,7 @@ export function lowering(
           // strings here. The graph rides in on the closure, never in the
           // input: the plan hashes the resolved input, and a node carries
           // functions and Standard Schemas.
-          report({ app: opts.name, nodes: joinDeployment(graph, input.entries) });
+          report(deploymentResult(opts.name, graph, input.entries, findings));
         }),
       );
       // `Date.now()` forces the report to run on an otherwise unchanged
@@ -912,21 +918,42 @@ export function lowering(
   >(program);
 }
 
-/**
- * The containers and preflight payloads the CLI wrote into a generated stack
- * file's environment, for `lower()`. Only the generated stack files that
- * `destroy` and `prisma dev` run in an Alchemy child call it.
- */
-export function transportedLowerInputs(
-  config: PrismaAppConfig,
-): Pick<LowerOptions, 'containers' | 'preflight'> {
+interface TransportedLowerInputs {
+  readonly containers: ReadonlyMap<string, ContainerInstance>;
+  readonly preflightPayloads: ReadonlyMap<string, string>;
+}
+
+interface LowerInputs extends TransportedLowerInputs {
+  readonly findings: PreflightFindings;
+}
+
+/** The containers and preflight payloads a host wrote into the environment of a stack file it runs as a child. */
+export function transportedLowerInputs(config: PrismaAppConfig): TransportedLowerInputs {
   const env = process.env;
-  const preflight = new Map<string, string>();
+  const preflightPayloads = new Map<string, string>();
   for (const { id } of config.extensions) {
     const payload = readPreflightPayload(id, env);
-    if (payload !== undefined) preflight.set(id, payload);
+    if (payload !== undefined) preflightPayloads.set(id, payload);
   }
-  return { containers: deserializeContainers(config.extensions, env), preflight };
+  return {
+    containers: deserializeContainers(config.extensions, env),
+    preflightPayloads,
+  };
+}
+
+function lowerInputs(config: PrismaAppConfig, opts: LowerOptions): LowerInputs {
+  const { containers, preflightPayloads } = opts;
+  const findings = opts.findings ?? { unset: [] };
+  if (containers !== undefined && preflightPayloads !== undefined) {
+    return { containers, preflightPayloads, findings };
+  }
+  if (containers === undefined && preflightPayloads === undefined) {
+    return { ...transportedLowerInputs(config), findings };
+  }
+  const missing = containers === undefined ? 'containers' : 'preflightPayloads';
+  throw new Error(
+    `lower() was passed ${missing === 'containers' ? 'preflightPayloads' : 'containers'} without ${missing}. Pass both, or neither to read both from the environment.`,
+  );
 }
 
 /**
@@ -945,7 +972,7 @@ export function lower(root: ModuleNode | AppRootNode, config: PrismaAppConfig, o
 
   return Alchemy.Stack(
     opts.name,
-    { providers, state: resolveStateLayer(opts, config, opts.containers) },
+    { providers, state: resolveStateLayer(opts, config, lowerInputs(config, opts).containers) },
     stackEffect,
   );
 }

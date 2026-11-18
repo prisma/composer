@@ -6,7 +6,19 @@
  * stand-in.
  */
 import { describe, expect, test } from 'bun:test';
-import { type Contract, dependency, Load, module, resource, service } from '@internal/core';
+import {
+  appRoot,
+  type Contract,
+  dependency,
+  isValueResource,
+  Load,
+  module,
+  paramSource,
+  resource,
+  service,
+  valueResource,
+} from '@internal/core';
+import type { Pointer } from '@internal/foundation/pointer';
 import {
   applicationTopologyContentHash,
   composeApplicationTopology,
@@ -228,6 +240,27 @@ describe('composeApplicationTopology', () => {
 
     expect(topology).toEqual({
       nodes: [{ logicalId: 'bare', parentLogicalId: null, kind: 'module' }],
+      ports: [],
+      edges: [],
+    });
+  });
+
+  test('a value resource is not sent, and no port or edge names it', () => {
+    const greeting = valueResource({
+      name: 'greeting',
+      extension: 'test/pack',
+      type: 'test-value',
+      value: paramSource<{ readonly name: string }, Pointer<string>>({ name: 'GREETING' }),
+    });
+    const graph = Load(
+      appRoot('shop', ({ provision }) => {
+        provision(greeting);
+      }),
+    );
+    expect(graph.nodes.some((entry) => isValueResource(entry.node))).toBe(true);
+
+    expect(composeApplicationTopology(graph)).toEqual({
+      nodes: [{ logicalId: 'shop', parentLogicalId: null, kind: 'module' }],
       ports: [],
       edges: [],
     });
