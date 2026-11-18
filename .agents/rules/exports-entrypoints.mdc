@@ -75,9 +75,9 @@ file per published subpath. Everything else under `src/` is internal. See
   not at `dist/`: the tsdown configs of `@prisma/composer-prisma-cloud` and the
   shared modules import it before any package is built, so it cannot be a
   built entry. It is still a file under `src/exports/` holding only
-  re-exports. The generated map keeps it because the package's
-  `tsdown.config.ts` adds it in `customExports`, after the base config's own
-  `customExports`; never add it to `package.json#exports` by hand.
+  re-exports. The generated map keeps it because `@internal/input-document`'s
+  own `tsdown.config.ts` adds it in `customExports`, after the base config's
+  own `customExports`; never add it to `package.json#exports` by hand.
 
 ## Moving a file
 
