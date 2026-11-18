@@ -1101,3 +1101,39 @@ describe('preflight names', () => {
     expect(inputSecretNames({ a: key, b: copyOf(key) }, 'app.web')).toEqual(['STRIPE_SECRET_KEY']);
   });
 });
+
+describe("preflight identifies Composer on the caller's client", () => {
+  test("every environment-variable lookup through the caller's client carries Composer's headers", async () => {
+    const state: FakeState = {
+      gets: [],
+      posts: [],
+      rows: [{ projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null }],
+    };
+    const headersSeen: unknown[] = [];
+    const fake = fakeClient(state);
+    const caller = {
+      ...fake,
+      GET: async (
+        path: string,
+        init: { params: { query: Record<string, string> }; headers?: unknown },
+      ) => {
+        headersSeen.push(init.headers);
+        return fake.GET(path as never, init as never);
+      },
+    } as unknown as ManagementApiClient;
+
+    await preflightWith({
+      graph: requiredSecretGraph(),
+      ...production,
+      credentials: { workspaceId: undefined, client: caller },
+    });
+
+    expect(headersSeen.length).toBeGreaterThan(0);
+    for (const headers of headersSeen) {
+      expect(headers).toMatchObject({
+        'x-prisma-client-name': 'composer',
+        'x-prisma-client-version': expect.stringMatching(/^\d+\.\d+\.\d+/),
+      });
+    }
+  });
+});
