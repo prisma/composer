@@ -7,11 +7,15 @@ import { appRoot, isSecretPointer, Load, module, resolve, type ServiceNode } fro
 import { preflightEnv, readPreflightPayload } from '@internal/core/config';
 import { isSecretString } from '@internal/foundation/secret';
 import { rawHttpContract } from '@internal/http';
-import type { StandardSchemaV1 } from '@standard-schema/spec';
+import { MAX_DEPTH, readVariableText } from '@internal/input-document';
+import type { StandardJSONSchemaV1, StandardSchemaV1 } from '@standard-schema/spec';
+import { type } from 'arktype';
+import { z } from 'zod';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
 import { decodePreflightPayload, preflightView } from '../control/preflight-payload.ts';
 import { compute, publicUrl, variable } from '../exports/index.ts';
 import { runDevPreflight } from '../local-target/preflight.ts';
+import { platformVariableNodes } from '../platform-variable.ts';
 import { serializeInput } from '../serializer.ts';
 
 const build = {
@@ -724,4 +728,152 @@ describe('prisma dev preflight', () => {
       expect(second.web).toEqual(first.web);
     });
   });
+
+  describe('typed plain platform variables', () => {
+    const typedGraph = (schema: StandardJSONSchemaV1, readers: readonly string[] = ['mail']) =>
+      Load(
+        appRoot('shop', ({ provision }) => {
+          const port = provision(variable({ name: 'SMTP_PORT', schema }));
+          for (const name of readers) {
+            provision(compute({ name, deps: {}, input: acceptsAnything, build }), {
+              input: { port },
+            });
+          }
+        }),
+      );
+
+    test('a text that decodes and fits lets dev start, and the text is passed on unchanged', async () => {
+      configuration['SMTP_PORT'] = '587';
+
+      const result = await devPreflight(typedGraph(type('number')));
+
+      expect(result.plainVariableText).toEqual({ SMTP_PORT: '587' });
+    });
+
+    test("a text that does not decode stops dev with boot's message and its reader", async () => {
+      configuration['SMTP_PORT'] = 'abc';
+
+      expect(await preflightError(typedGraph(type('number')))).toBe(
+        'The platform variable "SMTP_PORT" does not hold a number. Its schema is not a text type, so its text must be JSON, such as 587. prisma dev cannot start, because service "shop.mail" reads it.',
+      );
+    });
+
+    test("a text that does not fit stops dev with boot's message and every reader", async () => {
+      configuration['SMTP_PORT'] = '0';
+
+      expect(await preflightError(typedGraph(type('number >= 1'), ['mail', 'digest']))).toBe(
+        'The platform variable "SMTP_PORT" does not fit its schema: it fails "minimum" at #/minimum. prisma dev cannot start, because services "shop.mail" and "shop.digest" read it.',
+      );
+      expect(
+        await preflightError(typedGraph(type('number >= 1'), ['mail', 'digest', 'audit'])),
+      ).toEndWith('because services "shop.mail", "shop.digest" and "shop.audit" read it.');
+    });
+
+    test("each dev message is the shared function's message followed by the reader sentence", async () => {
+      const deep = (depth: number) => `${'['.repeat(depth)}1${']'.repeat(depth)}`;
+      const cases: [StandardJSONSchemaV1, string][] = [
+        [type('number'), 'abc'],
+        [type('number'), '9007199254740993'],
+        [type('number >= 1'), '0'],
+        [type('number[]'), deep(MAX_DEPTH + 1)],
+        [handWritten({ type: 'object', dependentRequired: { a: ['b'] } }), '{"a":1}'],
+      ];
+      for (const [schema, text] of cases) {
+        configuration['SMTP_PORT'] = text;
+        const graph = typedGraph(schema);
+        const node = platformVariableNodes(graph).find((entry) => entry.name === 'SMTP_PORT');
+        const boot = thrownMessage(() => readVariableText('SMTP_PORT', text, node?.schema));
+
+        expect(await preflightError(graph)).toBe(
+          `${boot} prisma dev cannot start, because service "shop.mail" reads it.`,
+        );
+      }
+    });
+
+    test(`a text nested ${MAX_DEPTH} levels deep lets dev start, and one level more stops it`, async () => {
+      const deep = (depth: number) => `${'['.repeat(depth)}1${']'.repeat(depth)}`;
+      configuration['SMTP_PORT'] = deep(MAX_DEPTH);
+      expect(
+        (await devPreflight(typedGraph(handWritten({ type: 'array' })))).plainVariableText,
+      ).toEqual({
+        SMTP_PORT: deep(MAX_DEPTH),
+      });
+      const recursive = handWritten({
+        anyOf: [{ type: 'number' }, { type: 'array', items: { $ref: '#' } }],
+      });
+      expect((await devPreflight(typedGraph(recursive))).plainVariableText).toEqual({
+        SMTP_PORT: deep(MAX_DEPTH),
+      });
+      configuration['SMTP_PORT'] = deep(MAX_DEPTH + 1);
+      expect(await preflightError(typedGraph(handWritten({ type: 'array' })))).toBe(
+        'The platform variable "SMTP_PORT" could not be checked against its schema. prisma dev cannot start, because service "shop.mail" reads it.',
+      );
+    });
+
+    test('a typed variable with no value is left to the existing check, not decoded', async () => {
+      const result = await devPreflight(typedGraph(type('number')));
+
+      expect(result.plainVariableText).toEqual({});
+    });
+
+    describe('no dev message holds any part of a planted text', () => {
+      const SECRET = 'a-made-up-secret-7qx9';
+      const cases: [string, () => StandardJSONSchemaV1, string][] = [
+        ['the text, under a number schema', () => type('number'), SECRET],
+        [
+          'a key, under additionalProperties: false',
+          () => type({ '+': 'reject', a: 'string' }),
+          JSON.stringify({ a: 'x', [SECRET]: 1 }),
+        ],
+        [
+          'a key, under unevaluatedProperties: false',
+          () =>
+            handWritten({ type: 'object', properties: { a: {} }, unevaluatedProperties: false }),
+          JSON.stringify({ [SECRET]: 1 }),
+        ],
+        [
+          'a key, under propertyNames',
+          () => handWritten({ type: 'object', propertyNames: { pattern: '^[a-z]+$' } }),
+          JSON.stringify({ [SECRET]: 1 }),
+        ],
+        [
+          'a value at a key named properties',
+          () => z.strictObject({ a: z.string().optional() }),
+          JSON.stringify({ properties: SECRET }),
+        ],
+        ['the text, under a pattern', () => z.string().regex(/^[0-9]+$/), SECRET],
+      ];
+      for (const [label, schema, text] of cases) {
+        test(label, async () => {
+          configuration['SMTP_PORT'] = text;
+
+          const message = await preflightError(typedGraph(schema()));
+
+          expect(message).toEndWith(
+            'prisma dev cannot start, because service "shop.mail" reads it.',
+          );
+          for (const part of [SECRET, 'made-up', '7qx9']) expect(message).not.toContain(part);
+        });
+      }
+    });
+  });
 });
+
+function handWritten(schema: Record<string, unknown>): StandardJSONSchemaV1 {
+  return {
+    '~standard': {
+      version: 1,
+      vendor: 'hand-written',
+      jsonSchema: { input: () => schema, output: () => schema },
+    },
+  };
+}
+
+function thrownMessage(run: () => unknown): string {
+  try {
+    run();
+  } catch (cause) {
+    if (cause instanceof Error) return cause.message;
+  }
+  throw new Error('expected the call to throw an error');
+}

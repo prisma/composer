@@ -294,7 +294,7 @@ export type InputBindingOf<I extends StandardSchemaV1 | undefined> = InputBindin
 
 /**
  * `T` with every pointer removed, at any depth: what a service reads at boot,
- * when each pointer has been replaced by the text of the variable it names.
+ * when each pointer has been replaced by the value of the variable it names.
  * Only arrays and plain object types are walked; a class instance such as a
  * `Date` or a `SecretString` is kept as it is.
  */

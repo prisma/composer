@@ -136,17 +136,7 @@ The body holds `input`, a dictionary with one value for each key of the schema, 
 
 `input` itself is not a value. Its type, `ModuleInput<S>`, carries a brand that every binding type refuses, so passing the whole `input` into a child module's or a service's `input`, a service param, a resource's props or a `resolve()` dependency fails to compile, for every module, the root included. A cast gets past the compiler, so Load refuses it too, naming where it was passed and saying to pass its fields on by name. A binding slot typed `unknown` accepts anything, so there only Load refuses it. A module receives the input it needs and no more: its body names each field it passes on.
 
-A leaf field can be **wrapped**: its schema is `field(inner)`, from
-`@prisma/composer/arktype` or `@prisma/composer/zod`
-([glossary](../03-domain-model/glossary.md#field)). A wrapped field's schema
-accepts what `inner` accepts and a plain pointer, so its value in the body is
-typed `Value<Out | Pointer<In>>`: for `from: field(type('string'))`,
-`input.from` is `Value<string | Pointer<string>>`. Its binding takes a
-literal, a value of `inner`'s input type, or a `RuntimeValue<string>`; a
-`RuntimeValue<SecretString>` there fails to compile, and so does a
-`RuntimeValue<string>` in a plain field. At deploy a module's schema checks
-each runtime value as its pointer, so a plain field bound to one fails the
-deploy, as below.
+A field can be **wrapped**: its schema is `field(inner)`, from `@prisma/composer/arktype` or `@prisma/composer/zod` ([glossary](../03-domain-model/glossary.md#field)). A wrapped field's schema accepts what `inner` accepts and a plain pointer, so its value in the body is typed `Value<Out | Pointer<In>>`: for `from: field(type('string'))`, `input.from` is `Value<string | Pointer<string>>`. A wrapped field holds the whole value one source supplies: text, a number, a boolean, or an object or array when a platform variable's schema says so, so `inner` may be an object schema. Its binding takes a literal, a value of `inner`'s input type, or a `RuntimeValue<In>`: `field(type('number'))` takes a platform variable declared `schema: type('number')`, and `field(type('string'))` takes one with no schema. A `RuntimeValue<SecretString>` there fails to compile, and so does any runtime value in a plain field. At deploy a module's schema checks each runtime value as its pointer, so a plain field bound to one fails the deploy, as below.
 
 The body can only pass an input field on. Turning one into text or a number,
 serializing it, listing its keys, iterating it, testing it with `in`,

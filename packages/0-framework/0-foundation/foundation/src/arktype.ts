@@ -64,11 +64,13 @@ function innerProblem(inner: Type<unknown, unknown>, field: FieldError): string 
 }
 
 /**
- * Wraps the schema of one leaf field so the field also accepts a plain
- * pointer, which stands for a value known only at boot. The field's input type
- * is `In | Pointer<In>` and its output type `Out | Pointer<In>`, where `In` and
+ * Wraps the schema of one field so the field also accepts a plain pointer,
+ * which stands for a value known only at boot. The field's input type is
+ * `In | Pointer<In>` and its output type `Out | Pointer<In>`, where `In` and
  * `Out` are `inner`'s. A value that is not a pointer gets `inner`'s error.
- * Wrap a leaf, never an object schema; put a default outside the wrapper.
+ * The field holds the whole value its source supplies, which may be an object
+ * or an array.
+ * Put a default outside the wrapper.
  *
  * ```ts
  * input: type({ from: field(type('string')), port: field(type('string.integer.parse')) })
@@ -82,6 +84,6 @@ export function field<t, $>(inner: Type<t, $>): Type<t | Pointer<Type<t, $>['inf
   const pointer = type('object').narrow((value) => isPlainPointer(value));
   return blindCast<
     Type<t | Pointer<Type<t, $>['inferIn']>, $>,
-    "ArkType infers the pointer branch as object; the branch admits only a plain pointer, which stands for the inner schema's input text"
+    "ArkType infers the pointer branch as object; the branch admits only a plain pointer, which stands for a value of the inner schema's input type"
   >(checked.or(pointer).configure({ problem: (error) => innerProblem(checked, error) }));
 }

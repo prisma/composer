@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { appRoot, Load, paramSource, secretSource, service, valueResource } from '@internal/core';
+import {
+  appRoot,
+  Load,
+  type PlainData,
+  paramSource,
+  secretSource,
+  service,
+  valueResource,
+} from '@internal/core';
 import type { Pointer } from '@internal/foundation/pointer';
 import type { SecretString } from '@internal/foundation/secret';
 import { valueReadsChange, valueReadsSnapshot } from '../value-reads-change.ts';
@@ -12,6 +20,7 @@ interface NodeSpec {
   readonly brandedProp?: boolean;
   /** Further props of the node. */
   readonly extra?: Readonly<Record<string, unknown>>;
+  readonly schema?: PlainData;
 }
 
 interface ReadSpec {
@@ -65,6 +74,7 @@ function graphOf(nodes: readonly NodeSpec[], reads: readonly ReadSpec[]) {
           props: {
             name: node.name,
             secret: node.secret === true,
+            ...(node.schema === undefined ? {} : { schema: node.schema }),
             ...(node.brandedProp === true
               ? { kind: { [Symbol.for('test:brand')]: true, name: 'variable' } }
               : {}),
@@ -152,6 +162,27 @@ describe('valueReadsChange', () => {
         readsOf([{ ...emailFrom, name: 'EMAIL_SENDER' }], [fromRead]),
       ),
     ).toEqual({ added: [], removed: [], changed: ['shop.emailFrom'] });
+  });
+
+  test("a change to a read node's schema is a change, and the same schema is none", () => {
+    const port: NodeSpec = { id: 'smtpPort', name: 'SMTP_PORT', schema: { type: 'number' } };
+    const portRead: ReadSpec = { reader: 'mail', node: 'smtpPort', path: 'port' };
+
+    expect(
+      valueReadsChange(
+        readsOf([port], [portRead]),
+        readsOf([{ ...port, schema: { type: 'integer' } }], [portRead]),
+      ),
+    ).toEqual({ added: [], removed: [], changed: ['shop.smtpPort'] });
+    expect(
+      valueReadsChange(
+        readsOf([port], [portRead]),
+        readsOf([{ id: port.id, name: port.name }], [portRead]),
+      ),
+    ).toEqual({ added: [], removed: [], changed: ['shop.smtpPort'] });
+    expect(
+      valueReadsChange(readsOf([port], [portRead]), readsOf([port], [portRead])),
+    ).toBeUndefined();
   });
 
   test('changed props on a node no service reads are no change', () => {

@@ -155,7 +155,7 @@ Section 14 records that this is a third origin of a runtime value beside the tab
 
 ### Where its value may go
 
-- **A service's input binding:** a wrapped field (`field()`) for a plain platform variable, a secret field for a platform secret. Before module-input S18 ships, the secret field is `secretString()`; after it, `secret(inner)`. The deploy check and the compiler refuse the other combinations, as module-input already does for every pointer.
+- **A service's input binding:** a wrapped field (`field()`) for a plain platform variable, a secret field for a platform secret. Before module-input S18 ships, the secret field is `secretString()`; after it, `secret(inner)`. The deploy check and the compiler refuse the other combinations, as module-input already does for every pointer. A wrapped field holds the whole value one source supplies: text, a number, a boolean, or an object or array when the variable's schema says so, so its inner schema may be an object schema.
 - **A module's input binding,** into a wrapped field or a secret field, from which the module passes it on.
 - **Two fields of one service may read one variable.** Each gets its own marker, and both read the same text at boot. The deploy's check that a service's markers name distinct variables keeps applying to `$generated` markers, which each own a variable, and stops applying to `$platform` markers.
 - **Nowhere else.** A service's per-key params, a `resolve()` dependency, a resource's props, the whole input of a service, and a plain field (a schema member written without `field()` or a secret field) all need data the deploy has. A compute service's one per-key param, `port`, is read by the deploy to set the deployment's port mapping before the service exists. The compiler refuses a source in a per-key param, and Load refuses one a cast gets there. The compiler refuses each where it can see the type. Where it cannot, Load refuses a `resolve()` dependency and a resource's props, the target's graph check (section 5) refuses the whole input, and the service's own schema refuses a plain field, naming the variable.
@@ -225,16 +225,16 @@ A name used two ways means two things: a value from the platform at boot, and a 
 A variable's text is text. `schema` says what that text means, as a schema from any library that implements [Standard JSON Schema](https://standardschema.dev/json-schema). The repo's ArkType 2.2.7 and Zod 4.4.3 both do. Such a schema object exposes `~standard.jsonSchema.input(options)` and `.output(options)`, which return plain JSON Schema, and keeps its TypeScript type.
 
 - **For the compiler,** the provisioned value is `RuntimeValue<T>`, where `T` is the schema's output type. `provision(variable({ name: 'SMTP_PORT', schema: type('number') }))` is a `RuntimeValue<number>`, so `field(type('number'))` accepts it and `field(type('string'))` refuses it. Without `schema`, `T` is `string`.
-- **At construction,** the constructor calls `jsonSchema.input({ target: 'draft-2020-12' })` and `jsonSchema.output({ target: 'draft-2020-12' })`, catches what either throws, compares the two, and keeps the input form in the node's props as plain JSON. The library's schema never runs on a value, because there is none. Keeping the JSON Schema in the props means a changed schema is a changed node, and that the deploy never needs the library.
-- **At deploy,** the JSON Schema is written into the `$platform` marker of each service that reads the variable, with its annotation keywords removed: `title`, `description`, `examples`, `default` and `$comment`. Validation does not use them, and a library copies an author's `examples` into the JSON Schema, which would otherwise land in a platform row and in the deploy report.
+- **At construction,** the constructor calls `jsonSchema.input({ target: 'draft-2020-12' })` and `jsonSchema.output({ target: 'draft-2020-12' })`, catches what either throws, and reduces each to the keywords of draft 2020-12 that validate, by a fixed table of keyword positions. Everything else, `$schema`, `title`, `description`, `examples`, `default`, `$comment` and a library's own metadata among it, is removed there, at every schema position, and a property named `title` is kept. It then renames the `$defs` entries to `d0`, `d1` and so on, in the order a walk from the top first reaches them, because ArkType names them with a process-wide counter. It compares the two reduced forms and keeps the reduced input form in the node's props as plain JSON. The library's schema never runs on a value, because there is none. Keeping the reduced JSON Schema in the props means a changed type is a changed node, while a changed description, or an unrelated edit elsewhere in the app, is not, and that the deploy never needs the library.
+- **At deploy,** the variable's JSON Schema, as the props hold it, is written into the `$platform` marker of each service that reads the variable. Nothing that does not validate reaches a platform row or the deploy report, because the reduction already removed it.
 - **At boot,** Composer decodes the text, validates the result against the JSON Schema, and only then hands it to the service's schema (section 8).
 
 ### The decoding rule
 
-Boot decodes a variable's text by one rule, decided from the JSON Schema alone at construction, so that boot has nothing to decide:
+Boot decodes a variable's text by one rule. The kind is decided from the JSON Schema alone, by one function that the constructor, boot and `prisma dev` all call; the marker carries the JSON Schema, not the kind:
 
 - **Without `schema`, the value is the text itself.**
-- **A text-only schema: the value is the text itself.** A JSON Schema is text-only when every value it accepts is a string. The constructor decides that from the schema's top level: `type` is `"string"`; or `const` is a string; or `enum` holds only strings; or the schema is an `anyOf` or `oneOf` whose every member is text-only; or it is an `allOf` with at least one text-only member. A top-level `$ref` into the same document's `$defs` is followed once. So ArkType's `'"smtp" | "ses"'`, which emits `enum`, and `'"x"'`, which emits `const`, are text-only, and Zod's `z.enum([...])`, which emits `type: "string"`, is too.
+- **A text-only schema: the value is the text itself.** A JSON Schema is text-only when every value it accepts is a string. The constructor decides that from the schema's top level: `type` is `"string"`; or `const` is a string; or `enum` holds only strings; or the schema is an `anyOf` or `oneOf` whose every member is text-only; or it is an `allOf` with at least one text-only member. Wherever the rule looks at a schema that has a `$ref`, it looks at the schema the `$ref` names instead, at the top level and in each member, and a `$ref` already followed makes the schema mixed. So ArkType's `'"smtp" | "ses"'`, which emits `enum`, and `'"x"'`, which emits `const`, are text-only, and Zod's `z.enum([...])`, which emits `type: "string"`, is too.
 - **A never-text schema: the text is JSON.** A JSON Schema is never-text when no value it accepts is a string, decided the same way: `type` is one of `number`, `integer`, `boolean`, `object`, `array` or `null`, or a list without `string`; or `const` is not a string; or `enum` holds no string; or every member of an `anyOf` or `oneOf` is never-text; or an `allOf` has at least one never-text member. Boot parses the text as JSON. `587` is the number 587, `true` is a boolean, `{"host":"x"}` is an object.
 - **A mixed schema is refused at construction.** A schema that accepts both strings and non-strings, such as ArkType's `'string | number'`, or one whose top level fits neither rule, such as an empty schema or a `not`, is refused, with an error naming the node and saying to declare either a text type or a JSON type. `'string | null'` and Zod's `.nullable()` emit `anyOf` of `string` and `null`, which is mixed: a row's text cannot be `null`, so declare `string` and make the field optional instead. Composer never guesses which form the text has.
 
@@ -242,7 +242,10 @@ A variable with `schema: type('number')` whose text is `abc` fails boot, because
 
 ### What the constructor refuses
 
-- **A transforming schema.** A schema whose input and output JSON Schemas differ changes its value, which is code, and no code runs on a platform value. ArkType's `string.numeric.parse` gives input `{"type":"string","pattern":…}` and output `{"type":"number"}`, so it is refused. The error names the node and says to declare the type the text holds, such as `type('number')`.
+- **A transforming schema.** A schema whose input and output JSON Schemas differ changes its value, which is code, and no code runs on a platform value. ArkType's `string.numeric.parse` gives input `{"type":"string","pattern":…}` and output `{"type":"number"}`, so it is refused, and so is a default inside an object. The error names the node and says to declare the type the text holds, such as `type('number')`. One difference is allowed, at a schema position only: `additionalProperties: false` in the output form where the input form has none. Zod writes it for every `z.object()`, and ArkType for `'+': 'delete'`; the removal of undeclared keys it stands for does not run on a variable's value, so such a key reaches the service's field.
+- **A reference Composer cannot follow.** A `$ref` that is not `#` or `#/$defs/<name>` with an existing name, and any `$dynamicRef`, `$dynamicAnchor`, `$anchor` or `$id`. The validator throws on an unresolved `$ref` only when validation reaches it, and ignores `$dynamicRef`, so each is refused when the root's body runs instead.
+- **A keyword of an older draft that the validator still reads,** such as `dependencies` or `items` as a list, and a keyword whose value has the wrong shape.
+- **A pattern the validator cannot compile.** The validator compiles each `pattern` with the `u` flag and throws for one that flag refuses, such as `a\-b`, so the constructor compiles each one first.
 - **A schema the library cannot express as JSON Schema.** ArkType throws for a `.narrow()` predicate and for `string.url`; Zod's `.transform()` throws from `jsonSchema.output()` while `.input()` returns `{"type":"string"}`. The constructor calls both and reports the library's message, naming the node.
 - **A mixed schema,** as above.
 
@@ -252,7 +255,7 @@ Some schemas lose meaning on the way to JSON Schema without failing. Boot can en
 
 - **Zod drops a refinement.** `z.string().refine(…)` gives `{"type":"string"}`, with no error. Boot does not run the refinement.
 - **Zod hides coercion.** `z.coerce.number()` gives `{"type":"number"}` for both input and output. Boot parses the text as JSON and checks it is a number; the coercion never runs. The result is the same for every text that is a JSON number.
-- **`format`.** Zod's `z.email()` emits `format: "email"`. Draft 2020-12 treats `format` as an annotation unless the validator is told otherwise. Slice 4's spike decides whether Composer's validator checks `format`, and the guide states the choice.
+- **`format`.** Zod's `z.email()` emits `format: "email"`. The validator checks the formats it knows, such as `email`, `uuid` and `date-time`, and accepts any value under a format it does not know, such as Zod's `z.jwt()`. The guide lists the checked formats.
 
 The guide says so, and says to put a check that must hold into the service's own schema, which does run at boot.
 
@@ -262,7 +265,7 @@ ADR-0042 says Composer never looks inside a schema, because a library's internal
 
 ### The validator
 
-Boot validates with a JSON Schema validator that Composer ships in the service runtime. It must support draft 2020-12, which both libraries emit, must not generate code with `new Function`, so that it works under any runtime policy, and must not depend on Node or Bun. `@cfworker/json-schema` meets the first two and is small; it is not in the repo yet. Slice 4 confirms the choice with a spike that runs it against the schemas ArkType and Zod emit for the types the guide shows, and records: whether `format` is checked or ignored, whether `$ref` and `$defs` resolve, and every message the validator can produce, so that section 8's rule about messages holds.
+Boot validates with a JSON Schema validator that Composer ships in the service runtime. It must support draft 2020-12, which both libraries emit, must not generate code with `new Function`, so that it works under any runtime policy, and must not depend on Node or Bun. `@cfworker/json-schema` 4.1.6 meets all three and has no dependencies. Checked against the schemas ArkType and Zod emit: `$ref` to `#` and into `$defs` resolves, including a recursive type; `format` is checked for the formats it knows; and its messages can quote the value, so Composer prints only a failure's keyword and location (section 8). `@prisma/composer-prisma-cloud` and each shared-module entrypoint inline it, as they inline the shared input-document package.
 
 The platform is not expected to validate anything. Composer does.
 
@@ -284,7 +287,7 @@ Each place in a service's input document that holds a platform variable's value 
 }
 ```
 
-- `name` is the variable. `secret` is present and `true` for a platform secret. `schema` is present when the node has one, as the JSON Schema with its annotations removed.
+- `name` is the variable. `secret` is present and `true` for a platform secret. `schema` is present when the node has one, as the variable's reduced JSON Schema from the node's props. A marker with both, or with a schema that accepts both text and other values, is malformed.
 - The marker replaces today's `$secret` pointer, `{ "$secret": "NAME" }`, in slice 2, for `envSecret()`; slice 3's nodes write the same marker. The input document and the code that reads it at boot ship in the same deployment, from the same installed package, so changing the marker needs no compatibility reader.
 - `$generated` pointers, for `generatedParam()` and `serviceOrigin()`, stay as they are. Those variables are Composer's own, not the operator's.
 - A user key spelled like a marker gains one leading `$` when written and loses it when read, as today for `$secret` and `$generated`. The escape covers `$platform` too, so only Composer can place a marker.
@@ -295,8 +298,8 @@ Each place in a service's input document that holds a platform variable's value 
 At boot `service.input()` reads the input document and replaces each marker. There are four steps:
 
 1. **The variable has no value** (`process.env[name]` is undefined): the marker's key is left out of its object. The service's schema decides whether that is allowed. If the schema then fails, the error also names each platform variable that had no value, so the operator knows what to set. A marker in an array position cannot be left out; such a variable with no value fails boot naming the variable, and preflight already treats it as required (section 9).
-2. **The variable has text:** the text is decoded by the marker's rule (section 7), then validated against `schema` if there is one. A value that does not decode or does not fit fails boot. The error names the variable and what was expected: the JSON form (`true` or `false`, a number, an object), or the failing JSON Schema keyword and its location, such as `minimum at /`. It never includes the text, a part of the text, the parser's message or the validator's message. This rule is the same for a plain platform variable and for a secret, because a parser's message quotes the input and no redaction runs at boot on the platform.
-3. **For a platform secret,** the result is put in a secret box.
+2. **The variable has text:** the text is decoded by the marker's rule (section 7), then validated against `schema` if there is one. A value that does not decode or does not fit fails boot. The error names the variable and what was expected: the JSON form (`true` or `false`, a number, an object), or the failing JSON Schema keyword and its location as the validator gives it, which is its path through the schema, such as `it fails "minimum" at #/$ref/properties/port/minimum`. The one kind of failure whose location the validator builds from the value, a failure under a `false` schema, is removed before the failure is named. It never includes the text, a part of the text, a key of it, the parser's message or the validator's message. A platform secret is never decoded, because `variable.secret()` takes no schema. The rule about messages matters because a parser's message quotes the input and no redaction runs at boot on the platform.
+3. **For a platform secret,** the text is put in a secret box.
 4. The service's own schema then validates the whole object, as today.
 
 ### Empty text
@@ -412,9 +415,12 @@ The graph is still a composition of modules that are all the same, except the ro
 
 ### Slice 4: a platform variable has a schema
 
-- **ADR-0064:** `schema`, the decoding rule, the refusals and the validator.
-- **ADR-0042:** the `schema` member of the marker and the decode-then-validate step. The statement "Composer never looks inside the schema" gains the exception in section 7, stated in ADR-0064 and cited here.
-- **Glossary:** the `schema` option on the platform variable entry.
+- **ADR-0064:** `schema`, the reduction, the decoding rule, the refusals, the validator and how it ships, and `prisma dev`.
+- **ADR-0042:** the `schema` member of the marker and the decode-then-validate step. The statement "Composer never looks inside the schema" gains the exception in section 7, stated in ADR-0064 and cited here. A wrapped field takes a plain platform variable's value typed by its schema, and may hold an object.
+- **ADR-0061, the guide and the skill:** a wrapped field holds the whole value one source supplies, which may be an object, where each said a leaf and never an object schema.
+- **ADR-0062:** a plain pointer is typed by its source, `Pointer<T>`.
+- **ADR-0058:** the dev preflight decodes and validates each plain platform variable.
+- **Glossary:** the platform variable node, the `$platform` marker, Value and RuntimeValue.
 
 No two slices rewrite one record at the same time: each slice starts after the one before it has merged. A record slice 2 rewrites may be rewritten again by slice 3, because they are sequential.
 

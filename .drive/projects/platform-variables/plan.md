@@ -4,7 +4,7 @@ Spec: [spec.md](spec.md), which numbers the requirements (R1 to R8) and the deci
 
 ## Status
 
-Slices 1 and 2 are merged. Slice 3 is specified.
+Slices 1, 2 and 3 are merged. Slice 4 is specified and built on its branch.
 
 ## Order
 
@@ -116,7 +116,7 @@ Each slice is one pull request, merged before the next starts. Slice 1 stands al
 
 **Checked on Prisma Cloud:** a number, a boolean, an enum and an object variable received with their types; `type('number')` with the text `abc`, where the deploy succeeds and `prisma service logs <service>` shows the boot error; a planted secret decoded under a number schema, with the error searched for any part of it; the same under `prisma dev`.
 
-**Spec:** to be written when slice 3 merges.
+**Spec:** [slices/4-a-platform-variable-has-a-schema/spec.md](slices/4-a-platform-variable-has-a-schema/spec.md), which states every public type, rule, message, observable behaviour and record change, the acceptance items, and the alternatives considered.
 
 ## Close-out
 

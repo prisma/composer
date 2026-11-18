@@ -5,7 +5,7 @@
  * surface grows.) Pure barrel — no implementations live here.
  */
 
-export type { Pointer } from '@internal/foundation/pointer';
+export type { PlainPointer, Pointer } from '@internal/foundation/pointer';
 export { isPlainPointer, isSecretPointer } from '@internal/foundation/pointer';
 export type { SecretString } from '@internal/foundation/secret';
 export { isSecretString, SecretBox } from '@internal/foundation/secret';

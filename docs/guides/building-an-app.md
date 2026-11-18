@@ -418,20 +418,7 @@ export default appRoot('shop', ({ provision }) => {
   a mistake fails before anything reaches the platform.
 - A root module's input is filled from the config adapters ([Values from outside the code](#values-from-outside-the-code)).
 - A module's `input` takes every source a service's does. Its schema checks each source as its **pointer**: the object that names the variable on the platform the service reads at boot. A `secretString()` field accepts the pointer of a platform secret and of a redacted `generatedParam()`. A plain field accepts no pointer, so a field bound to a plain platform variable, `serviceOrigin()` or a plain `generatedParam()` is wrapped with `field()`, below.
-- `field()`, from `@prisma/composer/arktype` or `@prisma/composer/zod`,
-  wraps one leaf field's schema: `type({ from: field(type('string')) })` or
-  `z.object({ from: field(z.string()) })`. A wrapped field also accepts a
-  plain pointer, which stands for a value known only at boot such as
-  `serviceOrigin()`, so in the body `input.from` is typed
-  `Value<string | Pointer<string>>`. Pass it on into another wrapped field or
-  a service's input; a plain `string` field refuses it at compile time. For a
-  value that is not a pointer, a wrapped field reports the plain field's
-  error, except that ArkType reports a missing key as
-  `from must be a string or an object (was missing)`. Wrap leaves, never an
-  object schema, and with ArkType put a default outside the wrapper:
-  `field(type('string')).default('x')`. With another Standard Schema library,
-  `Pointer`, `isPlainPointer()` and `isSecretPointer()` from
-  `@prisma/composer` are what `field()` and `secretString()` check. Wrap every leaf field of a reusable module's schema other than a `secretString()` field, unless a `resolve()` lists it: the module then takes a literal, a deploy-time value or a value known only at boot, whichever its caller has. In the example above, `from` stays plain because a `resolve()` computes with it, and `replyTo` is wrapped. A root's fields stay plain too, because the app configuration never holds a pointer. Never wrap a `secretString()` field: `field(secretString())` would accept a plain pointer into a secret field, and the service would then fail at boot.
+- `field()`, from `@prisma/composer/arktype` or `@prisma/composer/zod`, wraps one field's schema: `type({ from: field(type('string')) })` or `z.object({ from: field(z.string()) })`. A wrapped field also accepts a plain pointer, which stands for a value known only at boot such as `serviceOrigin()`, so in the body `input.from` is typed `Value<string | Pointer<string>>`. Pass it on into another wrapped field or a service's input; a plain `string` field refuses it at compile time. A wrapped field holds the whole value one source supplies: text, a number, a boolean, or an object or array when a platform variable's schema says so ([A typed platform variable](#a-typed-platform-variable)), so `field(type({ host: 'string', port: 'number' }))` is fine. For a value that is not a pointer, a wrapped field reports the plain field's error, except that ArkType reports a missing key as `from must be a string or an object (was missing)`. With ArkType put a default outside the wrapper: `field(type('string')).default('x')`. With another Standard Schema library, `Pointer`, `PlainPointer`, `isPlainPointer()` and `isSecretPointer()` from `@prisma/composer` are what `field()` and `secretString()` check. Wrap every field of a reusable module's schema other than a `secretString()` field, unless a `resolve()` lists it: the module then takes a literal, a deploy-time value or a value known only at boot, whichever its caller has. In the example above, `from` stays plain because a `resolve()` computes with it, and `replyTo` is wrapped. A root's fields stay plain too, because the app configuration never holds a pointer. Never wrap a `secretString()` field: `field(secretString())` would accept a plain pointer into a secret field, and the service would then fail at boot.
 - A body reaches only the keys every member of a union schema has, and has no
   element access into an array field. To narrow, declare a flat schema and
   pass its fields on by name, or narrow inside a `resolve()` function.
@@ -703,7 +690,7 @@ export default appRoot('shop', ({ provision }) => {
 
 Here `mailer` is a service of the app whose input schema declares `from: field(type('string'))` and `deliveryCredential: secretString()`.
 
-- **`variable({ name })`** declares a plain value. Its value fits a field wrapped with `field()`. A platform variable's value goes into a field of a service's or a module's `input` only: a service's per-key params, such as a compute service's reserved `port`, take a literal or a root input field, because the deploy needs the port before the service exists.
+- **`variable({ name })`** declares a plain value. Its value is the variable's text, and fits a text field wrapped with `field()`, such as `field(type('string'))`. To receive a number, a boolean or an object instead, give the variable a `schema` ([A typed platform variable](#a-typed-platform-variable)). A platform variable's value goes into a field of a service's or a module's `input` only: a service's per-key params, such as a compute service's reserved `port`, take a literal or a root input field, because the deploy needs the port before the service exists.
 - **`variable.secret({ name })`** declares a **platform secret**, for credentials, with one rule: **the value never enters framework config**. Its value fits a `secretString()` field only. What your code gets is a `SecretString` box that redacts on logging, rendering, and JSON-serialization — leaking it takes a deliberate `.expose()`:
 
   ```ts
@@ -717,6 +704,57 @@ Here `mailer` is a service of the app whose input schema declares `from: field(t
 - **The node creates nothing.** It is not sent to the platform's application topology, and the deploy report has no line for it. The loaded graph lists it, with each service that reads it in `graph.valueReads`. A node no service reads is listed under "Platform variables with no value" when it has none, as `named by resource "shop.emailFrom", read by no service`.
 
 A name is an upper-case letter followed by upper-case letters, digits and underscores, such as `STRIPE_SECRET_KEY`. Any name starting with `COMPOSER_`, and `DATABASE_URL`, `DATABASE_URL_POOLED`, `PORT`, `PATH` and `HOME`, are reserved. A name has one meaning in an app: two nodes with one name, or a platform variable and a root input field with one name, fail before anything is created, naming the variable and both places. Declare each platform variable once and pass its value to every module that needs it. A node's value bound as a service's whole input also fails: bind it to one field.
+
+#### A typed platform variable
+
+A variable on the platform holds text. Give `variable()` a `schema` to say what the text means:
+
+```ts
+import { appRoot } from '@prisma/composer';
+import { variable } from '@prisma/composer-prisma-cloud';
+import { type } from 'arktype';
+
+export default appRoot('shop', ({ provision }) => {
+  const smtpPort = provision(variable({ name: 'SMTP_PORT', schema: type('number') }));
+  provision(mailer, { input: { smtpPort } }); // mailer declares smtpPort: field(type('number'))
+});
+```
+
+```text
+$ prisma project env add 'SMTP_PORT=587' --project 'proj_…' --role production
+$ prisma deploy --environment production
+
+mailer.input().smtpPort   // 587, a number
+```
+
+`schema` is a schema from any library that implements [Standard JSON Schema](https://standardschema.dev/json-schema); ArkType and Zod both do. `variable.secret()` takes no schema: a secret's value is always text, so check its content in the service's `secretString()` field.
+
+- **The compiler knows the type.** `provision(variable({ name, schema: type('number') }))` is a runtime value of type `number`. It fits `field(type('number'))` and does not fit `field(type('string'))`; a variable with no schema is the reverse. An object schema fits a `field()` of the same object type.
+- **A text type gives the text, exactly.** A schema that accepts only text, such as `type('string')`, `z.enum(['a', 'b'])` or `type("'a' | 'b'")`, gives the variable's text with nothing trimmed. So a text that ends with a newline matches no member of an enum, and boot fails.
+- **Any other type reads the text as JSON.** A schema that accepts no text, such as a number, a boolean, an object, an array or `number | null`, parses the text as JSON. So `587` gives the number `587`, `true` gives `true`, `{"host":"smtp.example.com","port":587}` gives an object, and `null` gives `null` under `number | null`. Surrounding whitespace is allowed.
+- **A schema that accepts both is refused** when the root's body runs, because Composer could not tell how to read the text: `type('string | number')`, `z.union([z.string(), z.number()])`, an empty schema such as `z.unknown()`, and `string | null`. A variable on the platform cannot hold null as text, so for an optional text variable declare the text type and make the service's field optional.
+- **The value is checked twice at boot.** First against the variable's schema, then the service's own schema checks the whole input, as before. A text that does not decode or fit fails boot, and the deploy still succeeds, as for every boot failure. The error is in `prisma service logs <service>`, and it names the variable and never holds its text:
+
+  ```text
+  The platform variable "SMTP_PORT" does not hold a number. Its schema is not a text type, so its text must be JSON, such as 587.
+  The platform variable "SMTP_PORT" does not fit its schema: it fails "minimum" at #/minimum.
+  ```
+
+- **`prisma dev` checks the same way, before any service starts.** It decodes and validates each variable's text from your `config` adapters with the same code, and stops with the same message followed by `prisma dev cannot start, because service "shop.mailer" reads it.`
+- **Keep an identifier as text.** A whole number above 9007199254740991, such as a large order id, cannot be read exactly as a JavaScript number, so boot refuses it. Declare such a value as text. A value nested more than 100 levels deep is refused too.
+
+**What a schema library loses on the way.** No library code runs on a platform variable's value, because the app's module code is not in the service. Composer asks the library for the plain JSON Schema it emits, and boot checks the text against that. Anything the JSON Schema cannot say does not run:
+
+- A transform or a default that the library writes into its JSON Schema is refused when the root's body runs, such as ArkType's `string.numeric.parse`, Zod's `.transform()`, or a default inside an object. Put the default on the service's field instead.
+- ArkType throws for `.narrow()` and for `string.url`, which have no JSON Schema, and the error says so.
+- Zod drops `.refine()`. `.trim()`, `.toLowerCase()`, `z.coerce`, `z.preprocess()` and `.catch()` emit the same JSON Schema as the type without them, so they are accepted and do not run.
+- An undeclared key in an object is not removed. Zod's `z.object()` and ArkType's `'+': 'delete'` drop unknown keys when the library parses; on a platform variable nothing parses with the library, so an undeclared key reaches the service's field, and the service's own schema decides.
+- A regular expression's flags are dropped, and its pattern must be valid under the `u` flag, which is how the check compiles it. An escape such as `\-` outside a character class is the usual cause of a refusal; write `-` instead.
+- `format` is checked for `date`, `time`, `date-time`, `duration`, `uri`, `uri-reference`, `uri-template`, `url`, `email`, `hostname`, `ipv4`, `ipv6`, `regex`, `uuid`, `json-pointer`, `json-pointer-uri-fragment` and `relative-json-pointer`. Any other format, such as Zod's `z.jwt()`, is accepted unchecked.
+- `z.number().optional()` does not fit `field(z.number())`. Declare the variable's type plainly and make the service's field optional instead; an unset variable is left out of the input, as for every platform variable.
+- A hand-written JSON Schema that contradicts itself, such as a `$ref` to a number type beside `"type": "string"`, is accepted and fails every boot. Write the type once.
+
+Put any check or change the JSON Schema cannot hold in the service's own schema, which runs at boot on the decoded value.
 
 A reusable Module takes a secret as a `secretString()` field of its `input`
 and passes it on without ever learning the platform name
@@ -739,7 +777,7 @@ an environment variable:
 { "stripeEnabled": true, "stripeSecretKey": { "$platform": { "name": "STRIPE_SECRET_KEY", "secret": true } } }
 ```
 
-At boot the framework swaps each marker for a redacting box over the named variable, or leaves the field out when the variable is unset or empty, validates against the schema again, and `service.input()` returns the typed object. When the schema fails and a field was left out, the error ends with the names of the variables that had no value. A marker inside an array cannot be left out, so an unset variable there fails boot, naming it. The document holds no secret values, which is why the deploy report can print it, with each marker shown as `$platform NAME`.
+A typed platform variable's marker also carries its JSON Schema: `{ "$platform": { "name": "SMTP_PORT", "schema": { "type": "number" } } }`. At boot the framework swaps each marker for a redacting box over the named variable, for the variable's text, or for the value a typed variable's schema decodes from its text, or leaves the field out when the variable is unset or empty. It validates against the schema again, and `service.input()` returns the typed object. When the schema fails and a field was left out, the error ends with the names of the variables that had no value. A marker inside an array cannot be left out, so an unset variable there fails boot, naming it. The document holds no secret values, which is why the deploy report can print it, with each marker shown as `$platform NAME`, or `$platform SMTP_PORT (number)` for a typed variable.
 
 ## Values that differ per environment
 

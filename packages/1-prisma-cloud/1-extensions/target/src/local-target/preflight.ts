@@ -12,6 +12,7 @@ import type {
 } from '@internal/core/config';
 import { DEV_DIR, devEnvironmentDir } from '@internal/core/config';
 import { quotedList } from '@internal/foundation/errors';
+import { readVariableText, type VariableJsonSchema } from '@internal/input-document';
 import {
   movePreEnvironmentDevState,
   readOrCreateFingerprintKey,
@@ -46,19 +47,34 @@ function serviceNodeAt(graph: Graph, address: string): ServiceNode {
   return found;
 }
 
+const readBy = (readers: readonly string[]): string =>
+  readers.length === 1
+    ? `service ${quotedList(readers)} reads`
+    : `services ${quotedList(readers)} read`;
+
 function plainVariableNotTextError(
   name: string,
   address: string,
   readers: readonly string[],
   kind: string,
 ): Error {
-  const readBy =
-    readers.length === 1
-      ? `which service ${quotedList(readers)} reads`
-      : `which services ${quotedList(readers)} read`;
   return new Error(
-    `The \`config\` adapters return ${kind} for "${name}", not text. prisma dev cannot start, because the platform variable "${address}", ${readBy}, takes text. Make the adapter return a string.`,
+    `The \`config\` adapters return ${kind} for "${name}", not text. prisma dev cannot start, because the platform variable "${address}", which ${readBy(readers)}, takes text. Make the adapter return a string.`,
   );
+}
+
+function checkedVariableText(
+  name: string,
+  text: string,
+  schema: VariableJsonSchema | undefined,
+  readers: readonly string[],
+): void {
+  try {
+    readVariableText(name, text, schema);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(`${message} prisma dev cannot start, because ${readBy(readers)} it.`);
+  }
 }
 
 function plainVariableTexts(input: PreflightInput): Record<string, string> {
@@ -76,7 +92,9 @@ function plainVariableTexts(input: PreflightInput): Record<string, string> {
     const text = configurationText(input.configuration, node.name, (kind) =>
       plainVariableNotTextError(node.name, node.address, readers, kind),
     );
-    if (isSet(text)) texts[node.name] = text;
+    if (!isSet(text)) continue;
+    checkedVariableText(node.name, text, node.schema, readers);
+    texts[node.name] = text;
   }
   return texts;
 }

@@ -49,6 +49,7 @@
     "better-auth": "1.6.24"
   },
   "devDependencies": {
+    "@internal/input-document": "workspace:0.39.0",
     "@internal/tsdown-config": "workspace:0.39.0",
     "@prisma/dev": "^0.25.2",
     "@types/bun": "^1.3.13",

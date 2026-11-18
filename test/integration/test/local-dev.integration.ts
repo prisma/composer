@@ -442,7 +442,7 @@ async function main(): Promise<void> {
       readonly configuration: Readonly<Record<string, string>>;
       readonly secrets: Readonly<Record<string, string>>;
     } = {
-      configuration: { LOCALDEV_FIXTURE_GREETING: 'hello' },
+      configuration: { LOCALDEV_FIXTURE_GREETING: 'hello', LOCALDEV_FIXTURE_SMTP_PORT: '587' },
       secrets: { LOCALDEV_FIXTURE_API_KEY: 'test-api-key' },
     };
     const graph = Load(appModule, {
@@ -511,6 +511,7 @@ async function main(): Promise<void> {
       db: boolean;
       store: boolean;
       greeting: string | null;
+      smtpPort: unknown;
       portEnv: string | null;
     };
     assertEqual(
@@ -522,6 +523,11 @@ async function main(): Promise<void> {
       health.greeting,
       'hello',
       'the web service reads the plain platform variable LOCALDEV_FIXTURE_GREETING from the app configuration',
+    );
+    assertEqual(
+      health.smtpPort,
+      587,
+      'the web service receives the typed platform variable LOCALDEV_FIXTURE_SMTP_PORT as a number',
     );
 
     // 9. Emulator listing correct: both services running, stable ports/pids present.
