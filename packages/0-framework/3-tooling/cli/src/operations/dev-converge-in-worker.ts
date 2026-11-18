@@ -75,7 +75,7 @@ function runWorker(
     // Bun gives a worker no stdout or stderr streams; the worker forwards its writes itself.
     const streams = [worker.stdout, worker.stderr];
     for (const stream of streams) {
-      stream?.on('data', (chunk: Buffer | string) => report.output(String(chunk)));
+      stream?.setEncoding('utf8').on('data', (chunk: string) => report.output(chunk));
     }
     const ended = Promise.all(streams.map(streamEnded));
     let outcome: DevConvergeResult | undefined;

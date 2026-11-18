@@ -71,13 +71,22 @@ describe('recordAppFiles()', () => {
     fs.writeFileSync(
       script,
       [
-        `import { recordAppFiles } from ${JSON.stringify(pathToFileURL(path.join(import.meta.dir, '..', 'entry-resolution.ts')).href)};`,
-        `const { files } = await recordAppFiles(() => import(${JSON.stringify(pathToFileURL(app.entry).href)}));`,
+        'const [recorder, entry] = process.argv.slice(2);',
+        'const { recordAppFiles } = await import(recorder);',
+        'const { files } = await recordAppFiles(() => import(entry));',
         'console.log(JSON.stringify(files));',
       ].join('\n'),
     );
 
-    const result = spawnSync('node', [script], { encoding: 'utf8' });
+    const result = spawnSync(
+      'node',
+      [
+        script,
+        pathToFileURL(path.join(import.meta.dir, '..', 'entry-resolution.ts')).href,
+        pathToFileURL(app.entry).href,
+      ],
+      { encoding: 'utf8' },
+    );
 
     expect(result.stderr).not.toContain('Error');
     expect(JSON.parse(result.stdout).sort()).toEqual(app.expected);
