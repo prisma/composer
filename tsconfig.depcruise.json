@@ -66,6 +66,9 @@
       "@internal/cli/converge-contract": [
         "./packages/0-framework/3-tooling/cli/src/exports/converge-contract.ts"
       ],
+      "@internal/cli/dev-converge-worker": [
+        "./packages/0-framework/3-tooling/cli/src/operations/dev-converge-worker.ts"
+      ],
       "@internal/cli/control": ["./packages/0-framework/3-tooling/cli/src/exports/control.ts"],
       "@internal/cli/family": ["./packages/0-framework/3-tooling/cli/src/exports/family.ts"],
       "@internal/cli/testing": ["./packages/0-framework/3-tooling/cli/src/exports/testing.ts"],

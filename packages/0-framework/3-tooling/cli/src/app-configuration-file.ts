@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AppConfigurationRead, RootInputField } from '@internal/core';
-import { type AppSecrets, DEV_DIR, type NamedSecrets } from '@internal/core/config';
+import { DEV_DIR } from '@internal/core/config';
 import type { KnownSecrets } from './redaction.ts';
 import {
   refuseSecretsInPlainVariables,
@@ -10,8 +10,6 @@ import {
 
 /** Names the app configuration file the first process wrote for this run (ADR-0062). */
 export const APP_CONFIGURATION_FILE_ENV = 'PRISMA_COMPOSER_APP_CONFIGURATION_FILE';
-/** `prisma dev` only: the named secrets, as a JSON object. */
-export const NAMED_SECRETS_ENV = 'PRISMA_COMPOSER_NAMED_SECRETS';
 
 /** What the app configuration file holds: what the first process's Load read, the plain platform variable texts, and the graph's node addresses. */
 export interface AppConfigurationFile {
@@ -29,18 +27,13 @@ const FILE_NAME = /^app-configuration-(\d+)(-[^/]*)?\.json$/;
  */
 export const LEFTOVER_APP_CONFIGURATION_FILE_AGE_MS = 10 * 60 * 1000;
 
-/** The app configuration file a deploy or destroy run writes: unique per run, so concurrent runs from one checkout never share one. */
+/** The app configuration file a destroy run writes: unique per run, so concurrent runs from one checkout never share one. */
 export function deployAppConfigurationFile(cwd: string, runId: string): string {
   return path.join(
     cwd,
     '.prisma-composer',
     `app-configuration-${String(process.pid)}-${runId}.json`,
   );
-}
-
-/** The app configuration file `prisma dev` writes in an environment's folder. */
-export function devAppConfigurationFile(devDir: string): string {
-  return path.join(devDir, `app-configuration-${String(process.pid)}.json`);
 }
 
 function isRunning(pid: number): boolean {
@@ -109,31 +102,25 @@ export function prepareSecondProcess(input: {
   readonly appConfigurationRead: AppConfigurationRead;
   readonly plainVariableText: Readonly<Record<string, string>>;
   readonly nodeAddresses: readonly string[];
-  readonly secretsKeys: readonly string[];
   readonly knownSecrets: KnownSecrets;
-  readonly appSecrets?: AppSecrets;
 }): SecondProcessHandover {
-  const { file, appSecrets } = input;
+  const { file } = input;
   refuseSecretsInRootInput(
     input.appConfigurationRead,
     input.knownSecrets,
     'Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.',
   );
-  refuseSecretsInPlainVariables(input.plainVariableText, input.knownSecrets);
+  refuseSecretsInPlainVariables(
+    input.plainVariableText,
+    input.knownSecrets,
+    'Composer hands the second process every plain value in a file, and never writes a secret to a file.',
+  );
   const contents: AppConfigurationFile = {
     appConfigurationRead: input.appConfigurationRead,
     plainVariableText: input.plainVariableText,
     nodeAddresses: input.nodeAddresses,
   };
   const env: Record<string, string> = { [APP_CONFIGURATION_FILE_ENV]: file };
-  if (appSecrets !== undefined) {
-    const named: Record<string, string> = {};
-    for (const key of input.secretsKeys) {
-      const text = appSecrets[key];
-      if (text !== undefined && text !== '') named[key] = text;
-    }
-    env[NAMED_SECRETS_ENV] = JSON.stringify(named);
-  }
   const remove = () => {
     try {
       fs.rmSync(file, { force: true });
@@ -157,7 +144,7 @@ export function prepareSecondProcess(input: {
 }
 
 function missingVariable(name: string, what: string): string {
-  return `${name} is not set. This stack file runs as the second process of a Composer destroy or prisma dev, which ${what}.`;
+  return `${name} is not set. This stack file runs as the second process of a Composer destroy, which ${what}.`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -241,27 +228,4 @@ export function readAppConfigurationFile(
     plainVariableText,
     nodeAddresses: addresses,
   };
-}
-
-/** Second process, under `prisma dev`: the named secrets the first process handed it. */
-export function namedSecretsFromEnvironment(
-  env: Readonly<Record<string, string | undefined>>,
-): NamedSecrets {
-  const text = env[NAMED_SECRETS_ENV];
-  if (text === undefined || text === '') {
-    throw new Error(
-      missingVariable(NAMED_SECRETS_ENV, 'hands the secrets the local services need there'),
-    );
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    parsed = undefined;
-  }
-  const byKey = textByKeyOf(parsed);
-  if (byKey === undefined) throw new Error(`${NAMED_SECRETS_ENV} is not a JSON object of text.`);
-  const secrets: Record<string, string> = Object.create(null);
-  Object.assign(secrets, byKey);
-  return Object.freeze(secrets);
 }

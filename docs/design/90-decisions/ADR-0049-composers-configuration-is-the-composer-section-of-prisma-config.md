@@ -1,5 +1,7 @@
 # ADR-0049: Composer's configuration is the `composer` section of `prisma.config.ts`
 
+Amended by [ADR-0067](ADR-0067-prisma-dev-converges-in-a-worker-thread.md): `prisma dev` generates no dev stack file. The worker thread that runs each dev converge imports `prisma.config.ts` itself and takes its `composer` section; where this record says the dev stack file or the second process of `prisma dev` does that, read the worker thread.
+
 ```ts
 // prisma.config.ts
 import { defineConfig as composer, dotenv, environmentVariables } from '@prisma/composer/config';

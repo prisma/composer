@@ -129,6 +129,40 @@ describe('startWatch()', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   }, 10_000);
+
+  for (const [where, relative] of [
+    ['an existing directory', 'helpers.ts'],
+    ['a directory that does not exist yet', path.join('lib', 'deep', 'helpers.ts')],
+  ] as const) {
+    test(`a file that does not exist yet, in ${where}, fires once it is created, and not for its siblings`, async () => {
+      const dir = tempDir();
+      const file = path.join(dir, relative);
+
+      let calls = 0;
+      const watch = startWatch([{ address: 'app', paths: [file] }], () => {
+        calls += 1;
+      });
+      await watch.ready;
+
+      try {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(path.join(path.dirname(file), 'sibling.ts'), 'x');
+        await sleep(600);
+        expect(calls).toBe(0);
+
+        fs.writeFileSync(file, 'v1');
+        await until(() => calls === 1, 3000);
+        expect(calls).toBe(1);
+
+        fs.writeFileSync(file, 'v2');
+        await until(() => calls === 2, 3000);
+        expect(calls).toBe(2);
+      } finally {
+        watch.stop();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }, 15_000);
+  }
 });
 
 describe('authoringModuleTargets() (ADR-0056)', () => {

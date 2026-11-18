@@ -465,16 +465,16 @@ environment as production, so deploy and destroy refuse it with
 
 **The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.87 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
-`prisma deploy` runs alchemy inside the `prisma` process through alchemy's programmatic API: no generated file and no child process. Its progress prints as one step per resource, and a failure is `DEPLOY.ENGINE_FAILED` carrying the engine's own errors (credentials redacted, capped at 1000 characters), or `DEPLOY.INTERRUPTED` after Ctrl-C, which releases the environment's lease. For `prisma dev` and `destroy`, Composer runs the alchemy package installed beside the app's `@prisma/composer` and starts it with Node (the first `node` on PATH when `prisma` runs under Bun; `DEPLOY.NODE_MISSING` if none), so the app needs no direct `alchemy` dependency and no `.bin` link. No global Alchemy installation is needed.
+`prisma deploy` runs alchemy inside the `prisma` process through alchemy's programmatic API: no generated file and no child process. Its progress prints as one step per resource, and a failure is `DEPLOY.ENGINE_FAILED` carrying the engine's own errors (credentials redacted, capped at 1000 characters), or `DEPLOY.INTERRUPTED` after Ctrl-C, which releases the environment's lease. `prisma dev` runs alchemy in the `prisma` process too, each converge in a new worker thread, so an edit to your app definition applies on the next rebuild. Three kinds of edit need `prisma dev` restarted, and it says so: adding or removing a node, making the root pass on an input field it did not pass on at start, and changing which platform variables the app reads. For `destroy`, Composer runs the alchemy package installed beside the app's `@prisma/composer` and starts it with Node (the first `node` on PATH when `prisma` runs under Bun; `DEPLOY.NODE_MISSING` if none), so the app needs no direct `alchemy` dependency and no `.bin` link. No global Alchemy installation is needed.
 
 1. The destroy operation writes the pipeline's results to a generated, gitignored
    stack file at `.prisma-composer/alchemy.run.ts`, then runs the alchemy CLI
-   against it as a child process; `dev` does the same at
-   `.prisma-composer/dev/<environment>/alchemy.run.ts` with local providers. The file
+   against it as a child process. `dev` writes no stack file: it runs each
+   converge in a worker thread of its own process, with local providers. The file
    carries the computed values as literals but reads credentials via
    `fromEnv()`, so nothing sensitive lands on disk, and it is regenerated
    every run: output, not configuration, never edited.
-2. Failures are bisectable through that file. A failing destroy or dev converge names its
+2. Failures are bisectable through that file. A failing destroy names its
    path and prints a reproduce command: Node running the bin of the `alchemy`
    Composer depends on, with `destroy .prisma-composer/alchemy.run.ts --yes
    --stage <stage>` (Alchemy's own flag; on Prisma Cloud its value is the
@@ -550,8 +550,8 @@ that surprise:
    `<command>` in <dir>`` before the app comes up and streams the dev
    server's output prefixed `[<address>]` (other services' logs are not
    streamed). Source edits are the dev server's own hot reload; `dev` watches
-   the entry and every service's authoring module, reconverges on a topology
-   edit, and restarts a dev server only when its environment variables changed
+   the entry and every app file it imports, applies an edit to them on the
+   next rebuild (adding or removing a node, passing on a new root input field, or changing which platform variables the app reads needs `dev` restarted, and it says so), and restarts a dev server only when its environment variables changed
    (``<address>: its environment changed; `<command>` restarted``). It has no
    terminal (no colours or key shortcuts). The standalone build is not run
    locally, so a standalone-only bug surfaces at `prisma deploy`. Next.js
@@ -616,7 +616,7 @@ that surprise:
    build and run `prisma dev --detach` again.
 4. `dev` reads `prisma.config.ts` once, at start, and watches it: after an
    edit it says so and pauses rebuilds until you restart `dev`.
-5. `dev` reads secrets only from the `secrets` adapters. Put them where a `secrets` adapter reads them: the shell by default, or `.env.dev` with `secrets: [dotenv(), environmentVariables()]`. A required secret that is unset or empty stops `dev` with an error naming it; an optional one reaches the service as absent. A changed value takes effect on the next `prisma dev`. A `.env` that only the framework loads (Next.js) does not count: Composer reads secrets before the dev server starts. A plain platform variable (`variable({ name })`) comes from the `config` adapters, under the variable's name, read at start: set it in `.env.dev` or the shell. A value that is not text stops `dev`, and so does a typed variable's text that does not decode or fit its schema. If a rebuild changes which platform variables the app reads, or where, `dev` warns that the platform variables the app reads changed and pauses rebuilds until you restart it. On a rebuild, `dev` checks the reads against the modules it loaded at start, so it does not see an edit to `module.ts` or to the modules it imports; restart `dev` yourself after editing which variables the root declares or where it passes them.
+5. `dev` reads secrets only from the `secrets` adapters. Put them where a `secrets` adapter reads them: the shell by default, or `.env.dev` with `secrets: [dotenv(), environmentVariables()]`. A required secret that is unset or empty stops `dev` with an error naming it; an optional one reaches the service as absent. A changed value takes effect on the next `prisma dev`. A `.env` that only the framework loads (Next.js) does not count: Composer reads secrets before the dev server starts. A plain platform variable (`variable({ name })`) comes from the `config` adapters, under the variable's name, read at start: set it in `.env.dev` or the shell. A value that is not text stops `dev`, and so does a typed variable's text that does not decode or fit its schema. If a rebuild changes which platform variables the app reads, or where, `dev` warns that the platform variables the app reads changed and pauses rebuilds until you restart it. An edit to `module.ts` or a file it imports is applied by the next rebuild; one that adds or removes a node fails that rebuild and says to restart `dev`.
 6. The emulators are machine-wide daemons shared by every `dev`, registered
    under `~/.prisma-composer/emulators`. Set `PRISMA_COMPOSER_EMULATORS_DIR`
    to an absolute directory to give a checkout or CI job its own compute,

@@ -45,13 +45,14 @@ export function refuseSecretsInRootInput(
 export function refuseSecretsInPlainVariables(
   plainVariableText: Readonly<Record<string, string>>,
   knownSecrets: KnownSecrets,
+  consequence: string,
 ): void {
   for (const [variable, text] of Object.entries(plainVariableText)) {
     const name = knownSecrets.nameIn(text);
     if (name === undefined) continue;
     throw new CliStructuredError(
       'CONFIG.SECRET_AS_PLAIN_VALUE',
-      `The platform variable "${variable}", which prisma dev read from the \`config\` adapters, holds the value of the platform secret "${name}". Composer hands the second process every plain value in a file, and never writes a secret to a file.`,
+      `The platform variable "${variable}", which prisma dev read from the \`config\` adapters, holds the value of the platform secret "${name}". ${consequence}`,
       {
         fix: `Keep the value of "${name}" out of the platform variable "${variable}", or give "${variable}" a different value.`,
       },

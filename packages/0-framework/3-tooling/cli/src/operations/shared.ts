@@ -13,9 +13,11 @@ import type {
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
 import type { AppConvergeEntry } from '../app-converge.ts';
+import type { ConvergeFailureReason } from '../converge-in-process.ts';
 import type { startWatch } from '../dev/watch.ts';
 import type { SecretRedaction } from '../redaction.ts';
 import type { RunAlchemy } from '../run-alchemy.ts';
+import type { RunDevConverge } from './dev-converge.ts';
 
 /** The `id` of an ExtensionDescriptor — what keys the executors' per-extension maps. */
 export type ExtensionId = string;
@@ -34,21 +36,19 @@ export interface ServiceEndpoint {
 
 /**
  * The operations' in-package injection seam — lets the CLI's own tests drive
- * them without a real wrapper build or alchemy process.
+ * them without a real wrapper build, Alchemy converge or alchemy process.
  * Threaded through the *WithDeps variants, never part of the published
  * surface: the fields mirror internal types.
  */
 export interface OperationDeps {
   readonly runAssembler?: RunAssembler | undefined;
-  /**
-   * Starts the converge child for `destroy` and `dev`. The CLI passes one
-   * backed by the engine's `ctx.spawn`, so the terminal reaches the child
-   * natively and the engine owns signal policy; hosts get the default `spawnAlchemy`.
-   */
+  /** Starts the converge child for `destroy`; defaults to `spawnAlchemy`. Tests substitute it. */
   readonly alchemy?: RunAlchemy | undefined;
-  /** The `lower` and converge `deploy` runs; defaults to the app's own install (`loadAppConvergeEntry`). Tests substitute it. */
+  /** The `lower` and converge functions `deploy` runs; defaults to the app's own install (`loadAppConvergeEntry`). Tests substitute it. */
   readonly appConvergeEntry?: AppConvergeEntry | undefined;
-  /** What `deploy` redacts from everything it reports. Defaults to one built from `process.env`; the CLI passes its own so its console redirect redacts the same values. */
+  /** Runs one `dev` converge and reports its events; defaults to a new worker thread per converge (`runDevConvergeInWorker`). Tests substitute it. */
+  readonly runDevConverge?: RunDevConverge | undefined;
+  /** What `deploy` and `dev` redact from everything they report. Defaults to one built from `process.env`; the CLI passes its own so its console redirect redacts the same values. */
   readonly redaction?: SecretRedaction | undefined;
   /** Starts a file watch for `dev`; defaults to chokidar-backed `startWatch`. Tests substitute it to drive changes directly. */
   readonly watch?: typeof startWatch | undefined;
@@ -185,4 +185,15 @@ export function requireContainerForEnvironment(
       fix: `Install the same Composer version of ${extensionId} as the Composer that runs ${runs}.`,
     },
   );
+}
+
+/** A failed converge's reasons as text, one per line, without a tag the message already starts with. */
+export function convergeReasonsText(reasons: readonly ConvergeFailureReason[]): string {
+  return reasons
+    .map(({ tag, message }) =>
+      tag === 'Error' || tag === 'Unknown' || message.startsWith(tag)
+        ? message
+        : `${tag}: ${message}`,
+    )
+    .join('\n');
 }
