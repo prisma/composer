@@ -462,7 +462,7 @@ environment as production, so deploy and destroy refuse it with
 
 **The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.87 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
-`prisma deploy` runs alchemy inside the `prisma` process through alchemy's programmatic API: no generated file and no child process. Its progress prints as one step per resource, and a failure is `DEPLOY.ENGINE_FAILED` carrying the engine's own errors (credentials redacted, capped at 1000 characters), or `DEPLOY.INTERRUPTED` after Ctrl-C, which releases the environment's lease. `prisma dev` runs alchemy in the `prisma` process too, each converge in a new worker thread, so an edit to your app definition applies on the next rebuild. For `destroy`, Composer runs the alchemy package installed beside the app's `@prisma/composer` and starts it with Node (the first `node` on PATH when `prisma` runs under Bun; `DEPLOY.NODE_MISSING` if none), so the app needs no direct `alchemy` dependency and no `.bin` link. No global Alchemy installation is needed.
+`prisma deploy` runs alchemy inside the `prisma` process through alchemy's programmatic API: no generated file and no child process. Its progress prints as one step per resource, and a failure is `DEPLOY.ENGINE_FAILED` carrying the engine's own errors (credentials redacted, capped at 1000 characters), or `DEPLOY.INTERRUPTED` after Ctrl-C, which releases the environment's lease. `prisma dev` runs alchemy in the `prisma` process too, each converge in a new worker thread, so an edit to your app definition applies on the next rebuild. Three kinds of edit need `prisma dev` restarted, and it says so: adding or removing a node, making the root pass on an input field it did not pass on at start, and changing which platform variables the app reads. For `destroy`, Composer runs the alchemy package installed beside the app's `@prisma/composer` and starts it with Node (the first `node` on PATH when `prisma` runs under Bun; `DEPLOY.NODE_MISSING` if none), so the app needs no direct `alchemy` dependency and no `.bin` link. No global Alchemy installation is needed.
 
 1. The destroy operation writes the pipeline's results to a generated, gitignored
    stack file at `.prisma-composer/alchemy.run.ts`, then runs the alchemy CLI
@@ -548,8 +548,7 @@ that surprise:
    server's output prefixed `[<address>]` (other services' logs are not
    streamed). Source edits are the dev server's own hot reload; `dev` watches
    the entry and every app file it imports, applies an edit to them on the
-   next rebuild (adding or removing a node needs `dev` restarted, and it says
-   so), and restarts a dev server only when its environment variables changed
+   next rebuild (adding or removing a node, passing on a new root input field, or changing which platform variables the app reads needs `dev` restarted, and it says so), and restarts a dev server only when its environment variables changed
    (``<address>: its environment changed; `<command>` restarted``). It has no
    terminal (no colours or key shortcuts). The standalone build is not run
    locally, so a standalone-only bug surfaces at `prisma deploy`. Next.js
