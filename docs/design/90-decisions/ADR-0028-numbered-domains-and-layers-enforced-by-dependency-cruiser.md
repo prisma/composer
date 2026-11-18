@@ -59,6 +59,12 @@ tree.
 run as `pnpm lint:deps` locally, in lint-staged, and in CI — the same shape as
 Prisma ORM's, copied with plane support from day one.
 
+The check sees imports only. A lower layer can also come to depend on a higher
+one without importing it, through a type, method or field that exists for the
+higher layer's concept. The principle
+[A layer does not know what is built on it](../01-principles/architectural-principles.md#a-layer-does-not-know-what-is-built-on-it)
+covers that case, and review has to catch it.
+
 ## Reasoning
 
 ADR-0027 constrained the published surface to two packages and declared internal
