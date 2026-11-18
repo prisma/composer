@@ -30,6 +30,7 @@ import {
   type ManagementApiClient,
   ManagementClient,
   managementClientLayer,
+  withDeploySourceHeaders,
 } from '@internal/lowering';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
@@ -407,7 +408,11 @@ export async function runPreflight(
     return new Map();
   }
 
-  const client = input.credentials?.client ?? deps?.client ?? (await managementClient());
+  const supplied = input.credentials?.client;
+  const client =
+    supplied !== undefined
+      ? withDeploySourceHeaders(supplied)
+      : (deps?.client ?? (await managementClient()));
   const pending = await pendingEnvKeyClashes(client, projectId, branchId, clashes);
   if (pending.length > 0) throw envKeyClashError(pending, projectId, branchId, input.environment);
   const missing: MissingBinding[] = [];

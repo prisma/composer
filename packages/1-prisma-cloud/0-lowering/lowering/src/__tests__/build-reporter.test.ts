@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { type Contract, Load, module, resource } from '@internal/core';
 import type { ContainerInstance } from '@internal/core/config';
+import { createManagementApiClient } from '@prisma/management-api-sdk';
+import pkg from '../../package.json' with { type: 'json' };
 import type { BuildsApi, CreateBuildBody, UpdateBuildBody } from '../builds/api.ts';
 import {
   type ApplicationTopologyApi,
@@ -9,6 +11,7 @@ import {
   composeApplicationTopology,
 } from '../builds/application-topology.ts';
 import { type BuildContainerRefs, buildReporter } from '../builds/reporter.ts';
+import type { ManagementApiClient } from '../client.ts';
 
 const ENV = {
   PRISMA_SERVICE_TOKEN: 'token',
@@ -588,5 +591,74 @@ describe('buildReporter', () => {
       entities: [],
     });
     expect(warnings.length).toBeGreaterThan(0);
+  });
+});
+
+describe('the reporter identifies Composer on every Management API request', () => {
+  const run = async (credentials: { client: ManagementApiClient } | undefined) => {
+    const session = await buildReporter({
+      env: ENV,
+      origin: 'https://api.prisma.test',
+      warn: () => {},
+      refsOf,
+    }).begin({
+      appName: 'storefront',
+      graph: GRAPH,
+      environment: 'production',
+      cwd: import.meta.dir,
+      reportId: undefined,
+      ...(credentials !== undefined
+        ? { credentials: { workspaceId: undefined, ...credentials } }
+        : {}),
+    });
+    await session?.attach({ container: CONTAINER as unknown as ContainerInstance });
+    await session?.finish({
+      ok: true,
+      cancelled: false,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [],
+    });
+  };
+
+  const recordingFetch = (requests: Request[]) =>
+    Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push(new Request(input, init));
+        return Response.json({ data: { id: 'bld_1' } }, { status: 201 });
+      },
+      { preconnect: globalThis.fetch.preconnect },
+    );
+
+  const expectComposer = (requests: Request[]) => {
+    expect(requests.length).toBeGreaterThan(0);
+    for (const request of requests) {
+      expect(request.headers.get('x-prisma-client-name')).toBe('composer');
+      expect(request.headers.get('x-prisma-client-version')).toBe(pkg.version);
+      expect(request.headers.get('x-prisma-deploy-source')).not.toBeNull();
+    }
+  };
+
+  test('with the client it builds from PRISMA_SERVICE_TOKEN', async () => {
+    const requests: Request[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = recordingFetch(requests);
+    try {
+      await run(undefined);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    expectComposer(requests);
+  });
+
+  test("with the caller's client, over that client's own default headers", async () => {
+    const requests: Request[] = [];
+    const client = createManagementApiClient({
+      baseUrl: 'https://api.prisma.test',
+      headers: { 'x-prisma-client-name': 'prisma-cli' },
+      fetch: recordingFetch(requests),
+    });
+    await run({ client });
+    expectComposer(requests);
   });
 });
