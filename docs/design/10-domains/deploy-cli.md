@@ -315,12 +315,7 @@ them:
 
 ## Known limitations
 
-- **`destroy` requires built artifacts.** The `destroy` operation evaluates the
-  same stack program as deploy, and the pack's `package()` reads the
-  assembled bundle — so the app must build before it can be torn down. The
-  destroy-path error says exactly that. Whether Alchemy's destroy can run
-  against placeholder bundles (skipping assembly) is an open follow-up; it
-  needs a live-credential experiment.
+- **`destroy` requires built artifacts.** The `destroy` operation runs the same preparation as deploy, which assembles the built app — so the app must build before it can be torn down, and the destroy-path error says so. Alchemy's destroy plan never runs the stack program, so the bundles are not read. Skipping assembly on a destroy is an open follow-up.
 - **Native addons don't survive wrapper inlining.** A service module
   importing a package with native bindings (`.node` files — better-sqlite3,
   sharp, …) gets its JS inlined but not the binary, failing at boot rather

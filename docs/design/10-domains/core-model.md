@@ -437,12 +437,12 @@ interface LoadOptionsWithConfiguration extends CommonLoadOptions {
       // the root's input: what the config adapters return
   readonly appConfigurationRead?: never
 }
-interface LoadOptionsWithConfigurationRead extends CommonLoadOptions {
+interface LoadOptionsWithAppConfigurationRead extends CommonLoadOptions {
   readonly configuration?: never
   readonly appConfigurationRead: AppConfigurationRead
       // what an earlier Load of the same app read; lower() Loads with it
 }
-type LoadOptions = LoadOptionsWithConfiguration | LoadOptionsWithConfigurationRead
+type LoadOptions = LoadOptionsWithConfiguration | LoadOptionsWithAppConfigurationRead
       // Load also refuses both at runtime, for a caller without type checks
 function Load(root: ServiceNode | ModuleNode, opts?: LoadOptions): Graph   // throws LoadError
 class LoadError extends Error {}  // code COMPOSE.GRAPH_INVALID; optional `cause`
@@ -701,7 +701,7 @@ interface LowerOptions {
   readonly environment?: string                          // the environment being deployed, as --environment gave it;
                                                          // Load's environment.name.
   readonly appConfigurationRead?: AppConfigurationRead     // passed to Load: what the caller's own Load read
-  readonly preparedNodeAddresses?: readonly string[]       // the caller's graph; lowering refuses a graph whose addresses differ
+  readonly preparedNodeAddresses?: readonly string[]       // the graph the caller prepared; lowering refuses a graph whose addresses differ
   readonly containers: ReadonlyMap<ExtensionId, ContainerInstance>   // each extension's resolved container; required
   readonly preflightPayloads: ReadonlyMap<ExtensionId, string>       // each extension's preflight payload; required, empty for destroy
   // `prisma deploy` runs each service's build-adapter assembler and writes
