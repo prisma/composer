@@ -135,7 +135,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build packages
+        if: runner.os != 'Windows'
         run: pnpm build
+      # On the Windows runner, `next build` sometimes fails to start (exit code
+      # 0xC0000142) while many other builds start beside it.
+      - name: Build packages on Windows, two at a time
+        if: runner.os == 'Windows'
+        run: pnpm build --concurrency=2
       # Workspace binaries do not exist during the initial install.
       - name: Link built workspace binaries on Windows
         if: runner.os == 'Windows'

@@ -28,8 +28,10 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build packages
-        run: pnpm build
+      # `next build` sometimes fails to start (exit code 0xC0000142) while many
+      # other builds start beside it.
+      - name: Build packages, two at a time
+        run: pnpm build --concurrency=2
       - name: Link built workspace binaries on Windows
         run: pnpm install --frozen-lockfile --offline --ignore-scripts
       - name: Probe symlink privilege
