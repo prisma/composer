@@ -1153,3 +1153,68 @@ describe('preflight names', () => {
     expect(inputSecretNames({ a: key, b: copyOf(key) }, 'app.web')).toEqual(['STRIPE_SECRET_KEY']);
   });
 });
+
+describe("preflight identifies Composer on the caller's client", () => {
+  /** A caller's client over the fake, recording the headers each lookup and fill write carries. */
+  const recordingCaller = (state: FakeState) => {
+    const headersSeen: unknown[] = [];
+    const fake = fakeClient(state);
+    const record = (method: 'GET' | 'POST') => (path: string, init: { headers?: unknown }) => {
+      headersSeen.push(init.headers);
+      const send = fake[method] as unknown as (path: string, init: unknown) => unknown;
+      return send(path, init);
+    };
+    const client = {
+      ...fake,
+      GET: record('GET'),
+      POST: record('POST'),
+    } as unknown as ManagementApiClient;
+    return { client, headersSeen };
+  };
+
+  const expectComposer = (headersSeen: unknown[]) => {
+    expect(headersSeen.length).toBeGreaterThan(0);
+    for (const headers of headersSeen) {
+      expect(headers).toMatchObject({
+        'x-prisma-client-name': 'composer',
+        'x-prisma-client-version': expect.stringMatching(/^\d+\.\d+\.\d+/),
+      });
+    }
+  };
+
+  test("every environment-variable lookup through the caller's client carries Composer's headers", async () => {
+    const state: FakeState = {
+      gets: [],
+      posts: [],
+      postStatus: 201,
+      rows: [{ projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null }],
+    };
+    const { client, headersSeen } = recordingCaller(state);
+
+    await preflightWith({
+      graph: secretGraph(),
+      container: fakeContainer('proj', undefined),
+      environment: 'production',
+      credentials: { workspaceId: undefined, client },
+    });
+
+    expectComposer(headersSeen);
+  });
+
+  test("the .env fill write through the caller's client carries Composer's headers", async () => {
+    const state: FakeState = { gets: [], posts: [], postStatus: 201, rows: [] };
+    const { client, headersSeen } = recordingCaller(state);
+
+    await withValues({ secrets: { STRIPE_SECRET_KEY: 'sk_live_fill' } }, () =>
+      preflightWith({
+        graph: secretGraph(),
+        container: fakeContainer('proj', undefined),
+        environment: 'production',
+        credentials: { workspaceId: undefined, client },
+      }),
+    );
+
+    expect(state.posts).toHaveLength(1);
+    expectComposer(headersSeen);
+  });
+});
