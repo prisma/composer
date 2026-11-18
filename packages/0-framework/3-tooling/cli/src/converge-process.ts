@@ -1,6 +1,6 @@
 /**
- * The process state a converge holds while it runs: the one-converge-per-process
- * flag, the variables Alchemy reads from `process.env`, and the working
+ * The process state a converge holds while it runs: the per-thread
+ * one-converge flag, the variables Alchemy reads from `process.env`, and the working
  * directory. Shared by the converge on the main thread and by `prisma dev`,
  * which holds it on the main thread for the life of its converge worker.
  */

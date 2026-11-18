@@ -151,6 +151,16 @@ function jsonInexactKind(value: unknown): string | undefined {
   return describeNotPlain(value) ?? describeKind(value);
 }
 
+/** The `name` of the error a Load that takes what an earlier Load read fails with when it needs a root input field that Load did not read. */
+export const ROOT_INPUT_UNREAD_ERROR = 'RootInputUnreadError';
+
+class RootInputUnreadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = ROOT_INPUT_UNREAD_ERROR;
+  }
+}
+
 const SAME_GRAPH_ADVICE =
   'A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.';
 
@@ -631,8 +641,8 @@ export function resolveValues(input: {
             (candidate) => candidate.path.join('\0') === origin.path.join('\0'),
           );
           if (field === undefined) {
-            throw new LoadError(
-              `${inputFieldLabel(origin)} of root module "${origin.module}" was not read by the first Load: the second Load (in \`lower()\`) needs a root input field the first Load did not read, so the two Loads built different graphs. Under \`prisma dev\`, an edit that changes which fields the root passes on needs a restart of dev. ${SAME_GRAPH_ADVICE}`,
+            throw new RootInputUnreadError(
+              `${inputFieldLabel(origin)} of root module "${origin.module}" was not read when this command started, so it has no value here. ${SAME_GRAPH_ADVICE}`,
             );
           }
           result = field.value;

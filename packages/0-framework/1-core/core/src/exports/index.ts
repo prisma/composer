@@ -105,6 +105,7 @@ export {
   slotsOf,
   valueResource,
 } from '../node.ts';
+export { propsAsData } from '../props-data.ts';
 export type {
   EnvironmentFacts,
   PlainData,

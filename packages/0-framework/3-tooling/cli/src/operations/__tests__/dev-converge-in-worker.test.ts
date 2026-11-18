@@ -63,7 +63,7 @@ describe.skipIf(process.platform === 'win32')('a dev converge in a worker thread
     expect(process.cwd()).toBe(before);
   }, 60_000);
 
-  test('under Node too, with a config that imports a sibling .ts file by a .js specifier', () => {
+  test('under Node too, with a config that imports a sibling .ts file by a .js specifier, and an import of a missing extensionless file that names the file to create', () => {
     const result = spawnSync(
       'node',
       [path.join(import.meta.dir, 'fixtures', 'dev-converge-in-worker-under-node.ts')],
@@ -71,13 +71,15 @@ describe.skipIf(process.platform === 'win32')('a dev converge in a worker thread
     );
 
     if (result.status !== 0) throw new Error(result.stderr);
-    const { outcomes, seen, dir } = JSON.parse(result.stdout);
-    expect(outcomes).toEqual([{ kind: 'applied' }, { kind: 'applied' }]);
-    expect(seen).toEqual([`v1 ${dir}`, `v2 ${dir}`]);
+    const { outcomes, seen, missing, dir } = JSON.parse(result.stdout);
+    expect(outcomes).toEqual([{ kind: 'applied' }, { kind: 'applied' }, { kind: 'applied' }]);
+    expect(seen).toEqual([`v1 ${dir}`, `v2 ${dir}`, `v3 ${dir}`]);
+    expect(missing.kind).toBe('error');
+    expect(missing.appFiles).toContain(path.join(dir, 'helpers.ts'));
   }, 60_000);
 
   for (const runtime of ['bun', 'node']) {
-    test(`under ${runtime}, everything the app prints in the worker reaches the report and nothing reaches the terminal`, () => {
+    test(`under ${runtime}, everything the app prints in the worker reaches the report and nothing reaches the terminal, and inspector-only console methods print nothing`, () => {
       const token = 'fixture-token-value-456';
       const result = spawnSync(
         runtime,
@@ -89,8 +91,10 @@ describe.skipIf(process.platform === 'win32')('a dev converge in a worker thread
       expect(result.stderr).not.toContain(token);
       const { outcome, output } = JSON.parse(result.stdout);
       expect(outcome).toEqual({ kind: 'applied' });
-      const methods = ['log', 'dir', 'table', 'count', 'assert', 'warning'];
-      for (const printed of runtime === 'bun' ? [...methods, 'write'] : methods) {
+      const methods = ['log', 'named', 'dir', 'table', 'count', 'assert', 'warning'];
+      for (const printed of runtime === 'bun'
+        ? [...methods, 'write']
+        : [...methods, 'createTask']) {
         expect({ printed, reported: output.includes(printed) && output.includes(token) }).toEqual({
           printed,
           reported: true,
@@ -100,6 +104,7 @@ describe.skipIf(process.platform === 'win32')('a dev converge in a worker thread
       expect(output).toContain(`count ${token}`);
       expect(output).toContain(`assert ${token}`);
       expect(output).toContain(`warning ${token}`);
+      expect(output).not.toContain('quiet');
     }, 60_000);
   }
 
@@ -278,7 +283,11 @@ describe.skipIf(process.platform === 'win32')('a dev converge in a worker thread
 async function devSession(
   app: WorkerApp,
   events: DevEvent[],
-  input: { readonly cwd?: string; readonly signal?: AbortSignal } = {},
+  input: {
+    readonly cwd?: string;
+    readonly signal?: AbortSignal;
+    readonly realWatch?: boolean;
+  } = {},
 ) {
   const composer = (await import(pathToFileURL(app.configFile).href)).default.composer;
   const watched = new Map<string, () => void>();
@@ -290,12 +299,15 @@ async function devSession(
       onEvent: (event) => void events.push(event),
       ...(input.signal === undefined ? {} : { signal: input.signal }),
     },
-    {
-      watch: (targets, onChange) => {
-        for (const target of targets) for (const file of target.paths) watched.set(file, onChange);
-        return { ready: Promise.resolve(), stop: () => undefined };
-      },
-    },
+    input.realWatch === true
+      ? {}
+      : {
+          watch: (targets, onChange) => {
+            for (const target of targets)
+              for (const file of target.paths) watched.set(file, onChange);
+            return { ready: Promise.resolve(), stop: () => undefined };
+          },
+        },
   );
   if (!start.ok) throw start.failure;
   const change = (file: string = app.labelFile): void => {
@@ -374,22 +386,42 @@ describe.skipIf(process.platform === 'win32')('dev with its converge in a worker
     expect(app.seen()).toEqual([`v1 ${app.dir}`]);
   }, 60_000);
 
-  test('a file an edit imports before it exists fails that rebuild, is watched, and creating it rebuilds and applies', async () => {
+  for (const specifier of ['./helpers.ts', './helpers', './helpers.js']) {
+    test(`a file an edit imports as ${specifier} before it exists fails that rebuild, is watched, and creating it rebuilds and applies`, async () => {
+      const app = workerApp('v1');
+      const helpers = path.join(app.dir, 'helpers.ts');
+      const events: DevEvent[] = [];
+
+      const { session, change, watched } = await devSession(app, events);
+      fs.writeFileSync(app.labelFile, `export { label } from '${specifier}';\n`);
+      change();
+      await waitUntil(() => countOf(events, 'converge-failed') === 1);
+      const watchedAfterFailure = watched.has(helpers);
+      fs.writeFileSync(helpers, "export const label = 'v2';\n");
+      change(helpers);
+      await waitUntil(() => countOf(events, 'ready') === 2);
+      await session.stop();
+
+      expect(watchedAfterFailure).toBe(true);
+      expect(app.seen()).toEqual([`v1 ${app.dir}`, `v2 ${app.dir}`]);
+    }, 60_000);
+  }
+
+  test('with the real file watch, a file an edit imports as ./lib/helpers before it or its directory exists is picked up once it is created', async () => {
     const app = workerApp('v1');
-    const helpers = path.join(app.dir, 'helpers.ts');
+    const helpers = path.join(app.dir, 'lib', 'helpers.ts');
     const events: DevEvent[] = [];
 
-    const { session, change, watched } = await devSession(app, events);
-    fs.writeFileSync(app.labelFile, "export { label } from './helpers.ts';\n");
-    change();
+    const { session } = await devSession(app, events, { realWatch: true });
+    fs.writeFileSync(app.labelFile, "export { label } from './lib/helpers';\n");
     await waitUntil(() => countOf(events, 'converge-failed') === 1);
-    const watchedAfterFailure = watched.has(helpers);
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    fs.mkdirSync(path.dirname(helpers));
     fs.writeFileSync(helpers, "export const label = 'v2';\n");
-    change(helpers);
     await waitUntil(() => countOf(events, 'ready') === 2);
     await session.stop();
 
-    expect(watchedAfterFailure).toBe(true);
+    expect(countOf(events, 'converge-failed')).toBe(1);
     expect(app.seen()).toEqual([`v1 ${app.dir}`, `v2 ${app.dir}`]);
   }, 60_000);
 
@@ -453,6 +485,33 @@ describe.skipIf(process.platform === 'win32')('dev with its converge in a worker
       { kind: 'value-reads-changed', added: ['shop.smtpPort'], removed: [], changed: [] },
     ]);
     expect(countOf(events, 'converge-failed')).toBe(0);
+    expect(app.seen()).toEqual([`v1 ${app.dir}`]);
+  }, 60_000);
+
+  test('an edit that makes the root pass on an input field dev did not read at start fails the rebuild, saying dev must be restarted', async () => {
+    const app = workerApp('v1');
+    const events: DevEvent[] = [];
+
+    const { session, change } = await devSession(app, events);
+    fs.writeFileSync(app.entry, entrySource({ passesOn: 'PATH' }));
+    change(app.entry);
+    await waitUntil(() => countOf(events, 'converge-failed') === 1);
+    await session.stop();
+
+    const failed = events.find((event) => event.kind === 'converge-failed');
+    expect(failed).toMatchObject({
+      kind: 'converge-failed',
+      code: 'DEV.CONVERGE_FAILED',
+      message:
+        "The app's root now passes on a field of its input that dev did not read when it started, so the field has no value here. Restart `prisma dev` to apply the change.",
+      reasons: [
+        {
+          tag: 'RootInputUnreadError',
+          message:
+            'input.PATH of root module "shop" was not read when this command started, so it has no value here. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
+        },
+      ],
+    });
     expect(app.seen()).toEqual([`v1 ${app.dir}`]);
   }, 60_000);
 

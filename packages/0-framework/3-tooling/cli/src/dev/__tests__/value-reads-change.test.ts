@@ -10,6 +10,8 @@ interface NodeSpec {
   readonly secret?: boolean;
   /** Whether the node's props hold an object branded under a symbol key, which `structuredClone` drops. */
   readonly brandedProp?: boolean;
+  /** Further props of the node. */
+  readonly extra?: Readonly<Record<string, unknown>>;
 }
 
 interface ReadSpec {
@@ -66,6 +68,7 @@ function graphOf(nodes: readonly NodeSpec[], reads: readonly ReadSpec[]) {
             ...(node.brandedProp === true
               ? { kind: { [Symbol.for('test:brand')]: true, name: 'variable' } }
               : {}),
+            ...node.extra,
           },
           value,
         });
@@ -174,5 +177,14 @@ describe('valueReadsChange', () => {
         ),
       ),
     ).toEqual({ added: ['shop.smtpPort'], removed: ['shop.emailFrom'], changed: ['shop.sender'] });
+  });
+
+  test("two different dates in a read node's props are a change", () => {
+    expect(
+      valueReadsChange(
+        readsOf([{ ...emailFrom, extra: { since: new Date(1) } }], [fromRead]),
+        readsOf([{ ...emailFrom, extra: { since: new Date(2) } }], [fromRead]),
+      ),
+    ).toEqual({ added: [], removed: [], changed: ['shop.emailFrom'] });
   });
 });

@@ -27,7 +27,8 @@ export const record = (line: string): void =>
   fs.appendFileSync(path.join(process.cwd(), 'seen.txt'), line + '\\n');
 `;
 
-const CONFIG = `import * as path from 'node:path';
+const CONFIG = `import { log } from 'node:console';
+import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as Effect from ${url('effect/Effect')};
 import * as Layer from ${url('effect/Layer')};
@@ -48,7 +49,12 @@ const printEverywhere = (token) => {
   console.count('count ' + token);
   console.assert(false, 'assert ' + token);
   process.emitWarning('warning ' + token);
+  log('named ' + token);
   if (typeof console.write === 'function') console.write('write ' + token + '\\n');
+  for (const name of ['timeStamp', 'profile', 'profileEnd']) console[name]('quiet ' + token);
+  if (typeof console.createTask === 'function') {
+    console.createTask('quiet ' + token).run(() => console.log('createTask ' + token));
+  }
 };
 
 const thing = Object.assign(
@@ -120,6 +126,8 @@ export interface EntryShape {
   readonly ids?: readonly string[];
   /** Whether the service reads the platform variable `SMTP_PORT`. */
   readonly readsVariable?: boolean;
+  /** A field of the root's input the root passes on to the service. */
+  readonly passesOn?: string;
 }
 
 /** The entry's source. */
@@ -129,7 +137,9 @@ export function entrySource(shape: EntryShape = {}): string {
     `import { appRoot, paramSource, resource, service, valueResource } from ${url('@internal/core')};`,
     "import { label } from './label.ts';",
     '',
-    "export default appRoot('shop', ({ provision }) => {",
+    shape.passesOn === undefined
+      ? "export default appRoot('shop', ({ provision }) => {"
+      : "export default appRoot('shop', { input: { '~standard': { version: 1, vendor: 'fixture', validate: (value) => ({ value }) } } }, ({ input, provision }) => {",
     ...ids.map(
       (id) =>
         `  provision(resource({ name: ${JSON.stringify(id)}, extension: 'fixture-extension', type: 'fake/thing', props: { label } }), { id: ${JSON.stringify(id)} });`,
@@ -142,7 +152,9 @@ export function entrySource(shape: EntryShape = {}): string {
     "  const web = service({ name: 'web', extension: 'fixture-extension', type: 'fake/web', inputs: {}, params: {}, input: { '~standard': { version: 1, vendor: 'fixture', validate: (value) => ({ value }) } }, build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' } });",
     shape.readsVariable === true
       ? "  provision(web, { id: 'web', input: { port } });"
-      : "  provision(web, { id: 'web', input: {} });",
+      : shape.passesOn !== undefined
+        ? `  provision(web, { id: 'web', input: { passed: input[${JSON.stringify(shape.passesOn)}] } });`
+        : "  provision(web, { id: 'web', input: {} });",
     '});',
     '',
   ].join('\n');

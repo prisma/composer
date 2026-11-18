@@ -4,7 +4,6 @@
  * and the app as they are on disk now. It receives a `DevConvergeJob` as its
  * `workerData` and posts `WorkerMessage`s back.
  */
-import { Console } from 'node:console';
 import { Writable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { format } from 'node:util';
@@ -13,7 +12,7 @@ import type { PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { loadAppConvergeEntry } from '../app-converge.ts';
 import { checkComposerConfig, noComposerExportMessage } from '../composer-config.ts';
-import { appFileNamedBy, registerEntryResolution } from '../entry-resolution.ts';
+import { appFilesNamedBy, registerEntryResolution } from '../entry-resolution.ts';
 import { loadEntry } from '../load-entry.ts';
 import {
   convergeDevJob,
@@ -28,12 +27,27 @@ if (port === null) throw new Error('dev-converge-worker runs only as a worker th
 
 const post = (message: WorkerMessage): void => port.postMessage(message);
 const output = (text: string): void => post({ kind: 'output', text });
-/** Every function on `console`, its own and inherited, except constructors. */
-function consoleFunctionNames(): readonly string[] {
+/**
+ * Methods that send only to an attached inspector and print nothing to the terminal, under Node or
+ * Bun. They keep their own behaviour: `console.createTask` returns a task whose `run` callers use.
+ */
+const INSPECTOR_ONLY = new Set([
+  'context',
+  'createTask',
+  'profile',
+  'profileEnd',
+  'record',
+  'recordEnd',
+  'screenshot',
+  'timeStamp',
+]);
+
+/** Every function on `console` that can print, its own and inherited, except constructors. */
+function printingConsoleFunctionNames(): readonly string[] {
   const names = new Set<string>();
   for (let level: object | null = console; level !== null && level !== Object.prototype; ) {
     for (const name of Object.getOwnPropertyNames(level)) {
-      if (name === 'constructor' || name === 'Console') continue;
+      if (name === 'constructor' || name === 'Console' || INSPECTOR_ONLY.has(name)) continue;
       if (typeof Reflect.get(console, name) === 'function') names.add(name);
     }
     level = Object.getPrototypeOf(level);
@@ -46,8 +60,9 @@ const textOf = (chunk: string | Uint8Array): string =>
 
 // Whatever the app's code or a provider prints goes to the main thread, which redacts it.
 // Bun's own console methods and warnings write to the terminal directly, so every function on
-// `console` is replaced, and warnings are forwarded. A direct write to the process's file
-// descriptors cannot be caught here.
+// `console` that can print is replaced, and warnings are forwarded. The worker does not import
+// `node:console`: under Bun its named exports are fixed at the first import, which must come
+// after the replacement. A direct write to the process's file descriptors cannot be caught here.
 for (const stream of [process.stdout, process.stderr]) {
   stream.write = (chunk: string | Uint8Array) => {
     output(textOf(chunk));
@@ -60,16 +75,17 @@ const sink = new Writable({
     done();
   },
 });
-const replacement = new Console({ stdout: sink, stderr: sink });
-for (const name of consoleFunctionNames()) {
+const replacement = new console.Console({ stdout: sink, stderr: sink });
+const printed = (arg: unknown): string =>
+  typeof arg === 'string' || arg instanceof Uint8Array ? textOf(arg) : format(arg);
+for (const name of printingConsoleFunctionNames()) {
   const own: unknown = Reflect.get(replacement, name);
   Reflect.set(
     console,
     name,
     typeof own === 'function'
       ? own.bind(replacement)
-      : (...args: unknown[]) =>
-          output(args.map((arg) => (typeof arg === 'string' ? arg : format(arg))).join(' ')),
+      : (...args: unknown[]) => output(args.map(printed).join(' ')),
   );
 }
 if (typeof process.versions.bun === 'string') {
@@ -114,8 +130,7 @@ async function run(job: DevConvergeJob): Promise<DevConvergeResult> {
       controller.signal,
     );
   } catch (error) {
-    const named = appFileNamedBy(error);
-    return thrownResult(error, named === undefined ? [...recorded] : [...recorded, named]);
+    return thrownResult(error, [...recorded, ...appFilesNamedBy(error)]);
   }
 }
 

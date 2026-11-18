@@ -23,7 +23,7 @@
 import { existsSync } from 'node:fs';
 import * as mod from 'node:module';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 let registered = false;
 let recording: Set<string> | undefined;
@@ -79,26 +79,38 @@ export async function recordAppFiles<T>(
   }
 }
 
-function fileOf(location: string): string {
-  return location.startsWith('file:') ? fileURLToPath(location) : location;
+/** The path of a `file:` URL, or `undefined` for one that names no local file, such as one with a host. */
+function pathOfFileUrl(url: string): string | undefined {
+  try {
+    return fileURLToPath(url);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
- * The app file an import error names: the module that could not be found, or
- * the file that did not parse, when the runtime says which. Follows `cause`.
+ * The app files an import error names: the module that could not be found, or the file that did
+ * not parse, when the runtime says which. A module that could not be found comes with every file
+ * the resolve hook would try for it, since the user may create any of them. Follows `cause`.
  */
-export function appFileNamedBy(error: unknown): string | undefined {
+export function appFilesNamedBy(error: unknown): readonly string[] {
+  const visited = new Set<object>();
   for (let current = error; typeof current === 'object' && current !== null; ) {
+    if (visited.has(current)) break;
+    visited.add(current);
     const named = fileNamedBy(current);
-    if (named !== undefined && !named.split(path.sep).includes('node_modules')) return named;
+    if (named !== undefined && !named.split(path.sep).includes('node_modules')) {
+      if (existsSync(named)) return [named];
+      return [named, ...sourceCandidates(pathToFileURL(named)).map((url) => fileURLToPath(url))];
+    }
     current = 'cause' in current ? current.cause : undefined;
   }
-  return undefined;
+  return [];
 }
 
 function fileNamedBy(error: object): string | undefined {
   if ('url' in error && typeof error.url === 'string' && error.url.startsWith('file:')) {
-    return fileURLToPath(error.url);
+    return pathOfFileUrl(error.url);
   }
   if (
     'specifier' in error &&
@@ -107,7 +119,12 @@ function fileNamedBy(error: object): string | undefined {
     typeof error.referrer === 'string' &&
     isRelativeSpecifier(error.specifier)
   ) {
-    return path.resolve(path.dirname(fileOf(error.referrer)), error.specifier);
+    const referrer = error.referrer.startsWith('file:')
+      ? pathOfFileUrl(error.referrer)
+      : error.referrer;
+    return referrer === undefined
+      ? undefined
+      : path.resolve(path.dirname(referrer), error.specifier);
   }
   if (
     'position' in error &&

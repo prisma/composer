@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import type { Graph, ValueRead } from '@internal/core';
+import { type Graph, propsAsData, type ValueRead } from '@internal/core';
 import { quotedList } from '@internal/foundation/errors';
 
 /** A graph's value reads and the props of each value resource they read, as data a worker thread can receive. */
@@ -32,27 +32,11 @@ function propsAt(graph: Graph, address: string): unknown {
   return found?.kind === 'resource' ? found.props : undefined;
 }
 
-/**
- * `value` as plain data that survives `structuredClone` unchanged: arrays and the own string-keyed
- * properties of objects, recursively. Symbol keys are dropped, as a clone drops them, and a
- * function or symbol becomes its text. Both sides of a comparison go through it.
- */
-function comparable(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(comparable);
-  if (typeof value === 'object' && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [key, comparable(entry)]),
-    );
-  }
-  if (typeof value === 'function' || typeof value === 'symbol') return String(value);
-  return value;
-}
-
 export function valueReadsSnapshot(graph: Graph): ValueReadsSnapshot {
   return {
     reads: graph.valueReads.map(({ reader, resource, path }) => ({ reader, resource, path })),
     props: Object.fromEntries(
-      graph.valueReads.map(({ resource }) => [resource, comparable(propsAt(graph, resource))]),
+      graph.valueReads.map(({ resource }) => [resource, propsAsData(propsAt(graph, resource))]),
     ),
   };
 }

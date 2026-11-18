@@ -6,6 +6,7 @@ import { string } from '../config.ts';
 import { type Graph, Load, LoadError } from '../graph.ts';
 import type { LoadOptions } from '../graph-types.ts';
 import { module, service } from '../node.ts';
+import { ROOT_INPUT_UNREAD_ERROR } from '../resolve-values.ts';
 import { resolve } from '../value.ts';
 import { anyInputSchema } from './helpers.ts';
 
@@ -320,7 +321,7 @@ describe('what Load reads from the app configuration', () => {
     expect(bindingOf(graph)).toEqual({ a: 'from-file', c: 4 });
   });
 
-  test('a root field missing from what the first process read fails, saying the two processes built different graphs', () => {
+  test('a root field missing from what the first process read fails under its own name, saying it has no value', () => {
     const run = () =>
       Load(rootOf(schema), {
         appConfigurationRead: {
@@ -328,8 +329,12 @@ describe('what Load reads from the app configuration', () => {
         },
       });
 
-    expect(loadError(run).message).toBe(
-      'input.B of root module "shop" was not read by the first Load: the second Load (in `lower()`) needs a root input field the first Load did not read, so the two Loads built different graphs. Under `prisma dev`, an edit that changes which fields the root passes on needs a restart of dev. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
+    expect(run).toThrow(
+      expect.objectContaining({
+        name: ROOT_INPUT_UNREAD_ERROR,
+        message:
+          'input.B of root module "shop" was not read when this command started, so it has no value here. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
+      }),
     );
   });
 

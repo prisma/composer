@@ -2,3 +2,4 @@
 export * from '../control/deploy.ts';
 export { toProviderError, wrappedProviderError } from '../control/provider-error.ts';
 export { nodeAddresses, secretsKeys } from '../graph.ts';
+export { ROOT_INPUT_UNREAD_ERROR } from '../resolve-values.ts';

@@ -49,7 +49,7 @@ export type DevEvent =
       readonly removed: readonly string[];
       readonly changed: readonly string[];
     }
-  /** A rebuild's converge failed, or was refused because another converge holds this process. The app keeps running, still watching. */
+  /** A rebuild's converge failed, or was refused: `DEV.CONVERGE_RUNNING` when another converge on this thread holds the process state, `DEV.WORKER_THREAD` when dev was called from a thread that cannot change the process's working directory. The app keeps running, still watching. */
   | {
       readonly kind: 'converge-failed';
       readonly code: 'DEV.CONVERGE_FAILED' | 'DEV.CONVERGE_RUNNING' | 'DEV.WORKER_THREAD';

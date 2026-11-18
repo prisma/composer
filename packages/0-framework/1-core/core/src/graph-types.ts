@@ -46,7 +46,7 @@ export interface FirstProcessLoadOptions extends CommonLoadOptions {
   readonly appConfigurationRead?: never;
 }
 
-/** Load's options in a Load that takes what an earlier Load read: `lower()` under `deploy` and `prisma dev`, and `destroy`'s second process. */
+/** Load's options in a Load that takes what an earlier Load read: `lower()` under `deploy`, `prisma dev`'s Load and `lower()` in its converge worker thread, and `destroy`'s second process. */
 export interface SecondProcessLoadOptions extends CommonLoadOptions {
   readonly configuration?: never;
   /** What the earlier Load read. Load takes each root field from it without running the root's schema. */

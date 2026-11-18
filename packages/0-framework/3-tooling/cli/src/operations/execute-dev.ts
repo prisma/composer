@@ -15,7 +15,12 @@ import { isDeepStrictEqual } from 'node:util';
 import type { Graph, ServiceNode } from '@internal/core';
 import type { ContainerInstance, NamedSecrets, PrismaAppConfig } from '@internal/core/config';
 import type { DevServer } from '@internal/core/deploy';
-import { GRAPH_CHANGED_ERROR, nodeAddresses, secretsKeys } from '@internal/core/deploy';
+import {
+  GRAPH_CHANGED_ERROR,
+  nodeAddresses,
+  ROOT_INPUT_UNREAD_ERROR,
+  secretsKeys,
+} from '@internal/core/deploy';
 import type {
   DevPreflightResult,
   LocalTargetAttachment,
@@ -254,18 +259,23 @@ function convergeFailure(
           reasons: [],
         };
   }
-  const graphChanged = outcome.reasons.some(({ tag }) => tag === GRAPH_CHANGED_ERROR);
+  const failedWith = (name: string): boolean => outcome.reasons.some(({ tag }) => tag === name);
   return {
     code: 'DEV.CONVERGE_FAILED',
-    message: graphChanged
+    message: failedWith(GRAPH_CHANGED_ERROR)
       ? NODES_CHANGED
-      : redact(withComposerAdvice(convergeReasonsText(outcome.reasons))),
+      : failedWith(ROOT_INPUT_UNREAD_ERROR)
+        ? ROOT_INPUT_CHANGED
+        : redact(withComposerAdvice(convergeReasonsText(outcome.reasons))),
     reasons: outcome.reasons.map(({ tag, message }) => ({ tag, message: redact(message) })),
   };
 }
 
 const NODES_CHANGED =
   'The app now has a node added or removed. A running `prisma dev` keeps the nodes it started with, so restart `prisma dev` to apply the change.';
+
+const ROOT_INPUT_CHANGED =
+  "The app's root now passes on a field of its input that dev did not read when it started, so the field has no value here. Restart `prisma dev` to apply the change.";
 
 const DEV_PLAIN =
   'prisma dev hands every plain value to the local services as plain configuration, and never hands a secret that way.';
