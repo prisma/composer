@@ -466,12 +466,12 @@ environment as production, so deploy and destroy refuse it with
 
 1. The destroy operation writes the pipeline's results to a generated, gitignored
    stack file at `.prisma-composer/alchemy.run.ts`, then runs the alchemy CLI
-   against it as a child process; `dev` does the same at
-   `.prisma-composer/dev/<environment>/alchemy.run.ts` with local providers. The file
+   against it as a child process. `dev` writes no stack file: it runs each
+   converge in a worker thread of its own process, with local providers. The file
    carries the computed values as literals but reads credentials via
    `fromEnv()`, so nothing sensitive lands on disk, and it is regenerated
    every run: output, not configuration, never edited.
-2. Failures are bisectable through that file. A failing destroy or dev converge names its
+2. Failures are bisectable through that file. A failing destroy names its
    path and prints a reproduce command: Node running the bin of the `alchemy`
    Composer depends on, with `destroy .prisma-composer/alchemy.run.ts --yes
    --stage <stage>` (Alchemy's own flag; on Prisma Cloud its value is the

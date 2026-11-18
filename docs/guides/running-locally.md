@@ -62,12 +62,14 @@ and watches the file. When the file changes, `dev` prints that it changed and
 must be restarted, and it stops rebuilding: until you stop `dev` and start it
 again, a build change only repeats that notice.
 
-`dev` also loads your app definition files once: your entry module and
+`dev` also watches your app definition files: your entry module and
 every file of yours it imports, directly or through other files, such as
 each module's `module.ts`, each `service.ts` and their helpers (files in
-`node_modules` are not included). When one of them changes, `dev` prints
-which file changed and that it must be restarted, and it stops rebuilding in
-the same way.
+`node_modules` are not included). When one of them changes, `dev` rebuilds
+and applies the change: an edit to wiring, an input or a binding takes effect
+without a restart. An edit that adds or removes a service, a database or
+another node fails that rebuild with a message that says to restart `dev`;
+the running app is left as it was.
 
 `Ctrl-C` stops your app's service processes and its local Postgres servers,
 and exits; so does `dev` ending on SIGTERM or a failure. The data stays, and
@@ -152,7 +154,7 @@ What else changes for such a service:
   server that crashes later is restarted with backoff, as an artifact is.
 - **Edits to your source are the dev server's business.** `dev` does not
   rebuild for them. A change to an app definition file, such as `module.ts`
-  or a `service.ts`, needs `dev` restarted, as above. When a rebuild of another service changes what a dev
+  or a `service.ts`, is applied by a rebuild, as above. When a rebuild of another service changes what a dev
   server's environment holds, such as a dependency's URL, the dev server is
   restarted: `` shop.web: its environment changed; `next dev` restarted ``.
 - **It has no terminal.** Its output goes through the service's log, so a dev
@@ -450,7 +452,7 @@ token, workspace, or network is involved. Five consequences worth knowing:
   `prisma dev` treats as secrets only the values under the names of the graph's platform secrets, and redacts those values in what it prints. The other values in `.env` and the shell are not secrets to it, and print as they are, apart from values that look like credentials, such as a long value under a name containing `TOKEN` or `KEY`.
 
   Each service gets only the platform variables its own input points at. Code that reads `process.env.X` directly, where `X` is bound by another service, gets nothing under `prisma dev`. On Prisma Cloud every service receives every platform variable of its class, so do not rely on this isolation there.
-- **A plain platform variable comes from the `config` adapters.** For each `variable({ name })` node a service reads, `prisma dev` reads the value under the variable's name from what the `config` adapters return, at start. Set it in `.env.dev` or the shell, as you would a root input field. An unset or empty value is left out of the service's input, and the schema decides, as for a secret. A value that is not text, such as a number an adapter returns, stops `prisma dev` before any service starts, naming the variable, the node and the services that read it. A value that holds one of your secrets' values is refused too, because `prisma dev` hands plain values to its second process in a file.
+- **A plain platform variable comes from the `config` adapters.** For each `variable({ name })` node a service reads, `prisma dev` reads the value under the variable's name from what the `config` adapters return, at start. Set it in `.env.dev` or the shell, as you would a root input field. An unset or empty value is left out of the service's input, and the schema decides, as for a secret. A value that is not text, such as a number an adapter returns, stops `prisma dev` before any service starts, naming the variable, the node and the services that read it. A value that holds one of your secrets' values is refused too, because `prisma dev` gives plain values to your services as plain configuration.
 - Changing a value an adapter reads while `prisma dev` runs pauses rebuilds at the next rebuild, with a message; restart `prisma dev` to use the new values.
 - **Changing which platform variables the app reads pauses rebuilds.** `prisma dev` works out each platform variable's value when it starts. If a rebuild's graph adds a read, removes one, moves one to another field, or changes a node (such as renaming its variable or making it a secret), `prisma dev` does not apply it and warns: `The platform variables the app reads changed since dev started: reads of "shop.smtpPort" were added. Restart dev to apply them; rebuilds are paused until then.` Restart `prisma dev`. On a rebuild, `prisma dev` checks the reads against the modules it loaded at start, so it does not see an edit to `module.ts` or to the modules it imports: an edit that adds or removes a node fails with an error that the two processes built different graphs, and an edit that only moves a read is applied with the values worked out at start. Restart `prisma dev` after editing which variables your root declares or where you pass them.
 - **The emulators outlive a session.** They're shared, machine-wide daemons,

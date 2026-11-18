@@ -1,5 +1,7 @@
 # ADR-0064: The deploy does not copy local values to platform variables
 
+Amended by [ADR-0067](ADR-0067-prisma-dev-converges-in-a-worker-thread.md): under `prisma dev` the text of each plain platform variable (`plainVariableText`) and the named secrets reach the local target in memory, through the worker thread that runs each converge, not through the app configuration file or `PRISMA_COMPOSER_NAMED_SECRETS`.
+
 ```ts
 // module.ts
 import { appRoot } from '@prisma/composer';

@@ -1,5 +1,7 @@
 # ADR-0044: Errors are structural envelopes with dotted namespace codes
 
+Amended by [ADR-0067](ADR-0067-prisma-dev-converges-in-a-worker-thread.md): `prisma dev` has no Alchemy child. A failed dev converge is `DEV.CONVERGE_FAILED` with the engine's error as its cause, and the child exit-status passthrough applies to `destroy` only.
+
 ## The shape of a failure, end to end
 
 The site that detects a failure builds the complete error, because it is the only place that knows the context:

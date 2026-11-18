@@ -1,0 +1,61 @@
+# ADR-0067: `prisma dev` converges in a new worker thread of the `prisma` process
+
+## Decision
+
+Each converge of `prisma dev`, the first one and every rebuild, runs in a new worker thread (`node:worker_threads`) of the process that runs `dev`. `dev` writes no `.prisma-composer/dev/<environment>/alchemy.run.ts`, writes no app configuration file, and starts no Alchemy child.
+
+```ts
+// main thread, once per converge
+const outcome = await holdingConvergeProcess(env, cwd, () =>
+  convergeInWorker(job, { event, output }, signal),
+);
+
+// the worker: it imports the app as it is on disk now
+const config = (await import(job.configFile)).default.composer;
+const { root } = await loadEntry(job.entry);
+const { lower, converge, localTargetProviders, devState } = await loadAppConvergeEntry(job.appDir);
+const stack = lower(root, config, { ...job, providers: localTargetProviders(/* … */), state: devState() });
+postMessage({ kind: 'outcome', outcome: await converge({ operation: 'deploy', stack, /* … */ }) });
+```
+
+This extends [ADR-0066](ADR-0066-deploy-runs-alchemy-in-process.md) to `prisma dev`, and supersedes [ADR-0007](ADR-0007-deploy-drives-alchemy-through-a-generated-stack-file.md) for it. `destroy` keeps the generated stack file and the Alchemy child until it moves.
+
+- **The worker loads everything that is made of code.** It imports the `composer` section of `prisma.config.ts`, the app entry and the app's converge entry, resolves the local targets, calls `lower()`, and plans and applies. It ends when the converge ends. This is what the generated dev stack file did in the Alchemy child.
+- **The main thread sends only plain data.** The job holds file paths, the name and environment, what Load read from the app configuration, the bundles, the list of services that run a dev server, each container in the text form its descriptor serializes, the preflight payloads, the dev environment directory, the text of each plain platform variable, the named secrets, and the first Load's node addresses. It crosses as the worker's `workerData`, in memory. No file and no environment variable carries a value or a secret. A root input value must therefore be one the structured clone algorithm can copy.
+- **Three kinds of message come back.** The worker posts each converge event, each piece of Alchemy's terminal text, and last the outcome. The main thread reports them exactly as it reports a deploy's ([ADR-0066](ADR-0066-deploy-runs-alchemy-in-process.md)): events become steps, text becomes redacted messages, and a failure is `DEV.CONVERGE_FAILED` with the engine's error as its cause.
+- **What the app prints in the worker is redacted.** The worker's standard output and standard error go to the main thread, which reports them as redacted messages. Bun gives a worker no such streams, so the worker also sends what `console` and `process.stdout` and `process.stderr` are given as messages.
+- **The main thread holds the process for the worker.** A worker cannot change the working directory, and the one-converge flag of ADR-0066 lives on each thread's own `globalThis`. So for the worker's lifetime the main thread holds the flag and changes the process's working directory to the directory `dev` runs in, and restores both on every exit path. A deploy and a dev converge in one process therefore still refuse each other: the second one fails with `DEPLOY.CONVERGE_RUNNING` or `DEV.CONVERGE_RUNNING`. The check inside the converge that refuses a worker whose working directory is not the process's is unchanged.
+- **Ctrl-C asks the worker to stop.** The main thread posts an abort message; the worker aborts its converge, which releases the environment's state lease ([ADR-0045](ADR-0045-deploy-state-lives-behind-the-platform-state-api.md)), and posts the outcome `interrupted`. If the worker does not answer within 30 seconds, the main thread ends it and reports a failure that says the converge did not stop; the lease may then stay held until it expires. A worker that exits or fails without an outcome is a failed converge that names what happened.
+- **An edit to an app definition file rebuilds and converges.** `dev` watches the entry and every file of the app the entry loaded. The next converge runs in a new worker, which has its own module cache, so it imports the edited files. This amends [ADR-0056](ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): nothing asks for a restart after such an edit.
+- **The main thread's own graph is still the one it started with.** The main thread imports the app once, so the session's view of the app (which services exist, which run a dev server, what is watched) does not change after an edit. An edit that keeps the set of nodes applies in full. An edit that adds or removes a node fails the rebuild, because `lower()` in the worker refuses a graph whose node addresses differ from the first Load's, and `dev` says to restart. `main` had the same limit before this decision.
+
+## Reasoning
+
+- **Node and Bun cache imported modules.** In one thread, importing an edited definition file again returns the code loaded at start. The Alchemy child hid this, because every converge was a new process. A converge on the main thread would re-apply the graph loaded at start.
+- **The graph cannot be handed between threads or processes.** A loaded app is made of functions: module bodies, `resolve()` callbacks, Standard Schemas, contract checks, and nodes recognised by symbols. None of that survives a copy. And `lower()` takes the root module and runs Load on it again, so whatever runs the converge needs the imported code itself. The fresh import and the converge must run in the same place.
+- **A new worker thread has its own module cache,** under Node 24 and Bun 1.3 alike. It imports the app as it is on disk and shares nothing with the main thread but the process.
+- **`dev` needs no credentials.** The local target talks to local emulators, so the caller's API client of ADR-0066, which cannot be copied to a worker, does not have to cross. `deploy` stays on the main thread, where that client lives.
+
+## Consequences
+
+- `dev` and `deploy` run the same converge code in different places: `deploy` on the main thread, `dev` in a worker.
+- The worker is a file of its own in the built packages (`dev-converge-worker`), found beside the code that starts it.
+- `PRISMA_COMPOSER_NAMED_SECRETS` and the dev app configuration file are gone. This amends [ADR-0058](ADR-0058-prisma-dev-reads-secrets-from-the-app-secrets-and-never-invents-them.md), [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md) and [ADR-0064](ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md): under `prisma dev` the named secrets and the text of each plain platform variable reach the local target as values in memory.
+- `dev` still refuses a root input field or a plain platform variable that holds a known secret (`CONFIG.SECRET_AS_PLAIN_VALUE`), before each converge, because the local target gives those values to the services as plain configuration.
+- Warnings the runtime prints while the worker imports the app now appear as `dev` messages.
+- Core's refusal of a graph that differs from the first Load's has a name a caller can test, `GRAPH_CHANGED_ERROR`, exported from `@prisma/composer/deploy`.
+- Only `destroy` still uses the app configuration file and the generated stack file.
+
+## Alternatives considered
+
+- **Load the app in a short-lived child or worker that hands the graph back, and converge on the main thread.** The graph is not data and `lower()` needs the code, as above.
+- **A child process per converge.** It works, and it is what `dev` did before. It adds a spawn, a protocol between processes and exit codes, for nothing the worker lacks.
+- **Tell the user to restart `dev` after a definition edit.** `dev` keeps emulators and services running, possibly detached, and a wiring edit applied live before; a restart for every such edit is a step back.
+- **Import the edited files again on the main thread with a changed URL or a loader hook.** Node has such hooks and Bun does not, and every reload would leave the earlier copy of each module in memory.
+
+## Related
+
+- [ADR-0066](ADR-0066-deploy-runs-alchemy-in-process.md): `deploy` runs Alchemy in the `prisma` process.
+- [ADR-0056](ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): what `dev` runs and what it watches.
+- [ADR-0041](ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md): local dev runs the deploy pipeline against local providers.
+- [Local dev](../10-domains/local-dev.md).

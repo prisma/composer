@@ -1,6 +1,6 @@
 # ADR-0056: `prisma dev` runs a service with its build adapter's dev server
 
-Amended by [ADR-0066](ADR-0066-deploy-runs-alchemy-in-process.md) (2026-11-02): `prisma dev` converges in its own process and writes no dev stack file; `unassembled` is passed to `lower()` as a value. An edit to an authoring module, or to any other app definition file (an app file the entry loaded), no longer reconverges: the app is imported once, so dev reports the edit and pauses rebuilds until it is restarted. Edits to built output, and the serve step after every successful reconverge, are unchanged.
+Amended by [ADR-0067](ADR-0067-prisma-dev-converges-in-a-worker-thread.md): `prisma dev` runs each converge in a new worker thread of its own process and writes no dev stack file; `unassembled` is passed to `lower()` as a value. An edit to an authoring module, or to any other app definition file (an app file the entry loaded), rebuilds and converges, because the worker imports the app as it is on disk. An edit that adds or removes a node fails the rebuild and asks for a restart. Edits to built output, and the serve step after every successful reconverge, are unchanged.
 
 Amended 2026-10-23: `prisma dev` takes no positional entry; the entry is `entry` in the `composer` section of `prisma.config.ts`, or `--entry <path>` ([ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)).
 
