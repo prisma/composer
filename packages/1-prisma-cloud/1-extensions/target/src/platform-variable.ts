@@ -138,7 +138,7 @@ function secretVariable(options: {
   assertVariableName(name, 'variable.secret', "variable.secret({ name: 'API_KEY' })");
   if ('schema' in options) {
     throw new Error(
-      `variable.secret({ name: "${name}" }) takes no schema. A platform secret's value is always text; check its content in the service's secret field.`,
+      `variable.secret({ name: "${name}" }) takes no schema. A platform secret's value arrives as text in a secret box.`,
     );
   }
   return valueResource({

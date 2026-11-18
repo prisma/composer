@@ -727,7 +727,7 @@ $ prisma deploy --environment production
 mailer.input().smtpPort   // 587, a number
 ```
 
-`schema` is a schema from any library that implements [Standard JSON Schema](https://standardschema.dev/json-schema); ArkType and Zod both do. `variable.secret()` takes no schema: a secret's value is always text, so check its content in the service's `secretString()` field.
+`schema` is a schema from any library that implements [Standard JSON Schema](https://standardschema.dev/json-schema); ArkType and Zod both do. `variable.secret()` takes no schema: a platform secret's value arrives as text in a secret box, and the service's `secretString()` field takes the box without checking its text.
 
 - **The compiler knows the type.** `provision(variable({ name, schema: type('number') }))` is a runtime value of type `number`. It fits `field(type('number'))` and does not fit `field(type('string'))`; a variable with no schema is the reverse. An object schema fits a `field()` of the same object type.
 - **A text type gives the text, exactly.** A schema that accepts only text, such as `type('string')`, `z.enum(['a', 'b'])` or `type("'a' | 'b'")`, gives the variable's text with nothing trimmed. So a text that ends with a newline matches no member of an enum, and boot fails.
