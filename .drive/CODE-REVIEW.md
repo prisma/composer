@@ -41,6 +41,7 @@ Implementer models write long comments that explain, justify or narrate. Most sh
 - Does a test name describe the observable behaviour, not the implementation?
 - Does any record, guide, comment or PR text state a current choice as a permanent rule, with "never" and no reason? State what is decided, why, and whether it is expected to change. Keep "never" for real invariants, such as a secret never appearing in an error.
 - Is any markdown prose hard-wrapped? One paragraph is one line.
+- Does any error message, guide or record tell the reader to use something, or say that something happens? Find the function or behaviour it names in the code on the branch. If it is planned in another project and not merged, the text is false today. Added 2026-11-18: a platform secret's error message and the guide told authors to check a secret's content in the service's secret field. That came from a design that assumed `secret(inner)`, which another project had specified and not built; `secretString()` never looks at the content. Both reached `main`.
 
 ## The PR title and description
 

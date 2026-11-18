@@ -302,7 +302,7 @@ describe('variable({ name, schema }) refuses, when the root body runs, a schema 
     const secretWithSchema: (options: { readonly name: string }) => unknown = variable.secret;
     const options = { name: 'API_KEY', schema: type('string') };
     expect(() => secretWithSchema(options)).toThrow(
-      `variable.secret({ name: "API_KEY" }) takes no schema. A platform secret's value is always text; check its content in the service's secret field.`,
+      `variable.secret({ name: "API_KEY" }) takes no schema. A platform secret's value arrives as text in a secret box.`,
     );
   });
 
