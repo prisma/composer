@@ -64,6 +64,7 @@ import {
 import {
   interactionMessages,
   reportConvergeEvent,
+  type StackStep,
   type StepEvent,
   type StepTracker,
   stepTracker,
@@ -106,7 +107,7 @@ type ActionSteps =
     };
 
 /** The steps both actions take, which are destroy's. */
-type SharedSteps = StepTracker<DestroyStep>;
+type SharedSteps = StepTracker<StackStep>;
 
 interface StackPipelineOptions {
   readonly entry: string | undefined;
@@ -392,7 +393,7 @@ async function runStackPipelineInner(
     throw error;
   }
 
-  // Destroy-only guardrail — ahead of every other step, so it surfaces even
+  // Destroy-only guardrail — as prepare starts, so it surfaces even
   // when the rest of the pipeline goes on to fail for an unrelated reason
   // (missing config, missing built output — both common companions of
   // "nothing was ever deployed from here").
@@ -772,7 +773,7 @@ async function convergeStack(
           steps,
           event,
           redact,
-          (resource): DestroyStep => ({
+          (resource): StackStep => ({
             name: 'apply-resource',
             ...resource,
           }),

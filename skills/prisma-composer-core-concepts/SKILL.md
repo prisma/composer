@@ -467,11 +467,8 @@ environment as production, so deploy and destroy refuse it with
 
 `prisma deploy` runs alchemy inside the `prisma` process through alchemy's programmatic API: no generated file and no child process. Its progress prints as one step per resource, and a failure is `DEPLOY.ENGINE_FAILED` carrying the engine's own errors (credentials redacted, capped at 1000 characters), or `DEPLOY.INTERRUPTED` after Ctrl-C, which releases the environment's lease. `prisma dev` runs alchemy in the `prisma` process too, each converge in a new worker thread, so an edit to your app definition applies on the next rebuild. Three kinds of edit need `prisma dev` restarted, and it says so: adding or removing a node, making the root pass on an input field it did not pass on at start, and changing which platform variables the app reads. The `destroy` operation runs alchemy inside the process that calls it, the same way as deploy. The alchemy that runs is the one installed beside the app's `@prisma/composer`, so the app needs no direct `alchemy` dependency, and no global Alchemy installation is needed.
 
-1. No command writes a stack file or starts the alchemy CLI. An engine failure surfaces as
-   `DEPLOY.ENGINE_FAILED` carrying the engine's own errors (credentials redacted,
-   capped at 1000 characters), for deploy and destroy alike.
-2. Destroy runs the same preparation as deploy, assembly included, so **an app must be built before it can
-   be torn down**.
+1. No command writes a stack file or starts the alchemy CLI. An engine failure surfaces as `DEPLOY.ENGINE_FAILED` carrying the engine's own errors (credentials redacted, capped at 1000 characters), for deploy and destroy alike.
+2. Destroy runs the same preparation as deploy, assembly included, so **an app must be built before it can be torn down**.
 3. alchemy is why the `effect` pin exists: it resolves the `effect`
    constellation, and a hoisted newer `effect` halts every command (failure
    mode 1 below).

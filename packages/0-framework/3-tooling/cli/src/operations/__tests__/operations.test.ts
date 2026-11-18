@@ -1974,7 +1974,7 @@ describe('destroy()', () => {
     expect(JSON.stringify(events)).not.toContain(secret);
   });
 
-  test('the no-local-deploy-state event fires before the pipeline runs', async () => {
+  test('the no-local-deploy-state event fires before the app is assembled', async () => {
     const app = makeAppDir();
     const order: string[] = [];
 

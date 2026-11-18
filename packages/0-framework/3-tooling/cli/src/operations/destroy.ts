@@ -9,18 +9,17 @@
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../composer-config.ts';
-import type { DeployStep } from './deploy.ts';
 import { executorLoadFailure, type OperationDeps } from './shared.ts';
-import type { StepEvent } from './steps.ts';
+import type { StackStep, StepEvent } from './steps.ts';
 
-/** Emitted before the pipeline when `<cwd>/.alchemy` is missing or empty. */
+/** Emitted as `prepare` starts, when `<cwd>/.alchemy` is missing or empty. */
 export interface NoLocalDeployStateEvent {
   readonly kind: 'no-local-deploy-state';
   readonly cwd: string;
 }
 
-/** A destroy step: a deploy step other than `preflight`, which destroy does not run. */
-export type DestroyStep = Exclude<DeployStep, { readonly name: 'preflight' }>;
+/** A destroy step: every deploy step except `preflight`, which destroy does not run. */
+export type DestroyStep = StackStep;
 
 /** Each step as it starts and finishes, the messages Alchemy logs, and the missing local state notice. */
 export type DestroyEvent = StepEvent<DestroyStep> | NoLocalDeployStateEvent;

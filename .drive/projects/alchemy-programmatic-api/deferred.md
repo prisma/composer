@@ -84,7 +84,7 @@ Origin: manual QA of destroy in process.
 
 ## Destroy assembles the app, and so needs it built, for nothing
 
-Alchemy's destroy plan never runs the stack program: it reads the state store and deletes through the providers. So the bundles destroy assembles are never read, and `DEPLOY.BUILD_REQUIRED` on a destroy guards nothing. Destroy's Load of the app is needed only for the app's name and its extensions.
+Alchemy's destroy plan never runs the stack program: it reads the state store and deletes through the providers. So the bundles destroy assembles are never read, and `DEPLOY.BUILD_REQUIRED` on a destroy guards nothing. Destroy's Load of the app is needed only for the app's name.
 
 Wanted: destroy skips the assemble step, and `DEPLOY.BUILD_REQUIRED` is retired.
 
