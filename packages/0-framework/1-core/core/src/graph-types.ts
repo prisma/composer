@@ -46,13 +46,13 @@ export interface LoadOptionsWithConfiguration extends CommonLoadOptions {
 }
 
 /** Load's options in a Load that is given what an earlier Load of the same app read. */
-export interface LoadOptionsWithConfigurationRead extends CommonLoadOptions {
+export interface LoadOptionsWithAppConfigurationRead extends CommonLoadOptions {
   readonly configuration?: never;
   /** What the earlier Load read. Load takes each root field from it without running the root's schema. */
   readonly appConfigurationRead: AppConfigurationRead;
 }
 
-export type LoadOptions = LoadOptionsWithConfiguration | LoadOptionsWithConfigurationRead;
+export type LoadOptions = LoadOptionsWithConfiguration | LoadOptionsWithAppConfigurationRead;
 
 export interface GraphNode {
   readonly id: NodeId;

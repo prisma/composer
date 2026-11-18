@@ -11,9 +11,9 @@ import type { DevEvent } from './operations/dev.ts';
 
 export const REDACTED = '[redacted]';
 
-/** Env var names whose values are credentials: the service token, preflight payloads, and the usual secret spellings. */
+/** Env var names whose values are credentials: the service token and the usual secret spellings. */
 const SECRET_ENV_NAME =
-  /TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|AUTH|API_?KEY|ACCESS_?KEY|_KEY$|DATABASE_URL|_DSN$|^PRISMA_COMPOSER_PREFLIGHT_/i;
+  /TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|AUTH|API_?KEY|ACCESS_?KEY|_KEY$|DATABASE_URL|_DSN$/i;
 
 /**
  * The credential-looking values in `variables`: text of eight characters or more under a name

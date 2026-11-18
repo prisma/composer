@@ -663,7 +663,7 @@ describe('containerDescriptor().remove()', () => {
   });
 });
 
-describe('serialize()/deserialize() — the parent→child transport round trip', () => {
+describe('serialize() and deserialize() round trip', () => {
   test("a named environment's instance round-trips through JSON", () => {
     const instance = new PrismaCloudContainer(
       { appName: 'shop', environment: 'staging' },

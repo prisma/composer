@@ -3,7 +3,7 @@
  * `<devDir>/` every local provider reads or writes. Every write is
  * temp-then-rename; reads and writes on the SAME file are additionally
  * serialized behind one in-process async queue per absolute path, because the
- * local providers reconcile concurrently inside the one alchemy child and a
+ * local providers reconcile concurrently inside one converge and a
  * naive read-modify-write would drop a concurrent writer's key. Postgres
  * instance state is NOT here (REVISED — operator review of #162): the
  * `postgres-main` daemon owns it now.

@@ -10,7 +10,7 @@ const write = (dir: string, files: Record<string, string>): void => {
   for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), text);
 };
 
-const TOUCHED = ['S4_LATE', 'S4_PROBE', 'PRISMA_COMPOSER_PREFLIGHT_X'];
+const TOUCHED = ['S4_LATE', 'S4_PROBE', 'PRISMA_COMPOSER_PROBE'];
 
 afterEach(() => {
   for (const name of TOUCHED) delete process.env[name];
@@ -29,12 +29,12 @@ describe('environmentVariables()', () => {
   });
 
   test('environmentVariables() returns every variable of the process environment, PRISMA_COMPOSER_ ones too', async () => {
-    process.env['PRISMA_COMPOSER_PREFLIGHT_X'] = 'payload';
+    process.env['PRISMA_COMPOSER_PROBE'] = 'composer';
     process.env['S4_PROBE'] = 'kept';
 
     const values = await environmentVariables()(adapterInput);
 
-    expect(values['PRISMA_COMPOSER_PREFLIGHT_X']).toBe('payload');
+    expect(values['PRISMA_COMPOSER_PROBE']).toBe('composer');
     expect(values['S4_PROBE']).toBe('kept');
   });
 });

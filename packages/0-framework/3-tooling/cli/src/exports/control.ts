@@ -33,6 +33,7 @@ export { deploy } from '../operations/deploy.ts';
 export type {
   DestroyEvent,
   DestroyInput,
+  DestroyStep,
   NoLocalDeployStateEvent,
 } from '../operations/destroy.ts';
 export { destroy } from '../operations/destroy.ts';

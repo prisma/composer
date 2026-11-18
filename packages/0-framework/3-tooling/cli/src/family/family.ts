@@ -32,14 +32,7 @@ import { createDevStopCommand } from './commands/dev-stop.ts';
 import { createDevUrlCommand } from './commands/dev-url.ts';
 import { composerSection } from './section.ts';
 
-/**
- * The control-plane operations the family's handlers call. These are the
- * deps-taking variants, not the bare ones: a handler must inject the converge
- * spawn adapter (so the ENGINE starts the child and owns signal policy) and
- * the credentials the in-process leg authenticates with. A double that
- * honours `deps.alchemy` therefore exercises the real settlement path
- * against a scripted fake child.
- */
+/** The control-plane operations the family's handlers call, which take the credentials the converge authenticates with. */
 export interface ComposerOperations {
   readonly deploy: typeof deployWithDeps;
   readonly dev: typeof devWithDeps;

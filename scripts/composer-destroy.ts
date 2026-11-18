@@ -28,6 +28,7 @@ import type {
   ComposerConfigSource,
   destroy as Destroy,
   DestroyEvent,
+  DestroyStep,
 } from '@prisma/composer/control';
 
 const USAGE =
@@ -129,8 +130,6 @@ function printFailure(failure: CliStructuredError): void {
     console.error(`Caused by: ${failure.cause.message}`);
   }
 }
-
-type DestroyStep = Extract<DestroyEvent, { readonly kind: 'step-started' }>['step'];
 
 function stepText(step: DestroyStep): string {
   switch (step.name) {

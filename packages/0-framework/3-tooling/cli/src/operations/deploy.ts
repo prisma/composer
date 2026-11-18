@@ -16,7 +16,8 @@ import type { StepEvent } from './steps.ts';
 
 /** A deploy step. `assemble-service` steps run inside `assemble`, one per service, and `apply-resource` steps inside `apply`, one per resource Alchemy touches. */
 export type DeployStep =
-  | { readonly name: 'prepare' | 'assemble' | 'connect' | 'preflight' | 'apply' | 'record' }
+  | { readonly name: 'prepare' | 'assemble' | 'connect' | 'apply' | 'record' }
+  | { readonly name: 'preflight' }
   | { readonly name: 'assemble-service'; readonly address: string }
   | {
       readonly name: 'apply-resource';

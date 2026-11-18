@@ -78,7 +78,7 @@ function contractMismatch(
     'DEPS.CONVERGE_CONTRACT_MISMATCH',
     `The app's @prisma/composer ${appVersion} speaks converge contract ${app.contract}, and the \`prisma\` CLI's Composer ${host.version} speaks contract ${host.contract}.`,
     {
-      why: "Deploy and dev call the app's @prisma/composer from the CLI's Composer, and the two read each other's data only when they speak the same converge contract.",
+      why: "`prisma deploy`, `prisma dev` and `destroy` call the app's @prisma/composer from the CLI's Composer, and the two read each other's data only when they speak the same converge contract.",
       fix: update,
     },
   );

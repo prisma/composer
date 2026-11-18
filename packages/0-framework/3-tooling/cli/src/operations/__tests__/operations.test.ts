@@ -1172,6 +1172,9 @@ describe('deploy() credentials, the app converge entry and redaction', () => {
 
     if (running.ok || worker.ok) throw new Error('expected failures');
     expect(running.failure.code).toBe('DEPLOY.CONVERGE_RUNNING');
+    expect(running.failure.message).toBe(
+      'Another deploy, destroy or `prisma dev` converge is already running in this process.',
+    );
     expect(worker.failure.code).toBe('DEPLOY.WORKER_THREAD');
   });
 });
@@ -1886,7 +1889,7 @@ describe('destroy()', () => {
       'refused while another converge runs',
       { kind: 'refused', reason: 'already-running' },
       'DEPLOY.CONVERGE_RUNNING',
-      'Another deploy or destroy is already running in this process.',
+      'Another deploy, destroy or `prisma dev` converge is already running in this process.',
       'Wait for the other one to finish, or run this destroy in its own process.',
     ],
     [

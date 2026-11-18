@@ -227,9 +227,9 @@ export interface RunOutcome {
  */
 export interface RunReporter {
   /**
-   * Extra environment set while Alchemy plans and applies, so reporting that
-   * happens inside the apply can find the run this session belongs to. Read
-   * once, after `attach`.
+   * Variables a deploy sets in the process environment while Alchemy plans
+   * and applies, so reporting that happens inside the apply can find the run
+   * this session belongs to. Read once, after `attach`.
    */
   childEnv(): Readonly<Record<string, string>>;
   /** Called once the extension's own container is resolved, before Alchemy runs — the moment the run's project and branch first exist to be referenced. */
@@ -264,7 +264,7 @@ export interface LocalTargetDescriptor {
   providers(input: LocalTargetProvidersInput): Layer.Layer<never>;
   /** A stable local identity — resolved without any platform call. */
   readonly container: ContainerDescriptor;
-  /** Works out the platform variables' values, where deploy's preflight runs. Its payload reaches the alchemy process the same way deploy's preflight payload does. */
+  /** Works out the platform variables' values, where deploy's preflight runs. Its payload reaches this extension's lowering as its preflight payload, as deploy's does. */
   preflight?(input: PreflightInput): Promise<DevPreflightResult>;
   /** Ensure the emulator daemons this topology's node kinds need are running, plus any per-node emulator state that must exist before converge (idempotent; daemons persist across sessions). */
   emulators?(input: LocalTargetEmulatorsInput): Promise<void>;

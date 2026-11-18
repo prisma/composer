@@ -27,7 +27,7 @@ export function toDeploymentSummary(result: DeploymentResult): DeploymentSummary
   };
 }
 
-/** Fits the platform's 5000-character build `errorMessage` with room for the exit-status prefix. */
+/** Fits the platform's 5000-character build `errorMessage`. */
 const ENGINE_FAILURE_CAUSE_LIMIT = 1000;
 
 /** Alchemy's advice to rerun its own CLI with `--adopt` or to import a resource with adoption, which a Composer user has no way to do. */

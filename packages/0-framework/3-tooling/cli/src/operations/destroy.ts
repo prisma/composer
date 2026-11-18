@@ -19,8 +19,11 @@ export interface NoLocalDeployStateEvent {
   readonly cwd: string;
 }
 
-/** Each step as it starts and finishes, the messages Alchemy logs, as `deploy` reports them, and the missing local state notice. */
-export type DestroyEvent = StepEvent<DeployStep> | NoLocalDeployStateEvent;
+/** A destroy step: a deploy step other than `preflight`, which destroy does not run. */
+export type DestroyStep = Exclude<DeployStep, { readonly name: 'preflight' }>;
+
+/** Each step as it starts and finishes, the messages Alchemy logs, and the missing local state notice. */
+export type DestroyEvent = StepEvent<DestroyStep> | NoLocalDeployStateEvent;
 
 export interface DestroyInput {
   /**

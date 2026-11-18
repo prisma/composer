@@ -86,7 +86,9 @@ export function stepTracker<Step, OtherEvent = never>(
   };
 }
 
-export type StepTracker<Step> = ReturnType<typeof stepTracker<Step>>;
+export type StepTracker<Step, OtherEvent = never> = ReturnType<
+  typeof stepTracker<Step, OtherEvent>
+>;
 
 /** One converge event as step events: each resource is a step, made by `resourceStep`; a log line is a message. */
 export function reportConvergeEvent<Step>(

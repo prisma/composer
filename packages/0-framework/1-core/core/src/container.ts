@@ -17,7 +17,7 @@ export interface LocateContainerInput {
  */
 export interface ContainerInstance {
   readonly input: LocateContainerInput;
-  /** The exact string the CLI hands `alchemy` as its stage — the deploy-state scope. Distinct from `input.environment`: for Prisma Cloud this is the resolved Branch id (stable across renames, machine-independent). Framework-visible like `input` — NOT part of the `serialize()` payload, which stays extension-owned. */
+  /** The stage the operation passes to Alchemy — the deploy-state scope. Distinct from `input.environment`: for Prisma Cloud this is the resolved Branch id (stable across renames, machine-independent). Framework-visible like `input` — NOT part of the `serialize()` payload, which stays extension-owned. */
   readonly alchemyStage?: string | undefined;
   /** Serialize to a non-empty string. The format is the extension's own; only its `deserialize` reads it. */
   serialize(): string;

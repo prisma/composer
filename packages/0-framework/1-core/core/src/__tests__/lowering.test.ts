@@ -650,7 +650,7 @@ describe('lowering a module root — a single service', () => {
         ),
       ),
     ).toThrow(
-      'lower() built a different graph from the one Composer checked first. Only in the graph lower() built: "shop.echo". Only in the graph Composer checked: "shop.gone". A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
+      'lower() built a different graph from the graph the caller prepared. Only in the graph lower() built: "shop.echo". Only in the graph the caller prepared: "shop.gone". A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
     );
   });
 
@@ -1613,7 +1613,7 @@ describe('lowering a nested module — dotted addresses (H1: module-composition)
   });
 });
 
-describe('container threading through lowering() (the parent→child transport read side)', () => {
+describe('container threading through lowering()', () => {
   // A minimal ContainerInstance the fake extension's own deserialize
   // produces — core's claim on it is only `input` + `serialize()`.
   class FakeContainerInstance {

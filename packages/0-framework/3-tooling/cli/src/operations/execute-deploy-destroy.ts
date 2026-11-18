@@ -53,7 +53,7 @@ import {
   type DeployStep,
   type DeploySuccess,
 } from './deploy.ts';
-import type { DestroyEvent, DestroyInput, NoLocalDeployStateEvent } from './destroy.ts';
+import type { DestroyInput, DestroyStep, NoLocalDeployStateEvent } from './destroy.ts';
 import {
   convergeReasonsText,
   type ExtensionId,
@@ -61,10 +61,15 @@ import {
   requireContainerForEnvironment,
   toStructured,
 } from './shared.ts';
-import { interactionMessages, reportConvergeEvent, stepTracker } from './steps.ts';
+import {
+  interactionMessages,
+  reportConvergeEvent,
+  type StepEvent,
+  type StepTracker,
+  stepTracker,
+} from './steps.ts';
 
 type PreflightFindingsEvent = Extract<DeployEvent, { readonly kind: 'preflight-findings' }>;
-type StackEvent = DeployEvent | DestroyEvent;
 
 const ALCHEMY_STATE_DIR = '.alchemy';
 
@@ -75,8 +80,10 @@ function hasNoLocalDeployState(cwd: string): boolean {
 }
 
 /** Times each step for the host's `onEvent`. A step still open when the run fails is closed as failed, innermost first. */
-function stackSteps(onEvent: (event: StackEvent) => void) {
-  return stepTracker<DeployStep, PreflightFindingsEvent | NoLocalDeployStateEvent>(
+function stackSteps<Step extends DeployStep, OtherEvent>(
+  onEvent: ((event: StepEvent<Step> | OtherEvent) => void) | undefined,
+): StepTracker<Step, OtherEvent> {
+  return stepTracker<Step, OtherEvent>(
     (step) =>
       step.name === 'assemble-service'
         ? `${step.name}:${step.address}`
@@ -87,7 +94,19 @@ function stackSteps(onEvent: (event: StackEvent) => void) {
   );
 }
 
-type StackSteps = ReturnType<typeof stackSteps>;
+/** The action, with a step tracker typed for that action's own steps and events. */
+type ActionSteps =
+  | {
+      readonly action: 'deploy';
+      readonly steps: StepTracker<DeployStep, PreflightFindingsEvent>;
+    }
+  | {
+      readonly action: 'destroy';
+      readonly steps: StepTracker<DestroyStep, NoLocalDeployStateEvent>;
+    };
+
+/** The steps both actions take, which are destroy's. */
+type SharedSteps = StepTracker<DestroyStep>;
 
 interface StackPipelineOptions {
   readonly entry: string | undefined;
@@ -100,7 +119,6 @@ interface StackPipelineOptions {
   readonly reportId: string | undefined;
   /** Deploy only: where to write the run report, already resolved. */
   readonly reportPath: string | undefined;
-  readonly steps: StackSteps;
   /** Interrupts the plan or apply. */
   readonly signal: AbortSignal | undefined;
   readonly redaction: SecretRedaction;
@@ -111,21 +129,21 @@ export async function executeDeploy(
   deps: OperationDeps,
   cwd: string,
 ): Promise<Result<Omit<DeploySuccess, 'durationMs'>, CliStructuredError>> {
-  const outcome = await runStackPipeline('deploy', {
-    entry: input.entry,
-    config: input.config,
-    name: input.name,
-    environment: input.environment ?? DEFAULT_DEPLOY_ENVIRONMENT,
-    cwd,
-    deps,
-    reportId: input.reportId,
-    reportPath: resolveRunReportPath(input.reportPath, process.env[RUN_REPORT_FILE_ENV], cwd),
-    steps: stackSteps((event) => {
-      if (event.kind !== 'no-local-deploy-state') input.onEvent?.(event);
-    }),
-    signal: input.signal,
-    redaction: deps.redaction ?? new SecretRedaction(process.env),
-  });
+  const outcome = await runStackPipeline(
+    { action: 'deploy', steps: stackSteps(input.onEvent) },
+    {
+      entry: input.entry,
+      config: input.config,
+      name: input.name,
+      environment: input.environment ?? DEFAULT_DEPLOY_ENVIRONMENT,
+      cwd,
+      deps,
+      reportId: input.reportId,
+      reportPath: resolveRunReportPath(input.reportPath, process.env[RUN_REPORT_FILE_ENV], cwd),
+      signal: input.signal,
+      redaction: deps.redaction ?? new SecretRedaction(process.env),
+    },
+  );
   if (!outcome.ok) return outcome;
   return ok({ summary: outcome.value });
 }
@@ -135,21 +153,21 @@ export async function executeDestroy(
   deps: OperationDeps,
   cwd: string,
 ): Promise<Result<void, CliStructuredError>> {
-  const outcome = await runStackPipeline('destroy', {
-    entry: input.entry,
-    config: input.config,
-    name: input.name,
-    environment: input.environment,
-    cwd,
-    deps,
-    reportId: undefined,
-    reportPath: undefined,
-    steps: stackSteps((event) => {
-      if (event.kind !== 'preflight-findings') input.onEvent?.(event);
-    }),
-    signal: input.signal,
-    redaction: deps.redaction ?? new SecretRedaction(process.env),
-  });
+  const outcome = await runStackPipeline(
+    { action: 'destroy', steps: stackSteps(input.onEvent) },
+    {
+      entry: input.entry,
+      config: input.config,
+      name: input.name,
+      environment: input.environment,
+      cwd,
+      deps,
+      reportId: undefined,
+      reportPath: undefined,
+      signal: input.signal,
+      redaction: deps.redaction ?? new SecretRedaction(process.env),
+    },
+  );
   if (!outcome.ok) return outcome;
   return okVoid();
 }
@@ -291,16 +309,17 @@ async function finishReporters(
  * Nothing here can change what the pipeline returns.
  */
 async function runStackPipeline(
-  action: 'deploy' | 'destroy',
+  run: ActionSteps,
   opts: StackPipelineOptions,
 ): Promise<Result<DeploymentSummary | undefined, CliStructuredError>> {
+  const steps: SharedSteps = run.steps;
   const reporters: ExtensionReporter[] = [];
   let outcome: Result<DeploymentSummary | undefined, CliStructuredError>;
   try {
-    outcome = await runStackPipelineInner(action, opts, reporters);
+    outcome = await runStackPipelineInner(run, opts, reporters);
   } catch (error) {
-    opts.steps.closeOpen('failed');
-    opts.steps.start({ name: 'record' });
+    steps.closeOpen('failed');
+    steps.start({ name: 'record' });
     const thrown = redactThrown(error, opts.redaction);
     // A defect, not a structured failure — still the end of the run, and the
     // only chance to record that it ended at all.
@@ -314,12 +333,12 @@ async function runStackPipeline(
       },
       opts.redaction,
     );
-    opts.steps.finish({ name: 'record' });
+    steps.finish({ name: 'record' });
     throw thrown;
   }
   if (!outcome.ok) outcome = notOk(redactError(outcome.failure, opts.redaction));
-  if (!outcome.ok) opts.steps.closeOpen('failed');
-  opts.steps.start({ name: 'record' });
+  if (!outcome.ok) steps.closeOpen('failed');
+  steps.start({ name: 'record' });
   await finishReporters(
     reporters,
     outcome.ok
@@ -345,8 +364,8 @@ async function runStackPipeline(
           : { code: outcome.failure.code, message: outcome.failure.message },
       }),
     );
-  if (reportWritten) opts.steps.finish({ name: 'record' });
-  else opts.steps.fail({ name: 'record' });
+  if (reportWritten) steps.finish({ name: 'record' });
+  else steps.fail({ name: 'record' });
   return outcome;
 }
 
@@ -355,11 +374,13 @@ async function runStackPipeline(
  * the converge, and destroy its teardowns and container removals after it.
  * The value is only ever a summary for deploy. */
 async function runStackPipelineInner(
-  action: 'deploy' | 'destroy',
+  run: ActionSteps,
   opts: StackPipelineOptions,
   reporters: ExtensionReporter[],
 ): Promise<Result<DeploymentSummary | undefined, CliStructuredError>> {
-  const { entry, config: composerConfig, name, environment, cwd, deps, steps } = opts;
+  const { entry, config: composerConfig, name, environment, cwd, deps } = opts;
+  const { action } = run;
+  const steps: SharedSteps = run.steps;
 
   steps.start({ name: 'prepare' });
   try {
@@ -375,8 +396,8 @@ async function runStackPipelineInner(
   // when the rest of the pipeline goes on to fail for an unrelated reason
   // (missing config, missing built output — both common companions of
   // "nothing was ever deployed from here").
-  if (action === 'destroy' && hasNoLocalDeployState(cwd)) {
-    steps.emit({ kind: 'no-local-deploy-state', cwd });
+  if (run.action === 'destroy' && hasNoLocalDeployState(cwd)) {
+    run.steps.emit({ kind: 'no-local-deploy-state', cwd });
   }
 
   const loaded = await prepareAppConvergeEntry(
@@ -420,9 +441,7 @@ async function runStackPipelineInner(
       action === 'destroy'
         ? (error: Error): CliStructuredError =>
             new CliStructuredError('DEPLOY.BUILD_REQUIRED', error.message, {
-              why:
-                'destroy evaluates the same stack program as deploy, which packages ' +
-                'the built artifacts — so the app must be built first.',
+              why: 'Destroy runs the same preparation as deploy before it locates the environment, and that preparation assembles the built app.',
               fix: 'Run the build, then retry the destroy.',
               cause: error,
             })
@@ -527,8 +546,8 @@ async function runStackPipelineInner(
     alchemyStage = containers.get(config.state.extension)?.alchemyStage ?? environment;
     steps.finish({ name: 'connect' });
 
-    if (action === 'deploy') {
-      steps.start({ name: 'preflight' });
+    if (run.action === 'deploy') {
+      run.steps.start({ name: 'preflight' });
       let checked = 0;
       const report = (reported: PlatformVariableCheck): void => {
         checked += reported.checked;
@@ -555,15 +574,15 @@ async function runStackPipelineInner(
           throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
         }
       }
-      steps.finish({ name: 'preflight' }, { checked, unset: unset.length });
-      if (unset.length > 0) steps.emit({ kind: 'preflight-findings', findings: { unset } });
+      run.steps.finish({ name: 'preflight' }, { checked, unset: unset.length });
+      if (unset.length > 0) run.steps.emit({ kind: 'preflight-findings', findings: { unset } });
     }
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;
   }
 
-  const converged = await convergeStack(action, opts, pipeline, appConvergeEntry, {
+  const converged = await convergeStack(action, opts, steps, pipeline, appConvergeEntry, {
     containers,
     stage: alchemyStage,
     preflightPayloads,
@@ -622,8 +641,8 @@ async function prepareAppConvergeEntry(
 }
 
 const WORDS = {
-  deploy: { action: 'deploy', Action: 'Deploy', running: 'Another deploy is' },
-  destroy: { action: 'destroy', Action: 'Destroy', running: 'Another deploy or destroy is' },
+  deploy: { action: 'deploy', Action: 'Deploy' },
+  destroy: { action: 'destroy', Action: 'Destroy' },
 } as const;
 
 /** The structured failure a converge that did not apply settles as. */
@@ -643,7 +662,7 @@ function convergeFailure(
       return outcome.reason === 'already-running'
         ? new CliStructuredError(
             'DEPLOY.CONVERGE_RUNNING',
-            `${words.running} already running in this process.`,
+            'Another deploy, destroy or `prisma dev` converge is already running in this process.',
             {
               why: `A ${words.action} sets the process's environment and working directory while Alchemy runs, so two cannot overlap.`,
               fix: `Wait for the other one to finish, or run this ${words.action} in its own process.`,
@@ -688,6 +707,7 @@ function convergeFailure(
 async function convergeStack(
   action: 'deploy' | 'destroy',
   opts: StackPipelineOptions,
+  steps: SharedSteps,
   pipeline: PipelineResult,
   entry: AppConvergeEntry,
   resolved: {
@@ -698,7 +718,7 @@ async function convergeStack(
     readonly env: Readonly<Record<string, string>>;
   },
 ): Promise<Result<DeploymentSummary | undefined, CliStructuredError>> {
-  const { cwd, environment, steps } = opts;
+  const { cwd, environment } = opts;
   const config = pipeline.configSource.value;
   const env = resolved.env;
   opts.redaction.addCredentialLookingValues(credentialLookingValues(env));
@@ -752,7 +772,7 @@ async function convergeStack(
           steps,
           event,
           redact,
-          (resource): DeployStep => ({
+          (resource): DestroyStep => ({
             name: 'apply-resource',
             ...resource,
           }),
