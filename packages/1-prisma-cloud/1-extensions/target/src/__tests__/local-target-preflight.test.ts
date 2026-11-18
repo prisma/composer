@@ -796,6 +796,12 @@ describe('prisma dev preflight', () => {
       ).toEqual({
         SMTP_PORT: deep(MAX_DEPTH),
       });
+      const recursive = handWritten({
+        anyOf: [{ type: 'number' }, { type: 'array', items: { $ref: '#' } }],
+      });
+      expect((await devPreflight(typedGraph(recursive))).plainVariableText).toEqual({
+        SMTP_PORT: deep(MAX_DEPTH),
+      });
       configuration['SMTP_PORT'] = deep(MAX_DEPTH + 1);
       expect(await preflightError(typedGraph(handWritten({ type: 'array' })))).toBe(
         'The platform variable "SMTP_PORT" could not be checked against its schema. prisma dev cannot start, because service "shop.mail" reads it.',

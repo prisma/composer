@@ -326,6 +326,22 @@ describe('boot refuses a typed platform variable whose text does not decode or f
     expect(bootFailure({ type: 'array' }, nested(1_000_000))).toBe(message);
   });
 
+  test(`a recursive schema validates a value ${MAX_DEPTH} levels deep, and refuses one level more`, () => {
+    const nested = (depth: number) => `${'['.repeat(depth)}1${']'.repeat(depth)}`;
+    const nestedNext = (depth: number) => `${'{"next":'.repeat(depth)}{}${'}'.repeat(depth)}`;
+    const message = 'The platform variable "SMTP_PORT" could not be checked against its schema.';
+    const recursiveNext = {
+      $ref: '#/$defs/d0',
+      $defs: { d0: { type: 'object', properties: { next: { $ref: '#/$defs/d0' } } } },
+    };
+    for (const schema of [RECURSIVE_UNION_SELF_REF, RECURSIVE_UNION_VIA_DEFS]) {
+      expect(bootValue(schema, nested(MAX_DEPTH))).toBeArray();
+      expect(bootFailure(schema, nested(MAX_DEPTH + 1))).toBe(message);
+    }
+    expect(bootValue(recursiveNext, nestedNext(MAX_DEPTH - 1))).toBeObject();
+    expect(bootFailure(recursiveNext, nestedNext(MAX_DEPTH))).toBe(message);
+  });
+
   test('a value too deep fails as too deep, even when it also holds an inexact number', () => {
     const deepInexact = `${'['.repeat(MAX_DEPTH + 1)}1e400${']'.repeat(MAX_DEPTH + 1)}`;
     expect(bootFailure({ type: 'array' }, deepInexact)).toBe(

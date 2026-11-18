@@ -136,7 +136,7 @@ const doesNotFitError = (name: string, failure: OutputUnit): Error =>
 const uncheckedError = (name: string): Error =>
   new Error(`The platform variable "${name}" could not be checked against its schema.`);
 
-export const MAX_DEPTH = 1000;
+export const MAX_DEPTH = 100;
 
 const isExactNumber = (value: number): boolean =>
   Number.isFinite(value) && (!Number.isInteger(value) || Number.isSafeInteger(value));
