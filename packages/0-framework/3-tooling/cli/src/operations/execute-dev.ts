@@ -22,13 +22,17 @@ import type {
   LocalTargetDescriptor,
 } from '@internal/core/local-target';
 import { devEnvironmentDir, resolveLocalTargets } from '@internal/core/local-target';
-import { CliStructuredError, InternalError } from '@internal/foundation/errors';
+import {
+  type CliErrorEnvelope,
+  CliStructuredError,
+  InternalError,
+} from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import { removeLeftoverAppConfigurationFiles } from '../app-configuration-file.ts';
 import { loadAppConvergeEntry } from '../app-converge.ts';
 import type { ConvergeOutcome } from '../converge-in-process.ts';
 import { withComposerAdvice } from '../deployment-summary.ts';
-import { valueReadsSnapshot } from '../dev/value-reads-change.ts';
+import { valueReadsChangeText, valueReadsSnapshot } from '../dev/value-reads-change.ts';
 import {
   authoringModuleTargets,
   startWatch,
@@ -43,7 +47,7 @@ import {
 } from '../secret-as-plain-value.ts';
 import { validateEnvironmentName } from '../validate-environment.ts';
 import type { DevEvent, DevInput, DevSession, DevStep } from './dev.ts';
-import type { DevConvergeError, DevConvergeResult } from './dev-converge.ts';
+import type { DevConvergeResult } from './dev-converge.ts';
 import { runDevConvergeInWorker } from './dev-converge-in-worker.ts';
 import { claimDevEnvironmentName, requireDevEnvironmentName } from './dev-environment-name.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
@@ -57,6 +61,15 @@ import {
   toStructured,
 } from './shared.ts';
 import { interactionMessages, reportConvergeEvent, stepTracker } from './steps.ts';
+
+/** `dir` as the process reports it once it changes to it, so the converge worker's directory matches; `dir` resolved when it does not exist. */
+function realPath(dir: string): string {
+  try {
+    return fs.realpathSync(path.resolve(dir));
+  } catch {
+    return path.resolve(dir);
+  }
+}
 
 function isDottedCode(code: string): code is `${string}.${string}` {
   return /^[^.]+\.[^.]/.test(code);
@@ -186,15 +199,42 @@ function namedSecrets(current: PipelineResult): NamedSecrets {
 type FailedConverge = Exclude<ConvergeOutcome, { readonly kind: 'applied' | 'interrupted' }>;
 
 /** A structured error's text with its why and fix after it, as dev reports a rebuild that failed on one. */
-function withHelp(error: DevConvergeError): string {
-  return [error.message, error.why, error.fix].filter((line) => line !== undefined).join('\n');
+function withHelp(error: CliErrorEnvelope): string {
+  return [error.summary, error.why, error.fix].filter((line) => line !== undefined).join('\n');
+}
+
+/** The structured error a converge worker raised, rebuilt from its envelope; undefined when its code is not a dotted code. */
+function fromEnvelope(error: CliErrorEnvelope): CliStructuredError | undefined {
+  if (!isDottedCode(error.code)) return undefined;
+  return new CliStructuredError(error.code, error.summary, {
+    severity: error.severity,
+    ...(error.why === undefined ? {} : { why: error.why }),
+    ...(error.fix === undefined ? {} : { fix: error.fix }),
+    ...(error.where === undefined ? {} : { where: error.where }),
+    ...(error.meta === undefined ? {} : { meta: error.meta }),
+    ...(error.docsUrl === undefined ? {} : { docsUrl: error.docsUrl }),
+  });
+}
+
+type ConvergeFailure = {
+  readonly code: 'DEV.CONVERGE_FAILED' | 'DEV.CONVERGE_RUNNING' | 'DEV.WORKER_THREAD';
+  readonly message: string;
+  readonly reasons: readonly { readonly tag: string; readonly message: string }[];
+};
+
+/** How a rebuild reports a structured error its worker raised before the converge began. */
+function errorFailure(error: CliErrorEnvelope, redact: (text: string) => string): ConvergeFailure {
+  return {
+    code: 'DEV.CONVERGE_FAILED',
+    message: redact(withHelp(error)),
+    reasons: [{ tag: error.code, message: redact(error.summary) }],
+  };
 }
 
 /** The code and text a converge that failed or was refused settles as. */
 function convergeFailure(
   outcome: FailedConverge,
   redact: (text: string) => string,
-  error?: DevConvergeError,
 ): {
   readonly code: 'DEV.CONVERGE_FAILED' | 'DEV.CONVERGE_RUNNING' | 'DEV.WORKER_THREAD';
   readonly message: string;
@@ -210,7 +250,7 @@ function convergeFailure(
       : {
           code: 'DEV.WORKER_THREAD',
           message:
-            "dev's converge cannot run: dev was called from a thread that cannot change the process's working directory to its cwd, or its converge worker's working directory is not the session's.",
+            "dev's converge cannot run: dev was called from a thread that cannot change the process's working directory to its cwd.",
           reasons: [],
         };
   }
@@ -219,11 +259,7 @@ function convergeFailure(
     code: 'DEV.CONVERGE_FAILED',
     message: graphChanged
       ? NODES_CHANGED
-      : redact(
-          error === undefined
-            ? withComposerAdvice(convergeReasonsText(outcome.reasons))
-            : withHelp(error),
-        ),
+      : redact(withComposerAdvice(convergeReasonsText(outcome.reasons))),
     reasons: outcome.reasons.map(({ tag, message }) => ({ tag, message: redact(message) })),
   };
 }
@@ -253,7 +289,7 @@ export async function executeDev(
 ): Promise<Result<DevSession, CliStructuredError>> {
   const redaction = deps.redaction ?? new SecretRedaction(process.env);
   try {
-    const result = await executeDevInner(input, deps, path.resolve(cwd), redaction);
+    const result = await executeDevInner(input, deps, realPath(cwd), redaction);
     return result.ok ? result : notOk(redactError(result.failure, redaction));
   } catch (error) {
     throw redactThrown(error, redaction);
@@ -456,7 +492,7 @@ async function executeDevInner(
     steps.start({ name: 'converge', id });
     const result = await lowerAndConverge(current, signal, id);
     steps.closeOpen(
-      result.kind === 'converged' && result.outcome.kind === 'applied' ? 'ok' : 'failed',
+      result.kind === 'outcome' && result.outcome.kind === 'applied' ? 'ok' : 'failed',
     );
     return result;
   };
@@ -579,25 +615,30 @@ async function executeDevInner(
     return notOk(
       new CliStructuredError(
         'DEV.CONVERGE_FAILED',
-        'The app could not be converged: it read other platform variables when dev converged it than when dev started.',
+        `The platform variables the app reads changed while dev started: ${valueReadsChangeText(firstResult.change)}.`,
         {
-          why: 'A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
+          why: 'An app file was edited after dev loaded it, or a module body builds a different graph each time.',
           fix: 'Run dev again.',
         },
       ),
     );
   }
-  const first = firstResult.outcome;
-  const firstError = firstResult.error;
-  if (first.kind === 'failed' && firstError !== undefined && isDottedCode(firstError.code)) {
+  if (firstResult.kind === 'error') {
     await stopStartedServices();
     return notOk(
-      new CliStructuredError(firstError.code, firstError.message, {
-        ...(firstError.why === undefined ? {} : { why: firstError.why }),
-        ...(firstError.fix === undefined ? {} : { fix: firstError.fix }),
-      }),
+      fromEnvelope(firstResult.error) ??
+        new CliStructuredError(
+          'DEV.CONVERGE_FAILED',
+          `The app could not be converged.\n${redact(withHelp(firstResult.error))}`,
+          {
+            meta: {
+              reasons: [{ tag: firstResult.error.code, message: firstResult.error.summary }],
+            },
+          },
+        ),
     );
   }
+  const first = firstResult.outcome;
   if (first.kind === 'interrupted') {
     await stopStartedServices();
     return notOk(
@@ -778,10 +819,14 @@ async function executeDevInner(
           readsChanged = true;
           return;
         }
+        if (result.kind === 'error') {
+          emit({ kind: 'converge-failed', ...errorFailure(result.error, redact) });
+          return;
+        }
         const { outcome } = result;
         if (outcome.kind === 'interrupted') return;
         if (outcome.kind !== 'applied') {
-          emit({ kind: 'converge-failed', ...convergeFailure(outcome, redact, result.error) });
+          emit({ kind: 'converge-failed', ...convergeFailure(outcome, redact) });
           return;
         }
         if (stopping) return;

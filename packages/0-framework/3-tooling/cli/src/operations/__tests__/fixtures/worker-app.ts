@@ -48,6 +48,7 @@ const printEverywhere = (token) => {
   console.count('count ' + token);
   console.assert(false, 'assert ' + token);
   process.emitWarning('warning ' + token);
+  if (typeof console.write === 'function') console.write('write ' + token + '\\n');
 };
 
 const thing = Object.assign(

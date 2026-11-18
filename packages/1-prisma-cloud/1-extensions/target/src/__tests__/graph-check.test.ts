@@ -214,7 +214,7 @@ describe('the graph check of platform variable nodes', () => {
       );
 
       expect(message).toBe(
-        'input.EMAIL_KEY of root module "shop" reads "EMAIL_KEY" from the app configuration, and the platform secret "EMAIL_KEY" names "EMAIL_KEY" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which `prisma deploy` sends to the platform as plain configuration, and `prisma dev` hands to its converge worker thread, and `destroy` hands to its second process in a file. Read the secret with the platform secret "EMAIL_KEY" only, or give the plain value a different name.',
+        'input.EMAIL_KEY of root module "shop" reads "EMAIL_KEY" from the app configuration, and the platform secret "EMAIL_KEY" names "EMAIL_KEY" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which `prisma deploy` sends to the platform as plain configuration, `prisma dev` gives to the local services as plain configuration, and `destroy` writes to a file. Read the secret with the platform secret "EMAIL_KEY" only, or give the plain value a different name.',
       );
     },
   );

@@ -21,18 +21,25 @@ export interface LoadedEntry {
   readonly files: readonly string[];
 }
 
-/** `unloadableFix`, when given, says where the path came from, so a wrong path names its source. */
+/**
+ * `unloadableFix`, when given, says where the path came from, so a wrong path names its source.
+ * `recorded` receives each app file the import loads, so a caller has them when it throws.
+ */
 export async function loadEntry(
   entryArg: string,
   cwd: string,
   unloadableFix?: string,
+  recorded?: Set<string>,
 ): Promise<LoadedEntry> {
   registerEntryResolution();
   const resolvedPath = path.resolve(cwd, entryArg);
   let mod: unknown;
   let files: readonly string[];
   try {
-    ({ value: mod, files } = await recordAppFiles(() => import(pathToFileURL(resolvedPath).href)));
+    ({ value: mod, files } = await recordAppFiles(
+      () => import(pathToFileURL(resolvedPath).href),
+      recorded,
+    ));
   } catch (error) {
     const explained = explainJsxLoadError(error, resolvedPath);
     if (explained !== undefined) {

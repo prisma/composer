@@ -7,7 +7,7 @@
 import { type AppConfigurationRead, type AppRootNode, Load, type ModuleNode } from '@internal/core';
 import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
 import { resolveLocalTargets } from '@internal/core/local-target';
-import { CliStructuredError } from '@internal/foundation/errors';
+import { type CliErrorEnvelope, CliStructuredError } from '@internal/foundation/errors';
 import type { AppConvergeEntry } from '../app-converge.ts';
 import {
   type ConvergeEvent,
@@ -55,25 +55,22 @@ export interface DevConvergeReport {
   readonly output: (text: string) => void;
 }
 
-/** A structured error thrown before the converge began, as data: its code, message, why and fix. */
-export interface DevConvergeError {
-  readonly code: string;
-  readonly message: string;
-  readonly why?: string | undefined;
-  readonly fix?: string | undefined;
-}
-
 /**
- * What one dev converge came to. `converged` carries the converge's outcome, and `error` when a
- * structured error stopped it before it began. `value-reads-changed` means the app now reads
- * other platform variables than the session prepared for, so nothing was converged.
- * `appFiles` lists the app files the converge's import loaded.
+ * What one dev converge came to; each variant lists the app files the converge's import loaded.
+ * `outcome`: the converge ran, or the runner refused or ended it, to this outcome.
+ * `error`: a structured error stopped it before it began, as its envelope.
+ * `value-reads-changed`: the app now reads other platform variables than the session prepared
+ * for, so nothing was converged.
  */
 export type DevConvergeResult =
   | {
-      readonly kind: 'converged';
+      readonly kind: 'outcome';
       readonly outcome: ConvergeOutcome;
-      readonly error?: DevConvergeError | undefined;
+      readonly appFiles: readonly string[];
+    }
+  | {
+      readonly kind: 'error';
+      readonly error: CliErrorEnvelope;
       readonly appFiles: readonly string[];
     }
   | {
@@ -97,20 +94,20 @@ export interface LoadedDevApp {
   readonly appFiles: readonly string[];
 }
 
-export function thrownOutcome(error: unknown): ConvergeOutcome {
-  return { kind: 'failed', reasons: [failureReasonOf(error)] };
+function cloneable(envelope: CliErrorEnvelope): CliErrorEnvelope {
+  try {
+    return structuredClone(envelope);
+  } catch {
+    const { meta: _meta, ...rest } = envelope;
+    return rest;
+  }
 }
 
-/** `error` as a failed result, keeping a structured error's code, why and fix. */
+/** `error` as a result: a structured error as its envelope, any other as a failed outcome. */
 export function thrownResult(error: unknown, appFiles: readonly string[] = []): DevConvergeResult {
-  return {
-    kind: 'converged',
-    outcome: thrownOutcome(error),
-    ...(CliStructuredError.is(error)
-      ? { error: { code: error.code, message: error.message, why: error.why, fix: error.fix } }
-      : {}),
-    appFiles,
-  };
+  return CliStructuredError.is(error)
+    ? { kind: 'error', error: cloneable(error.toEnvelope()), appFiles }
+    : { kind: 'outcome', outcome: { kind: 'failed', reasons: [failureReasonOf(error)] }, appFiles };
 }
 
 function containersOf(
@@ -176,7 +173,7 @@ export async function convergeDevJob(
       onEvent: report.onEvent,
       output: report.output,
     });
-    return { kind: 'converged', outcome, appFiles: app.appFiles };
+    return { kind: 'outcome', outcome, appFiles: app.appFiles };
   } catch (error) {
     return thrownResult(error, app.appFiles);
   }

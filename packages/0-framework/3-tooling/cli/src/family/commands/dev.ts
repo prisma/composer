@@ -15,10 +15,10 @@
  * `dev` is credential-free: everything it starts runs on this machine.
  */
 import * as path from 'node:path';
-import { quotedList } from '@internal/foundation/errors';
 import type { EngineEvent } from '@prisma/cli-engine';
 import { defineSessionCommand, flag } from '@prisma/cli-engine';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
+import { valueReadsChangeText } from '../../dev/value-reads-change.ts';
 import type { DevEvent, DevInput, DevStep } from '../../operations/dev.ts';
 import { DEV_ENVIRONMENT, type ServiceEndpoint } from '../../operations/shared.ts';
 import { SecretRedaction } from '../../redaction.ts';
@@ -32,21 +32,7 @@ const STOP_STEP = "Stopping the app's services — emulators and data stay up";
 function valueReadsChangedText(
   change: Extract<DevEvent, { readonly kind: 'value-reads-changed' }>,
 ): string {
-  const clauses = [
-    ...(change.added.length > 0 ? [`reads of ${quotedList(change.added)} were added`] : []),
-    ...(change.removed.length > 0 ? [`reads of ${quotedList(change.removed)} were removed`] : []),
-    ...(change.changed.length > 0
-      ? [`${quotedList(change.changed)} ${change.changed.length === 1 ? 'was' : 'were'} changed`]
-      : []),
-  ];
-  const [first, second, third] = clauses;
-  const joined =
-    third !== undefined
-      ? `${first}, ${second}, and ${third}`
-      : second !== undefined
-        ? `${first} and ${second}`
-        : first;
-  return `The platform variables the app reads changed since dev started: ${joined}. Restart dev to apply them; rebuilds are paused until then.`;
+  return `The platform variables the app reads changed since dev started: ${valueReadsChangeText(change)}. Restart dev to apply them; rebuilds are paused until then.`;
 }
 
 /** Resolves when the run is asked to stop. */

@@ -46,20 +46,27 @@ function record(url: string): void {
  * static and dynamic imports alike. Under Node the resolve hook records them;
  * under Bun they are the modules `require.cache` gained, which includes ES
  * modules. A module already loaded before `load` started, and what only it
- * imports, is not recorded.
+ * imports, is not recorded. Each file is also added to `recorded` as it is
+ * found, so a caller still has them when `load` throws.
  */
 export async function recordAppFiles<T>(
   load: () => Promise<T>,
+  recorded: Set<string> = new Set(),
 ): Promise<{ readonly value: T; readonly files: readonly string[] }> {
   if (typeof process.versions.bun === 'string') {
     const cache = mod.createRequire(import.meta.url).cache;
     const before = new Set(Object.keys(cache));
-    const value = await load();
-    const files = Object.keys(cache).flatMap((key) => {
-      if (before.has(key) || !path.isAbsolute(key)) return [];
-      return key.split(path.sep).includes('node_modules') ? [] : [key];
-    });
-    return { value, files };
+    const files: string[] = [];
+    try {
+      return { value: await load(), files };
+    } finally {
+      for (const key of Object.keys(cache)) {
+        if (before.has(key) || !path.isAbsolute(key)) continue;
+        if (key.split(path.sep).includes('node_modules')) continue;
+        files.push(key);
+        recorded.add(key);
+      }
+    }
   }
   registerEntryResolution();
   const files = new Set<string>();
@@ -68,7 +75,51 @@ export async function recordAppFiles<T>(
     return { value: await load(), files: [...files] };
   } finally {
     recording = undefined;
+    for (const file of files) recorded.add(file);
   }
+}
+
+function fileOf(location: string): string {
+  return location.startsWith('file:') ? fileURLToPath(location) : location;
+}
+
+/**
+ * The app file an import error names: the module that could not be found, or
+ * the file that did not parse, when the runtime says which. Follows `cause`.
+ */
+export function appFileNamedBy(error: unknown): string | undefined {
+  for (let current = error; typeof current === 'object' && current !== null; ) {
+    const named = fileNamedBy(current);
+    if (named !== undefined && !named.split(path.sep).includes('node_modules')) return named;
+    current = 'cause' in current ? current.cause : undefined;
+  }
+  return undefined;
+}
+
+function fileNamedBy(error: object): string | undefined {
+  if ('url' in error && typeof error.url === 'string' && error.url.startsWith('file:')) {
+    return fileURLToPath(error.url);
+  }
+  if (
+    'specifier' in error &&
+    typeof error.specifier === 'string' &&
+    'referrer' in error &&
+    typeof error.referrer === 'string' &&
+    isRelativeSpecifier(error.specifier)
+  ) {
+    return path.resolve(path.dirname(fileOf(error.referrer)), error.specifier);
+  }
+  if (
+    'position' in error &&
+    typeof error.position === 'object' &&
+    error.position !== null &&
+    'file' in error.position &&
+    typeof error.position.file === 'string' &&
+    path.isAbsolute(error.position.file)
+  ) {
+    return error.position.file;
+  }
+  return undefined;
 }
 
 /**

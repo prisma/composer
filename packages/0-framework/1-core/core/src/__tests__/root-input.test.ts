@@ -329,7 +329,7 @@ describe('what Load reads from the app configuration', () => {
       });
 
     expect(loadError(run).message).toBe(
-      'input.B of root module "shop" is not in the app configuration file. The first process\'s root body did not pass it on, so the deploy\'s two processes built different graphs. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
+      'input.B of root module "shop" was not read by the first Load: the second Load (in `lower()`) needs a root input field the first Load did not read, so the two Loads built different graphs. Under `prisma dev`, an edit that changes which fields the root passes on needs a restart of dev. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
     );
   });
 

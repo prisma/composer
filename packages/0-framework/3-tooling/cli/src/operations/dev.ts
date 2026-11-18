@@ -90,9 +90,10 @@ export interface DevInput {
    * `devStop` stops the app later.
    */
   readonly detach?: boolean | undefined;
+  /** The app's directory, where `.prisma-composer/` and Alchemy's `.alchemy` live. Defaults to `process.cwd()`. For the length of each converge, the process's working directory is `cwd`; it is restored after. */
   readonly cwd?: string | undefined;
   readonly onEvent?: ((event: DevEvent) => void) | undefined;
-  /** Interrupts a running converge and stops dev. During the first converge, dev then fails with `DEV.INTERRUPTED`; once the session has started, it stops as `stop()` stops it. One process runs one converge at a time, so a `deploy` in the same process while a converge runs is refused, and so is a dev converge while a deploy runs. */
+  /** Interrupts a running converge and stops dev. During the first converge, dev then fails with `DEV.INTERRUPTED`; once the session has started, it stops as `stop()` stops it. Only one converge runs at a time on the thread that called dev, which holds the converge flag while dev's converge worker runs: a `deploy` on that thread while dev converges is refused, and so is a dev converge while a deploy runs there. A converge on another thread of the process is not refused. */
   readonly signal?: AbortSignal | undefined;
 }
 

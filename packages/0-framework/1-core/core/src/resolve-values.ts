@@ -632,7 +632,7 @@ export function resolveValues(input: {
           );
           if (field === undefined) {
             throw new LoadError(
-              `${inputFieldLabel(origin)} of root module "${origin.module}" is not in the app configuration file. The first process's root body did not pass it on, so the deploy's two processes built different graphs. ${SAME_GRAPH_ADVICE}`,
+              `${inputFieldLabel(origin)} of root module "${origin.module}" was not read by the first Load: the second Load (in \`lower()\`) needs a root input field the first Load did not read, so the two Loads built different graphs. Under \`prisma dev\`, an edit that changes which fields the root passes on needs a restart of dev. ${SAME_GRAPH_ADVICE}`,
             );
           }
           result = field.value;
@@ -691,7 +691,7 @@ export function resolveValues(input: {
           path: field.path,
         });
         throw new LoadError(
-          `${label} of root module "${rootModuleAddress()}" reads "${key}" from the app configuration, and ${origin.label} names "${key}" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which \`prisma deploy\` sends to the platform as plain configuration, and \`prisma dev\` hands to its converge worker thread, and \`destroy\` hands to its second process in a file. Read the secret with ${origin.label} only, or give the plain value a different name.`,
+          `${label} of root module "${rootModuleAddress()}" reads "${key}" from the app configuration, and ${origin.label} names "${key}" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which \`prisma deploy\` sends to the platform as plain configuration, \`prisma dev\` gives to the local services as plain configuration, and \`destroy\` writes to a file. Read the secret with ${origin.label} only, or give the plain value a different name.`,
         );
       }
     }

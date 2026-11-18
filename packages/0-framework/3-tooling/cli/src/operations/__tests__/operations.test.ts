@@ -50,7 +50,12 @@ import { unsetPlatformVariablesText } from '../../unset-platform-variables.ts';
 import { type DeployEvent, deployWithDeps } from '../deploy.ts';
 import { type DestroyInput, destroyWithDeps } from '../destroy.ts';
 import { type DevEvent, type DevInput, devWithDeps } from '../dev.ts';
-import { convergeDevJob, type RunDevConverge, thrownResult } from '../dev-converge.ts';
+import {
+  convergeDevJob,
+  type DevConvergeResult,
+  type RunDevConverge,
+  thrownResult,
+} from '../dev-converge.ts';
 import { devStop, devUrl } from '../dev-current.ts';
 import { LOG_QUEUE_LIMIT } from '../execute-log.ts';
 import { type LogLine, logWithDeps } from '../log.ts';
@@ -2846,6 +2851,68 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(events.filter((event) => event.kind === 'stopping')).toHaveLength(1);
     expect(events.at(-1)).toEqual({ kind: 'stopped' });
     expect(converges).toBe(1);
+  }, 15_000);
+
+  /** Starts dev whose first converge comes to `first`, and counts the services it stops. */
+  async function devWhoseFirstConverge(first: DevConvergeResult) {
+    const app = makeAppDir('hello-dev');
+    let stops = 0;
+    const attachment: LocalTargetAttachment = {
+      ...runningAttachment,
+      stopApp: () => {
+        stops += 1;
+        return Promise.resolve();
+      },
+    };
+    const result = await silently(() =>
+      devWithDeps(
+        { config: composerConfig(devConfigWith(attachment)), entry: app.entryPath, cwd: app.dir },
+        { runAssembler: fakeAssembler, runDevConverge: async () => first },
+      ),
+    );
+    return { result, stops };
+  }
+
+  test('a first converge that sees other platform variable reads fails dev naming them, and stops the services', async () => {
+    const { result, stops } = await devWhoseFirstConverge({
+      kind: 'value-reads-changed',
+      change: { added: ['hello-dev.smtpPort'], removed: [], changed: [] },
+      appFiles: [],
+    });
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure).toMatchObject({
+      code: 'DEV.CONVERGE_FAILED',
+      message:
+        'The platform variables the app reads changed while dev started: reads of "hello-dev.smtpPort" were added.',
+      why: 'An app file was edited after dev loaded it, or a module body builds a different graph each time.',
+      fix: 'Run dev again.',
+    });
+    expect(stops).toBe(1);
+  }, 15_000);
+
+  test('a structured error the converge worker raises fails the first converge under its own code, why and fix', async () => {
+    const { result, stops } = await devWhoseFirstConverge({
+      kind: 'error',
+      error: {
+        ok: false,
+        code: 'DEPS.CONVERGE_UNRESOLVABLE',
+        severity: 'error',
+        summary: 'Could not load the converge from the app.',
+        why: 'dev runs the app install.',
+        fix: 'Install @prisma/composer in the app.',
+      },
+      appFiles: [],
+    });
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure).toMatchObject({
+      code: 'DEPS.CONVERGE_UNRESOLVABLE',
+      message: 'Could not load the converge from the app.',
+      why: 'dev runs the app install.',
+      fix: 'Install @prisma/composer in the app.',
+    });
+    expect(stops).toBe(1);
   }, 15_000);
 
   test('a failed first converge carries its reasons, without a stack file or reproduce command', async () => {

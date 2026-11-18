@@ -7,12 +7,13 @@
 import { Console } from 'node:console';
 import { Writable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
+import { format } from 'node:util';
 import { parentPort, workerData } from 'node:worker_threads';
 import type { PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { loadAppConvergeEntry } from '../app-converge.ts';
 import { checkComposerConfig, noComposerExportMessage } from '../composer-config.ts';
-import { registerEntryResolution } from '../entry-resolution.ts';
+import { appFileNamedBy, registerEntryResolution } from '../entry-resolution.ts';
 import { loadEntry } from '../load-entry.ts';
 import {
   convergeDevJob,
@@ -27,32 +28,26 @@ if (port === null) throw new Error('dev-converge-worker runs only as a worker th
 
 const post = (message: WorkerMessage): void => port.postMessage(message);
 const output = (text: string): void => post({ kind: 'output', text });
-const CONSOLE_METHODS = [
-  'log',
-  'info',
-  'warn',
-  'error',
-  'debug',
-  'trace',
-  'dir',
-  'dirxml',
-  'table',
-  'count',
-  'countReset',
-  'assert',
-  'group',
-  'groupCollapsed',
-  'groupEnd',
-  'time',
-  'timeEnd',
-  'timeLog',
-] as const;
+/** Every function on `console`, its own and inherited, except constructors. */
+function consoleFunctionNames(): readonly string[] {
+  const names = new Set<string>();
+  for (let level: object | null = console; level !== null && level !== Object.prototype; ) {
+    for (const name of Object.getOwnPropertyNames(level)) {
+      if (name === 'constructor' || name === 'Console') continue;
+      if (typeof Reflect.get(console, name) === 'function') names.add(name);
+    }
+    level = Object.getPrototypeOf(level);
+  }
+  return [...names];
+}
+
 const textOf = (chunk: string | Uint8Array): string =>
   typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
 
 // Whatever the app's code or a provider prints goes to the main thread, which redacts it.
-// Bun's own console methods and warnings write to the terminal directly, so the whole
-// console's methods are replaced, and warnings are forwarded.
+// Bun's own console methods and warnings write to the terminal directly, so every function on
+// `console` is replaced, and warnings are forwarded. A direct write to the process's file
+// descriptors cannot be caught here.
 for (const stream of [process.stdout, process.stderr]) {
   stream.write = (chunk: string | Uint8Array) => {
     output(textOf(chunk));
@@ -66,9 +61,16 @@ const sink = new Writable({
   },
 });
 const replacement = new Console({ stdout: sink, stderr: sink });
-for (const method of CONSOLE_METHODS) {
-  const write: unknown = Reflect.get(replacement, method);
-  if (typeof write === 'function') Reflect.set(console, method, write.bind(replacement));
+for (const name of consoleFunctionNames()) {
+  const own: unknown = Reflect.get(replacement, name);
+  Reflect.set(
+    console,
+    name,
+    typeof own === 'function'
+      ? own.bind(replacement)
+      : (...args: unknown[]) =>
+          output(args.map((arg) => (typeof arg === 'string' ? arg : format(arg))).join(' ')),
+  );
 }
 if (typeof process.versions.bun === 'string') {
   process.on('warning', (warning) => output(`${warning.name}: ${warning.message}\n`));
@@ -100,9 +102,10 @@ async function importConfig(file: string): Promise<PrismaAppConfig> {
 }
 
 async function run(job: DevConvergeJob): Promise<DevConvergeResult> {
+  const recorded = new Set<string>();
   try {
     const config = await importConfig(job.configFile);
-    const { root, files } = await loadEntry(job.entry, job.cwd);
+    const { root, files } = await loadEntry(job.entry, job.cwd, undefined, recorded);
     const entry = await loadAppConvergeEntry(job.appDir);
     return await convergeDevJob(
       job,
@@ -111,7 +114,8 @@ async function run(job: DevConvergeJob): Promise<DevConvergeResult> {
       controller.signal,
     );
   } catch (error) {
-    return thrownResult(error);
+    const named = appFileNamedBy(error);
+    return thrownResult(error, named === undefined ? [...recorded] : [...recorded, named]);
   }
 }
 

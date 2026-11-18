@@ -8,6 +8,8 @@ interface NodeSpec {
   readonly id: string;
   readonly name: string;
   readonly secret?: boolean;
+  /** Whether the node's props hold an object branded under a symbol key, which `structuredClone` drops. */
+  readonly brandedProp?: boolean;
 }
 
 interface ReadSpec {
@@ -58,7 +60,13 @@ function graphOf(nodes: readonly NodeSpec[], reads: readonly ReadSpec[]) {
           name: node.id,
           extension: 'test/pack',
           type: 'variable',
-          props: { name: node.name, secret: node.secret === true },
+          props: {
+            name: node.name,
+            secret: node.secret === true,
+            ...(node.brandedProp === true
+              ? { kind: { [Symbol.for('test:brand')]: true, name: 'variable' } }
+              : {}),
+          },
           value,
         });
         values.set(node.id, provision(resource, { id: node.id }));
@@ -78,6 +86,12 @@ const emailFrom: NodeSpec = { id: 'emailFrom', name: 'EMAIL_FROM' };
 const unread: NodeSpec = { id: 'unread', name: 'UNREAD' };
 
 describe('valueReadsChange', () => {
+  test('a snapshot whose read node holds a symbol-branded object in its props is no change from its own structured clone', () => {
+    const started = readsOf([{ ...emailFrom, brandedProp: true }], [fromRead]);
+
+    expect(valueReadsChange(structuredClone(started), started)).toBeUndefined();
+  });
+
   test('identical graphs built in another order are no change', () => {
     const token: NodeSpec = { id: 'token', name: 'API_TOKEN' };
     const tokenRead: ReadSpec = { reader: 'digest', node: 'token', path: 'token' };

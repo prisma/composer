@@ -12,7 +12,7 @@ fs.rmSync(app.dir, { recursive: true, force: true });
 
 process.stdout.write(
   JSON.stringify({
-    outcome: result.kind === 'converged' && result.outcome,
+    outcome: result.kind === 'outcome' && result.outcome,
     output: output.join(''),
   }),
 );

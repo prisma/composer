@@ -32,9 +32,27 @@ const WORKER_URL = new URL(
 
 function failed(tag: string, message: string): DevConvergeResult {
   return {
-    kind: 'converged',
+    kind: 'outcome',
     outcome: { kind: 'failed', reasons: [{ tag, message }] },
     appFiles: [],
+  };
+}
+
+/** The worker's own converge refuses when its working directory is not the job's, which the main thread set: that is a fault in Composer, not in how dev was called. */
+function workerDirectoryFault(result: DevConvergeResult, cwd: string): DevConvergeResult {
+  if (
+    result.kind !== 'outcome' ||
+    result.outcome.kind !== 'refused' ||
+    result.outcome.reason !== 'worker-thread'
+  ) {
+    return result;
+  }
+  return {
+    ...failed(
+      'InternalError',
+      `The converge worker thread's working directory was not "${cwd}", which prisma dev set before it started the worker. This is a bug in Composer; please report it.`,
+    ),
+    appFiles: result.appFiles,
   };
 }
 
@@ -81,7 +99,7 @@ function runWorker(
       if (!isWorkerMessage(message) || outcome !== undefined) return;
       if (message.kind === 'event') report.onEvent(message.event);
       else if (message.kind === 'output') report.output(message.text);
-      else outcome = message.result;
+      else outcome = workerDirectoryFault(message.result, job.cwd);
     });
     worker.on('error', (error: unknown) => {
       outcome ??= failed(
@@ -107,16 +125,15 @@ function runWorker(
 }
 
 const refused = (reason: 'already-running' | 'worker-thread'): DevConvergeResult => ({
-  kind: 'converged',
+  kind: 'outcome',
   outcome: { kind: 'refused', reason },
   appFiles: [],
 });
 
 /**
- * A {@link RunDevConverge} that runs each converge in a new worker thread. The worker gets the
- * job's `cwd` as the process resolves it once changed to, so a relative or symlinked `cwd`
- * matches the worker's own `process.cwd()`. `stopTimeoutMs` bounds how long an interrupted
- * converge may take to stop.
+ * A {@link RunDevConverge} that runs each converge in a new worker thread. The job's `cwd` must be
+ * a real path, as `process.cwd()` reports it once changed to. `stopTimeoutMs` bounds how long an
+ * interrupted converge may take to stop.
  */
 export function runDevConvergeInWorkerWith(
   options: { readonly stopTimeoutMs?: number } = {},
@@ -124,9 +141,9 @@ export function runDevConvergeInWorkerWith(
   const stopTimeoutMs = options.stopTimeoutMs ?? STOP_TIMEOUT_MS;
   return async (job, report, signal) => {
     try {
-      if (!isMainThread && process.cwd() !== path.resolve(job.cwd)) return refused('worker-thread');
+      if (!isMainThread && process.cwd() !== job.cwd) return refused('worker-thread');
       const held = await holdingConvergeProcess({}, job.cwd, () =>
-        runWorker({ ...job, cwd: process.cwd() }, report, signal, stopTimeoutMs),
+        runWorker(job, report, signal, stopTimeoutMs),
       );
       return held.held ? held.value : refused('already-running');
     } catch (error) {

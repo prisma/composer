@@ -59,9 +59,11 @@ async function withProcessState<T>(
 }
 
 /**
- * Runs `run` holding this thread's converge flag, with `env` and `cwd` set as
- * `withProcessState` sets them, and releases all three on every exit path.
- * `held: false` means another converge holds the flag and nothing ran.
+ * Runs `run` holding three things for its length: this thread's converge flag
+ * (on `globalThis`, so it guards this thread only), the process environment
+ * variables in `env`, and the process's working directory, changed to `cwd`.
+ * All three are restored on every exit path. `held: false` means another
+ * converge on this thread holds the flag, and nothing ran.
  */
 export async function holdingConvergeProcess<T>(
   env: Readonly<Record<string, string | undefined>>,

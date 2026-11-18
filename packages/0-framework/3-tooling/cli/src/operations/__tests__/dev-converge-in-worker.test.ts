@@ -40,7 +40,7 @@ const waitUntil = async (done: () => boolean, ms = 20_000): Promise<void> => {
 };
 
 function outcomeOf(result: DevConvergeResult): ConvergeOutcome {
-  if (result.kind !== 'converged') throw new Error(`expected a converge, got ${result.kind}`);
+  if (result.kind !== 'outcome') throw new Error(`expected a converge, got ${result.kind}`);
   return result.outcome;
 }
 
@@ -89,7 +89,8 @@ describe.skipIf(process.platform === 'win32')('a dev converge in a worker thread
       expect(result.stderr).not.toContain(token);
       const { outcome, output } = JSON.parse(result.stdout);
       expect(outcome).toEqual({ kind: 'applied' });
-      for (const printed of ['log', 'dir', 'table', 'count', 'assert', 'warning']) {
+      const methods = ['log', 'dir', 'table', 'count', 'assert', 'warning'];
+      for (const printed of runtime === 'bun' ? [...methods, 'write'] : methods) {
         expect({ printed, reported: output.includes(printed) && output.includes(token) }).toEqual({
           printed,
           reported: true,
@@ -101,20 +102,6 @@ describe.skipIf(process.platform === 'win32')('a dev converge in a worker thread
       expect(output).toContain(`warning ${token}`);
     }, 60_000);
   }
-
-  test('a cwd reached through a symlink, or given relative to the process directory, converges', async () => {
-    const app = workerApp('v1');
-    const link = path.join(path.dirname(app.dir), `${path.basename(app.dir)}-link`);
-    fs.symlinkSync(app.dir, link);
-    links.push(link);
-    const before = process.cwd();
-
-    const throughLink = await converge(jobFor(app, link), quiet);
-    const relative = await converge(jobFor(app, path.relative(before, app.dir)), quiet);
-
-    expect([throughLink, relative]).toEqual([{ kind: 'applied' }, { kind: 'applied' }]);
-    expect(process.cwd()).toBe(before);
-  }, 60_000);
 
   test('an interrupted converge returns interrupted once its worker ends, and releases the process for the next one', async () => {
     const app = workerApp('block');
@@ -231,14 +218,10 @@ describe.skipIf(process.platform === 'win32')('a dev converge in a worker thread
 
     const result = await runDevConvergeInWorker(jobFor(app), quiet);
 
-    const outcome = outcomeOf(result);
-    if (outcome.kind !== 'failed') throw new Error(`expected a failure, got ${outcome.kind}`);
-    expect(outcome.reasons).toHaveLength(1);
-    expect(outcome.reasons[0]?.tag).toBe('COMPOSE.ENTRY_UNLOADABLE');
-    expect(outcome.reasons[0]?.message).toStartWith(
-      `Failed to import entry module "${app.entry}": `,
-    );
-    expect(result).toMatchObject({ error: { code: 'COMPOSE.ENTRY_UNLOADABLE' } });
+    if (result.kind !== 'error') throw new Error(`expected an error, got ${result.kind}`);
+    expect(result.error.code).toBe('COMPOSE.ENTRY_UNLOADABLE');
+    expect(result.error.summary).toStartWith(`Failed to import entry module "${app.entry}": `);
+    expect(result.appFiles).toContain(app.labelFile);
   }, 60_000);
 
   test("a structured error from loading the app's converge entry keeps its code, why and fix", async () => {
@@ -248,8 +231,7 @@ describe.skipIf(process.platform === 'win32')('a dev converge in a worker thread
     const result = await runDevConvergeInWorker(jobFor(app), quiet);
 
     expect(result).toMatchObject({
-      kind: 'converged',
-      outcome: { kind: 'failed', reasons: [{ tag: 'DEPS.CONVERGE_UNRESOLVABLE' }] },
+      kind: 'error',
       error: {
         code: 'DEPS.CONVERGE_UNRESOLVABLE',
         why: expect.stringContaining("run the lowering and Alchemy from the app's own install"),
@@ -377,6 +359,38 @@ describe.skipIf(process.platform === 'win32')('dev with its converge in a worker
 
     expect(countOf(events, 'ready')).toBe(1);
     expect(app.seen()).toEqual([`v1 ${app.dir}`]);
+  }, 60_000);
+
+  test('dev converges from a cwd given relative to the process directory', async () => {
+    const app = workerApp('v1');
+    const events: DevEvent[] = [];
+
+    const { session } = await devSession(app, events, {
+      cwd: path.relative(process.cwd(), app.dir),
+    });
+    await session.stop();
+
+    expect(countOf(events, 'ready')).toBe(1);
+    expect(app.seen()).toEqual([`v1 ${app.dir}`]);
+  }, 60_000);
+
+  test('a file an edit imports before it exists fails that rebuild, is watched, and creating it rebuilds and applies', async () => {
+    const app = workerApp('v1');
+    const helpers = path.join(app.dir, 'helpers.ts');
+    const events: DevEvent[] = [];
+
+    const { session, change, watched } = await devSession(app, events);
+    fs.writeFileSync(app.labelFile, "export { label } from './helpers.ts';\n");
+    change();
+    await waitUntil(() => countOf(events, 'converge-failed') === 1);
+    const watchedAfterFailure = watched.has(helpers);
+    fs.writeFileSync(helpers, "export const label = 'v2';\n");
+    change(helpers);
+    await waitUntil(() => countOf(events, 'ready') === 2);
+    await session.stop();
+
+    expect(watchedAfterFailure).toBe(true);
+    expect(app.seen()).toEqual([`v1 ${app.dir}`, `v2 ${app.dir}`]);
   }, 60_000);
 
   test('a definition file that stops parsing fails that rebuild with its code and fix, and dev keeps watching and applies the fix', async () => {

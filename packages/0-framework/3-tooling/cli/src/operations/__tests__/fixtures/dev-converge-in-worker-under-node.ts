@@ -12,7 +12,7 @@ fs.rmSync(app.dir, { recursive: true, force: true });
 
 process.stdout.write(
   JSON.stringify({
-    outcomes: [first, second].map((result) => result.kind === 'converged' && result.outcome),
+    outcomes: [first, second].map((result) => result.kind === 'outcome' && result.outcome),
     seen,
     dir: app.dir,
   }),
