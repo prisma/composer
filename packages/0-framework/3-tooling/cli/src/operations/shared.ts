@@ -17,6 +17,7 @@ import type { ConvergeFailureReason } from '../converge-in-process.ts';
 import type { startWatch } from '../dev/watch.ts';
 import type { SecretRedaction } from '../redaction.ts';
 import type { RunAlchemy } from '../run-alchemy.ts';
+import type { RunDevConverge } from './dev-converge.ts';
 
 /** The `id` of an ExtensionDescriptor — what keys the executors' per-extension maps. */
 export type ExtensionId = string;
@@ -43,8 +44,10 @@ export interface OperationDeps {
   readonly runAssembler?: RunAssembler | undefined;
   /** Starts the converge child for `destroy`; defaults to `spawnAlchemy`. Tests substitute it. */
   readonly alchemy?: RunAlchemy | undefined;
-  /** The `lower`, converge and local target functions `deploy` and `dev` run; defaults to the app's own install (`loadAppConvergeEntry`). Tests substitute it. */
+  /** The `lower` and converge functions `deploy` runs; defaults to the app's own install (`loadAppConvergeEntry`). Tests substitute it. */
   readonly appConvergeEntry?: AppConvergeEntry | undefined;
+  /** Runs one `dev` converge and reports its events; defaults to a new worker thread per converge (`convergeInWorker`). Tests substitute it. */
+  readonly runDevConverge?: RunDevConverge | undefined;
   /** What `deploy` and `dev` redact from everything they report. Defaults to one built from `process.env`; the CLI passes its own so its console redirect redacts the same values. */
   readonly redaction?: SecretRedaction | undefined;
   /** Starts a file watch for `dev`; defaults to chokidar-backed `startWatch`. Tests substitute it to drive changes directly. */

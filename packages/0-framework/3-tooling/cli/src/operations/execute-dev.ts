@@ -1,8 +1,9 @@
 /**
  * The dev executor (local-dev spec § 6): events out through `onEvent`,
  * lifetime owned by the returned DevSession. Every converge lowers the app
- * against the local target and runs Alchemy's plan and apply in this process,
- * through the app's own install (`loadAppConvergeEntry`, ADR-0066). The operation
+ * against the local target and runs Alchemy's plan and apply in a new worker
+ * thread, through the app's own install (`loadAppConvergeEntry`, ADR-0066), so
+ * each converge imports the app as it is on disk. The operation
  * NEVER touches process signal handlers; the host does. Reached only by lazy
  * import from dev.ts: this module's static graph transitively loads alchemy's
  * provider tree, so the control entry must never import it statically.
@@ -11,10 +12,10 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import type { AppRootNode, Graph, ModuleNode, ServiceNode } from '@internal/core';
+import type { Graph, ServiceNode } from '@internal/core';
 import type { ContainerInstance, NamedSecrets, PrismaAppConfig } from '@internal/core/config';
 import type { DevServer } from '@internal/core/deploy';
-import { secretsKeys } from '@internal/core/deploy';
+import { GRAPH_CHANGED_ERROR, nodeAddresses, secretsKeys } from '@internal/core/deploy';
 import type {
   DevPreflightResult,
   LocalTargetAttachment,
@@ -24,7 +25,7 @@ import { devEnvironmentDir, resolveLocalTargets } from '@internal/core/local-tar
 import { CliStructuredError, InternalError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import { removeLeftoverAppConfigurationFiles } from '../app-configuration-file.ts';
-import { type AppConvergeEntry, loadAppConvergeEntry } from '../app-converge.ts';
+import { loadAppConvergeEntry } from '../app-converge.ts';
 import type { ConvergeOutcome } from '../converge-in-process.ts';
 import { withComposerAdvice } from '../deployment-summary.ts';
 import { valueReadsChange } from '../dev/value-reads-change.ts';
@@ -41,7 +42,9 @@ import {
   refuseSecretsInRootInput,
 } from '../secret-as-plain-value.ts';
 import { validateEnvironmentName } from '../validate-environment.ts';
+import { convergeInWorker } from './converge-in-worker.ts';
 import type { DevEvent, DevInput, DevSession, DevStep } from './dev.ts';
+import { thrownOutcome } from './dev-converge.ts';
 import { claimDevEnvironmentName, requireDevEnvironmentName } from './dev-environment-name.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import {
@@ -201,12 +204,18 @@ function convergeFailure(
           reasons: [],
         };
   }
+  const graphChanged = outcome.reasons.some(({ tag }) => tag === GRAPH_CHANGED_ERROR);
   return {
     code: 'DEV.CONVERGE_FAILED',
-    message: redact(withComposerAdvice(convergeReasonsText(outcome.reasons))),
+    message: graphChanged
+      ? NODES_CHANGED
+      : redact(withComposerAdvice(convergeReasonsText(outcome.reasons))),
     reasons: outcome.reasons.map(({ tag, message }) => ({ tag, message: redact(message) })),
   };
 }
+
+const NODES_CHANGED =
+  'The app now has a node added or removed. A running `prisma dev` keeps the nodes it started with, so restart `prisma dev` to apply the change.';
 
 const DEV_PLAIN =
   'prisma dev hands every plain value to the local services as plain configuration, and never hands a secret that way.';
@@ -221,18 +230,6 @@ const REFUSAL_HELP = {
     fix: "Call dev from the main thread, or with the process's working directory as its cwd.",
   },
 } as const;
-
-function thrownOutcome(error: unknown): ConvergeOutcome {
-  return {
-    kind: 'failed',
-    reasons: [
-      {
-        tag: error instanceof Error ? error.name : 'Unknown',
-        message: error instanceof Error ? error.message : String(error),
-      },
-    ],
-  };
-}
 
 /** Runs the full dev pipeline; resolves to a running session or a structured failure. */
 export async function executeDev(
@@ -271,10 +268,9 @@ async function executeDevInner(
 
   let pipeline: Awaited<ReturnType<typeof runPipeline>>;
   let resolved: ReadonlyMap<string, LocalTargetDescriptor>;
-  let appConvergeEntry: AppConvergeEntry;
   // The app definition files: every app file the entry import loaded, and
-  // each service's authoring module, hashed as they were when it loaded.
-  let startedDefinitions: ReadonlyMap<string, string | undefined>;
+  // each service's authoring module.
+  let definitionFiles: readonly string[];
   const containers = new Map<ExtensionId, ContainerInstance>();
   const preflightPayloads = new Map<ExtensionId, string>();
   const plainVariableText: Record<string, string> = {};
@@ -314,20 +310,21 @@ async function executeDevInner(
     );
     const { graph, name } = pipeline;
     const config = pipeline.configSource.value;
-    startedDefinitions = new Map(
-      [
+    definitionFiles = [
+      ...new Set([
         ...pipeline.entryModule.files,
         ...authoringModuleTargets(pipeline.entryModule.path, graph).flatMap(
           (target) => target.paths,
         ),
-      ].map((file) => [file, contentHash(file)]),
-    );
+      ]),
+    ];
 
-    // Lowering and Alchemy run from the app's own install, found before
-    // anything local is created.
-    appConvergeEntry =
-      deps.appConvergeEntry ??
-      (await loadAppConvergeEntry(path.dirname(pipeline.configSource.file)));
+    // Lowering and Alchemy run from the app's own install, in the converge
+    // worker. Loading it here first refuses a missing or mismatched install
+    // before anything local is created.
+    if (deps.runDevConverge === undefined) {
+      await loadAppConvergeEntry(path.dirname(pipeline.configSource.file));
+    }
 
     // Dev-capability check — resolve every non-build-only extension's lazy
     // `localTarget` thunk ONCE (ADR-0041's lazy reference); its pinned error
@@ -414,8 +411,8 @@ async function executeDevInner(
     throw error;
   }
 
-  const config = pipeline.configSource.value;
   const redact = (text: string): string => redaction.redact(text);
+  const runDevConverge = deps.runDevConverge ?? convergeInWorker;
   const steps = stepTracker<DevStep>(
     (step) => (step.name === 'converge' ? step.id : `${step.converge}:${step.resourceId}`),
     emit,
@@ -438,61 +435,58 @@ async function executeDevInner(
     } catch (error) {
       throw toStructured('DEV.ENVIRONMENT_WRITE_FAILED', error);
     }
-    const root = current.graph.root.node;
-    if (root.kind !== 'module') {
+    if (current.graph.root.node.kind !== 'module') {
       throw new InternalError('runPipeline admitted a root that is not a module');
     }
     steps.start({ name: 'converge', id });
-    const outcome = await lowerAndConverge(current, root, signal, id);
+    const outcome = await lowerAndConverge(current, signal, id);
     steps.closeOpen(outcome.kind === 'applied' ? 'ok' : 'failed');
     return outcome;
   };
 
   const lowerAndConverge = async (
     current: PipelineResult,
-    root: ModuleNode | AppRootNode,
     signal: AbortSignal | undefined,
     id: string,
   ): Promise<ConvergeOutcome> => {
     const output = interactionMessages(steps, redaction);
     try {
-      const stack = appConvergeEntry.lower(root, config, {
-        name: current.name,
-        environment,
-        appConfigurationRead: current.graph.appConfigurationRead,
-        bundles: current.assembled.bundles,
-        unassembled: Object.keys(current.assembled.devServers),
-        containers,
-        preflightPayloads,
-        providers: appConvergeEntry.localTargetProviders(
-          resolved,
-          containers,
+      return await runDevConverge(
+        {
+          configFile: current.configSource.file,
+          entry: current.entryModule.path,
+          appDir: path.dirname(current.configSource.file),
+          cwd,
+          name: current.name,
+          environment,
+          appConfigurationRead: current.graph.appConfigurationRead,
+          bundles: current.assembled.bundles,
+          unassembled: Object.keys(current.assembled.devServers),
+          containers: Object.fromEntries(
+            [...containers].map(([extension, container]) => [extension, container.serialize()]),
+          ),
+          preflightPayloads: Object.fromEntries(preflightPayloads),
           devDir,
           plainVariableText,
-          namedSecrets(current),
-        ),
-        state: appConvergeEntry.devState(),
-      });
-      return await appConvergeEntry.converge({
-        operation: 'deploy',
-        stack,
-        stage: environment,
-        cwd,
-        env: {},
+          namedSecrets: namedSecrets(current),
+          nodeAddresses: nodeAddresses(pipeline.graph),
+        },
+        {
+          onEvent: (event) =>
+            reportConvergeEvent(
+              steps,
+              event,
+              redact,
+              (resource): DevStep => ({
+                name: 'apply-resource',
+                converge: id,
+                ...resource,
+              }),
+            ),
+          output: (text) => output.push(text),
+        },
         signal,
-        onEvent: (event) =>
-          reportConvergeEvent(
-            steps,
-            event,
-            redact,
-            (resource): DevStep => ({
-              name: 'apply-resource',
-              converge: id,
-              ...resource,
-            }),
-          ),
-        output: (text) => output.push(text),
-      });
+      );
     } catch (error) {
       return thrownOutcome(error);
     } finally {
@@ -659,11 +653,9 @@ async function executeDevInner(
 
     // Watch loop until the session is stopped: rebuild → re-assemble →
     // re-converge; a converge failure keeps the running app and keeps watching.
-    // The app definition files are watched too: the app was imported once, in
-    // this process, so an edit to one cannot reach the converge, and the
-    // session reports it and pauses instead (ADR-0066).
+    // An edit to an app definition file rebuilds too: each converge runs in a
+    // new worker thread, which imports the app as it is on disk.
     const bundleWatch = watchTargetsFrom(pipeline.assembled.bundles);
-    const definitionFiles = [...startedDefinitions.keys()];
     const targets = [
       ...bundleWatch.targets,
       ...definitionFiles.map((file) => ({ address: pipeline.graph.root.id, paths: [file] })),
@@ -689,23 +681,16 @@ async function executeDevInner(
     let configChanged = false;
     let valuesChanged = false;
     let readsChanged = false;
-    let definitionChanged = false;
     // Read on every event, not only from the config watcher: a build watch
     // on a directory that contains the file can fire first.
     const paused = (): boolean => {
-      if (valuesChanged || readsChanged || definitionChanged) return true;
+      if (valuesChanged || readsChanged) return true;
       if (configChanged || contentHash(configFile) !== startedConfig) {
         configChanged = true;
         emit({ kind: 'config-changed', file: configFile });
         return true;
       }
-      const changed = definitionFiles.filter(
-        (file) => contentHash(file) !== startedDefinitions.get(file),
-      );
-      if (changed.length === 0) return false;
-      definitionChanged = true;
-      emit({ kind: 'definition-changed', files: changed });
-      return true;
+      return false;
     };
     configWatch = watchFiles(
       [{ address: configFile, paths: [configFile] }],

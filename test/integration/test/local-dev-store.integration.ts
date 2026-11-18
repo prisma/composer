@@ -42,8 +42,8 @@
  *      redeploy — S3's own pinned "a stopped service always starts on
  *      redeploy" behavior — which would defeat this proof entirely).
  *   A sub-module's `module.ts` is an app definition file: an edit to it
- *      while dev runs is reported as needing a restart, and a later artifact
- *      touch converges nothing (the app is imported once per process).
+ *      while dev runs rebuilds and converges, because each converge runs in
+ *      a new worker thread that imports the app as it is on disk.
  *   3. Postgres persistence: a row is written directly against the real
  *      local Postgres URL (read from the postgres-main daemon's own
  *      database listing — the daemon owns instance state, REVISED —
@@ -433,11 +433,11 @@ function framesAfter(session: DevSession, from: number): Record<string, unknown>
 
 /**
  * Edits catalog's `module.ts`, which the store's entry imports through the
- * `@store/catalog` workspace package, and waits for dev's restart notice
- * naming it. Then touches catalog's built artifact and checks that no
- * rebuild converges and catalog keeps its pid. Restores the file after.
+ * `@store/catalog` workspace package, and waits for the rebuild it starts to
+ * converge and reprint the front door. The edit is a comment, so nothing
+ * deployable changes and catalog keeps its pid. Restores the file after.
  */
-async function editSubModuleAndAwaitRestartNotice(
+async function editSubModuleAndAwaitRebuild(
   session: DevSession,
   pidsBefore: Record<string, number | undefined>,
 ): Promise<void> {
@@ -446,32 +446,24 @@ async function editSubModuleAndAwaitRestartNotice(
   try {
     fs.writeFileSync(catalogModule, `${original}\n// proving-script definition edit\n`);
     await waitForAsync(async () => {
-      const notice = framesAfter(session, from).find(
-        (frame) =>
-          frame['kind'] === 'message' &&
-          typeof frame['text'] === 'string' &&
-          frame['text'].includes(catalogModule) &&
-          frame['text'].includes('restart dev'),
+      const ready = framesAfter(session, from).some(
+        (frame) => frame['kind'] === 'status' && frame['status'] === 'ready',
       );
-      return notice === undefined ? undefined : true;
+      return ready ? true : undefined;
     }, REAL_WATCH_TIMEOUT_MS);
 
-    fs.appendFileSync(
-      catalogDist,
-      `\n// proving-script touch after a definition edit ${Date.now()}\n`,
-    );
-    await new Promise((resolve) => setTimeout(resolve, 5_000));
-    const rebuilt = framesAfter(session, from).some(
+    const failed = framesAfter(session, from).some(
       (frame) =>
-        frame['kind'] === 'endpoint' ||
-        (typeof frame['id'] === 'string' && frame['id'].startsWith('dev.rebuild.')),
+        frame['kind'] === 'message' &&
+        typeof frame['text'] === 'string' &&
+        frame['text'].startsWith('Converge failed'),
     );
-    assert(!rebuilt, 'no rebuild converges after an app definition file changed');
+    assert(!failed, 'the rebuild after an app definition edit converges');
     const pids = await pidsByAddress(APP_NAME);
     assertEqual(
       pids['store.catalog.service'],
       pidsBefore['store.catalog.service'],
-      'catalog.service keeps its pid after an app definition file changed',
+      'catalog.service keeps its pid after a comment-only edit to its module.ts',
     );
   } finally {
     fs.writeFileSync(catalogModule, original);
@@ -602,12 +594,10 @@ async function main(): Promise<void> {
     }
 
     // ——— A sub-module's module.ts is an app definition file ———
-    // The app is imported once, in the prisma process, so dev cannot apply an
-    // edit to it: it must say so and stop converging, not rebuild the old graph.
-    await editSubModuleAndAwaitRestartNotice(activeSession, pidsBefore);
-    console.log(
-      "[proving] PASS: an edit to a sub-module's module.ts is reported as needing a restart, and nothing converges",
-    );
+    // Each converge runs in a new worker thread that imports the app as it
+    // is on disk, so an edit to it rebuilds and converges.
+    await editSubModuleAndAwaitRebuild(activeSession, pidsBefore);
+    console.log("[proving] PASS: an edit to a sub-module's module.ts rebuilds and converges");
 
     // ——— Criterion 3 (write half): a row through the real local Postgres URL ———
     const dbUrl = await readCatalogDbUrl();

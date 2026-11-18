@@ -132,17 +132,6 @@ describe('dev — converging in process', () => {
     expect(result.events.some((event) => event.kind === 'remediation')).toBe(false);
   });
 
-  test('an edit to the app definition renders as a warning that asks for a restart', async () => {
-    const text =
-      '/repo/shop/src/service.ts changed. dev loaded the app definition files when it started and cannot load them again; restart dev to apply the change. Rebuilds are paused until then.';
-    const { result } = await runWithEvents(
-      [{ kind: 'definition-changed', files: ['/repo/shop/src/service.ts'] }],
-      (event) => event.kind === 'message' && event.text === text,
-    );
-
-    expect(result.events).toContainEqual({ kind: 'message', severity: 'warn', text });
-  });
-
   test('Ctrl-C during the first converge settles 130, reporting the interruption, not an error', async () => {
     const double = createOperationsDouble({});
     const interrupt = new AbortController();

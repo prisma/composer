@@ -163,14 +163,6 @@ function reportDevEvent(
         report({ kind: 'message', severity: 'warn', text: `Watch error: ${event.message}` });
         return;
 
-      case 'definition-changed':
-        report({
-          kind: 'message',
-          severity: 'warn',
-          text: `${event.files.join(', ')} changed. dev loaded the app definition files when it started and cannot load them again; restart dev to apply the change. Rebuilds are paused until then.`,
-        });
-        return;
-
       case 'step-started':
         report({
           kind: 'step-started',

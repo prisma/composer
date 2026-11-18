@@ -49,8 +49,6 @@ export type DevEvent =
       readonly removed: readonly string[];
       readonly changed: readonly string[];
     }
-  /** An app definition file changed: one of the app files the entry module loaded when the session started. The session keeps the app it loaded and stops rebuilding until it is restarted. */
-  | { readonly kind: 'definition-changed'; readonly files: readonly string[] }
   /** A rebuild's converge failed, or was refused because another converge holds this process. The app keeps running, still watching. */
   | {
       readonly kind: 'converge-failed';

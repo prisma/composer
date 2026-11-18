@@ -321,13 +321,23 @@ export class LowerError extends Error {
   }
 }
 
+/** The `name` of the error `lower()` fails with when it builds a graph whose node addresses differ from `firstProcessNodeAddresses`. */
+export const GRAPH_CHANGED_ERROR = 'GraphChangedError';
+
+class GraphChangedError extends LowerError {
+  constructor(message: string) {
+    super(message);
+    this.name = GRAPH_CHANGED_ERROR;
+  }
+}
+
 function assertSameNodeAddresses(built: readonly string[], firstProcess: readonly string[]): void {
   const onlyBuilt = built.filter((address) => !firstProcess.includes(address));
   const onlyFirst = firstProcess.filter((address) => !built.includes(address));
   if (onlyBuilt.length === 0 && onlyFirst.length === 0) return;
   const list = (addresses: readonly string[]) =>
     addresses.length === 0 ? 'none' : addresses.map((address) => `"${address}"`).join(', ');
-  throw new LowerError(
+  throw new GraphChangedError(
     `lower() built a different graph from the one Composer checked first. Only in the graph lower() built: ${list(onlyBuilt)}. Only in the graph Composer checked: ${list(onlyFirst)}. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.`,
   );
 }

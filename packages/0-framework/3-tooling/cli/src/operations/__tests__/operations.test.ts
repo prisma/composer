@@ -41,6 +41,7 @@ import { dotenv, environmentVariables } from '../../config-adapters.ts';
 import { CONVERGE_CONTRACT } from '../../converge-contract.ts';
 import type { Converge, ConvergeOutcome, ConvergeRequest } from '../../converge-in-process.ts';
 import { DEPLOYMENT_RESULT_FILE_ENV, engineFailureFilePath } from '../../deployment-summary.ts';
+import { loadEntry } from '../../load-entry.ts';
 import type { AppIdentity } from '../../pipeline.ts';
 import { SecretRedaction } from '../../redaction.ts';
 import { renderDeployment } from '../../render-deployment.ts';
@@ -48,11 +49,12 @@ import { RUN_REPORT_VERSION } from '../../run-report.ts';
 import { unsetPlatformVariablesText } from '../../unset-platform-variables.ts';
 import { type DeployEvent, deployWithDeps } from '../deploy.ts';
 import { type DestroyInput, destroyWithDeps } from '../destroy.ts';
-import { type DevEvent, devWithDeps } from '../dev.ts';
+import { type DevEvent, type DevInput, devWithDeps } from '../dev.ts';
+import { convergeDevJob, type RunDevConverge } from '../dev-converge.ts';
 import { devStop, devUrl } from '../dev-current.ts';
 import { LOG_QUEUE_LIMIT } from '../execute-log.ts';
 import { type LogLine, logWithDeps } from '../log.ts';
-import { executionDiagnostics, executorLoadFailure } from '../shared.ts';
+import { executionDiagnostics, executorLoadFailure, type OperationDeps } from '../shared.ts';
 
 const tmpDirs: string[] = [];
 
@@ -233,6 +235,25 @@ const FAILED: ConvergeOutcome = {
 /** Core's own `lower` with a stand-in for Alchemy's plan and apply: deploy tests never run the real Alchemy here. */
 function appConvergeEntry(converge: Converge): AppConvergeEntry {
   return { lower, converge, localTargetProviders, devState };
+}
+
+/** Runs dev's converge in this thread through `entry`, as its worker would: a stubbed `lower` or converge cannot cross to a worker. */
+function inThisThread(config: PrismaAppConfig, entry: AppConvergeEntry): RunDevConverge {
+  return async (job, report, signal) => {
+    const { root } = await loadEntry(job.entry, job.cwd);
+    return convergeDevJob(job, { config, root, entry }, report, signal);
+  };
+}
+
+/** `devWithDeps`, with a stubbed `appConvergeEntry` run through the `runDevConverge` seam by {@link inThisThread}. */
+function devInThisThread(input: DevInput, deps: OperationDeps) {
+  const { appConvergeEntry: entry, ...rest } = deps;
+  return devWithDeps(
+    input,
+    entry === undefined
+      ? rest
+      : { ...rest, runDevConverge: inThisThread(input.config.value, entry) },
+  );
 }
 
 // A caller passing no credentials leaves the token to the environment.
@@ -1967,7 +1988,7 @@ function devConfigWith(
 describe.skipIf(process.platform !== 'win32')('local operations on Windows', () => {
   test('dev and log return their platform refusal before touching the pipeline', async () => {
     const devResult = await silently(() =>
-      devWithDeps({ entry: 'service.ts', config: composerConfig(fakeConfig()) }, {}),
+      devInThisThread({ entry: 'service.ts', config: composerConfig(fakeConfig()) }, {}),
     );
     const logResult = await silently(() =>
       logWithDeps({ entry: 'service.ts', config: composerConfig(fakeConfig()) }, {}),
@@ -2002,7 +2023,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const requests: ConvergeRequest[] = [];
     let spawned = 0;
     const result = await silently(() =>
-      devWithDeps(
+      devInThisThread(
         {
           config: composerConfig(devConfigWith(runningAttachment, [], localContainer, preflight)),
           entry: app.entryPath,
@@ -2054,7 +2075,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       const app = makeAppDir('hello-dev');
       let converged = false;
       const result = await silently(() =>
-        devWithDeps(
+        devInThisThread(
           {
             config: composerConfig(
               devConfigWith(runningAttachment, [], localContainer, () =>
@@ -2114,7 +2135,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     };
 
     const result = await silently(() =>
-      devWithDeps(
+      devInThisThread(
         {
           config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
@@ -2140,7 +2161,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const stages: string[] = [];
 
     await silently(() =>
-      devWithDeps(
+      devInThisThread(
         {
           config: composerConfig(devConfigWith(linesAttachment([], []), environments)),
           entry: app.entryPath,
@@ -2175,7 +2196,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     fs.writeFileSync(path.join(devDir, 'environment-name'), 'dev\n');
 
     const result = await silently(() =>
-      devWithDeps(
+      devInThisThread(
         {
           config: composerConfig(devConfigWith(linesAttachment([], []), environments)),
           entry: app.entryPath,
@@ -2203,7 +2224,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const runs: { stage: string; cwd: string }[] = [];
 
     await silently(() =>
-      devWithDeps(
+      devInThisThread(
         {
           config: composerConfig(devConfigWith(linesAttachment([], []), environments)),
           entry: app.entryPath,
@@ -2250,7 +2271,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       let converged = false;
 
       const result = await silently(() =>
-        devWithDeps(
+        devInThisThread(
           {
             config: composerConfig(
               devConfigWith(linesAttachment([], []), environments, deserialize),
@@ -2297,7 +2318,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     };
 
     const result = await silently(() =>
-      devWithDeps(
+      devInThisThread(
         {
           config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
@@ -2330,7 +2351,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     };
 
     const result = await silently(() =>
-      devWithDeps(
+      devInThisThread(
         {
           config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
@@ -2368,7 +2389,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     };
 
     const result = await silently(() =>
-      devWithDeps(
+      devInThisThread(
         {
           config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
@@ -2413,7 +2434,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const configChanges = () => events.filter((event) => event.kind === 'config-changed');
 
     await silently(async () => {
-      const start = await devWithDeps(
+      const start = await devInThisThread(
         {
           config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
@@ -2477,7 +2498,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     };
 
     await silently(async () => {
-      const start = await devWithDeps(
+      const start = await devInThisThread(
         {
           config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
@@ -2542,7 +2563,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       endpoints: () => Promise.resolve([]),
       logs: async function* () {},
     };
-    const start = await devWithDeps(
+    const start = await devInThisThread(
       {
         config: composerConfig(devConfigWith(attachment)),
         entry: app.entryPath,
@@ -2641,7 +2662,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     let converges = 0;
 
     await silently(async () => {
-      const start = await devWithDeps(
+      const start = await devInThisThread(
         {
           config: composerConfig(devConfigWith(runningAttachment)),
           entry: app.entryPath,
@@ -2789,12 +2810,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     ).toBe(false);
   }, 15_000);
 
-  /**
-   * The app is imported once, in this process, and Node and Bun cache the
-   * import. A rebuild therefore cannot see an edit to a file that defines the
-   * app, so the session says so and pauses instead of converging the old one.
-   */
-  test('an edit to a file that defines the app is reported, and rebuilds stop until dev restarts', async () => {
+  test('an edit to a file that defines the app rebuilds and converges again', async () => {
     const app = makeAppDir('hello-dev');
     const events: DevEvent[] = [];
     let converges = 0;
@@ -2811,18 +2827,15 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       if (!start.ok) throw start.failure;
       fs.appendFileSync(app.entryPath, '// a topology edit\n');
       change();
-      change();
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitUntil(() => converges === 2);
       await start.value.stop();
     });
 
-    expect(events.filter((event) => event.kind === 'definition-changed')).toEqual([
-      { kind: 'definition-changed', files: [app.entryPath] },
-    ]);
-    expect(converges).toBe(1);
+    expect(converges).toBe(2);
+    expect(events.some((event) => event.kind === 'converge-failed')).toBe(false);
   }, 15_000);
 
-  test('an edit to any app file the entry loaded is reported, not only the entry and service files', async () => {
+  test('every app file the entry loaded is watched, not only the entry and service files', async () => {
     const app = makeAppDir('hello-dev');
     const helper = path.join(app.dir, 'inputs.ts');
     fs.writeFileSync(helper, 'export const inputs = {};\n');
@@ -2833,29 +2846,36 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         .replace('      inputs: {},', '      inputs,')
         .replace('\nexport default', "\nimport { inputs } from './inputs.ts';\nexport default"),
     );
-    const events: DevEvent[] = [];
+    let helperChange: (() => void) | undefined;
     let converges = 0;
 
     await silently(async () => {
-      const { start, change } = await devWithBuildWatch(
-        app,
-        async () => {
-          converges += 1;
-          return APPLIED;
+      const start = await devInThisThread(
+        {
+          config: composerConfig(devConfigWith(runningAttachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
         },
-        events,
+        {
+          runAssembler: fakeAssembler,
+          appConvergeEntry: appConvergeEntry(async () => {
+            converges += 1;
+            return APPLIED;
+          }),
+          watch: (targets, onChange) => {
+            if (targets.some((target) => target.paths.includes(helper))) helperChange = onChange;
+            return { ready: Promise.resolve(), stop: () => undefined };
+          },
+        },
       );
       if (!start.ok) throw start.failure;
-      fs.appendFileSync(helper, '// an edit\n');
-      change();
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      helperChange?.();
+      await waitUntil(() => converges === 2);
       await start.value.stop();
     });
 
-    expect(events.filter((event) => event.kind === 'definition-changed')).toEqual([
-      { kind: 'definition-changed', files: [helper] },
-    ]);
-    expect(converges).toBe(1);
+    expect(helperChange).toBeDefined();
+    expect(converges).toBe(2);
   }, 15_000);
 
   test.each([
@@ -2911,31 +2931,6 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     ]);
   }, 15_000);
 
-  test('a save that leaves the definition files unchanged still rebuilds', async () => {
-    const app = makeAppDir('hello-dev');
-    const events: DevEvent[] = [];
-    let converges = 0;
-
-    await silently(async () => {
-      const { start, change } = await devWithBuildWatch(
-        app,
-        async () => {
-          converges += 1;
-          return APPLIED;
-        },
-        events,
-      );
-      if (!start.ok) throw start.failure;
-      fs.writeFileSync(app.entryPath, fs.readFileSync(app.entryPath));
-      change();
-      await waitUntil(() => converges === 2);
-      await start.value.stop();
-    });
-
-    expect(events.some((event) => event.kind === 'definition-changed')).toBe(false);
-    expect(converges).toBe(2);
-  }, 15_000);
-
   describe('the prisma.config.ts watch', () => {
     const quietAttachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
@@ -2959,7 +2954,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         onError: ((error: unknown) => void) | undefined;
       }[] = [];
       let converges = 0;
-      const start = await devWithDeps(
+      const start = await devInThisThread(
         {
           config: composerConfig(devConfigWith(quietAttachment)),
           entry: app.entryPath,
@@ -3061,7 +3056,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const events: string[] = [];
 
     const result = await silently(async () => {
-      const start = await devWithDeps(
+      const start = await devInThisThread(
         {
           config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
@@ -3104,7 +3099,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const events: string[] = [];
 
     await silently(async () => {
-      const start = await devWithDeps(
+      const start = await devInThisThread(
         {
           config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
@@ -3156,7 +3151,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     let watches = 0;
 
     await silently(async () => {
-      const start = await devWithDeps(
+      const start = await devInThisThread(
         {
           config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
@@ -3194,7 +3189,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     };
 
     const result = await silently(async () => {
-      const start = await devWithDeps(
+      const start = await devInThisThread(
         {
           config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
@@ -3229,7 +3224,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     let convergeRan = false;
 
     const result = await silently(() =>
-      devWithDeps(
+      devInThisThread(
         {
           config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
@@ -3974,7 +3969,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
     const lowered: LowerOptions[] = [];
 
     await silently(async () => {
-      const start = await devWithDeps(
+      const start = await devInThisThread(
         {
           config: composerConfig(devServerConfigWith(attachment)),
           entry: app.entryPath,
@@ -4045,7 +4040,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
     let change: () => void = () => undefined;
 
     await silently(async () => {
-      const start = await devWithDeps(
+      const start = await devInThisThread(
         {
           config: composerConfig(devServerConfigWith(attachment)),
           entry: app.entryPath,
@@ -4086,7 +4081,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
     const attachment = fakeAttachment([], async function* () {});
 
     const result = await silently(() =>
-      devWithDeps(
+      devInThisThread(
         {
           config: composerConfig(
             devServerConfigWith({ ...attachment, serve: unused }, { reserve: false }),
@@ -4118,7 +4113,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
     let converges = 0;
 
     const result = await silently(() =>
-      devWithDeps(
+      devInThisThread(
         {
           config: composerConfig(devServerConfigWith(fakeAttachment([], async function* () {}))),
           entry: app.entryPath,
@@ -4162,7 +4157,7 @@ describe.skipIf(process.platform === 'win32')('dev() — dev servers (ADR-0056)'
     };
 
     const result = await silently(() =>
-      devWithDeps(
+      devInThisThread(
         {
           config: composerConfig(devServerConfigWith(attachment)),
           entry: app.entryPath,
@@ -4491,7 +4486,7 @@ describe.skipIf(process.platform === 'win32')(
       };
 
       const result = await silently(() =>
-        devWithDeps(
+        devInThisThread(
           { config: composerConfig(config), entry: app.entryPath, cwd: app.dir, detach: true },
           { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(async () => APPLIED) },
         ),
@@ -4518,7 +4513,7 @@ describe.skipIf(process.platform === 'win32')(
       const valuesChanges = () => events.filter((event) => event.kind === 'values-changed');
 
       await silently(async () => {
-        const start = await devWithDeps(
+        const start = await devInThisThread(
           {
             config: composerConfig({
               ...devConfigWith(runningAttachment),
@@ -4680,7 +4675,7 @@ describe.skipIf(process.platform === 'win32')(
       let stop: () => Promise<void> = async () => undefined;
 
       await silently(async () => {
-        const start = await devWithDeps(
+        const start = await devInThisThread(
           {
             config: composerConfig(configFor(preflight)),
             entry: app.entryPath,
@@ -4768,7 +4763,7 @@ describe.skipIf(process.platform === 'win32')(
       });
 
       const result = await silently(() =>
-        devWithDeps(
+        devInThisThread(
           {
             config: composerConfig({
               ...configFor(async () => ({
@@ -5036,7 +5031,7 @@ describe('the second process reads what the first process read', () => {
           { runAssembler: fakeAssembler, alchemy },
         ),
       dev: (dir: string) =>
-        devWithDeps(
+        devInThisThread(
           {
             config: composerConfig({ ...devConfigWith(attachment), config: [values] }),
             entry: path.join(dir, 'service.ts'),
@@ -5165,7 +5160,7 @@ describe('the second process reads what the first process read', () => {
       let started = false;
 
       const result = await silently(() =>
-        devWithDeps(
+        devInThisThread(
           {
             config: composerConfig({
               ...devConfigWith(attachment),
@@ -5240,7 +5235,7 @@ describe('the second process reads what the first process read', () => {
       let writtenDuringConverge: string[] | undefined;
 
       const result = await silently(() =>
-        devWithDeps(
+        devInThisThread(
           {
             config: composerConfig({
               ...devConfigWith(attachment),
@@ -5611,7 +5606,7 @@ describe('no known secret is printed', () => {
       const events: DevEvent[] = [];
 
       const result = await silently(() =>
-        devWithDeps(
+        devInThisThread(
           {
             config: composerConfig({
               ...devConfigWith(attachment),
@@ -5661,7 +5656,7 @@ describe('no known secret is printed', () => {
       const events: DevEvent[] = [];
 
       await silently(async () => {
-        const start = await devWithDeps(
+        const start = await devInThisThread(
           {
             config: composerConfig({
               ...devServerConfigWith(attachment),

@@ -19,6 +19,7 @@ export default defineConfig({
   ...baseConfig,
   entry: {
     family: 'src/exports/family.ts',
+    'dev-converge-worker': 'src/exports/dev-converge-worker.ts',
     testing: 'src/exports/testing.ts',
   },
   exports: false,
