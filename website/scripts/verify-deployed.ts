@@ -33,7 +33,7 @@ if (token === undefined || token.length === 0) {
 
 const client = createManagementApiClient({ token });
 
-async function findProjectId(name: string): Promise<string | undefined> {
+async function findProjectId(logicalId: string): Promise<string | undefined> {
   let cursor: string | undefined;
   for (;;) {
     const { data, error } = await client.GET('/v1/projects', {
@@ -42,7 +42,7 @@ async function findProjectId(name: string): Promise<string | undefined> {
     if (error !== undefined || data === undefined) {
       fail(`GET /v1/projects failed: ${JSON.stringify(error)}`);
     }
-    const match = data.data.find((p) => p.name === name);
+    const match = data.data.find((p) => p.logicalId === logicalId);
     if (match !== undefined) return match.id;
     if (!data.pagination.hasMore || data.pagination.nextCursor === null) return undefined;
     cursor = data.pagination.nextCursor;
@@ -51,7 +51,9 @@ async function findProjectId(name: string): Promise<string | undefined> {
 
 const projectId = await findProjectId(app.name);
 if (projectId === undefined) {
-  fail(`No project named '${app.name}' in this workspace — nothing has been deployed here.`);
+  fail(
+    `No project with the logical id '${app.name}' in this workspace — nothing has been deployed here.`,
+  );
 }
 
 const { data: services, error } = await client.GET('/v1/apps', {
@@ -61,12 +63,13 @@ if (error !== undefined || services === undefined) {
   fail(`GET /v1/apps?projectId=${projectId} failed: ${JSON.stringify(error)}`);
 }
 
-let matches = services.data.filter((s) => s.name === siteService.name);
+const siteAddress = `${app.name}.${siteService.name}`;
+let matches = services.data.filter((s) => s.logicalId === siteAddress);
 if (matches.length === 0) {
-  fail(`Project '${app.name}' has no '${siteService.name}' app.`);
+  fail(`Project '${app.name}' has no app with the logical id '${siteAddress}'.`);
 }
 if (matches.length > 1) {
-  // Same-named apps on other Branches belong to other environments;
+  // Apps with this logical id on other Branches belong to other environments;
   // production is the one on the project's default Branch.
   const { data: branches, error: branchesError } = await client.GET(
     '/v1/projects/{projectId}/branches',
@@ -79,7 +82,7 @@ if (matches.length > 1) {
   matches = matches.filter((s) => s.branchId === defaultBranchId);
   if (matches.length !== 1) {
     fail(
-      `Project '${app.name}' has ${matches.length} '${siteService.name}' apps on its default ` +
+      `Project '${app.name}' has ${matches.length} '${siteAddress}' apps on its default ` +
         'Branch, so production cannot be identified. Tear down the other environments ' +
         '(`DOCS_ENVIRONMENT=<name> pnpm run destroy` in website/) and re-run.\n' +
         matches.map((s) => `  - ${s.id} ${s.appEndpointDomain}`).join('\n'),
@@ -89,7 +92,7 @@ if (matches.length > 1) {
 
 const domain = matches[0]?.appEndpointDomain;
 if (domain === undefined || domain.length === 0) {
-  fail(`The '${siteService.name}' app has no endpoint domain yet.`);
+  fail(`The '${siteAddress}' app has no endpoint domain yet.`);
 }
 
 // appEndpointDomain may arrive with or without the scheme; tolerate either.

@@ -74,12 +74,6 @@ jobs:
       - name: Reset the production project (destroy-then-redeploy cutover)
         if: github.event_name == 'workflow_dispatch' && inputs.reset
         run: bun scripts/delete-project.ts composer-docs
-      # The production Project was deployed by a Composer version that kept
-      # deploy state elsewhere, so `prisma deploy` refuses it. Deleting it takes
-      # the site down; renaming it lets the deploy below create a fresh Project
-      # while the old site keeps serving at its own URL.
-      - name: One-off - retire the legacy docs Project by renaming it (remove once the deploy is green)
-        run: bun scripts/retire-legacy-project.ts composer-docs
       # The CLI is invoked directly rather than through the package's `deploy`
       # script, which sources a local .env that does not exist on a runner (the
       # credentials are already in env).
