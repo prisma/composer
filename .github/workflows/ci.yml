@@ -156,13 +156,19 @@ jobs:
         if: runner.os != 'Windows'
         env:
           STATE_TEST_DATABASE_URL: ${{ steps.postgres.outputs.connection-uri }}
-        run: pnpm turbo run test --filter='!@internal/local-target'
+        run: pnpm turbo run test --filter='!@internal/local-target' --filter='!@internal/prisma-cloud'
       # Same daemon-sharing reason as the Linux job: local-target runs alone after the rest.
       - name: Test local-target
         if: runner.os != 'Windows'
         env:
           STATE_TEST_DATABASE_URL: ${{ steps.postgres.outputs.connection-uri }}
         run: pnpm turbo run test --filter=@internal/local-target
+      # And so does the Prisma Cloud target, as in the Linux job.
+      - name: Test the Prisma Cloud target
+        if: runner.os != 'Windows'
+        env:
+          STATE_TEST_DATABASE_URL: ${{ steps.postgres.outputs.connection-uri }}
+        run: pnpm turbo run test --filter=@internal/prisma-cloud
       # Local dev/log are not supported on Windows.
       - name: Test changed packages on Windows
         if: runner.os == 'Windows'
