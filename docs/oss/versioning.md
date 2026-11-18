@@ -14,8 +14,11 @@ backwards-compatibility promise, and we use that latitude:
   include API removals, semantic changes, or authoring-contract changes.
 - **Releases are frequent.** The cadence is "ship a minor whenever the next batch of
   work is cohesive enough to warrant one", not a fixed schedule.
-- **There are no patch releases of older minors.** Once `0.2.0` ships, `0.1.x`
-  receives no further updates. You are expected to keep up rather than pin and wait.
+- **Older minors get patch releases only by exception.** Once `0.2.0` ships, `0.1.x`
+  normally receives no further updates, and you are expected to keep up rather than
+  pin and wait. Maintainers patch an older line when a fix has to reach the people
+  still on it, for example a change the platform depends on. Such a patch carries
+  only that fix.
 
 The promise we make instead: you can always read a single number — the root
 [`package.json`](../../package.json) `version` of any commit — and know exactly what
@@ -48,6 +51,10 @@ building on a false assumption.
 - **`dev`** — every push to `main` that doesn't change the root `version` produces a
   `<base>-dev.N` tarball under this tag. **No stability promise** — may be yanked freely.
 - **`beta`** — reserved for hand-cut release candidates via `workflow_dispatch`.
+- **`release-<major>.<minor>`** — the newest patch of an older line, for example
+  `release-0.38` for `0.38.1`. A patch never moves `latest` backwards. A caret range
+  (`^0.38.0`) resolves to the patch whatever its tag. A patch to the line `latest` is
+  on (`0.39.1` while `latest` is `0.39.0`) takes `latest` instead.
 
 ## Who can publish
 
@@ -59,9 +66,11 @@ building on a false assumption.
   [npm provenance attestation](https://docs.npmjs.com/generating-provenance-statements)
   tying it to this repository and the workflow run that produced it (provenance requires
   the repo to be public, which it is).
-- The workflow only produces a real publish from `main`. Dry-runs are permitted from any
-  branch via `workflow_dispatch` (see below); every step that mutates external state is
-  independently guarded.
+- The workflow only produces a real publish from `main` or from a push to a
+  `release/<major>.<minor>.x` branch. Pushing to a release branch must be restricted to
+  maintainers, as `main` is (a branch ruleset on `release/*`). Dry-runs are permitted
+  from any branch via `workflow_dispatch` (see below); every step that mutates external
+  state is independently guarded.
 
 ## Mechanism: how we deliver the contract
 
@@ -77,7 +86,9 @@ override the version and no separate release-manifest file.
 - [`scripts/determine-version.ts`](../../scripts/determine-version.ts) composes the
   version + dist-tag for a run: a push to `main` whose root `version` differs from the
   previous tip is a **release bump** → publish `<base>` under `latest` + a GitHub
-  Release; otherwise → `<base>-dev.N` under `dev`.
+  Release; otherwise → `<base>-dev.N` under `dev`. A push to `release/<major>.<minor>.x`
+  publishes only when it changes the root `version`, under the line's dist-tag, with a
+  GitHub Release; it never publishes a dev build.
 - [`scripts/check-publish-deps.mjs`](../../scripts/check-publish-deps.mjs) is a
   pre-publish gate: it packs every publishable tarball and fails the publish if any
   resolved `package.json` would carry a `workspace:` / `catalog:` specifier or a
@@ -104,6 +115,23 @@ publish trigger** — there is no separate dispatch step for a normal release.
 
 Between releases, every merge to `main` publishes a `<base>-dev.N` build under `dev` —
 useful for `npm install @prisma/composer@dev` reproductions.
+
+## Procedure: patch an older line
+
+1. If the line has no branch yet, create `release/<major>.<minor>.x` from its release
+   tag, for example `release/0.38.x` from `v0.38.0`. Creating it publishes nothing.
+2. In a fresh branch off the release branch, cherry-pick the fix. A line older than
+   this procedure also needs the commit that taught `publish.yml` and
+   `scripts/determine-version.ts` about release branches: the workflow that runs is the
+   one on the pushed branch.
+3. Bump the patch in the same branch: `node scripts/set-version.ts <major>.<minor>.<patch>`,
+   then `pnpm install --lockfile-only` to regenerate `pnpm-lock.yaml`.
+4. Open a PR into the release branch titled `chore(release): v<version>` that says what
+   the patch carries. CI runs normally.
+5. **Merge it.** The push changes the root version on the release branch, so the
+   `Publish to npm` workflow publishes `<version>` under `release-<major>.<minor>` (or
+   `latest`, see above) and cuts a GitHub Release whose notes say it is a patch for the
+   line.
 
 ## Validating publish changes
 
