@@ -55,3 +55,10 @@ Seen in QA on 2026-11-18: one project held a stack in `dante73-qa-token` and ano
 Wanted: decide whether `destroy` of `production` should refuse, or warn, when another environment in the project still has deployed resources.
 
 Origin: manual QA after the #431 merge.
+
+## Follow-ups from the review of the dev converge worker (#411)
+
+- **Core's `firstProcess*` and `SecondProcess*` names** (`LowerOptions.firstProcessNodeAddresses` and others) describe a mechanism only `destroy` still has. Renaming changes the converge contract shapes, so do it when `destroy` moves in process. Origin: review S08.
+- **`DevStep` ids are strings the command parses** (`dev.rebuild.N`), where `DeployStep` is structural. Origin: review S11.
+- **The main thread loads the app's whole converge entry only to check it** before anything local is created; the worker loads it again. A lighter check (the contract entry alone) would do. Origin: review S12.
+- **The session's own view of the app is the one from start.** Adding or removing a node needs `prisma dev` restarted. The worker could send back the plain facts the session needs (addresses, kinds, dev servers, watch paths). Origin: ADR-0067.

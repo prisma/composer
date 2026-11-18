@@ -69,7 +69,9 @@ each module's `module.ts`, each `service.ts` and their helpers (files in
 and applies the change: an edit to wiring, an input or a binding takes effect
 without a restart. An edit that adds or removes a service, a database or
 another node fails that rebuild with a message that says to restart `dev`;
-the running app is left as it was.
+the running app is left as it was. An edit that changes which platform
+variables your app reads pauses rebuilds, with a message, until you restart
+`dev`. A file that an edit newly imports is watched from then on.
 
 `Ctrl-C` stops your app's service processes and its local Postgres servers,
 and exits; so does `dev` ending on SIGTERM or a failure. The data stays, and
