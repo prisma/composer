@@ -19,13 +19,21 @@
  *                         Otherwise, `<base>-dev.N`, dist-tag `dev`
  *                          (N is the next available build number,
  *                          discovered by querying npm).
+ * - `push` to `release/<major>.<minor>.x` → a patch release for an older
+ *                          line, only when the push changed the root
+ *                          `version`: `<base>` under `release-<major>.<minor>`,
+ *                          or under `latest` when it patches the line
+ *                          `latest` is on. No dev builds
+ *                          (`planReleaseLinePublish`).
  * - `workflow_dispatch` → `<base>` (no suffix), dist-tag from
  *                          `INPUT_DIST_TAG` (defaults to `latest`).
  *                          Useful as a manual escape hatch (re-publish
  *                          after a transient failure, cut a beta).
  *
- * Outputs `version`, `tag`, and `devVersion` (empty unless the push is
- * a release bump) to `$GITHUB_OUTPUT` for downstream workflow steps.
+ * Outputs `publish` (`false` when nothing is published), `version`, `tag`,
+ * `stable` (`true` for a release with a GitHub Release: `latest` or a
+ * release line) and `devVersion` (empty unless the push is a release bump
+ * on `main`) to `$GITHUB_OUTPUT` for downstream workflow steps.
  */
 
 import { execFileSync, execSync } from 'node:child_process';
@@ -33,13 +41,20 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'pathe';
 import type { PreviousVersionLookup } from './determine-version-utils.ts';
-import { assertCanonicalBase, planPushPublish } from './determine-version-utils.ts';
+import {
+  assertCanonicalBase,
+  planPushPublish,
+  planReleaseLinePublish,
+  releaseLineOf,
+} from './determine-version-utils.ts';
 
 const PACKAGE_NAME = process.argv[2] ?? '@prisma/composer';
 
 interface VersionResult {
+  publish: boolean;
   version: string;
   tag: string;
+  stable: boolean;
   devVersion?: string;
 }
 
@@ -68,6 +83,10 @@ function run(command: string): string | undefined {
 
 function getLatestDevVersion(): string | undefined {
   return run(`npm view "${PACKAGE_NAME}" dist-tags.dev`);
+}
+
+function getLatestVersion(): string | undefined {
+  return run(`npm view "${PACKAGE_NAME}" dist-tags.latest`);
 }
 
 /**
@@ -101,7 +120,9 @@ function readPreviousRootVersion(): PreviousVersionLookup {
 function writeGitHubOutput(result: VersionResult): void {
   const outputFile = process.env.GITHUB_OUTPUT;
   if (outputFile) {
+    appendFileSync(outputFile, `publish<<EOF\n${String(result.publish)}\nEOF\n`);
     appendFileSync(outputFile, `version<<EOF\n${result.version}\nEOF\n`);
+    appendFileSync(outputFile, `stable<<EOF\n${String(result.stable)}\nEOF\n`);
     appendFileSync(outputFile, `tag<<EOF\n${result.tag}\nEOF\n`);
     appendFileSync(outputFile, `devVersion<<EOF\n${result.devVersion ?? ''}\nEOF\n`);
   }
@@ -124,12 +145,27 @@ switch (eventName) {
     // the dist-tag and cause `pnpm publish --tag ""` to fail downstream.
     // The workflow declares `dist-tag` with a `latest` default, so this
     // fallback is a defensive belt-and-braces.
-    result = { version: baseVersion, tag: inputDistTag || 'latest' };
+    {
+      const tag = inputDistTag || 'latest';
+      result = { publish: true, version: baseVersion, tag, stable: tag === 'latest' };
+    }
     break;
 
   case 'push': {
     const previous = readPreviousRootVersion();
-    result = planPushPublish(baseVersion, previous, getLatestDevVersion());
+    const branch = process.env.GITHUB_REF_NAME ?? '';
+    if (releaseLineOf(branch) !== undefined) {
+      const plan = planReleaseLinePublish(branch, baseVersion, previous, getLatestVersion());
+      result = { ...plan, stable: plan.publish };
+      if (!plan.publish) {
+        console.log(
+          `Release branch ${branch}: the root version did not change; nothing to publish.`,
+        );
+      }
+      break;
+    }
+    const plan = planPushPublish(baseVersion, previous, getLatestDevVersion());
+    result = { ...plan, publish: true, stable: plan.tag === 'latest' };
     if (result.tag === 'latest') {
       console.log(
         `Previous root version: ${previous.available ? (previous.version ?? '(unset)') : '(unreadable)'} → release bump detected.`,
