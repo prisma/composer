@@ -1711,7 +1711,7 @@ packages:
       effect: ^4.1.4
 
   '@alchemy.run/prisma@file:wip/alchemy-tarballs/alchemy.run-prisma-2.0.0-beta.87.tgz':
-    resolution: {integrity: sha512-8pCp+f1ePSWBwVP4crmv65Vs/M3arVEfYoshTik/l5p3tANmJyjGm74cs062L20F1AnNkVu5YcCWCF20eAgQEw==, tarball: file:wip/alchemy-tarballs/alchemy.run-prisma-2.0.0-beta.87.tgz}
+    resolution: {integrity: sha512-jPX8DjHd3wVZa354Jgewf//lIyVjPu1r2bmZbXB2xfs0UKrE4qs5PfWvkuWZwFC6HFKEyp1e17SoqzTwE/cIrg==, tarball: file:wip/alchemy-tarballs/alchemy.run-prisma-2.0.0-beta.87.tgz}
     version: 2.0.0-beta.87
     peerDependencies:
       '@effect/platform-bun': ^4.1.4
