@@ -2,7 +2,7 @@
 
 This is the whole design of the module input project, as settled with Will on 2026-10-29 and 2026-10-30, and extended on 2026-11-05 with platform variables (section 5) and secrets in the root's input (section 7). It is the authoritative statement of it. It describes how the system behaves, not how the code is arranged. Slices S2 to S5 build an earlier version of it; [plan.md](plan.md) says what is built and which slice builds each remaining change.
 
-On 2026-11-06 Will split platform variables into their own project. Their design is now [../platform-variables/design.md](../platform-variables/design.md), which supersedes sections 5, 8 and 9 of this file wherever they speak of platform variables, preflight filling or `envSecret()`. This file keeps the root's input, carried secrets and `secret(inner)`.
+On 2026-11-06 Will split platform variables into their own project. That work is merged, and its design is recorded in [the platform variables decision record](../../../docs/design/90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md), which supersedes sections 5, 8 and 9 of this file wherever they speak of platform variables, preflight filling or `envSecret()`. This file keeps the root's input, carried secrets and `secret(inner)`.
 
 The 2026-11-05 extension follows a platform change. Prisma Cloud keeps environment variables in the project, with a shared value per class and per-branch overrides, and a deploy may name a variable that has no value yet. Every deployment receives every variable of its class; neither the platform nor Composer isolates a service's environment on Prisma Cloud. Composer's part is to put the variable in the graph, as a node, and to record which service reads it.
 
@@ -181,7 +181,7 @@ A runtime value's real value at deploy is a pointer (section 3). The service rea
 
 ### Platform variables
 
-A value the platform owns, which a service reads at boot, is a **platform variable**: a node, `variable({ name, schema? })` or `variable.secret({ name })`, which only the root, written with `appRoot()`, may provision, and whose provisioned result is a runtime value. Its design is the [platform-variables project](../platform-variables/design.md). This project relies on it only for what section 4 says about runtime values.
+A value the platform owns, which a service reads at boot, is a **platform variable**: a node, `variable({ name, schema? })` or `variable.secret({ name })`, which only the root, written with `appRoot()`, may provision, and whose provisioned result is a runtime value. Its design is recorded in [the platform variables decision record](../../../docs/design/90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md). This project relies on it only for what section 4 says about runtime values.
 
 ### The other sources
 
