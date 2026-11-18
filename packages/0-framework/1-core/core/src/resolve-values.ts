@@ -709,7 +709,7 @@ export function resolveValues(input: {
       const kind = 'value' in field ? jsonInexactKind(field.value) : undefined;
       if (kind !== undefined) {
         throw new LoadError(
-          `${inputFieldLabel({ kind: 'input', module: rootModuleAddress(), path: field.path })} of root module "${rootModuleAddress()}" holds ${kind}, which JSON cannot hold exactly. \`destroy\` hands the root's input to its second process in a JSON file, so a field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.`,
+          `${inputFieldLabel({ kind: 'input', module: rootModuleAddress(), path: field.path })} of root module "${rootModuleAddress()}" holds ${kind}, which JSON cannot hold exactly. A field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.`,
         );
       }
     }

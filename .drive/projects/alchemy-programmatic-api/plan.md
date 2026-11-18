@@ -26,10 +26,18 @@ Each `prisma dev` converge runs `plan` / `apply` in-process through slice 2's fu
 - Builds on: slice 2.
 - Done when: local-dev integration tests pass; `prisma dev` writes no `alchemy.run.ts` and spawns no Alchemy child.
 
+## Slice 4: Deploy authenticates through `ctx.api`
+
+Merged with slice 2 in #405. See `slice-4-spec.md`.
+
+## Slice 5: Destroy in process
+
+Added on 2026-11-18, when Will decided the release waits for all three commands. See `slice-5-spec.md`.
+
 ## Close-out
 
 - [ ] Verify the spec's Project DoD.
 - [x] Swap the preview URL for the first Alchemy release containing the API: 2.0.0-beta.85, commit 398ed309 on slice 1, merged up. Core-concepts skill sentence updated.
-- [ ] Record destroy's migration or deletion in `.drive/deferred.md`.
+- [x] Destroy moves in process in slice 5.
 - [ ] Move the items in this project's `deferred.md` to `.drive/deferred.md` (or Linear) before deleting the project folder.
 - [ ] Delete `.drive/projects/alchemy-programmatic-api/`.

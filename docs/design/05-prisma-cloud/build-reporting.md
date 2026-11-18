@@ -181,7 +181,6 @@ from the platform.
 | Laptop | absent | Creates a build, `source: "cli"`, no run identity. Not idempotent: each retry is a new build, and failed local commands create build records. |
 | Generic CI on GitHub Actions | absent | Creates a build, `source: "ci"`, with a run identity. Idempotent per run attempt, and links the build to its repository. |
 | Prisma GitHub Action | present | Joins. Never re-creates, never touches `source` or `externalLogUrl`. |
-| Direct `alchemy deploy` of the generated stack file | absent | No CLI parent, so no build and no resource reports. |
 | `destroy` | either | Not reported. |
 | `prisma dev` | n/a | Never reports: local providers, no token. |
 | Programmatic deploy | either | Behaves as the laptop or CI case, according to its environment. |

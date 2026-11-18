@@ -13,7 +13,7 @@ rests on are recorded in
 [ADR-0006](../90-decisions/ADR-0006-every-node-is-named.md) (node names; the
 root's name names the application),
 [ADR-0007](../90-decisions/ADR-0007-deploy-drives-alchemy-through-a-generated-stack-file.md)
-(the generated stack file), and
+(the generated stack file, now superseded), and
 [ADR-0008](../90-decisions/ADR-0008-wrapper-inlines-everything-except-runtime-builtins.md)
 (wrapper inlining), and
 [ADR-0017](../90-decisions/ADR-0017-control-plane-loads-through-the-app-config.md)
@@ -39,7 +39,6 @@ covers those three
   that file's directory; `--entry <path>` overrides it, resolved against the
   working directory. With neither, the command fails with `CONFIG.ENTRY_MISSING`.
   The entry is an input to the tool, not an application fact ([ADR-0003](../90-decisions/ADR-0003-deploy-derives-everything-from-the-root-node.md)).
-  The generated stack file gets the entry as an absolute path.
 - **`prisma deploy list`** — list every node the app has deployed in an
   environment (default: `production`), one row per node of the application topology the
   last deploy wrote, in topology order. Each row has the node's address, its
@@ -96,20 +95,7 @@ that relative imports inside the entry graph may use `./x.js` or extensionless
 bun APIs can only deploy under bun, since loading the graph imports that module
 — the app's choice, not a CLI limit.
 
-**Where Alchemy runs.** `prisma deploy` runs Alchemy in the `prisma` process, through Alchemy's programmatic API (`alchemy/Alchemist`) ([ADR-0066](../90-decisions/ADR-0066-deploy-runs-alchemy-in-process.md)). It loads core's `lower()` and the converge from `@prisma/composer/internal/converge`, resolved from the directory of the app's `prisma.config.ts`, so they use the app's own install of `alchemy` and `effect`, the same one its extensions and providers come from. The `prisma` host's Composer calls that install, so the two must speak the same converge contract, a number the install exports from `@prisma/composer/internal/converge-contract`; their package versions may differ. A different contract fails with `DEPS.CONVERGE_CONTRACT_MISMATCH`, naming both contracts and both versions and saying which side to upgrade. An app whose `@prisma/composer` cannot be resolved, or predates that entry, fails with `DEPS.CONVERGE_UNRESOLVABLE`. Both fail before anything is created. Alchemy and `effect` load only behind the deploy operation's lazy executor import, so `prisma --version` never loads them.
-
-**The Alchemy child's runtime (`destroy`).** `destroy` still starts an Alchemy child; `prisma dev` runs each converge in a worker thread of its own process ([ADR-0067](../90-decisions/ADR-0067-prisma-dev-converges-in-a-worker-thread.md)). Composer runs the `bin` of the `alchemy`
-package that the app's `@prisma/composer` depends on, found from the app
-directory the way the generated stack file's own imports are, so the CLI and
-the stack code come from one install. It starts that bin with Node, as the
-bin's `#!/usr/bin/env node` line would: the host's own Node when the host runs
-under Node, and the first `node` on PATH when it runs under Bun
-(`DEPLOY.NODE_MISSING` when there is none). Composer does not pick the final
-runtime: Alchemy's launcher may move itself to Bun when the package-manager
-environment says Bun invoked it (`bunx`, `bun run`). The invocation table in
-[docs/guides/deploying.md](../../guides/deploying.md) is the user-facing
-result. The failure output prints the command line that was started, so a
-user can rerun it by hand (ADR-0007).
+**Where Alchemy runs.** `prisma deploy` runs Alchemy in the `prisma` process, through Alchemy's programmatic API (`alchemy/Alchemist`) ([ADR-0066](../90-decisions/ADR-0066-deploy-runs-alchemy-in-process.md)). It loads core's `lower()` and the converge from `@prisma/composer/internal/converge`, resolved from the directory of the app's `prisma.config.ts`, so they use the app's own install of `alchemy` and `effect`, the same one its extensions and providers come from. The `prisma` host's Composer calls that install, so the two must speak the same converge contract, a number the install exports from `@prisma/composer/internal/converge-contract`; their package versions may differ. A different contract fails with `DEPS.CONVERGE_CONTRACT_MISMATCH`, naming both contracts and both versions and saying which side to upgrade. An app whose `@prisma/composer` cannot be resolved, or predates that entry, fails with `DEPS.CONVERGE_UNRESOLVABLE`. Both fail before anything is created. Alchemy and `effect` load only behind the deploy operation's lazy executor import, so `prisma --version` never loads them. The `destroy` operation runs Alchemy the same way, in the process that calls it, and `prisma dev` runs each converge in a worker thread of its own process ([ADR-0067](../90-decisions/ADR-0067-prisma-dev-converges-in-a-worker-thread.md)). No command starts the Alchemy CLI, so Alchemy runs under whatever runtime the calling process runs under. The invocation table in [docs/guides/deploying.md](../../guides/deploying.md) is the user-facing result.
 
 ## The pipeline
 
@@ -158,8 +144,7 @@ user can rerun it by hand (ADR-0007).
    `<app>`/`<environment>`" rather than creating one. What resolving a container
    means is entirely the extension's own business — the CLI holds the result
    as an opaque value. See § Environments and containers. The one thing the
-   CLI checks is that each container, rebuilt the way the Alchemy child will
-   rebuild it, names the environment it asked for. The CLI passes the
+   CLI checks is that each container, rebuilt from its serialized form, names the environment it asked for. The CLI passes the
    container's `serialize()` output to the same extension's `deserialize` and
    compares the result's `input.environment` with the name. An extension older
    than the running Composer keeps the input it is given, but resolves from a
@@ -183,7 +168,7 @@ user can rerun it by hand (ADR-0007).
    - **Process state.** For the length of the plan and apply, `deploy` sets each reporter's variables in `process.env`, and changes to the deploy's working directory when the process is elsewhere, because Alchemy reads `.env` and keeps `.alchemy` there. It restores both on every exit path. One process runs one converge at a time, across every install it loads (`DEPLOY.CONVERGE_RUNNING`), and a worker thread cannot change directory (`DEPLOY.WORKER_THREAD`).
    - **Credentials.** The command passes the engine's `ctx.api` and the active credential's workspace as the operation's `credentials`, and `lower()` receives them as `LowerOptions.credentials`. Every Management API request the deploy makes goes through that client, which sets the bearer token and refreshes it: Composer's own resources call it, and Alchemy's Prisma providers and state store reach it through an Effect `HttpClient` that forwards Management API requests to it without their own `Authorization` header and sends other hosts (presigned upload URLs) to node's transport. The client's host comes from `PRISMA_MANAGEMENT_API_URL`; a `PRISMA_API_URL` that names another host fails the deploy with `DEPLOY.MANAGEMENT_API_URL_CONFLICT` before anything is created. No token reaches Composer's code and none is written into `process.env`, so a `prisma login` session deploys like `PRISMA_SERVICE_TOKEN` ([ADR-0066](../90-decisions/ADR-0066-deploy-runs-alchemy-in-process.md)). A caller of the operation that passes no credentials gets a client built from `PRISMA_SERVICE_TOKEN`.
 
-   `destroy` writes the pipeline's results as a runnable stack module at `.prisma-composer/alchemy.run.ts` and drives the `alchemy` CLI against it (ADR-0007), started as § Runtime describes, carrying every resolved container across to the child as one environment variable per extension — content the CLI writes but never reads (ADR-0038). `alchemy destroy` re-imports and re-evaluates the same stack, so its target reconstruction needs the containers. The generated file and Alchemy's state live in the process's working directory — tool state lives where you run the tool, like any other CLI (ADR-0004). Beside it the CLI writes the app configuration file, `.prisma-composer/app-configuration-<pid>-<uuid>.json`, mode 0600, and deletes it when the run ends. It holds what Load read from the app configuration and the first process's node addresses; it is not `prisma.config.ts`. The CLI passes its path in `PRISMA_COMPOSER_APP_CONFIGURATION_FILE`. The second process reads it, runs no adapter, and refuses a graph whose node addresses differ from the first process's. It never receives the app secrets. The CLI refuses to write the file when any value in it contains a known secret (`CONFIG.SECRET_AS_PLAIN_VALUE`). It also deletes the file when its process exits. At the start of each `deploy` and `destroy` it deletes the app configuration files an earlier run left in `.prisma-composer/`, when the process id in the file name is not running and the file is older than ten minutes. The CLI engine gives the child the terminal, so its output is not redacted; Composer redacts its failure cause. `deploy` writes no app configuration file: it has no second process, and `lower()` receives what Load read as a value, with the graph's node addresses, so the lowering still refuses a graph whose addresses differ. Before it creates anything, `deploy` refuses a plain value Load read that contains a known secret (`CONFIG.SECRET_AS_PLAIN_VALUE`), because that value goes to the platform as plain configuration.
+   `destroy` takes the same path with `operation: 'destroy'` ([ADR-0068](../90-decisions/ADR-0068-destroy-runs-alchemy-in-process.md)): it loads the app's converge entry before anything else, locates each container, calls `lower()` with the located containers, an empty preflight payload map, the caller's credentials and the graph's node addresses, and plans and applies in the calling process. It reports the same steps as `deploy`, without `preflight`, and its events are redacted the same way. Its teardown and container removal run only after the converge applied. No command writes `.prisma-composer/alchemy.run.ts` or an app configuration file, and none starts the Alchemy CLI. Alchemy's state lives in the process's working directory — tool state lives where you run the tool, like any other CLI (ADR-0004). Before it creates anything, `deploy` refuses a plain value Load read that contains a known secret (`CONFIG.SECRET_AS_PLAIN_VALUE`), because that value goes to the platform as plain configuration. `destroy` sends no configuration and makes no such check.
 
 The pass that assembles a service is the same pass that lowers it, so the
 correlation between services and their built bundles never exists as
@@ -208,7 +193,7 @@ inputs carry the same `environment`.
   ([ADR-0038](../90-decisions/ADR-0038-containers-are-an-extension-descriptor.md)).
   The CLI resolves every configured extension's container before Alchemy runs
   (pipeline step 8) and holds each result as an opaque value.
-- **Containers reach the lowering as values.** `deploy` hands each resolved container to `lower()` directly. `prisma dev` sends each container to its converge's worker thread in the text form the extension's `serialize()` produced, in memory. For `destroy`, which starts an Alchemy child, each container crosses to the child as one environment variable, named from the extension's id and holding whatever that extension's own `serialize()` produced; the child reads it back and calls the same extension's `deserialize`. The transport is content-blind: the CLI never reads the value, and an extension never touches `process.env` directly — it receives its container as a parameter everywhere. Preflight payloads travel the same two ways (`LowerOptions.preflightPayloads` for `deploy`) and reach the lowering as `LowerContext.preflight`. Pass both `containers` and `preflightPayloads`, or neither. When both are absent, `lower()` reads both from the environment transports through `transportedLowerInputs(config)`. When exactly one is passed, `lower()` throws. The generated stack file passes neither.
+- **Containers reach the lowering as values.** `deploy` and `destroy` hand each resolved container to `lower()` directly. `prisma dev` sends each container to its converge's worker thread in the text form the extension's `serialize()` produced, in memory, and the worker calls the same extension's `deserialize`. An extension never touches `process.env` for its container: it receives it as a parameter everywhere. Preflight payloads reach the lowering the same way (`LowerOptions.preflightPayloads`) and each extension reads its own as `LowerContext.preflight`. Both options are required; `destroy` passes an empty payload map.
 - **State rides the container.** `PrismaAppConfig.state` names its owning
   extension; core hands that extension's own resolved container to
   `state.create()`, so the state layer is built from it rather than from the
@@ -298,7 +283,7 @@ them:
 | A config adapter throws or returns something other than an object (`CONFIG.ADAPTER_FAILED`, `CONFIG.ADAPTER_INVALID`) | which list and position, and the fix |
 | Alchemy's plan or apply failed (`DEPLOY.ENGINE_FAILED`) | the errors Alchemy failed with |
 | Ctrl-C during the plan or apply (`DEPLOY.INTERRUPTED`) | to deploy again; the lease is already released |
-| `deploy`, before anything is created, or `destroy` or `prisma dev`, before the app configuration file is written: a root input value, or under `prisma dev` a plain platform variable's value, holds a known secret (`CONFIG.SECRET_AS_PLAIN_VALUE`). `destroy` reads no app secrets, so it knows a secret only when the app configuration holds its value | which root input field, or under `prisma dev` which plain platform variable, holds a known secret, and the secrets key whose value matched, never the value; a secret of eight characters or more counts anywhere in a value, a shorter one only as the whole value. The fix: `Pass the value of the platform secret "<name>" to where this value is used, or give this plain value text that does not contain the value of "<name>".` For a plain platform variable under `prisma dev`, the fix is to keep the secret's value out of the variable or give the variable a different value |
+| `deploy`, before anything is created, or `prisma dev`, before it converges: a root input value, or under `prisma dev` a plain platform variable's value, holds a known secret (`CONFIG.SECRET_AS_PLAIN_VALUE`). `destroy` does not make this check | which root input field, or under `prisma dev` which plain platform variable, holds a known secret, and the secrets key whose value matched, never the value; a secret of eight characters or more counts anywhere in a value, a shorter one only as the whole value. The fix: `Pass the value of the platform secret "<name>" to where this value is used, or give this plain value text that does not contain the value of "<name>".` For a plain platform variable under `prisma dev`, the fix is to keep the secret's value out of the variable or give the variable a different value |
 
 ## Out of scope (designed around)
 
@@ -324,11 +309,9 @@ them:
   `--stage` — the environment's Branch id, which for `production` is the
   project's default Branch id. This pins the deploy-state scope to the Branch
   instead of Alchemy's `dev_$USER` default, so it never varies by machine.
-  Alchemy is ALWAYS given an explicit stage (`stage` on `Alchemist.plan`, `--stage` for the child): the
+  Alchemy is ALWAYS given an explicit stage (`stage` on `Alchemist.plan`): the
   container-supplied `alchemyStage` when there is one, else the environment
-  name. Every environment has a name, so there is always a value. The generated
-  stack file carries neither the environment nor any resolved container
-  (ADR-0007).
+  name. Every environment has a name, so there is always a value.
 
 ## Known limitations
 
@@ -358,4 +341,4 @@ them:
   (§ Environments and containers).
 - [ADR-0059](../90-decisions/ADR-0059-a-deployment-environment-is-called-an-environment.md)
   — the term is environment.
-- [ADR-0038](../90-decisions/ADR-0038-containers-are-an-extension-descriptor.md) — the container descriptor and the opaque parent→child transport (pipeline steps 8 and 10, § Environments and containers).
+- [ADR-0038](../90-decisions/ADR-0038-containers-are-an-extension-descriptor.md) — the container descriptor and the opaque container value (pipeline steps 8 and 10, § Environments and containers).
