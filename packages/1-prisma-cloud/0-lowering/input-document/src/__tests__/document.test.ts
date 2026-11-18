@@ -7,6 +7,7 @@ import {
   platformMarker,
   readDocument,
   unescapeKey,
+  type VariableJsonSchema,
   withUnsetVariables,
 } from '../exports/index.ts';
 
@@ -19,6 +20,12 @@ describe('platformMarker', () => {
   test('carries secret: true only for a secret', () => {
     expect(platformMarker('X', true)).toEqual({ $platform: { name: 'X', secret: true } });
     expect(platformMarker('X', false)).toEqual({ $platform: { name: 'X' } });
+  });
+
+  test('carries the schema of a plain variable that has one', () => {
+    expect(platformMarker('SMTP_PORT', false, { type: 'number' })).toEqual({
+      $platform: { name: 'SMTP_PORT', schema: { type: 'number' } },
+    });
   });
 });
 
@@ -54,6 +61,27 @@ describe('collectPlatformMarkers', () => {
     expect(() => collectPlatformMarkers({ a: { $platform: 'X' } })).toThrow(
       'the input document holds a malformed $platform marker at "a"',
     );
+  });
+
+  test('a marker with a schema is collected as a plain variable', () => {
+    expect(
+      collectPlatformMarkers({ port: platformMarker('SMTP_PORT', false, { type: 'number' }) }),
+    ).toEqual([{ name: 'SMTP_PORT', path: 'port', secret: false, inArray: false }]);
+  });
+
+  test('a marker with both secret and schema, or with a mixed schema, is refused as malformed', () => {
+    const malformed = [
+      { $platform: { name: 'X', secret: true, schema: { type: 'number' } } },
+      { $platform: { name: 'X', schema: { anyOf: [{ type: 'string' }, { type: 'number' }] } } },
+      { $platform: { name: 'X', schema: {} } },
+      { $platform: { name: 'X', schema: true } },
+      { $platform: { name: 'X', schema: 'number' } },
+    ];
+    for (const marker of malformed) {
+      const message = 'the input document holds a malformed $platform marker at "port"';
+      expect(() => collectPlatformMarkers({ port: marker })).toThrow(message);
+      expect(() => read({ port: marker }, { X: '1' })).toThrow(message);
+    }
   });
 });
 
@@ -137,5 +165,21 @@ describe('describeDocument', () => {
     ).toBe(
       '{"greeting":"hello","key":$platform STRIPE_SECRET_KEY,"list":[1,$generated COMPOSER_WEB_TOKEN_GENERATED]}',
     );
+  });
+
+  test('shows the word for a plain variable schema in brackets', () => {
+    const shown = (schema: VariableJsonSchema) =>
+      describeDocument(platformMarker('SMTP_PORT', false, schema));
+    expect(shown({ type: 'number' })).toBe('$platform SMTP_PORT (number)');
+    expect(shown({ type: 'string', format: 'email' })).toBe('$platform SMTP_PORT (string)');
+    expect(shown({ type: ['number', 'null'] })).toBe('$platform SMTP_PORT (number | null)');
+    expect(shown({ enum: ['a', 'b'] })).toBe('$platform SMTP_PORT (text)');
+    expect(shown({ anyOf: [{ type: 'number' }, { type: 'null' }] })).toBe(
+      '$platform SMTP_PORT (json)',
+    );
+    expect(shown({ $ref: '#/$defs/d0', $defs: { d0: { type: 'object' } } })).toBe(
+      '$platform SMTP_PORT (json)',
+    );
+    expect(describeDocument(platformMarker('SMTP_PORT', false))).toBe('$platform SMTP_PORT');
   });
 });

@@ -155,37 +155,18 @@ In code the type is `Value<T>`, and `RealValuesOf<D>` is the tuple of real-value
 
 ### RuntimeValue
 
-A [value](#value) whose data exists only on the platform the app is deployed to: the service reads it at boot. A platform variable node's value, `generatedParam()` and `serviceOrigin()` give one. In code a runtime value is `RuntimeValue<T>`, which is `Value<Pointer<T>>`.
+A [value](#value) whose data exists only on the platform the app is deployed to: the service reads it at boot. A platform variable node's value, `generatedParam()` and `serviceOrigin()` give one. In code a runtime value is `RuntimeValue<T>`, which is `Value<Pointer<T>>`. `T` is the data the service receives: `string` for `serviceOrigin()`, and for a plain platform variable the type its `schema` gives, such as `RuntimeValue<number>` for `variable({ name: 'SMTP_PORT', schema: type('number') })`.
 
 At deploy its real value is a **pointer**: an object that names the [variable on the platform](#a-variable-on-the-platform) holding the data. For a platform variable node's value that is the platform variable; for `generatedParam()` and `serviceOrigin()` it is one of Composer's own `COMPOSER_` rows. The deploy writes the pointer into the service's input document, and the service reads the variable at boot. A pointer has one of two kinds, which it records in its data:
 
 - a **secret pointer**, typed `Pointer<SecretString>`, from a platform secret's value and a redacted `generatedParam()`;
-- a **plain pointer**, typed `Pointer<string>`, from a plain platform variable's value, `serviceOrigin()` and a plain `generatedParam()`.
+- a **plain pointer**, typed `Pointer<T>` for the data type `T` its source gives, from a plain platform variable's value, `serviceOrigin()` and a plain `generatedParam()`.
 
-A pointer is typed by the variable's text, so every plain pointer is a
-`Pointer<string>`. `isSecretPointer(x)` and `isPlainPointer(x)` from
-`@prisma/composer` tell the kinds apart. A schema may return a copy of a
-pointer: ArkType copies its input when a transform runs in it or when it
-deletes undeclared keys. The copy keeps the pointer's kind and the variable
-it names, and Composer treats it as the same pointer. A pointer throws when
-code turns it into text or a number. A `resolve()` cannot list a runtime
-value, so its function never receives a pointer.
+A pointer is typed by its source. `serviceOrigin()` and a plain `generatedParam()` give a `Pointer<string>`. A plain platform variable's value gives a `Pointer<T>`, where `T` is its schema's output type, or `string` when it has no schema. `isSecretPointer(x)` from `@prisma/composer` narrows to `Pointer<SecretString>`, and `isPlainPointer(x)` to `PlainPointer`, a plain pointer of any data type. A schema may return a copy of a pointer: ArkType copies its input when a transform runs in it or when it deletes undeclared keys. The copy keeps the pointer's kind and the variable it names, and Composer treats it as the same pointer. A pointer throws when code turns it into text or a number. A `resolve()` cannot list a runtime value, so its function never receives a pointer.
 
 ### `field()`
 
-`field(inner)`, from `@prisma/composer/arktype` or `@prisma/composer/zod`,
-wraps the schema of one leaf field of an input schema. A **wrapped field**
-accepts what `inner` accepts and a plain pointer, so it also takes a runtime
-value with a plain pointer. Its input type is `In | Pointer<In>` and its
-output type `Out | Pointer<In>`, where `In` and `Out` are `inner`'s. A
-**plain field** is written without `field()`: the author's request for
-deploy-time data, and the kind of field a `resolve()` computes with, since a
-wrapped field's real value may be a pointer. A secret field is
-`secretString()`, which accepts a secret box or a secret pointer and needs no
-`field()`. `field()` wraps leaves only: an object field stays a plain object
-schema whose leaves are wrapped. For another Standard Schema library,
-`@prisma/composer` exports `Pointer`, `isPlainPointer()` and
-`isSecretPointer()`, with which an author writes the same two helpers. A service reads a wrapped field as `Out`: `service.input()` returns the schema's output with every pointer removed, because at boot each pointer has been replaced by the text of the variable it names.
+`field(inner)`, from `@prisma/composer/arktype` or `@prisma/composer/zod`, wraps the schema of one field of an input schema. A **wrapped field** accepts what `inner` accepts and a plain pointer, so it also takes a runtime value with a plain pointer. Its input type is `In | Pointer<In>` and its output type `Out | Pointer<In>`, where `In` and `Out` are `inner`'s. A wrapped field holds the whole value one source supplies: text, a number, a boolean, or an object or array when a platform variable's schema says so, so `inner` may be an object schema. A **plain field** is written without `field()`: the author's request for deploy-time data, and the kind of field a `resolve()` computes with, since a wrapped field's real value may be a pointer. A secret field is `secretString()`, which accepts a secret box or a secret pointer and needs no `field()`. For another Standard Schema library, `@prisma/composer` exports `Pointer`, `PlainPointer`, `isPlainPointer()` and `isSecretPointer()`, with which an author writes the same two helpers. A service reads a wrapped field as `Out`: `service.input()` returns the schema's output with every pointer removed, because at boot each pointer has been replaced by the value of the variable it names.
 
 ### Platform variable
 
@@ -193,7 +174,19 @@ A variable on the platform that a service reads by name at boot. The app declare
 
 ### Platform variable node
 
-The node that declares a [platform variable](#platform-variable), built with `variable({ name })` or `variable.secret({ name })` from `@prisma/composer-prisma-cloud` and provisioned in the [app root](#app-root). `provision()` returns the variable's value, with `id` on it, and the root passes that value down through module inputs to the services that read it. The value goes into a field of a service's or a module's `input` only, never a per-key param. It is a [value resource](#value-resource) of type `platform-variable`: it creates nothing, writes no row, and is not sent to the application topology. Its default provision id is the variable's name in camel case (`EMAIL_FROM` gives `emailFrom`). The loaded graph lists every node and, in `valueReads`, each service that reads it and the path in its input binding ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)).
+The node that declares a [platform variable](#platform-variable), built with `variable({ name })` or `variable.secret({ name })` from `@prisma/composer-prisma-cloud` and provisioned in the [app root](#app-root). `variable({ name, schema })` also says what the variable's text holds: `schema` is a schema from a library that implements Standard JSON Schema, such as ArkType or Zod, and the node keeps the plain JSON Schema it emits, reduced to the keywords that validate, in its `props`. A schema that accepts only text gives the text; any other schema reads the text as JSON. Without `schema`, the value is the text. `variable.secret()` takes no schema. `provision()` returns the variable's value, with `id` on it, and the root passes that value down through module inputs to the services that read it. The value goes into a field of a service's or a module's `input` only, never a per-key param. It is a [value resource](#value-resource) of type `platform-variable`: it creates nothing, writes no row, and is not sent to the application topology. Its default provision id is the variable's name in camel case (`EMAIL_FROM` gives `emailFrom`). The loaded graph lists every node and, in `valueReads`, each service that reads it and the path in its input binding ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)).
+
+### `$platform` marker
+
+What the deploy writes in a service's input document in place of a platform variable's value: `{ "$platform": { "name": "SMTP_PORT" } }`. A platform secret's marker adds `"secret": true`. The marker of a plain variable declared with a `schema` adds `"schema"`, the variable's JSON Schema, and boot uses it to decode and validate the variable's text. A marker with both `secret` and `schema`, or whose schema accepts both text and other values, is malformed and refused wherever a document is read. See [ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md).
+
+### The variable's JSON Schema
+
+The plain JSON Schema a [platform variable node](#platform-variable-node) keeps in its `props` as `schema`, when `variable()` is given one. The constructor asks the schema's library for the JSON Schema it emits through Standard JSON Schema, keeps only the keywords of draft 2020-12 that validate, and renames its `$defs` entries `d0`, `d1` and so on. The [`$platform` marker](#platform-marker) carries it, and boot and `prisma dev` validate the variable's decoded value against it ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)). In code: `VariableJsonSchema`.
+
+### Kind of a variable's JSON Schema
+
+What decides how a typed platform variable's text is read, decided from [the variable's JSON Schema](#the-variables-json-schema) alone by one function, `schemaKind()`. A **text-only** schema accepts only text, such as a string or a string enum, and the value is the text exactly. A **never-text** schema accepts no text, such as a number, a boolean, an object, an array or `number | null`, and the text is read as JSON. A **mixed** schema accepts both, or its kind cannot be told, such as `string | number`, `string | null` or an empty schema; the constructor refuses it, and a marker that holds one is malformed ([ADR-0064](../90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)).
 
 ### Platform secret
 

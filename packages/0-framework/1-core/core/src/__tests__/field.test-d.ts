@@ -14,6 +14,7 @@ import type {
   ModuleInputField,
   ModuleNode,
   PlainData,
+  PlainPointer,
   Pointer,
   RuntimeValue,
   SecretString,
@@ -135,6 +136,23 @@ test('in a module body a wrapped field is a value of Out | Pointer<In>', () => {
   });
 });
 
+test('in a module body a wrapped object field is one field, with no nested fields', () => {
+  const smtp = { user: 'string', port: 'number' } as const;
+  module('m', { input: type({ smtp: arkField(type(smtp)), plain: smtp }) }, ({ input }) => {
+    expectTypeOf(input.smtp).toEqualTypeOf<
+      ModuleInputField<{ user: string; port: number } | Pointer<{ user: string; port: number }>>
+    >();
+    expectTypeOf(input.plain.user).toEqualTypeOf<ModuleInputField<string>>();
+    // @ts-expect-error a wrapped object field may be a pointer at deploy, so it has no nested fields
+    void input.smtp.user;
+  });
+  const zodSmtp = z.object({ user: z.string() });
+  module('m', { input: z.object({ smtp: zodField(zodSmtp) }) }, ({ input }) => {
+    // @ts-expect-error a wrapped object field may be a pointer at deploy, so it has no nested fields
+    void input.smtp.user;
+  });
+});
+
 test("a wrapped field's binding takes a literal, a deploy-time value and a plain runtime value", () => {
   module('shop', ({ provision }) => {
     provision(arkChild, { id: 'a', input: { from: 'x', port: '1', host: 'h', key: secretValue } });
@@ -216,10 +234,17 @@ test('RuntimeValue<T> is Value<Pointer<T>>', () => {
   expectTypeOf<RuntimeValue<string>>().toEqualTypeOf<Value<Pointer<string>>>();
 });
 
-test('isPlainPointer() narrows to Pointer<string>, isSecretPointer() to Pointer<SecretString>', () => {
+test('isPlainPointer() narrows to PlainPointer, isSecretPointer() to Pointer<SecretString>', () => {
   const x: unknown = undefined;
-  if (isPlainPointer(x)) expectTypeOf(x).toEqualTypeOf<Pointer<string>>();
+  if (isPlainPointer(x)) expectTypeOf(x).toEqualTypeOf<PlainPointer>();
   if (isSecretPointer(x)) expectTypeOf(x).toEqualTypeOf<Pointer<SecretString>>();
+});
+
+test('a plain pointer of any data type is a PlainPointer, and a secret pointer is not', () => {
+  expectTypeOf<Pointer<string>>().toExtend<PlainPointer>();
+  expectTypeOf<Pointer<number>>().toExtend<PlainPointer>();
+  expectTypeOf<Pointer<{ readonly port: number }>>().toExtend<PlainPointer>();
+  expectTypeOf<Pointer<SecretString>>().not.toExtend<PlainPointer>();
 });
 
 test('the two kinds of pointer do not fit each other', () => {

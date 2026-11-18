@@ -1,3 +1,4 @@
+import { inputDocumentRuntimeDependencies } from '@internal/input-document/bundling';
 import { baseConfig } from '@internal/tsdown-config';
 import { defineConfig } from 'tsdown';
 
@@ -35,6 +36,7 @@ export default defineConfig([
     external: [/^bun$/, /^bun:/],
     noExternal: [
       /^@internal\//,
+      ...inputDocumentRuntimeDependencies,
       // `@prisma/orm-*` (the Prisma ORM shells) are excluded: this entrypoint
       // must not carry the ORM, which the app resolves from its own facade.
       /^@prisma\/(?!orm-)/,
@@ -68,6 +70,7 @@ export default defineConfig([
     external: [/^bun$/, /^bun:/],
     noExternal: [
       /^@internal\//,
+      ...inputDocumentRuntimeDependencies,
       // The local bootstrap runs the real PN dbInit path, so the control
       // client (and the rest of the @prisma/orm-* graph it reaches) must ride
       // inside the bundle — consumers never resolve those packages themselves.

@@ -1,3 +1,4 @@
+import { inputDocumentRuntimeDependencies } from '@internal/input-document/bundling';
 import { baseConfig } from '@internal/tsdown-config';
 import { defineConfig } from 'tsdown';
 
@@ -21,6 +22,12 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [/^@internal\//, /^@prisma\/(?!orm-)/, /^arktype/, /^@standard-schema\//],
+    noExternal: [
+      /^@internal\//,
+      ...inputDocumentRuntimeDependencies,
+      /^@prisma\/(?!orm-)/,
+      /^arktype/,
+      /^@standard-schema\//,
+    ],
   },
 ]);

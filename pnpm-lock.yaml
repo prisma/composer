@@ -926,6 +926,10 @@ importers:
         version: 6.0.3
 
   packages/1-prisma-cloud/0-lowering/input-document:
+    dependencies:
+      '@cfworker/json-schema':
+        specifier: 4.1.6
+        version: 4.1.6
     devDependencies:
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
@@ -1158,6 +1162,9 @@ importers:
       vitest:
         specifier: ^5.0.4
         version: 5.0.4(@types/node@26.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
   packages/1-prisma-cloud/2-shared-modules/auth:
     dependencies:
@@ -1201,6 +1208,9 @@ importers:
         specifier: 8.22.0
         version: 8.22.0
     devDependencies:
+      '@internal/input-document':
+        specifier: workspace:0.39.0
+        version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
@@ -1244,6 +1254,9 @@ importers:
         specifier: ^2.2.3
         version: 2.2.7
     devDependencies:
+      '@internal/input-document':
+        specifier: workspace:0.39.0
+        version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
@@ -1284,6 +1297,9 @@ importers:
         specifier: ^9.0.3
         version: 9.0.3
     devDependencies:
+      '@internal/input-document':
+        specifier: workspace:0.39.0
+        version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
@@ -1327,6 +1343,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.1085.0
         version: 3.1087.0
+      '@internal/input-document':
+        specifier: workspace:0.39.0
+        version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
@@ -1373,6 +1392,9 @@ importers:
       '@durable-streams/server-conformance-tests':
         specifier: 0.2.3
         version: 0.2.3(@types/node@26.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@internal/input-document':
+        specifier: workspace:0.39.0
+        version: link:../../0-lowering/input-document
       '@internal/tsdown-config':
         specifier: workspace:0.39.0
         version: link:../../../0-framework/0-foundation/tsdown-config
@@ -1622,6 +1644,9 @@ importers:
       '@prisma/orm-postgres':
         specifier: 8.0.0-rc.24
         version: 8.0.0-rc.24(@prisma/cli-engine@0.10.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5))(magicast@0.5.5)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
       '@types/node':
         specifier: ^26.0.1
         version: 26.1.1
@@ -1996,6 +2021,9 @@ packages:
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
+
+  '@cfworker/json-schema@4.1.6':
+    resolution: {integrity: sha512-YzVGTHXf4bzlyAL5KAvHYCdNbbt6zM5cYkAgxqxQPDQM6aZ4ShIIN5yJ+6q7YeonnevxT8k/LmD2tJi/jOiKkg==}
 
   '@clack/core@1.4.0':
     resolution: {integrity: sha512-7Wctjq6f7c1CPz8sPpkwUnz8yRgVANkpNupb81q432FjcJg4l+Sw7XANdNSdWfAKq0IHI0JTcUeK5dxs/HrGPw==}
@@ -6077,6 +6105,8 @@ snapshots:
 
   '@biomejs/cli-win32-x64@2.5.4':
     optional: true
+
+  '@cfworker/json-schema@4.1.6': {}
 
   '@clack/core@1.4.0':
     dependencies:

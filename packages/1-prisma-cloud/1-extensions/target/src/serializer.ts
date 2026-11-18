@@ -31,6 +31,7 @@ import {
   escapeKey,
   generatedMarker,
   INPUT_KEY_NAME,
+  isPlainObject,
   type PlatformMarkerUse,
   platformMarker,
   readDocument,
@@ -40,7 +41,12 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { configKey, ORIGIN_KEY_NAME } from './config-key.ts';
 import { isGeneratedParamSource, isOriginParamSource } from './param.ts';
-import { bindingPlace, isPlainVariableSource, platformVariableName } from './platform-variable.ts';
+import {
+  bindingPlace,
+  isPlainVariableSource,
+  platformVariableName,
+  platformVariableSchema,
+} from './platform-variable.ts';
 import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
 
 // The ambient environment of whatever runtime hosts the bundle. Declared
@@ -223,13 +229,6 @@ export const generatedParamVarName = (address: string, path: string): string => 
   const pathSegments = path.split('.').filter((s) => s.length > 0);
   return ['COMPOSER', ...segments, ...pathSegments, 'GENERATED'].join('_').toUpperCase();
 };
-
-/** A plain data object (not an array, not a class instance) — the only object shape a binding/document may nest. */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
-}
 
 const ABSENT: unique symbol = Symbol('composer-input-absent');
 
@@ -596,10 +595,16 @@ function substitutePointers(
   const walk = (v: unknown, path: string, inArray = false): unknown => {
     const leaf = generatedByPath.get(path);
     if (isSecretSource(v) || isPlainVariableSource(v)) {
-      const secret = isSecretSource(v);
       const name = platformVariableName(v, bindingPlace(path, address));
-      markers.push({ name, path, secret, inArray });
-      return platformMarker(name, secret);
+      if (isSecretSource(v)) {
+        markers.push({ name, path, secret: true, inArray });
+        return platformMarker(name, true);
+      }
+      markers.push({ name, path, secret: false, inArray });
+      const schema = platformVariableSchema(v);
+      return schema === undefined
+        ? platformMarker(name, false)
+        : platformMarker(name, false, schema);
     }
     if (isParamSource(v)) {
       if (leaf === undefined) {
