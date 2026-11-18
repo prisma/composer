@@ -470,7 +470,7 @@ environment as production, so deploy and destroy refuse it with
 1. No command writes a stack file or starts the alchemy CLI. An engine failure surfaces as
    `DEPLOY.ENGINE_FAILED` carrying the engine's own errors (credentials redacted,
    capped at 1000 characters), for deploy and destroy alike.
-2. Destroy lowers the same app as deploy, which needs the assembled bundles, so **an app must be built before it can
+2. Destroy runs the same preparation as deploy, assembly included, so **an app must be built before it can
    be torn down**.
 3. alchemy is why the `effect` pin exists: it resolves the `effect`
    constellation, and a hoisted newer `effect` halts every command (failure

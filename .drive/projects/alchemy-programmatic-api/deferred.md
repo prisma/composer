@@ -73,3 +73,26 @@ Origin: manual QA after the #431 merge.
 - **Under Node, `import './lib'` fails even when `lib/index.ts` exists**, while Bun loads it. The entry resolve hook tries its candidates only on "module not found", and Node raises a directory-import error instead. Origin: round-4 review.
 - **Core's two refusals of a graph that differs from the first Load's have names but no error code.** `GRAPH_CHANGED_ERROR` and `ROOT_INPUT_UNREAD_ERROR` are plain named errors, recognised by name because they cross from the app's install of core to the host's. Under `deploy` each is a reason of `DEPLOY.ENGINE_FAILED`. Give both a code in the registry when errors can cross installs with their envelope. Origin: round-4 review S05.
 - **Watches added during a dev session do not wait for the watcher to be ready**, so an edit made in the first moments after a newly imported file is recorded can be missed. Origin: round-3 review.
+
+## Destroy's "no prior deploy state" notice fires after every Prisma Cloud deploy
+
+Seen in QA on 2026-11-18: `destroy` run from the directory that had just deployed still said "No prior deploy state", because Prisma Cloud's state lives behind the platform's API and `.alchemy` stays empty. The check predates that state store.
+
+Wanted: ask the configured state store whether it keeps state locally before giving the notice, or drop the notice.
+
+Origin: manual QA of destroy in process.
+
+## Destroy assembles the app, and so needs it built, for nothing
+
+Alchemy's destroy plan never runs the stack program: it reads the state store and deletes through the providers. So the bundles destroy assembles are never read, and `DEPLOY.BUILD_REQUIRED` on a destroy guards nothing. Destroy's Load of the app is needed only for the app's name and its extensions.
+
+Wanted: destroy skips the assemble step, and `DEPLOY.BUILD_REQUIRED` is retired.
+
+Origin: round-1 code review of destroy in process (F01).
+
+## `RunReporter.childEnv()` is named for a child that no longer exists
+
+Extensions implement it, so a rename breaks them. It goes away when the reporter hands its build id to the lowering as a value (see "Deploy still sets the reporter variables in `process.env`" above); rename or remove it then.
+
+Origin: round-1 system design review of destroy in process (S03).
+

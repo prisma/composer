@@ -545,7 +545,7 @@ interface ExtensionDescriptor {
   readonly preflight?: (input: PreflightInput) => Promise<void>      // platform prerequisites; throws to abort (ADR-0029)
   readonly teardown?: (input: TeardownInput) => Promise<void>        // destroy-time cleanup of infrastructure the
                                                                      // extension owns OUTSIDE the stack (e.g. the deploy
-                                                                     // state store `alchemy destroy` was still reading).
+                                                                     // state store the destroy converge was still reading).
                                                                      // Runs after destroy succeeds, before the environment's
                                                                      // Project/Branch go; throwing aborts (ADR-0034)
 }
@@ -702,6 +702,8 @@ interface LowerOptions {
                                                          // Load's environment.name.
   readonly appConfigurationRead?: AppConfigurationRead     // passed to Load: what the caller's own Load read
   readonly preparedNodeAddresses?: readonly string[]       // the caller's graph; lowering refuses a graph whose addresses differ
+  readonly containers: ReadonlyMap<ExtensionId, ContainerInstance>   // each extension's resolved container; required
+  readonly preflightPayloads: ReadonlyMap<ExtensionId, string>       // each extension's preflight payload; required, empty for destroy
   // `prisma deploy` runs each service's build-adapter assembler and writes
   // the resulting bundle dirs here, in the options it hands to
   // `lower()` — one bundle per provision id (the deploy root is always a
@@ -720,7 +722,7 @@ interface Bundle { readonly dir: string; readonly entry: string }          // th
 interface Artifact { readonly path: string; readonly sha256: string }       // package()'s product
 
 // Load → route each node through its extension's nodes[node.type] → an Alchemy
-// Stack (the default export the alchemy CLI consumes). An unknown (extension,
+// Stack (the value `Alchemist.plan` takes). An unknown (extension,
 // type) pair → LowerError naming both and the known ids. root must be a module —
 // a bare service is not independently deployable.
 function lower(root: ModuleNode, config: PrismaAppConfig, opts: LowerOptions): AlchemyStack
