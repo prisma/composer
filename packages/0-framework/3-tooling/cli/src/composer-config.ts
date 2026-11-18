@@ -15,7 +15,7 @@ import type {
 export interface ComposerConfigSource {
   /** The `composer` section: the `composer` property of that file's default export. */
   readonly value: PrismaAppConfig;
-  /** The declaring `prisma.config.ts`. The deploy's generated stack file imports it. A relative path resolves against the operation's `cwd`. */
+  /** The declaring `prisma.config.ts`. A relative path resolves against the operation's `cwd`. */
   readonly file: string;
 }
 
@@ -52,7 +52,7 @@ export const sectionMissing: ConfigFinding = {
   fix: MOVE_TO_SECTION_FIX,
 };
 
-/** What the generated stack file throws when the file it imports has no `composer` export. */
+/** What `prisma dev`'s converge worker throws when the file it imports has no `composer` export. */
 export function noComposerExportMessage(configFile: string): string {
   return `${configFile} declares no \`composer\` section. Pass the prisma.config.ts that declares it.`;
 }

@@ -111,18 +111,6 @@ function redactShapes(text: string): string {
     );
 }
 
-/**
- * `text` with the credential-looking values of `env` and the credential shapes replaced by
- * `[redacted]`. For a process that has no `SecretRedaction`; `SecretRedaction.redact` hides
- * the known secrets too.
- */
-export function redactCredentialLooking(
-  text: string,
-  env: Readonly<Record<string, string | undefined>>,
-): string {
-  return redactShapes(redactValues(text, credentialLookingValues(env)));
-}
-
 /** A value under a secrets key, with that key. */
 export interface KnownSecret {
   readonly name: string;
@@ -130,14 +118,14 @@ export interface KnownSecret {
 }
 
 /**
- * The shortest known secret the file check looks for inside a longer value. A shorter one, such
+ * The shortest known secret the plain-value check looks for inside a longer value. A shorter one, such
  * as a `dev` placeholder, is refused only when it is the whole value.
  */
 export const MIN_SECRET_LENGTH_INSIDE_A_VALUE = 8;
 
 /**
  * The known secrets of one command: the values under the secrets keys the graph names, in the app
- * secrets and the app configuration (ADR-0062). The app configuration file must not hold any of them.
+ * secrets and the app configuration (ADR-0062). A plain value must not hold any of them.
  */
 export class KnownSecrets {
   readonly #names = new Map<string, string>();

@@ -5,7 +5,6 @@ import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type { Config, Params } from '../config.ts';
 import { number, string } from '../config.ts';
-import { containerEnvVarName } from '../container-transport.ts';
 import {
   type ExtensionDescriptor,
   isBuildOnlyExtension,
@@ -31,7 +30,6 @@ import {
   type ProvisionerDescriptor,
   resolveStateLayer,
   type ServiceLowering,
-  transportedLowerInputs,
 } from '../control/deploy.ts';
 import { Load, nodeAddresses } from '../graph.ts';
 import {
@@ -44,7 +42,6 @@ import {
   resource,
   service,
 } from '../node.ts';
-import { preflightEnvVarName } from '../preflight-transport.ts';
 import { resolve } from '../value.ts';
 import { anyInputSchema, conn, plainValue, providerContract } from './helpers.ts';
 
@@ -648,7 +645,7 @@ describe('lowering a module root — a single service', () => {
           opts({
             name: 'shop',
             bundles,
-            firstProcessNodeAddresses: ['shop', 'shop.gone'],
+            preparedNodeAddresses: ['shop', 'shop.gone'],
           }),
         ),
       ),
@@ -673,7 +670,7 @@ describe('lowering a module root — a single service', () => {
           opts({
             name: 'shop',
             bundles,
-            firstProcessNodeAddresses: [...addresses].reverse(),
+            preparedNodeAddresses: [...addresses].reverse(),
           }),
         ),
       ),
@@ -1490,22 +1487,6 @@ describe('joinDeployment', () => {
   });
 });
 
-const withEnv = <T>(values: Record<string, string | undefined>, fn: () => T): T => {
-  const previous = new Map(Object.keys(values).map((k) => [k, process.env[k]]));
-  for (const [k, v] of Object.entries(values)) {
-    if (v === undefined) delete process.env[k];
-    else process.env[k] = v;
-  }
-  try {
-    return fn();
-  } finally {
-    for (const [k, v] of previous) {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
-  }
-};
-
 describe('deploymentResult', () => {
   test('joins the deployed entries with the graph and carries the findings it is given', () => {
     const root = module('shop', {}, (h) => {
@@ -1698,9 +1679,7 @@ describe('container threading through lowering() (the parent→child transport r
     const { descriptor, config, seen } = fakeExtensionWithContainer();
     const passed = new FakeContainerInstance({ appName: 'shop', environment: 'staging' });
 
-    withEnv({ [containerEnvVarName(descriptor.id)]: JSON.stringify({ stale: true }) }, () => {
-      run(lowering(dbModule(), config, opts({ containers: new Map([[descriptor.id, passed]]) })));
-    });
+    run(lowering(dbModule(), config, opts({ containers: new Map([[descriptor.id, passed]]) })));
 
     expect(seen).toEqual([
       { phase: 'application', container: passed },
@@ -1708,12 +1687,10 @@ describe('container threading through lowering() (the parent→child transport r
     ]);
   });
 
-  test('an extension with no container passed sees ctx.container as undefined, whatever the environment holds', () => {
-    const { descriptor, config, seen } = fakeExtensionWithContainer();
+  test('an extension with no container passed sees ctx.container as undefined', () => {
+    const { config, seen } = fakeExtensionWithContainer();
 
-    withEnv({ [containerEnvVarName(descriptor.id)]: JSON.stringify({ appName: 'shop' }) }, () => {
-      run(lowering(dbModule(), config, opts()));
-    });
+    run(lowering(dbModule(), config, opts()));
 
     expect(seen).toEqual([
       { phase: 'application', container: undefined },
@@ -1739,92 +1716,10 @@ describe('container threading through lowering() (the parent→child transport r
     };
     const root = module('shop', {}, () => ({}));
 
-    withEnv({ [preflightEnvVarName(descriptor.id)]: 'from-env' }, () => {
-      run(
-        lowering(root, config, opts({ preflightPayloads: new Map([[descriptor.id, 'passed']]) })),
-      );
-      run(lowering(root, config, opts()));
-    });
+    run(lowering(root, config, opts({ preflightPayloads: new Map([[descriptor.id, 'passed']]) })));
+    run(lowering(root, config, opts()));
 
     expect(seen).toEqual(['passed', undefined]);
-  });
-
-  test('transportedLowerInputs reads the two transports a generated stack file was given', () => {
-    const { descriptor, config } = fakeExtensionWithContainer();
-    const instanceInput = { appName: 'shop', environment: 'production' };
-
-    const inputs = withEnv(
-      {
-        [containerEnvVarName(descriptor.id)]: JSON.stringify(instanceInput),
-        [preflightEnvVarName(descriptor.id)]: 'payload',
-      },
-      () => transportedLowerInputs(config),
-    );
-    const blanked = withEnv(
-      {
-        [containerEnvVarName(descriptor.id)]: undefined,
-        [preflightEnvVarName(descriptor.id)]: '',
-      },
-      () => transportedLowerInputs(config),
-    );
-
-    expect(inputs.containers.get(descriptor.id)).toEqual(new FakeContainerInstance(instanceInput));
-    expect([...inputs.preflightPayloads]).toEqual([[descriptor.id, 'payload']]);
-    expect(blanked.containers.size).toBe(0);
-    expect(blanked.preflightPayloads.size).toBe(0);
-  });
-
-  test.each([
-    ['containers', 'preflightPayloads', { containers: new Map() }],
-    ['preflightPayloads', 'containers', { preflightPayloads: new Map() }],
-  ] as const)('a caller that passes only %s is refused, naming %s', (passed, missing, given) => {
-    const { config, seen } = fakeExtensionWithContainer();
-
-    expect(() =>
-      run(lowering(dbModule(), config, { name: 'hello', bundles: {}, ...given })),
-    ).toThrow(
-      `lower() was passed ${passed} without ${missing}. Pass both, or neither to read both from the environment.`,
-    );
-    expect(() => lower(dbModule(), config, { name: 'hello', bundles: {}, ...given })).toThrow(
-      `without ${missing}`,
-    );
-    expect(seen).toEqual([]);
-  });
-
-  test('a caller that passes no containers or preflight payloads, such as a stack file an older CLI generated, gets both from the environment', () => {
-    const { descriptor, config, seen } = fakeExtensionWithContainer();
-    const instanceInput = { appName: 'shop', environment: 'staging' };
-    const payloads: unknown[] = [];
-    const recording: PrismaAppConfig = {
-      ...config,
-      extensions: [
-        {
-          ...descriptor,
-          application: {
-            provision: (ctx) => {
-              payloads.push(ctx.preflight);
-              return descriptor.application?.provision(ctx) ?? Effect.succeed(undefined);
-            },
-          },
-        },
-      ],
-    };
-
-    withEnv(
-      {
-        [containerEnvVarName(descriptor.id)]: JSON.stringify(instanceInput),
-        [preflightEnvVarName(descriptor.id)]: 'from-env',
-      },
-      () => {
-        run(lowering(dbModule(), recording, { name: 'hello', bundles: {} }));
-      },
-    );
-
-    expect(seen).toEqual([
-      { phase: 'application', container: new FakeContainerInstance(instanceInput) },
-      { phase: 'resource', container: new FakeContainerInstance(instanceInput) },
-    ]);
-    expect(payloads).toEqual(['from-env']);
   });
 
   test('an extension declaring no container descriptor at all sees ctx.container as undefined', () => {

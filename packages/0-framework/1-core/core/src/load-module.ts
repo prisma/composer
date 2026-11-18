@@ -720,7 +720,7 @@ export function loadModule(root: ModuleNode | AppRootNode, opts?: LoadOptions): 
   }
   if (opts?.configuration !== undefined && opts.appConfigurationRead !== undefined) {
     throw new LoadError(
-      'Load takes configuration, in the first process, or appConfigurationRead, in the second, not both.',
+      'Load takes configuration, in the first Load, or appConfigurationRead, in a later one, not both.',
     );
   }
   const moduleInputs: ProvisionedModuleInput[] = [];

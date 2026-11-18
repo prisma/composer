@@ -294,7 +294,7 @@ describe('what Load reads from the app configuration', () => {
     );
   });
 
-  test("the second process takes each root field from what the first process read, without running the root's schema", () => {
+  test("a later Load takes each root field from what the first Load read, without running the root's schema", () => {
     const calls: unknown[] = [];
     const counting: StandardSchemaV1 = {
       '~standard': {
@@ -321,7 +321,7 @@ describe('what Load reads from the app configuration', () => {
     expect(bindingOf(graph)).toEqual({ a: 'from-file', c: 4 });
   });
 
-  test('a root field missing from what the first process read fails under its own name, saying it has no value', () => {
+  test('a root field missing from what the first Load read fails under its own name, saying it has no value', () => {
     const run = () =>
       Load(rootOf(schema), {
         appConfigurationRead: {
@@ -345,7 +345,7 @@ describe('what Load reads from the app configuration', () => {
     } as unknown as LoadOptions;
 
     expect(loadError(() => Load(rootOf(schema), both)).message).toBe(
-      'Load takes configuration, in the first process, or appConfigurationRead, in the second, not both.',
+      'Load takes configuration, in the first Load, or appConfigurationRead, in a later one, not both.',
     );
   });
 

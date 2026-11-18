@@ -4,14 +4,13 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { appRoot, isSecretPointer, Load, module, resolve, type ServiceNode } from '@internal/core';
-import { preflightEnv, readPreflightPayload } from '@internal/core/config';
 import { isSecretString } from '@internal/foundation/secret';
 import { rawHttpContract } from '@internal/http';
 import { MAX_DEPTH, readVariableText } from '@internal/input-document';
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
 import { z } from 'zod';
-import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
+import { PrismaCloudContainer } from '../container.ts';
 import { decodePreflightPayload, preflightView } from '../control/preflight-payload.ts';
 import { compute, publicUrl, variable } from '../exports/index.ts';
 import { runDevPreflight } from '../local-target/preflight.ts';
@@ -205,31 +204,17 @@ async function preflightError(graph: ReturnType<typeof Load>): Promise<string> {
   return error.message;
 }
 
-/** What the alchemy process sees after the CLI transports the payload. */
-function transported(payload: string | undefined): Record<string, string> {
-  return preflightEnv(
-    payload === undefined ? new Map() : new Map([[PRISMA_CLOUD_EXTENSION_ID, payload]]),
-  );
-}
-
-function billingDocument(
-  graph: ReturnType<typeof Load>,
-  childEnv: Record<string, string>,
-): unknown {
+function billingDocument(graph: ReturnType<typeof Load>, sent: string | undefined): unknown {
   const node = graph.nodes.find((entry) => entry.id === 'app.billing')?.node as ServiceNode;
   const binding = graph.inputBindings.find((b) => b.serviceAddress === 'app.billing')?.binding;
-  const { absentVariables } = preflightView(
-    readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv),
-  );
+  const { absentVariables } = preflightView(sent);
   const row = serializeInput(node, 'app.billing', binding, { absentVariables });
   return JSON.parse(row?.value ?? 'null');
 }
 
-/** The dev payload as the alchemy process decodes it. */
-function devPayload(childEnv: Record<string, string>) {
-  const decoded = decodePreflightPayload(
-    childEnv['PRISMA_COMPOSER_PREFLIGHT_PRISMA_COMPOSER_PRISMA_CLOUD'],
-  );
+/** The dev payload as the lowering decodes it. */
+function devPayload(sent: string | undefined) {
+  const decoded = decodePreflightPayload(sent);
   if (decoded.kind !== 'dev') throw new Error(`expected a dev payload, got ${decoded.kind}`);
   return decoded;
 }
@@ -302,9 +287,9 @@ describe('prisma dev preflight', () => {
     secrets['STRIPE_SECRET_KEY'] = 'sk_test_1';
     const graph = billingGraph(requiresSecrets('stripeKey'));
 
-    const childEnv = transported(await preflight(graph));
+    const sent = await preflight(graph);
 
-    expect(billingDocument(graph, childEnv)).toEqual({
+    expect(billingDocument(graph, sent)).toEqual({
       stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
     });
   });
@@ -314,31 +299,29 @@ describe('prisma dev preflight', () => {
     secrets['STRIPE_WEBHOOK_SECRET'] = '';
     const graph = billingGraph(requiresSecrets('stripeKey'));
 
-    const childEnv = transported(await preflight(graph));
+    const sent = await preflight(graph);
 
-    expect(billingDocument(graph, childEnv)).toEqual({
+    expect(billingDocument(graph, sent)).toEqual({
       stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
     });
   });
 
-  test('the payload reaches the alchemy process with the absent secrets and a hash of each value, never the value', async () => {
+  test('the payload reaches the lowering with the absent secrets and a hash of each value, never the value', async () => {
     secrets['STRIPE_SECRET_KEY'] = 'sk_test_1';
 
-    const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
+    const sent = await preflight(billingGraph(requiresSecrets('stripeKey')));
 
-    const payload = devPayload(childEnv);
+    const payload = devPayload(sent);
     expect([...payload.absentVariables]).toEqual(['STRIPE_WEBHOOK_SECRET']);
     expect([...payload.platformVariableVersions.keys()]).toEqual(['STRIPE_SECRET_KEY']);
-    expect(Object.values(childEnv).join('')).not.toContain('sk_test_1');
+    expect(sent ?? '').not.toContain('sk_test_1');
   });
 
   test("the deployment's trigger member for a secret changes exactly when its value changes", async () => {
     const graph = billingGraph(requiresSecrets('stripeKey'));
     const memberFor = async (value: string) => {
       secrets['STRIPE_SECRET_KEY'] = value;
-      const { platformVariableVersion } = preflightView(
-        readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, transported(await preflight(graph))),
-      );
+      const { platformVariableVersion } = preflightView(await preflight(graph));
       return platformVariableVersion('STRIPE_SECRET_KEY');
     };
 
@@ -351,13 +334,9 @@ describe('prisma dev preflight', () => {
   test('an unset secret has no trigger member value', async () => {
     secrets['STRIPE_SECRET_KEY'] = 'sk_test_1';
 
-    const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
+    const sent = await preflight(billingGraph(requiresSecrets('stripeKey')));
 
-    expect(
-      preflightView(
-        readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv),
-      ).platformVariableVersion('STRIPE_WEBHOOK_SECRET'),
-    ).toBeUndefined();
+    expect(preflightView(sent).platformVariableVersion('STRIPE_WEBHOOK_SECRET')).toBeUndefined();
   });
 
   test('a secret an array position reads that is unset stops dev, naming the variable and the service', async () => {
@@ -396,21 +375,21 @@ describe('prisma dev preflight', () => {
     expect(message).toContain('API_TOKEN  (read by service "app.web", field "token")');
   });
 
-  test('a plain node in an input field that is set is fingerprinted for the alchemy process', async () => {
+  test('a plain node in an input field that is set is fingerprinted for the lowering', async () => {
     configuration['APP_PORT'] = '3000';
 
-    const childEnv = transported(await preflight(portGraph()));
+    const sent = await preflight(portGraph());
 
-    expect([...devPayload(childEnv).platformVariableVersions.keys()]).toEqual(['APP_PORT']);
+    expect([...devPayload(sent).platformVariableVersions.keys()]).toEqual(['APP_PORT']);
   });
 
   test('the fingerprint key is created once, readable only by its owner, and reused', async () => {
     configuration['APP_PORT'] = '3000';
     const keyPath = path.join(environmentDir(cwd), 'fingerprint.key');
 
-    const first = devPayload(transported(await preflight(portGraph())));
+    const first = devPayload(await preflight(portGraph()));
     const key = fs.readFileSync(keyPath);
-    const second = devPayload(transported(await preflight(portGraph())));
+    const second = devPayload(await preflight(portGraph()));
 
     // Windows has no POSIX file modes, and local dev does not run there.
     if (process.platform !== 'win32') expect(fs.statSync(keyPath).mode & 0o777).toBe(0o600);
@@ -422,9 +401,9 @@ describe('prisma dev preflight', () => {
     configuration['APP_PORT'] = '3000';
     const keyPath = path.join(environmentDir(cwd), 'fingerprint.key');
 
-    const first = devPayload(transported(await preflight(portGraph())));
+    const first = devPayload(await preflight(portGraph()));
     fs.rmSync(keyPath);
-    const second = devPayload(transported(await preflight(portGraph())));
+    const second = devPayload(await preflight(portGraph()));
 
     expect(second.platformVariableVersions.get('APP_PORT')).not.toBe(
       first.platformVariableVersions.get('APP_PORT'),
@@ -442,7 +421,7 @@ describe('prisma dev preflight', () => {
   test('a secret shared by two services that is set gets one fingerprint', async () => {
     secrets['STRIPE_SECRET_KEY'] = 'sk_test_1';
 
-    const payload = devPayload(transported(await preflight(sharedGraph())));
+    const payload = devPayload(await preflight(sharedGraph()));
 
     expect([...payload.platformVariableVersions.keys()]).toEqual(['STRIPE_SECRET_KEY']);
     expect([...payload.absentVariables]).toEqual([]);
@@ -491,7 +470,7 @@ describe('prisma dev preflight', () => {
 
     const versions = [];
     for (const environment of ['dev', 'test', 'feature/x']) {
-      const payload = devPayload(transported(await preflight(portGraph(), environment)));
+      const payload = devPayload(await preflight(portGraph(), environment));
       versions.push(payload.platformVariableVersions.get('APP_PORT'));
     }
 
@@ -518,9 +497,7 @@ describe('prisma dev preflight', () => {
     secrets['STRIPE_SECRET_KEY'] = 'sk_pool';
     process.env['STRIPE_SECRET_KEY'] = 'sk_shell';
     try {
-      const payload = devPayload(
-        transported(await preflight(billingGraph(requiresSecrets('stripeKey')))),
-      );
+      const payload = devPayload(await preflight(billingGraph(requiresSecrets('stripeKey'))));
       const key = fs.readFileSync(path.join(environmentDir(cwd), 'fingerprint.key'));
 
       expect(payload.platformVariableVersions.get('STRIPE_SECRET_KEY')).toBe(
@@ -539,7 +516,7 @@ describe('prisma dev preflight', () => {
       );
 
       configuration['API_TOKEN'] = 'from-the-configuration';
-      const payload = devPayload(transported(await preflight(tokenGraph())));
+      const payload = devPayload(await preflight(tokenGraph()));
 
       expect([...payload.platformVariableVersions.keys()]).toEqual(['API_TOKEN']);
     } finally {
@@ -600,13 +577,11 @@ describe('prisma dev preflight', () => {
     function documentOf(
       graph: ReturnType<typeof Load>,
       address: string,
-      childEnv: Record<string, string>,
+      sent: string | undefined,
     ): unknown {
       const node = graph.nodes.find((entry) => entry.id === address)?.node as ServiceNode;
       const binding = graph.inputBindings.find((b) => b.serviceAddress === address)?.binding;
-      const { absentVariables } = preflightView(
-        readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv),
-      );
+      const { absentVariables } = preflightView(sent);
       const row = serializeInput(node, address, binding, { absentVariables });
       return JSON.parse(row?.value ?? 'null');
     }
@@ -618,10 +593,10 @@ describe('prisma dev preflight', () => {
       const result = await devPreflight(graph);
 
       expect(result.plainVariableText).toEqual({ EMAIL_FROM: 'shop@example.com' });
-      const payload = devPayload(transported(result.payload));
+      const payload = devPayload(result.payload);
       expect([...payload.platformVariableVersions.keys()]).toEqual(['EMAIL_FROM']);
       expect([...payload.absentVariables]).toEqual([]);
-      expect(documentOf(graph, 'shop.mail', transported(result.payload))).toEqual({
+      expect(documentOf(graph, 'shop.mail', result.payload)).toEqual({
         from: { $platform: { name: 'EMAIL_FROM' } },
       });
       expect(JSON.stringify(result.payload)).not.toContain('shop@example.com');
@@ -644,8 +619,8 @@ describe('prisma dev preflight', () => {
       const result = await devPreflight(graph);
 
       expect(result.plainVariableText).toEqual({});
-      expect([...devPayload(transported(result.payload)).absentVariables]).toEqual(['EMAIL_FROM']);
-      expect(documentOf(graph, 'shop.mail', transported(result.payload))).toEqual({});
+      expect([...devPayload(result.payload).absentVariables]).toEqual(['EMAIL_FROM']);
+      expect(documentOf(graph, 'shop.mail', result.payload)).toEqual({});
     });
 
     test('a required unset input field stops dev, naming the variable, the service and the field', async () => {
@@ -701,10 +676,8 @@ describe('prisma dev preflight', () => {
       );
       const triggersFor = async (from: string) => {
         configuration['EMAIL_FROM'] = from;
-        const childEnv = transported(await preflight(graph));
-        const { absentVariables, platformVariableVersion } = preflightView(
-          readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv),
-        );
+        const sent = await preflight(graph);
+        const { absentVariables, platformVariableVersion } = preflightView(sent);
         const membersOf = (address: string) => {
           const node = graph.nodes.find((entry) => entry.id === address)?.node as ServiceNode;
           const binding = graph.inputBindings.find((b) => b.serviceAddress === address)?.binding;

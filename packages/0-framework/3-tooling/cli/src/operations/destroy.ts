@@ -9,11 +9,18 @@
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../composer-config.ts';
+import type { DeployStep } from './deploy.ts';
 import { executorLoadFailure, type OperationDeps } from './shared.ts';
+import type { StepEvent } from './steps.ts';
 
-export type DestroyEvent =
-  /** Emitted before the pipeline when `<cwd>/.alchemy` is missing/empty. */
-  { readonly kind: 'no-local-deploy-state'; readonly cwd: string };
+/** Emitted before the pipeline when `<cwd>/.alchemy` is missing or empty. */
+export interface NoLocalDeployStateEvent {
+  readonly kind: 'no-local-deploy-state';
+  readonly cwd: string;
+}
+
+/** Each step as it starts and finishes, the messages Alchemy logs, as `deploy` reports them, and the missing local state notice. */
+export type DestroyEvent = StepEvent<DeployStep> | NoLocalDeployStateEvent;
 
 export interface DestroyInput {
   /**
@@ -28,6 +35,8 @@ export interface DestroyInput {
   readonly cwd?: string | undefined;
   /** Mid-operation notifications, in real time. Rendering is the host's. */
   readonly onEvent?: ((event: DestroyEvent) => void) | undefined;
+  /** Interrupts the plan or apply when it aborts. The destroy then fails with `DEPLOY.INTERRUPTED`, after releasing the environment's state lease, and removes no container. */
+  readonly signal?: AbortSignal | undefined;
 }
 
 export async function destroy(input: DestroyInput): Promise<Result<void, CliStructuredError>> {

@@ -4,10 +4,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as RealAlchemyPrisma from '@alchemy.run/prisma';
 import type { Contract } from '@internal/core';
-import type { NodeDescriptor } from '@internal/core/config';
-import { type ContainerInstance, containerEnvVarName } from '@internal/core/config';
+import type { ContainerInstance, NodeDescriptor } from '@internal/core/config';
 import type { DeploymentResult, LowerContext, LoweredResult, Outputs } from '@internal/core/deploy';
-import { transportedLowerInputs } from '@internal/core/deploy';
 // Import the REAL modules the mocks below stub, so each mock can spread them.
 // This matters beyond convenience: `bun test` runs every test file in ONE
 // process and `mock.module` is process-global. When the real module is already
@@ -413,17 +411,21 @@ async function withEnv<T>(values: Record<string, string | undefined>, fn: () => 
   }
 }
 
-// The parent→child transport var this extension's real `application.provision`
-// (run through the real `lowering()`, not a stubbed ctx) reads its container
-// from — the id-env-var stubbing slice 2 deletes replaces itself with this.
-const CONTAINER_VAR = containerEnvVarName(PRISMA_CLOUD_EXTENSION_ID);
-const containerEnv = (projectId: string, branchId?: string): Record<string, string> => ({
-  [CONTAINER_VAR]: new PrismaCloudContainer(
-    { appName: 'shop', environment: branchId ?? 'production' },
-    projectId,
-    branchId,
-    branchId === undefined ? 'br_default' : undefined,
-  ).serialize(),
+// The container this extension's real `application.provision` (run through
+// the real `lowering()`, not a stubbed ctx) reads, as the deploy passes it.
+const lowerInputs = (projectId: string) => ({
+  containers: new Map([
+    [
+      PRISMA_CLOUD_EXTENSION_ID,
+      new PrismaCloudContainer(
+        { appName: 'shop', environment: 'production' },
+        projectId,
+        undefined,
+        'br_default',
+      ),
+    ],
+  ]),
+  preflightPayloads: new Map<string, string>(),
 });
 
 // Typed accessors over the kind-discriminated registry — a wrong kind here is
@@ -2169,7 +2171,7 @@ describe('s3StoreService() authoring factory', () => {
 
 describe('sharing: one module-provisioned postgres, two compute consumers — through core lowering()', () => {
   test("ONE Database + Connection; both services' env writes carry its url under their own keys", async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const build = {
         extension: '@prisma/composer/node',
@@ -2201,7 +2203,7 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
 
       run<undefined>(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles: {
             'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
@@ -2278,7 +2280,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
     });
 
   test("consumer's edge writes its own serviceKey var; the provider's writes the accepted set with that one key", async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const root = module('shop', {}, ({ provision }) => {
         const auth = provision(
@@ -2295,7 +2297,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
 
       run<undefined>(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles: {
             'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
@@ -2326,7 +2328,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
   });
 
   test('two consumers of one provider mint two distinct edge keys; the accepted set carries both', async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const root = module('shop', {}, ({ provision }) => {
         const auth = provision(
@@ -2347,7 +2349,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
 
       run<undefined>(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles: {
             'shop.auth2': { dir: 'modules/auth2/dist/bundle', entry: 'server.js' },
@@ -2375,7 +2377,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
   });
 
   test('a provider that exposes RPC with zero wired consumers still writes an accepted-set var — value "[]" (deny-all, closes the fail-open hole)', async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const root = module('shop', {}, ({ provision }) => {
         provision(
@@ -2388,7 +2390,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
 
       run<undefined>(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles: { 'shop.auth3': { dir: 'modules/auth3/dist/bundle', entry: 'server.js' } },
         }),
@@ -2408,7 +2410,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
   });
 
   test('a service with no `expose` never serves, so it writes no accepted-keys var', async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const root = module('shop', {}, ({ provision }) => {
         const auth = provision(
@@ -2426,7 +2428,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
 
       run<undefined>(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles: {
             'shop.auth4': { dir: 'modules/auth4/dist/bundle', entry: 'server.js' },
@@ -2471,7 +2473,7 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
     });
 
   test('two consumers of one streams module share ONE key; the provider stores that same key', async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const root = module('shop', {}, ({ provision }) => {
         const events = provision(
@@ -2492,7 +2494,7 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
 
       run<undefined>(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles: {
             'shop.events': { dir: 'modules/events/dist/bundle', entry: 'server.js' },
@@ -2592,7 +2594,7 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
   });
 
   test('a streams provider with no consumers mints nothing and stores no key', async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const root = module('shop', {}, ({ provision }) => {
         provision(
@@ -2605,7 +2607,7 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
 
       run<undefined>(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles: { 'shop.lonely': { dir: 'modules/lonely/dist/bundle', entry: 'server.js' } },
         }),
@@ -2808,7 +2810,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
     `names on Prisma Cloud take ${min} to ${max} characters, and every platform name is the node's address.`;
 
   test('a database whose address is over the Connection limit throws at lower time, before any Database is recorded', async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const id = idForAddressOfLength(53);
       const root = module('shop', {}, ({ provision }) => {
@@ -2825,7 +2827,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
       const error = lowerError(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles,
         }),
@@ -2841,7 +2843,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
   });
 
   test('a database whose address is exactly at the Connection limit lowers, named by its address', async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const id = idForAddressOfLength(52);
       const root = module('shop', {}, ({ provision }) => {
@@ -2852,7 +2854,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
       run<undefined>(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles: {},
         }),
@@ -2863,7 +2865,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
   });
 
   test('a bucket whose address is over the Bucket limit throws before any Bucket is recorded', async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const id = idForAddressOfLength(101);
       const root = module('shop', {}, ({ provision }) => {
@@ -2874,7 +2876,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
       const error = lowerError(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles: {},
         }),
@@ -2886,7 +2888,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
   });
 
   test('a bucket whose address is over the Connection limit but within the Bucket limit lowers', async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const id = idForAddressOfLength(100);
       const root = module('shop', {}, ({ provision }) => {
@@ -2897,7 +2899,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
       run<undefined>(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles: {},
         }),
@@ -2908,7 +2910,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
   });
 
   test('a service whose address is over the App limit throws naming the address', async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const id = idForAddressOfLength(257);
       const root = module('shop', {}, ({ provision }) => {
@@ -2919,7 +2921,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
       const error = lowerError(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles: { [`shop.${id}`]: bundles['shop.auth'] },
         }),
@@ -2931,7 +2933,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
   });
 
   test('a service whose address is over the Connection limit lowers, its display name the full address', async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const id = idForAddressOfLength(66);
       const root = module('shop', {}, ({ provision }) => {
@@ -2942,7 +2944,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
       run<undefined>(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles: { [`shop.${id}`]: bundles['shop.auth'] },
         }),
@@ -2954,7 +2956,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
   });
 
   test('a valid-name module lowers unchanged — no throw, the Database is created', async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const root = module('shop', {}, ({ provision }) => {
         const db = provision(rawPostgres({ name: 'data' }), { id: 'data' });
@@ -2971,7 +2973,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
       expect(() =>
         run<undefined>(
           lowering(root, configFor(target), {
-            ...transportedLowerInputs(configFor(target)),
+            ...lowerInputs('shop-project#cloud-id'),
             name: 'shop',
             bundles,
           }),
@@ -3067,7 +3069,7 @@ describe('topology identities on platform resources', () => {
 
 describe('platform identity: each row carries its topology node logicalId — through core lowering()', () => {
   test('App, Database and Bucket logicalIds equal the service and resource node logicalIds the topology submits', async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const build = {
         extension: '@prisma/composer/node',
@@ -3096,7 +3098,7 @@ describe('platform identity: each row carries its topology node logicalId — th
 
       run<undefined>(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles: { 'shop.auth.service': { dir: 'modules/auth/dist/bundle', entry: 'server.js' } },
         }),
@@ -3296,7 +3298,7 @@ describe('resource IDs are built from the full address, and each declares the ID
   });
 
   test('compute: an RPC service key is named under the calling service, and a streams key under the provider', async () => {
-    await withEnv(containerEnv('shop-project#cloud-id'), () => {
+    await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const rpcContract: Contract<'rpc', Record<never, never>> = {
         kind: 'rpc',
@@ -3342,7 +3344,7 @@ describe('resource IDs are built from the full address, and each declares the ID
 
       run<undefined>(
         lowering(root, configFor(target), {
-          ...transportedLowerInputs(configFor(target)),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           bundles: { 'shop.auth': bundle, 'shop.events': bundle, 'shop.web': bundle },
         }),
@@ -3687,10 +3689,10 @@ describe("prismaCloud().nodes['public-url'] — the public URL descriptor", () =
   };
 
   const lowerThroughCore = (root: ReturnType<typeof shop>, bundles: Record<string, string>) =>
-    withEnv(containerEnv('shop-project#cloud-id'), () => {
+    withEnv({}, () => {
       run<undefined>(
         lowering(root, configFor(prismaCloud({ workspaceId: 'ws_1' })), {
-          ...transportedLowerInputs(configFor(prismaCloud({ workspaceId: 'ws_1' }))),
+          ...lowerInputs('shop-project#cloud-id'),
           name: 'shop',
           environment: 'production',
           bundles: Object.fromEntries(
@@ -3823,31 +3825,29 @@ describe("prismaCloud().nodes['platform-variable'] — a platform variable node"
   });
 
   const lowerShop = () =>
-    withEnv(
-      { ...containerEnv('shop-project#cloud-id'), EMAIL_KEY: 'sk_planted_should_not_leak' },
-      () => {
-        const reports: DeploymentResult[] = [];
-        const stack: {
-          actions: Record<string, Alchemy.Action>;
-          resources: Record<string, unknown>;
-        } = { actions: {}, resources: {} };
-        run<undefined>(
-          lowering(shop, configFor(prismaCloud({ workspaceId: 'ws_1' })), {
-            name: 'shop',
-            environment: 'production',
-            bundles: {
-              'shop.mailer': { dir: 'modules/mailer/dist', entry: 'server.js' },
-              'shop.web': { dir: 'modules/web/dist', entry: 'server.js' },
-            },
-            report: (result) => reports.push(result),
-          }).pipe(Effect.provideService(Alchemy.Stack, stack as never)),
-        );
-        const action = stack.actions['composer-deployment-report'];
-        if (action === undefined) throw new Error('expected the deployment report action');
-        run<unknown>(action.Run(action.Input));
-        return reports;
-      },
-    );
+    withEnv({ EMAIL_KEY: 'sk_planted_should_not_leak' }, () => {
+      const reports: DeploymentResult[] = [];
+      const stack: {
+        actions: Record<string, Alchemy.Action>;
+        resources: Record<string, unknown>;
+      } = { actions: {}, resources: {} };
+      run<undefined>(
+        lowering(shop, configFor(prismaCloud({ workspaceId: 'ws_1' })), {
+          ...lowerInputs('shop-project#cloud-id'),
+          name: 'shop',
+          environment: 'production',
+          bundles: {
+            'shop.mailer': { dir: 'modules/mailer/dist', entry: 'server.js' },
+            'shop.web': { dir: 'modules/web/dist', entry: 'server.js' },
+          },
+          report: (result) => reports.push(result),
+        }).pipe(Effect.provideService(Alchemy.Stack, stack as never)),
+      );
+      const action = stack.actions['composer-deployment-report'];
+      if (action === undefined) throw new Error('expected the deployment report action');
+      run<unknown>(action.Run(action.Input));
+      return reports;
+    });
 
   test('the deploy report has a line for each service and none for a platform variable node', async () => {
     const reports = await lowerShop();

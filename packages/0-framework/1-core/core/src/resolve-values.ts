@@ -701,7 +701,7 @@ export function resolveValues(input: {
           path: field.path,
         });
         throw new LoadError(
-          `${label} of root module "${rootModuleAddress()}" reads "${key}" from the app configuration, and ${origin.label} names "${key}" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which \`prisma deploy\` sends to the platform as plain configuration, \`prisma dev\` gives to the local services as plain configuration, and \`destroy\` writes to a file. Read the secret with ${origin.label} only, or give the plain value a different name.`,
+          `${label} of root module "${rootModuleAddress()}" reads "${key}" from the app configuration, and ${origin.label} names "${key}" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which \`prisma deploy\` sends to the platform as plain configuration and \`prisma dev\` gives to the local services as plain configuration. Read the secret with ${origin.label} only, or give the plain value a different name.`,
         );
       }
     }

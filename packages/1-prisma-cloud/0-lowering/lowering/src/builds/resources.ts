@@ -15,7 +15,7 @@
  */
 import type { BuildResourceAction, BuildResourceType, BuildsApi } from './api.ts';
 
-/** Names the build a run belongs to. Set by the CLI on the alchemy child, or by a CI runner that created the build itself. */
+/** Names the build a run belongs to. Set by the CLI while Alchemy applies, or by a CI runner that created the build itself. */
 export const BUILD_ID_ENV = 'PRISMA_BUILD_ID';
 
 interface PlatformResource {

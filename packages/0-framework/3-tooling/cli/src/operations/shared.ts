@@ -10,13 +10,11 @@ import type {
   ContainerDescriptor,
   ContainerInstance,
 } from '@internal/core/config';
-import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
 import type { AppConvergeEntry } from '../app-converge.ts';
 import type { ConvergeFailureReason } from '../converge-in-process.ts';
 import type { startWatch } from '../dev/watch.ts';
 import type { SecretRedaction } from '../redaction.ts';
-import type { RunAlchemy } from '../run-alchemy.ts';
 import type { RunDevConverge } from './dev-converge.ts';
 
 /** The `id` of an ExtensionDescriptor — what keys the executors' per-extension maps. */
@@ -36,15 +34,13 @@ export interface ServiceEndpoint {
 
 /**
  * The operations' in-package injection seam — lets the CLI's own tests drive
- * them without a real wrapper build, Alchemy converge or alchemy process.
+ * them without a real wrapper build or Alchemy converge.
  * Threaded through the *WithDeps variants, never part of the published
  * surface: the fields mirror internal types.
  */
 export interface OperationDeps {
   readonly runAssembler?: RunAssembler | undefined;
-  /** Starts the converge child for `destroy`; defaults to `spawnAlchemy`. Tests substitute it. */
-  readonly alchemy?: RunAlchemy | undefined;
-  /** The `lower` and converge functions `deploy` runs; defaults to the app's own install (`loadAppConvergeEntry`). Tests substitute it. */
+  /** The `lower` and converge functions `deploy` and `destroy` run; defaults to the app's own install (`loadAppConvergeEntry`). Tests substitute it. */
   readonly appConvergeEntry?: AppConvergeEntry | undefined;
   /** Runs one `dev` converge and reports its events; defaults to a new worker thread per converge (`runDevConvergeInWorker`). Tests substitute it. */
   readonly runDevConverge?: RunDevConverge | undefined;
@@ -58,7 +54,7 @@ export interface OperationDeps {
    * engine's credential read, so no code below this point reads the
    * environment for token material. Absent for hosts that have not adopted
    * the seam — the container descriptors then fall back to the environment
-   * protocol, as the spawned child does.
+   * protocol.
    *
    * Read by `deploy` and `destroy` only, because they are the operations that
    * reach a PLATFORM container. `dev` and `log` resolve local targets, whose
@@ -67,53 +63,6 @@ export interface OperationDeps {
    * authenticated call on those paths for this to reach.
    */
   readonly credentials?: CallerCredentials | undefined;
-}
-
-/**
- * Where a failed execution left its artifacts — details of the CURRENT
- * execution mechanism (a spawned deploy-engine child driving a generated
- * stack file), for hosts that want to print a reproduce hint. The mechanism
- * is not part of the surface's contract, so these fields may change or
- * disappear if the mechanism does; branch on `code`/`message`/`cause` for
- * anything durable.
- */
-export interface ExecutionDiagnostics {
-  /** The child's exit status; undefined means the spawn itself threw, or the
-   *  child was killed by a signal (`signal` then names it). */
-  readonly exitCode: number | undefined;
-  /** The signal that killed the child, when one did. A signal-killed converge
-   *  is an abort the user asked for, not a failure of the deploy — a host
-   *  should report it as an interruption and print no reproduce hint. */
-  readonly signal?: string | undefined;
-  readonly stackFilePath: string;
-  readonly reproduceCommand: string;
-  readonly cwd: string;
-}
-
-/**
- * Reads the execution diagnostics an engine-failure error carries in
- * `meta.diagnostics`; undefined for every other failure.
- */
-export function executionDiagnostics(f: CliStructuredError): ExecutionDiagnostics | undefined {
-  const diagnostics = f.meta?.['diagnostics'];
-  if (typeof diagnostics !== 'object' || diagnostics === null) return undefined;
-  const candidate = blindCast<
-    Record<string, unknown>,
-    'probe for the structural field checks below; typeof above proves it is a non-null object'
-  >(diagnostics);
-  if (
-    (candidate['exitCode'] !== undefined && typeof candidate['exitCode'] !== 'number') ||
-    (candidate['signal'] !== undefined && typeof candidate['signal'] !== 'string') ||
-    typeof candidate['stackFilePath'] !== 'string' ||
-    typeof candidate['reproduceCommand'] !== 'string' ||
-    typeof candidate['cwd'] !== 'string'
-  ) {
-    return undefined;
-  }
-  return blindCast<
-    ExecutionDiagnostics,
-    'the field checks above validate the runtime shape (optional numeric exitCode, optional string signal, string stackFilePath/reproduceCommand/cwd)'
-  >(diagnostics);
 }
 
 /**
@@ -158,8 +107,8 @@ const RUN_OF = {
  * An extension older than this Composer stores the input it is given but
  * resolves from a key without `environment`, so it may read every name as
  * production, or, locally, put every environment in one copy. Its
- * `deserialize` rebuilds only the fields it knows, so the container the
- * Alchemy child rebuilds shows which environment it really resolved.
+ * `deserialize` rebuilds only the fields it knows, so the container it
+ * rebuilds shows which environment it really resolved.
  * Refusing here keeps a mismatched install from deploying into, destroying
  * or running the wrong place.
  */

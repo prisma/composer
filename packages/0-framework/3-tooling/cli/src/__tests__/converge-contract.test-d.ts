@@ -66,20 +66,20 @@ interface LowerOptionsAt2 {
   readonly name: string;
   readonly environment?: string;
   readonly appConfigurationRead?: AppConfigurationReadAt2;
-  readonly firstProcessNodeAddresses?: readonly string[];
+  readonly preparedNodeAddresses?: readonly string[];
   readonly bundles: Record<string, BundleAt2>;
   readonly state?: AlchemyStateLayer;
   readonly providers?: Layer.Layer<never>;
   readonly report?: (result: DeploymentResultAt2) => void;
   readonly unassembled?: readonly string[];
-  readonly containers?: ReadonlyMap<string, ContainerInstance> | undefined;
-  readonly preflightPayloads?: ReadonlyMap<string, string> | undefined;
+  readonly containers: ReadonlyMap<string, ContainerInstance>;
+  readonly preflightPayloads: ReadonlyMap<string, string>;
   readonly findings?: PreflightFindingsAt2;
   readonly credentials?: CallerCredentials | undefined;
 }
 
 interface ConvergeRequestAt2 {
-  readonly operation: 'deploy';
+  readonly operation: 'deploy' | 'destroy';
   readonly stack: LoweredStack;
   readonly stage: string;
   readonly cwd: string;

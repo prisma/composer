@@ -12,9 +12,25 @@ const FAKE_CONTROL = `
 import { writeFileSync } from 'node:fs';
 export async function destroy(input) {
   if (process.env.FAKE_THROW === '1') throw new Error('entry did not load');
-  const { onEvent, config, ...rest } = input;
+  const { onEvent, config, signal, ...rest } = input;
   writeFileSync(process.env.FAKE_RECORD, JSON.stringify({ ...rest, file: config.file, section: config.value }));
   if (process.env.FAKE_EVENT === '1') onEvent?.({ kind: 'no-local-deploy-state', cwd: input.cwd });
+  if (process.env.FAKE_STEPS === '1') {
+    onEvent?.({ kind: 'step-started', step: { name: 'apply' } });
+    const resource = { name: 'apply-resource', resourceId: 'shop.web', resourceType: 'Prisma.Compute', status: 'deleted' };
+    onEvent?.({ kind: 'step-started', step: resource });
+    onEvent?.({ kind: 'message', severity: 'info', text: 'deleting shop.web' });
+    onEvent?.({ kind: 'step-finished', step: resource, outcome: 'ok', durationMs: 5 });
+    onEvent?.({ kind: 'step-finished', step: { name: 'apply' }, outcome: 'failed', durationMs: 7 });
+  }
+  if (process.env.FAKE_INTERRUPT === '1') {
+    process.kill(process.pid, 'SIGINT');
+    await new Promise((settle) => setTimeout(settle, 50));
+    if (signal?.aborted !== true) throw new Error('Ctrl-C did not abort the signal');
+    const failure = new Error('The destroy was interrupted.');
+    failure.code = 'DEPLOY.INTERRUPTED';
+    return { ok: false, failure };
+  }
   if (process.env.FAKE_FAIL !== '1') return { ok: true, value: undefined };
   const failure = new Error('The stack could not be torn down.');
   failure.code = 'DEPLOY.ENGINE_FAILED';
@@ -120,6 +136,30 @@ describe('composer-destroy', () => {
 
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stderr, new RegExp(`No prior deploy state under ${app}`));
+  });
+
+  it('prints each step, resource and message destroy reports, one line each on stderr', () => {
+    const result = run(['--entry', 'module.ts', '--environment', 'production'], {
+      FAKE_STEPS: '1',
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(result.stderr.trim().split('\n'), [
+      'started apply',
+      'started shop.web (Prisma.Compute) deleted',
+      'info: deleting shop.web',
+      'finished shop.web (Prisma.Compute) deleted (5ms)',
+      'failed apply (7ms)',
+    ]);
+  });
+
+  it('interrupts destroy on Ctrl-C and reports the interruption', () => {
+    const result = run(['--entry', 'module.ts', '--environment', 'production'], {
+      FAKE_INTERRUPT: '1',
+    });
+
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /The destroy was interrupted\./);
   });
 
   it('reads the config file --config names, relative to the current directory', () => {

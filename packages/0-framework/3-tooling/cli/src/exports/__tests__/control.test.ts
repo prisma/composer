@@ -1,7 +1,7 @@
 /**
  * `destroy` and `log` are reachable only through the `./control` entry: no
  * command wraps them. These drive each through that entry to a structured
- * refusal, the path a host takes when it passes a section the CLI would refuse.
+ * refusal.
  */
 import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
@@ -19,7 +19,7 @@ function withAppDir<T>(run: (dir: string) => Promise<T>): Promise<T> {
 const refusedSection = { value: {} as PrismaAppConfig, file: 'prisma.config.ts' };
 
 describe('the ./control entry', () => {
-  test('destroy refuses a section the CLI would refuse, as a structured failure', async () => {
+  test('destroy refuses an app whose @prisma/composer is not installed, as a structured failure, before it reads the section', async () => {
     const result = await withAppDir((cwd) =>
       destroy({
         config: refusedSection,
@@ -31,10 +31,7 @@ describe('the ./control entry', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
-    expect(result.failure).toMatchObject({
-      code: 'CONFIG.FIELD_INVALID',
-      meta: { field: 'extensions' },
-    });
+    expect(result.failure.code).toBe('DEPS.CONVERGE_UNRESOLVABLE');
   }, 15_000);
 
   test.skipIf(process.platform === 'win32')(
