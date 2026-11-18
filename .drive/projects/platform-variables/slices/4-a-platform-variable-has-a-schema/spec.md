@@ -254,7 +254,7 @@ Everything in sections 4 to 7.
 - **`schema` on a platform secret.** In `deferred.md`.
 - **Validating at deploy.** The deploy has no value.
 - **Running the library's schema anywhere.** The app's module code is not in the service.
-- **A size limit on the input document.** A marker repeats its schema in every field that reads the variable, and the document is one variable on the platform. No limit on a value's size is recorded. Added to `deferred.md`.
+- **A size limit on the input document.** A marker repeats its schema in every field that reads the variable. On Prisma Cloud the input document travels in the service's artifact, not in a variable, so a variable's 8 KB limit does not apply to it ([ADR-0065](../../../../../docs/design/90-decisions/ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)), and no other limit is needed.
 
 ## 10. Done when
 

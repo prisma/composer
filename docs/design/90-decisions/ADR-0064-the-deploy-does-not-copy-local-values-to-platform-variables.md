@@ -133,7 +133,7 @@ The platform variable nodes are the value resources in `graph.nodes` whose exten
 
 ### The input document
 
-Each place in a service's input document that reads a platform variable holds a `$platform` marker:
+Each place in a service's input document that reads a platform variable holds a `$platform` marker. On Prisma Cloud the document travels in the service's artifact ([ADR-0065](ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)), so the marker and its schema travel with it:
 
 ```json
 {
@@ -233,7 +233,7 @@ Preflight runs after the deploy has resolved the app's Project and Branch, and b
 The local target plays the platform's part.
 
 - **A plain platform variable comes from the app configuration.** The target's dev preflight runs in the first process. For each plain node a service reads, found in `graph.valueReads`, it reads the app configuration under the variable's name, once. A text value goes into `plainVariableText`, which `prisma dev` writes into the app configuration file for the second process, and counts toward its readers' fingerprints, so a changed value restarts only its readers. A value that is not text stops `prisma dev` before any service starts: ``The `config` adapters return a number for "SMTP_PORT", not text. prisma dev cannot start, because the platform variable "shop.smtpPort", which service "shop.mail.service" reads, takes text. Make the adapter return a string.``
-- **A typed platform variable is decoded and validated before any service starts.** The dev preflight then calls `readVariableText` on each text, once per platform variable node. A failure stops `prisma dev` with the message boot would give, followed by one sentence naming the readers: `prisma dev cannot start, because service "shop.mail.service" reads it.`, or with several readers `because services "shop.mail" and "shop.digest" read it.` The local service decodes again at its own boot, through the same code, from the same text, because its input document keeps the marker's schema.
+- **A typed platform variable is decoded and validated before any service starts.** The dev preflight then calls `readVariableText` on each text, once per platform variable node. A failure stops `prisma dev` with the message boot would give, followed by one sentence naming the readers: `prisma dev cannot start, because service "shop.mail.service" reads it.`, or with several readers `because services "shop.mail" and "shop.digest" read it.` The local service decodes again at its own boot, through the same code, from the same text, because the input document its artifact carries keeps the marker's schema; a dev server reads the same document from its `COMPOSER_<ADDRESS>_INPUT` variable.
 - **A platform secret comes from the app secrets.** The first process hands the second process the named secrets, the app secrets under the secrets keys of the graph's platform secrets, in `PRISMA_COMPOSER_NAMED_SECRETS`, in memory.
 - **A missing value follows ADR-0058.** For a variable a service reads in its input, an unset or empty one is left out of the service's input document, and the schema decides: a required one, or one an array position reads, stops `prisma dev` before any service starts, naming it and the service.
 - **Every plain value in the file is checked.** A member of `plainVariableText` that holds a known secret fails with `CONFIG.SECRET_AS_PLAIN_VALUE`, naming the platform variable and the secret, never the value.
@@ -287,7 +287,7 @@ The local target plays the platform's part.
 - The deploy reads the app secrets only to redact the values under the graph's secrets keys wherever it prints.
 - A schema's transform, default, refinement or removal of undeclared keys does not run on a platform variable's value. A transform or default the library can show in its JSON Schema is refused; one it cannot show, such as Zod's `.trim()` or `z.coerce`, is accepted and does not run. Such a check or change belongs in the service's own schema.
 - A hand-written schema whose `$ref` contradicts the keywords beside it, such as `{ "$ref": "#/$defs/n", "type": "string" }` with `n` a number, is judged by its target, so it is accepted and fails every boot with "does not fit". Neither ArkType nor Zod emits such a schema.
-- An input document repeats a variable's schema in every field that reads it, and no limit on its size is recorded.
+- An input document repeats a variable's schema in every field that reads it. On Prisma Cloud the document travels in the service's artifact, not in a variable, so a variable's 8 KB limit does not apply to it ([ADR-0065](ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)).
 - A test that needs to know which variable a binding reads finds the entry in `graph.valueReads`, takes the node at its `resource` from `graph.nodes`, and reads `props.name`.
 
 ## Alternatives considered
