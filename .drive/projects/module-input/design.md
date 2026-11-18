@@ -2,7 +2,7 @@
 
 This is the whole design of the module input project, as settled with Will on 2026-10-29 and 2026-10-30, and extended on 2026-11-05 with platform variables (section 5) and secrets in the root's input (section 7). It is the authoritative statement of it. It describes how the system behaves, not how the code is arranged. Slices S2 to S5 build an earlier version of it; [plan.md](plan.md) says what is built and which slice builds each remaining change.
 
-On 2026-11-06 Will split platform variables into their own project. That work is merged, and its design is recorded in [the platform variables decision record](../../../docs/design/90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md), which supersedes sections 5, 8 and 9 of this file wherever they speak of platform variables, preflight filling or `envSecret()`. This file keeps the root's input, carried secrets and `secret(inner)`.
+On 2026-11-06 Will split platform variables into their own project. That work is merged, and its design is recorded in [the platform variables decision record](../../../docs/design/90-decisions/ADR-0064-an-app-declares-its-platform-variables-in-its-root-and-the-deploy-copies-no-local-values.md), which supersedes sections 5, 8 and 9 of this file wherever they speak of platform variables, preflight filling or `envSecret()`. This file keeps the root's input, carried secrets and `secret(inner)`.
 
 The 2026-11-05 extension follows a platform change. Prisma Cloud keeps environment variables in the project, with a shared value per class and per-branch overrides, and a deploy may name a variable that has no value yet. Every deployment receives every variable of its class; neither the platform nor Composer isolates a service's environment on Prisma Cloud. Composer's part is to put the variable in the graph, as a node, and to record which service reads it.
 
@@ -181,7 +181,7 @@ A runtime value's real value at deploy is a pointer (section 3). The service rea
 
 ### Platform variables
 
-A value the platform owns, which a service reads at boot, is a **platform variable**: a node, `variable({ name, schema? })` or `variable.secret({ name })`, which only the root, written with `appRoot()`, may provision, and whose provisioned result is a runtime value. Its design is recorded in [the platform variables decision record](../../../docs/design/90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md). This project relies on it only for what section 4 says about runtime values.
+A value the platform owns, which a service reads at boot, is a **platform variable**: a node, `variable({ name, schema? })` or `variable.secret({ name })`, which only the root, written with `appRoot()`, may provision, and whose provisioned result is a runtime value. Its design is recorded in [the platform variables decision record](../../../docs/design/90-decisions/ADR-0064-an-app-declares-its-platform-variables-in-its-root-and-the-deploy-copies-no-local-values.md). This project relies on it only for what section 4 says about runtime values.
 
 ### The other sources
 
@@ -352,7 +352,7 @@ Each amendment says plainly which recorded statement it reverses:
 - **Dev secrets**: it rejected "Load `.env` in Composer itself", and told projects to add `import 'dotenv/config'`. `dotenv()` partly reverses the first: Composer ships the loader, but the user still names it in `prisma.config.ts`. A project that adopts `dotenv()` removes the import. The dev second process now receives its secrets from the first process, not from its own environment or adapters.
 - **Errors**: a structured error is never transformed between where it is raised and who receives it. Now redaction is the one change: before an operation returns an error, Composer removes every secret value it knows from its text and drops its cause.
 
-The 2026-11-05 extension reverses these further. S18 rewrites the records about carried secrets and `secret(inner)`; the platform-variables project rewrites the records about preflight filling, isolation and the `$platform` marker:
+The 2026-11-05 extension reverses these further. S18 rewrites the records about carried secrets and `secret(inner)`. The records about preflight filling, isolation and the `$platform` marker are already rewritten, and [the platform variables decision record](../../../docs/design/90-decisions/ADR-0064-an-app-declares-its-platform-variables-in-its-root-and-the-deploy-copies-no-local-values.md) holds that design:
 
 - **Secrets (ADR-0029)**: "a secret is an environment-sourced value the framework never stores", and `envSecret()` "is the only thing the framework calls a secret". Now a secret is any value handled as one: a platform secret, which Composer never sees, or a carried secret, which the root reads from the app secrets and the deploy sets on a service. Where a value comes from no longer decides whether it is a secret.
 - **Env-sourced params (ADR-0032)** and **dev secrets (ADR-0058)**: preflight fills a missing platform variable from the app configuration or the app secrets. Now the deploy fills nothing on the platform; the local target fills its own.

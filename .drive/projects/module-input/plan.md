@@ -11,7 +11,7 @@ A PR delivers one capability a user would notice, so slices whose limits the nex
 - **S3 to S8** are merged as one PR: prisma/composer#403.
 - **S9 and S10** are merged: prisma/composer#412.
 - **S11 to S13** are merged: prisma/composer#419.
-- **S18**, secrets in the root's input, is specified next. On 2026-11-06 Will split platform variables out into their own project, now merged, whose design is recorded in [the platform variables decision record](../../../docs/design/90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md); S18 keeps only what concerns the root's input. No platform-variables slice depends on it.
+- **S18**, secrets in the root's input, is specified next. Platform variables are designed and merged separately, and [the platform variables decision record](../../../docs/design/90-decisions/ADR-0064-an-app-declares-its-platform-variables-in-its-root-and-the-deploy-copies-no-local-values.md) records them. S18 keeps only what concerns the root's input, and nothing about platform variables depends on it.
 - **S14** is designed with Will before it is specified.
 
 ## S1. Spike: an input field as an opaque typed value
@@ -72,11 +72,11 @@ Adapters may report that their values changed, and `dotenv()` watches its files.
 
 ## S15, S16 and S17 are settled
 
-S15 (a developer's local secret reaching another environment) is settled by the platform-variables project, whose deploy fills nothing on the platform. S16 (secrets get a home of their own) is settled because only the values the graph names are known secrets. S17 (`secret(schema)`) ships in S18.
+S15 (a developer's local secret reaching another environment) is settled: the deploy copies no local value to the platform ([the platform variables decision record](../../../docs/design/90-decisions/ADR-0064-an-app-declares-its-platform-variables-in-its-root-and-the-deploy-copies-no-local-values.md)). S16 (secrets get a home of their own) is settled because only the values the graph names are known secrets. S17 (`secret(schema)`) ships in S18.
 
 ## S18. The root's input may hold a secret
 
-Design: [design.md](design.md) sections 3, 7, 8 and 9. One PR. Platform variables, which S18 held until 2026-11-06, were a separate project, now merged, whose design is recorded in [the platform variables decision record](../../../docs/design/90-decisions/ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md).
+Design: [design.md](design.md) sections 3, 7, 8 and 9. One PR. Platform variables, which S18 held until 2026-11-06, were a separate project, now merged, whose design is recorded in [the platform variables decision record](../../../docs/design/90-decisions/ADR-0064-an-app-declares-its-platform-variables-in-its-root-and-the-deploy-copies-no-local-values.md).
 
 - `secretString()` becomes `secret(inner)`, in both entry points. `inner` says what the secret's content must be, and is checked at boot when the service unboxes it.
 - A root `secret()` field is a carried secret: filled from the app secrets under its name, handed to the second process in `PRISMA_COMPOSER_NAMED_SECRETS`, and set on the service as a secret variable by the deploy. A name present in both the app configuration and the app secrets for a root field fails the deploy; the slice spec checks that rule against the default adapters, which both read the shell, so that a secret supplied through the shell is not refused. `destroy` binds it to a stand-in box.
