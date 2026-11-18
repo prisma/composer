@@ -58,6 +58,8 @@ jobs:
     env:
       PRISMA_SERVICE_TOKEN: ${{ secrets.CI_SITE_DEPLOY_TOKEN }}
       PRISMA_WORKSPACE_ID: ${{ vars.PROD_SITE_WORKSPACE_ID }}
+      # Only read when the deploy creates the Project.
+      PRISMA_REGION: us-east-1
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -72,6 +74,12 @@ jobs:
       - name: Reset the production project (destroy-then-redeploy cutover)
         if: github.event_name == 'workflow_dispatch' && inputs.reset
         run: bun scripts/delete-project.ts composer-docs
+      # The production Project was deployed by a Composer version that kept
+      # deploy state elsewhere, so `prisma deploy` refuses it. Deleting it takes
+      # the site down; renaming it lets the deploy below create a fresh Project
+      # while the old site keeps serving at its own URL.
+      - name: One-off - retire the legacy docs Project by renaming it (remove once the deploy is green)
+        run: bun scripts/retire-legacy-project.ts composer-docs
       # The CLI is invoked directly rather than through the package's `deploy`
       # script, which sources a local .env that does not exist on a runner (the
       # credentials are already in env).
