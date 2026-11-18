@@ -73,22 +73,29 @@ async function listProjects(): Promise<readonly ProjectRow[]> {
   }
 }
 
-const projects = await listProjects();
+async function retireLegacyProjects(name: string): Promise<void> {
+  const projects = await listProjects();
 
-const fresh = projects.find((project) => project.logicalId === appName);
-if (fresh !== undefined) {
-  console.log(`Project ${fresh.id} carries the logical id "${appName}". Nothing to retire.`);
-  process.exit(0);
+  const fresh = projects.find((project) => project.logicalId === name);
+  if (fresh !== undefined) {
+    console.log(`Project ${fresh.id} carries the logical id "${name}". Nothing to retire.`);
+    return;
+  }
+
+  const legacy = projects.filter((project) => project.name === name);
+  if (legacy.length === 0) {
+    console.log(`No project named "${name}" in this workspace. Nothing to retire.`);
+    return;
+  }
+
+  for (const project of legacy) {
+    const retiredName = `${name}-retired-${project.id.slice(-6)}`;
+    await request('PATCH', `/projects/${project.id}`, { name: retiredName });
+    console.log(`Renamed project ${project.id} from "${name}" to "${retiredName}".`);
+  }
 }
 
-const legacy = projects.filter((project) => project.name === appName);
-if (legacy.length === 0) {
-  console.log(`No project named "${appName}" in this workspace. Nothing to retire.`);
-  process.exit(0);
-}
-
-for (const project of legacy) {
-  const retiredName = `${appName}-retired-${project.id.slice(-6)}`;
-  await request('PATCH', `/projects/${project.id}`, { name: retiredName });
-  console.log(`Renamed project ${project.id} from "${appName}" to "${retiredName}".`);
-}
+retireLegacyProjects(appName).catch((error: unknown) => {
+  console.error(error);
+  process.exit(1);
+});
