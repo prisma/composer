@@ -88,7 +88,9 @@ export interface WatchHandle {
  * watched file; proven by the delete-recreate test failing on Linux CI
  * only). Directory targets are watched recursively as themselves; a
  * nonexistent path is treated as a file target, so it starts reporting the
- * moment something creates it.
+ * moment something creates it. A file whose directory does not exist yet is
+ * watched through its nearest existing ancestor, following only the
+ * directories on the way to it.
  */
 export function startWatch(
   targets: readonly WatchTarget[],
@@ -108,6 +110,7 @@ export function startWatch(
   const fileTargets = new Set<string>();
   const directoryRoots = new Set<string>();
   const parentRoots = new Set<string>();
+  const filesInMissingDirectories = new Set<string>();
   for (const target of targets) {
     for (const p of target.paths) {
       const abs = path.resolve(p);
@@ -121,7 +124,8 @@ export function startWatch(
         directoryRoots.add(abs);
       } else {
         fileTargets.add(abs);
-        parentRoots.add(path.dirname(abs));
+        if (fs.existsSync(path.dirname(abs))) parentRoots.add(path.dirname(abs));
+        else filesInMissingDirectories.add(abs);
       }
     }
   }
@@ -150,6 +154,22 @@ export function startWatch(
     watchers.push(parentWatcher);
   }
 
+  if (filesInMissingDirectories.size > 0) {
+    const { roots, onTheWay } = nearestExistingAncestors(filesInMissingDirectories);
+    const ancestorWatcher = chokidar.watch([...roots], {
+      ignoreInitial: true,
+      ignored: (candidate) => {
+        const resolved = path.resolve(candidate);
+        return !roots.has(resolved) && !onTheWay.has(resolved);
+      },
+    });
+    ancestorWatcher.on('all', (_event, eventPath) => {
+      if (fileTargets.has(path.resolve(eventPath))) trigger();
+    });
+    ancestorWatcher.on('error', reportError);
+    watchers.push(ancestorWatcher);
+  }
+
   let markReady: () => void = () => {};
   const allReady = Promise.all(
     watchers.map((watcher) => new Promise<void>((resolve) => watcher.on('ready', () => resolve()))),
@@ -164,4 +184,26 @@ export function startWatch(
       for (const watcher of watchers) void watcher.close();
     },
   };
+}
+
+/**
+ * For files whose directory does not exist yet: the nearest existing ancestor of each, and every
+ * path from there down to the file, which are all a watch on the ancestor needs to follow.
+ */
+function nearestExistingAncestors(files: ReadonlySet<string>): {
+  readonly roots: ReadonlySet<string>;
+  readonly onTheWay: ReadonlySet<string>;
+} {
+  const roots = new Set<string>();
+  const onTheWay = new Set<string>();
+  for (const file of files) {
+    onTheWay.add(file);
+    let directory = path.dirname(file);
+    while (!fs.existsSync(directory)) {
+      onTheWay.add(directory);
+      directory = path.dirname(directory);
+    }
+    roots.add(directory);
+  }
+  return { roots, onTheWay };
 }

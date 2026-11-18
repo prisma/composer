@@ -11,8 +11,25 @@ import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../composer-config.ts';
 import { executorLoadFailure, type OperationDeps, type ServiceEndpoint } from './shared.ts';
+import type { StepEvent } from './steps.ts';
+
+/** A step of a converge. Each converge is one `converge` step, `dev.converge` for the first and `dev.rebuild.<n>` for the n-th rebuild, and each resource Alchemy touches is an `apply-resource` step inside it. */
+export type DevStep =
+  | { readonly name: 'converge'; readonly id: string }
+  | {
+      readonly name: 'apply-resource';
+      /** The id of the converge step it belongs to. */
+      readonly converge: string;
+      /** The resource's ID (ADR-0057): its node's address, or the address and the resource's role in that node. */
+      readonly resourceId: string;
+      readonly resourceType: string;
+      /** Alchemy's status word for what is happening to it, such as `creating` or `created`. */
+      readonly status: string;
+    };
 
 export type DevEvent =
+  /** A converge's steps and Alchemy's log lines. Every step a converge opens is finished when it ends, as `failed` when it failed or was interrupted. */
+  | StepEvent<DevStep>
   /** Initial front door + after each successful re-converge. */
   | { readonly kind: 'ready'; readonly endpoints: readonly ServiceEndpoint[] }
   | { readonly kind: 'unwatchable'; readonly address: string }
@@ -32,12 +49,12 @@ export type DevEvent =
       readonly removed: readonly string[];
       readonly changed: readonly string[];
     }
-  /** The app keeps running, still watching. */
+  /** A rebuild's converge failed, or was refused: `DEV.CONVERGE_RUNNING` when another converge on this thread holds the process state, `DEV.WORKER_THREAD` when dev was called from a thread that cannot change the process's working directory. The app keeps running, still watching. */
   | {
       readonly kind: 'converge-failed';
-      readonly stackFilePath: string;
-      readonly reproduceCommand: string;
-      readonly cwd: string;
+      readonly code: 'DEV.CONVERGE_FAILED' | 'DEV.CONVERGE_RUNNING' | 'DEV.WORKER_THREAD';
+      readonly message: string;
+      readonly reasons: readonly { readonly tag: string; readonly message: string }[];
     }
   /** Once per service that runs its build adapter's dev server, before the first converge (ADR-0056). `cwd` is absolute. */
   | {
@@ -73,17 +90,19 @@ export interface DevInput {
    * `devStop` stops the app later.
    */
   readonly detach?: boolean | undefined;
+  /** The app's directory, where `.prisma-composer/` and Alchemy's `.alchemy` live. Defaults to `process.cwd()`. For the length of each converge, the process's working directory is `cwd`; it is restored after. */
   readonly cwd?: string | undefined;
   readonly onEvent?: ((event: DevEvent) => void) | undefined;
+  /** Interrupts a running converge and stops dev. During the first converge, dev then fails with `DEV.INTERRUPTED`; once the session has started, it stops as `stop()` stops it. Only one converge runs at a time on the thread that called dev, which holds the converge flag while dev's converge worker runs: a `deploy` on that thread while dev converges is refused, and so is a dev converge while a deploy runs there. A converge on another thread of the process is not refused. */
+  readonly signal?: AbortSignal | undefined;
 }
 
-/** A running dev session. The operation NEVER touches process signal handlers —
- * the host owns signals (and must evict alchemy's import-time SIGINT/SIGTERM
- * listeners before installing its own; see run-dev.ts). */
+/** A running dev session. The operation NEVER touches process signal handlers: the host owns signals. */
 export interface DevSession {
   /** The initial front door, already merged across attachments. */
   readonly endpoints: readonly ServiceEndpoint[];
   /** Stop the watch loop and the app's services (emulators and data stay up).
+   * A converge still running is interrupted, and its worker thread ends before the services stop.
    * Idempotent; emits 'stopping'/'stopped'; resolves `closed`. A no-op for a detached session. */
   stop(): Promise<void>;
   /** Settles when the session has fully stopped (via stop()); already settled for a detached session. */

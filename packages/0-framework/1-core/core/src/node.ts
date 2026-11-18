@@ -59,7 +59,7 @@ export interface SourceOptions {
 
 /** What a deploy target says about a secret source it builds. */
 export interface SecretSourceOptions extends SourceOptions {
-  /** The app secrets key that holds this secret's value. Composer redacts the value under it wherever it prints, and `prisma dev` hands it to its second process. */
+  /** The app secrets key that holds this secret's value. Composer redacts the value under it wherever it prints, and `prisma dev` hands it to its converge worker thread. */
   readonly secretsKey?: string;
 }
 

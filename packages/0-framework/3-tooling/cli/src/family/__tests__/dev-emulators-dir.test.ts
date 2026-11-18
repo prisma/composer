@@ -16,6 +16,7 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import { createTestCli } from '@prisma/cli-engine/testing';
 import * as Layer from 'effect/Layer';
 import { devWithDeps } from '../../operations/dev.ts';
+import type { RunDevConverge } from '../../operations/dev-converge.ts';
 import { createComposerFamily, realOperations } from '../family.ts';
 import { mountAsHost } from './host-mount.ts';
 
@@ -109,6 +110,8 @@ function configWhoseEmulatorsThrow(): PrismaAppConfig {
   };
 }
 
+const notReached: RunDevConverge = unused;
+
 const fakeAssembler = async (node: ServiceNode) => ({
   dir: path.join(path.dirname(fileURLToPath(node.build.module)), 'dist', 'bundle'),
   entry: 'server.js',
@@ -122,7 +125,12 @@ describe.skipIf(process.platform === 'win32')(
       const family = createComposerFamily({
         operations: {
           ...realOperations,
-          dev: (input, deps) => devWithDeps(input, { ...deps, runAssembler: fakeAssembler }),
+          dev: (input, deps) =>
+            devWithDeps(input, {
+              ...deps,
+              runAssembler: fakeAssembler,
+              runDevConverge: notReached,
+            }),
         },
       });
       const cli = createTestCli({

@@ -10,7 +10,6 @@
  */
 import { isMainThread } from 'node:worker_threads';
 import { type lower, wrappedProviderError } from '@internal/core/deploy';
-import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
 import * as Alchemist from 'alchemy/Alchemist';
 import * as Interaction from 'alchemy/Interaction';
@@ -19,6 +18,7 @@ import * as Cause from 'effect/Cause';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
 import * as Logger from 'effect/Logger';
+import { convergeRunning, holdingConvergeProcess } from './converge-process.ts';
 
 /** What `lower()` returns: the stack value `Alchemist.plan` takes. */
 export type LoweredStack = ReturnType<typeof lower>;
@@ -152,10 +152,10 @@ function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
 }
 
 /** One error as a reason. A wrapped provider failure reports the error it wraps, and a structured error reports its code as its tag. */
-function reasonOf(error: unknown): ConvergeFailureReason {
+export function failureReasonOf(error: unknown): ConvergeFailureReason {
   if (!isRecord(error)) return { tag: 'Unknown', message: textOf(error) };
   const wrapped = wrappedProviderError(error);
-  if (wrapped !== undefined) return reasonOf(wrapped);
+  if (wrapped !== undefined) return failureReasonOf(wrapped);
   const message = typeof error['message'] === 'string' ? error['message'] : undefined;
   const tag = CliStructuredError.is(error)
     ? error.code
@@ -171,59 +171,12 @@ function reasonOf(error: unknown): ConvergeFailureReason {
 export function failureReasons(cause: Cause.Cause<unknown>): readonly ConvergeFailureReason[] {
   const reasons = cause.reasons.flatMap((reason): ConvergeFailureReason[] => {
     if (Cause.isInterruptReason(reason)) return [];
-    return [reasonOf(Cause.isFailReason(reason) ? reason.error : reason.defect)];
+    return [failureReasonOf(Cause.isFailReason(reason) ? reason.error : reason.defect)];
   });
   const unique = new Map(reasons.map((reason) => [`${reason.tag}\0${reason.message}`, reason]));
   return unique.size > 0
     ? [...unique.values()]
     : [{ tag: 'Unknown', message: Cause.pretty(cause) }];
-}
-
-/** One flag per process, shared by every copy of this module, so two apps' installs in one host cannot converge at once. */
-const RUNNING = Symbol.for('prisma.composer.converge.running');
-
-const flag = blindCast<
-  { [RUNNING]?: boolean },
-  'globalThis takes any symbol-keyed property; this one is ours alone'
->(globalThis);
-
-/**
- * Sets the process state Alchemy reads for the length of `run`, and restores
- * it on every exit path: the variables in `env`, then the working directory.
- * A directory that cannot be restored never leaves a variable behind and
- * never changes what `run` returned.
- */
-async function withProcessState<T>(
-  env: Readonly<Record<string, string | undefined>>,
-  cwd: string,
-  run: () => Promise<T>,
-): Promise<T> {
-  const previousEnv = Object.keys(env).map((name) => [name, process.env[name]] as const);
-  const previousCwd = process.cwd();
-  let changedDirectory = false;
-  try {
-    for (const [name, value] of Object.entries(env)) {
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
-    if (previousCwd !== cwd) {
-      process.chdir(cwd);
-      changedDirectory = true;
-    }
-    return await run();
-  } finally {
-    for (const [name, value] of previousEnv) {
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
-    if (changedDirectory) {
-      try {
-        process.chdir(previousCwd);
-      } catch {
-        // The old directory is gone, so there is nowhere to return to; the outcome stands.
-      }
-    }
-  }
 }
 
 /** A stream for Alchemy's terminal output that hands each write to `write`; it reports the terminal's size and colours as stderr does. */
@@ -266,13 +219,13 @@ function program(request: ConvergeRequest, emit: (event: ConvergeEvent) => void)
 
 /**
  * Plans and applies `stack` in this process, as `alchemy deploy --yes` would.
- * The plan's scope, and the state-store lease it holds, closes before this
+ * The plan's scope, and the state-store lease it holds when the store has one, closes before this
  * returns, including when `signal` interrupts it. One converge runs at a time
  * per process, across every install of this module: a second call while one
  * runs is refused.
  */
 export const convergeInProcess: Converge = async (request) => {
-  if (flag[RUNNING] === true) return { kind: 'refused', reason: 'already-running' };
+  if (convergeRunning()) return { kind: 'refused', reason: 'already-running' };
   if (!isMainThread && process.cwd() !== request.cwd) {
     return { kind: 'refused', reason: 'worker-thread' };
   }
@@ -284,9 +237,8 @@ export const convergeInProcess: Converge = async (request) => {
     }
   };
   try {
-    flag[RUNNING] = true;
     const effect = program(request, emit);
-    return await withProcessState(request.env, request.cwd, async () => {
+    const held = await holdingConvergeProcess(request.env, request.cwd, async () => {
       const exit = await Effect.runPromiseExit(
         effect,
         request.signal === undefined ? undefined : { signal: request.signal },
@@ -295,9 +247,8 @@ export const convergeInProcess: Converge = async (request) => {
       if (Cause.hasInterruptsOnly(exit.cause)) return { kind: 'interrupted' } as const;
       return { kind: 'failed', reasons: failureReasons(exit.cause) } as const;
     });
+    return held.held ? held.value : { kind: 'refused', reason: 'already-running' };
   } catch (error) {
-    return { kind: 'failed', reasons: [reasonOf(error)] };
-  } finally {
-    flag[RUNNING] = false;
+    return { kind: 'failed', reasons: [failureReasonOf(error)] };
   }
 };
