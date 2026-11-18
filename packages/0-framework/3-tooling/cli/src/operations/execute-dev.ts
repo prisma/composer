@@ -35,9 +35,10 @@ import {
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import { removeLeftoverAppConfigurationFiles } from '../app-configuration-file.ts';
 import { loadAppConvergeEntry } from '../app-converge.ts';
-import type { ConvergeOutcome } from '../converge-in-process.ts';
+import type { ConvergeFailureReason, ConvergeOutcome } from '../converge-in-process.ts';
 import { withComposerAdvice } from '../deployment-summary.ts';
-import { valueReadsChangeText, valueReadsSnapshot } from '../dev/value-reads-change.ts';
+import { valueReadsSnapshot } from '../dev/value-reads-change.ts';
+import { valueReadsChangeText } from '../dev/value-reads-change-text.ts';
 import {
   authoringModuleTargets,
   startWatch,
@@ -259,16 +260,22 @@ function convergeFailure(
           reasons: [],
         };
   }
-  const failedWith = (name: string): boolean => outcome.reasons.some(({ tag }) => tag === name);
+  const rootInputUnread = rootInputUnreadReason(outcome);
   return {
     code: 'DEV.CONVERGE_FAILED',
-    message: failedWith(GRAPH_CHANGED_ERROR)
+    message: outcome.reasons.some(({ tag }) => tag === GRAPH_CHANGED_ERROR)
       ? NODES_CHANGED
-      : failedWith(ROOT_INPUT_UNREAD_ERROR)
-        ? ROOT_INPUT_CHANGED
+      : rootInputUnread !== undefined
+        ? `${ROOT_INPUT_CHANGED}\n${redact(rootInputUnread.message)}`
         : redact(withComposerAdvice(convergeReasonsText(outcome.reasons))),
     reasons: outcome.reasons.map(({ tag, message }) => ({ tag, message: redact(message) })),
   };
+}
+
+function rootInputUnreadReason(outcome: FailedConverge): ConvergeFailureReason | undefined {
+  return outcome.kind === 'refused'
+    ? undefined
+    : outcome.reasons.find(({ tag }) => tag === ROOT_INPUT_UNREAD_ERROR);
 }
 
 const NODES_CHANGED =
@@ -276,6 +283,9 @@ const NODES_CHANGED =
 
 const ROOT_INPUT_CHANGED =
   "The app's root now passes on a field of its input that dev did not read when it started, so the field has no value here. Restart `prisma dev` to apply the change.";
+
+const CHANGED_WHILE_STARTING =
+  'An app file was edited after dev loaded it, or a module body builds a different graph each time.';
 
 const DEV_PLAIN =
   'prisma dev hands every plain value to the local services as plain configuration, and never hands a secret that way.';
@@ -627,7 +637,7 @@ async function executeDevInner(
         'DEV.CONVERGE_FAILED',
         `The platform variables the app reads changed while dev started: ${valueReadsChangeText(firstResult.change)}.`,
         {
-          why: 'An app file was edited after dev loaded it, or a module body builds a different graph each time.',
+          why: CHANGED_WHILE_STARTING,
           fix: 'Run dev again.',
         },
       ),
@@ -660,6 +670,22 @@ async function executeDevInner(
   }
   if (first.kind !== 'applied') {
     await stopStartedServices();
+    const rootInputUnread = rootInputUnreadReason(first);
+    if (rootInputUnread !== undefined) {
+      return notOk(
+        new CliStructuredError(
+          'DEV.CONVERGE_FAILED',
+          `The app could not be converged.\n${redact(rootInputUnread.message)}`,
+          {
+            why: CHANGED_WHILE_STARTING,
+            fix: 'Run dev again.',
+            meta: {
+              reasons: [{ tag: rootInputUnread.tag, message: redact(rootInputUnread.message) }],
+            },
+          },
+        ),
+      );
+    }
     const failure = convergeFailure(first, redact);
     return notOk(
       failure.code === 'DEV.CONVERGE_FAILED'

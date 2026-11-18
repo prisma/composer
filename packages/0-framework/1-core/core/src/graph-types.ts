@@ -46,7 +46,7 @@ export interface FirstProcessLoadOptions extends CommonLoadOptions {
   readonly appConfigurationRead?: never;
 }
 
-/** Load's options in a Load that takes what an earlier Load read: `lower()` under `deploy`, `prisma dev`'s Load and `lower()` in its converge worker thread, and `destroy`'s second process. */
+/** Load's options in a Load that takes what an earlier Load of the same app read. */
 export interface SecondProcessLoadOptions extends CommonLoadOptions {
   readonly configuration?: never;
   /** What the earlier Load read. Load takes each root field from it without running the root's schema. */
@@ -180,8 +180,9 @@ export interface Graph {
 
 /**
  * Thrown by Load when the graph is malformed. Structured at origin
- * (base-type rule 6): one type-level code covers every raise site until a
- * finer per-site taxonomy is carved out. The `name` stays
+ * (base-type rule 6) under one type-level code. Not every error Load throws
+ * is one: a Load that needs a root input field an earlier Load did not read
+ * throws an error named `ROOT_INPUT_UNREAD_ERROR`. The `name` stays
  * `CliStructuredError` — structural recognition depends on it.
  */
 export class LoadError extends CliStructuredError {

@@ -58,11 +58,33 @@ function printingConsoleFunctionNames(): readonly string[] {
 const textOf = (chunk: string | Uint8Array): string =>
   typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
 
-// Whatever the app's code or a provider prints goes to the main thread, which redacts it.
-// Bun's own console methods and warnings write to the terminal directly, so every function on
-// `console` that can print is replaced, and warnings are forwarded. The worker does not import
-// `node:console`: under Bun its named exports are fixed at the first import, which must come
-// after the replacement. A direct write to the process's file descriptors cannot be caught here.
+/** Bun's `console.write`: each argument's bytes one after another, returning how many were written. */
+function bunConsoleWrite(...args: unknown[]): number {
+  const chunks: Uint8Array[] = [];
+  try {
+    if (args.length === 0) throw writeArgumentError('ERR_STREAM_NULL_VALUES');
+    for (const arg of args) chunks.push(bytesOf(arg));
+  } finally {
+    if (chunks.length > 0) output(textOf(Buffer.concat(chunks)));
+  }
+  return chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+}
+
+function bytesOf(arg: unknown): Uint8Array {
+  if (typeof arg === 'string') return Buffer.from(arg, 'utf8');
+  if (arg instanceof ArrayBuffer) return new Uint8Array(arg);
+  if (ArrayBuffer.isView(arg)) return new Uint8Array(arg.buffer, arg.byteOffset, arg.byteLength);
+  throw writeArgumentError('ERR_INVALID_ARG_TYPE');
+}
+
+function writeArgumentError(code: string): TypeError {
+  return Object.assign(new TypeError('write() expects a string, ArrayBufferView, or ArrayBuffer'), {
+    code,
+  });
+}
+
+// The worker must not import `node:console`: under Bun its named exports are fixed at the first
+// import, which must come after the replacement below.
 for (const stream of [process.stdout, process.stderr]) {
   stream.write = (chunk: string | Uint8Array) => {
     output(textOf(chunk));
@@ -83,9 +105,11 @@ for (const name of printingConsoleFunctionNames()) {
   Reflect.set(
     console,
     name,
-    typeof own === 'function'
-      ? own.bind(replacement)
-      : (...args: unknown[]) => output(args.map(printed).join(' ')),
+    name === 'write'
+      ? bunConsoleWrite
+      : typeof own === 'function'
+        ? own.bind(replacement)
+        : (...args: unknown[]) => output(args.map(printed).join(' ')),
   );
 }
 if (typeof process.versions.bun === 'string') {

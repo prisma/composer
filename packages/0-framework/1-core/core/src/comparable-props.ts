@@ -13,7 +13,7 @@ import { isPlainObject, isValue, originOf } from './value.ts';
  * - a function or symbol becomes its text;
  * - a reference back to an object that contains it becomes a cycle marker.
  */
-export function propsAsData(props: unknown): unknown {
+export function comparableProps(props: unknown): unknown {
   return asData(props, new Set());
 }
 

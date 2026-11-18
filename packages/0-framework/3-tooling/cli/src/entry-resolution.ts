@@ -20,7 +20,7 @@
  * it to learn which app files an entry import loaded.
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import * as mod from 'node:module';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -91,7 +91,8 @@ function pathOfFileUrl(url: string): string | undefined {
 /**
  * The app files an import error names: the module that could not be found, or the file that did
  * not parse, when the runtime says which. A module that could not be found comes with every file
- * the resolve hook would try for it, since the user may create any of them. Follows `cause`.
+ * the resolve hook would try for it, since the user may create any of them. A directory is never
+ * returned: in its place come the files the hook would try inside it. Follows `cause`.
  */
 export function appFilesNamedBy(error: unknown): readonly string[] {
   const visited = new Set<object>();
@@ -100,12 +101,30 @@ export function appFilesNamedBy(error: unknown): readonly string[] {
     visited.add(current);
     const named = fileNamedBy(current);
     if (named !== undefined && !named.split(path.sep).includes('node_modules')) {
-      if (existsSync(named)) return [named];
-      return [named, ...sourceCandidates(pathToFileURL(named)).map((url) => fileURLToPath(url))];
+      return filesFor(path.resolve(named));
     }
     current = 'cause' in current ? current.cause : undefined;
   }
   return [];
+}
+
+const HOOK_MAPPED_EXTENSIONS: ReadonlySet<string> = new Set(['', '.js', '.mjs', '.cjs']);
+
+function filesFor(named: string): readonly string[] {
+  const candidates = () => sourceCandidates(pathToFileURL(named)).map((url) => fileURLToPath(url));
+  if (isDirectory(named)) {
+    return candidates().filter((candidate) => candidate.startsWith(named + path.sep));
+  }
+  if (existsSync(named) || !HOOK_MAPPED_EXTENSIONS.has(path.extname(named))) return [named];
+  return [named, ...candidates()];
+}
+
+function isDirectory(file: string): boolean {
+  try {
+    return statSync(file).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 function fileNamedBy(error: object): string | undefined {
@@ -204,7 +223,12 @@ function sourceCandidates(resolved: URL): URL[] {
 }
 
 function isRelativeSpecifier(specifier: string): boolean {
-  return specifier.startsWith('./') || specifier.startsWith('../');
+  return (
+    specifier === '.' ||
+    specifier === '..' ||
+    specifier.startsWith('./') ||
+    specifier.startsWith('../')
+  );
 }
 
 function isModuleNotFoundError(error: unknown): boolean {

@@ -50,7 +50,11 @@ const printEverywhere = (token) => {
   console.assert(false, 'assert ' + token);
   process.emitWarning('warning ' + token);
   log('named ' + token);
-  if (typeof console.write === 'function') console.write('write ' + token + '\\n');
+  if (typeof console.write === 'function') {
+    const bytes = new TextEncoder().encode('bytes ' + token);
+    const written = console.write('write ', 'joined ', bytes, new TextEncoder().encode(' buffer\\n').buffer);
+    console.log('write returned ' + written);
+  }
   for (const name of ['timeStamp', 'profile', 'profileEnd']) console[name]('quiet ' + token);
   if (typeof console.createTask === 'function') {
     console.createTask('quiet ' + token).run(() => console.log('createTask ' + token));

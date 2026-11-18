@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
-import { type Graph, propsAsData, type ValueRead } from '@internal/core';
-import { quotedList } from '@internal/foundation/errors';
+import type { Graph, ValueRead } from '@internal/core';
+import { comparableProps } from '@internal/core/deploy';
 
 /** A graph's value reads and the props of each value resource they read, as data a worker thread can receive. */
 export interface ValueReadsSnapshot {
@@ -36,7 +36,7 @@ export function valueReadsSnapshot(graph: Graph): ValueReadsSnapshot {
   return {
     reads: graph.valueReads.map(({ reader, resource, path }) => ({ reader, resource, path })),
     props: Object.fromEntries(
-      graph.valueReads.map(({ resource }) => [resource, propsAsData(propsAt(graph, resource))]),
+      graph.valueReads.map(({ resource }) => [resource, comparableProps(propsAt(graph, resource))]),
     ),
   };
 }
@@ -68,21 +68,4 @@ export function valueReadsChange(
   }
   if (added.length + removed.length + changed.length === 0) return undefined;
   return { added, removed, changed };
-}
-
-/** Which reads changed, as a clause: `reads of "shop.port" were added and "shop.key" was changed`. */
-export function valueReadsChangeText(change: ValueReadsChange): string {
-  const clauses = [
-    ...(change.added.length > 0 ? [`reads of ${quotedList(change.added)} were added`] : []),
-    ...(change.removed.length > 0 ? [`reads of ${quotedList(change.removed)} were removed`] : []),
-    ...(change.changed.length > 0
-      ? [`${quotedList(change.changed)} ${change.changed.length === 1 ? 'was' : 'were'} changed`]
-      : []),
-  ];
-  const [first, second, third] = clauses;
-  return third !== undefined
-    ? `${first}, ${second}, and ${third}`
-    : second !== undefined
-      ? `${first} and ${second}`
-      : (first ?? '');
 }

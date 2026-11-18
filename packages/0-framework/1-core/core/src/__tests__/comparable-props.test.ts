@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { isDeepStrictEqual } from 'node:util';
+import { comparableProps } from '../comparable-props.ts';
 import { paramSource, secretSource } from '../node.ts';
-import { propsAsData } from '../props-data.ts';
 import { environmentFacts, resolve } from '../value.ts';
 
 const same = (a: unknown, b: unknown): boolean =>
-  isDeepStrictEqual(structuredClone(propsAsData(a)), propsAsData(b));
+  isDeepStrictEqual(structuredClone(comparableProps(a)), comparableProps(b));
 
-describe('propsAsData()', () => {
+describe('comparableProps()', () => {
   test('a param source and a secret source with the same payload differ', () => {
     const payload = { name: 'EMAIL_FROM' };
 
@@ -35,7 +35,7 @@ describe('propsAsData()', () => {
   test('a derived value is described as derived, unlike a source', () => {
     const derived = resolve([environmentFacts.name], ([name]) => `${name}-x`);
 
-    expect(propsAsData({ derived })).toEqual({
+    expect(comparableProps({ derived })).toEqual({
       object: { derived: { value: { derived: 'computed' } } },
     });
     expect(same({ v: derived }, { v: paramSource({}) })).toBe(false);
@@ -65,10 +65,10 @@ describe('propsAsData()', () => {
     looped['self'] = looped;
     const shared = { name: 'y' };
 
-    expect(propsAsData(looped)).toEqual({
+    expect(comparableProps(looped)).toEqual({
       object: { name: 'x', self: { cycle: true } },
     });
-    expect(propsAsData({ a: shared, b: shared })).toEqual({
+    expect(comparableProps({ a: shared, b: shared })).toEqual({
       object: { a: { object: { name: 'y' } }, b: { object: { name: 'y' } } },
     });
   });

@@ -105,6 +105,11 @@ describe.skipIf(process.platform === 'win32')('a dev converge in a worker thread
       expect(output).toContain(`assert ${token}`);
       expect(output).toContain(`warning ${token}`);
       expect(output).not.toContain('quiet');
+      if (runtime === 'bun') {
+        const written = `write joined bytes ${token} buffer\n`;
+        expect(output).toContain(written);
+        expect(output).toContain(`write returned ${Buffer.byteLength(written)}`);
+      }
     }, 60_000);
   }
 
@@ -318,6 +323,9 @@ async function devSession(
   return { session: start.value, change, watched };
 }
 
+const ROOT_INPUT_UNREAD_PATH =
+  'input.PATH of root module "shop" was not read when this command started, so it has no value here. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.';
+
 const countOf = (events: readonly DevEvent[], kind: DevEvent['kind']): number =>
   events.filter((event) => event.kind === kind).length;
 
@@ -502,17 +510,35 @@ describe.skipIf(process.platform === 'win32')('dev with its converge in a worker
     expect(failed).toMatchObject({
       kind: 'converge-failed',
       code: 'DEV.CONVERGE_FAILED',
-      message:
-        "The app's root now passes on a field of its input that dev did not read when it started, so the field has no value here. Restart `prisma dev` to apply the change.",
-      reasons: [
-        {
-          tag: 'RootInputUnreadError',
-          message:
-            'input.PATH of root module "shop" was not read when this command started, so it has no value here. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.',
-        },
-      ],
+      message: `The app's root now passes on a field of its input that dev did not read when it started, so the field has no value here. Restart \`prisma dev\` to apply the change.\n${ROOT_INPUT_UNREAD_PATH}`,
+      reasons: [{ tag: 'RootInputUnreadError', message: ROOT_INPUT_UNREAD_PATH }],
     });
     expect(app.seen()).toEqual([`v1 ${app.dir}`]);
+  }, 60_000);
+
+  test("a module body that passes on a root input field only in the worker fails the first converge with core's sentence and the causes at start", async () => {
+    const app = workerApp('v1');
+    fs.writeFileSync(
+      app.entry,
+      `import { isMainThread } from 'node:worker_threads';\n${entrySource({ passesOn: 'PATH' }).replace('input["PATH"]', 'isMainThread ? undefined : input["PATH"]')}`,
+    );
+    const composer = (await import(pathToFileURL(app.configFile).href)).default.composer;
+
+    const start = await devWithDeps(
+      { config: { value: composer, file: app.configFile }, entry: app.entry, cwd: app.dir },
+      { watch: () => ({ ready: Promise.resolve(), stop: () => undefined }) },
+    );
+
+    expect(start.ok).toBe(false);
+    if (start.ok) return;
+    expect(start.failure.toEnvelope()).toMatchObject({
+      code: 'DEV.CONVERGE_FAILED',
+      summary: `The app could not be converged.\n${ROOT_INPUT_UNREAD_PATH}`,
+      why: 'An app file was edited after dev loaded it, or a module body builds a different graph each time.',
+      fix: 'Run dev again.',
+      meta: { reasons: [{ tag: 'RootInputUnreadError', message: ROOT_INPUT_UNREAD_PATH }] },
+    });
+    expect(app.seen()).toEqual([]);
   }, 60_000);
 
   test('an edit that adds a node fails the rebuild, saying dev must be restarted', async () => {

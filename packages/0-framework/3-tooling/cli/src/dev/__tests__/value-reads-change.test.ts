@@ -18,7 +18,6 @@ interface NodeSpec {
   readonly secret?: boolean;
   /** Whether the node's props hold an object branded under a symbol key, which `structuredClone` drops. */
   readonly brandedProp?: boolean;
-  /** Further props of the node. */
   readonly extra?: Readonly<Record<string, unknown>>;
   readonly schema?: PlainData;
 }

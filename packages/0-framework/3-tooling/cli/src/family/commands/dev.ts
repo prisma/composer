@@ -18,7 +18,7 @@ import * as path from 'node:path';
 import type { EngineEvent } from '@prisma/cli-engine';
 import { defineSessionCommand, flag } from '@prisma/cli-engine';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
-import { valueReadsChangeText } from '../../dev/value-reads-change.ts';
+import { valueReadsChangeText } from '../../dev/value-reads-change-text.ts';
 import type { DevEvent, DevInput, DevStep } from '../../operations/dev.ts';
 import { DEV_ENVIRONMENT, type ServiceEndpoint } from '../../operations/shared.ts';
 import { SecretRedaction } from '../../redaction.ts';

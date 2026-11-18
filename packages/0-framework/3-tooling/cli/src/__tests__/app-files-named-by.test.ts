@@ -60,13 +60,60 @@ describe('appFilesNamedBy()', () => {
   test('a file URL that names no local file is skipped, and its cause still read', () => {
     const dir = appDir();
     const error = {
-      url: 'file://server/share/helpers.ts',
-      cause: { specifier: './helpers.ts', referrer: 'file://server/share/label.ts' },
+      url: 'file:///lib%2Fhelpers.ts',
+      cause: { specifier: './helpers.ts', referrer: 'file:///lib%2Flabel.ts' },
     };
     const outer = { cause: error, url: pathToFileURL(path.join(dir, 'x.ts')).href };
 
     expect(appFilesNamedBy(error)).toEqual([]);
     expect(appFilesNamedBy(outer)[0]).toBe(path.join(dir, 'x.ts'));
+  });
+
+  test('a missing import that already has a TypeScript extension is named alone', () => {
+    const dir = appDir();
+    const error = { specifier: './helpers.ts', referrer: path.join(dir, 'label.ts') };
+
+    expect(appFilesNamedBy(error)).toEqual([path.join(dir, 'helpers.ts')]);
+  });
+
+  describe('an import that names an existing directory names the index file inside it, never the directory', () => {
+    function appWithLib(): { readonly dir: string; readonly app: string } {
+      const dir = appDir();
+      const app = path.join(dir, 'app');
+      fs.mkdirSync(path.join(app, 'lib'), { recursive: true });
+      return { dir, app };
+    }
+
+    const nodeShape = (directory: string) => ({
+      code: 'ERR_UNSUPPORTED_DIR_IMPORT',
+      url: `${pathToFileURL(directory).href}/`,
+    });
+    const bunShape = (app: string, specifier: string) => ({
+      cause: { specifier, referrer: path.join(app, 'label.ts') },
+    });
+
+    const cases = [
+      ['./lib', (_dir: string, app: string) => path.join(app, 'lib')],
+      ['./', (_dir: string, app: string) => app],
+      ['..', (dir: string) => dir],
+    ] as const;
+
+    for (const [specifier, directoryOf] of cases) {
+      for (const shape of ['Node', 'Bun'] as const) {
+        test(`${specifier}, as ${shape} reports it`, () => {
+          const { dir, app } = appWithLib();
+          const directory = directoryOf(dir, app);
+          const error = shape === 'Node' ? nodeShape(directory) : bunShape(app, specifier);
+
+          const named = appFilesNamedBy(error);
+
+          expect(named).toEqual([path.join(directory, 'index.ts')]);
+          for (const file of named) {
+            expect(fs.existsSync(file) && fs.statSync(file).isDirectory()).toBe(false);
+          }
+        });
+      }
+    }
   });
 
   test('a file in node_modules is not an app file', () => {
