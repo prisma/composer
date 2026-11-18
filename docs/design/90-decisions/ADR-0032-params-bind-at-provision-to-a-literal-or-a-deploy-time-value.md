@@ -25,7 +25,7 @@ A param takes one of two bindings:
 - **A literal**, schema-validated when config is built at deploy.
 - **A deploy-time value** of the param's type, such as a root input field or a `resolve()` result ([ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md)). The deploy writes its real value as it writes a literal.
 
-A param takes no source: not a platform variable node's value, not `generatedParam()`, not `serviceOrigin()`. Core's `ParamBindings` admits no `ParamSource`, so binding one fails to compile. A source that a cast gets into a param fails Load with `COMPOSE.GRAPH_INVALID`: `Service "<address>" binds its param "<name>" to <label of the source>, a value known only at boot. A param takes a literal or a value the deploy has. Bind the value to a field of the service's input instead.` A value known only at boot, such as a platform variable's, goes into a field of the service's `input` ([ADR-0064](ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md)).
+A param takes no source: not a platform variable node's value, not `generatedParam()`, not `serviceOrigin()`. Core's `ParamBindings` admits no `ParamSource`, so binding one fails to compile. A source that a cast gets into a param fails Load with `COMPOSE.GRAPH_INVALID`: `Service "<address>" binds its param "<name>" to <label of the source>, a value known only at boot. A param takes a literal or a value the deploy has. Bind the value to a field of the service's input instead.` A value known only at boot, such as a platform variable's, goes into a field of the service's `input` ([ADR-0064](ADR-0064-an-app-declares-its-platform-variables-in-its-root-and-the-deploy-copies-no-local-values.md)).
 
 ## Reasoning
 
@@ -56,5 +56,5 @@ A param takes no source: not a platform variable node's value, not `generatedPar
 - [ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md) — framework-minted param values, which live in deploy state.
 - [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md) — service input, where every other value goes.
 - [ADR-0062](ADR-0062-environment-values-come-from-resolve-and-config-adapters.md) — values, deploy-time and runtime.
-- [ADR-0064](ADR-0064-the-deploy-does-not-copy-local-values-to-platform-variables.md) — platform variables, which go into input fields.
+- [ADR-0064](ADR-0064-an-app-declares-its-platform-variables-in-its-root-and-the-deploy-copies-no-local-values.md) — platform variables, which go into input fields.
 - [config-params.md](../10-domains/config-params.md).
