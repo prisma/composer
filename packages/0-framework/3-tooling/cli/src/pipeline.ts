@@ -2,7 +2,7 @@
  * The shared prefix of `deploy`/`destroy`/`dev` (deploy-cli.md § The
  * pipeline; local-dev spec § 6): entry load, Load,
  * registry coverage validation, name resolution, assemble. Deploy and dev
- * diverge after this — deploy resolves containers/preflight/stack file
+ * diverge after this — deploy resolves containers and runs its preflight
  * against the hosted providers, dev against the local ones — so everything
  * up to and including assemble lives here once, consumed verbatim by both
  * `run()` (main.ts) and `runDev()` (dev/run-dev.ts), so the two pipelines
@@ -61,7 +61,7 @@ export interface PipelineResult {
   readonly graph: Graph;
   readonly name: string;
   readonly assembled: AssembledServices;
-  /** The app configuration read for this run. In memory only; the app configuration file holds only what Load read from it. */
+  /** The app configuration read for this run. In memory only. */
   readonly configuration: AppConfiguration;
   /** The app secrets read for this run. In memory only: never written to a file, an event, a result or a report. */
   readonly secrets: AppSecrets;

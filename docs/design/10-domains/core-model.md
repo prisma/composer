@@ -118,8 +118,7 @@ Who imports what, end to end:
   ADR-0049). The Prisma CLI engine finds and loads the file, searching from the
   command's working directory up to the repository root. The section is the only importer of the `/control` entries where heavy code lives, and app
   code never imports it, which is what keeps that code out of the artifact. The
-  app author still writes no *stack* file — `prisma deploy` generates one
-  at `.prisma-composer/alchemy.run.ts` per run and drives it; see
+  app author still writes no *stack* file — `prisma deploy` lowers the app to a stack value and hands it to Alchemy in its own process; see
   [`deploy-cli.md`](deploy-cli.md).
 
 At deploy, the build adapter's assembler produces a **normalized bundle dir**: the
@@ -433,17 +432,17 @@ interface CommonLoadOptions {
   readonly id?: NodeId                              // the root's address; defaults to its name
   readonly environment?: { readonly name: string }  // required by any value over environment.name
 }
-interface FirstProcessLoadOptions extends CommonLoadOptions {
+interface LoadOptionsWithConfiguration extends CommonLoadOptions {
   readonly configuration?: Readonly<Record<string, unknown>>
-      // the root's input; the first process passes what the config adapters return
+      // the root's input: what the config adapters return
   readonly appConfigurationRead?: never
 }
-interface SecondProcessLoadOptions extends CommonLoadOptions {
+interface LoadOptionsWithAppConfigurationRead extends CommonLoadOptions {
   readonly configuration?: never
   readonly appConfigurationRead: AppConfigurationRead
-      // what the first process's Load read, from the app configuration file
+      // what an earlier Load of the same app read; lower() Loads with it
 }
-type LoadOptions = FirstProcessLoadOptions | SecondProcessLoadOptions
+type LoadOptions = LoadOptionsWithConfiguration | LoadOptionsWithAppConfigurationRead
       // Load also refuses both at runtime, for a caller without type checks
 function Load(root: ServiceNode | ModuleNode, opts?: LoadOptions): Graph   // throws LoadError
 class LoadError extends Error {}  // code COMPOSE.GRAPH_INVALID; optional `cause`
@@ -546,7 +545,7 @@ interface ExtensionDescriptor {
   readonly preflight?: (input: PreflightInput) => Promise<void>      // platform prerequisites; throws to abort (ADR-0029)
   readonly teardown?: (input: TeardownInput) => Promise<void>        // destroy-time cleanup of infrastructure the
                                                                      // extension owns OUTSIDE the stack (e.g. the deploy
-                                                                     // state store `alchemy destroy` was still reading).
+                                                                     // state store the destroy converge was still reading).
                                                                      // Runs after destroy succeeds, before the environment's
                                                                      // Project/Branch go; throwing aborts (ADR-0034)
 }
@@ -700,11 +699,13 @@ interface DeploymentResult {
 interface LowerOptions {
   readonly name: string                                  // stack name (+ Load's root id override)
   readonly environment?: string                          // the environment being deployed, as --environment gave it;
-                                                         // Load's environment.name. The generated stack files always pass it.
-  readonly appConfigurationRead?: AppConfigurationRead     // passed to Load; deploy passes its own Load's, the generated stack files read it from the app configuration file
-  readonly firstProcessNodeAddresses?: readonly string[]   // from the same file; lowering refuses a graph whose addresses differ
+                                                         // Load's environment.name.
+  readonly appConfigurationRead?: AppConfigurationRead     // passed to Load: what the caller's own Load read
+  readonly preparedNodeAddresses?: readonly string[]       // the graph the caller prepared; lowering refuses a graph whose addresses differ
+  readonly containers: ReadonlyMap<ExtensionId, ContainerInstance>   // each extension's resolved container; required
+  readonly preflightPayloads: ReadonlyMap<ExtensionId, string>       // each extension's preflight payload; required, empty for destroy
   // `prisma deploy` runs each service's build-adapter assembler and writes
-  // the resulting bundle dirs here, into the generated stack file it hands to
+  // the resulting bundle dirs here, in the options it hands to
   // `lower()` — one bundle per provision id (the deploy root is always a
   // module). A hand-composed / mixed-stack caller (the escape hatch — see
   // § Lowering) supplies these itself.
@@ -721,7 +722,7 @@ interface Bundle { readonly dir: string; readonly entry: string }          // th
 interface Artifact { readonly path: string; readonly sha256: string }       // package()'s product
 
 // Load → route each node through its extension's nodes[node.type] → an Alchemy
-// Stack (the default export the alchemy CLI consumes). An unknown (extension,
+// Stack (the value `Alchemist.plan` takes). An unknown (extension,
 // type) pair → LowerError naming both and the known ids. root must be a module —
 // a bare service is not independently deployable.
 function lower(root: ModuleNode, config: PrismaAppConfig, opts: LowerOptions): AlchemyStack
@@ -1036,7 +1037,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     providers: () => Prisma.providers() as unknown as Layer.Layer<never>,
 
     // Deploy-time prerequisite check (ADR-0029): the CLI runs it once, after the
-    // Project/Branch are resolved and before any stack file or Alchemy — it
+    // Project/Branch are resolved and before Alchemy — it
     // verifies every secret the provision manifest needs exists, throwing to abort.
     preflight: (input) => runPreflight(input),
 

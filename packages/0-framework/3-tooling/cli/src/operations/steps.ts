@@ -1,11 +1,24 @@
 /**
- * Step events for the operations that converge (`deploy` and `dev`): a
+ * Step events for the operations that converge (`deploy`, `destroy` and `dev`): a
  * tracker that times each step and closes what is left open, and the one
  * mapping from Alchemy's converge events to resource steps both share.
  */
 import type { ConvergeEvent } from '../converge-in-process.ts';
 import { withComposerAdvice } from '../deployment-summary.ts';
 import { type SecretRedaction, StreamRedactor } from '../redaction.ts';
+
+/** The steps a deploy and a destroy both run. */
+export type StackStep =
+  | { readonly name: 'prepare' | 'assemble' | 'connect' | 'apply' | 'record' }
+  | { readonly name: 'assemble-service'; readonly address: string }
+  | {
+      readonly name: 'apply-resource';
+      /** The resource's ID (ADR-0057): its node's address, or the address and the resource's role in that node. */
+      readonly resourceId: string;
+      readonly resourceType: string;
+      /** Alchemy's word for what is happening to the resource, such as `creating` or `created`, for people to read. It changes between a step's start and finish, and its values are Alchemy's, so do not branch on it. */
+      readonly status: string;
+    };
 
 /** A step event, over the operation's own step type. */
 export type StepEvent<Step> =
@@ -86,7 +99,9 @@ export function stepTracker<Step, OtherEvent = never>(
   };
 }
 
-export type StepTracker<Step> = ReturnType<typeof stepTracker<Step>>;
+export type StepTracker<Step, OtherEvent = never> = ReturnType<
+  typeof stepTracker<Step, OtherEvent>
+>;
 
 /** One converge event as step events: each resource is a step, made by `resourceStep`; a log line is a message. */
 export function reportConvergeEvent<Step>(

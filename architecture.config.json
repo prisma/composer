@@ -793,12 +793,6 @@
       "plane": "control"
     },
     {
-      "glob": "packages/9-public/composer/src/exports/report.ts",
-      "domain": "public",
-      "layer": "public",
-      "plane": "control"
-    },
-    {
       "glob": "packages/9-public/composer/src/exports/control.ts",
       "domain": "public",
       "layer": "public",
@@ -806,12 +800,6 @@
     },
     {
       "glob": "packages/9-public/composer/src/exports/config.ts",
-      "domain": "public",
-      "layer": "public",
-      "plane": "control"
-    },
-    {
-      "glob": "packages/9-public/composer/src/exports/internal-app-configuration-file.ts",
       "domain": "public",
       "layer": "public",
       "plane": "control"

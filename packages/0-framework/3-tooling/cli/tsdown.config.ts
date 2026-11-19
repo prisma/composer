@@ -1,14 +1,9 @@
 import { defineConfig } from '@internal/tsdown-config';
 
-// `render-deployment.ts` is its own entry (published as `./report`): the
-// generated stack file imports the renderer into the ALCHEMY CHILD, so it must
-// import nothing but core's types.
 export default defineConfig({
   entry: {
     'app-identity': 'src/exports/app-identity.ts',
-    report: 'src/exports/render-deployment.ts',
     config: 'src/exports/config.ts',
-    'app-configuration-file': 'src/exports/app-configuration-file.ts',
     control: 'src/exports/control.ts',
     converge: 'src/exports/converge.ts',
     'dev-converge-worker': 'src/exports/dev-converge-worker.ts',

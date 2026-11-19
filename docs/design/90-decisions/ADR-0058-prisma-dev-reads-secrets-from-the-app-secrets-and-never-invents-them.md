@@ -1,5 +1,7 @@
 # ADR-0058: `prisma dev` reads secrets from the app secrets and never invents them
 
+Amended by [ADR-0068](ADR-0068-destroy-runs-alchemy-in-process.md): the environment transport `PRISMA_COMPOSER_PREFLIGHT_<extension>` is deleted. Every preflight payload reaches the lowering as a value.
+
 Amended by [ADR-0067](ADR-0067-prisma-dev-converges-in-a-worker-thread.md): `prisma dev` has no second process, no dev app configuration file and no `PRISMA_COMPOSER_NAMED_SECRETS`. The named secrets reach the local target as a value in memory, passed to the worker thread that runs each converge.
 
 ```ts

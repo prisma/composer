@@ -290,11 +290,11 @@ describe('what Load reads from the app configuration', () => {
     );
 
     expect(loadError(() => Load(root, { configuration: { WHEN: '2026-01-01' } })).message).toBe(
-      'input.WHEN of root module "shop" holds an object that is not plain data, which JSON cannot hold exactly. `destroy` hands the root\'s input to its second process in a JSON file, so a field the root\'s body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.',
+      'input.WHEN of root module "shop" holds an object that is not plain data, which JSON cannot hold exactly. A field the root\'s body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.',
     );
   });
 
-  test("the second process takes each root field from what the first process read, without running the root's schema", () => {
+  test("a later Load takes each root field from what the first Load read, without running the root's schema", () => {
     const calls: unknown[] = [];
     const counting: StandardSchemaV1 = {
       '~standard': {
@@ -321,7 +321,7 @@ describe('what Load reads from the app configuration', () => {
     expect(bindingOf(graph)).toEqual({ a: 'from-file', c: 4 });
   });
 
-  test('a root field missing from what the first process read fails under its own name, saying it has no value', () => {
+  test('a root field missing from what the first Load read fails under its own name, saying it has no value', () => {
     const run = () =>
       Load(rootOf(schema), {
         appConfigurationRead: {
@@ -345,7 +345,7 @@ describe('what Load reads from the app configuration', () => {
     } as unknown as LoadOptions;
 
     expect(loadError(() => Load(rootOf(schema), both)).message).toBe(
-      'Load takes configuration, in the first process, or appConfigurationRead, in the second, not both.',
+      'Load takes configuration, in the first Load, or appConfigurationRead, in a later one, not both.',
     );
   });
 

@@ -48,7 +48,6 @@ describe('dev — converging in process', () => {
     );
 
     expect(double.calls.dev[0]?.signal).toBeInstanceOf(AbortSignal);
-    expect(double.calls.deps.dev[0]?.alchemy).toBeUndefined();
     expect(createComposerFamily({ operations: double.operations }).commands['dev']?.maySpawn).toBe(
       false,
     );

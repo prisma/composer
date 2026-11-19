@@ -3,11 +3,9 @@
  * deploy rather than watch one — the Prisma GitHub Action reads it to build a
  * pull-request comment carrying preview links.
  *
- * Deliberately separate from `deployment-summary.ts`. That file is a private
- * carrier between the alchemy child and this process, written to a
- * per-run path the parent deletes in a `finally` so resource ids and URLs do
- * not accumulate on disk. This one is written where the operator asked for
- * it, survives the run, is written on the failure path too, and carries a
+ * Deliberately separate from `deployment-summary.ts`, the summary the
+ * operation returns as a value. This one is written where the operator asked
+ * for it, survives the run, is written on the failure path too, and carries a
  * version so a consumer can depend on its shape.
  */
 import * as fs from 'node:fs';

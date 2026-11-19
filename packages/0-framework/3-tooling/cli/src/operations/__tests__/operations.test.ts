@@ -31,24 +31,18 @@ import {
 } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
 import * as Layer from 'effect/Layer';
-import {
-  APP_CONFIGURATION_FILE_ENV,
-  LEFTOVER_APP_CONFIGURATION_FILE_AGE_MS,
-} from '../../app-configuration-file.ts';
 import { type AppConvergeEntry, HOST_COMPOSER_VERSION } from '../../app-converge.ts';
 import type { ComposerConfigSource } from '../../composer-config.ts';
 import { dotenv, environmentVariables } from '../../config-adapters.ts';
 import { CONVERGE_CONTRACT } from '../../converge-contract.ts';
 import type { Converge, ConvergeOutcome, ConvergeRequest } from '../../converge-in-process.ts';
-import { DEPLOYMENT_RESULT_FILE_ENV, engineFailureFilePath } from '../../deployment-summary.ts';
 import { loadEntry } from '../../load-entry.ts';
 import type { AppIdentity } from '../../pipeline.ts';
 import { SecretRedaction } from '../../redaction.ts';
-import { renderDeployment } from '../../render-deployment.ts';
 import { RUN_REPORT_VERSION } from '../../run-report.ts';
 import { unsetPlatformVariablesText } from '../../unset-platform-variables.ts';
 import { type DeployEvent, deployWithDeps } from '../deploy.ts';
-import { type DestroyInput, destroyWithDeps } from '../destroy.ts';
+import { type DestroyEvent, type DestroyInput, destroyWithDeps } from '../destroy.ts';
 import { type DevEvent, type DevInput, devWithDeps } from '../dev.ts';
 import {
   convergeDevJob,
@@ -59,7 +53,7 @@ import {
 import { devStop, devUrl } from '../dev-current.ts';
 import { LOG_QUEUE_LIMIT } from '../execute-log.ts';
 import { type LogLine, logWithDeps } from '../log.ts';
-import { executionDiagnostics, executorLoadFailure, type OperationDeps } from '../shared.ts';
+import { executorLoadFailure, type OperationDeps } from '../shared.ts';
 
 const tmpDirs: string[] = [];
 
@@ -302,7 +296,6 @@ describe('deploy()', () => {
   test('a successful deploy converges the lowered app in this process: no stack file, no child', async () => {
     const app = makeAppDir('hello-ops');
     const requests: ConvergeRequest[] = [];
-    let spawned = false;
 
     const result = await silently(() =>
       deployWithDeps(
@@ -315,10 +308,6 @@ describe('deploy()', () => {
         {
           runAssembler: fakeAssembler,
           appConvergeEntry: appConvergeEntry(recordingConverge(requests)),
-          alchemy: async () => {
-            spawned = true;
-            return { exitCode: 0, signal: null };
-          },
           credentials: { workspaceId: 'ws_handler', client: {} },
         },
       ),
@@ -332,7 +321,6 @@ describe('deploy()', () => {
       env: {},
     });
     expect(requests[0]?.stack.stackName).toBe('hello-ops');
-    expect(spawned).toBe(false);
     expect(fs.existsSync(path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'))).toBe(false);
     expect(result.value.summary).toBeUndefined();
   });
@@ -726,7 +714,6 @@ describe('deploy()', () => {
     expect(result.failure.code).toBe('DEPLOY.ENGINE_FAILED');
     expect(result.failure.message).toBe(`Alchemy could not deploy the app.\n${cause}`);
     expect(result.failure.meta?.['engineCause']).toBe(cause);
-    expect(executionDiagnostics(result.failure)).toBeUndefined();
   });
 
   test('an engine failure cause never carries a known secret read from a dotenv file, and keeps a dotenv value no secret source names', async () => {
@@ -876,8 +863,9 @@ describe('deploy()', () => {
 });
 
 /** Each event as `kind name[:address] outcome`, for asserting order without timings. */
-function stepLine(event: DeployEvent): string {
+function stepLine(event: DeployEvent | DestroyEvent): string {
   if (event.kind === 'message') return `message ${event.text}`;
+  if (event.kind === 'no-local-deploy-state') return 'no local deploy state';
   if (event.kind === 'preflight-findings') {
     return `findings ${event.findings.unset.map((variable) => variable.name).join(', ')}`;
   }
@@ -968,7 +956,7 @@ describe('deploy() credentials, the app converge entry and redaction', () => {
     if (graph === undefined) throw new Error('the preflight did not run');
     expect(lowered[0]?.containers?.get('fixture-extension')).toBeDefined();
     expect([...(lowered[0]?.preflightPayloads ?? [])]).toEqual([['fixture-extension', 'payload']]);
-    expect(lowered[0]?.firstProcessNodeAddresses).toEqual(nodeAddresses(graph));
+    expect(lowered[0]?.preparedNodeAddresses).toEqual(nodeAddresses(graph));
   });
 
   test('a structured error that lower() throws keeps its code', async () => {
@@ -1184,6 +1172,9 @@ describe('deploy() credentials, the app converge entry and redaction', () => {
 
     if (running.ok || worker.ok) throw new Error('expected failures');
     expect(running.failure.code).toBe('DEPLOY.CONVERGE_RUNNING');
+    expect(running.failure.message).toBe(
+      'Another deploy, destroy or `prisma dev` converge is already running in this process.',
+    );
     expect(worker.failure.code).toBe('DEPLOY.WORKER_THREAD');
   });
 });
@@ -1544,7 +1535,7 @@ describe('destroy()', () => {
           },
           {
             runAssembler: fakeAssembler,
-            alchemy: async () => ({ exitCode: 0, signal: null }),
+            appConvergeEntry: appConvergeEntry(applied),
           },
         ),
       );
@@ -1573,7 +1564,7 @@ describe('destroy()', () => {
           },
           {
             runAssembler: fakeAssembler,
-            alchemy: async () => ({ exitCode: 0, signal: null }),
+            appConvergeEntry: appConvergeEntry(applied),
           },
         ),
       );
@@ -1604,7 +1595,7 @@ describe('destroy()', () => {
       const result = await silently(() =>
         destroyWithDeps(input as DestroyInput, {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          appConvergeEntry: appConvergeEntry(applied),
         }),
       );
 
@@ -1614,6 +1605,36 @@ describe('destroy()', () => {
       expect(containerCalls).toEqual([]);
     },
   );
+
+  test('destroy refuses a section the CLI would refuse, before locating anything or converging', async () => {
+    const app = makeAppDir();
+    let converged = false;
+
+    const result = await silently(() =>
+      destroyWithDeps(
+        {
+          config: { value: {} as PrismaAppConfig, file: 'prisma.config.ts' },
+          entry: app.entryPath,
+          environment: 'staging',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          appConvergeEntry: appConvergeEntry(async () => {
+            converged = true;
+            return APPLIED;
+          }),
+        },
+      ),
+    );
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure).toMatchObject({
+      code: 'CONFIG.FIELD_INVALID',
+      meta: { field: 'extensions' },
+    });
+    expect(converged).toBe(false);
+  });
 
   test('locate returning undefined is a structured failure naming the app and environment', async () => {
     const app = makeAppDir();
@@ -1630,7 +1651,7 @@ describe('destroy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -1683,10 +1704,6 @@ describe('destroy()', () => {
     };
     const deps = {
       runAssembler: fakeAssembler,
-      alchemy: async () => {
-        ran.push('alchemy');
-        return { exitCode: 0, signal: null };
-      },
       appConvergeEntry: appConvergeEntry(async () => {
         ran.push('alchemy');
         return APPLIED;
@@ -1758,73 +1775,206 @@ describe('destroy()', () => {
     },
   );
 
-  test('a failed destroy carries the cause the child recorded, like deploy', async () => {
-    const app = makeAppDir();
+  /** A destroy of an app with deploy state, its converge entry recording each `lower()` call and each request. */
+  async function destroyRecording(
+    converge: Converge,
+    opts: {
+      readonly order?: string[];
+      readonly signal?: AbortSignal;
+      readonly onEvent?: (event: DestroyEvent) => void;
+      readonly redaction?: SecretRedaction;
+    } = {},
+  ) {
+    const app = makeAppDir('hello-destroy');
     fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
     fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
-
-    const result = await silently(() =>
-      destroyWithDeps(
-        {
-          entry: app.entryPath,
-          environment: 'staging',
-          cwd: app.dir,
-          config: composerConfig(fakeConfig({}, { alchemyStage: 'br_x' })),
-        },
-        {
-          runAssembler: fakeAssembler,
-          alchemy: async (input) => {
-            const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
-            if (resultFile === undefined) throw new Error('the result-file env var must be set');
-            fs.writeFileSync(engineFailureFilePath(resultFile), '[db] fail — timed out');
-            return { exitCode: 1, signal: null };
-          },
-        },
-      ),
-    );
-
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('unreachable');
-    expect(result.failure.code).toBe('DEPLOY.ENGINE_FAILED');
-    expect(result.failure.message).toBe(
-      'alchemy destroy exited with status 1.\n[db] fail — timed out',
-    );
-  });
-
-  test('a successful destroy runs alchemy, then every teardown, then every container removal', async () => {
-    const app = makeAppDir();
-    fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
-    fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
-    const order: string[] = [];
-
+    const order = opts.order ?? [];
+    const lowered: LowerOptions[] = [];
+    const requests: ConvergeRequest[] = [];
+    const containerCalls: ContainerCall[] = [];
+    const credentials = { workspaceId: 'ws_destroy', client: {} };
     const result = await silently(() =>
       destroyWithDeps(
         {
           config: composerConfig(
             fakeConfig(
               { teardown: async () => void order.push('teardown') },
-              { onRemove: () => void order.push('remove') },
+              {
+                calls: containerCalls,
+                alchemyStage: 'br_destroy',
+                onRemove: () => void order.push('remove'),
+              },
             ),
           ),
           entry: app.entryPath,
           environment: 'staging',
           cwd: app.dir,
+          signal: opts.signal,
+          onEvent: opts.onEvent,
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => {
-            order.push('alchemy');
-            return { exitCode: 0, signal: null };
+          credentials,
+          redaction: opts.redaction,
+          appConvergeEntry: {
+            ...appConvergeEntry(async (request) => {
+              requests.push(request);
+              order.push('converge');
+              return converge(request);
+            }),
+            lower: (root, config, options) => {
+              lowered.push(options);
+              return lower(root, config, options);
+            },
           },
         },
       ),
     );
+    return { app, result, order, lowered, requests, containerCalls, credentials };
+  }
 
-    expect(result.ok).toBe(true);
-    expect(order).toEqual(['alchemy', 'teardown', 'remove']);
+  test('destroy lowers the app with the located containers and the credentials, and converges it as a destroy in this process', async () => {
+    const signal = new AbortController().signal;
+    const { app, result, lowered, requests, containerCalls, credentials } = await destroyRecording(
+      applied,
+      { signal },
+    );
+
+    if (!result.ok) throw result.failure;
+    expect(containerCalls.map((call) => call.op)).toEqual(['locate', 'remove']);
+    expect(lowered).toHaveLength(1);
+    expect(lowered[0]?.containers.get('fixture-extension')?.input).toEqual({
+      appName: 'hello-destroy',
+      environment: 'staging',
+    });
+    expect(lowered[0]?.preflightPayloads.size).toBe(0);
+    expect(lowered[0]?.credentials).toBe(credentials);
+    expect(lowered[0]?.preparedNodeAddresses).toEqual(['hello-destroy', 'hello-destroy.app']);
+    expect(lowered[0]?.report).toBeUndefined();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      operation: 'destroy',
+      stage: 'br_destroy',
+      cwd: app.dir,
+      env: {},
+    });
+    expect(requests[0]?.signal).toBe(signal);
+    expect(requests[0]?.stack.stackName).toBe('hello-destroy');
   });
 
-  test('the no-local-deploy-state event fires before the pipeline runs', async () => {
+  test('a successful destroy converges, then runs every teardown, then every container removal, and writes nothing under .prisma-composer', async () => {
+    const { app, result, order } = await destroyRecording(applied);
+
+    expect(result.ok).toBe(true);
+    expect(order).toEqual(['converge', 'teardown', 'remove']);
+    expect(fs.existsSync(path.join(app.dir, '.prisma-composer'))).toBe(false);
+  });
+
+  test.each([
+    [
+      'interrupted',
+      { kind: 'interrupted' },
+      'DEPLOY.INTERRUPTED',
+      'The destroy was interrupted.',
+      'Destroy again to finish.',
+    ],
+    [
+      'failed',
+      FAILED,
+      'DEPLOY.ENGINE_FAILED',
+      'Alchemy could not destroy the app.\nProviderError: the provider refused',
+      undefined,
+    ],
+    [
+      'refused while another converge runs',
+      { kind: 'refused', reason: 'already-running' },
+      'DEPLOY.CONVERGE_RUNNING',
+      'Another deploy, destroy or `prisma dev` converge is already running in this process.',
+      'Wait for the other one to finish, or run this destroy in its own process.',
+    ],
+    [
+      'refused in a worker thread',
+      { kind: 'refused', reason: 'worker-thread' },
+      'DEPLOY.WORKER_THREAD',
+      'Destroy cannot run in a worker thread when its cwd is not the process working directory.',
+      "Call destroy from the main thread, or with the process's working directory as its cwd.",
+    ],
+  ] as const)(
+    'a converge that is %s fails the destroy with its code, and no teardown or container removal runs',
+    async (_label, outcome, code, message, fix) => {
+      const { result, order } = await destroyRecording(async () => outcome);
+
+      if (result.ok) throw new Error('expected a failure');
+      expect(result.failure.code).toBe(code);
+      expect(result.failure.message).toBe(message);
+      if (fix !== undefined) expect(result.failure.fix).toBe(fix);
+      expect(order).toEqual(['converge']);
+    },
+  );
+
+  test('a converge that rejects fails the destroy with DEPLOY.ENGINE_FAILED, and no teardown or container removal runs', async () => {
+    const { result, order } = await destroyRecording(async () => {
+      throw new Error('the converge broke');
+    });
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure.code).toBe('DEPLOY.ENGINE_FAILED');
+    expect(result.failure.message).toBe('Alchemy could not destroy the app.\nthe converge broke');
+    expect(order).toEqual(['converge']);
+  });
+
+  test("destroy reports deploy's steps, each resource it removes and Alchemy's log lines, redacted", async () => {
+    const events: DestroyEvent[] = [];
+    const secret = 'destroy-secret-value-4e1d';
+    const redaction = new SecretRedaction({});
+    redaction.addCredentialLookingValues([secret]);
+
+    const { result } = await destroyRecording(
+      async (request) => {
+        request.onEvent?.({
+          kind: 'resource',
+          fqn: 'hello-destroy.app',
+          resourceType: 'Prisma.Compute',
+          status: 'deleting',
+          phase: 'running',
+        });
+        request.onEvent?.({ kind: 'log', severity: 'info', text: `removing ${secret}` });
+        request.output?.(`plan: delete 1 (${secret})\n`);
+        request.onEvent?.({
+          kind: 'resource',
+          fqn: 'hello-destroy.app',
+          resourceType: 'Prisma.Compute',
+          status: 'deleted',
+          phase: 'done',
+        });
+        return APPLIED;
+      },
+      { onEvent: (event) => events.push(event), redaction },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(events.map(stepLine)).toEqual([
+      'started prepare',
+      'finished prepare ok',
+      'started assemble',
+      'started assemble-service:hello-destroy.app',
+      'finished assemble-service:hello-destroy.app ok',
+      'finished assemble ok',
+      'started connect',
+      'finished connect ok',
+      'started apply',
+      'started apply-resource:hello-destroy.app',
+      'message removing [redacted]',
+      'message plan: delete 1 ([redacted])',
+      'finished apply-resource:hello-destroy.app ok',
+      'finished apply ok',
+      'started record',
+      'finished record ok',
+    ]);
+    expect(JSON.stringify(events)).not.toContain(secret);
+  });
+
+  test('the no-local-deploy-state event fires before the app is assembled', async () => {
     const app = makeAppDir();
     const order: string[] = [];
 
@@ -1835,14 +1985,16 @@ describe('destroy()', () => {
           entry: app.entryPath,
           environment: 'staging',
           cwd: app.dir,
-          onEvent: (event) => void order.push(event.kind),
+          onEvent: (event) => {
+            if (event.kind === 'no-local-deploy-state') order.push(event.kind);
+          },
         },
         {
           runAssembler: async (node) => {
             order.push('assemble');
             return fakeAssembler(node);
           },
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -1868,12 +2020,12 @@ describe('destroy()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
 
-    expect(events).toEqual([]);
+    expect(events).not.toContain('no-local-deploy-state');
   });
 });
 
@@ -2035,7 +2187,6 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
   async function convergedDev(preflight: LocalTargetDescriptor['preflight']): Promise<{
     readonly lowered: LowerOptions[];
     readonly requests: ConvergeRequest[];
-    readonly spawned: number;
     readonly providerCalls: Parameters<typeof localTargetProviders>[];
     readonly providers: ReturnType<typeof localTargetProviders>;
     readonly state: ReturnType<typeof devState>;
@@ -2047,7 +2198,6 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const providerCalls: Parameters<typeof localTargetProviders>[] = [];
     const lowered: LowerOptions[] = [];
     const requests: ConvergeRequest[] = [];
-    let spawned = 0;
     const result = await silently(() =>
       devInThisThread(
         {
@@ -2058,10 +2208,6 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => {
-            spawned += 1;
-            return { exitCode: 0, signal: null };
-          },
           appConvergeEntry: {
             ...appConvergeEntry(async (request) => {
               requests.push(request);
@@ -2081,7 +2227,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       ),
     );
     expect(result.ok).toBe(true);
-    return { lowered, requests, spawned, providerCalls, providers, state, appDir: app.dir };
+    return { lowered, requests, providerCalls, providers, state, appDir: app.dir };
   }
 
   test("the dev preflight's payload reaches lower() as a value, and the converge sets no environment variable", async () => {
@@ -2139,10 +2285,10 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
   );
 
   test('dev lowers against the local providers and state store, and converges as a deploy in this process, starting no Alchemy child', async () => {
-    const { lowered, requests, spawned, providerCalls, providers, state, appDir } =
-      await convergedDev(() => Promise.resolve({ payload: undefined, plainVariableText: {} }));
+    const { lowered, requests, providerCalls, providers, state, appDir } = await convergedDev(() =>
+      Promise.resolve({ payload: undefined, plainVariableText: {} }),
+    );
 
-    expect(spawned).toBe(0);
     expect(lowered[0]?.providers).toBe(providers);
     expect(lowered[0]?.state).toBe(state);
     expect(providerCalls).toHaveLength(1);
@@ -3953,7 +4099,7 @@ describe('deploy-run reporting', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          appConvergeEntry: appConvergeEntry(applied),
         },
       ),
     );
@@ -4417,10 +4563,10 @@ describe('the operations read the app configuration and the app secrets from the
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => {
+          appConvergeEntry: appConvergeEntry(async () => {
             convergeRan = true;
-            return { exitCode: 0, signal: null };
-          },
+            return APPLIED;
+          }),
         },
       ),
     );
@@ -4478,9 +4624,6 @@ describe('the operations read the app configuration and the app secrets from the
     expect(block).toContain('EMAIL_API_KEY');
     expect(block).toContain('config.[redacted]');
     expect(block).not.toContain(sentinel);
-    expect(renderDeployment({ app: 'app', nodes: [], findings: findings.findings })).not.toContain(
-      sentinel,
-    );
     expect(JSON.stringify(result)).not.toContain(sentinel);
     expect(fs.readFileSync(reportPath, 'utf8')).not.toContain(sentinel);
   });
@@ -5029,7 +5172,7 @@ function serviceNodeAt(graph: Graph | undefined, address: string): ServiceNode {
   return node;
 }
 
-describe('the second process reads what the first process read', () => {
+describe('lower() takes what the first Load read', () => {
   const values = () => ({
     GREETING: 'hello',
     APP_ORIGIN: 'https://origin.example',
@@ -5075,12 +5218,13 @@ describe('the second process reads what the first process read', () => {
     expect(writtenDuringConverge).toEqual([]);
   });
 
-  test('destroy writes and deletes the app configuration file the same way, and reads no secrets', async () => {
+  test('destroy hands lower() only what Load read from the app configuration, writes no file, and reads no secrets', async () => {
     const app = makeSecondProcessAppDir();
     fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
     fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
-    let file: string | undefined;
-    let json: unknown;
+    const lowered: LowerOptions[] = [];
+    const before = filesUnder(app.dir);
+    let writtenDuringConverge: string[] | undefined;
 
     const result = await silently(() =>
       destroyWithDeps(
@@ -5096,94 +5240,28 @@ describe('the second process reads what the first process read', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async (input) => {
-            file = input.env[APP_CONFIGURATION_FILE_ENV];
-            if (file === undefined) throw new Error('no app configuration file named');
-            json = JSON.parse(fs.readFileSync(file, 'utf8'));
-            return { exitCode: 0, signal: null };
+          appConvergeEntry: {
+            ...appConvergeEntry(applied),
+            lower: (root, config, options) => {
+              lowered.push(options);
+              return lower(root, config, options);
+            },
+            converge: async () => {
+              writtenDuringConverge = filesUnder(app.dir).filter((file) => !before.includes(file));
+              return APPLIED;
+            },
           },
         },
       ),
     );
 
-    expect(result.ok).toBe(true);
-    expect(json).toEqual({
-      appConfigurationRead: {
-        rootInput: [{ path: ['GREETING'], value: 'hello' }],
-      },
-      plainVariableText: {},
-      nodeAddresses: ['hello-second', 'hello-second.app'],
-    });
-    if (file === undefined) throw new Error('the destroy did not run');
-    expect(fs.existsSync(file)).toBe(false);
+    if (!result.ok) throw result.failure;
+    expect(lowered.map((options) => options.appConfigurationRead)).toEqual([
+      { rootInput: [{ path: ['GREETING'], value: 'hello' }] },
+    ]);
+    expect(writtenDuringConverge).toEqual([]);
+    expect(filesUnder(app.dir).filter((file) => !before.includes(file))).toEqual([]);
   });
-
-  test('deploy, destroy and dev each start by deleting the app configuration files that earlier runs left', async () => {
-    const ended = spawnSync(process.execPath, ['-e', '0']).pid;
-    const leftover = (dir: string) => {
-      const file = path.join(dir, `app-configuration-${String(ended)}-forced-exit.json`);
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(file, '{}');
-      const old = new Date(Date.now() - LEFTOVER_APP_CONFIGURATION_FILE_AGE_MS - 60_000);
-      fs.utimesSync(file, old, old);
-      return file;
-    };
-    const attachment: LocalTargetAttachment = {
-      startServices: () => Promise.resolve(),
-      stopApp: () => Promise.resolve(),
-      endpoints: () => Promise.resolve([]),
-      logs: async function* () {},
-    };
-    const alchemy = async () => ({ exitCode: 0, signal: null });
-    const runs: Record<string, (dir: string) => Promise<unknown>> = {
-      deploy: (dir: string) =>
-        deployWithDeps(
-          {
-            config: composerConfig({ ...fakeConfig(), config: [values] }),
-            entry: path.join(dir, 'service.ts'),
-            environment: 'staging',
-            cwd: dir,
-          },
-          { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
-        ),
-      destroy: (dir: string) =>
-        destroyWithDeps(
-          {
-            config: composerConfig({ ...fakeConfig(), config: [values] }),
-            entry: path.join(dir, 'service.ts'),
-            environment: 'staging',
-            cwd: dir,
-          },
-          { runAssembler: fakeAssembler, alchemy },
-        ),
-      dev: (dir: string) =>
-        devInThisThread(
-          {
-            config: composerConfig({ ...devConfigWith(attachment), config: [values] }),
-            entry: path.join(dir, 'service.ts'),
-            cwd: dir,
-            detach: true,
-          },
-          { runAssembler: fakeAssembler, appConvergeEntry: appConvergeEntry(applied) },
-        ),
-    };
-
-    for (const [command, run] of Object.entries(runs)) {
-      if (command === 'dev' && process.platform === 'win32') continue;
-      const app = makeSecondProcessAppDir();
-      const files = [
-        leftover(path.join(app.dir, '.prisma-composer')),
-        leftover(path.join(app.dir, '.prisma-composer', 'dev', 'dev')),
-      ];
-
-      await silently(() => run(app.dir));
-
-      expect({ command, left: files.filter((file) => fs.existsSync(file)) }).toEqual({
-        command,
-        left: [],
-      });
-    }
-  }, 20_000);
 
   const secretText = ['plain', 'SECRET', '91'].join('-');
   const holdingTheSecret = () => ({ ...values(), GREETING: secretText });
@@ -5233,11 +5311,11 @@ describe('the second process reads what the first process read', () => {
     expect(converged).toBe(false);
   });
 
-  test('destroy refuses a root input field holding a secret the `config` adapters also hold, before writing any file or starting the second process', async () => {
+  test('destroy lowers a root input field holding a secret the `config` adapters also hold, since it sends no plain value anywhere', async () => {
     const app = makeSecondProcessAppDir();
     fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
     fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
-    let started = false;
+    let converged = false;
 
     const result = await silently(() =>
       destroyWithDeps(
@@ -5253,24 +5331,16 @@ describe('the second process reads what the first process read', () => {
         },
         {
           runAssembler: fakeAssembler,
-          alchemy: async () => {
-            started = true;
-            return { exitCode: 0, signal: null };
-          },
+          appConvergeEntry: appConvergeEntry(async () => {
+            converged = true;
+            return APPLIED;
+          }),
         },
       ),
     );
 
-    if (result.ok) throw new Error('the destroy should fail');
-    expect(result.failure.code).toBe('CONFIG.SECRET_AS_PLAIN_VALUE');
-    expect(result.failure.message).toBe(
-      'Root input field input.GREETING holds the value of the platform secret "S13_SECRET". Composer hands the second process every plain value Load read, in a file, and never writes a secret to a file.',
-    );
-    expect(JSON.stringify(result.failure.toEnvelope())).not.toContain('SECRET-91');
-    expect(started).toBe(false);
-    expect(
-      filesUnder(app.dir).filter((file) => path.basename(file).startsWith('app-configuration')),
-    ).toEqual([]);
+    if (!result.ok) throw result.failure;
+    expect(converged).toBe(true);
   });
 
   test.skipIf(process.platform === 'win32')(

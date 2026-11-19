@@ -1,8 +1,8 @@
 /**
  * This extension's container lifecycle (the `container` descriptor,
  * ADR-0037): resolves the app's Project and the environment's Branch via
- * `@internal/lowering`'s `resolveContainer`, before the generated stack file
- * runs — `deploy` ensures (creates if absent), `destroy` locates only.
+ * `@internal/lowering`'s `resolveContainer`, before Alchemy runs —
+ * `deploy` ensures (creates if absent), `destroy` locates only.
  * Control-plane only (imported by control.ts and the hook modules); errors
  * here are plain `Error`s — `CliError` is a CLI concept this extension must
  * not import.
@@ -170,8 +170,7 @@ const tokenRequiredError = (): Error =>
 
 /**
  * The caller's workspace id, or — only when the caller passed no credentials
- * at all — the env protocol, which is what the alchemy child process and
- * existing programmatic hosts have set.
+ * at all — the env protocol, which programmatic hosts and scripts set.
  */
 function requireWorkspaceId(credentials: PrismaCloudCredentials | undefined): string {
   const workspaceId =

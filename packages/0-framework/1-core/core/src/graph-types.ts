@@ -23,9 +23,8 @@ export interface RootInputField {
 
 /**
  * What a Load read from the app configuration (ADR-0062). A later Load takes it in place of the
- * app configuration: `lower()` under `deploy` (on the main thread) and `prisma dev` (in its
- * converge worker thread), and `destroy`'s second process, which reads it from the app
- * configuration file.
+ * app configuration: `lower()` under `deploy` and `destroy` (on the main thread) and `prisma dev`
+ * (in its converge worker thread).
  */
 export interface AppConfigurationRead {
   /** Each field of the root's input that its body names, as the root's schema produced it. Empty when the root declares no input. */
@@ -39,21 +38,21 @@ interface CommonLoadOptions {
   readonly environment?: EnvironmentRealValues;
 }
 
-/** Load's options wherever the app configuration is at hand: the first Load of a command. */
-export interface FirstProcessLoadOptions extends CommonLoadOptions {
+/** Load's options in the Load that reads the app configuration: the first Load of a command. */
+export interface LoadOptionsWithConfiguration extends CommonLoadOptions {
   /** The app configuration (ADR-0062): what the `config` adapters return. It is the root's input, which the root's schema checks. */
   readonly configuration?: Readonly<Record<string, unknown>>;
   readonly appConfigurationRead?: never;
 }
 
-/** Load's options in a Load that takes what an earlier Load of the same app read. */
-export interface SecondProcessLoadOptions extends CommonLoadOptions {
+/** Load's options in a Load that is given what an earlier Load of the same app read. */
+export interface LoadOptionsWithAppConfigurationRead extends CommonLoadOptions {
   readonly configuration?: never;
   /** What the earlier Load read. Load takes each root field from it without running the root's schema. */
   readonly appConfigurationRead: AppConfigurationRead;
 }
 
-export type LoadOptions = FirstProcessLoadOptions | SecondProcessLoadOptions;
+export type LoadOptions = LoadOptionsWithConfiguration | LoadOptionsWithAppConfigurationRead;
 
 export interface GraphNode {
   readonly id: NodeId;

@@ -1,10 +1,10 @@
 /** The `composer` section of `prisma.config.ts` (ADR-0017): statically imports each extension's node-descriptor registry plus the state store; core defines only the types. */
 import type * as Layer from 'effect/Layer';
 import type { CallerCredentials } from '../caller-credentials.ts';
-import type { ContainerDescriptor, ContainerInstance } from '../container-transport.ts';
+import type { ContainerDescriptor, ContainerInstance } from '../container.ts';
 import type { Graph } from '../graph.ts';
 import type { ServiceNode } from '../node.ts';
-import type { PreflightFindings, PreflightPayload } from '../preflight-transport.ts';
+import type { PreflightFindings, PreflightPayload } from '../preflight.ts';
 import type {
   AlchemyStateLayer,
   ApplicationDescriptor,
@@ -23,24 +23,14 @@ export type {
   ContainerDescriptor,
   ContainerInstance,
   LocateContainerInput,
-} from '../container-transport.ts';
-export {
-  containerEnv,
-  containerEnvVarName,
-  deserializeContainers,
-} from '../container-transport.ts';
+} from '../container.ts';
 export type {
   PlatformVariableReader,
   PreflightFindings,
   PreflightPayload,
   UnsetPlatformVariable,
-} from '../preflight-transport.ts';
-export {
-  platformVariableReaderText,
-  preflightEnv,
-  preflightEnvVarName,
-  readPreflightPayload,
-} from '../preflight-transport.ts';
+} from '../preflight.ts';
+export { platformVariableReaderText } from '../preflight.ts';
 /** Re-exported because `RunOutcome` hands them to a reporter — reading this surface must not also require the deploy one. */
 export type { DeployedEntity } from './deploy.ts';
 
@@ -67,18 +57,16 @@ export interface ExtensionDescriptor {
   readonly checkGraph?: (graph: Graph) => void;
   /**
    * Deploy-time prerequisite check — the CLI runs it once, after the app's
-   * Project/Branch are resolved and BEFORE any stack file is written or Alchemy
+   * Project/Branch are resolved and BEFORE Alchemy
    * runs. A target uses it to verify platform prerequisites (e.g. that every
    * platform variable a service needs has a value) and throws to abort the
    * deploy. Async: it talks to the platform (ADR-0064).
    *
    * What it returns reaches this same extension's lowering as
-   * `LowerContext.preflight`: as a value under `deploy` and `prisma dev`, and
-   * through the environment (preflight-transport.ts) for `destroy`'s alchemy
-   * child, which re-imports the config from scratch. The payload
-   * is the extension's own opaque string; the framework never reads it, and a
-   * secret value must never go in it. What it hands `input.report` reaches the
-   * deploy report through the framework's own transport, not this payload.
+   * `LowerContext.preflight`. The payload is the extension's own opaque
+   * string; the framework never reads it, and a secret value must never go in
+   * it. What it hands `input.report` reaches the deploy report through the
+   * framework, not this payload.
    *
    * METHOD SYNTAX REQUIRED, for the same reason ContainerDescriptor's members
    * need it: the framework hands over the erased `PreflightInput<unknown>`,
@@ -87,7 +75,7 @@ export interface ExtensionDescriptor {
    */
   preflight?(input: PreflightInput): Promise<PreflightPayload>;
   /**
-   * Destroy-time cleanup — the CLI runs it once, after `alchemy destroy`
+   * Destroy-time cleanup — the CLI runs it once, after Alchemy's destroy
    * succeeds and BEFORE the environment's containers are removed. A target uses
    * it to remove infrastructure it owns outside the stack (e.g. the deploy
    * state store, which the destroy above was still reading). Throwing aborts
@@ -97,10 +85,9 @@ export interface ExtensionDescriptor {
   readonly teardown?: (input: TeardownInput) => Promise<void>;
   /**
    * The extension's container lifecycle, when its platform has containers
-   * (ADR-0038). The CLI resolves containers after assembly and before any
-   * stack file or Alchemy run (deploy ensures, destroy locates); the
-   * resolved instance reaches the alchemy process through the env transport
-   * in container-transport.ts.
+   * (ADR-0038). The CLI resolves containers after assembly and before
+   * Alchemy runs (deploy ensures, destroy locates), and hands each resolved
+   * instance to the lowering.
    */
   readonly container?: ContainerDescriptor;
   /**
@@ -240,12 +227,12 @@ export interface RunOutcome {
  */
 export interface RunReporter {
   /**
-   * Extra environment for the alchemy child, so reporting that happens
-   * inside the apply can find the run this session belongs to. Read once,
-   * after `attach`, and merged into the child's environment.
+   * Variables a deploy sets in the process environment while Alchemy plans
+   * and applies, so reporting that happens inside the apply can find the run
+   * this session belongs to. Read once, after `attach`.
    */
   childEnv(): Readonly<Record<string, string>>;
-  /** Called once the extension's own container is resolved, before any stack file is written — the moment the run's project and branch first exist to be referenced. */
+  /** Called once the extension's own container is resolved, before Alchemy runs — the moment the run's project and branch first exist to be referenced. */
   attach(input: ReportAttachInput): Promise<void>;
   /** Called exactly once, on every exit path including a thrown error. */
   finish(outcome: RunOutcome): Promise<void>;
@@ -277,7 +264,7 @@ export interface LocalTargetDescriptor {
   providers(input: LocalTargetProvidersInput): Layer.Layer<never>;
   /** A stable local identity — resolved without any platform call. */
   readonly container: ContainerDescriptor;
-  /** Works out the platform variables' values, where deploy's preflight runs. Its payload reaches the alchemy process the same way deploy's preflight payload does. */
+  /** Works out the platform variables' values, where deploy's preflight runs. Its payload reaches this extension's lowering as its preflight payload, as deploy's does. */
   preflight?(input: PreflightInput): Promise<DevPreflightResult>;
   /** Ensure the emulator daemons this topology's node kinds need are running, plus any per-node emulator state that must exist before converge (idempotent; daemons persist across sessions). */
   emulators?(input: LocalTargetEmulatorsInput): Promise<void>;
@@ -481,7 +468,7 @@ export interface ConfigAdapterInput {
 /** The values one adapter returns, by name. */
 export type ConfigValues = Readonly<Record<string, unknown>>;
 
-/** A function in the `config` or `secrets` list of the `composer` section (ADR-0062): it receives the environment and returns that environment's values. Only the command's first process calls it; the second process reads what the first read from the app configuration file. */
+/** A function in the `config` or `secrets` list of the `composer` section (ADR-0062): it receives the environment and returns that environment's values. Only a command's first Load calls it; a later Load, such as the one `lower()` runs, takes what the first one read. */
 export type ConfigAdapter = (input: ConfigAdapterInput) => ConfigValues | Promise<ConfigValues>;
 
 /** The app configuration (ADR-0062): what the `config` adapters return, merged by top-level key, a later adapter winning. It is the root's input, and under `prisma dev` it also holds the text of each plain platform variable. */

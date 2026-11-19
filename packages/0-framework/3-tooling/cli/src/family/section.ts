@@ -1,6 +1,6 @@
 /**
  * The `composer` section of `prisma.config.ts` is Composer's whole configuration.
- * The validator returns it together with the file that declared it, which the generated stack file imports.
+ * The validator returns it together with the file that declared it.
  */
 import type { ConfigSection, SectionProvenance, SectionValidation } from '@prisma/cli-engine';
 import { defineConfigSection } from '@prisma/cli-engine';

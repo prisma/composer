@@ -12,20 +12,10 @@ import { notOk, ok, type Result } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../composer-config.ts';
 import type { DeploymentSummary } from '../deployment-summary.ts';
 import { executorLoadFailure, type OperationDeps } from './shared.ts';
-import type { StepEvent } from './steps.ts';
+import type { StackStep, StepEvent } from './steps.ts';
 
 /** A deploy step. `assemble-service` steps run inside `assemble`, one per service, and `apply-resource` steps inside `apply`, one per resource Alchemy touches. */
-export type DeployStep =
-  | { readonly name: 'prepare' | 'assemble' | 'connect' | 'preflight' | 'apply' | 'record' }
-  | { readonly name: 'assemble-service'; readonly address: string }
-  | {
-      readonly name: 'apply-resource';
-      /** The resource's ID (ADR-0057): its node's address, or the address and the resource's role in that node. */
-      readonly resourceId: string;
-      readonly resourceType: string;
-      /** Alchemy's word for what is happening to the resource, such as `creating` or `created`, for people to read. It changes between a step's start and finish, and its values are Alchemy's, so do not branch on it. */
-      readonly status: string;
-    };
+export type DeployStep = StackStep | { readonly name: 'preflight' };
 
 export type DeployEvent =
   | StepEvent<DeployStep>

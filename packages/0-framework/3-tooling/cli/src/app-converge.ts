@@ -30,7 +30,7 @@ function unresolvable(appDir: string, detail: string, cause?: unknown): CliStruc
     'DEPS.CONVERGE_UNRESOLVABLE',
     `Could not load the converge from the app's @prisma/composer in "${appDir}": ${detail}`,
     {
-      why: "`prisma deploy` and `prisma dev` run the lowering and Alchemy from the app's own install of @prisma/composer, so the app, its extensions and Alchemy share one copy of alchemy.",
+      why: "`prisma deploy`, `prisma dev` and `destroy` run the lowering and Alchemy from the app's own install of @prisma/composer, so the app, its extensions and Alchemy share one copy of alchemy.",
       fix: 'Install @prisma/composer in the app, at the same version as the Composer the `prisma` CLI runs.',
       ...(cause === undefined ? {} : { cause }),
     },
@@ -78,7 +78,7 @@ function contractMismatch(
     'DEPS.CONVERGE_CONTRACT_MISMATCH',
     `The app's @prisma/composer ${appVersion} speaks converge contract ${app.contract}, and the \`prisma\` CLI's Composer ${host.version} speaks contract ${host.contract}.`,
     {
-      why: "Deploy and dev call the app's @prisma/composer from the CLI's Composer, and the two read each other's data only when they speak the same converge contract.",
+      why: "`prisma deploy`, `prisma dev` and `destroy` call the app's @prisma/composer from the CLI's Composer, and the two read each other's data only when they speak the same converge contract.",
       fix: update,
     },
   );

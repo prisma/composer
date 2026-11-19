@@ -1,7 +1,7 @@
 /**
  * Pins the control entry's import-light guarantee structurally: a fresh bun
  * process imports src/exports/control.ts with every heavy module poisoned
- * (executors, pipeline, alchemy runner, stack generators, watch). If the
+ * (executors, pipeline, the in-process converge, watch). If the
  * entry's static graph ever reaches one of them, the import throws and this
  * test fails — the guarantee stops resting on doc comments.
  */
@@ -28,7 +28,7 @@ describe('the ./control entry', () => {
           '    build.onLoad(\n' +
           '      {\n' +
           '        filter:\n' +
-          '          /(execute-deploy-destroy|execute-dev|execute-log|pipeline|run-alchemy|generate-stack|watch|run-dev|run-log)\\.ts$/,\n' +
+          '          /(execute-deploy-destroy|execute-dev|execute-log|pipeline|converge-in-process|watch|run-dev|run-log)\\.ts$/,\n' +
           '      },\n' +
           '      (args) => {\n' +
           "        throw new Error(`heavy module in the control entry's static graph: ${args.path}`);\n" +

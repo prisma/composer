@@ -1,5 +1,7 @@
 # ADR-0067: `prisma dev` converges in a new worker thread of the `prisma` process
 
+Amended by [ADR-0068](ADR-0068-destroy-runs-alchemy-in-process.md): `destroy` runs in process too, so no command uses the app configuration file or a generated stack file, and `LowerOptions.firstProcessNodeAddresses` is named `preparedNodeAddresses`.
+
 ## Decision
 
 Each converge of `prisma dev`, the first one and every rebuild, runs in a new worker thread (`node:worker_threads`) of the process that runs `dev`. `dev` writes no `.prisma-composer/dev/<environment>/alchemy.run.ts`, writes no app configuration file, and starts no Alchemy child.

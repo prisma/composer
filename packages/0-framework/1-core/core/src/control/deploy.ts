@@ -7,7 +7,6 @@ import type { State } from 'alchemy/State/State';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type { Config, ConfigParam } from '../config.ts';
-import { deserializeContainers } from '../container-transport.ts';
 import { type Graph, Load, type NodeId, nodeAddresses } from '../graph.ts';
 import type { AppConfigurationRead } from '../graph-types.ts';
 import {
@@ -20,11 +19,7 @@ import {
   type ServiceNode,
   slotsOf,
 } from '../node.ts';
-import {
-  type PreflightFindings,
-  type PreflightPayload,
-  readPreflightPayload,
-} from '../preflight-transport.ts';
+import type { PreflightFindings, PreflightPayload } from '../preflight.ts';
 import type {
   CallerCredentials,
   ContainerInstance,
@@ -233,8 +228,8 @@ export interface LowerOptions {
   readonly environment?: string;
   /** What the caller's Load read from the app configuration (ADR-0062). Load takes the root's input from it. */
   readonly appConfigurationRead?: AppConfigurationRead;
-  /** The node addresses of the graph the caller built. When given, lowering refuses a graph whose addresses differ. */
-  readonly firstProcessNodeAddresses?: readonly string[];
+  /** The node addresses of the graph the caller prepared. When given, lowering refuses a graph whose addresses differ. */
+  readonly preparedNodeAddresses?: readonly string[];
   // One assembled bundle per provisioned service, keyed by the service's
   // full hierarchical address (its graph id).
   readonly bundles: Record<string, Bundle>;
@@ -252,10 +247,10 @@ export interface LowerOptions {
   readonly report?: (result: DeploymentResult) => void;
   /** Addresses lowered without an artifact: `package` and `deploy` are skipped and `reserve` runs instead (ADR-0056). Only `prisma dev` sets it. */
   readonly unassembled?: readonly string[];
-  /** Each extension's resolved container, by extension id. Pass both `containers` and `preflightPayloads`, or neither. When both are absent, `lower()` reads both from the environment transports through `transportedLowerInputs(config)`. When exactly one is passed, `lower()` throws. */
-  readonly containers?: ReadonlyMap<string, ContainerInstance> | undefined;
+  /** Each extension's resolved container, by extension id. */
+  readonly containers: ReadonlyMap<string, ContainerInstance>;
   /** What each extension's preflight returned, by extension id. Each lowering context gets its own extension's entry as `LowerContext.preflight`. */
-  readonly preflightPayloads?: ReadonlyMap<string, string> | undefined;
+  readonly preflightPayloads: ReadonlyMap<string, string>;
   /** The platform variables with no value that the deploy preflight found. The deploy report carries them. Absent means none. */
   readonly findings?: PreflightFindings;
   /** What the caller already authenticated, handed to every extension's `providers()` and to the state descriptor's `create()`. Absent means each extension falls back to its own credential protocol. */
@@ -321,7 +316,7 @@ export class LowerError extends Error {
   }
 }
 
-/** The `name` of the error `lower()` fails with when it builds a graph whose node addresses differ from `firstProcessNodeAddresses`. */
+/** The `name` of the error `lower()` fails with when it builds a graph whose node addresses differ from `preparedNodeAddresses`. */
 export const GRAPH_CHANGED_ERROR = 'GraphChangedError';
 
 class GraphChangedError extends LowerError {
@@ -331,14 +326,14 @@ class GraphChangedError extends LowerError {
   }
 }
 
-function assertSameNodeAddresses(built: readonly string[], firstProcess: readonly string[]): void {
-  const onlyBuilt = built.filter((address) => !firstProcess.includes(address));
-  const onlyFirst = firstProcess.filter((address) => !built.includes(address));
-  if (onlyBuilt.length === 0 && onlyFirst.length === 0) return;
+function assertSameNodeAddresses(built: readonly string[], prepared: readonly string[]): void {
+  const onlyBuilt = built.filter((address) => !prepared.includes(address));
+  const onlyPrepared = prepared.filter((address) => !built.includes(address));
+  if (onlyBuilt.length === 0 && onlyPrepared.length === 0) return;
   const list = (addresses: readonly string[]) =>
     addresses.length === 0 ? 'none' : addresses.map((address) => `"${address}"`).join(', ');
   throw new GraphChangedError(
-    `lower() built a different graph from the one Composer checked first. Only in the graph lower() built: ${list(onlyBuilt)}. Only in the graph Composer checked: ${list(onlyFirst)}. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.`,
+    `lower() built a different graph from the graph the caller prepared. Only in the graph lower() built: ${list(onlyBuilt)}. Only in the graph the caller prepared: ${list(onlyPrepared)}. A module body must build the same graph every time; one that reads the process environment, a file or the clock can build a different one.`,
   );
 }
 
@@ -707,11 +702,12 @@ export function lowering(
         ? { appConfigurationRead: opts.appConfigurationRead }
         : {}),
     });
-    if (opts.firstProcessNodeAddresses !== undefined) {
-      assertSameNodeAddresses(nodeAddresses(graph), opts.firstProcessNodeAddresses);
+    if (opts.preparedNodeAddresses !== undefined) {
+      assertSameNodeAddresses(nodeAddresses(graph), opts.preparedNodeAddresses);
     }
     const extensions = yield* extensionsById(config);
-    const { containers, preflightPayloads, findings } = lowerInputs(config, opts);
+    const { containers, preflightPayloads } = opts;
+    const findings = opts.findings ?? { unset: [] };
     const preflightOf = (extensionId: string): PreflightPayload =>
       preflightPayloads.get(extensionId);
     const lowered = new Map<NodeId, Outputs>();
@@ -928,48 +924,10 @@ export function lowering(
   >(program);
 }
 
-interface TransportedLowerInputs {
-  readonly containers: ReadonlyMap<string, ContainerInstance>;
-  readonly preflightPayloads: ReadonlyMap<string, string>;
-}
-
-interface LowerInputs extends TransportedLowerInputs {
-  readonly findings: PreflightFindings;
-}
-
-/** The containers and preflight payloads a host wrote into the environment of a stack file it runs as a child. */
-export function transportedLowerInputs(config: PrismaAppConfig): TransportedLowerInputs {
-  const env = process.env;
-  const preflightPayloads = new Map<string, string>();
-  for (const { id } of config.extensions) {
-    const payload = readPreflightPayload(id, env);
-    if (payload !== undefined) preflightPayloads.set(id, payload);
-  }
-  return {
-    containers: deserializeContainers(config.extensions, env),
-    preflightPayloads,
-  };
-}
-
-function lowerInputs(config: PrismaAppConfig, opts: LowerOptions): LowerInputs {
-  const { containers, preflightPayloads } = opts;
-  const findings = opts.findings ?? { unset: [] };
-  if (containers !== undefined && preflightPayloads !== undefined) {
-    return { containers, preflightPayloads, findings };
-  }
-  if (containers === undefined && preflightPayloads === undefined) {
-    return { ...transportedLowerInputs(config), findings };
-  }
-  const missing = containers === undefined ? 'containers' : 'preflightPayloads';
-  throw new Error(
-    `lower() was passed ${missing === 'containers' ? 'preflightPayloads' : 'containers'} without ${missing}. Pass both, or neither to read both from the environment.`,
-  );
-}
-
 /**
  * The whole-stack wrapper: Load → route each node through the config's
- * extension registries → an Alchemy Stack, which `deploy` hands to
- * `Alchemist.plan` and a generated stack file exports for the alchemy CLI.
+ * extension registries → an Alchemy Stack, which the operations hand to
+ * `Alchemist.plan`.
  */
 export function lower(root: ModuleNode | AppRootNode, config: PrismaAppConfig, opts: LowerOptions) {
   // A LowerError at deploy is fatal; orDie moves it off the error channel to
@@ -982,7 +940,7 @@ export function lower(root: ModuleNode | AppRootNode, config: PrismaAppConfig, o
 
   return Alchemy.Stack(
     opts.name,
-    { providers, state: resolveStateLayer(opts, config, lowerInputs(config, opts).containers) },
+    { providers, state: resolveStateLayer(opts, config, opts.containers) },
     stackEffect,
   );
 }

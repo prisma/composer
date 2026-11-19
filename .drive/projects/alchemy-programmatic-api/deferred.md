@@ -16,14 +16,6 @@ Wanted: `@prisma/cli-engine` exposes the client's base URL to commands (it alrea
 
 Origin: slice 4 review (D02).
 
-## Destroy still authenticates with a token in a child process
-
-Deploy runs Alchemy in process and authenticates every request through `ctx.api`. Destroy still runs Alchemy in a child process with `needs: { credentials: 'child' }`, so it gets a token snapshot that cannot refresh, and a `prisma login` session works differently for the two commands.
-
-Wanted: destroy runs in process like deploy and passes `ctx.api` the same way.
-
-Origin: slice 4 review (D03).
-
 ## Alchemy's HTTP state store requires a token
 
 `makeHttpStateStore` takes a required `authToken` and always sets `Authorization: Bearer <authToken>`. Composer passes an empty string, and the deploy's `HttpClient` removes the header before the request reaches the client. That works, but only because the adapter removes every `Authorization` header.
@@ -42,11 +34,27 @@ Origin: slice 4 review (S05).
 
 ## `destroy` does not know the secrets in the `secrets` list
 
-`destroy` reads the `config` adapters and not the `secrets` adapters, so its known secrets are only the values the app configuration holds. A secret that is only in the `secrets` list, such as `DB_PASSWORD`, is unknown to it, so a `config` value that contains it, such as `DATABASE_URL`, is written to destroy's app configuration file and is not redacted. The behaviour is the same on `main`. The guide and `deploy-cli.md` now state the limit.
+`destroy` reads the `config` adapters and not the `secrets` adapters, so the secrets it redacts in its events are only the values the app configuration holds. Since destroy moved in process it writes no file, so the only effect is on redaction of event text.
 
-Wanted: decide whether `destroy` should read the app secrets for the refusal and for redaction.
+Wanted: decide whether `destroy` should read the app secrets for redaction.
 
-Origin: review of `b0c3453a` (F04).
+Origin: review of `b0c3453a` (F04), narrowed when destroy moved in process.
+
+## The public `deploy` and `destroy` operations take no credentials
+
+The `prisma deploy` command passes `ctx.api` through an internal seam. A script that calls `deploy` or `destroy` from `@prisma/composer/control` cannot pass a client, so it authenticates with `PRISMA_SERVICE_TOKEN` only, and a `prisma login` session cannot destroy an environment.
+
+Wanted: a `prisma` command for destroy, or a public `credentials` field on both inputs.
+
+Origin: moving destroy in process.
+
+## Load still refuses a root input value JSON cannot hold exactly
+
+The check existed because `destroy` wrote the root's input to a JSON file. No command writes that file now. `prisma dev` copies the values to a worker thread, which allows more than JSON does.
+
+Wanted: decide whether the restriction stays (one rule for every command) or is relaxed to what a thread can copy.
+
+Origin: moving destroy in process.
 
 ## Destroying the `production` environment deletes the project, with every other environment's resources
 
@@ -58,7 +66,6 @@ Origin: manual QA after the #431 merge.
 
 ## Follow-ups from the review of the dev converge worker (#411)
 
-- **Core's `firstProcess*` and `SecondProcess*` names** (`LowerOptions.firstProcessNodeAddresses` and others) describe a mechanism only `destroy` still has. Renaming changes the converge contract shapes, so do it when `destroy` moves in process. Origin: review S08.
 - **`DevStep` ids are strings the command parses** (`dev.rebuild.N`), where `DeployStep` is structural. Origin: review S11.
 - **The main thread loads the app's whole converge entry only to check it** before anything local is created; the worker loads it again. A lighter check (the contract entry alone) would do. Origin: review S12.
 - **The session's own view of the app is the one from start.** Adding or removing a node needs `prisma dev` restarted. The worker could send back the plain facts the session needs (addresses, kinds, dev servers, watch paths). Origin: ADR-0067.
@@ -66,3 +73,26 @@ Origin: manual QA after the #431 merge.
 - **Under Node, `import './lib'` fails even when `lib/index.ts` exists**, while Bun loads it. The entry resolve hook tries its candidates only on "module not found", and Node raises a directory-import error instead. Origin: round-4 review.
 - **Core's two refusals of a graph that differs from the first Load's have names but no error code.** `GRAPH_CHANGED_ERROR` and `ROOT_INPUT_UNREAD_ERROR` are plain named errors, recognised by name because they cross from the app's install of core to the host's. Under `deploy` each is a reason of `DEPLOY.ENGINE_FAILED`. Give both a code in the registry when errors can cross installs with their envelope. Origin: round-4 review S05.
 - **Watches added during a dev session do not wait for the watcher to be ready**, so an edit made in the first moments after a newly imported file is recorded can be missed. Origin: round-3 review.
+
+## Destroy's "no prior deploy state" notice fires after every Prisma Cloud deploy
+
+Seen in QA on 2026-11-18: `destroy` run from the directory that had just deployed still said "No prior deploy state", because Prisma Cloud's state lives behind the platform's API and `.alchemy` stays empty. The check predates that state store.
+
+Wanted: ask the configured state store whether it keeps state locally before giving the notice, or drop the notice.
+
+Origin: manual QA of destroy in process.
+
+## Destroy assembles the app, and so needs it built, for nothing
+
+Alchemy's destroy plan never runs the stack program: it reads the state store and deletes through the providers. So the bundles destroy assembles are never read, and `DEPLOY.BUILD_REQUIRED` on a destroy guards nothing. Destroy's Load of the app is needed only for the app's name.
+
+Wanted: destroy skips the assemble step, and `DEPLOY.BUILD_REQUIRED` is retired.
+
+Origin: round-1 code review of destroy in process (F01).
+
+## `RunReporter.childEnv()` is named for a child that no longer exists
+
+Extensions implement it, so a rename breaks them. It goes away when the reporter hands its build id to the lowering as a value (see "Deploy still sets the reporter variables in `process.env`" above); rename or remove it then.
+
+Origin: round-1 system design review of destroy in process (S03).
+

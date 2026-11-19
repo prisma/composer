@@ -33,7 +33,6 @@ import {
   InternalError,
 } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
-import { removeLeftoverAppConfigurationFiles } from '../app-configuration-file.ts';
 import { loadAppConvergeEntry } from '../app-converge.ts';
 import type { ConvergeFailureReason, ConvergeOutcome } from '../converge-in-process.ts';
 import { withComposerAdvice } from '../deployment-summary.ts';
@@ -341,7 +340,6 @@ async function executeDevInner(
   const { onEvent } = input;
   const environment = input.environment ?? DEV_ENVIRONMENT;
   const devDir = path.join(cwd, devEnvironmentDir(environment));
-  removeLeftoverAppConfigurationFiles(cwd);
 
   let pipeline: Awaited<ReturnType<typeof runPipeline>>;
   let resolved: ReadonlyMap<string, LocalTargetDescriptor>;

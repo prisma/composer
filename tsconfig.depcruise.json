@@ -52,16 +52,10 @@
       ],
       "@internal/nextjs": ["./packages/0-framework/2-authoring/nextjs/src/exports/index.ts"],
       "@internal/assemble": ["./packages/0-framework/3-tooling/assemble/src/exports/index.ts"],
-      "@internal/cli/report": [
-        "./packages/0-framework/3-tooling/cli/src/exports/render-deployment.ts"
-      ],
       "@internal/cli/app-identity": [
         "./packages/0-framework/3-tooling/cli/src/exports/app-identity.ts"
       ],
       "@internal/cli/config": ["./packages/0-framework/3-tooling/cli/src/exports/config.ts"],
-      "@internal/cli/app-configuration-file": [
-        "./packages/0-framework/3-tooling/cli/src/exports/app-configuration-file.ts"
-      ],
       "@internal/cli/converge": ["./packages/0-framework/3-tooling/cli/src/exports/converge.ts"],
       "@internal/cli/converge-contract": [
         "./packages/0-framework/3-tooling/cli/src/exports/converge-contract.ts"
@@ -158,9 +152,6 @@
       ],
       "@internal/cron": ["./packages/1-prisma-cloud/2-shared-modules/cron/src/exports/index.ts"],
       "@prisma/composer/config": ["./packages/9-public/composer/src/exports/config.ts"],
-      "@prisma/composer/internal/app-configuration-file": [
-        "./packages/9-public/composer/src/exports/internal-app-configuration-file.ts"
-      ],
       "@prisma/composer/internal/converge": [
         "./packages/9-public/composer/src/exports/internal-converge.ts"
       ],
@@ -205,7 +196,6 @@
       "@prisma/composer-prisma-cloud": [
         "./packages/9-public/composer-prisma-cloud/src/exports/index.ts"
       ],
-      "@prisma/composer/report": ["./packages/9-public/composer/src/exports/report.ts"],
       "@prisma/composer/control": ["./packages/9-public/composer/src/exports/control.ts"],
       "@prisma/composer": ["./packages/9-public/composer/src/exports/index.ts"]
     }

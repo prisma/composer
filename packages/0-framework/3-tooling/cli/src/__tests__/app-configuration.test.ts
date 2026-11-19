@@ -3,7 +3,6 @@ import type { ConfigAdapter, PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { readAppConfiguration, readAppSecrets } from '../app-configuration.ts';
 import { dotenv } from '../config-adapters.ts';
-import * as appConfigurationFileEntry from '../exports/app-configuration-file.ts';
 import * as configEntry from '../exports/config.ts';
 
 const base: PrismaAppConfig = {
@@ -209,8 +208,7 @@ describe('readAppConfiguration and readAppSecrets', () => {
 });
 
 describe('where the readers are published', () => {
-  test('the public config entry exports the adapters only, and the second process reads through the app configuration file entry', () => {
+  test('the public config entry exports the adapters only', () => {
     expect(Object.keys(configEntry).sort()).toEqual(['dotenv', 'environmentVariables']);
-    expect(Object.keys(appConfigurationFileEntry).sort()).toEqual(['readAppConfigurationFile']);
   });
 });

@@ -36,23 +36,16 @@ entry module (`module.ts` here) and every module it imports, so those modules de
 `prisma` needs. Run it with your package manager by default:
 `pnpm prisma deploy` or `npx prisma deploy`.
 
-`prisma deploy` runs Alchemy inside the `prisma` process, so Alchemy runs under whatever `prisma` runs under. `prisma dev`, and the `destroy` operation, start Alchemy's launcher as a separate process, with Node: the Node `prisma` runs on, or
-the first `node` on PATH when `prisma` runs under Bun (`DEPLOY.NODE_MISSING`
-if there is none). Alchemy's launcher then moves itself to Bun when the
-package-manager environment says Bun invoked it, which `bunx` and `bun run`
-do. So for those, the invocation decides where each ends up:
+`prisma deploy` and `prisma dev` run Alchemy inside the `prisma` process, and the `destroy` operation runs it inside the process that calls it. So Alchemy runs under whatever your modules run under, and the invocation decides that:
 
-| Invocation | `prisma` runs under | Alchemy runs under |
-| --- | --- | --- |
-| `pnpm prisma …` or `npx prisma …` | Node | Node |
-| `bunx prisma …` | Node (the bin's `node` shebang) | Bun |
-| `bunx --bun prisma …` | Bun | Bun (Bun stands in for `node` on PATH) |
-| `bun node_modules/prisma/dist/prisma.js …` | Bun | Node |
+| Invocation | `prisma` runs under |
+| --- | --- |
+| `pnpm prisma …` or `npx prisma …` | Node |
+| `bunx prisma …` | Node (the bin's `node` shebang) |
+| `bunx --bun prisma …` | Bun |
+| `bun node_modules/prisma/dist/prisma.js …` | Bun |
 
-If your modules use Bun APIs (they import `bun`, or call `Bun.serve` when
-imported), `prisma` must run under Bun. To keep Alchemy on Node at the same
-time, run the bin's JavaScript entry with Bun from a shell, not from a
-`bun run` script:
+If your modules use Bun APIs (they import `bun`, or call `Bun.serve` when imported), `prisma` must run under Bun:
 
 ```sh
 bun node_modules/prisma/dist/prisma.js deploy
@@ -795,10 +788,10 @@ What to know before embedding it:
   deploy engine ran and failed (`DEPLOY.ENGINE_FAILED`), the message ends with
   the engine's own error lines — the failed resource and the error it
   printed, with every secret Composer knows redacted, and capped at 1000 characters — which a
-  deploy reporting to Prisma Cloud also records on the build. A `deploy` stopped by its `signal` fails with `DEPLOY.INTERRUPTED`, after it has released the environment's lease. A failed `destroy` also carries an optional `diagnostics` object with the exit code and an exact reproduce command — details of the current execution mechanism, handy for printing a hint but not something to build on; branch on `message`/`cause` for anything durable. Importing the module executes nothing until you call an operation.
-- Composer replaces every secret it knows with `[redacted]` in the deploy engine's output: the value under the name of each platform secret your app declares, in your `config` and `secrets` lists, however short. Other values in those lists, such as the shell's, are printed as they are, apart from values that look like credentials, such as a long value under a name containing `TOKEN` or `KEY`. `deploy` redacts each engine event and log line before `onEvent` receives it. `destroy` passes its engine child's output through Composer on its way to your terminal, so that engine shows plain progress lines, without colour.
-- **`onEvent` reports each step.** Pass `onEvent` to `deploy` to receive a `step-started` and a `step-finished` event per step (`prepare`, `assemble`, one `assemble-service` per service, `connect`, `preflight`, `apply`, one `apply-resource` per resource the engine touches, with its `resourceId` and the engine's `status` word, which is for people to read, `record`), as they happen, and a `message` event for each line the engine logs. A finished step has `outcome`, `durationMs` and the `data` described in [What a deploy prints](#what-a-deploy-prints). Right after `preflight`, a `preflight-findings` event lists the platform variables with no value that no service needs, when there are any. When a step fails, it and the steps around it finish as `failed`; `record` still runs. An `onEvent` that throws does not fail the deploy. A successful result's `durationMs` is the whole deploy's total.
-- **`deploy` runs the engine in your process.** It returns `summary` as a value and reports the engine's progress through `onEvent`; it prints nothing. While it plans and applies it sets each deploy reporter's variables in `process.env` and changes to `cwd` when your process is elsewhere, then restores both, so a process runs one deploy at a time (`DEPLOY.CONVERGE_RUNNING`), and from a worker thread `cwd` must be the process's working directory (`DEPLOY.WORKER_THREAD`). Deploy uses the lowering and the converge from the app's own install of `@prisma/composer`, found beside its `prisma.config.ts`, which must speak the same converge contract as the Composer running the deploy (`DEPS.CONVERGE_CONTRACT_MISMATCH` otherwise); the package versions may differ. Pass `signal` to interrupt it. `destroy` still runs the engine as a child process.
+  deploy reporting to Prisma Cloud also records on the build. A `deploy` stopped by its `signal` fails with `DEPLOY.INTERRUPTED`, after it has released the environment's lease. A `destroy` stopped by its `signal` fails the same way. Importing the module executes nothing until you call an operation.
+- Composer replaces every secret it knows with `[redacted]` in the deploy engine's output: the value under the name of each platform secret your app declares, in your `config` and `secrets` lists, however short. Other values in those lists, such as the shell's, are printed as they are, apart from values that look like credentials, such as a long value under a name containing `TOKEN` or `KEY`. `deploy` and `destroy` redact each engine event and log line before `onEvent` receives it.
+- **`onEvent` reports each step.** Pass `onEvent` to `deploy` to receive a `step-started` and a `step-finished` event per step (`prepare`, `assemble`, one `assemble-service` per service, `connect`, `preflight`, `apply`, one `apply-resource` per resource the engine touches, with its `resourceId` and the engine's `status` word, which is for people to read, `record`), as they happen, and a `message` event for each line the engine logs. A finished step has `outcome`, `durationMs` and the `data` described in [What a deploy prints](#what-a-deploy-prints). Right after `preflight`, a `preflight-findings` event lists the platform variables with no value that no service needs, when there are any. When a step fails, it and the steps around it finish as `failed`; `record` still runs. An `onEvent` that throws does not fail the deploy. A successful result's `durationMs` is the whole deploy's total. `destroy` takes `onEvent` too and reports the same steps without `preflight`, and one `no-local-deploy-state` event as `prepare` starts when the working directory has no `.alchemy` directory.
+- **`deploy` and `destroy` run the engine in your process.** `deploy` returns `summary` as a value and reports the engine's progress through `onEvent`; it prints nothing. While it plans and applies it sets each deploy reporter's variables in `process.env` and changes to `cwd` when your process is elsewhere, then restores both, so a process runs one deploy or destroy at a time (`DEPLOY.CONVERGE_RUNNING`), and from a worker thread `cwd` must be the process's working directory (`DEPLOY.WORKER_THREAD`). Both use the lowering and the converge from the app's own install of `@prisma/composer`, found beside its `prisma.config.ts`, which must speak the same converge contract as the Composer running the operation (`DEPS.CONVERGE_CONTRACT_MISMATCH` otherwise); the package versions may differ. Pass `signal` to interrupt either.
 - **`dev` resolves to `{ ok: true, value: session }` or a failure** —
   never an exit code. The session is `{ endpoints, stop(), closed }`, with
   progress (`ready`, `converge-failed`, `config-changed`, `watch-error`, …) delivered through

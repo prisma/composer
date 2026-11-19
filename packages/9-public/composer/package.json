@@ -6,13 +6,11 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./config": "./dist/config.mjs",
-    "./internal/app-configuration-file": "./dist/internal-app-configuration-file.mjs",
     "./internal/converge": "./dist/internal-converge.mjs",
     "./internal/converge-contract": "./dist/internal-converge-contract.mjs",
     "./control": "./dist/control.mjs",
     "./deploy": "./dist/deploy.mjs",
     "./local-target": "./dist/local-target.mjs",
-    "./report": "./dist/report.mjs",
     "./testing": "./dist/testing.mjs",
     "./casts": "./dist/casts.mjs",
     "./assertions": "./dist/assertions.mjs",
@@ -40,7 +38,6 @@
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "catalog:",
-    "cross-spawn": "^7.0.6",
     "dotenv-flow": "4.1.0",
     "effect": "catalog:",
     "esbuild": "^0.28.1",

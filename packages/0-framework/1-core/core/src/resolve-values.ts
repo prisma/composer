@@ -701,7 +701,7 @@ export function resolveValues(input: {
           path: field.path,
         });
         throw new LoadError(
-          `${label} of root module "${rootModuleAddress()}" reads "${key}" from the app configuration, and ${origin.label} names "${key}" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which \`prisma deploy\` sends to the platform as plain configuration, \`prisma dev\` gives to the local services as plain configuration, and \`destroy\` writes to a file. Read the secret with ${origin.label} only, or give the plain value a different name.`,
+          `${label} of root module "${rootModuleAddress()}" reads "${key}" from the app configuration, and ${origin.label} names "${key}" as a secret. A name is a plain value or a secret, not both: a root input field is a plain value, which \`prisma deploy\` sends to the platform as plain configuration and \`prisma dev\` gives to the local services as plain configuration. Read the secret with ${origin.label} only, or give the plain value a different name.`,
         );
       }
     }
@@ -709,7 +709,7 @@ export function resolveValues(input: {
       const kind = 'value' in field ? jsonInexactKind(field.value) : undefined;
       if (kind !== undefined) {
         throw new LoadError(
-          `${inputFieldLabel({ kind: 'input', module: rootModuleAddress(), path: field.path })} of root module "${rootModuleAddress()}" holds ${kind}, which JSON cannot hold exactly. \`destroy\` hands the root's input to its second process in a JSON file, so a field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.`,
+          `${inputFieldLabel({ kind: 'input', module: rootModuleAddress(), path: field.path })} of root module "${rootModuleAddress()}" holds ${kind}, which JSON cannot hold exactly. A field the root's body passes on must hold text, a finite number, a boolean, null, or arrays and plain objects of these.`,
         );
       }
     }

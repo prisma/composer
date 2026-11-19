@@ -1,9 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { appRoot, Load } from '@internal/core';
-import { preflightEnv, readPreflightPayload } from '@internal/core/config';
 import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
+import { PrismaCloudContainer } from '../container.ts';
 import {
   decodePreflightPayload,
   preflightView,
@@ -70,70 +69,52 @@ const preflightAgainst = (updatedAt: string | undefined) =>
     { client: fakePlatform(updatedAt) },
   );
 
-/** The first process: run the real preflight and hand its payload to the framework transport. */
-async function cliProcess(updatedAt: string | undefined): Promise<Record<string, string>> {
-  const payload = serializeDeployPreflightPayload(await preflightAgainst(updatedAt));
-  return preflightEnv(
-    payload === undefined ? new Map() : new Map([[PRISMA_CLOUD_EXTENSION_ID, payload]]),
-  );
+/** Runs the real preflight and returns the payload the deploy hands the lowering. */
+async function preflightPayload(updatedAt: string | undefined): Promise<string | undefined> {
+  return serializeDeployPreflightPayload(await preflightAgainst(updatedAt));
 }
 
-/**
- * The alchemy process: it never ran a preflight, so its own map is empty and
- * everything it knows comes from the transported env — exactly the state a
- * fresh `prismaCloud()` is in there. Returns the `<name>:updatedAt` trigger
- * members the deploy hook declares on `Prisma.Deployment` — what upstream's
- * fingerprint moves on.
- */
-function alchemyProcessVariableTriggers(env: Record<string, string>): Record<string, string> {
-  const { platformVariableVersion } = preflightView(
-    readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, env),
-  );
+/** The `<name>:updatedAt` trigger members the deploy hook declares on `Prisma.Deployment`, as the lowering reads them from the payload — what upstream's fingerprint moves on. */
+function variableTriggers(payload: string | undefined): Record<string, string> {
+  const { platformVariableVersion } = preflightView(payload);
   return Object.fromEntries(
     platformVariables.map((name) => [`${name}:updatedAt`, platformVariableVersion(name) ?? '?']),
   );
 }
 
-describe('the rotation signal across the CLI → alchemy process boundary', () => {
-  test('a secret rotated on the platform moves the trigger member in the alchemy process', async () => {
-    const before = alchemyProcessVariableTriggers(await cliProcess('2026-05-05T12:00:00.000Z'));
-    const after = alchemyProcessVariableTriggers(await cliProcess('2026-07-07T09:15:00.000Z'));
+describe('the rotation signal from the preflight to the lowering', () => {
+  test('a secret rotated on the platform moves the trigger member', async () => {
+    const before = variableTriggers(await preflightPayload('2026-05-05T12:00:00.000Z'));
+    const after = variableTriggers(await preflightPayload('2026-07-07T09:15:00.000Z'));
 
     expect(after).not.toEqual(before);
   });
 
   test('an unchanged secret leaves it standing still — the deployment is reused', async () => {
-    const first = alchemyProcessVariableTriggers(await cliProcess('2026-05-05T12:00:00.000Z'));
-    const second = alchemyProcessVariableTriggers(await cliProcess('2026-05-05T12:00:00.000Z'));
+    const first = variableTriggers(await preflightPayload('2026-05-05T12:00:00.000Z'));
+    const second = variableTriggers(await preflightPayload('2026-05-05T12:00:00.000Z'));
 
     expect(second).toEqual(first);
   });
 
-  test('what the transport carries is the timestamp preflight read, under the name of the platform variable', async () => {
-    const env = await cliProcess('2026-05-05T12:00:00.000Z');
-
-    expect(env).toEqual({
-      PRISMA_COMPOSER_PREFLIGHT_PRISMA_COMPOSER_PRISMA_CLOUD:
-        '{"updatedAt":{"STRIPE_SECRET_KEY":"2026-05-05T12:00:00.000Z"}}',
-    });
+  test('the payload carries the timestamp preflight read, under the name of the platform variable', async () => {
+    expect(await preflightPayload('2026-05-05T12:00:00.000Z')).toBe(
+      '{"updatedAt":{"STRIPE_SECRET_KEY":"2026-05-05T12:00:00.000Z"}}',
+    );
   });
 
   test('a variable with no value sends no payload, and its trigger member is unknown', async () => {
-    const env = await cliProcess(undefined);
+    const payload = await preflightPayload(undefined);
 
-    expect(env).toEqual({});
-    expect(alchemyProcessVariableTriggers(env)).toEqual({ 'STRIPE_SECRET_KEY:updatedAt': '?' });
+    expect(payload).toBeUndefined();
+    expect(variableTriggers(payload)).toEqual({ 'STRIPE_SECRET_KEY:updatedAt': '?' });
   });
 
-  test('without the transport the alchemy process learns nothing — the trigger cannot move', async () => {
-    // What the child saw before the timestamps were transported at all: every
-    // name unknown, so a rotation is invisible. This is the failure the
-    // transport exists to prevent.
-    const untransported = alchemyProcessVariableTriggers({});
-    const rotated = alchemyProcessVariableTriggers(await cliProcess('2026-07-07T09:15:00.000Z'));
+  test('without the payload the lowering learns nothing — the trigger cannot move', async () => {
+    const withoutPayload = variableTriggers(undefined);
+    const rotated = variableTriggers(await preflightPayload('2026-07-07T09:15:00.000Z'));
 
-    expect(alchemyProcessVariableTriggers({})).toEqual(untransported);
-    expect(rotated).not.toEqual(untransported);
+    expect(rotated).not.toEqual(withoutPayload);
   });
 });
 
@@ -199,22 +180,12 @@ describe("each run's own preflight", () => {
   });
 });
 
-describe('one transport variable, two kinds of payload', () => {
-  const childEnv = (payload: string | undefined) =>
-    preflightEnv(
-      payload === undefined ? new Map() : new Map([[PRISMA_CLOUD_EXTENSION_ID, payload]]),
-    );
-
+describe('one payload, two kinds', () => {
   test('a deploy payload names no absent secret and reads as timestamps', () => {
     const preflight = preflightView(
-      readPreflightPayload(
-        PRISMA_CLOUD_EXTENSION_ID,
-        childEnv(
-          serializeDeployPreflightPayload({
-            updatedAt: new Map([['STRIPE_SECRET_KEY', '2026-10-01T00:00:00Z']]),
-          }),
-        ),
-      ),
+      serializeDeployPreflightPayload({
+        updatedAt: new Map([['STRIPE_SECRET_KEY', '2026-10-01T00:00:00Z']]),
+      }),
     );
 
     expect([...preflight.absentVariables]).toEqual([]);
@@ -223,15 +194,10 @@ describe('one transport variable, two kinds of payload', () => {
 
   test('a dev payload carries the absent variables and the value versions', () => {
     const preflight = preflightView(
-      readPreflightPayload(
-        PRISMA_CLOUD_EXTENSION_ID,
-        childEnv(
-          serializeDevPreflightPayload({
-            absentVariables: ['STRIPE_WEBHOOK_SECRET'],
-            platformVariableVersions: { STRIPE_SECRET_KEY: 'hmac-of-value' },
-          }),
-        ),
-      ),
+      serializeDevPreflightPayload({
+        absentVariables: ['STRIPE_WEBHOOK_SECRET'],
+        platformVariableVersions: { STRIPE_SECRET_KEY: 'hmac-of-value' },
+      }),
     );
 
     expect([...preflight.absentVariables]).toEqual(['STRIPE_WEBHOOK_SECRET']);
@@ -239,9 +205,7 @@ describe('one transport variable, two kinds of payload', () => {
   });
 
   test('with no payload nothing is absent and every version is unknown', () => {
-    const preflight = preflightView(
-      readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, childEnv(undefined)),
-    );
+    const preflight = preflightView(undefined);
 
     expect([...preflight.absentVariables]).toEqual([]);
     expect(preflight.platformVariableVersion('STRIPE_SECRET_KEY')).toBeUndefined();

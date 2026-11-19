@@ -1,5 +1,7 @@
 # ADR-0038: Containers are an extension descriptor
 
+> Amended by [ADR-0068](ADR-0068-destroy-runs-alchemy-in-process.md): `destroy` hands each located container to `lower()` as a value too. The environment-variable transport below is deleted; `serialize()` and `deserialize` remain for the dev worker thread and for the check that a container names its environment.
+
 > Amended by [ADR-0067](ADR-0067-prisma-dev-converges-in-a-worker-thread.md): `prisma dev` sends each resolved container to its converge's worker thread in memory, in the text form `serialize()` produced. The environment-variable transport below remains for `destroy` only.
 
 > Amended by [ADR-0066](ADR-0066-deploy-runs-alchemy-in-process.md): `deploy` runs Alchemy in the CLI's own process and hands each resolved container to `lower()` as a value (`LowerOptions.containers`). The environment-variable transport below remains for `destroy` and `prisma dev`, which still start an Alchemy child.

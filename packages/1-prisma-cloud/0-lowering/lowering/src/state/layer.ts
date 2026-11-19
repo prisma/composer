@@ -160,9 +160,9 @@ export const stateLayerAgainst = (
       const migrated = migrateRowsOnRead(service);
 
       // Report what this run touches to the build it belongs to, when there
-      // is one. There is none when nothing created a build — a direct
-      // `alchemy deploy` of the generated stack file, which runs with no CLI
-      // parent — and reporting resources against no build is impossible, so
+      // is one. There is none when nothing created a build — a destroy, or a
+      // deploy whose extension started no report — and reporting resources
+      // against no build is impossible, so
       // the store is used unwrapped and the deploy is unaffected.
       const buildId = process.env[BUILD_ID_ENV];
       if (buildId === undefined || buildId.length === 0) {

@@ -57,26 +57,46 @@ interface Fixture {
   readonly config: PrismaAppConfig;
   /** True once the state store's scope has closed, which is when a remote store releases its lease. */
   readonly released: () => boolean;
+  /** How many times the state store's scope has closed. */
+  readonly releases: () => number;
 }
 
-function fixture(lowerThing: ExtensionDescriptor['nodes'][string]): Fixture {
-  let released = false;
+/** What an in-memory state store holds: each stack's stages, and each stage's resources by FQN. */
+type StoredState = NonNullable<Parameters<typeof InMemoryService>[0]>;
+
+/** The state store is in memory, over `stored`. `list`, when given, replaces the store's listing of a stage's resources. */
+function fixture(
+  lowerThing: ExtensionDescriptor['nodes'][string],
+  stored: StoredState = {},
+  list?: Effect.Effect<readonly string[]>,
+): Fixture {
+  let releases = 0;
   const state = Layer.effect(
     State.State,
     Effect.gen(function* () {
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
-          released = true;
+          releases += 1;
         }),
       );
-      return InMemoryService({});
+      const store = InMemoryService(stored);
+      return list === undefined
+        ? store
+        : State.State.of(Effect.map(store, (service) => ({ ...service, list: () => list })));
     }),
   );
   const extension: ExtensionDescriptor = { id: 'test/pack', nodes: { 'fake/thing': lowerThing } };
   return {
     config: { extensions: [extension], state: { extension: 'test/pack', create: () => state } },
-    released: () => released,
+    released: () => releases > 0,
+    releases: () => releases,
   };
+}
+
+function storedResources(stored: StoredState): string[] {
+  return Object.values(stored).flatMap((stages) =>
+    Object.values(stages).flatMap((resources) => Object.keys(resources)),
+  );
 }
 
 const reportsThing = Object.assign(
@@ -430,6 +450,50 @@ describe('convergeInProcess', () => {
 
     expect(outcome).toEqual({ kind: 'interrupted' });
     expect(released()).toBe(true);
+  });
+
+  test('a destroy plans and applies in this process, and removes the stage the deploy applied from the state store', async () => {
+    const stored: StoredState = {};
+    const { config, releases } = fixture(reportsThing, stored);
+    const cwd = tmpDir();
+
+    const deployed = await convergeInProcess(request(config, { report: () => {} }, { cwd }));
+    const afterDeploy = storedResources(stored);
+    const destroyed = await convergeInProcess(request(config, {}, { operation: 'destroy', cwd }));
+
+    expect(deployed).toEqual({ kind: 'applied' });
+    expect(afterDeploy).toEqual(['composer-deployment-report']);
+    expect(destroyed).toEqual({ kind: 'applied' });
+    expect(stored).toEqual({ shop: {} });
+    expect(releases()).toBe(2);
+  });
+
+  test('an abort interrupts a destroy while it plans, the state store scope still closes, and a second destroy finishes it', async () => {
+    const stored: StoredState = {};
+    const cwd = tmpDir();
+    await convergeInProcess(
+      request(fixture(reportsThing, stored).config, { report: () => {} }, { cwd }),
+    );
+    const controller = new AbortController();
+    const stalled = fixture(
+      reportsThing,
+      stored,
+      Effect.sync(() => controller.abort()).pipe(Effect.andThen(Effect.never)),
+    );
+
+    const interrupted = await convergeInProcess(
+      request(stalled.config, {}, { operation: 'destroy', cwd, signal: controller.signal }),
+    );
+    const afterInterrupt = storedResources(stored);
+    const finished = await convergeInProcess(
+      request(fixture(reportsThing, stored).config, {}, { operation: 'destroy', cwd }),
+    );
+
+    expect(interrupted).toEqual({ kind: 'interrupted' });
+    expect(stalled.released()).toBe(true);
+    expect(afterInterrupt).toEqual(['composer-deployment-report']);
+    expect(finished).toEqual({ kind: 'applied' });
+    expect(stored).toEqual({ shop: {} });
   });
 });
 

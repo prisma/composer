@@ -7,12 +7,14 @@
  * the app's `prisma.config.ts`: the one in the current directory, or the file
  * `--config` names. It does not look in parent directories. The entry is the
  * section's `entry`, relative to the config file, or `--entry`, relative to the
- * current directory.
+ * current directory. Alchemy runs inside this process; no child is started.
  *
  * `--environment <name>` is required, as the operation's `environment` is:
  * production is `--environment production`.
  *
  * Credentials come from PRISMA_SERVICE_TOKEN and PRISMA_WORKSPACE_ID.
+ * Each step, resource and message destroy reports is one line on stderr.
+ * Ctrl-C interrupts the destroy, which then fails with `DEPLOY.INTERRUPTED`.
  * Exits 2 on bad arguments. Exits 1 with the structured failure on stderr
  * when destroy fails, and with one line when the control entry or the config
  * cannot be loaded or destroy throws.
@@ -26,6 +28,7 @@ import type {
   ComposerConfigSource,
   destroy as Destroy,
   DestroyEvent,
+  DestroyStep,
 } from '@prisma/composer/control';
 
 const USAGE =
@@ -128,12 +131,34 @@ function printFailure(failure: CliStructuredError): void {
   }
 }
 
-function warnOnEvent(cwd: string) {
+function stepText(step: DestroyStep): string {
+  switch (step.name) {
+    case 'assemble-service':
+      return `assemble ${step.address}`;
+    case 'apply-resource':
+      return `${step.resourceId} (${step.resourceType}) ${step.status}`;
+    default:
+      return step.name;
+  }
+}
+
+/** One line on stderr for an event. */
+function eventLine(event: DestroyEvent, cwd: string): string {
+  switch (event.kind) {
+    case 'no-local-deploy-state':
+      return `No prior deploy state under ${event.cwd ?? cwd}. If you deployed from a different directory, run destroy from there; otherwise this is a no-op.`;
+    case 'step-started':
+      return `started ${stepText(event.step)}`;
+    case 'step-finished':
+      return `${event.outcome === 'ok' ? 'finished' : 'failed'} ${stepText(event.step)} (${String(event.durationMs)}ms)`;
+    case 'message':
+      return `${event.severity}: ${event.text}`;
+  }
+}
+
+function printEvents(cwd: string) {
   return (event: DestroyEvent): void => {
-    if (event.kind !== 'no-local-deploy-state') return;
-    console.error(
-      `No prior deploy state under ${event.cwd ?? cwd}. If you deployed from a different directory, run destroy from there; otherwise this is a no-op.`,
-    );
+    console.error(eventLine(event, cwd));
   };
 }
 
@@ -141,6 +166,9 @@ async function run(request: DestroyRequest, cwd: string): Promise<number> {
   const destroy = await loadDestroy(cwd);
   const file = resolve(cwd, request.config);
   const value = await loadComposerSection(file);
+  const interrupt = new AbortController();
+  const onSigint = (): void => interrupt.abort();
+  process.once('SIGINT', onSigint);
   let result: Awaited<ReturnType<typeof Destroy>>;
   try {
     result = await destroy({
@@ -149,10 +177,13 @@ async function run(request: DestroyRequest, cwd: string): Promise<number> {
       name: request.name,
       environment: request.environment,
       cwd,
-      onEvent: warnOnEvent(cwd),
+      onEvent: printEvents(cwd),
+      signal: interrupt.signal,
     });
   } catch (error) {
     throw new ScriptFailure(`destroy threw: ${messageOf(error)}`);
+  } finally {
+    process.off('SIGINT', onSigint);
   }
   if (!result.ok) {
     printFailure(result.failure);

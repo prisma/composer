@@ -33,6 +33,8 @@ export { deploy } from '../operations/deploy.ts';
 export type {
   DestroyEvent,
   DestroyInput,
+  DestroyStep,
+  NoLocalDeployStateEvent,
 } from '../operations/destroy.ts';
 export { destroy } from '../operations/destroy.ts';
 export type { DevEvent, DevInput, DevSession } from '../operations/dev.ts';
@@ -41,7 +43,6 @@ export type { DevStopInput, DevStopped, DevUrl, DevUrlInput } from '../operation
 export { devStop, devUrl } from '../operations/dev-current.ts';
 export type { LogAttached, LogEvent, LogInput, LogLine } from '../operations/log.ts';
 export { log } from '../operations/log.ts';
-export type { ExecutionDiagnostics, ServiceEndpoint } from '../operations/shared.ts';
-export { executionDiagnostics } from '../operations/shared.ts';
+export type { ServiceEndpoint } from '../operations/shared.ts';
 export type { RunReport, RunReportFailure } from '../run-report.ts';
 export { RUN_REPORT_FILE_ENV, RUN_REPORT_VERSION } from '../run-report.ts';

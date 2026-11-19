@@ -43,7 +43,7 @@ export type ConvergeEvent =
     };
 
 export interface ConvergeRequest {
-  readonly operation: 'deploy';
+  readonly operation: 'deploy' | 'destroy';
   readonly stack: LoweredStack;
   readonly stage: string;
   /** The directory Alchemy runs in: where it reads `.env` and keeps `.alchemy`. */
@@ -218,7 +218,7 @@ function program(request: ConvergeRequest, emit: (event: ConvergeEvent) => void)
 }
 
 /**
- * Plans and applies `stack` in this process, as `alchemy deploy --yes` would.
+ * Plans and applies `stack` in this process, as `alchemy deploy --yes` or `alchemy destroy --yes` would.
  * The plan's scope, and the state-store lease it holds when the store has one, closes before this
  * returns, including when `signal` interrupts it. One converge runs at a time
  * per process, across every install of this module: a second call while one

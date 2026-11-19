@@ -151,7 +151,7 @@ export async function convergeDevJob(
       name: job.name,
       environment: job.environment,
       appConfigurationRead: job.appConfigurationRead,
-      firstProcessNodeAddresses: job.nodeAddresses,
+      preparedNodeAddresses: job.nodeAddresses,
       bundles: { ...job.bundles },
       unassembled: job.unassembled,
       containers,
