@@ -70,17 +70,17 @@ The platform's slice 7, owned by Søren from the platform's Console brief: the D
 
 ## Order
 
-| Work | Starts when |
-| --- | --- |
-| C1, P1, platform slices 0 to 3, 4a, 4 and 4b | merged |
-| platform slice 4c (run the backfill) | being built; the backfill has not run |
-| platform slices 5, 6 and 9 | in that order, after 4c |
-| U2 built and reviewed | done, held on the bot's forks |
-| platform slice 8's API half (`prisma.build` as a RoutingUrl, and the error codes) | can start any time; not scheduled |
-| U2's two upstream pull requests | platform slice 8's API half has shipped |
-| P2 | U2 is released |
-| platform slice 7 (service page, cutover) and slice 10 (public docs) | platform slice 6 has merged |
-| P3 | platform slice 8's API half has shipped |
+| Work | Who | Starts when |
+| --- | --- | --- |
+| C1, P1, platform slices 0 to 3, 4a, 4 and 4b | done | merged |
+| platform slice 4c (run the backfill) | the platform session; Will approves each production write | being built; the backfill has not run |
+| platform slices 5, 6 and 9 | the platform session | in that order, after 4c |
+| U2 built and reviewed | done | held on the bot's forks |
+| platform slice 8's API half (`prisma.build` as a RoutingUrl, and the error codes) | the platform session | can start any time; not scheduled |
+| U2's two upstream pull requests | the agent Will assigns, from [brief.md](slices/u2-routing-url-resource/brief.md); Will opens them | platform slice 8's API half has shipped |
+| P2 | not assigned | U2 is released |
+| platform slice 7 (service page, cutover) and slice 10 (public docs) | slice 7: Søren with the platform session; slice 10: the platform session | platform slice 6 has merged |
+| P3 | not assigned | platform slice 8's API half has shipped |
 
 ## Close-out
 
