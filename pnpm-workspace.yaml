@@ -5,6 +5,19 @@ packages:
   - test/**
   - website
 
+# Dependabot runs `pnpm update` with a minimum release age (its cooldown), and
+# pnpm applies that age to every package it resolves, not only the one being
+# updated. These are pinned by hand to an exact, often recent, release, so a
+# young pin would fail every Dependabot update until it aged.
+minimumReleaseAgeExclude:
+  - alchemy
+  - '@alchemy.run/*'
+  - '@distilled.cloud/*'
+  - effect
+  - '@effect/*'
+  - prisma
+  - '@prisma/*'
+
 # The published prisma host every example, website and test/integration run.
 # One pin, so a host bump is one line; scripts/check-cli-engine-pin.mjs checks
 # that every manifest uses it and that the host shares the workspace engine.
