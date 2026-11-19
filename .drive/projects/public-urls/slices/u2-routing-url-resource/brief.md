@@ -10,9 +10,9 @@ That support is already built and reviewed. Your job is to finish it once Prisma
 
 Two branches on the bot's forks. Neither is a pull request yet.
 
-- **Distilled:** `wmadden-electric/distilled`, branch `feat/prisma-routing-urls`, at `6661db7c0`. The REST protocol reads the HTTP status, so Alchemy can tell "created" from "already existed". `@distilled.cloud/prisma` is regenerated with the hostname (RoutingUrl) operations and the domain ownership statuses.
-- **Alchemy:** `wmadden-electric/alchemy`, branch `feat/prisma-domain-ownership-status`, at `47fecd7d3`. It adds two resources: `Prisma.DomainOwnership` and `Prisma.RoutingUrl`.
-- Both branches have had three rounds of `drive-code-review`. The apex-domain support and the nameserver lookup fix in Alchemy commit `47fecd7d3` have not been reviewed.
+- **Distilled:** `wmadden-electric/distilled`, branch `feat/prisma-routing-urls`, at `f3bce8aa6`, rebased onto upstream on 20 November. The REST protocol reads the HTTP status, so Alchemy can tell "created" from "already existed". Upstream Distilled has since added the hostname operations itself, so the branch no longer does; see "State on 2026-11-20" in [plan.md](plan.md). `@distilled.cloud/prisma` is regenerated with the hostname (RoutingUrl) operations and the domain ownership statuses.
+- **Alchemy:** `wmadden-electric/alchemy`, branch `feat/prisma-domain-ownership-status`, at `dcc35d3f4`, rebased onto upstream on 20 November. It pins a temporary Distilled branch, `feat/prisma-routing-urls-on-alchemy-pin`, because Alchemy cannot build against Distilled's `main` yet; [plan.md](plan.md) says why and what to check before opening. It adds two resources: `Prisma.DomainOwnership` and `Prisma.RoutingUrl`.
+- Both branches have had three rounds of `drive-code-review`, and Alchemy a fourth on 20 November covering the apex support, the nameserver lookup and the error for DNS that could not be checked. The last Alchemy commit, `dcc35d3f4`, fixes that round's second set of findings and has not itself been reviewed.
 - The two pull request descriptions are already written: `pr-bodies/distilled.md` and `pr-bodies/alchemy.md`, in this folder.
 
 ## What blocks it
@@ -24,7 +24,7 @@ Will also decided that the two upstream pull requests open only after Prisma's w
 ## What to do
 
 1. **Check whether the error codes have shipped.** Read slice 8's state in `projects/routing-urls/plans/plan.md` on `origin/main` of prisma/pdp-control-plane, and look for the codes in the live Management API spec. If they have not shipped, do step 2 and then report to Will and stop.
-2. **Review what nobody has reviewed yet.** Update both branches onto their upstream main branches. Run `drive-code-review` on the Alchemy apex change and nameserver fix in `47fecd7d3`, and fix what it finds. This does not depend on Prisma.
+2. **Done on 20 November:** both branches were updated onto upstream and the unreviewed Alchemy commits were reviewed and fixed. If upstream has moved a lot since, update the branches again.
 3. **Regenerate Distilled** against the final Prisma spec (`specs:update`, then generate).
 4. **Type the error codes.** Add a Distilled patch that types the hostname refusals on `/error/code`, the same way patch 005 does. Then change Alchemy's `RoutingUrl.ts` to use `catchTags` on those typed errors instead of matching message text.
 5. **Re-pin Alchemy's distilled submodule** to the new Distilled branch tip.

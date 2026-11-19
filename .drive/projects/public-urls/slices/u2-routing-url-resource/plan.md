@@ -12,13 +12,23 @@ Sam Goodwin's alchemy-run/alchemy#2701 and its base #2698 are replaced by the Al
 
 **Platform request before opening:** distinct error codes for the RoutingUrl create and update refusals. Today a duplicate `logicalId` 409 is `client-error`, and an invalid hostname and a service on another Branch are both `validation-error`; only the quota 409 has its own code (`quota-exceeded`). Proposed: `logical-id-taken`, `invalid-hostname`, `service-on-another-branch`. Then the Distilled pull request types the four errors on `/error/code` (as patch 005 does), and Alchemy uses `catchTags` instead of matching message text (U2 review round 3, finding 1).
 
-**Platform doc to correct:** `docs/compute/RoutingUrls.md` uses `shop.com`, an apex, with a CNAME record to the switchboard. Foundry's OpenAPI spec says registration needs a direct CNAME, which an apex cannot have, so a flattened apex fails. Alchemy's `Prisma.RoutingUrl` refuses a hostname change to an apex and says so.
+**Platform doc corrected:** `docs/compute/RoutingUrls.md` now says an apex uses ALIAS, ANAME or a flattened CNAME, and that Foundry uses a hostname's A or AAAA records only when it has no CNAME. Alchemy's check follows the same rule: a nameserver that answers a CNAME that is not the switchboard counts as not pointing at it.
+
+**Platform requests, not scheduled:** Alchemy's check before a hostname change copies Foundry's acceptance rule and cannot see a RoutingUrl in another workspace that holds the new hostname (`heldBy`). Two requests remove the copy: the update route refuses a change that would take a serving hostname out of service, or failing that, a cheap lookup that says whether a hostname is held. Until one ships, the client check is a stopgap and the limit is documented in the resource's JSDoc and guide.
 
 **Before opening, after platform slice 8:** regenerate Distilled against the final spec, add the error-code patch and switch Alchemy to `catchTags`, then run `drive-code-review` on both branches once more. That review covers the apex support and the nameserver lookup fix in Alchemy `47fecd7d3`, which no review has seen yet.
 
+## State on 2026-11-20
+
+- **Platform slice 8 has not shipped.** The platform plan lists it as planned with no spec, and the live spec has none of the three error codes.
+- **Both branches are rebased onto upstream `main`.** Distilled `feat/prisma-routing-urls` is at `f3bce8aa6`; the old tips are kept as `archive/` branches on the forks.
+- **Upstream Distilled regenerated the Prisma client itself on 2026-11-15**, so it already has the RoutingUrl operations and the domain ownership statuses. Our Distilled branch now adds only `T.ResponseCode()` in the REST protocol, `httpStatus` on the two creates (patch 006), and patch 005 no longer adding `DomainOwnershipRequired` to `createWorkspaceDomainOwnership`. The error-code patch will be the fourth.
+- **Alchemy cannot build against Distilled `main` yet.** Alchemy pins Distilled at `63ab82684`, 117 commits behind, and some of those commits are breaking changes Alchemy has not adopted. So the Alchemy branch pins a temporary Distilled branch on the bot's fork, `feat/prisma-routing-urls-on-alchemy-pin`: the same four commits on top of `63ab82684`. Before the Alchemy pull request opens, either upstream Alchemy has moved to a Distilled commit that contains our merged changes, or the Distilled change must be offered on the commit Alchemy pins. Check which when the time comes.
+- **Round 4 review** covered the two commits round 3 had not seen (`7de692c41` and `9f6f52c9e` after the rebase) and the fixes that followed. Reviews are in [reviews/d2-alchemy/](reviews/d2-alchemy/).
+
 ## Distilled pull request (branch `feat/prisma-routing-urls`)
 
-- **D1.** The REST protocol fills `T.ResponseCode()` members, and `@distilled.cloud/prisma` is regenerated from the live spec: RoutingUrl operations, domain ownership `status` and `expiresAt`, and `httpStatus` on the two creates. One pull request, though Distilled's rules prefer the runtime change on its own; the description says why.
+- **D1.** The REST protocol fills `T.ResponseCode()` members, and `@distilled.cloud/prisma` gets `httpStatus` on the two creates. Upstream has since added the RoutingUrl operations and the domain ownership `status` and `expiresAt` itself. One pull request, though Distilled's rules prefer the runtime change on its own; the description says why.
 - No typed RoutingUrl errors: D3 matches the generic `Conflict` and `UnprocessableEntity` errors, so U2 needs no second Distilled pull request.
 
 ## Alchemy pull request (branch `feat/prisma-domain-ownership-status`)
