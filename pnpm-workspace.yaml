@@ -17,6 +17,7 @@ minimumReleaseAgeExclude:
   - '@effect/*'
   - prisma
   - '@prisma/*'
+  - '@durable-streams/server-conformance-tests'
 
 # The published prisma host every example, website and test/integration run.
 # One pin, so a host bump is one line; scripts/check-cli-engine-pin.mjs checks
