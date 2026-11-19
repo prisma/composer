@@ -90,3 +90,63 @@ export function planPushPublish(
   }
   return { version: nextDevVersion(base, latestDevTag), tag: 'dev' };
 }
+
+const RELEASE_BRANCH_PATTERN = /^release\/(0|[1-9]\d*)\.(0|[1-9]\d*)\.x$/;
+
+/** The `major.minor` line a `release/<major>.<minor>.x` branch maintains, or `undefined` for any other branch. */
+export function releaseLineOf(branch: string): string | undefined {
+  const match = branch.match(RELEASE_BRANCH_PATTERN);
+  return match ? `${match[1]}.${match[2]}` : undefined;
+}
+
+export interface ReleaseLinePublishPlan {
+  /** `false` when the push did not change the root version: nothing is published. */
+  publish: boolean;
+  version: string;
+  /** `latest` when the patch supersedes the version `latest` is on; otherwise `release-<major>.<minor>`. */
+  tag: string;
+}
+
+/**
+ * The publish plan for a push to a `release/<major>.<minor>.x` branch,
+ * which carries patch releases for an older line. Only a push that
+ * changes the root version publishes, and it publishes that version as
+ * is: release lines have no dev builds.
+ *
+ * A patch must never move `latest` backwards, so it publishes under the
+ * line's own dist-tag, `release-<major>.<minor>`. The one exception is a
+ * patch to the line `latest` is on (`0.39.1` while `latest` is `0.39.0`):
+ * that patch becomes `latest`. A caret range (`^0.38.0`) picks the patch
+ * up whatever its tag.
+ */
+export function planReleaseLinePublish(
+  branch: string,
+  base: string,
+  previous: PreviousVersionLookup,
+  latestTag: string | undefined,
+): ReleaseLinePublishPlan {
+  const line = releaseLineOf(branch);
+  if (line === undefined) {
+    throw new Error(
+      `Branch "${branch}" is not a release branch. Release branches are named release/<major>.<minor>.x.`,
+    );
+  }
+  const { major, minor, patch } = parseVersion(base);
+  if (`${major}.${minor}` !== line) {
+    throw new Error(
+      `Root version ${base} is not on the ${line} line that ${branch} maintains. ` +
+        `Set the root package.json version to ${line}.<patch>.`,
+    );
+  }
+  const lineTag = `release-${line}`;
+  const isReleaseBump = previous.available && previous.version !== base;
+  if (!isReleaseBump) return { publish: false, version: base, tag: lineTag };
+
+  const latest = latestTag === undefined ? undefined : parseVersion(latestTag);
+  const supersedesLatest =
+    latest !== undefined &&
+    latest.major === major &&
+    latest.minor === minor &&
+    patch > latest.patch;
+  return { publish: true, version: base, tag: supersedesLatest ? 'latest' : lineTag };
+}
