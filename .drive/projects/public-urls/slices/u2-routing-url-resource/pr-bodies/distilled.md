@@ -1,53 +1,65 @@
-Let REST outputs read the HTTP status, and use it in `@distilled.cloud/prisma` so a caller can tell whether a create created anything.
+Two things a caller of Prisma's hostname API could not tell from `@distilled.cloud/prisma`, and now can: whether a create made the resource or found it, and which refusal it got.
 
 ```ts
-const created = yield* createWorkspaceDomainOwnership({ workspaceId, domain: "api.example.com" });
-created.httpStatus; // 201 when this call created it, 200 when the workspace already had it
-created.data.status; // "unverified" | "verified" | "expiring"
+import * as Prisma from "@distilled.cloud/prisma/management";
+
+// 1. did this call create it?
+const ownership = yield* Prisma.createWorkspaceDomainOwnership({ workspaceId, domain: "*.example.com" });
+ownership.httpStatus; // 201 created, 200 the workspace already had it
+
+// 2. which refusal?
+yield* Prisma.createServiceUrl({ serviceId, hostname: "api.example.com", logicalId: "api" }).pipe(
+  Effect.catchTags({
+    RoutingUrlQuotaExceeded: () => …,       // 409 quota-exceeded
+    RoutingUrlLogicalIdTaken: () => …,      // 409 logical-id-taken
+    RoutingUrlInvalidHostname: () => …,     // 422 invalid-hostname
+    RoutingUrlServiceNotOnABranch: () => …, // 422 service-not-on-a-branch
+  }),
+);
 ```
 
-This pull request carries a core runtime change and a Prisma change together. Distilled's rules prefer them apart; they are together on purpose, so the Alchemy team reviews one Distilled pull request for this work instead of two.
+alchemy-run/alchemy#3529 (`Prisma.RoutingUrl`, `Prisma.DomainOwnership`) is the caller, and depends on this.
 
-### Core: `T.ResponseCode()` in the REST protocol
+## The failing calls
 
-`makeRestProtocol` now fills an output member marked `T.ResponseCode()` with the HTTP status.
+**A create that answers 201 or 200 with the same body.** `POST /v1/workspaces/{workspaceId}/domain-ownerships` and `POST /v1/services/{serviceId}/domains` are idempotent. The spec documents `201` when the call created the resource and `200` when it already existed, and the body is the same in both. The SDK returned only the body, so Alchemy could not tell a domain ownership it had just created from one another stack or a person had made, which decides whether it may delete it later.
 
-```ts
-const CreatedOutput = S.Struct({
-  id: S.optional(S.String),
-  httpStatus: S.optional(S.Number.pipe(T.ResponseCode())),
-});
-// 201 -> { id: "t1", httpStatus: 201 }
-// 200 -> { id: "t1", httpStatus: 200 }
-```
+**Refusals told apart only by their message.** `POST /v1/services/{serviceId}/urls` and `PATCH /v1/urls/{id}` answer five different refusals with `409` and `422`. Since 2026-11-20 the spec declares the code of each as an enum on `error.code`:
 
-1. The decode plan records which output member, if any, carries `T.ResponseCode()`. The trait already existed in core and the Cloudflare protocol reads it; the generic REST protocol did not.
-2. After the body is mapped and the response headers are copied in, that member is set to the status. Outputs without the member are unchanged, and an array or scalar body is returned as it is.
+| route | status | `error.code` |
+|---|---|---|
+| create, update | 409 | `quota-exceeded`, `logical-id-taken` |
+| create | 422 | `invalid-hostname`, `service-not-on-a-branch`, `validation-error` |
+| update | 422 | `invalid-hostname`, `service-on-another-branch`, `validation-error` |
 
-The change does nothing without a `T.ResponseCode()` member, and only the Prisma generator binds `smithy.api#httpResponseCode`, so no other REST client changes.
+The SDK returned all of them as `Conflict` or `UnprocessableEntity`, which keep only the message.
 
-`makeRestProtocol` always fills a `T.ResponseCode()` member on a successful response with an object body, so consumers may rely on it being set.
+**An error the API no longer returns.** `createWorkspaceDomainOwnership` listed `DomainOwnershipRequired` (422 `domain-ownership-required`). Prisma now always saves the domain ownership and returns it with `status: "unverified"` until DNS has the TXT record; the spec lists that 422 on this route for an invalid hostname only.
 
-Why: some APIs answer an idempotent create with 201 when they create the resource and 200 when it already existed, with the same body in both cases. Without the status a caller cannot tell whether it owns what came back.
+Evidence for all three is Prisma's published spec, `GET https://api.prisma.io/v1/doc`, at the mirror commit below. No live account was used.
 
-### Prisma
+## What changed
 
-1. `createServiceDomain` and `createWorkspaceDomainOwnership` responses get an `httpStatus` member (patch 006). The spec documents 201 when the call created the resource and 200 when it already existed. `scripts/generate.ts` maps `smithy.api#httpResponseCode` to `T.ResponseCode()`.
-2. `createWorkspaceDomainOwnership` no longer fails with `DomainOwnershipRequired`. The platform now always saves the domain ownership and returns it as `unverified` until DNS has the record. Patch 005 no longer adds the error to that operation. It still types the error on `createServiceDomain`, where the spec still documents the `domain-ownership-required` 422. This removal is why the title has `!`.
-3. The spec mirror moves to 2026-11-19 (`fb28505`). That regeneration also adds `Conflict` to `createWorkspace`.
+- **core/protocol-rest**: an output member marked `T.ResponseCode()` is filled with the response's status. The trait already existed, and the AWS restJson1, S3 and Cloudflare protocols already read it; the generic REST protocol did not. An output without the member is unchanged, and so is an array, scalar, raw or streamed body.
+- **dev/codegen**: `smithy.api#httpResponseCode` binds to `T.ResponseCode()` in the shared binding cascade, next to `httpHeader`. No converter or other patch emits the trait, so no other SDK's output changes (checked by regenerating AWS, the one SDK whose models contain it).
+- **prisma, patch 006**: adds a required `httpStatus` member to the two create responses above. The spec is correct; this is an SDK addition.
+- **prisma, patch 007**: types the five RoutingUrl refusals on `/error/code`, as patch 005 does for `DomainOwnershipRequired`. `validation-error` and any other code stay `UnprocessableEntity` and `Conflict`.
+- **prisma, patch 005**: no longer adds `DomainOwnershipRequired` to `createWorkspaceDomainOwnership`. It still types it on `createServiceDomain`, where the spec still documents it.
+- **prisma, spec mirror** `fc91281` → `<mirror commit>`. Apart from the above, the regeneration adds `Conflict` to `createWorkspace`; the rest of the diff in `management.ts` is the generator renumbering its schema indexes.
 
-No exported operation was renamed or removed. The RoutingUrl 409 and 422 errors stay the generic `Conflict` and `UnprocessableEntity`.
+`httpStatus` is the status of the last attempt. The client retries a create on its own after a `503` or a dropped connection, so a resource this call created can come back with `200`. A caller that must know for certain passes a retry policy that does not retry the create; Alchemy does.
 
-Evidence: the spec mirror at 2026-11-19, which matches the live `GET https://api.prisma.io/v1/doc`. The platform change behind item 2 is prisma/pdp-control-plane `routes/v1/workspaces/domain-ownerships.ts`.
+Breaking (`!`), all in `@distilled.cloud/prisma`: `createWorkspaceDomainOwnership` no longer fails with `DomainOwnershipRequired`; `createServiceUrl` and `updateUrl` can fail with four new typed errors each; `createWorkspace` can fail with `Conflict`. The core change breaks nothing.
 
-Checked:
+Three new cases in `packages/core/test/protocol-rest.test.ts` cover the new runtime behaviour (a 201 and a 200 reach the member; it sits beside a `T.RawResponse()` member; an output without it is unchanged). I did not ask first; say if you would rather not have them.
 
-- `pnpm typecheck:ci`
-- `pnpm vitest run packages/core` and `pnpm vitest run packages/prisma` (four new cases in `packages/core/test/protocol-rest.test.ts`: a 201 and a 200 reach the member; the member sits next to a `T.RawResponse()` member; an array body comes back unchanged; an output without the member is unchanged)
-- `pnpm format:check`, `pnpm lint`, `pnpm specs:check`
-- `pnpm patches:audit prisma`: patches 005 and 006 are both needed
+Checks: `pnpm typecheck:ci`, `pnpm vitest run packages/core packages/prisma`, `pnpm format:check`, `pnpm lint` (0 errors), `pnpm specs:check`, `pnpm patches:audit prisma` (all patches needed).
 
-The companion alchemy-run/alchemy pull request, `Prisma.RoutingUrl` and `Prisma.DomainOwnership`, depends on this one.
+## Alternatives considered
+
+- **Two pull requests**, the status in one and the Prisma spec changes in the other. They are together because Alchemy's hostname resources need both at once and one companion pull request pins one Distilled commit. The commits are separate if you want them split.
+- **A `created` field in Prisma's response body**, so no status is needed. It is the better long-term answer and would also survive a retry; it is a platform change we have not made, and other APIs answer creates the same way.
+- **Reading the status from `T.RawResponse()`** in the caller. It works, but every caller would then decode the body itself.
 
 Agent: prospero-20
 
