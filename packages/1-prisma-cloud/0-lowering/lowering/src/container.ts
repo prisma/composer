@@ -140,10 +140,8 @@ const resolveProject = (
       );
     }
 
-    // createDatabase: false — the platform default database is never used
-    // (composer claims DATABASE_URL with a placeholder at provision), so don't create it. The
-    // API 403s this for user actors, but deploys authenticate as workspace
-    // actors (service tokens), which are allowed.
+    // Without a default database the platform writes no DATABASE_URL for the project.
+    // User actors get a 403 for createDatabase: false; deploys use a service token, which is allowed.
     const created = yield* call(() =>
       client.POST('/v1/projects', {
         body: { name: appName, workspaceId, createDatabase: false, logicalId: appName, region },

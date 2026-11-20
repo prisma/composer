@@ -355,6 +355,39 @@ describe('a supplied client and PRISMA_API_URL', () => {
   });
 });
 
+describe("the container lookup identifies Composer on the caller's client", () => {
+  test('every request ensure makes carries x-prisma-client-name: composer', async () => {
+    const state = newFakeState();
+    const fake = fakeClient(state);
+    const headersSeen: unknown[] = [];
+    const caller = new Proxy(fake, {
+      get: (target, property) => {
+        const value: unknown = Reflect.get(target, property);
+        if (typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          const init = args[args.length - 1];
+          headersSeen.push(
+            typeof init === 'object' && init !== null ? Reflect.get(init, 'headers') : undefined,
+          );
+          return Reflect.apply(value, target, args);
+        };
+      },
+    });
+
+    await withEnv({ PRISMA_API_URL: undefined, PRISMA_MANAGEMENT_API_URL: undefined }, () =>
+      containerDescriptor({ region: () => 'us-east-1' }).ensure(
+        { appName: 'storefront', environment: 'staging' },
+        { workspaceId: 'ws-1', client: caller },
+      ),
+    );
+
+    expect(headersSeen.length).toBeGreaterThan(0);
+    for (const headers of headersSeen) {
+      expect(headers).toMatchObject({ 'x-prisma-client-name': 'composer' });
+    }
+  });
+});
+
 describe('a request from an older CLI, with no environment name', () => {
   const olderInput = { appName: 'storefront', stage: 'staging' } as unknown as LocateContainerInput;
 

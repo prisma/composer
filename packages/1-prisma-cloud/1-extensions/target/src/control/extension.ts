@@ -184,7 +184,7 @@ export const prismaState = (): StateDescriptor => ({
         ...(branchId !== undefined ? { branchId } : {}),
         ...(defaultBranchId !== undefined ? { defaultBranchId } : {}),
       },
-      credentials?.client,
+      credentials,
     );
   },
 });
@@ -344,7 +344,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     providers: ({ credentials }: ProvidersInput<Prisma.ManagementApiClient>) =>
       asProvidersLayer(
         Layer.mergeAll(
-          Prisma.providers({ client: credentials?.client }),
+          Prisma.providers(credentials),
           PgWarmProvider(),
           OrmMigrationProvider(),
           S3CredentialsProvider(),
@@ -367,17 +367,13 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // platform-side.
 
     // Runs once per lowering, before any service: resolves the CLI-ensured
-    // Project into the application handle, and claims the project's
-    // `DATABASE_URL`/`DATABASE_URL_POOLED` with a placeholder
-    // (`claimDatabaseUrlKeys` explains why). Create-only and outside the
-    // resource graph — alchemy never plans a write or delete for them.
+    // Project into the application handle.
     application: {
       provision: (ctx) =>
-        Effect.gen(function* () {
+        Effect.sync(() => {
           const { projectId, branchId, defaultBranchId, branchless } = prismaCloudContainerOf(
             ctx.container,
           );
-          yield* Prisma.claimDatabaseUrlKeys(projectId);
           return { projectId, branchId, defaultBranchId, branchless } satisfies CloudApplication;
         }),
     },

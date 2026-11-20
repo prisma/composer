@@ -14,6 +14,7 @@ import type {
   LocateContainerInput,
 } from '@internal/core/config';
 import {
+  composerClientOf,
   deleteBranch,
   deleteProject,
   fromEnv,
@@ -194,7 +195,7 @@ function clientFor(
   credentials: PrismaCloudCredentials | undefined,
   deps: ContainerDeps | undefined,
 ): ManagementApiClient | undefined {
-  return credentials?.client ?? deps?.client;
+  return composerClientOf(credentials) ?? deps?.client;
 }
 
 /** Runs against the injected client when there is one, and against an env-built one otherwise. */

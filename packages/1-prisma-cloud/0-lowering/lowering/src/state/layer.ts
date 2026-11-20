@@ -1,3 +1,4 @@
+import type { CallerCredentials } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import { Stack, type StackServices } from 'alchemy';
 import {
@@ -57,12 +58,13 @@ export const prismaStateLayer = (
     /** The project's default Branch id, when the deploy targets `production` — skips re-resolving it. */
     readonly defaultBranchId?: string;
   },
-  supplied?: client.ManagementApiClient,
+  credentials?: Pick<CallerCredentials<client.ManagementApiClient>, 'client'>,
 ): Layer.Layer<State, never, StackServices> => {
-  const suppliedOrigin = supplied === undefined ? undefined : suppliedClientOrigin(process.env);
+  const suppliedOrigin =
+    credentials?.client === undefined ? undefined : suppliedClientOrigin(process.env);
   return Layer.unwrap(
     (suppliedOrigin === undefined ? tokenClientOrigin() : Effect.succeed(suppliedOrigin)).pipe(
-      Effect.map((origin) => stateLayerAgainst(origin, ids, supplied)),
+      Effect.map((origin) => stateLayerAgainst(origin, ids, credentials)),
     ),
   ).pipe(Layer.orDie);
 };
@@ -102,10 +104,10 @@ export const stateLayerAgainst = (
     readonly branchId?: string;
     readonly defaultBranchId?: string;
   },
-  supplied?: client.ManagementApiClient,
+  credentials?: Pick<CallerCredentials<client.ManagementApiClient>, 'client'>,
 ): Layer.Layer<State, never, StackServices> => {
   const { projectId, branchId, defaultBranchId } = ids;
-  const dependencies = client.suppliedOrFromEnv(supplied, apiOrigin);
+  const dependencies = client.suppliedOrFromEnv(credentials, apiOrigin);
 
   return Layer.effect(
     State,

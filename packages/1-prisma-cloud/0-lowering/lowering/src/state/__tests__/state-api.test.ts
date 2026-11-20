@@ -306,7 +306,7 @@ describe('prismaStateLayer against the platform state API', () => {
     },
     supplied?: ManagementApiClient,
   ): Promise<A> => {
-    const layer = stateLayerAgainst(fake.origin, ids, supplied).pipe(
+    const layer = stateLayerAgainst(fake.origin, ids, { client: supplied }).pipe(
       Layer.provide(stackContext),
     ) as unknown as Layer.Layer<State>;
     return Effect.runPromise(
@@ -378,7 +378,7 @@ describe('prismaStateLayer against the platform state API', () => {
     const layer = stateLayerAgainst(
       fake.origin,
       { projectId: PROJECT_ID, branchId: BRANCH_ID },
-      supplied,
+      { client: supplied },
     ).pipe(
       Layer.provide(Layer.merge(stackContext, FetchHttpClient.layer)),
     ) as unknown as Layer.Layer<State>;
