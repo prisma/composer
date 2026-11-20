@@ -3,7 +3,7 @@
  * target per review R4), proven against a real local Postgres — isolated from
  * the Alchemy stack / Prisma Cloud provisioning. Exercises `applyOrmMigration`
  * end to end (replay-only: the pipeline never synthesizes). A failed migrate
- * throws OrmMigrationError carrying Prisma ORM's own error, whose whole text
+ * throws PrismaOrmError carrying Prisma ORM's own error, whose whole text
  * each failure case asserts:
  *
  * No authored graph (empty migrations dir):
@@ -45,7 +45,7 @@ import {
 } from '@prisma/orm-toolchain/migration-tools/spaces';
 import {
   applyOrmMigration,
-  OrmMigrationError,
+  PrismaOrmError,
   resolveTargetRef,
   targetStorageHash,
 } from '../orm-migrate.ts';
@@ -80,12 +80,12 @@ if (pg === undefined) {
 
 const gadgetHash = targetStorageHash(gadgetContractJson);
 
-async function rejection(run: Promise<unknown>): Promise<OrmMigrationError> {
+async function rejection(run: Promise<unknown>): Promise<PrismaOrmError> {
   try {
     await run;
   } catch (error) {
-    expect(error).toBeInstanceOf(OrmMigrationError);
-    return error as OrmMigrationError;
+    expect(error).toBeInstanceOf(PrismaOrmError);
+    return error as PrismaOrmError;
   }
   throw new Error('expected applyOrmMigration to fail');
 }

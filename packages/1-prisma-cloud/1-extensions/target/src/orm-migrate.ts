@@ -26,14 +26,14 @@
  * synthesized from the contract) and never `dbUpdate` (synthesized
  * diff-and-apply). Any failed `migrate` — no authored path, a marker the
  * graph does not contain, a step that errors — fails the deploy as a typed
- * `OrmMigrationError` (not swallowed) that carries Prisma ORM's own error and
+ * `PrismaOrmError` (not swallowed) that carries Prisma ORM's own error and
  * advice. PN applies each migration in its own
  * transaction, so a failed apply is atomic and resume-safe — the marker and
  * schema are left as the last committed step.
  */
 
 import {
-  type CliErrorEnvelope,
+  CliStructuredError,
   isStructuredError,
   type StructuredError,
 } from '@internal/foundation/errors';
@@ -89,7 +89,7 @@ interface OrmNextAction {
 }
 
 /** An error Prisma ORM reports when `migrate` fails, whether it returns it or throws it. */
-export interface OrmFailure {
+export interface PrismaOrmFailure {
   readonly code: `${string}.${string}`;
   readonly message: string;
   readonly why?: string | undefined;
@@ -123,7 +123,7 @@ function isOrmRefusal(error: unknown): error is StructuredError {
   );
 }
 
-function thrownFailure(error: StructuredError): OrmFailure {
+function thrownFailure(error: StructuredError): PrismaOrmFailure {
   const nextActions =
     'nextActions' in error && Array.isArray(error.nextActions)
       ? error.nextActions.filter(isNextAction)
@@ -143,65 +143,57 @@ function withBinaryName(text: string): string {
   return text.replaceAll('{bin}', 'prisma');
 }
 
-function nextActionLine(action: OrmNextAction): string {
+function nextActionStep(action: OrmNextAction): string {
   const target = action.command ?? action.url;
   return target === undefined || target === action.label
-    ? `→ ${action.label}`
-    : `→ ${action.label}: ${target}`;
+    ? action.label
+    : `${action.label}: ${target}`;
 }
 
-function fixLines(fix: string | undefined): readonly string[] {
+function fixSteps(fix: string | undefined): readonly string[] {
   return (fix ?? '')
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => `→ ${line}`);
-}
-
-function migrateFailureText(failure: OrmFailure): string {
-  const [whyFirst, ...whyRest] = failure.why?.split('\n') ?? [];
-  return withBinaryName(
-    [
-      failure.message,
-      ...(whyFirst === undefined ? [] : [`  why: ${whyFirst}`]),
-      ...whyRest.map((line) => `       ${line}`),
-      ...(failure.nextActions?.map(nextActionLine) ?? fixLines(failure.fix)),
-      ...(failure.docsUrl === undefined ? [] : [`  docs: ${failure.docsUrl}`]),
-    ].join('\n'),
-  );
+    .filter((line) => line.length > 0);
 }
 
 /**
- * A deploy-failing migration error — surfaced, never swallowed. Built from a
- * failed `migrate`, it is Prisma ORM's own error: its code, its `why`, and a
- * message with the ORM's advice in it.
+ * A failed Prisma ORM `migrate`, returned or thrown: the ORM's code, why,
+ * advice (its next actions, or its fix when it has none) and docs link.
  */
+export class PrismaOrmError extends CliStructuredError {
+  constructor(failure: PrismaOrmFailure) {
+    const why = failure.why === undefined ? undefined : withBinaryName(failure.why);
+    const steps = (failure.nextActions?.map(nextActionStep) ?? fixSteps(failure.fix)).map(
+      withBinaryName,
+    );
+    const [whyFirst, ...whyRest] = why?.split('\n') ?? [];
+    // Every path a converge failure travels carries only the error's tag and message, so the message holds the why and the advice too.
+    const message = [
+      withBinaryName(failure.message),
+      ...(whyFirst === undefined ? [] : [`  why: ${whyFirst}`]),
+      ...whyRest.map((line) => `       ${line}`),
+      ...steps.map((step) => `→ ${step}`),
+      ...(failure.docsUrl === undefined ? [] : [`  docs: ${failure.docsUrl}`]),
+    ].join('\n');
+    super(failure.code, message, {
+      ...(why === undefined ? {} : { why }),
+      ...(steps.length === 0 ? {} : { fix: steps.join('\n') }),
+      ...(failure.docsUrl === undefined ? {} : { docsUrl: failure.docsUrl }),
+    });
+  }
+}
+
+/** A failure Composer finds before Prisma ORM runs; it fails the deploy and is never swallowed. */
 export class OrmMigrationError extends Error {
   readonly _tag = 'OrmMigrationError';
-  readonly code: OrmMigrationFailureCode | OrmFailure['code'];
+  readonly code: OrmMigrationFailureCode;
   readonly why: string | undefined;
-  constructor(code: OrmMigrationFailureCode, summary: string, why?: string);
-  constructor(failure: OrmFailure);
-  constructor(source: OrmMigrationFailureCode | OrmFailure, summary?: string, why?: string) {
-    super(
-      typeof source === 'string'
-        ? `Prisma ORM migrate (${source}): ${summary}`
-        : migrateFailureText(source),
-    );
-    // Recognized structurally as a structured error, so a failed converge reports the ORM's code as its tag.
-    this.name = typeof source === 'string' ? 'OrmMigrationError' : 'CliStructuredError';
-    this.code = typeof source === 'string' ? source : source.code;
-    this.why = typeof source === 'string' ? why : source.why;
-  }
-
-  toEnvelope(): CliErrorEnvelope {
-    return {
-      ok: false,
-      code: this.code,
-      severity: 'error',
-      summary: this.message,
-      ...(this.why === undefined ? {} : { why: this.why }),
-    };
+  constructor(code: OrmMigrationFailureCode, summary: string, why?: string) {
+    super(`Prisma ORM migrate (${code}): ${summary}`);
+    this.name = 'OrmMigrationError';
+    this.code = code;
+    this.why = why;
   }
 }
 
@@ -299,7 +291,7 @@ export async function isAtTargetRef(url: string, ref: PnTargetRef): Promise<bool
  * Bring the database at `url` to the target ref via PN's authored migrations.
  * Reads the live marker, decides no-op / migrate
  * ({@link decideMigrationAction}), applies, and throws a typed
- * {@link OrmMigrationError} carrying Prisma ORM's error when `migrate` fails.
+ * {@link PrismaOrmError} carrying Prisma ORM's error when `migrate` fails.
  * `migrationsDir` is the on-disk migrations root and `ref` the resolved target
  * ({@link resolveTargetRef} — both resolved by the lowering, which also keys
  * the OrmMigration resource on them). `refName` (the resource's `targetRef`,
@@ -319,8 +311,8 @@ export async function applyOrmMigration(opts: {
 }): Promise<OrmMigrationOutcome> {
   const connection = normalizeSslMode(opts.url);
   // Retry the connect+operation past PPG's cold-start (see withConnectionRetry).
-  // A failed migrate is an OrmMigrationError — never a connection transient —
-  // so it surfaces immediately, never retried.
+  // A failed migrate or a failed check is never a connection transient, so it
+  // surfaces immediately, never retried.
   return withConnectionRetry(
     () =>
       runMigration(
@@ -332,7 +324,10 @@ export async function applyOrmMigration(opts: {
         opts.extensionPacks ?? [],
         opts.configPath,
       ),
-    { shouldRetry: (error) => !(error instanceof OrmMigrationError) },
+    {
+      shouldRetry: (error) =>
+        !(error instanceof PrismaOrmError || error instanceof OrmMigrationError),
+    },
   );
 }
 
@@ -393,10 +388,10 @@ async function runMigration(
           : {}),
       });
     } catch (error) {
-      if (isOrmRefusal(error)) throw new OrmMigrationError(thrownFailure(error));
+      if (isOrmRefusal(error)) throw new PrismaOrmError(thrownFailure(error));
       throw error;
     }
-    if (!result.ok) throw new OrmMigrationError(result.failure);
+    if (!result.ok) throw new PrismaOrmError(result.failure);
     return { action, targetHash: ref.hash, markerHashBefore };
   } finally {
     await client.close();

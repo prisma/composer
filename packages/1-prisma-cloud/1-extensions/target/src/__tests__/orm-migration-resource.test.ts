@@ -27,13 +27,14 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { wrappedProviderError } from '@internal/core/deploy';
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import type * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Option from 'effect/Option';
-import { OrmMigrationError, targetStorageHash } from '../orm-migrate.ts';
+import { OrmMigrationError, PrismaOrmError, targetStorageHash } from '../orm-migrate.ts';
 import type { OrmMigration } from '../orm-migration-resource.ts';
 import { ormMigrationProviderService } from '../orm-migration-resource.ts';
 import type { PgWarm } from '../pg-warm-resource.ts';
@@ -302,7 +303,7 @@ describe.skipIf(pg === undefined)('OrmMigration reconcile routes through applyOr
     expect(second.storageHash).toBe(widgetHash);
   });
 
-  test('reconcile re-throws a no-path failure: the Effect REJECTS with OrmMigrationError', async () => {
+  test('reconcile re-throws a no-path failure: the Effect REJECTS with PrismaOrmError', async () => {
     // Ensure the DB is signed at widgetHash (idempotent if already there).
     await Effect.runPromise(
       reconcile({
@@ -315,7 +316,7 @@ describe.skipIf(pg === undefined)('OrmMigration reconcile routes through applyOr
     );
 
     // Target a DIFFERENT contract (gadget) with no authored migration path. The
-    // provider's `catch: toProviderError` must route the thrown OrmMigrationError into
+    // provider's `catch: toProviderError` must route the thrown PrismaOrmError into
     // the Effect's error channel — so the reconcile FAILS, not succeeds.
     const outcome = await matchFailure(
       reconcile({
@@ -328,8 +329,10 @@ describe.skipIf(pg === undefined)('OrmMigration reconcile routes through applyOr
     );
 
     expect(outcome.failed).toBe(true);
-    expect(outcome.error).toBeInstanceOf(OrmMigrationError);
-    expect((outcome.error as OrmMigrationError).code).toBe('MIGRATION.PATH_UNREACHABLE');
+    // Alchemy receives it wrapped, as for any provider error without a `_tag`.
+    const error = wrappedProviderError(outcome.error);
+    expect(error).toBeInstanceOf(PrismaOrmError);
+    expect((error as PrismaOrmError).code).toBe('MIGRATION.PATH_UNREACHABLE');
   });
 
   test("the recovery commands name the resource's prisma.config.ts with --config", async () => {
@@ -348,8 +351,9 @@ describe.skipIf(pg === undefined)('OrmMigration reconcile routes through applyOr
       );
 
       const config = path.relative(process.cwd(), gadgetConfig);
-      expect(outcome.error).toBeInstanceOf(OrmMigrationError);
-      expect((outcome.error as OrmMigrationError).message.split('\n').slice(3, 5)).toEqual([
+      const error = wrappedProviderError(outcome.error);
+      expect(error).toBeInstanceOf(PrismaOrmError);
+      expect((error as PrismaOrmError).message.split('\n').slice(3, 5)).toEqual([
         `→ Preview the changes: prisma db update --dry-run --config ${config} --db <url>`,
         `→ Reconcile the database: prisma db update --config ${config} --db <url>`,
       ]);
