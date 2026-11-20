@@ -778,18 +778,7 @@ nodes are edges only and never lower. Then for each service:
 5. `deploy(artifact)` — the first version snapshots an environment that is already
    complete.
 
-**How the ordering is actually enforced:** our walk only *assembles* Alchemy resource descriptions — Alchemy executes them in dependency order and runs unordered resources concurrently; declaration order is never consulted. So core realizes the sequence as **dependency edges**: most arise naturally from value flow (the env var consumes the project id and the producer's URL), and two do not. Deploy-after-serialize exists because the service descriptor builds the `Deployment`'s props out of the values it boots with, which is PDP's own dataflow (the deployment-create call carries the service's variables). Deploy-after-producers exists because the service descriptor also builds them out of its producers' outputs, so a consumer's deployment is created after its producers go live. See the lowering graphs in
-[`../05-prisma-cloud/alchemy-lowering.md`](../05-prisma-cloud/alchemy-lowering.md).
-This is what makes the fresh-deploy config race (PRO-211) structurally impossible
-on every target — the edge's **ordering** job. Its second job, **propagating**
-a wire whose value genuinely changes, is wired by the deploy hook: a deploy
-whose environment differs from the running deployment's replaces the
-deployment, so changed values reach the running service. On Prisma Cloud the
-carrier is the deployment resource itself: a salted hash of its `variables`,
-and a `<name>:updatedAt` trigger per platform variable it reads, whose value
-Composer never holds (ADR-0069).
-Secrets are platform-sourced and rotate through the platform, not this edge (see
-the [input glossary entry](../03-domain-model/glossary.md#input)).
+**How the ordering is actually enforced:** our walk only *assembles* Alchemy resource descriptions — Alchemy executes them in dependency order and runs unordered resources concurrently; declaration order is never consulted. So core realizes the sequence as **dependency edges**: most arise naturally from value flow (the consumer's deployment `variables` consume the producer's URL and the database connection), and two do not. Deploy-after-serialize exists because the service descriptor builds the `Deployment`'s props out of the values it boots with, which is PDP's own dataflow (the deployment-create call carries the service's variables). Deploy-after-producers exists because the service descriptor also builds them out of its producers' outputs, so a consumer's deployment is created after its producers go live. See the lowering graphs in [`../05-prisma-cloud/alchemy-lowering.md`](../05-prisma-cloud/alchemy-lowering.md). This is what makes the fresh-deploy config race (PRO-211) structurally impossible on every target — the edge's **ordering** job. Its second job, **propagating** a wire whose value genuinely changes, is wired by the deploy hook: a deploy whose environment differs from the running deployment's replaces the deployment, so changed values reach the running service. On Prisma Cloud the carrier is the deployment resource itself: a salted hash of its `variables`, and a `<name>:updatedAt` trigger per platform variable it reads, whose value Composer never holds (ADR-0069). Secrets are platform-sourced and rotate through the platform, not this edge (see the [input glossary entry](../03-domain-model/glossary.md#input)).
 
 **Deployment identity — address, bootstrap, and why.** A node's identity is its **address**: the path of provision ids starting at the root, assigned by Load from graph position. The root's address is the deployed app name, so every address starts with it (`shop`, `shop.catalog`, `shop.auth.api`). A provision id is the node's name unless `provision()` sets an `id`, and the path qualifies it, so registry modules with common internal names (`db`, `service`) cannot collide. Identity cannot travel through the environment: every App in a Project boots a byte-identical env (ConfigVariables are project+branch-scoped and snapshotted at version create — see the [PDP data model](../05-prisma-cloud/pdp-data-model.md)), so any "who am I" variable is one shared key, last write wins. The only per-service channel is the artifact itself. Hence the bootstrap: the artifact's entrypoint takes identity as a parameter, and deploy is the caller. The Compute artifact the pack assembles:
 
@@ -1090,19 +1079,25 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         // leaf, keyed by the SAME serializer run() reads with at boot, `null`
         // when it has no value. Values are the provisioning refs core built the
         // Config from, so the deployment depends on its resource/producer (the
-        // ordering edges). Returns the map deploy sends, plus the resolved listen port.
+        // ordering edges). A record of every name ever sent adds `null` for each
+        // name Composer no longer sends. Returns the map deploy sends, plus the resolved listen port.
         serialize: ({ address, node, graph }, provisioned, config) =>
           Effect.gen(function* () {
-            const variables = {}
+            const bootVariables = {}
             for (const d of configOf(node)) {
               const value = d.owner === "service" ? config.service[d.name] : config.inputs[d.owner.input]?.[d.name]
-              variables[configKey(address, d)] = value === undefined ? null : Redacted.make(encode(d.owner, value))
+              bootVariables[configKey(address, d)] = value === undefined ? null : Redacted.make(encode(d.owner, value))
             }
+            const everSent = yield* SentVariableNames(`${address}.sent-variable-names`, { names: Object.keys(bootVariables).sort() })
+            const requestVariables = Output.map(everSent.names, (names) => ({
+              ...Object.fromEntries(names.map((name) => [name, null])),
+              ...bootVariables,
+            }))
             // The input document is not a variable: its text travels in the artifact.
             const binding = graph.inputBindings.find((b) => b.serviceAddress === address)?.binding
             const input = serializeInput(node, address, binding)
             const port = typeof config.service.port === "number" ? config.service.port : 3000
-            return { variables, port, ...(input !== undefined ? { input } : {}) }   // : ComputeSerialized → deploy's variables, package's document
+            return { bootVariables, requestVariables, port, ...(input !== undefined ? { input } : {}) }   // : ComputeSerialized → deploy's variables, package's document
           }),
 
         // Print the bootstrap and assemble the deployable artifact from the build
@@ -1131,7 +1126,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
             const deployment = yield* Prisma.Deployment(`${address}.deployment`, {
               app: appAfter(provisioned.serviceId, producerOutputs),
               artifactPath: artifact.path,
-              variables: serialized.variables,
+              variables: serialized.requestVariables,
               artifactContentType: "application/gzip",
               portMapping: { http: serialized.port }, start: true, promote: true,
             })

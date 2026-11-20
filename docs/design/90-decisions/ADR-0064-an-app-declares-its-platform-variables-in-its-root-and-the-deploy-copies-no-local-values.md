@@ -45,7 +45,7 @@ The environment's facts, such as `environment.name`, and the values Composer cre
 ### What Prisma Cloud does
 
 - **A variable is a row in a project.** A row has `projectId`, `class` (`production` or `preview`), an optional `branchId`, a `key` and a `value`. A row with no `branchId` is the class's shared value. A row with one is that preview branch's override. Prisma Cloud calls these rows environment variables.
-- **A deployment receives the rows of its class, with its branch's overrides on top.** A **scope** is a level at which a row can be set and at which a reader looks it up. Today there are two: the class and the branch. When a name has a row at both, the more local one, the branch row, wins. The platform copies the rows into the deployment when it creates it and never reads them again, so a value set later reaches a service only at its next deployment. There is no service scope: every deployment receives every row of its class, its own and other services' alike. The list filter accepts only `projectId`, `class`, `key` and `branchId`.
+- **A deployment receives the rows of its class, with its branch's overrides on top.** A **scope** is a level at which a row can be set and at which a reader looks it up. Today there are two: the class and the branch. When a name has a row at both, the more local one, the branch row, wins. The platform copies the rows into the deployment when it creates it and never reads them again, so a value set later reaches a service only at its next deployment. A third scope, the service, holds values stored on one service and wins over both; Composer sends its own `COMPOSER_` keys there ([ADR-0069](ADR-0069-a-services-composer-keys-travel-with-its-deployment-as-service-variables.md)), and preflight does not look there. Every deployment receives every row of its class, its own and other services' alike. The list filter accepts only `projectId`, `class`, `key` and `branchId`.
 - **A key is upper case or it does not exist.** The platform refuses a key that does not match `[A-Z_][A-Z0-9_]*`, on write and in the list filter.
 - **A value is never empty.** The platform refuses an empty value, so a variable is either present with text or absent.
 - **A read returns metadata, never a value.** It returns `updatedAt`, and `isManagedBySystem` for a row the platform owns.
@@ -264,7 +264,7 @@ The local target plays the platform's part.
 
 **The schema decides, as a black box.** [ADR-0042](ADR-0042-service-input-is-one-standard-schema.md) forbids reading a schema's internals. Leaving variables out and calling `validate` asks the schema exactly whether it can do without them, with no value and no introspection.
 
-**One call per name, not per scope.** The list filter by class and key already returns the class row and every branch row. Listing the whole class would return every branch's `COMPOSER_` rows on a preview project.
+**One call per name, not per scope.** The list filter by class and key already returns the class row and every branch row. Listing the whole class would also return every branch's overrides on a preview project, including `COMPOSER_` rows an older Composer wrote.
 
 **Upper-case names.** The platform accepts no other key, and Composer compares pointer names without case while a process environment on Linux compares them with case. With upper-case names a row and a name never differ by case, so boot finds the row preflight saw.
 

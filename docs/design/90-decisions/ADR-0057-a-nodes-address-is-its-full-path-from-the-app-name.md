@@ -71,7 +71,7 @@ One node lowers to several Alchemy resources: a postgres resource becomes a Data
 
 | Node | Main resource | Other pieces |
 | --- | --- | --- |
-| compute service `shop.web` | App `shop.web` | Deployment `shop.web.deployment`, the record of keys sent `shop.web.sent-keys`, under `prisma dev` for a dev server one environment variable row per key `shop.web.env.<KEY>`, generated values `shop.web.generated.<path>`, RPC service keys `shop.web.servicekey.<input>`, a streams key `shop.web.streamkey` |
+| compute service `shop.web` | App `shop.web` | Deployment `shop.web.deployment`, the record of keys sent `shop.web.sent-variable-names`, under `prisma dev` for a dev server one environment variable row per key `shop.web.env.<KEY>`, generated values `shop.web.generated.<path>`, RPC service keys `shop.web.servicekey.<input>`, a streams key `shop.web.streamkey` |
 | postgres resource `shop.catalog` | Database `shop.catalog` | Connection `shop.catalog.connection`, `shop.catalog.warmup`, `shop.catalog.migration` |
 | bucket `shop.uploads` | Bucket `shop.uploads` | access key `shop.uploads.accesskey` |
 

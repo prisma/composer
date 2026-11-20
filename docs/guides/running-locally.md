@@ -239,11 +239,7 @@ prisma dev url my-app.gateway --environment test # test's URL
 prisma dev stop --environment test
 ```
 
-`--fresh` wipes only the environment it runs in. Everything local to one copy
-lives in `.prisma-composer/dev/<environment>/`: the record of its instances,
-its dev servers' `COMPOSER_*` values (`env.json`), the key `prisma dev` hashes secret values with, the generated stack
-file, the unpacked artifacts and the bucket objects. The deploy engine keeps
-each copy's state in `.alchemy/state/<app>/<environment>`.
+`--fresh` wipes only the environment it runs in. Everything local to one copy lives in `.prisma-composer/dev/<environment>/`: the record of its instances, its dev servers' `COMPOSER_*` values (`env.json`), the key `prisma dev` hashes secret values with, the generated stack file, the unpacked artifacts and the bucket objects. The deploy engine keeps each copy's state in `.alchemy/state/<app>/<environment>`.
 
 Environment names are case-sensitive, but on a case-insensitive filesystem,
 such as the default on macOS, `Dev` and `dev` would share one folder. So the

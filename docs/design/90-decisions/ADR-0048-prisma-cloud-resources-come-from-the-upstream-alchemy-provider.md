@@ -18,7 +18,7 @@ Layer.mergeAll(
   Prisma.ConnectionProvider(),
   Prisma.AppProvider(),
   Prisma.DeploymentProvider(),
-  environmentVariableProvider(), // upstream's, deleting the rows an older Composer wrote (ADR-0069)
+  providerForDeletingOldVariableRows(), // upstream's, deleting the rows an older Composer wrote (ADR-0069)
 ),
 // + Composer's own resources: Bucket, BucketKey, ServiceKey,
 //   GeneratedParam, S3Credentials, OrmMigration, PgWarm

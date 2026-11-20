@@ -202,7 +202,7 @@ Prisma Cloud's term for a named set of [variables on the platform](#a-variable-o
 
 ### Service variable
 
-Prisma Cloud's term for a value stored on one platform service, which is one Composer [service](#service) in one environment (`Prisma.App` in code). It is set only when a deployment is created, through the create-deployment request, which Console's "Save and Deploy" sends, and is deleted with the platform service. It wins over the branch's group and overrides. Composer sends each service's `COMPOSER_` keys as service variables, a key it no longer sends as `null`, and reads none ([ADR-0069](../90-decisions/ADR-0069-a-services-composer-keys-travel-with-its-deployment-as-service-variables.md)).
+Prisma Cloud's term for a value stored on one platform service, which is one Composer [service](#service) in one environment (`Prisma.App` in code). It is set only when a deployment is created, through the create-deployment request, which Console's "Save and Deploy" sends, and is deleted with the platform service. It wins over the branch's group and overrides. Composer sends each service's `COMPOSER_` keys as service variables, a name Composer no longer sends as `null`, and reads none ([ADR-0069](../90-decisions/ADR-0069-a-services-composer-keys-travel-with-its-deployment-as-service-variables.md)).
 
 ### Value resource
 
@@ -510,22 +510,12 @@ is in `layering.md`; this is the term-by-term catalogue.
   emits one Stack for the whole app; `prisma deploy` drives it over the
   app module the config's `entry` names (no hand-written stack file — ADR-0003).
   `→` **Topology / app root**.
-- **Resource\<Type, Props, Attributes>** — a managed entity with a string type
-  tag, desired-input **Props**, and cloud-returned **Attributes**. Declared, then
-  `yield*`-ed. Composer binds upstream alchemy's: `Prisma.Project`, `Database`,
-  `Connection`, `App`, `Deployment`, `EnvironmentVariable`.
-  `→` a **Service** lowers to `App` + `Deployment` (+ `EnvironmentVariable`); a
-  first-class **Resource** (Postgres) lowers to `Database` + `Connection`.
+- **Resource\<Type, Props, Attributes>** — a managed entity with a string type tag, desired-input **Props**, and cloud-returned **Attributes**. Declared, then `yield*`-ed. Composer binds upstream alchemy's: `Prisma.Project`, `Database`, `Connection`, `App`, `Deployment`, `EnvironmentVariable`. `→` a **Service** lowers to `App` + `Deployment`, whose `variables` carry its `COMPOSER_` keys (an `EnvironmentVariable` row only for a dev server under `prisma dev`); a first-class **Resource** (Postgres) lowers to `Database` + `Connection`.
 - **Props** — the desired configuration passed at declare time; diffed against
   the last deploy to detect change. (A rebuild registers as a change because the
   artifact is content-addressed: new bytes, new `artifactPath`.) `→` a node's **dependencies** +
   **Input**.
-- **Attributes / Output\<T>** — values the cloud returns (`appEndpointDomain`,
-  `deploymentId`, ids); lazy references that flow into other Resources' Props.
-  Resource-to-resource wiring is Output → Props. `→` a node's **exposed interfaces**; a
-  **connection** (exposed interface→dependency) lowers to Output→Props, plus an
-  `EnvironmentVariable` when the consumer reads it at runtime (what `AUTH_URL`
-  does today).
+- **Attributes / Output\<T>** — values the cloud returns (`appEndpointDomain`, `deploymentId`, ids); lazy references that flow into other Resources' Props. Resource-to-resource wiring is Output → Props. `→` a node's **exposed interfaces**; a **connection** (exposed interface→dependency) lowers to Output→Props: a value the consumer reads at runtime is a key in its Deployment's `variables`.
 - **Provider** — implements a Resource type's lifecycle; an Effect `Layer`. We
   author one per Prisma resource with `Provider.effect(Resource, reconcile)`,
   bundled via `Provider.collection([…])` into a `Provider.ProviderCollection`

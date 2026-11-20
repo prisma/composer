@@ -294,20 +294,7 @@ A start in flight ends with the first of these that applies:
 
 The exit of a process the emulator no longer tracks is ignored.
 
-The env materialization is the one platform-side behavior the local target
-implements itself: the hosted platform copies a service's variables into a
-deployment at version-create; locally, the `Deployment` provider builds the
-same environment from the `variables` the lowering gave the deployment
-([ADR-0069](../90-decisions/ADR-0069-a-services-composer-keys-travel-with-its-deployment-as-service-variables.md)),
-leaving out a key sent as `null`, then lays the port the emulator assigned
-over `COMPOSER_<ADDRESS>_PORT` and adds the platform variables the service
-reads — against props defined in this repo, once, not an emulation of a
-foreign API. A changed `variables` is a changed prop, so it restarts exactly
-the service that reads it. A dev server has no deployment: its rows, which
-`reserve` declares, are in `env.json`, and its environment is built from the
-rows under its own address (plus any row outside the `COMPOSER_` namespace,
-which is a platform-owned name by definition), so a sibling's row never
-changes it.
+The env materialization is the one platform-side behavior the local target implements itself: the hosted platform copies a service's variables into a deployment at version-create; locally, the `Deployment` provider builds the same environment from the `variables` the lowering gave the deployment ([ADR-0069](../90-decisions/ADR-0069-a-services-composer-keys-travel-with-its-deployment-as-service-variables.md)), leaving out a key sent as `null`, then lays the port the emulator assigned over `COMPOSER_<ADDRESS>_PORT` and adds the platform variables the service reads — against props defined in this repo, once, not an emulation of a foreign API. A changed `variables` is a changed prop, so it restarts exactly the service that reads it. A dev server has no deployment: its rows, which `reserve` declares, are in `env.json`, and its environment is built from the rows under its own address (plus any row outside the `COMPOSER_` namespace, which is a platform-owned name by definition), so a sibling's row never changes it.
 
 The Postgres and bucket emulators follow the same model: a database is an
 instance with a generated id (`db_<16 hex digits>`), served by a

@@ -551,21 +551,9 @@ What deployed apps actually run into, and what to do about it:
   authenticated for you, and your `curl` isn't one of the services the app
   connected to it — so it's turned away, and a provider with no consumers turns
   away everyone. Reach it through a consumer instead.
-- **A service's `COMPOSER_*` variables belong to the deploy.** Its port,
-  connection settings, generated values and service keys are sent with each
-  new deployment of the service and stored on the service as service
-  variables, which Console shows read-only. A service's input document is not
-  among them: it travels in the service's artifact.
-- **A service holds at most 50 variables.** The deploy refuses a service that
-  would send more than 50 values, before it changes anything, and names the
-  service and the count. Variables you set on a service in Console count toward
-  the platform's limit too, so a service close to 50 can still fail mid-deploy
-  with "Quota exceeded for service_variable".
-- **A deployment you make in Console lasts until the next `prisma deploy`.**
-  Console's "Save and Deploy" creates a deployment the deploy doesn't know;
-  the next `prisma deploy` makes the deploy's own deployment live again. A
-  value you saved stays stored on the service and reaches that deployment the
-  next time the deploy replaces it.
+- **A service's `COMPOSER_*` variables belong to the deploy.** Its port, connection settings, generated values and service keys are sent with each new deployment of the service and stored on the service as service variables. You can change them in the Console, but every deploy that creates a deployment sets them again and deletes each name Composer no longer sends. A service's input document is not among them: it travels in the service's artifact.
+- **A service holds at most 50 variables.** The deploy refuses a service that would send more than 50 values, naming the service and the count. It stops before any resource is created, changed or deleted; by then the branch's application topology has been replaced and the build recorded. Variables you set on a service in the Console count toward the platform's limit too, so a service close to 50 can still fail mid-deploy with "Quota exceeded for service_variable".
+- **A change you make in the Console lasts until the next `prisma deploy`.** Saving a service's variables in the Console creates a deployment the deploy doesn't know; the next `prisma deploy` makes the deploy's own deployment live again. A variable you added under your own name stays stored on the service and reaches that deployment the next time the deploy replaces it; a `COMPOSER_*` variable you changed is set back then.
 - **Calls into a sleeping service can get `ECONNRESET`** while it cold-starts.
   Retry them.
 - **The `cron` scheduler stays awake on purpose.** It holds Compute's
@@ -593,11 +581,12 @@ The first deploy with this version:
 
 - **replaces each service's deployment once.** The new deployment is created with every value, and your service's URL does not change.
 - **deletes the old variables afterwards.** Each one is deleted after the old deployment that read it has stopped. A deployment still finishing open connections keeps its variables until a later deploy finds it stopped, so some can stay visible in the Console after the first deploy. While both exist, the service's own value wins. On production the `COMPOSER_*` variables leave your project's production variables.
+- **still hands a value to a key that loses it in the same deploy.** The new deployment is created while the old variables exist, and the deploy's `null` deletes only the service's own value. So if this deploy also removes a dependency, or the last consumer of a streams service, the new deployment still receives the old variable's value for that key, until the deploy next replaces it. Earlier versions behave the same. Make the upgrade deploy on its own, or deploy that service once more with a changed build afterwards.
 - **skips a variable you already deleted.** A variable the platform refuses to delete because it no longer matches what the deploy recorded is dropped from the deploy's records, and the deploy prints a warning naming it. Delete it in the Console if it is still listed.
 
 If the first deploy is interrupted after the new deployments exist, the next deploy finishes deleting without replacing anything again.
 
-**Don't go back to an older version afterwards.** An older version writes the variables again, but the values stored on each service win over them, so a value that changes later, such as a rotated connection, never reaches the service. Delete a service's variables in the Console before deploying it with an older version.
+**Going back to an older version is not supported.** An older version writes the variables again, but the values this version stored on each service win over them, so a value that changes later, such as a rotated connection, never reaches the service. If you must go back, delete each service's `COMPOSER_*` service variables in the Console first.
 
 ## Upgrading to input documents in the artifact
 
@@ -633,15 +622,7 @@ production has a name, `production`:
 
 ## Upgrading to addresses that start with the app name
 
-Earlier versions left the app name out of every address below the root
-(`auth.database` instead of `storefront-auth.auth.database`), and named the
-deploy engine's resources `auth.database-db`, `auth.database-conn` and so on.
-The first deploy with this version moves every resource of an existing
-environment to its new name in place. Databases keep their rows, buckets keep
-their objects, and generated secrets and service keys keep their values. The
-platform resources' `logicalId`s change to the full address in the same deploy.
-Configuration keys gain the app name (`COMPOSER_STOREFRONT_AUTH_…`), and
-services get a new deployment.
+Earlier versions left the app name out of every address below the root (`auth.database` instead of `storefront-auth.auth.database`), and named the deploy engine's resources `auth.database-db`, `auth.database-conn` and so on. The first deploy with this version moves every resource of an existing environment to its new name in place. Databases keep their rows, buckets keep their objects, and generated secrets and service keys keep their values. The platform resources' `logicalId`s change to the full address in the same deploy. Configuration keys gain the app name (`COMPOSER_STOREFRONT_AUTH_…`), and services get a new deployment.
 
 Every name Composer gives a platform resource becomes the full address too:
 apps, buckets and Composer's database connections and bucket access keys are
