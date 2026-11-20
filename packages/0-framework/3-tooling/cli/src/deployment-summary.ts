@@ -27,8 +27,8 @@ export function toDeploymentSummary(result: DeploymentResult): DeploymentSummary
   };
 }
 
-/** Fits the platform's 5000-character build `errorMessage`. */
-const ENGINE_FAILURE_CAUSE_LIMIT = 1000;
+/** Fits the platform's 5000-character build `errorMessage` with the failure's summary line, and keeps a failure's advice, such as Prisma ORM's next actions for a failed migration. */
+const ENGINE_FAILURE_CAUSE_LIMIT = 4000;
 
 /** Alchemy's advice to rerun its own CLI with `--adopt` or to import a resource with adoption, which a Composer user has no way to do. */
 const ALCHEMY_ADOPT_ADVICE: readonly (readonly [RegExp, string])[] = [

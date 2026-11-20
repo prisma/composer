@@ -716,6 +716,37 @@ describe('deploy()', () => {
     expect(result.failure.meta?.['engineCause']).toBe(cause);
   });
 
+  test('a failure cause keeps advice up to 4000 characters long, and is cut after that', async () => {
+    const app = makeAppDir();
+    const heading = '[MIGRATION.PATH_UNREACHABLE] No path\n→ ';
+    const advice = (length: number) => `${heading}${'x'.repeat(length - heading.length)}`;
+    const deployFailingWith = (message: string) =>
+      silently(() =>
+        deployWithDeps(
+          {
+            config: composerConfig(fakeConfig()),
+            entry: app.entryPath,
+            environment: 'ci-7',
+            cwd: app.dir,
+          },
+          {
+            runAssembler: fakeAssembler,
+            appConvergeEntry: appConvergeEntry(async () => ({
+              kind: 'failed',
+              reasons: [{ tag: 'Error', message }],
+            })),
+          },
+        ),
+      );
+
+    const kept = await deployFailingWith(advice(4000));
+    const cut = await deployFailingWith(advice(4001));
+
+    if (kept.ok || cut.ok) throw new Error('expected failures');
+    expect(kept.failure.meta?.['engineCause']).toBe(advice(4000));
+    expect(cut.failure.meta?.['engineCause']).toBe(`${advice(4001).slice(0, 3999)}…`);
+  });
+
   test('an engine failure cause never carries a known secret read from a dotenv file, and keeps a dotenv value no secret source names', async () => {
     const app = makeAppDir('fixture-app', 'WEBHOOK_SIG');
     const onlyInDotenvFile = 'dotenv-only-SENTINEL-4f1c';
