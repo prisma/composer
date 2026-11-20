@@ -19,6 +19,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import pg from 'pg';
 
+export const SCHEMA_BOOTSTRAP_TIMEOUT_MS = 30_000;
+
 export interface TestPostgres {
   readonly url: string;
   readonly stop: () => void;

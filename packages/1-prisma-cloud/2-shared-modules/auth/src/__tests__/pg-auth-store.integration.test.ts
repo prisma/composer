@@ -15,6 +15,7 @@ import { ensureLocalAuthSchema } from '../execution/local-schema.ts';
 import { createPgAuthStore } from '../pg-auth-store.ts';
 import {
   createTestDatabase,
+  SCHEMA_BOOTSTRAP_TIMEOUT_MS,
   startTestPostgres,
   type TestDatabase,
   type TestPostgres,
@@ -86,7 +87,7 @@ describe.skipIf(pgServer === undefined)('PgAuthStore', () => {
     await ensureLocalAuthSchema(db.url);
     sql = new SQL({ url: db.url, max: 1 });
     store = createPgAuthStore(db.url);
-  });
+  }, SCHEMA_BOOTSTRAP_TIMEOUT_MS);
   afterAll(async () => {
     await sql?.end();
     await db?.drop().catch(() => {});
@@ -204,7 +205,7 @@ describe.skipIf(pgServer === undefined)('PgAuthStore', () => {
         banExpires: PAST,
       });
       pagedStore = createPgAuthStore(pagedDb.url);
-    });
+    }, SCHEMA_BOOTSTRAP_TIMEOUT_MS);
     afterAll(async () => {
       await pagedSql?.end();
       await pagedDb?.drop().catch(() => {});
