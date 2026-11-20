@@ -138,6 +138,7 @@ function withNamesNoLongerSentDeleted(
 function checkServiceVariableCount(
   address: string,
   variables: Readonly<Record<string, ServiceVariableValue | null>>,
+  local: boolean,
 ): void {
   const count = Object.values(variables).filter((value) => value !== null).length;
   if (count <= SERVICE_VARIABLE_LIMIT) return;
@@ -147,8 +148,10 @@ function checkServiceVariableCount(
     {
       why:
         `Composer sends one variable for each of the service's params, dependency connection values and generated values, ` +
-        `and the app declares ${count} for "${address}". No resource has been created, changed or deleted; ` +
-        "the branch's application topology has already been replaced and the build recorded.",
+        `and the app declares ${count} for "${address}". ` +
+        (local
+          ? '`prisma dev` refuses it as a deploy to Prisma Cloud would, before it starts or changes anything locally.'
+          : "No resource has been created, changed or deleted; the branch's application topology has already been replaced and the build recorded."),
       fix: `Give "${address}" fewer dependencies or generated values, for example by splitting it into two services.`,
       meta: { address, count, limit: SERVICE_VARIABLE_LIMIT },
     },
@@ -267,7 +270,11 @@ export function computeDescriptor(
             envValue(value);
         }
 
-        checkServiceVariableCount(address, bootVariables);
+        checkServiceVariableCount(
+          address,
+          bootVariables,
+          cloudApplicationOf(ctx.application).branchless,
+        );
         const everSent = yield* SentVariableNames(resourceId(address, 'sent-variable-names'), {
           names: Object.keys(bootVariables).sort(),
         });

@@ -1467,7 +1467,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     });
   });
 
-  test('serialize refuses a service with more than 50 variables, naming the service, the count and the limit', () => {
+  test('serialize refuses a service with more than 50 variables, naming the service, the count and the limit, for a deploy and under prisma dev', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const deps = Object.fromEntries(
       Array.from({ length: 49 }, (_, i) => [
@@ -1520,7 +1520,36 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       'The service "shop.wide" needs 51 variables, but Prisma Cloud stores at most 50 on one service.',
     );
     expect(envelope.fix).toContain('fewer dependencies or generated values');
+    expect(envelope.why).toContain("the branch's application topology has already been replaced");
     expect(recorded.sentVariableNames.length).toBe(before);
+
+    let local: unknown;
+    try {
+      run(
+        serviceDescriptorOf(target, 'compute').serialize(
+          {
+            ...ctx,
+            application: {
+              projectId: 'shop-project#cloud-id',
+              branchId: undefined,
+              defaultBranchId: undefined,
+              branchless: true,
+            },
+          } as LowerContext,
+          provisioned,
+          config,
+        ),
+      );
+    } catch (error) {
+      local = error;
+    }
+    if (!CliStructuredError.is(local))
+      throw new Error('expected a structured error under prisma dev');
+    expect(local.code).toBe('DEPLOY.SERVICE_VARIABLE_LIMIT');
+    expect(local.toEnvelope().why).toContain(
+      '`prisma dev` refuses it as a deploy to Prisma Cloud would',
+    );
+    expect(local.toEnvelope().why).not.toContain('topology');
   });
 
   test('a service with exactly 50 variables serializes', () => {
