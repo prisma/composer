@@ -21,7 +21,7 @@ import type {
   RunOutcome,
   UnsetPlatformVariable,
 } from '@internal/core/config';
-import { type LowerOptions, lower, nodeAddresses } from '@internal/core/deploy';
+import { type LowerOptions, lower, nodeAddresses, toProviderError } from '@internal/core/deploy';
 import {
   devState,
   type LocalTargetAttachment,
@@ -30,12 +30,18 @@ import {
   localTargetProviders,
 } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
+import * as Cause from 'effect/Cause';
 import * as Layer from 'effect/Layer';
 import { type AppConvergeEntry, HOST_COMPOSER_VERSION } from '../../app-converge.ts';
 import type { ComposerConfigSource } from '../../composer-config.ts';
 import { dotenv, environmentVariables } from '../../config-adapters.ts';
 import { CONVERGE_CONTRACT } from '../../converge-contract.ts';
-import type { Converge, ConvergeOutcome, ConvergeRequest } from '../../converge-in-process.ts';
+import {
+  type Converge,
+  type ConvergeOutcome,
+  type ConvergeRequest,
+  failureReasons,
+} from '../../converge-in-process.ts';
 import { loadEntry } from '../../load-entry.ts';
 import type { AppIdentity } from '../../pipeline.ts';
 import { SecretRedaction } from '../../redaction.ts';
@@ -4054,6 +4060,52 @@ describe('deploy-run reporting', () => {
 
     expect(result.ok).toBe(false);
     expect(log.events.at(-1)).toBe('finish:cancelled');
+  });
+
+  test("a structured error a provider fails with reaches the deploy's failure and build report under its own code", async () => {
+    class ProviderRefusal extends CliStructuredError {
+      readonly _tag = 'ProviderRefusal';
+    }
+    const message =
+      'The database is at a contract that is not in the migration graph\n→ Reconcile the database: prisma db update --db <url>';
+    const app = makeAppDir();
+    const outcomes: RunOutcome[] = [];
+    const config = fakeConfig({
+      reporter: {
+        begin: async () => ({
+          childEnv: () => ({}),
+          attach: async () => {},
+          finish: async (outcome) => {
+            outcomes.push(outcome);
+          },
+        }),
+      },
+    });
+
+    const result = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, environment: 'ci-6', cwd: app.dir, config: composerConfig(config) },
+        {
+          runAssembler: fakeAssembler,
+          appConvergeEntry: appConvergeEntry(async () => ({
+            kind: 'failed',
+            reasons: failureReasons(
+              Cause.fail(
+                toProviderError(new ProviderRefusal('MIGRATION.MARKER_MISMATCH', message)),
+              ),
+            ),
+          })),
+        },
+      ),
+    );
+
+    if (result.ok) throw new Error('expected a failure');
+    const cause = `MIGRATION.MARKER_MISMATCH: ${message}`;
+    expect(result.failure.meta?.['reasons']).toEqual([
+      { tag: 'MIGRATION.MARKER_MISMATCH', message },
+    ]);
+    expect(result.failure.meta?.['engineCause']).toBe(cause);
+    expect(outcomes[0]?.errorMessage).toBe(`Alchemy could not deploy the app.\n${cause}`);
   });
 
   test('the build report of a failed converge names the step and carries the engine cause in its message', async () => {
