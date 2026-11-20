@@ -45,8 +45,13 @@ Recorded 2026-11-18 at Will's request, as a later piece of work with its own pul
 
 **The fix found while proving piece B.** Read a service's `url` output from the service's stable domain, which is known at planning time. It is commit `dde80b76` on the branch `feat/compute-keeps-previous-versions`, in the worktree `.claude/worktrees/compute-keep-versions`. After it, the first deploy still replaces the reading service's version once, and later unchanged deploys replace nothing.
 
-**To do.**
+**Status, 2026-11-20.** Built on main as its own pull request, https://github.com/prisma/composer/pull/446, branch `fix/unchanged-deploy-keeps-consumer-version`. It does not need the Alchemy release.
 
-- Take that fix out of piece B's branch into its own pull request, with a test that deploys twice unchanged and sees no new version.
-- Find out whether it can ship on main before the Alchemy change is released. The cause exists on main today, so it probably can, but that has not been checked.
-- Check the other outputs a service publishes for the same problem.
+- A service's `url` comes from its `Prisma.App`'s endpoint domain. One function reads it, `endpointDomainOf`.
+- Reading the URL from the App removed the wait that made a producer go live before its consumers. The pull request keeps that order explicitly: the consumer deployment's `app` prop waits on every output of the nodes the service depends on (`appAfter` in the lowering package). A producer's `serviceId` comes from its deployment, and that is the output that waits for the promotion.
+- The other outputs were checked. None stays unknown while planning an unchanged deploy.
+- Proven on Prisma Cloud with `storefront-auth`: an unchanged deploy creates no version, a change to auth alone leaves the storefront's version, and when both change auth is live before the storefront's new version is created.
+
+**What this means for piece B.** When piece B's branch is brought up to date with main, drop its commit `dde80b76` in favour of what main has, and carry the producer wait over to the new resources: the consumer's `Prisma.ComputeVersion` must still be created only after its producers' services serve their new versions. Piece B's branch currently has no such wait.
+
+**Found and not addressed.** A fresh Next.js build of an unchanged app produces a different artifact, because the example sets no `generateBuildId`. So any rebuild of the `storefront-auth` storefront makes a new version, and the example's `deploy` script rebuilds the storefront whenever the auth package changes. Once previous versions are kept, each of these leaves a version behind. Not decided whether Composer, the `nextjs()` build adapter or the example should make the build reproducible.
