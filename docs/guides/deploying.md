@@ -302,7 +302,7 @@ The platform copies the variables into a deployment when it creates it. A value 
 
 ### What the deploy checks
 
-The `check environment variables` step asks Prisma Cloud once which variables the environment's branch receives, and looks up every platform variable the app reads in that answer, before any service or database is created. It reads whether a value exists, never the value. For `production` it asks about the project's default branch. If Prisma Cloud cannot answer, the deploy fails, naming the call, the project and the branch, and the HTTP status when there is one. A 404 can mean the platform does not offer this read yet.
+The `check environment variables` step asks Prisma Cloud once which variables the environment's branch receives, and looks up every platform variable the app reads in that answer, before any service or database is created. It reads whether a value exists, never the value. For `production` it asks about the project's default branch. If Prisma Cloud cannot answer, the deploy fails, naming the call, the project and the branch, and the HTTP status when the client reports one. A 404 can mean the platform does not offer this read yet.
 
 - **A variable a service needs that has no value fails the deploy.** Whether a service needs it is decided by the service's input schema: the deploy leaves the variable out and validates the input. A required field fails; an optional one does not.
 

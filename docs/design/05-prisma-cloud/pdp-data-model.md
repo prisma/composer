@@ -14,8 +14,10 @@ flowchart TB
   WS[Workspace<br/>auth boundary · service tokens]
   P[Project<br/>encryption keyset - DEK]
   B[Branch<br/>one has the production role]
-  CVT[ConfigVariable — template<br/>branchId NULL]
-  CVO[ConfigVariable — override<br/>branchId set · preview class only]
+  VG[VariableGroup<br/>production · preview · custom]
+  CVG[ConfigVariable — group row<br/>groupId set]
+  CVO[ConfigVariable — branch override<br/>branchId set]
+  SV[Service variable]
   A[App<br/>API name: compute service<br/>serviceEndpointDomain]
   DB[Database]
   D[Deployment<br/>DB table: ComputeVersion<br/>foundryVersionId]
@@ -24,10 +26,12 @@ flowchart TB
 
   WS --> P
   P --> B
-  P --> CVT
+  P --> VG
+  VG --> CVG
   B --> CVO
   B --> A
   B --> DB
+  A --> SV
   A --> D
   A --> PR
   PR --> D
@@ -48,12 +52,8 @@ Edge semantics, with the properties that matter to us:
   `[branchId, projectId]`). An App **must be attached to a Branch to deploy** —
   version creation 422s otherwise (`resolveDeployEnvVars.ts`: "Attach the app to
   a Branch before creating a deployment").
-- **Project → ConfigVariable (template), Branch → ConfigVariable (override).**
-  `ConfigVariable` = `{ projectId, branchId?, class: production|preview, key,
-  encryptedValue (AES-GCM under the project DEK), isManagedByModule }`, unique on
-  `(project, branch, class, key)`. `branchId NULL` is a project-level template;
-  a set `branchId` is a branch-scoped override, **allowed only for the preview
-  class** (CHECK constraint).
+- **Project → VariableGroup → ConfigVariable, Branch → ConfigVariable (override).** A `ConfigVariable` holds a `key` and an `encryptedValue` (AES-GCM under the project DEK), and belongs either to a variable group, as a **group row**, or to one Branch, as that Branch's **override**. Every project has a `production` and a `preview` group and can add custom groups; each Branch receives exactly one group (see [Variable groups](#variable-groups)).
+- **App → Service variable.** Values stored on one App, which is one Composer service in one environment (see [Variable groups](#variable-groups)).
 - **App → Deployment.** A Deployment is one immutable version of the app
   (`ComputeVersion` table); `foundryVersionId` links it to the runner's record.
 - **App → Promotion → Deployment.** Promotion points the app's stable endpoint
@@ -81,9 +81,9 @@ This is the timing model Prisma Composer's graph must respect:
 
 | Moment | What happens | Source |
 | --- | --- | --- |
-| default DB provisioned | the platform **writes** `DATABASE_URL` and `DATABASE_URL_POOLED` as ordinary project-level production-class ConfigVariable **templates** (user-set values win) | `compute-config/wireDefaultDatabaseUrl.ts` |
+| default DB provisioned | the platform **writes** `DATABASE_URL` and `DATABASE_URL_POOLED` as ordinary rows of the project's `production` group (user-set values win) | `compute-config/wireDefaultDatabaseUrl.ts` |
 | any time | ConfigVariable rows are created/updated/deleted via the environment-variables API — **rows only; no effect on any existing version** | `routes/v1/environment-variables.ts` |
-| **version create** | `materializeBranchEnvVars(app.branchId)` resolves the complete map — production branch → production templates; preview branch → preview templates merged with that branch's overrides (override wins) — decrypts it, and hands the **plain map to Foundry with the version**. The env is **frozen into the version** | `routes/v1/versions.ts` → `resolveDeployEnvVars.ts` → `compute-config/materializeBranchEnvVars.ts` |
+| **version create** | `materializeBranchEnvVars(app.branchId)` resolves the complete map — the Branch's group, then that Branch's overrides (override wins); a deployment created with service variables gets them on top — decrypts it, and hands the **plain map to Foundry with the version**. The env is **frozen into the version** | `routes/v1/versions.ts` → `resolveDeployEnvVars.ts` → `compute-config/materializeBranchEnvVars.ts` |
 | version start | boots the version; **no env re-resolution** | `routes/v1/version-handlers.ts` |
 | promote | endpoint routed to the version; `serviceEndpointDomain` persisted. The domain returned at *create* time is a placeholder region — only the post-promote read is trustworthy (PRO-200) | `interactors/compute/service.ts` |
 
@@ -101,23 +101,18 @@ Consequences Prisma Composer designs around:
    the deployment, so the change reaches the running service (see the
    change-propagation note in
    [alchemy-lowering.md](alchemy-lowering.md#the-lowering-graphs)).
-3. **`DATABASE_URL` is not a separate mechanism.** It is a platform-written template flowing through the same materialization as user variables — a convenience for hand-provisioned single services. The platform owns it (system-managed) and writes it only for a project's default database. Prisma Composer refuses to bind or manage the name and creates no default database (see [alchemy-lowering.md](alchemy-lowering.md#database_url-is-forbidden--and-left-to-the-platform)); every database URL a service consumes is an explicit, service-named variable.
-4. **Branch + class is the platform's environments model** (production
-   templates vs preview templates + per-branch overrides) — the substrate
-   [an environment as a Branch](../10-domains/deploy-cli.md#environments-and-containers) is
-   built on: an environment other than `production` is a Branch, and its config is written
-   preview-class with that Branch's overrides. Under variable groups (below), a Branch
-   receives one group in place of a class.
+3. **`DATABASE_URL` is not a separate mechanism.** It is a platform-written group row flowing through the same materialization as user variables — a convenience for hand-provisioned single services. The platform owns it (system-managed) and writes it only for a project's default database. Prisma Composer refuses to bind or manage the name and creates no default database (see [alchemy-lowering.md](alchemy-lowering.md#database_url-is-forbidden--and-left-to-the-platform)); every database URL a service consumes is an explicit, service-named variable.
+4. **The Branch is the platform's environments model**: each Branch receives one variable group and its own overrides. It is the substrate [an environment as a Branch](../10-domains/deploy-cli.md#environments-and-containers) is built on: an environment other than `production` is a Branch, and production is the project's default Branch.
 
 ## Variable groups
 
 Prisma Cloud keeps variables in groups. What Composer depends on:
 
-- **Variable groups.** Every project has a `production` group and a `preview` group, holding the rows the two old row classes held. A group's class (`production`, `preview` or `custom`) names its kind and is not a row's old class. A project can add custom groups, each with one rule on a branch's git name: `equals` or `startsWith`.
+- **Variable groups.** Every project has a `production` group and a `preview` group. A group's class (`production`, `preview` or `custom`) names its kind. A project can add custom groups, each with one rule on a branch's git name: `equals` or `startsWith`.
 - **One group per branch.** The production branch receives `production`. Any other branch receives the custom group with the most precise matching rule, or else `preview`. Groups do not combine.
 - **Service variables.** Values stored on one platform service, which is one Composer service in one environment. They are set only when a deployment is created, through the create-deployment request, which Console's "Save and Deploy" sends, and are deleted with the platform service.
-- **The order a deployment receives values:** every value of its branch's group, then the branch's overrides, then the service's variables. Later wins. The map is still frozen into the version when it is created.
-- **Branch overrides are being removed.** The platform is removing branch overrides: after a notice period, it rejects a write that names a branch. Existing overrides keep applying until their branch is deleted.
+- **The order a deployment receives values:** every value of its branch's group, then the branch's overrides, then the service's variables. Later wins. The map is frozen into the version when it is created.
+- **Branch overrides are being removed.** After a notice period, the platform rejects a write that names a branch. Existing overrides keep applying until their branch is deleted.
 - **The resolved-variables read.** `GET /v1/projects/{projectId}/resolved-variables?branchId=…` returns the group the branch receives (`id`, `name`, `class`) and every key the branch receives, each with `updatedAt`, `isManagedBySystem` and a `source` (`group`, `branchOverride` or `service`). It returns no values and does not paginate. Deploy preflight reads it once per deploy ([ADR-0064](../90-decisions/ADR-0064-an-app-declares-its-platform-variables-in-its-root-and-the-deploy-copies-no-local-values.md)).
 
 ## Related

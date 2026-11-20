@@ -194,7 +194,7 @@ A [platform variable](#platform-variable) whose value is handled as a secret: bo
 
 ### A variable on the platform
 
-Any entry, or **row**, in a Prisma Cloud project's environment variables: a name and a non-empty text. A **group row** belongs to a [variable group](#variable-group); what was called a class row is a row of the `production` or `preview` group. A **branch override** (formerly "branch row") belongs to one branch and wins over its group's value. The platform is removing branch overrides: after a notice period, it rejects a write that names a branch. That includes Composer's own `COMPOSER_` rows, which are not [platform variables](#platform-variable). The term names the platform's storage, as distinct from what the app reads. Prisma Cloud calls these rows environment variables.
+Any entry, or **row**, in a Prisma Cloud project's environment variables: a name and a non-empty text. Composer's own `COMPOSER_` rows are rows too, but not [platform variables](#platform-variable). A **group row** belongs to a [variable group](#variable-group); what was called a class row is a row of the `production` or `preview` group. A **branch override** (formerly "branch row") belongs to one branch and wins over its group's value. The platform is removing branch overrides: after a notice period, it rejects a write that names a branch. Composer writes a service's `COMPOSER_` rows on a preview environment as branch overrides, so those writes fail once the platform rejects them. The term names the platform's storage, as distinct from what the app reads. Prisma Cloud calls these rows environment variables.
 
 ### Variable group
 
