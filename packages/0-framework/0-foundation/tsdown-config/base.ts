@@ -1,4 +1,22 @@
-import type { UserConfig } from 'tsdown';
+import type { Rolldown, UserConfig } from 'tsdown';
+
+/**
+ * Rolldown 1.2 ignores the `.map` beside a built input file, so a bundle of
+ * another workspace package's `dist` would name that `dist` as its source.
+ * Loading the map with the code lets rolldown compose it back to our `.ts`.
+ * Third-party packages under `node_modules` keep rolldown's default.
+ */
+export const carryIncomingSourceMaps: Rolldown.Plugin = {
+  name: 'carry-incoming-source-maps',
+  load: {
+    filter: { id: { include: /\.(?:m?js|d\.m?ts)$/, exclude: /[\\/]node_modules[\\/]/ } },
+    async handler(id) {
+      const map = await this.fs.readFile(`${id}.map`, { encoding: 'utf8' }).catch(() => null);
+      if (map === null) return null;
+      return { code: await this.fs.readFile(id, { encoding: 'utf8' }), map };
+    },
+  },
+};
 
 /**
  * Base `tsdown` configuration for the workspace. Mirrors prisma/orm's
@@ -56,6 +74,7 @@ export const baseConfig: UserConfig = {
     exclude: [/^bin$/],
   },
   outExtensions: () => ({ js: '.mjs', dts: '.d.mts' }),
+  plugins: [carryIncomingSourceMaps],
   skipNodeModulesBundle: true,
   sourcemap: true,
 };

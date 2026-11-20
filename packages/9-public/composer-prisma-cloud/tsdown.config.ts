@@ -1,5 +1,5 @@
 import { inputDocumentRuntimeDependencies } from '@internal/input-document/bundling';
-import { baseConfig } from '@internal/tsdown-config';
+import { baseConfig, carryIncomingSourceMaps } from '@internal/tsdown-config';
 import { defineConfig } from 'tsdown';
 
 // Cloud-domain internals (@internal/lowering, /prisma-cloud, /cron) are
@@ -81,7 +81,7 @@ export default defineConfig([
     clean: true,
     skipNodeModulesBundle: false,
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework],
+    plugins: [carryIncomingSourceMaps, externalizeFramework],
   },
   {
     ...baseConfig,
@@ -91,7 +91,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework],
+    plugins: [carryIncomingSourceMaps, externalizeFramework],
   },
   {
     ...baseConfig,
@@ -105,7 +105,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework],
+    plugins: [carryIncomingSourceMaps, externalizeFramework],
   },
   {
     // Re-emitted from @internal/dev-emulators' and @internal/local-target's
@@ -132,7 +132,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework],
+    plugins: [carryIncomingSourceMaps, externalizeFramework],
   },
   {
     ...baseConfig,
@@ -142,7 +142,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework],
+    plugins: [carryIncomingSourceMaps, externalizeFramework],
   },
   {
     ...baseConfig,
@@ -158,7 +158,7 @@ export default defineConfig([
     // `bun` is a runtime builtin — keep it external in the re-emitted entrypoint.
     external: [/^bun$/, /^bun:/],
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework],
+    plugins: [carryIncomingSourceMaps, externalizeFramework],
   },
   {
     // The /storage/testing local stand-in — inlines @internal/storage/testing's
@@ -171,7 +171,7 @@ export default defineConfig([
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework],
+    plugins: [carryIncomingSourceMaps, externalizeFramework],
   },
   {
     ...baseConfig,
@@ -181,7 +181,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework],
+    plugins: [carryIncomingSourceMaps, externalizeFramework],
   },
   {
     // Re-emitted from @internal/email's dist, where email-entrypoint was
@@ -200,7 +200,7 @@ export default defineConfig([
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework],
+    plugins: [carryIncomingSourceMaps, externalizeFramework],
   },
   {
     // The /email/testing local stand-in — inlines @internal/email/testing's
@@ -213,7 +213,7 @@ export default defineConfig([
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework],
+    plugins: [carryIncomingSourceMaps, externalizeFramework],
   },
   {
     ...baseConfig,
@@ -223,7 +223,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework, externalizeEmailToSelf],
+    plugins: [carryIncomingSourceMaps, externalizeFramework, externalizeEmailToSelf],
   },
   {
     // Re-emitted from @internal/auth's dist, where auth-entrypoint was
@@ -243,7 +243,7 @@ export default defineConfig([
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework],
+    plugins: [carryIncomingSourceMaps, externalizeFramework],
   },
   {
     // The /auth/testing local stand-in — inlines @internal/auth/testing's
@@ -256,7 +256,7 @@ export default defineConfig([
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework, externalizeEmailToSelf],
+    plugins: [carryIncomingSourceMaps, externalizeFramework, externalizeEmailToSelf],
   },
   {
     ...baseConfig,
@@ -266,7 +266,7 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework],
+    plugins: [carryIncomingSourceMaps, externalizeFramework],
   },
   {
     // Re-emitted from @internal/streams' dist, where streams-entrypoint was
@@ -284,7 +284,7 @@ export default defineConfig([
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework],
+    plugins: [carryIncomingSourceMaps, externalizeFramework],
   },
   {
     // The /streams/testing local stand-in (@prisma/streams-local, already
@@ -297,6 +297,6 @@ export default defineConfig([
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
     noExternal: [/^@internal\//, ...inputDocumentRuntimeDependencies],
-    plugins: [externalizeFramework],
+    plugins: [carryIncomingSourceMaps, externalizeFramework],
   },
 ]);
