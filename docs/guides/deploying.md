@@ -552,7 +552,7 @@ What deployed apps actually run into, and what to do about it:
   connected to it — so it's turned away, and a provider with no consumers turns
   away everyone. Reach it through a consumer instead.
 - **A service's `COMPOSER_*` variables belong to the deploy.** Its port, connection settings, generated values and service keys are sent with each new deployment of the service and stored on the service as service variables. You can change them in the Console, but every deploy that creates a deployment sets them again and deletes each name Composer no longer sends. A service's input document is not among them: it travels in the service's artifact.
-- **A service holds at most 50 variables.** The deploy refuses a service that would send more than 50 values, naming the service and the count. It stops before any resource is created, changed or deleted; by then the branch's application topology has been replaced and the build recorded. Variables you set on a service in the Console count toward the platform's limit too, so a service close to 50 can still fail mid-deploy with "Quota exceeded for service_variable".
+- **A service holds at most 50 variables.** The deploy refuses a service that would send more than 50 values. Today the refusal appears as a reason inside a `DEPLOY.ENGINE_FAILED` result ("Alchemy could not deploy the app"), with the code `DEPLOY.SERVICE_VARIABLE_LIMIT` and a message naming the service, the count and the limit; `prisma dev` refuses the same service the same way. The deploy stops before any resource is created, changed or deleted; by then the branch's application topology has been replaced and the build recorded. Variables you set on a service in the Console count toward the platform's limit too, so a service close to 50 can still fail mid-deploy with "Quota exceeded for service_variable".
 - **A change you make in the Console lasts until the next `prisma deploy`.** Saving a service's variables in the Console creates a deployment the deploy doesn't know; the next `prisma deploy` makes the deploy's own deployment live again. A variable you added under your own name stays stored on the service and reaches that deployment the next time the deploy replaces it; a `COMPOSER_*` variable you changed is set back then.
 - **Calls into a sleeping service can get `ECONNRESET`** while it cold-starts.
   Retry them.
@@ -586,7 +586,7 @@ The first deploy with this version:
 
 If the first deploy is interrupted after the new deployments exist, the next deploy finishes deleting without replacing anything again.
 
-**Going back to an older version is not supported.** An older version writes the variables again, but the values this version stored on each service win over them, so a value that changes later, such as a rotated connection, never reaches the service. If you must go back, delete each service's `COMPOSER_*` service variables in the Console first.
+**Going back to an older version is not possible.** Once an environment has been deployed with this version, an older version stops while it plans the deploy, before it changes anything, with "No provider is registered for resource type 'PrismaCloud.SentVariableNames'": this version's deploy state holds a record that older versions do not know. Keep deploying the environment with this version or a newer one.
 
 ## Upgrading to input documents in the artifact
 

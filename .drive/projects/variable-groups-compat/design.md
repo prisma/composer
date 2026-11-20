@@ -189,7 +189,7 @@ Deleting a row by id keeps working after override writes are rejected.
 
 **What is deleted with the rows.** The key-clash check and the code that computes the clashes: with no rows written, two rows cannot collide. One narrow case remains for an app that upgrades directly from a version before the address change: a service whose new key equals another service's old key, and which has no value for it, would receive the other service's old row once. The guide tells such an app to deploy once with any release from 0.35.0 to 0.39.0 first. `asOwnRow` is no longer applied to variables. Build reporting stops listing variable rows, except the deletes on the first deploy.
 
-**Going back to an older Composer** after a deploy with this version is not supported, and the release note says why: the older version writes rows again, and the stored service variables win over them, so a value that changed since never reaches the service.
+**Going back to an older Composer** after a deploy with this version is not possible: deploy state then holds a `PrismaCloud.SentVariableNames` resource per service, an older version registers no provider for it, and Alchemy stops while planning, before changing anything.
 
 **Not part of this:** options on `prisma deploy` that set a user's value on a service, which the platform spec proposes as `--variable`. The decision that defines platform variables says the deploy sets no user values until that has its own design.
 

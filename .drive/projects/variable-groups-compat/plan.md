@@ -14,9 +14,9 @@ Design section 4.1. Builds on: slice 1. Merges when the new read is live in prod
 
 ## Slice 3: a service's `COMPOSER_` keys travel with its deployment
 
-Design section 4.2. Builds on: the open pull request "an unchanged deploy no longer replaces a service that depends on another service", merged. Independent of slice 2. Opened early as a draft, with `pnpm` patches standing in for the upstream packages, for Ty to align his interface against. Needs one pull request on Distilled and one on Alchemy once the platform's field is final. Merges when the platform accepts `variables` in production and both upstream packages have released.
+Design section 4.2. Builds on: the open pull request "an unchanged deploy no longer replaces a service that depends on another service", merged. Opened early as a draft, with `pnpm` patches standing in for the upstream packages, for Ty to align his interface against. Needs one pull request on Distilled and one on Alchemy once the platform's field is final. Merges when the platform accepts `variables` in production and both upstream packages have released.
 
-Merges after slice 2. Its glossary copies slice 2's entries for variable group and service variable word for word, and those entries describe slice 2's preflight, which reads the variable group the branch receives; on `main` before slice 2 they would be false. When slice 2 merges, rebase this branch onto it.
+Its code is independent of slice 2 and can be built and reviewed on its own, but it merges after slice 2: its glossary copies slice 2's entries for variable group and service variable word for word, and those entries describe slice 2's preflight, which reads the variable group the branch receives; on `main` before slice 2 they would be false. When slice 2 merges, rebase this branch onto it.
 
 Before marking the pull request ready:
 
@@ -24,7 +24,10 @@ Before marking the pull request ready:
 - [ ] `@distilled.cloud/prisma` and `@alchemy.run/prisma` have released the field.
 - [ ] Composer's pins are raised to those releases, `patches/` and `pnpm.patchedDependencies` are gone, and `check:patched-dependencies` passes.
 - [ ] The paragraphs about the patches in ADR-0069 (end of "Decision") and in `alchemy-lowering.md` (the `Prisma.Deployment` row) are removed.
-- [ ] The pull request description says the E2E deploy job fails until the platform accepts `variables` in production.
+- [ ] The `Deploy, verify, destroy` check passes against a platform that accepts `variables`.
+- [ ] A manual upgrade against that platform: an app deployed with 0.39.0 on a production and a preview environment, then deployed with this branch, with the services watched for at least ten minutes afterwards.
+
+When opening the draft, the pull request description says the E2E deploy job fails until the platform accepts `variables` in production.
 
 ## Release
 
