@@ -1,4 +1,4 @@
-/** Two compute services, one reading the other's URL, deployed twice under the real Alchemy apply engine and the real `Prisma.App`, `Prisma.Deployment` and `Prisma.EnvironmentVariable` providers, against a fake Management API. */
+// A producer and a consumer that reads its url, deployed twice under the real Alchemy apply engine and the real `Prisma.App`, `Prisma.Deployment` and `Prisma.EnvironmentVariable` providers, against a fake Management API.
 import { expect, test } from 'bun:test';
 import * as path from 'node:path';
 import * as Prisma from '@alchemy.run/prisma';
@@ -26,13 +26,13 @@ const CREATED_AT = '2026-11-20T00:00:00.000Z';
 interface FakePlatform {
   readonly services: Map<string, Record<string, unknown>>;
   readonly deployments: Map<string, Record<string, unknown>>;
-  /** The App id of every deployment ever created, in order; a deleted deployment stays listed. */
+  // A deleted deployment stays listed.
   readonly created: unknown[];
   readonly variables: Map<string, Record<string, unknown>>;
   readonly values: Map<string, unknown>;
   readonly events: string[];
-  /** While set, `shop.auth`'s deployment create waits until `shop.web`'s arrives, so a reader that does not wait for its provider is created first. */
-  gate: Deferred.Deferred<void> | undefined;
+  // While set, the producer's deployment create waits until the consumer's arrives, so a consumer that does not wait for its producer is created first.
+  authCreateWaitsForWeb: Deferred.Deferred<void> | undefined;
 }
 
 function record(body: unknown): Record<string, unknown> {
@@ -189,7 +189,7 @@ function fakePlatform() {
     variables: new Map(),
     values: new Map(),
     events: [],
-    gate: undefined,
+    authCreateWaitsForWeb: undefined,
   };
   const api = fakeManagementApi(({ method, path, body }) =>
     Effect.gen(function* () {
@@ -197,10 +197,12 @@ function fakePlatform() {
       const creating =
         method === 'POST' ? url.pathname.match(/^\/v1\/services\/([^/]+)\/deployments$/) : null;
       const address = platform.services.get(creating?.[1] ?? '')?.['logicalId'];
-      const gate = platform.gate;
-      if (gate !== undefined && address === 'shop.web') yield* Deferred.succeed(gate, undefined);
-      if (gate !== undefined && address === 'shop.auth') {
-        yield* Deferred.await(gate).pipe(Effect.timeoutOption(Duration.millis(500)));
+      const waitForWeb = platform.authCreateWaitsForWeb;
+      if (waitForWeb !== undefined && address === 'shop.web') {
+        yield* Deferred.succeed(waitForWeb, undefined);
+      }
+      if (waitForWeb !== undefined && address === 'shop.auth') {
+        yield* Deferred.await(waitForWeb).pipe(Effect.timeoutOption(Duration.millis(500)));
       }
       return respond(platform, method, url, body);
     }),
@@ -291,7 +293,7 @@ function program(authArtifact = artifact, webArtifact = artifact) {
   }) as Effect.Effect<void>;
 }
 
-test("an unchanged deploy keeps the deployment of a service that reads another service's url", async () => {
+test("an unchanged deploy keeps the deployment of a consumer of the producer's url", async () => {
   const { platform, createdFor, stack } = fakePlatform();
 
   await runScratch(stack.deploy(program()));
@@ -304,7 +306,7 @@ test("an unchanged deploy keeps the deployment of a service that reads another s
   expect(createdFor('shop.web')).toHaveLength(1);
 });
 
-test('a new artifact for the service that is read replaces its deployment and keeps the reading service', async () => {
+test("a new artifact for the producer replaces its deployment and keeps the consumer's", async () => {
   const { createdFor, stack } = fakePlatform();
 
   await runScratch(stack.deploy(program()));
@@ -314,27 +316,27 @@ test('a new artifact for the service that is read replaces its deployment and ke
   expect(createdFor('shop.web')).toHaveLength(1);
 });
 
-test("on a first deploy, the service that is read is promoted before the reading service's deployment is created", async () => {
+test("on a first deploy, the producer is promoted before the consumer's deployment is created", async () => {
   const { platform, stack } = fakePlatform();
-  platform.gate = Deferred.makeUnsafe<void>();
+  platform.authCreateWaitsForWeb = Deferred.makeUnsafe<void>();
 
   await runScratch(stack.deploy(program()));
 
-  expect(platform.events.indexOf('promote:shop.auth')).toBeLessThan(
-    platform.events.indexOf('create:shop.web'),
-  );
+  expect(
+    platform.events.filter((event) => event === 'promote:shop.auth' || event === 'create:shop.web'),
+  ).toEqual(['promote:shop.auth', 'create:shop.web']);
 });
 
-test("when both artifacts change, the service that is read is promoted before the reading service's new deployment is created", async () => {
+test("when both artifacts change, the producer is promoted before the consumer's new deployment is created", async () => {
   const { platform, createdFor, stack } = fakePlatform();
   await runScratch(stack.deploy(program()));
   platform.events.length = 0;
-  platform.gate = Deferred.makeUnsafe<void>();
+  platform.authCreateWaitsForWeb = Deferred.makeUnsafe<void>();
 
   await runScratch(stack.deploy(program(changedArtifact, changedArtifact)));
 
   expect(createdFor('shop.web')).toHaveLength(2);
-  expect(platform.events.indexOf('promote:shop.auth')).toBeLessThan(
-    platform.events.indexOf('create:shop.web'),
-  );
+  expect(
+    platform.events.filter((event) => event === 'promote:shop.auth' || event === 'create:shop.web'),
+  ).toEqual(['promote:shop.auth', 'create:shop.web']);
 });

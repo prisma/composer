@@ -183,23 +183,23 @@ describe('appAfter — the edge Alchemy actually plans on', () => {
     ]);
   });
 
-  test("a provider's outputs are upstream of the deployment, and it still resolves to the app id", () => {
-    const provider = registered(
-      Prisma.App('provider-svc', {
+  test("a producer's outputs are upstream of the deployment, and it still resolves to the app id", () => {
+    const producer = registered(
+      Prisma.App('producer-svc', {
         project: 'proj-1',
-        displayName: 'provider',
+        displayName: 'producer',
         regionId: 'us-east-1',
       }),
     );
-    const edge = appAfter(app.appId, [], [provider.appId]);
+    const edge = appAfter(app.appId, [], [producer.appId]);
 
     expect(Object.keys(Output.upstreamAny({ app: edge })).sort()).toEqual(
-      ['auth-svc', 'provider-svc'].sort(),
+      ['auth-svc', 'producer-svc'].sort(),
     );
     const resolved = Effect.runSync(
       Output.evaluate(edge, {
         'auth-svc': { appId: 'app-123' },
-        'provider-svc': { appId: 'app-456' },
+        'producer-svc': { appId: 'app-456' },
       }) as Effect.Effect<string>,
     );
     expect(resolved).toBe('app-123');

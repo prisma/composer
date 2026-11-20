@@ -353,7 +353,8 @@ export function computeDescriptor(
 
     deploy: ({ id, address, graph, lowered, preflight }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
-        const providerOutputs = graph.edges
+        // Only to order this deployment after its producers are live; their values reach it through the rows and triggers.
+        const producerOutputs = graph.edges
           .filter((edge) => edge.kind === 'dependency' && edge.to === id)
           .flatMap((edge) => Object.values(lowered.get(edge.from) ?? {}))
           .filter(Output.isOutput);
@@ -375,7 +376,7 @@ export function computeDescriptor(
         const deployment = yield* Prisma.Deployment(resourceId(address, 'deployment'), {
           // `app` carries the ordering edges as well as the app id — see
           // `appAfter` for why it is the only prop that can.
-          app: appAfter(provisioned.serviceId, serialized.environment, providerOutputs),
+          app: appAfter(provisioned.serviceId, serialized.environment, producerOutputs),
           artifactPath: artifact.path,
           // The artifact IS a gzipped tar (see @internal/lowering's packager);
           // upstream sends this as the upload's Content-Type and folds it into
@@ -399,10 +400,10 @@ export function computeDescriptor(
         const url = endpointDomainOf(provisioned, address);
         return {
           outputs: {
-            // The App's domain: one that waits for the promotion is unknown while planning, which replaces every reader's deployment.
+            // The App's domain, not the deployment's: the deployment's is unknown while planning, so every consumer of this url would get a new deployment.
             url,
             projectId: provisioned.projectId,
-            // Waits for the promotion, because a custom domain is bound to the live version.
+            // From the deployment, so it resolves once this service is live: a custom domain binds to the live version, and its consumers' deployments wait for it.
             serviceId: deployment.appId,
           },
           entities: [

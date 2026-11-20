@@ -2,7 +2,7 @@
  * The service's own origin as a reserved provider param (ADR-0031): the ONE
  * brand and the ONE entry — shared by control.ts (which registers the
  * deploy-side value function that resolves the provisioned service's
- * `endpointDomain` — see its `selfOriginValue`) and compute.ts (which
+ * `endpointDomain` through `endpointDomainOf`) and compute.ts (which
  * validates and stashes the row at boot through the generic
  * `stashProviderParams` loop), so writer and reader cannot drift.
  *
