@@ -1,5 +1,7 @@
 # ADR-0044: Errors are structural envelopes with dotted namespace codes
 
+Amended 2026-11-20: a converge failure reason's tag is the code of a structured error a provider failed with, and that code can belong to another product, such as Prisma ORM's `MIGRATION.MARKER_MISMATCH`. It names no Composer namespace and is not in the registry below.
+
 Amended by [ADR-0068](ADR-0068-destroy-runs-alchemy-in-process.md): `destroy` has no Alchemy child either, so no command passes a child's exit status through, and `DEPLOY.ALCHEMY_BIN_MISSING`, `DEPLOY.NODE_MISSING` and `DEPLOY.STACK_WRITE_FAILED` are retired.
 
 Amended by [ADR-0067](ADR-0067-prisma-dev-converges-in-a-worker-thread.md): `prisma dev` has no Alchemy child. A dev converge that failed or could not start is `DEV.CONVERGE_FAILED`, which carries the tag and message of each error the engine failed with when the engine failed, and the child exit-status passthrough applies to `destroy` only.
