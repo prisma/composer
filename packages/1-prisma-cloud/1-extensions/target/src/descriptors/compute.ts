@@ -105,16 +105,23 @@ function originOf(
         `address — known services: ${known}.`,
     );
   }
-  return endpointDomainOf(provisioned, target);
+  return endpointDomainOf(
+    provisioned,
+    target,
+    `cannot resolve serviceOrigin("${target}") for "${consumer}"`,
+  );
 }
 
 export function endpointDomainOf(
   provisioned: ServiceProvisionedAttributes,
   address: string,
+  consequence?: string,
 ): Output.Output<string> {
   return Output.map(provisioned.endpointDomain, (domain) => {
     if (domain === undefined) {
-      throw new Error(`the App for "${address}" reported no endpoint domain.`);
+      throw new Error(
+        `the App for "${address}" reported no endpoint domain${consequence === undefined ? '' : `: ${consequence}`}.`,
+      );
     }
     return domain;
   });
