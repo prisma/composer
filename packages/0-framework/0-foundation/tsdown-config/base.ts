@@ -1,15 +1,18 @@
 import type { Rolldown, UserConfig } from 'tsdown';
 
-// Bundlers do not read a built input's own source map, so bundling another workspace
+// Rolldown does not read a built input's own source map, so bundling another workspace
 // package's dist would name that dist as the source. Loading the map lets rolldown compose it.
 export const carryIncomingSourceMaps: Rolldown.Plugin = {
   name: 'carry-incoming-source-maps',
   load: {
-    filter: { id: { include: /\.(?:m?js|d\.m?ts)$/, exclude: /[\\/]node_modules[\\/]/ } },
+    filter: {
+      id: { include: /\.(?:m?js|d\.m?ts)$/, exclude: [/^\0/, /[\\/]node_modules[\\/]/] },
+    },
     async handler(id) {
-      const code = await this.fs.readFile(id, { encoding: 'utf8' });
+      const code = await this.fs.readFile(id, { encoding: 'utf8' }).catch(() => null);
+      if (code === null) return null;
       const mapUrl = /\/\/# sourceMappingURL=(\S+)\s*$/.exec(code)?.[1];
-      if (mapUrl === undefined || mapUrl.startsWith('data:')) return null;
+      if (mapUrl === undefined || !isPlainRelativePath(mapUrl)) return null;
       const directory = id.slice(0, Math.max(id.lastIndexOf('/'), id.lastIndexOf('\\')) + 1);
       return {
         code,
@@ -18,6 +21,10 @@ export const carryIncomingSourceMaps: Rolldown.Plugin = {
     },
   },
 };
+
+function isPlainRelativePath(url: string): boolean {
+  return !/^(?:[a-z][a-z0-9+.-]*:|[\\/])/i.test(url);
+}
 
 /**
  * Base `tsdown` configuration for the workspace. Mirrors prisma/orm's

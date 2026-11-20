@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
-import { sourceMapProblems } from './check-published-source-maps.mjs';
+import { sourceMapProblems } from './check-published-source-maps-utils.mjs';
 
 const root = mkdtempSync(join(tmpdir(), 'published-source-maps-'));
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -41,7 +41,8 @@ describe('sourceMapProblems', () => {
           '../../node_modules/kysely/dist/index.js',
         ]),
         'index.d.mts.map': { version: 3, sources: ['../../core/src/index.ts'], mappings: '' },
-        'reexports.mjs': 'import { f } from "./index.mjs";\nexport { f };\n',
+        'reexports.mjs': 'import { t as f } from "./index.mjs";\nexport { f };\n',
+        'star.mjs': 'export * from "./index.mjs";\nexport { f as g } from "./index.mjs";\n',
         'rolldown-runtime-abc.mjs': 'var x = 1;\nexport { x };\n',
       }),
       [],
@@ -52,6 +53,16 @@ describe('sourceMapProblems', () => {
     const problems = problemsFor({ 'index.mjs': code });
     assert.equal(problems.length, 1);
     assert.match(problems[0], /index\.mjs: has no source map/);
+  });
+
+  it('fails a .mjs without a map whose lines start with import or export but hold code', () => {
+    const problems = problemsFor({
+      'a.mjs': 'export function f() { return 1; }\n',
+      'b.mjs': 'import "x"; const y = 2; export { y };\n',
+    });
+    assert.equal(problems.length, 2);
+    assert.match(problems[0], /a\.mjs: has no source map/);
+    assert.match(problems[1], /b\.mjs: has no source map/);
   });
 
   it('fails an own-code source inside a dist folder, including one under node_modules/@internal', () => {
