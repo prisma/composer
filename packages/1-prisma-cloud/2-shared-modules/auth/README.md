@@ -270,9 +270,9 @@ const server = await startLocalAuthServer({ databaseUrl }); // e.g. `prisma dev`
 //                          verification / magic links straight from here
 ```
 
-Real Better Auth, the real handlers, the same fetch topology as production;
-the pack's schema applies idempotently at boot; a fixed dev secret; rpc runs
-keyless. No cloud credentials anywhere.
+Real Better Auth, the real handlers, the same fetch topology as production; the pack's schema applies idempotently at boot; a fixed dev secret; rpc runs keyless. No cloud credentials anywhere.
+
+The helper applies the schema with the Prisma ORM your app installs (`@prisma/orm-postgres`, a required peer, and `@prisma/orm-toolchain`, which Composer depends on). It carries no copy of its own.
 
 ## Email flows
 

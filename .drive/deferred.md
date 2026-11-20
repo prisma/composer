@@ -287,9 +287,14 @@ ADR-0053 (the commands). What we deliberately didn't do:
 
 # Alchemy footprint — deferred (2026-10-30)
 
-- **`@alchemy.run/prisma` still installs `@distilled.cloud/aws` (143 MB).** Only its S3 bucket bindings (`ReadBucket`, `WriteBucket`, `internal/BucketClient`) use it, and Composer never calls them. Composer cannot remove it for its users. The fix is upstream: a small Prisma Cloud bucket client in Alchemy's `packages/prisma` that signs with `@distilled.cloud/aws4signer` and covers only what Prisma Cloud's bucket API supports. A change is being prepared for Alchemy's maintainers. When it ships, bump `alchemy` and `@alchemy.run/prisma` together; a Composer app should then install about 330 MB instead of 473 MB.
-- **Two copies of `@prisma/dev`.** `@alchemy.run/prisma` depends on `@prisma/dev ^0.20.0` and Composer on `^0.25.2`, so npm nests a second copy (about 25 MB with its own dependencies). Alchemy beta 83 had the same dependency. Ask upstream to widen its range, or move to a release that does.
-- **`@prisma/composer-prisma-cloud` ships 28 MB of source maps and a 24 MB `auth/testing` bundle.** Of the package's 45 MB, `dist/auth/testing.mjs` is 9 MB and its map 15 MB. The `./auth/testing` export is a test helper that inlines a large dependency tree. Find what it inlines, and decide whether test helpers and source maps belong in the published package. This is Composer's own packaging, not Alchemy's.
+- **`@alchemy.run/prisma` still installs `@distilled.cloud/aws` (143 MB).** Only its S3 bucket bindings use it, and Composer never calls them. The fix first proposed to Alchemy (a small Prisma Cloud bucket client inside Alchemy's `packages/prisma`) was rejected upstream. The plan now is a standalone `@distilled.cloud/s3` package, merged in Distilled on 2026-11-05. As of 2026-11-14 it is not published, and Alchemy's Prisma provider does not use it yet. Composer has nothing to do until it does; then bump `alchemy` and `@alchemy.run/prisma` together.
+
+The other installed weight, largest first:
+
+- **`@prisma/dev` ships PGlite files that `@electric-sql/pglite` also ships**, about 14.5 MB. That is an earlier count, not re-measured. The fix belongs in `@prisma/dev`'s packaging.
+- **`prettier`, 11.4 MB.** It is installed because the Prisma ORM toolchain imports it eagerly. The fix is a change in the ORM repository.
+- **`esbuild`, 10.6 MB.** Composer uses it only to build the boot wrapper. Switching to rolldown would pin rolldown to the version Alchemy uses; not decided.
+- **`redis`, about 5 MB.** It is a required peer of `@effect/platform-node`. The fix is upstream in Effect.
 
 # Module input — deferred (2026-10-29)
 
