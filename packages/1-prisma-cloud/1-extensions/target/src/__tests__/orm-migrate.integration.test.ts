@@ -37,6 +37,12 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createPostgresControlClient } from '@prisma/orm-postgres/control';
+import { writeRef } from '@prisma/orm-toolchain/migration-tools/refs';
+import {
+  APP_SPACE_ID,
+  spaceMigrationDirectory,
+  spaceRefsDirectory,
+} from '@prisma/orm-toolchain/migration-tools/spaces';
 import {
   applyOrmMigration,
   OrmMigrationError,
@@ -98,52 +104,49 @@ async function readMarker(
   }
 }
 
-describe.skipIf(pg === undefined)(
-  'applyOrmMigration — no authored graph (structured refusal)',
-  () => {
-    if (pg === undefined) return;
-    let migrationsDir: string;
-    // A database this suite owns — never the shared `postgres`/`public` the
-    // state-store suite uses — so the empty-DB assertion holds in any order.
-    let db: TestDatabase;
+describe.skipIf(pg === undefined)('applyOrmMigration — no authored graph', () => {
+  if (pg === undefined) return;
+  let migrationsDir: string;
+  // A database this suite owns — never the shared `postgres`/`public` the
+  // state-store suite uses — so the empty-DB assertion holds in any order.
+  let db: TestDatabase;
 
-    beforeAll(async () => {
-      migrationsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pn-refuse-'));
-      db = await createTestDatabase(pg.url);
-    });
-    afterAll(async () => {
-      await db?.drop().catch(() => {});
-      if (migrationsDir !== undefined) fs.rmSync(migrationsDir, { recursive: true, force: true });
-    });
+  beforeAll(async () => {
+    migrationsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pn-refuse-'));
+    db = await createTestDatabase(pg.url);
+  });
+  afterAll(async () => {
+    await db?.drop().catch(() => {});
+    if (migrationsDir !== undefined) fs.rmSync(migrationsDir, { recursive: true, force: true });
+  });
 
-    test("empty DB, empty migrations dir → Prisma ORM's no-path error; DB untouched", async () => {
-      expect(await readMarker(db.url)).toBeNull();
+  test("empty DB, empty migrations dir → Prisma ORM's no-path error; DB untouched", async () => {
+    expect(await readMarker(db.url)).toBeNull();
 
-      const ref = await resolveTargetRef(migrationsDir, widgetContractJson);
-      expect(ref).toEqual({ hash: widgetHash, invariants: [] });
+    const ref = await resolveTargetRef(migrationsDir, widgetContractJson);
+    expect(ref).toEqual({ hash: widgetHash, invariants: [] });
 
-      const error = await rejection(
-        applyOrmMigration({ url: db.url, contractJson: widgetContractJson, migrationsDir, ref }),
-      );
+    const error = await rejection(
+      applyOrmMigration({ url: db.url, contractJson: widgetContractJson, migrationsDir, ref }),
+    );
 
-      expect(error.code).toBe('MIGRATION.PATH_UNREACHABLE');
-      expect(error.message).toBe(
-        [
-          '[MIGRATION.PATH_UNREACHABLE] No on-disk migrations for contract space "app"',
-          `  why: migrate is replay-only: a contract space that declares managed storage elements must have an authored migration graph on disk. Space "app" has no migrations under \`${migrationsDir}/app/\` but its head ref targets "${widgetHash}".`,
-          '→ Plan the missing edge: prisma migration plan --name <slug>',
-          '→ Apply it: prisma db migrate',
-          '→ A rollback (reverse) plan is expected to contain destructive (DROP) operations — review them before applying',
-          '→ Plan a rename with --rename old:new; re-adding a required field without a safe default, or a type change that needs data, may need you to fill in the planned migration.ts',
-          '→ Inspect the on-disk graph: prisma migration list',
-          '→ Inspect a bundle in the path you expected: prisma migration show <bundle>',
-        ].join('\n'),
-      );
-      // Nothing was applied — the pipeline never synthesizes.
-      expect(await readMarker(db.url)).toBeNull();
-    });
-  },
-);
+    expect(error.code).toBe('MIGRATION.PATH_UNREACHABLE');
+    expect(error.message).toBe(
+      [
+        'No on-disk migrations for contract space "app"',
+        `  why: migrate is replay-only: a contract space that declares managed storage elements must have an authored migration graph on disk. Space "app" has no migrations under \`${migrationsDir}/app/\` but its head ref targets "${widgetHash}".`,
+        '→ Plan the missing edge: prisma migration plan --name <slug>',
+        '→ Apply it: prisma db migrate',
+        '→ A rollback (reverse) plan is expected to contain destructive (DROP) operations — review them before applying',
+        '→ Plan a rename with --rename old:new; re-adding a required field without a safe default, or a type change that needs data, may need you to fill in the planned migration.ts',
+        '→ Inspect the on-disk graph: prisma migration list',
+        '→ Inspect a bundle in the path you expected: prisma migration show <bundle>',
+      ].join('\n'),
+    );
+    // Nothing was applied — the pipeline never synthesizes.
+    expect(await readMarker(db.url)).toBeNull();
+  });
+});
 
 describe.skipIf(pg === undefined)('applyOrmMigration — authored baseline (replay path)', () => {
   if (pg === undefined) return;
@@ -213,7 +216,7 @@ describe.skipIf(pg === undefined)('applyOrmMigration — authored baseline (repl
     expect(error.code).toBe('MIGRATION.PATH_UNREACHABLE');
     expect(error.message).toBe(
       [
-        '[MIGRATION.PATH_UNREACHABLE] Current contract has no planned migration path',
+        'Current contract has no planned migration path',
         `  why: No migration edge connects the current state "${widgetHash}" to the target "${gadgetHash}" in contract space "app". The on-disk migration graph does not join the two, and migrate replays existing edges — it never invents one.`,
         `→ Plan the missing edge: prisma migration plan --from ${widgetHash} --to ${gadgetHash} --name <slug>`,
         `→ Apply it: prisma db migrate --to ${gadgetHash}`,
@@ -246,7 +249,7 @@ describe.skipIf(pg === undefined)('applyOrmMigration — authored baseline (repl
       expect(error.code).toBe('MIGRATION.MARKER_MISMATCH');
       expect(error.message).toBe(
         [
-          '[MIGRATION.MARKER_MISMATCH] The database is at a contract that is not in the migration graph',
+          'The database is at a contract that is not in the migration graph',
           `  why: The database's marker names ${widgetHash}, which no migration in ${path.relative(process.cwd(), path.join(otherDir, 'app'))} starts or ends at. A migration it applied was planned again or deleted, or \`db update\` moved it to a contract no migration ends at.`,
           '→ Unless this database changes only through migrations, as production does, move it with db update; its data stays:',
           '→ Preview the changes: prisma db update --dry-run --db <url>',
@@ -333,13 +336,43 @@ describe.skipIf(pg === undefined)(
       expect(error.code).toBe('MIGRATION.EXECUTION_FAILED');
       expect(error.message).toBe(
         [
-          '[MIGRATION.EXECUTION_FAILED] Operation table.Widget failed during execution: create table "Widget"',
+          'Operation table.Widget failed during execution: create table "Widget"',
           '  why: division by zero. The failed apply changed nothing.',
           '→ Resolve the cause the failure names, then re-run `prisma db migrate --db <url>`',
           '  docs: https://docs.prisma.io/docs/orm/v8/reference/error-reference#MIGRATION.EXECUTION_FAILED',
         ].join('\n'),
       );
       expect(await readMarker(db.url)).toBeNull();
+    });
+
+    test('a deploy pinned to a ref is told to re-run to that ref', async () => {
+      await writeRef(
+        spaceRefsDirectory(spaceMigrationDirectory(migrationsDir, APP_SPACE_ID)),
+        'pinned',
+        {
+          hash: widgetHash,
+          invariants: [],
+        },
+      );
+      const ref = await resolveTargetRef(migrationsDir, widgetContractJson, 'pinned');
+      const error = await rejection(
+        applyOrmMigration({
+          url: db.url,
+          contractJson: widgetContractJson,
+          migrationsDir,
+          ref,
+          refName: 'pinned',
+        }),
+      );
+
+      expect(error.message).toBe(
+        [
+          'Operation table.Widget failed during execution: create table "Widget"',
+          '  why: division by zero. The failed apply changed nothing.',
+          '→ Resolve the cause the failure names, then re-run `prisma db migrate --to pinned --db <url>`',
+          '  docs: https://docs.prisma.io/docs/orm/v8/reference/error-reference#MIGRATION.EXECUTION_FAILED',
+        ].join('\n'),
+      );
     });
   },
 );
@@ -358,6 +391,39 @@ describe.skipIf(pg === undefined)(
     afterAll(async () => {
       pg.stop();
       if (migrationsDir !== undefined) fs.rmSync(migrationsDir, { recursive: true, force: true });
+    });
+
+    test('a ref requiring an invariant no migration provides → the error the ORM throws, at once', async () => {
+      await writeRef(
+        spaceRefsDirectory(spaceMigrationDirectory(migrationsDir, APP_SPACE_ID)),
+        'needs-missing',
+        { hash: widgetHash, invariants: ['never-provided'] },
+      );
+      const db = await createTestDatabase(pg.url);
+      try {
+        const ref = await resolveTargetRef(migrationsDir, widgetContractJson, 'needs-missing');
+        const error = await rejection(
+          applyOrmMigration({
+            url: db.url,
+            contractJson: widgetContractJson,
+            migrationsDir,
+            ref,
+            refName: 'needs-missing',
+          }),
+        );
+
+        expect(error.code).toBe('MIGRATION.NO_INVARIANT_PATH');
+        expect(error.message).toBe(
+          [
+            'No path covers the required invariants',
+            '  why: Ref "needs-missing" requires invariants the reachable path doesn\'t cover. required=["never-provided"], missing=["never-provided"].',
+            '→ Add a migration on the path that runs `dataTransform({ invariantId: "<id>", … })` for each missing invariant, or retarget the ref to a hash whose path already provides them.',
+          ].join('\n'),
+        );
+        expect(await readMarker(db.url)).toBeNull();
+      } finally {
+        await db.drop().catch(() => {});
+      }
     });
 
     test('fresh DB + ref with invariants → migrate; marker records the invariant; re-run no-ops', async () => {

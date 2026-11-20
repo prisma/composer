@@ -32,7 +32,12 @@
  * schema are left as the last committed step.
  */
 
-import { type ControlClient, createPostgresControlClient } from '@prisma/orm-postgres/control';
+import {
+  type CliErrorEnvelope,
+  isStructuredError,
+  type StructuredError,
+} from '@internal/foundation/errors';
+import { createPostgresControlClient } from '@prisma/orm-postgres/control';
 import { readRef } from '@prisma/orm-toolchain/migration-tools/refs';
 import {
   APP_SPACE_ID,
@@ -77,13 +82,61 @@ export type OrmMigrationFailureCode =
   | 'CONTRACT_IDENTITY_MISMATCH'
   | 'TARGET_REF_NOT_FOUND';
 
-/** The error a failed Prisma ORM `migrate` returns. */
-export type OrmMigrateFailure = Extract<
-  Awaited<ReturnType<ControlClient['migrate']>>,
-  { readonly ok: false }
->['failure'];
+interface OrmNextAction {
+  readonly label: string;
+  readonly command?: string | undefined;
+  readonly url?: string | undefined;
+}
 
-type OrmNextAction = NonNullable<OrmMigrateFailure['nextActions']>[number];
+/** An error Prisma ORM reports when `migrate` fails, whether it returns it or throws it. */
+export interface OrmFailure {
+  readonly code: `${string}.${string}`;
+  readonly message: string;
+  readonly why?: string | undefined;
+  readonly fix?: string | undefined;
+  readonly nextActions?: readonly OrmNextAction[] | undefined;
+  readonly docsUrl?: string | undefined;
+}
+
+function isNextAction(value: unknown): value is OrmNextAction {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'label' in value &&
+    typeof value.label === 'string' &&
+    (!('command' in value) || value.command === undefined || typeof value.command === 'string') &&
+    (!('url' in value) || value.url === undefined || typeof value.url === 'string')
+  );
+}
+
+/**
+ * Whether Prisma ORM threw `error` to refuse the migration, rather than because
+ * the connection failed: its connection failures carry `DRIVER.*` codes, a raw
+ * driver error has no dotted code, and a failed marker read wraps whatever the
+ * driver threw in `CONTRACT.MARKER_READ_FAILED`.
+ */
+function isOrmRefusal(error: unknown): error is StructuredError {
+  return (
+    isStructuredError(error) &&
+    !error.code.startsWith('DRIVER.') &&
+    error.code !== 'CONTRACT.MARKER_READ_FAILED'
+  );
+}
+
+function thrownFailure(error: StructuredError): OrmFailure {
+  const nextActions =
+    'nextActions' in error && Array.isArray(error.nextActions)
+      ? error.nextActions.filter(isNextAction)
+      : undefined;
+  return {
+    code: error.code,
+    message: error.message,
+    why: error.why,
+    fix: error.fix,
+    nextActions,
+    docsUrl: error.docsUrl,
+  };
+}
 
 /** Prisma ORM's advice names its binary `{bin}`; Composer's commands run in the same `prisma` CLI. */
 function withBinaryName(text: string): string {
@@ -97,22 +150,22 @@ function nextActionLine(action: OrmNextAction): string {
     : `→ ${action.label}: ${target}`;
 }
 
-/** The failure as the `prisma` CLI prints a diagnostic: code and summary, why, next actions (the fix when there are none), docs. */
-function migrateFailureText(failure: OrmMigrateFailure): string {
+function fixLines(fix: string | undefined): readonly string[] {
+  return (fix ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => `→ ${line}`);
+}
+
+function migrateFailureText(failure: OrmFailure): string {
   const [whyFirst, ...whyRest] = failure.why?.split('\n') ?? [];
-  const actions = failure.nextActions ?? [];
-  const advice =
-    actions.length > 0
-      ? actions.map(nextActionLine)
-      : failure.fix === undefined
-        ? []
-        : [`→ ${failure.fix}`];
   return withBinaryName(
     [
-      `[${failure.code}] ${failure.message}`,
+      failure.message,
       ...(whyFirst === undefined ? [] : [`  why: ${whyFirst}`]),
       ...whyRest.map((line) => `       ${line}`),
-      ...advice,
+      ...(failure.nextActions?.map(nextActionLine) ?? fixLines(failure.fix)),
       ...(failure.docsUrl === undefined ? [] : [`  docs: ${failure.docsUrl}`]),
     ].join('\n'),
   );
@@ -125,19 +178,30 @@ function migrateFailureText(failure: OrmMigrateFailure): string {
  */
 export class OrmMigrationError extends Error {
   readonly _tag = 'OrmMigrationError';
-  readonly code: OrmMigrationFailureCode | OrmMigrateFailure['code'];
+  readonly code: OrmMigrationFailureCode | OrmFailure['code'];
   readonly why: string | undefined;
   constructor(code: OrmMigrationFailureCode, summary: string, why?: string);
-  constructor(failure: OrmMigrateFailure);
-  constructor(source: OrmMigrationFailureCode | OrmMigrateFailure, summary?: string, why?: string) {
+  constructor(failure: OrmFailure);
+  constructor(source: OrmMigrationFailureCode | OrmFailure, summary?: string, why?: string) {
     super(
       typeof source === 'string'
         ? `Prisma ORM migrate (${source}): ${summary}`
         : migrateFailureText(source),
     );
-    this.name = 'OrmMigrationError';
+    // Recognized structurally as a structured error, so a failed converge reports the ORM's code as its tag.
+    this.name = typeof source === 'string' ? 'OrmMigrationError' : 'CliStructuredError';
     this.code = typeof source === 'string' ? source : source.code;
     this.why = typeof source === 'string' ? why : source.why;
+  }
+
+  toEnvelope(): CliErrorEnvelope {
+    return {
+      ok: false,
+      code: this.code,
+      severity: 'error',
+      summary: this.message,
+      ...(this.why === undefined ? {} : { why: this.why }),
+    };
   }
 }
 
@@ -272,7 +336,6 @@ export async function applyOrmMigration(opts: {
   );
 }
 
-/** The `--config` the ORM's commands repeat: none for the `prisma.config.ts` they find in the working directory themselves. */
 function printedConfigPath(configPath: string | undefined): string | undefined {
   if (configPath === undefined) return undefined;
   const printed = relative(process.cwd(), configPath);
@@ -314,18 +377,25 @@ async function runMigration(
     // semantics apply. Fails on no path / runner error; never synthesizes.
     // The database is the one this deploy provisioned, not the one
     // prisma.config.ts names, so the ORM's advice prints `--db <url>`.
-    const result = await client.migrate({
-      contract: contractJson,
-      migrationsDir,
-      invocation: {
-        cwd: process.cwd(),
-        configPath: printedConfigPath(configPath),
-        dbGiven: true,
-      },
-      ...(refName !== undefined
-        ? { refHash: ref.hash, refInvariants: ref.invariants, refName }
-        : {}),
-    });
+    let result: Awaited<ReturnType<typeof client.migrate>>;
+    try {
+      result = await client.migrate({
+        contract: contractJson,
+        migrationsDir,
+        invocation: {
+          cwd: process.cwd(),
+          configPath: printedConfigPath(configPath),
+          dbGiven: true,
+          rerunArgs: refName === undefined ? [] : ['--to', refName],
+        },
+        ...(refName !== undefined
+          ? { refHash: ref.hash, refInvariants: ref.invariants, refName }
+          : {}),
+      });
+    } catch (error) {
+      if (isOrmRefusal(error)) throw new OrmMigrationError(thrownFailure(error));
+      throw error;
+    }
     if (!result.ok) throw new OrmMigrationError(result.failure);
     return { action, targetHash: ref.hash, markerHashBefore };
   } finally {
