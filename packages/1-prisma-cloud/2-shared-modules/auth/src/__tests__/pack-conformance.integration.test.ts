@@ -35,6 +35,7 @@ import { ensureLocalAuthSchema } from '../execution/local-schema.ts';
 import { AUTH_PACK_ID, AUTH_SCHEMA, authPack } from '../pack/index.ts';
 import {
   createTestDatabase,
+  SCHEMA_BOOTSTRAP_TIMEOUT_MS,
   startTestPostgres,
   type TestDatabase,
   type TestPostgres,
@@ -109,26 +110,30 @@ describe.skipIf(pgServer === undefined)('auth pack schema conformance', () => {
     if (migrationsDir !== undefined) fs.rmSync(migrationsDir, { recursive: true, force: true });
   });
 
-  test('a deploy-path migration (empty app space + authPack) leaves Better Auth with zero pending changes', async () => {
-    const client = createPostgresControlClient({
-      connection: db.url,
-      extensions: [authPack],
-    });
-    await client.connect();
-    try {
-      const result = await client.dbInit({
-        contract: emptyAppContractJson,
-        mode: 'apply',
-        migrationsDir,
-        invocation: { cwd: process.cwd(), configPath: undefined, dbGiven: false },
+  test(
+    'a deploy-path migration (empty app space + authPack) leaves Better Auth with zero pending changes',
+    async () => {
+      const client = createPostgresControlClient({
+        connection: db.url,
+        extensions: [authPack],
       });
-      expect(result.ok).toBe(true);
-    } finally {
-      await client.close();
-    }
+      await client.connect();
+      try {
+        const result = await client.dbInit({
+          contract: emptyAppContractJson,
+          mode: 'apply',
+          migrationsDir,
+          invocation: { cwd: process.cwd(), configPath: undefined, dbGiven: false },
+        });
+        expect(result.ok).toBe(true);
+      } finally {
+        await client.close();
+      }
 
-    await expectZeroPendingChanges(db.url);
-  });
+      await expectZeroPendingChanges(db.url);
+    },
+    SCHEMA_BOOTSTRAP_TIMEOUT_MS,
+  );
 
   test('the auth marker row is signed at the pack head', async () => {
     const client = new pg.Client({ connectionString: db.url });
@@ -154,18 +159,22 @@ describe.skipIf(pgServer === undefined)(
       pgServer.stop();
     });
 
-    test('boots a fresh database to a conforming schema; a second boot is a marker no-op', async () => {
-      const db = await createTestDatabase(pgServer.url);
-      try {
-        await ensureLocalAuthSchema(db.url);
-        // Repeat boots are the local server's contract: the signed marker
-        // makes the second call a clean no-op.
-        await ensureLocalAuthSchema(db.url);
-        await expectZeroPendingChanges(db.url);
-      } finally {
-        await db.drop().catch(() => {});
-      }
-    });
+    test(
+      'boots a fresh database to a conforming schema; a second boot is a marker no-op',
+      async () => {
+        const db = await createTestDatabase(pgServer.url);
+        try {
+          await ensureLocalAuthSchema(db.url);
+          // Repeat boots are the local server's contract: the signed marker
+          // makes the second call a clean no-op.
+          await ensureLocalAuthSchema(db.url);
+          await expectZeroPendingChanges(db.url);
+        } finally {
+          await db.drop().catch(() => {});
+        }
+      },
+      SCHEMA_BOOTSTRAP_TIMEOUT_MS,
+    );
 
     test('refuses a database that carries other contract spaces without the auth pack', async () => {
       const db = await createTestDatabase(pgServer.url);
