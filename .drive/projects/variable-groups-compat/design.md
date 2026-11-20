@@ -148,7 +148,7 @@ With the pull request above merged, no value in the map depends on a deployment:
 
 **Keys a service used to send are deleted.** A key the service's code no longer declares, such as a removed dependency's params or a renamed generated value, would otherwise stay stored: readable by every later deployment of that service, and counted toward the limit of 50, with no way for the user to delete it. So Composer keeps, for each service, a record of every key it has ever sent, and sends `null` for each recorded key that is not in this deploy's map.
 
-- The record is a Composer-owned Alchemy resource in the deploy state, one per service, like the one that keeps a generated value stable (`GeneratedParam`). Its input is this deploy's key names. Its output is every key name it has been given, ever. It holds names, never values.
+- The record is a Composer-owned Alchemy resource in the deploy state, `PrismaCloud.SentVariableNames` with the ID `<address>.sent-variable-names`, one per service, like the one that keeps a generated value stable (`GeneratedParam`). Its input is this deploy's key names. Its output is every key name it has been given, ever. It holds names, never values. As built, it is registered for the hosted and the local target.
 - When the key names do not change, the record does not change, its output is known at plan time, and the map is the same as last time. So the `null`s are stable and replace nothing.
 - When the key names change, the record changes and so does the map. That deploy replaces the deployment anyway, because the keys changed.
 - The record starts at the first deploy with this version. Before it, Composer wrote rows, and Alchemy deleted the rows of removed keys itself.
@@ -168,7 +168,7 @@ variables?: Record<string, Redacted.Redacted<string> | null>;
 - **Declared `variables` with no recorded hash also replaces.** This differs from `triggers`, which records its first hash through an update. An update creates no deployment, so the values would never reach the platform.
 - Leaving `variables` unset sends no field, so every existing user of the resource is unaffected.
 
-The generated client `@distilled.cloud/prisma` gains the field on the request type. It is generated from the platform's published production API description, and it can also carry a hand-written patch for a field the description does not have yet.
+The generated client `@distilled.cloud/prisma` gains the field on the request type. It is generated from the platform's published production API description, and it can also carry a hand-written patch for a field the description does not have yet. As built, both packages carry the field as `pnpm` patches under `patches/`, and the proposed upstream changes are in `slices/upstream/`.
 
 **Under `prisma dev`.** The local `Prisma.Deployment` provider takes the service's own keys from its `variables` prop, where it reads `env.json` today. A `null` entry is left out. Everything else in `materializeEnv` stays: the emulator's port is still laid over `COMPOSER_<ADDRESS>_PORT`, and the platform variables are still added. A changed `variables` is a changed prop, so a changed value still restarts the service.
 
@@ -182,14 +182,14 @@ A service that runs a dev server has no deployment, so it has no prop to carry t
 2. Alchemy then deletes the resources that are in its state and no longer declared: the old variable rows, on production and on preview. Each row is deleted after the old deployment it fed has stopped. A deployment that is still draining open connections holds its rows until a later deploy finds it stopped, so rows can remain visible in Console after the first deploy.
 3. While both exist, the service variable wins over the row.
 4. On production, the `COMPOSER_` keys leave the user's production group.
-5. A row already deleted in Console, or one the platform manages, is skipped. A row the platform refuses to delete because its recorded identity does not match is removed from the deploy state and reported as a warning that names the key, so one bad row cannot fail this deploy and every deploy after it.
+5. A row already deleted in Console, or one the platform manages, is skipped (upstream's own delete does this). A row the platform refuses to delete because its recorded identity does not match is removed from the deploy state and reported as a warning that names the key, so one bad row cannot fail this deploy and every deploy after it. As built, Composer registers the hosted `Prisma.EnvironmentVariable` provider through its own layer (`providerForDeletingOldVariableRows()` in `lowering/src/providers.ts`), whose delete catches upstream's `EnvironmentVariableConflict`, logs the warning, and succeeds, so Alchemy drops the row from state.
 6. If the deploy is interrupted after the replacements, the next deploy replaces nothing again and finishes the deletes.
 
 Deleting a row by id keeps working after override writes are rejected.
 
 **What is deleted with the rows.** The key-clash check and the code that computes the clashes: with no rows written, two rows cannot collide. One narrow case remains for an app that upgrades directly from a version before the address change: a service whose new key equals another service's old key, and which has no value for it, would receive the other service's old row once. The guide tells such an app to deploy once with any release from 0.35.0 to 0.39.0 first. `asOwnRow` is no longer applied to variables. Build reporting stops listing variable rows, except the deletes on the first deploy.
 
-**Going back to an older Composer** after a deploy with this version is not supported, and the release note says why: the older version writes rows again, and the stored service variables win over them, so a value that changed since never reaches the service.
+**Going back to an older Composer** after a deploy with this version is not possible: deploy state then holds a `PrismaCloud.SentVariableNames` resource per service, an older version registers no provider for it, and Alchemy stops while planning, before changing anything.
 
 **Not part of this:** options on `prisma deploy` that set a user's value on a service, which the platform spec proposes as `--variable`. The decision that defines platform variables says the deploy sets no user values until that has its own design.
 

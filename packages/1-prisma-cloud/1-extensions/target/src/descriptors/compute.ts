@@ -2,6 +2,7 @@
 
 import * as Prisma from '@alchemy.run/prisma';
 import type { ServiceLowering } from '@internal/core/deploy';
+import { CliStructuredError } from '@internal/foundation/errors';
 import { describeDocument, type PlatformMarkerUse } from '@internal/input-document';
 import { ARTIFACT_CONTENT_TYPE, appAfter, packageComputeArtifact } from '@internal/lowering';
 import * as Output from 'alchemy/Output';
@@ -12,15 +13,13 @@ import { preflightView } from '../control/preflight-payload.ts';
 import { GeneratedParam } from '../generated-param-resource.ts';
 import {
   fromLegacyId,
-  legacyConfigKey,
-  legacyEnvVarId,
   legacyGeneratedParamId,
-  legacyGeneratedParamVarName,
-  legacyInputKey,
   legacyNodeResourceId,
 } from '../legacy-resource-ids.ts';
+import { RESERVED_PROVIDER_PARAMS } from '../provider-params.ts';
 import { provisionedEdges } from '../provisioned-edges.ts';
 import { resourceId } from '../resource-ids.ts';
+import { SentVariableNames } from '../sent-variable-names-resource.ts';
 import { encode, type InputDocumentRow, paramEntries, serializeInput } from '../serializer.ts';
 import {
   asOwnRow,
@@ -28,6 +27,7 @@ import {
   logicalIdProp,
   projectIdOf,
   type ResolvedCloudOptions,
+  SERVICE_VARIABLE_LIMIT,
   type ServiceProvisionedAttributes,
   validatePlatformName,
   variableClassAndBranch,
@@ -54,34 +54,21 @@ export interface ComputeProvisioned {
   readonly endpointDomain: Output.Output<string | undefined>;
 }
 
-/** compute's serialize → deploy handoff: the env-var rows deploy must depend on, the deployment's replacement triggers, the resolved port it routes to, and the serialized input document (when the service declares one) for the deploy report. */
+/** A service variable's value: `Redacted` keeps it out of logs, though Alchemy writes it to deploy state in plain text. It may still be an unresolved deploy-time reference. */
+type ServiceVariableValue = Redacted.Redacted<string> | Output.Output<Redacted.Redacted<string>>;
+
+/** compute's serialize → deploy handoff. */
 export interface ComputeSerialized {
-  readonly environment: readonly Prisma.EnvironmentVariable[];
-  /**
-   * What the deploy hook declares as `Prisma.Deployment.triggers` — one member
-   * per row of `environment`, carrying the SAME value the row writes (Redacted,
-   * possibly still an unresolved Output). The platform materializes env rows
-   * into a deployment only at create (PRO-211), so a changed value must replace
-   * the deployment; upstream compares a salted hash of these to plan that
-   * replacement. Alchemy also writes the members to its state as given,
-   * `Redacted` values in plain text included. Because upstream resolves the actual
-   * values, a value re-issued under a stable resource identity (a connection
-   * rotated in place, a re-minted service key) moves the fingerprint too.
-   */
-  readonly triggers: Readonly<Record<string, unknown>>;
+  /** Every `COMPOSER_` key the service reads at boot, as its value or `null`. */
+  readonly bootVariables: Readonly<Record<string, ServiceVariableValue | null>>;
+  /** What the create-deployment request carries: `bootVariables`, plus `null` for every name Composer no longer sends. */
+  readonly requestVariables: Output.Output<Record<string, Redacted.Redacted<string> | null>>;
   /** Platform variables the service reads and Composer does not write; each joins the triggers as `<name>:updatedAt`. */
   readonly platformVariables: readonly string[];
   readonly port: number;
   readonly input?: InputDocumentRow;
 }
 
-/**
- * Every env-var value goes to the platform wrapped in `Redacted`: the
- * Management API never reads a value back, so alchemy persists the desired one
- * in state to repair drift, and `Redacted` is what keeps it out of the
- * serialized state row. A value that is still an unresolved deploy-time
- * reference is wrapped inside the map, at the same point it becomes a string.
- */
 const envValue = (
   value: string | Output.Output<string>,
 ): Redacted.Redacted<string> | Output.Output<Redacted.Redacted<string>> =>
@@ -131,11 +118,44 @@ function isComputeProvisioned(value: unknown): value is ComputeProvisioned {
   return typeof value === 'object' && value !== null && 'endpointDomain' in value;
 }
 
-/** One environment row and its trigger member: the resource AND the value it writes, so a row cannot exist without joining the deployment's replacement triggers. */
-interface EnvRow {
-  readonly record: Prisma.EnvironmentVariable;
-  readonly key: string;
-  readonly value: Redacted.Redacted<string> | Output.Output<Redacted.Redacted<string>>;
+function withNamesNoLongerSentDeleted(
+  variables: Readonly<Record<string, ServiceVariableValue | null>>,
+  everSent: Output.Output<readonly string[]>,
+): Output.Output<Record<string, Redacted.Redacted<string> | null>> {
+  const resolved: Record<string, Redacted.Redacted<string> | null> = {};
+  const pending: Output.Output<readonly [string, Redacted.Redacted<string>]>[] = [];
+  for (const [key, value] of Object.entries(variables)) {
+    if (Output.isOutput(value)) pending.push(Output.map(value, (v) => [key, v] as const));
+    else resolved[key] = value;
+  }
+  return Output.map(Output.all(everSent, Output.all(...pending)), ([names, entries]) => ({
+    ...Object.fromEntries(names.map((name) => [name, null])),
+    ...resolved,
+    ...Object.fromEntries(entries),
+  }));
+}
+
+function checkServiceVariableCount(
+  address: string,
+  variables: Readonly<Record<string, ServiceVariableValue | null>>,
+  local: boolean,
+): void {
+  const count = Object.values(variables).filter((value) => value !== null).length;
+  if (count <= SERVICE_VARIABLE_LIMIT) return;
+  throw new CliStructuredError(
+    'DEPLOY.SERVICE_VARIABLE_LIMIT',
+    `The service "${address}" needs ${count} variables, but Prisma Cloud stores at most ${SERVICE_VARIABLE_LIMIT} on one service.`,
+    {
+      why:
+        `Composer sends one variable for each of the service's params, dependency connection values and generated values, ` +
+        `and the app declares ${count} for "${address}". ` +
+        (local
+          ? '`prisma dev` refuses it as a deploy to Prisma Cloud would, before it starts or changes anything locally.'
+          : "No resource has been created, changed or deleted; the branch's application topology has already been replaced and the build recorded."),
+      fix: `Give "${address}" fewer dependencies or generated values, for example by splitting it into two services.`,
+      meta: { address, count, limit: SERVICE_VARIABLE_LIMIT },
+    },
+  );
 }
 
 const sortedMarkerNames = (markers: readonly PlatformMarkerUse[]): string[] =>
@@ -186,30 +206,18 @@ export function computeDescriptor(
       Effect.gen(function* () {
         const { address, node, graph } = ctx;
         const app = graph.root.id;
-        const classAndBranch = variableClassAndBranch(ctx.application);
-        const projectId = provisioned.projectId;
         if (node.kind !== 'service') {
           throw new Error(`prisma-cloud: cannot serialize non-service node "${address}".`);
         }
         const svc = node;
-        const rows: EnvRow[] = [];
+        // A key left out keeps the value an earlier deploy stored on the service, so every key boot reads is sent, as `null` when it has no value.
+        const bootVariables: Record<string, ServiceVariableValue | null> = {};
 
         for (const d of paramEntries(svc)) {
           const value =
             d.owner === 'service' ? config.service[d.name] : config.inputs[d.owner.input]?.[d.name];
-          // An unprovisioned optional connection param has no value yet — write
-          // no row (boot's coerce() reads a missing var as absent → undefined).
-          // Mirrors stash(), keeping writer and reader consistent.
-          if (value === undefined) continue;
-          const key = configKey(address, d);
-          const wrapped = envValue(encode(d.owner, value));
-          const record = yield* Prisma.EnvironmentVariable(resourceId(address, 'env', key), {
-            project: projectId,
-            key,
-            value: wrapped,
-            ...classAndBranch,
-          }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyConfigKey(app, address, d))));
-          rows.push({ record, key, value: wrapped });
+          bootVariables[configKey(address, d)] =
+            value === undefined ? null : envValue(encode(d.owner, value));
         }
 
         const inputRow = serializeInput(
@@ -218,63 +226,22 @@ export function computeDescriptor(
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
           { absentVariables: preflightView(ctx.preflight).absentVariables },
         );
-        if (inputRow !== undefined) {
-          // Each generated leaf: generate its value ONCE (the resource keeps it
-          // stable across redeploys via its persisted output) and provision it
-          // under the framework var the document's `$generated` pointer names.
-          // The resource id is stable per service+leaf so reconcile finds the
-          // existing value instead of regenerating.
-          for (const leaf of inputRow.generated) {
-            // References the target's App, not its Deployment, so its consumers form no cycle.
-            const value =
-              leaf.origin !== undefined
-                ? originOf(ctx.services, leaf.origin, address)
-                : (yield* GeneratedParam(resourceId(address, 'generated', leaf.path), {
-                    bytes: leaf.bytes,
-                  }).pipe(fromLegacyId(legacyGeneratedParamId(app, address, leaf.path)))).value;
-            // The generated value is mint-once-stable (the resource returns
-            // its persisted output), so this trigger member holds still across
-            // redeploys and moves exactly when the value is re-generated.
-            const generatedValue = envValue(value);
-            rows.push({
-              record: yield* Prisma.EnvironmentVariable(resourceId(address, 'env', leaf.varName), {
-                project: projectId,
-                key: leaf.varName,
-                value: generatedValue,
-                ...classAndBranch,
-              }).pipe(
-                asOwnRow,
-                fromLegacyId(legacyEnvVarId(legacyGeneratedParamVarName(app, address, leaf.path))),
-              ),
-              key: leaf.varName,
-              value: generatedValue,
-            });
-          }
+        for (const leaf of inputRow?.generated ?? []) {
+          // References the target's App, not its Deployment, so its consumers form no cycle.
+          const value =
+            leaf.origin !== undefined
+              ? originOf(ctx.services, leaf.origin, address)
+              : (yield* GeneratedParam(resourceId(address, 'generated', leaf.path), {
+                  bytes: leaf.bytes,
+                }).pipe(fromLegacyId(legacyGeneratedParamId(app, address, leaf.path)))).value;
+          bootVariables[leaf.varName] = envValue(value);
         }
 
-        // ADR-0031: this node's own faceted inputs already got their edge's
-        // key above, through the generic param loop — core's buildConfig
-        // fills a provisioned param like any other, so there is no
-        // consumer-side special case left to write here.
-
-        // Provider side (ADR-0031). Compute never names a brand — it looks
-        // one up. Two kinds of registered entries:
-        //
-        //  · Edge-derived (`value(refs)`) — driven by the PROVIDER, not by
-        //    its edges: asked even with no inbound edge for that brand,
-        //    because "no edges" and "no var" are not the same thing — an
-        //    absent var reads as "never provisioned" (local dev, tests), so
-        //    a deployed provider with zero wired consumers must still be
-        //    able to emit a deny-everything value. Whether an empty set
-        //    means deny-all or emit-nothing is that param's own call, so it
-        //    may return undefined to write no row at all. The expose check
-        //    is main's and stays for these: a service that exposes nothing
-        //    can never be any binding's provider.
-        //
-        //  · Service-derived (`valueForService(provisioned, address)`) —
-        //    derived from this service's OWN provisioned attributes (e.g.
-        //    its origin), so EVERY compute service is asked, exposing or
-        //    not; the expose check does not apply.
+        // Reserved provider params (ADR-0031): an edge-derived one is asked only of a service that exposes something,
+        // a service-derived one (such as the origin) of every service; one with no value is sent as `null`.
+        for (const entry of RESERVED_PROVIDER_PARAMS) {
+          bootVariables[configKey(address, { owner: 'service', name: entry.name })] = null;
+        }
         const exposes = svc.expose !== undefined && Object.keys(svc.expose).length > 0;
         const refsByBrand = new Map<symbol, unknown[]>();
         if (exposes) {
@@ -295,47 +262,30 @@ export function computeDescriptor(
                 ? entry.value(refsByBrand.get(brand) ?? [])
                 : undefined;
           if (raw === undefined) continue;
-          const key = configKey(address, { owner: 'service', name: entry.name });
-          // The value may still be an unresolved deploy-time Output (a
-          // minted key or the provisioned endpoint domain isn't known until
-          // Alchemy applies it) or already a plain value (e.g. a zero-refs
-          // deny-all literal) — either way it is JSON-encoded through the
-          // same `encode` a declared param's own literal takes, never a
-          // brand-invented format.
+          // JSON-encoded through the same `encode` a declared param's own literal takes, never a brand-invented format.
           const value = Output.isOutput(raw)
             ? Output.map(raw, (v) => encode('service', v))
             : encode('service', raw);
-          // May be a minted key (rpc, streams). Redacted keeps it out of logs;
-          // Alchemy state still stores it in plain text, on the row and the
-          // trigger member.
-          const providerValue = envValue(value);
-          rows.push({
-            record: yield* Prisma.EnvironmentVariable(resourceId(address, 'env', key), {
-              project: projectId,
-              key,
-              value: providerValue,
-              ...classAndBranch,
-            }).pipe(
-              asOwnRow,
-              fromLegacyId(
-                legacyEnvVarId(
-                  legacyConfigKey(app, address, { owner: 'service', name: entry.name }),
-                ),
-              ),
-            ),
-            key,
-            value: providerValue,
-          });
+          bootVariables[configKey(address, { owner: 'service', name: entry.name })] =
+            envValue(value);
         }
+
+        checkServiceVariableCount(
+          address,
+          bootVariables,
+          cloudApplicationOf(ctx.application).branchless,
+        );
+        const everSent = yield* SentVariableNames(resourceId(address, 'sent-variable-names'), {
+          names: Object.keys(bootVariables).sort(),
+        });
 
         // Carries the resolved port to deploy(); falls back to 3000 if unset.
         // This is the only place the raw, untyped config is read, so it is the
         // only place the fallback belongs — from here on `port` is a number.
         const port = typeof config.service['port'] === 'number' ? config.service['port'] : 3000;
         return {
-          environment: rows.map((r) => r.record),
-          // Keys are unique per row (one env var each), so no member collides.
-          triggers: Object.fromEntries(rows.map((r) => [r.key, r.value])),
+          bootVariables,
+          requestVariables: withNamesNoLongerSentDeleted(bootVariables, everSent.names),
           platformVariables: inputRow !== undefined ? sortedMarkerNames(inputRow.markers) : [],
           port,
           ...(inputRow !== undefined ? { input: inputRow } : {}),
@@ -360,40 +310,32 @@ export function computeDescriptor(
 
     deploy: ({ id, address, graph, lowered, preflight }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
-        // Only to order this deployment after its producers are live; their values reach it through the rows and triggers.
+        // Only to order this deployment after its producers are live; their values reach it through `variables`.
         const producerOutputs = graph.edges
           .filter((edge) => edge.kind === 'dependency' && edge.to === id)
           .flatMap((edge) => Object.values(lowered.get(edge.from) ?? {}))
           .filter(Output.isOutput);
         const { platformVariableVersion } = preflightView(preflight);
-        // Env keys never contain ':', so a `<name>:updatedAt` member cannot
-        // collide with a row's own trigger member. The key name is historical:
-        // under `prisma dev` the member holds an HMAC of the value, and
-        // renaming it would redeploy every hosted deployment once.
-        const triggers = {
-          ...serialized.triggers,
-          ...Object.fromEntries(
-            serialized.platformVariables.map((name) => [
-              `${name}:updatedAt`,
-              platformVariableVersion(name) ?? '?',
-            ]),
-          ),
-        };
+        const triggers = Object.fromEntries(
+          serialized.platformVariables.map((name) => [
+            `${name}:updatedAt`,
+            platformVariableVersion(name) ?? '?',
+          ]),
+        );
         const app = graph.root.id;
         const deployment = yield* Prisma.Deployment(resourceId(address, 'deployment'), {
           // `app` carries the ordering edges as well as the app id — see
           // `appAfter` for why it is the only prop that can.
-          app: appAfter(provisioned.serviceId, serialized.environment, producerOutputs),
+          app: appAfter(provisioned.serviceId, producerOutputs),
           artifactPath: artifact.path,
           // The artifact IS a gzipped tar (see @internal/lowering's packager);
           // upstream sends this as the upload's Content-Type and folds it into
           // the fingerprint that decides whether a new deployment is needed.
           artifactContentType: ARTIFACT_CONTENT_TYPE,
-          // Upstream plans a replacement exactly when a member moved (or cannot
-          // be proven unmoved), because the platform materializes env rows into
-          // a deployment only at create (PRO-211). Alchemy writes the members
-          // to its state as given.
+          // A changed platform variable replaces the deployment: the platform
+          // copies variables into a deployment only when it is created.
           triggers,
+          variables: serialized.requestVariables,
           // Route to the port the app actually binds (the service's `port`
           // param, resolved by serialize) — not a hardcoded constant.
           portMapping: { http: serialized.port },
@@ -425,19 +367,31 @@ export function computeDescriptor(
       }),
 
     // ADR-0056: a service that runs its build adapter's dev server under
-    // `prisma dev` has no artifact. What `deploy` returns, with the
-    // `Deployment` removed. With no artifact to carry it, the input document
-    // is a variable.
-    reserve: ({ address, application, graph }, provisioned, serialized) =>
+    // `prisma dev` has no artifact and no deployment to carry its variables,
+    // so its values and its input document are local rows, read by the dev
+    // server.
+    reserve: ({ address, application }, provisioned, serialized) =>
       Effect.gen(function* () {
-        const { input } = serialized;
-        if (input !== undefined) {
-          yield* Prisma.EnvironmentVariable(resourceId(address, 'env', input.key), {
+        if (!cloudApplicationOf(application).branchless) {
+          throw new Error(
+            `prisma-cloud: the dev server of "${address}" was reserved outside \`prisma dev\`. ` +
+              'Variable rows are written only to the local application; this is a bug in Composer.',
+          );
+        }
+        const rows: Record<string, ServiceVariableValue> = {};
+        for (const [key, value] of Object.entries(serialized.bootVariables)) {
+          if (value !== null) rows[key] = value;
+        }
+        if (serialized.input !== undefined) {
+          rows[serialized.input.key] = envValue(serialized.input.value);
+        }
+        for (const [key, value] of Object.entries(rows)) {
+          yield* Prisma.EnvironmentVariable(resourceId(address, 'env', key), {
             project: provisioned.projectId,
-            key: input.key,
-            value: envValue(input.value),
+            key,
+            value,
             ...variableClassAndBranch(application),
-          }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(graph.root.id, address))));
+          });
         }
         const url = endpointDomainOf(provisioned, address);
         return {

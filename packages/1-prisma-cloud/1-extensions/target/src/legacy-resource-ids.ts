@@ -5,8 +5,7 @@
  * Delete this file once no such environment remains.
  */
 import { renamedFrom } from 'alchemy/Rename';
-import { configKey } from './config-key.ts';
-import { generatedParamVarName, inputKey } from './serializer.ts';
+import { inputKey } from './serializer.ts';
 
 /** The address without its first segment, the app name: `shop.auth.api` in the app `shop` is `auth.api`. */
 export function addressBelowApp(address: string, app: string): string {
@@ -22,28 +21,9 @@ export function legacyNodeResourceId(app: string, address: string, suffix: strin
   return `${addressBelowApp(address, app)}-${suffix}`;
 }
 
-/** An environment variable row: its old key, then `-var`. */
-export function legacyEnvVarId(legacyKey: string): string {
-  return `${legacyKey}-var`;
-}
-
-/** The key a config row had when its address left out the app name. */
-export function legacyConfigKey(
-  app: string,
-  address: string,
-  d: Parameters<typeof configKey>[1],
-): string {
-  return configKey(addressBelowApp(address, app), d);
-}
-
 /** The input document row's old key. */
 export function legacyInputKey(app: string, address: string): string {
   return inputKey(addressBelowApp(address, app));
-}
-
-/** A generated input leaf's old variable name. */
-export function legacyGeneratedParamVarName(app: string, address: string, path: string): string {
-  return generatedParamVarName(addressBelowApp(address, app), path);
 }
 
 /** A generated input leaf's value: `<old input key>:<path>-generated`. */

@@ -82,23 +82,11 @@ three clusters:
 
 | Cluster | Resources | Local implementation |
 | --- | --- | --- |
-| Compute | `ComputeService`, `Deployment`, `EnvironmentVariable` | a Compute **emulator** owning one child process per service, plus a local env-var store |
+| Compute | `ComputeService`, `Deployment`, `EnvironmentVariable` | a Compute **emulator** owning one child process per service, plus a local env-var store for dev servers |
 | Postgres | `Project`, `Database`, `Connection` | the ORM CLI's local Postgres **emulator** (`prisma dev`) |
 | Buckets | `Bucket`, `BucketKey` | a bucket **emulator**: the storage module's existing S3 wire handler + SigV4 verifier over a disk-backed object store — objects are plain files at their key paths |
 
-**The target runs one emulator per node kind — the platform's primitives,
-locally.** The extension's `emulators` hook inspects the loaded topology and
-ensures a machine-scoped emulator daemon per node kind the app uses: a
-**Compute emulator** (runs service processes), the **Postgres emulator** (the
-ORM's `prisma dev` — its daemon manager is the ORM CLI's own), and a **bucket
-emulator** (the S3 wire over disk). Each emulator is multi-tenant and
-long-lived — the firebase/supabase model — and is capable of creating an
-*isolated instance* of its node type: a running service, a database, a
-bucket. The local providers provision those instances by communicating with
-the emulators during converge, and the orchestration wires the instances to
-each other through the same lowered `EnvironmentVariable` records a deploy
-produces — the topology composes locally exactly as it does on the platform.
-Emulator instances are removed only by `--fresh`, through `teardown`.
+**The target runs one emulator per node kind — the platform's primitives, locally.** The extension's `emulators` hook inspects the loaded topology and ensures a machine-scoped emulator daemon per node kind the app uses: a **Compute emulator** (runs service processes), the **Postgres emulator** (the ORM's `prisma dev` — its daemon manager is the ORM CLI's own), and a **bucket emulator** (the S3 wire over disk). Each emulator is multi-tenant and long-lived — the firebase/supabase model — and is capable of creating an *isolated instance* of its node type: a running service, a database, a bucket. The local providers provision those instances by communicating with the emulators during converge, and the orchestration wires the instances to each other through the same lowered values a deploy produces — the `variables` of each service's `Deployment` ([ADR-0069](ADR-0069-a-services-composer-keys-travel-with-its-deployment-as-service-variables.md)), or, for a dev server, the `EnvironmentVariable` rows `reserve` declares — so the topology composes locally exactly as it does on the platform. Emulator instances are removed only by `--fresh`, through `teardown`.
 
 **Converge terminates; the Compute emulator keeps serving.** Alchemy's
 converge is a run-to-completion program (ADR-0007 drives it in a child
@@ -135,16 +123,7 @@ assembly consumes, never sources; the user's own watcher (`next dev` is not
 involved — `tsdown --watch`, `bun build --watch`, whatever their build does)
 produces the rebuild, and dev responds by re-running assemble and converge.
 
-**A service boots exactly as deployed.** The artifact's bootstrap calls
-`run(address, boot, inputDocument)` with the input document the artifact's
-`compute.bootstrap.json` holds
-([ADR-0065](ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)),
-against the same `COMPOSER_*` environment protocol a deploy's platform
-injection produces — the local `Deployment` provider materializes that
-environment from the same `EnvironmentVariable` records the lowering emitted,
-and reads the artifact's input document to work out which platform variables
-the service's process receives. Deserialization, stashing,
-`load()`/`config()`/`secrets()` all execute the deployed code path.
+**A service boots exactly as deployed.** The artifact's bootstrap calls `run(address, boot, inputDocument)` with the input document the artifact's `compute.bootstrap.json` holds ([ADR-0065](ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)), against the same `COMPOSER_*` environment protocol a deploy's platform injection produces — the local `Deployment` provider materializes that environment from the same `variables` the lowering gave the deployment, leaving out a key sent as `null`, and reads the artifact's input document to work out which platform variables the service's process receives. Deserialization, stashing, `load()`/`config()`/`secrets()` all execute the deployed code path.
 
 ## Reasoning
 
@@ -277,6 +256,7 @@ this repo owns.
   provisioning seam that every extension must implement and keep from drifting,
   duplicating exactly the orchestration the deploy pipeline already performs —
   and contradicting goals.md's stand-in-beside-provider shape.
+- **Every service's keys in the local env-var store.** The position before ADR-0069: the local `Deployment` provider read each service's own rows from `env.json`, which the lowering's `EnvironmentVariable` records filled. A deployment now carries its keys in `variables`, and only a dev server, which has no deployment, keeps rows.
 - **Direct-injection boot** (`service.runLocal(values)` — hand the service its
   hydrated bindings, bypassing the env wire protocol). Retained as a *testing*
   convenience only. Dev drives the real `run(address, boot)` path so that

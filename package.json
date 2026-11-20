@@ -21,6 +21,7 @@
     "check:cli-engine-pin": "node scripts/check-cli-engine-pin.mjs",
     "check:skill-packaging": "node scripts/check-skill-packaging.mjs",
     "check:orm-pins": "node scripts/check-orm-pins.mjs",
+    "check:patched-dependencies": "bun scripts/check-patched-dependencies.ts",
     "contracts:emit": "node scripts/emit-contracts.mjs",
     "check:contracts-emitted": "node scripts/emit-contracts.mjs --check",
     "check:family-static-graph": "node scripts/check-family-static-graph.mjs",
@@ -58,7 +59,11 @@
     "onlyBuiltDependencies": [
       "prisma",
       "@prisma/engines"
-    ]
+    ],
+    "patchedDependencies": {
+      "@alchemy.run/prisma@2.0.0-beta.87": "patches/@alchemy.run__prisma@2.0.0-beta.87.patch",
+      "@distilled.cloud/prisma@1.0.0-rc.20": "patches/@distilled.cloud__prisma@1.0.0-rc.20.patch"
+    }
   },
   "version": "0.39.0"
 }

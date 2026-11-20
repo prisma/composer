@@ -43,6 +43,8 @@ catalog.service: http://localhost:3000
 orders.service: http://localhost:3003
 ```
 
+**Where a service's environment comes from.** A service that runs its built artifact gets its `COMPOSER_*` values from its deployment, as on Prisma Cloud: the deploy pipeline computes them, and the local target hands them to the process without writing them anywhere, with the port the emulator gave the service in place of its own. A value that changes restarts exactly the service that reads it. A service that runs a dev server has no deployment, so its values are kept in `env.json` in the environment's folder, where the dev server reads them. Platform variables come from your app configuration and secrets, for both.
+
 `dev` prints `ready` only once every service accepts connections on its port, so a request to a printed URL right away connects. After a rebuild, `dev` waits the same way before it prints the URLs again. A service must listen on the port Composer gives it, unless it is declared with `compute({ ..., listens: false })`: such a service, like the cron module's scheduler, is running as soon as its process starts.
 
 If a service exits before it listens, or does not listen within 30 seconds, `dev` fails instead of printing `ready`, and stops the app's other services. The message names the service, its port, and its log file, for example `service "my-app.gateway" exited (code 1) before it accepted connections on its port 3001. Its log: …/svc_….log`. On a first start it is in the message of `prisma dev`'s error that the app could not be converged (`DEV.CONVERGE_FAILED` from the `dev` operation in `@prisma/composer/control`). On a warm start it is the message of the `DEV.SERVICE_START_FAILED` error.
@@ -237,11 +239,7 @@ prisma dev url my-app.gateway --environment test # test's URL
 prisma dev stop --environment test
 ```
 
-`--fresh` wipes only the environment it runs in. Everything local to one copy
-lives in `.prisma-composer/dev/<environment>/`: the record of its instances,
-its environment variable values, the key `prisma dev` hashes secret values with, the generated stack
-file, the unpacked artifacts and the bucket objects. The deploy engine keeps
-each copy's state in `.alchemy/state/<app>/<environment>`.
+`--fresh` wipes only the environment it runs in. Everything local to one copy lives in `.prisma-composer/dev/<environment>/`: the record of its instances, its dev servers' `COMPOSER_*` values (`env.json`), the key `prisma dev` hashes secret values with, the generated stack file, the unpacked artifacts and the bucket objects. The deploy engine keeps each copy's state in `.alchemy/state/<app>/<environment>`.
 
 Environment names are case-sensitive, but on a case-insensitive filesystem,
 such as the default on macOS, `Dev` and `dev` would share one folder. So the

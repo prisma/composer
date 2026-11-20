@@ -46,6 +46,42 @@ const managementApiHttpLayer = (origin: string) =>
     }),
   );
 
+type EnvironmentVariableService = Provider.ProviderService<Prisma.EnvironmentVariable>;
+
+// Correct only while hosted deploys declare no rows, so every delete is of a row an older Composer wrote:
+// a row whose recorded identity no longer matches would otherwise fail this deploy and every later one.
+const droppingMismatchedRows = (
+  service: EnvironmentVariableService,
+): EnvironmentVariableService => ({
+  ...service,
+  delete: (input) =>
+    service.delete(input).pipe(
+      Effect.catchIf(
+        (error) => error._tag === 'EnvironmentVariableConflict',
+        () =>
+          Effect.logWarning(
+            `Composer could not delete the variable ${input.output.key} that an older Composer wrote, ` +
+              "because the platform's record of it no longer matches the deploy state. Composer has " +
+              'stopped tracking it. Delete it in Console if it is still listed.',
+          ),
+      ),
+    ),
+  ...(service.modes === undefined
+    ? {}
+    : {
+        modes: {
+          live: Effect.map(service.modes.live, droppingMismatchedRows),
+          local: Effect.map(service.modes.local, droppingMismatchedRows),
+        },
+      }),
+});
+
+export const providerForDeletingOldVariableRows = () =>
+  Provider.effect(
+    Prisma.EnvironmentVariable,
+    Effect.map(Prisma.EnvironmentVariable.Provider, droppingMismatchedRows),
+  ).pipe(Layer.provide(Prisma.EnvironmentVariableProvider()));
+
 /**
  * Upstream alchemy's live providers for the postgres family (Project,
  * Database, Connection), the compute family (App, Deployment,
@@ -65,7 +101,7 @@ const upstreamPrismaProviders = (baseUrl: string, clientSupplied: boolean) =>
     Prisma.ConnectionProvider(),
     Prisma.AppProvider(),
     Prisma.DeploymentProvider(),
-    Prisma.EnvironmentVariableProvider(),
+    providerForDeletingOldVariableRows(),
     Prisma.BucketProvider(),
     Prisma.BucketAccessKeyProvider(),
     Prisma.CustomDomainProvider(),

@@ -545,31 +545,15 @@ async function main(): Promise<void> {
     assert(typeof webInfo.pid === 'number', 'web service must report a pid');
     assert(typeof bkgInfo.pid === 'number', 'bkg service must report a pid');
 
-    // 10. env store correct: every row lives in the COMPOSER_ namespace.
-    // Composer writes no unprefixed variable — an unprefixed name is a
-    // platform-owned one (DATABASE_URL and friends), and the platform manages
-    // those itself. The port-override row
-    // (COMPOSER_<ADDRESS>_PORT) is deliberately NEVER persisted to env.json
-    // (local-dev spec § 4: "Ports live nowhere here" — the Deployment
-    // provider materializes it fresh into each deployment's own env, in
-    // memory, and never writes it back) — so it is verified through the
-    // fixture's own /health response (captured above, before webInfo existed
-    // to compare against) rather than by reading env.json for a key it never
-    // receives.
-    const envRaw = readJson(path.join(devDir, 'env.json'));
-    assert(
-      typeof envRaw === 'object' && envRaw !== null,
-      'env.json exists and parses to an object',
-    );
-    const env = envRaw as Record<string, string>;
-    // Non-empty first: an empty object would vacuously pass every check below.
-    assert(Object.keys(env).length > 0, 'env.json carries the deploy-written rows');
-    assertEqual(env['DATABASE_URL'], undefined, 'env.json holds no DATABASE_URL row');
-    assertEqual(env['DATABASE_URL_POOLED'], undefined, 'env.json holds no DATABASE_URL_POOLED row');
+    // 10. A service that runs its artifact takes its COMPOSER_ keys from its
+    // deployment's variables, so nothing is written to env.json; the port is
+    // the emulator's, laid over the one in the variables.
+    const envFile = path.join(devDir, 'env.json');
+    const env = fs.existsSync(envFile) ? (readJson(envFile) as Record<string, string>) : {};
     assertEqual(
-      Object.keys(env).every((key) => key.startsWith('COMPOSER_')),
-      true,
-      'every env.json row lives in the COMPOSER_ namespace',
+      Object.keys(env).length,
+      0,
+      'env.json holds no row for a service that runs its artifact',
     );
     assertEqual(
       health.portEnv,

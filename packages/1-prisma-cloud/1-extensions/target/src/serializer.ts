@@ -232,7 +232,7 @@ export const generatedParamVarName = (address: string, path: string): string => 
 
 const ABSENT: unique symbol = Symbol('composer-input-absent');
 
-/** One generated input leaf the walk records: the descriptor provisions a `GeneratedParam` resource + an env row per entry, and the substitution emits its `$generated` pointer at `path`. */
+/** One generated input leaf: the descriptor sends its value under `varName`, and the document holds a `$generated` pointer at `path`. */
 export interface GeneratedLeaf {
   readonly varName: string;
   readonly bytes: number;
@@ -379,14 +379,14 @@ export function resolveInputBinding(
   };
 }
 
-/** One serialized input document, ready to write as a row: into the artifact, or as a variable for a service with no artifact. */
+/** One serialized input document: written into the artifact, or as a local row for a dev server. */
 export interface InputDocumentRow {
   readonly key: string;
   /** The JSON document: defaults applied, each secret leaf a `$platform` marker, each generated leaf a `$generated` marker, never a secret's value. */
   readonly value: string;
   /** Binding paths whose platform variable `prisma dev` found unset. */
   readonly absent: readonly string[];
-  /** Generated leaves the descriptor must provision (a `GeneratedParam` resource + env row each). */
+  /** Generated leaves the descriptor must send a value for. */
   readonly generated: readonly GeneratedLeaf[];
   /** Every `$platform` marker the document holds, in document order. Composer does not write the variables they name. */
   readonly markers: readonly PlatformMarkerUse[];

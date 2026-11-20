@@ -5,12 +5,7 @@ The Alchemy resource types Composer lowers to over the
 lowering graphs — including the correction that makes deploy ordering a property
 of the dependency graph rather than luck.
 
-The postgres family (`Project`, `Database`, `Connection`), the compute
-family (`App`, `Deployment`, `EnvironmentVariable`) and the bucket family
-(`Bucket`, `BucketAccessKey`) are **upstream alchemy's** (`@alchemy.run/prisma`), not
-ours: Composer registers their providers and binds their props. What
-`@internal/lowering` still owns is the artifact packager, `ServiceKey`, and the
-hosted state store.
+The postgres family (`Project`, `Database`, `Connection`), the compute family (`App`, `Deployment`, `EnvironmentVariable`) and the bucket family (`Bucket`, `BucketAccessKey`) are **upstream alchemy's** (`@alchemy.run/prisma`), not ours: Composer registers their providers and binds their props. What `@internal/lowering` still owns is the artifact packager, `ServiceKey`, and the hosted state store. A hosted deploy declares no `EnvironmentVariable`: a service's `COMPOSER_` keys go in its Deployment's `variables` ([ADR-0069](../90-decisions/ADR-0069-a-services-composer-keys-travel-with-its-deployment-as-service-variables.md)).
 
 ## Placement: one Project per application, one Branch per environment
 
@@ -24,10 +19,7 @@ Consequences, stated plainly:
 - Config keys are namespaced per service by the pack's mapping (e.g.
   `AUTH_DB_URL`, `STOREFRONT_AUTH_URL`) — collisions are a naming concern the
   pack owns, not a reason to split projects.
-- The Project is thereby also the **secret-visibility boundary**: every service's
-  process env physically contains its co-located siblings' variables. One
-  application = one trust domain; anything that must not be visible across
-  services belongs in a different project (a different application).
+- The Project is thereby also the **secret-visibility boundary**: every service on a Branch receives every variable of the group that Branch receives. A service's own `COMPOSER_` keys are service variables, stored on that service only. One application = one trust domain; anything that must not be visible across services belongs in a different project (a different application).
 
 Every deploy environment — production, staging, a per-PR preview — is a
 **Branch** of that one Project
@@ -68,8 +60,9 @@ behind them.
 | `Prisma.Database` | Database | project, name?, region, branchId?, logicalId? | databaseId, connection strings | one per Module-provisioned postgres resource; never the project default; a branch-attached database is created with `branchId` and no display name (upstream refuses the combination — see [deploying.md](../../guides/deploying.md)) |
 | `Prisma.Connection` | database connection info | database, name | connectionId, directConnectionString | Composer binds the DIRECT string explicitly; upstream's `databaseUrl` is pooled-first |
 | `Prisma.App` | App | project, displayName, regionId, branchId?, logicalId? | appId, appEndpointDomain | `branchId` targets the Branch of an environment other than `production`; omitted, upstream attaches the App to the project's default (production) Branch. `appEndpointDomain` is available at provision — that is what a service's own origin and its published `url` are read from |
-| `Prisma.EnvironmentVariable` | ConfigVariable | project, class, key, value (Redacted), branchId? | environmentVariableId | production-class with no `branchId` for `production`; preview-class with `branchId` for any other environment. Values are write-only, so upstream re-applies the desired one on every deploy |
-| `Prisma.Deployment` | Deployment (ComputeVersion) + Promotion | app, artifactPath, artifactContentType, portMapping, triggers, start, promote | deploymentId, appEndpointDomain | provider reconcile: create → upload tar.gz → start → poll until running → promote; `appEndpointDomain` read **post-promote**; it is the same domain the App reports from its create. It is replaced, not updated, when its artifact fingerprint or its `triggers` fingerprint moves |
+| `Prisma.EnvironmentVariable` | ConfigVariable | project, class, key, value (Redacted), branchId? | environmentVariableId | declared by no hosted deploy. Its provider stays registered so Alchemy can delete the rows an older Composer wrote; Composer's layer around it drops a row the platform refuses to delete because its recorded identity differs, with a warning naming the key. Under `prisma dev`, `reserve` declares one per key a dev server reads |
+| `Prisma.Deployment` | Deployment (ComputeVersion) + Promotion | app, artifactPath, artifactContentType, portMapping, variables, triggers, start, promote | deploymentId, appEndpointDomain | provider reconcile: create (with `variables`) → upload tar.gz → start → poll until running → promote; `appEndpointDomain` read **post-promote**; it is the same domain the App reports from its create. It is replaced, not updated, when its artifact fingerprint, its `variables` fingerprint or its `triggers` fingerprint moves, and when `variables` is declared on a deployment that recorded none. `variables` is a `pnpm` patch until the platform accepts it in production and the upstream release carries it; `check:patched-dependencies` blocks a release until then |
+| `SentVariableNames` (Composer's) | none | names (this deploy's variable names) | names (every name ever given) | one per compute service; the deploy sends `null` for each name Composer no longer sends. Holds names, never values |
 | `Prisma.Bucket` | Bucket | project, name, branchId?, logicalId? | bucketId, name | one per bucket resource; `Prisma.BucketAccessKey` mints its read-write S3 credentials, which become the node's outputs |
 
 `logicalId` is set on every deploy except branchless local dev; [§ Platform identity](#platform-identity-logicalid) says what it carries.
@@ -114,8 +107,8 @@ Rules:
 
 - The value is the address. Composer passes it explicitly, even where it equals the Alchemy resource ID, because upstream's Prisma resources default `logicalId` to their own fully qualified resource ID.
 - For App, Database and Bucket, the resource that creates the row writes its `logicalId`, as a prop. No separate resource or later API call writes it.
-- On the app's own Project and Branch, the row holding a node's `logicalId` is that node's row. The descriptors declare App, Database, Bucket and `COMPOSER_` EnvironmentVariable resources with `asOwnRow` (Alchemy's `adopt(true)`), so a deploy resuming an interrupted create uses the row instead of failing with `OwnedBySomeoneElse`. On resume, Connections need nothing: their generated name already proves which create made them. Deployments and bucket access keys are never reported as someone else's, so an interrupted create of one is simply made again, and the first attempt can be left behind.
-- Other platform rows a node lowers to carry no `logicalId`: `Prisma.Connection`, `Prisma.Deployment`, `Prisma.EnvironmentVariable`, `Prisma.BucketAccessKey`. Composer's local resources (`ServiceKey`, `PgWarm`, `OrmMigration`, `GeneratedParam`, `S3Credentials`) create no platform row.
+- On the app's own Project and Branch, the row holding a node's `logicalId` is that node's row. The descriptors declare App, Database and Bucket resources with `asOwnRow` (Alchemy's `adopt(true)`), so a deploy resuming an interrupted create uses the row instead of failing with `OwnedBySomeoneElse`. On resume, Connections need nothing: their generated name already proves which create made them. Deployments and bucket access keys are never reported as someone else's, so an interrupted create of one is simply made again, and the first attempt can be left behind.
+- Other platform rows a node lowers to carry no `logicalId`: `Prisma.Connection`, `Prisma.Deployment`, `Prisma.BucketAccessKey`. Composer's local resources (`ServiceKey`, `PgWarm`, `OrmMigration`, `GeneratedParam`, `SentVariableNames`, `S3Credentials`) create no platform row.
 - Branchless local dev creates no platform rows and writes none.
 
 ### Resource IDs
@@ -128,7 +121,8 @@ For the app `shop`:
 | --- | --- | --- | --- |
 | compute service `shop.web` | `Prisma.App` | `shop.web` | `web-svc` |
 | | `Prisma.Deployment` | `shop.web.deployment` | `web-deploy` |
-| | `Prisma.EnvironmentVariable`, one per key | `shop.web.env.<KEY>` | `<old KEY>-var` |
+| | `SentVariableNames` | `shop.web.sent-variable-names` | (new) |
+| | `Prisma.EnvironmentVariable` under `prisma dev`, one per key a dev server reads | `shop.web.env.<KEY>` | (none) |
 | | `GeneratedParam`, one per generated input leaf | `shop.web.generated.<leaf path>` | `<old input KEY>:<leaf path>-generated` |
 | | `ServiceKey` for an RPC input (per calling service and input) | `shop.web.servicekey.<input>` | `servicekey-web.<input>` |
 | | `ServiceKey` for a streams provider (per providing service) | `<provider address>.streamkey` | `streamskey-<old provider address>` |
@@ -140,7 +134,7 @@ For the app `shop`:
 | | `Prisma.BucketAccessKey` | `shop.uploads.accesskey` | `uploads-key` |
 | s3 credentials `shop.creds` | `S3Credentials` | `shop.creds` | `creds-creds` |
 
-Every role is a noun naming the piece: `deployment`, `env`, `generated`, `servicekey`, `streamkey`, `connection`, `warmup`, `migration`, `accesskey`. The old ID is computed in `legacy-resource-ids.ts` from `addressBelowApp(address, app)`, which removes the known `<app>.` prefix, by the rule the previous release used. `<old KEY>` is the environment variable key the previous release wrote, built from that shorter address.
+Every role is a noun naming the piece: `deployment`, `sent-variable-names`, `env`, `generated`, `servicekey`, `streamkey`, `connection`, `warmup`, `migration`, `accesskey`. The old ID is computed in `legacy-resource-ids.ts` from `addressBelowApp(address, app)`, which removes the known `<app>.` prefix, by the rule the previous release used. `<old input KEY>` is the input document key the previous release used, built from that shorter address. Variable rows an older release wrote stay in deploy state under the ID they were stored with, and Alchemy deletes them as resources no longer declared.
 
 **Platform names.** Every platform name Composer writes is the node's address (`shop.catalog`, `shop.auth.api`): the App `displayName`, the branchless Database `name`, and the Connection, Bucket and BucketAccessKey `name`. They are labels, never identity. Upstream adds `-` and a 12-character token to every Connection name, so a Connection's platform name is the address plus that suffix. `validatePlatformName` checks the address against each kind's limit (Connection 52, so the address fits beside the suffix in the platform's 65; Bucket 100; App 256; an access key has none) and fails naming the address; it never shortens a name. A hosted Database takes no name from Composer, because upstream refuses a name together with branch attachment; upstream derives its physical name from the resource ID and updates it in place.
 
@@ -148,11 +142,10 @@ On the upgrade deploy every one of these names changes from the short address to
 
 - a Connection when its `name` or database changes, which mints new credentials;
 - a BucketAccessKey when its `name`, `role` or bucket changes, which mints new credentials;
-- an EnvironmentVariable when its `key`, `class`, `branchId` or project changes;
 - an App, Database or Bucket only when its project (or, for a Database, its region, source or default flag) changes;
-- a Deployment when its artifact or `triggers` fingerprint changes.
+- a Deployment when its artifact, `variables` or `triggers` fingerprint changes.
 
-So the upgrade updates every App, Database and Bucket in place, along with every `logicalId` and a hosted Database's derived name; a Bucket's display name is not its S3 bucket name, so its objects stay. It recreates each of Composer's Connections and bucket access keys with new credentials, and Composer's services receive them in the same deploy. Each replace is create-first and then deletes only the old Connection or key, by the id Composer stored, after checking its database or bucket and name still match. The database, the bucket's objects and any Connection or key made by hand are untouched. Environment variable rows are replaced because their keys change; their values are rewritten on every deploy, so nothing is lost, and the changed environment makes a new Deployment as any environment change does.
+So the upgrade updates every App, Database and Bucket in place, along with every `logicalId` and a hosted Database's derived name; a Bucket's display name is not its S3 bucket name, so its objects stay. It recreates each of Composer's Connections and bucket access keys with new credentials, and Composer's services receive them in the same deploy. Each replace is create-first and then deletes only the old Connection or key, by the id Composer stored, after checking its database or bucket and name still match. The database, the bucket's objects and any Connection or key made by hand are untouched. Every `COMPOSER_` key changes name, so every service's `variables` changes and its Deployment is replaced.
 
 Status:
 
@@ -174,10 +167,7 @@ logic is untouched.
 
 ## The mapping, both directions
 
-- **Ours → PDP**: each resource's provider (`reconcile`/`delete`) calls the
-  Management API; the table above is that mapping. One resource maps to one PDP
-  entity except `Deployment`, which spans version-create + upload + start +
-  promote (and therefore owns the env-snapshot moment).
+- **Ours → PDP**: each resource's provider (`reconcile`/`delete`) calls the Management API; the table above is that mapping. One resource maps to one PDP entity except `Deployment`, which spans version-create + upload + start + promote (and therefore owns the env-snapshot moment, and carries the service's `variables`).
 - **PDP → ours**: `foundryVersionId`, `Promotion`, and Foundry's version record have no resource of ours; they are internal to the `Deployment` provider's behavior or unmodeled. **Branch** likewise has no Alchemy resource — it is resolved and its lifecycle managed by the CLI's container-resolution client, outside the Alchemy graph entirely (see [§ Environments and container resolution](#environments-and-container-resolution)). `serviceEndpointDomain` surfaces as `App.appEndpointDomain` and `Deployment.appEndpointDomain`; both are the same domain.
 
 ## The lowering graphs
@@ -202,15 +192,14 @@ flowchart LR
 ```mermaid
 flowchart TB
   subgraph P [Project: shop]
-    DBa[(Database shop.authdb)] --> Ca[Connection shop.authdb.connection] -- url --> EVa["EnvironmentVariable(COMPOSER_SHOP_AUTH_DB_URL)"]
-    DBs[(Database shop.storefrontdb)] --> Cs[Connection shop.storefrontdb.connection] -- url --> EVs["EnvironmentVariable(COMPOSER_SHOP_STOREFRONT_DB_URL)"]
+    DBa[(Database shop.authdb)] --> Ca[Connection shop.authdb.connection] -- "url → variables.COMPOSER_SHOP_AUTH_DB_URL" --> Da
+    DBs[(Database shop.storefrontdb)] --> Cs[Connection shop.storefrontdb.connection] -- "url → variables.COMPOSER_SHOP_STOREFRONT_DB_URL" --> Ds
     Sa[App shop.auth] --> Da[Deployment shop.auth.deployment]
     Ss[App shop.storefront] --> Ds[Deployment shop.storefront.deployment]
-    EVa -- resource ref --> Da
-    EVs -- resource ref --> Ds
-    Sa -- appEndpointDomain --> EVu["EnvironmentVariable(COMPOSER_SHOP_STOREFRONT_AUTH_URL)"]
-    EVu -- resource ref --> Ds
-    Da -- "serviceId (after promote)" --> Ds
+    Ka[SentVariableNames shop.auth.sent-variable-names] -- names --> Da
+    Ks[SentVariableNames shop.storefront.sent-variable-names] -- names --> Ds
+    Sa -- "appEndpointDomain → variables.COMPOSER_SHOP_STOREFRONT_AUTH_URL" --> Ds
+    Da -- "serviceId (after promote), on app" --> Ds
   end
 ```
 
@@ -218,31 +207,22 @@ How the pieces map:
 
 - **The application** lowers to one `Project`, resolved by the CLI before
   Alchemy runs. It provisions no variables of its own.
-- **Each service** lowers to an `App → Deployment` chain plus its own
-  `Database → Connection`, whose url is written as that service's **explicitly
-  named** variable — the same `serialize` path as any other config value.
-- **The connection** lowers to two edges: the producer's App's endpoint domain flows into a named `EnvironmentVariable`, and that **whole resource flows into the consumer's `Deployment`** through its `app` prop. The domain comes from the App, not the Deployment: the Deployment is promoted on every deploy, so its domain is unknown while planning, and a consumer's deployment, whose triggers hold the value, would be replaced on every deploy. Because the App's domain is known, an unchanged consumer keeps its deployment when its producer is redeployed.
-- Every `EnvironmentVariable` a Deployment boots with is threaded into its `app` — database URLs and connection URLs alike — so the deployment depends on its config being written first.
+- **Each service** lowers to an `App → Deployment` chain, a `SentVariableNames` record, plus its own `Database → Connection`, whose url is one of that service's **explicitly named** keys in the Deployment's `variables` — the same `serialize` path as any other config value.
+- **The connection** lowers to two edges: the producer's App's endpoint domain becomes a named key in the consumer's Deployment's `variables`, and the producer's outputs ride the consumer's `app` prop. The domain comes from the App, not the Deployment: the Deployment is promoted on every deploy, so its domain is unknown while planning, and a consumer's deployment, whose `variables` hold the value, would be replaced on every deploy. Because the App's domain is known, an unchanged consumer keeps its deployment when its producer is redeployed.
+- Every value a Deployment boots with is in its `variables`, so Alchemy schedules the Deployment after every resource those values come from.
 - Every output of a consumer's producers is threaded into its Deployment's `app` too, so its deployment waits for its producers' promotion: a Compute producer's `serviceId` comes from its Deployment and resolves only after the promotion. The wait is on `app`, not in `triggers`, and upstream treats an unresolved `app` as unchanged, so an unchanged consumer is not replaced.
 - The Deployment's `portMapping.http` rides the same seam: `serialize` resolves
   the service's `port` param from the typed Config and surfaces it in its
   outputs, and `deploy` routes the platform to it — so the routed port and the
   `PORT` the app binds trace to one value and cannot drift.
 
-That ordering edge is essential and mirrors PDP's own dataflow — the
-deployment-create call literally contains the materialized env map, so the
-environment is genuinely an input to a deployment (see the
-[config lifecycle](pdp-data-model.md#the-config-lifecycle--what-is-resolved-when)).
-The edge's job is **ordering**: the variable write completes before
-deployment-create, so new and replacement deployments boot with the completed
-configuration updates.
-Without it the two race — the failure documented as PRO-211 in `gotchas.md`.
+That ordering mirrors PDP's own dataflow — the deployment-create call contains the service's variables, so they are genuinely an input to a deployment (see the [config lifecycle](pdp-data-model.md#the-config-lifecycle--what-is-resolved-when)).
 
-**Why the edge rides `app`.** Upstream's `Prisma.Deployment` has no `environment` prop (Composer's deleted one did). Alchemy derives its dependency graph from the resource references a prop's *value* is built from, so the descriptor builds `app` as an Output over the app id, every whole variable resource and every output of the service's producers, resolving to the app id itself: the graph gains the edges. A persisted variable ID can resolve before its pending value update finishes; the whole resource keeps that update as a dependency. The edge cannot ride `artifactPath` (or any of upstream's other replacement-block props): the diff reads that block as one unit and gives no opinion the moment any member is unresolved — and a brand-new variable's reference IS unresolved at plan time — which would skip the artifact comparison and silently drop a code change. [ADR-0048](../90-decisions/ADR-0048-prisma-cloud-resources-come-from-the-upstream-alchemy-provider.md) records the full argument, and `compute/__tests__/deployment-edge.test.ts` drives upstream's real diff.
+**Why the producer edge rides `app`.** Upstream's `Prisma.Deployment` has no prop for "wait for these". Alchemy derives its dependency graph from the resource references a prop's *value* is built from, so the descriptor builds `app` as an Output over the app id and every output of the service's producers, resolving to the app id itself (`appAfter`): the graph gains the edges. The edge cannot ride `artifactPath` (or any of upstream's other replacement-block props): the diff reads that block as one unit and gives no opinion the moment any member is unresolved, which would skip the artifact comparison and silently drop a code change. [ADR-0048](../90-decisions/ADR-0048-prisma-cloud-resources-come-from-the-upstream-alchemy-provider.md) records the full argument, and `compute/__tests__/deployment-edge.test.ts` drives upstream's real diff.
 
-**Change propagation is wired through `Prisma.Deployment.triggers`.** The platform freezes a deployment's environment at create, so a *value* change (a rotated URL) reaches a running service only through a new deployment. The compute descriptor declares one trigger member per environment row, carrying the same `Redacted` value the row writes; upstream folds the resolved members into a salted fingerprint inside its own encrypted state and plans a replacement exactly when one moved (and conservatively when a member cannot be resolved at plan time because the producing resource is itself changing). Unchanged service → same fingerprint → reuse; changed value or artifact → replace. Because upstream resolves the actual values, a value re-issued under a stable resource identity (a connection rotated in place, a re-minted service key) moves the fingerprint too. No plaintext lands in state — the members are `Redacted` in props and only the salted hash is persisted. A platform variable a row merely POINTS at (operator-owned; Composer never reads its value) contributes a `<name>:updatedAt` member instead, read at preflight and handed to the lowering in the extension's preflight payload, so an out-of-band rotation still ships a new deployment. A service's input document is not an environment row and has no trigger member: it travels in the service's artifact, in the `inputDocument` field of `compute.bootstrap.json` ([ADR-0065](../90-decisions/ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)), so a changed document changes the artifact's bytes and its content-addressed `artifactPath`, which replaces the deployment. A platform variable the document names is still a `<name>:updatedAt` member.
+**Change propagation is wired through `variables` and `triggers`.** The platform copies a deployment's environment at create, so a *value* change (a rotated URL) reaches a running service only through a new deployment. Upstream records a salted hash of the resolved `variables` and plans a replacement when it moves, when a value cannot be resolved at plan time because the producing resource is itself changing, and when `variables` is declared on a deployment that recorded no hash. Unchanged service → same hash → reuse; changed value or artifact → replace. Because upstream resolves the actual values, a value re-issued under a stable resource identity (a connection rotated in place, a re-minted service key) replaces too. Every key the service reads at boot is in `variables`, as its value or `null`, and `SentVariableNames` adds `null` for every name Composer no longer sends, so it is deleted from the service ([ADR-0069](../90-decisions/ADR-0069-a-services-composer-keys-travel-with-its-deployment-as-service-variables.md)). The values are stored in deploy state in plain text: Alchemy writes every prop to state, and a `Redacted` value as its text; each is a value the deploy produced, never a platform variable's. A platform variable the service reads (operator-owned; Composer never holds its value) contributes a `<name>:updatedAt` member to `triggers` instead, read at preflight and handed to the lowering in the extension's preflight payload, so an out-of-band rotation still ships a new deployment. A service's input document is not in `variables` and has no trigger member: it travels in the service's artifact, in the `inputDocument` field of `compute.bootstrap.json` ([ADR-0065](../90-decisions/ADR-0065-a-compute-services-input-document-travels-in-its-artifact.md)), so a changed document changes the artifact's bytes and its content-addressed `artifactPath`, which replaces the deployment. A platform variable the document names is still a `<name>:updatedAt` member.
 
-The compute descriptor constructs these edges (the `serialize` env-var records thread into `deploy` through the service SPI, and the producers' outputs come from the lowering context); no app author ever hand-wires them.
+The compute descriptor constructs these edges (the `serialize` map threads into `deploy` through the service SPI, and the producers' outputs come from the lowering context); no app author ever hand-wires them.
 
 ## Related
 

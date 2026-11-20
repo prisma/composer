@@ -294,18 +294,7 @@ A start in flight ends with the first of these that applies:
 
 The exit of a process the emulator no longer tracks is ignored.
 
-The env materialization is the one platform-side behavior the local target
-implements itself: the hosted platform joins the branch's config variables
-into a deployment at version-create; locally, the `Deployment` provider
-performs the same join from the `EnvironmentVariable` records the lowering
-emitted — against props defined in this repo, once, not an emulation of a
-foreign API. One pinned deviation: the local join is scoped to the
-service's own rows (plus any row outside the `COMPOSER_` namespace, which is
-a platform-owned name by definition), because the platform
-diffs a deployment only on its own referenced rows while an app-wide local
-snapshot diffs on bytes — which restart-amplified dependents on every
-first-after-cold converge. No sanctioned reader consumes sibling rows, so
-the scoping changes restart behavior only.
+The env materialization is the one platform-side behavior the local target implements itself: the hosted platform copies a service's variables into a deployment at version-create; locally, the `Deployment` provider builds the same environment from the `variables` the lowering gave the deployment ([ADR-0069](../90-decisions/ADR-0069-a-services-composer-keys-travel-with-its-deployment-as-service-variables.md)), leaving out a key sent as `null`, then lays the port the emulator assigned over `COMPOSER_<ADDRESS>_PORT` and adds the platform variables the service reads — against props defined in this repo, once, not an emulation of a foreign API. A changed `variables` is a changed prop, so it restarts exactly the service that reads it. A dev server has no deployment: its rows, which `reserve` declares, are in `env.json`, and its environment is built from the rows under its own address (plus any row outside the `COMPOSER_` namespace, which is a platform-owned name by definition), so a sibling's row never changes it.
 
 The Postgres and bucket emulators follow the same model: a database is an
 instance with a generated id (`db_<16 hex digits>`), served by a
@@ -478,8 +467,8 @@ semantics):
 | `Database` | the database instance the directory's record names for the resource, on its own `@prisma/dev` server hosted by the Postgres emulator; started if stopped, created when missing; `databaseId` is the instance id |
 | `Connection` | the URL of the database instance its `Database` names |
 | `App` | finds the service's Compute instance through the directory's record, creating it when there is none; the instance holds the service's port; `appEndpointDomain = http://localhost:<port>` — which makes origin (ADR-0039) work unchanged. Deleting it deletes the instance |
-| `Deployment` | unpacks the artifact once per hash, reads the input document from its `compute.bootstrap.json`, materializes the env, and puts the deployment at the service's Compute instance, which (re)starts the child; updated when its instance does not run the recorded artifact |
-| `EnvironmentVariable` | a key→value row in the dev state store |
+| `Deployment` | unpacks the artifact once per hash, reads the input document from its `compute.bootstrap.json`, materializes the env from its `variables`, and puts the deployment at the service's Compute instance, which (re)starts the child; updated when its instance does not run the recorded artifact |
+| `EnvironmentVariable` | a key→value row in the dev state store (`env.json`); only `reserve` declares one, for a dev server |
 | `Bucket` | the bucket instance the directory's record names for the resource, over a directory under `.prisma-composer/dev/<environment>/buckets/<app>/<bucket>/`, served by the bucket emulator; `bucketId` is the instance id, also its S3 name |
 | `BucketKey` | credentials registered with the bucket emulator for its bucket |
 | `ServiceKey` | **unchanged** — mints locally, persists in state |
@@ -552,7 +541,7 @@ The worker thread of a `prisma dev` converge runs no adapter. The main thread pa
 
 A rebuild runs no dev preflight, so a read of a platform variable that a code change adds would have no value. `prisma dev` therefore sends each converge's worker thread the reads of the graph it started with (`valueReads`: reader, node and path) and each read node's address and `props`. The worker, which has just loaded the app as it is on disk, compares them with its own graph's before it converges. If either differs, it does not converge; `prisma dev` emits the `value-reads-changed` event with the nodes whose reads were added, removed or changed, and pauses rebuilds until it is restarted. If the first converge sees a difference, which usually means an app file changed while `prisma dev` was starting, and otherwise that a module body builds a different graph each time it runs, `prisma dev` stops and names the reads that changed. For a rebuild the CLI prints a warning: `The platform variables the app reads changed since dev started: reads of "shop.smtpPort" were added, reads of "shop.emailFrom" were removed, and "shop.sender" was changed. Restart dev to apply them; rebuilds are paused until then.` An edit that adds or removes a node fails the rebuild with a message that says to restart `prisma dev`.
 
-The local `Deployment` provider gives each service only the variables its own input reads: the `$platform` markers in its input document, at any depth. For a service that runs its artifact, it reads the input document for this from the unpacked artifact's `compute.bootstrap.json`, with the reader `@internal/lowering` exports next to the packer. It ignores a `COMPOSER_<ADDRESS>_INPUT` entry in `env.json` for such a service, whether or not the artifact holds a document, and does not put that key into the process's environment, because the artifact's bootstrap passes the document to `run()`. For a service that runs a dev server, which has no artifact, the compute descriptor's `reserve` writes the input document as a `COMPOSER_<ADDRESS>_INPUT` variable, which the local target keeps in `env.json` with the service's other rows. This isolation is a requirement of the local target only. On Prisma Cloud every deployment receives every variable of its class.
+The local `Deployment` provider gives each service only the variables its own input reads: the `$platform` markers in its input document, at any depth. For a service that runs its artifact, it reads the input document for this from the unpacked artifact's `compute.bootstrap.json`, with the reader `@internal/lowering` exports next to the packer. It does not read `env.json` for such a service, and the artifact's bootstrap passes the document to `run()`. For a service that runs a dev server, which has no artifact, the compute descriptor's `reserve` writes the input document as a `COMPOSER_<ADDRESS>_INPUT` row, which the local target keeps in `env.json` with the service's other rows. This isolation is a requirement of the local target only. On Prisma Cloud every deployment receives every variable of the group its branch receives.
 
 To load `.env` files, list `dotenv()` in `config` and `secrets`, with `environmentVariables()` after it to keep the shell. It reads `.env`, `.env.local`, `.env.<environment>` and `.env.<environment>.local` beside `prisma.config.ts`, through `dotenv-flow`, and skips `.env.local` for the environment `test`. Values in `.env.dev` are read only by the environment `dev`; values in `.env` and `.env.local` are read by every environment, `prisma deploy` to `production` included. The deploy does not copy a secret to the platform, but a plain value there reaches the root's input in every environment. `import 'dotenv/config'` at the top of `prisma.config.ts` still works with the default lists; remove it when you list `dotenv()`.
 

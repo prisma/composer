@@ -1,0 +1,20 @@
+diff --git a/packages/prisma/src/services/management.ts b/packages/prisma/src/services/management.ts
+index 7c0702e0..afed79d4 100644
+--- a/packages/prisma/src/services/management.ts
++++ b/packages/prisma/src/services/management.ts
+@@ -977,6 +977,7 @@ export interface CreateServiceDeploymentRequest {
+   serviceId: string;
+   portMapping?: CreateServiceDeploymentRequestPortMapping;
+   skipCodeUpload?: boolean;
++  variables?: { [key: string]: string | null };
+ }
+ export interface CreateServiceDeploymentResponseData {
+   id: string;
+@@ -6235,6 +6236,7 @@ function __c57(j: number): any {
+           serviceId: S.String.pipe(T.Label()),
+           portMapping: S.optional(__S(912, __c57, 0)),
+           skipCodeUpload: S.optional(S.Boolean),
++          variables: S.optional(S.Record(S.String, S.NullOr(S.String))),
+         }).pipe(T.Http({ method: "POST", uri: "/v1/services/{serviceId}/deployments", code: 200 })),
+       ).annotate({ identifier: "CreateServiceDeploymentRequest" });
+     case 2:

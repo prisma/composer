@@ -31,6 +31,9 @@ jobs:
         run: pnpm lint:retired-binary-name
       - name: Lint (no control bytes in tracked files)
         run: pnpm lint:control-bytes
+      # A pnpm patch never reaches a user's install, so a release must not depend on one.
+      - name: Lint (no published package depends on a patched package)
+        run: pnpm check:patched-dependencies
 
   typecheck:
     name: Type Check

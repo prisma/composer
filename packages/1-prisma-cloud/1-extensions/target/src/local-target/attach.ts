@@ -9,6 +9,7 @@ import type { LocalTargetAttachInput, LocalTargetAttachment } from '@internal/co
 import { computeClient } from '@internal/dev-emulators';
 import {
   type AppScope,
+  devServerRows,
   directoryOf,
   ensureServiceInstance,
   materializeEnv,
@@ -159,8 +160,8 @@ export async function devAttach(input: LocalTargetAttachInput): Promise<LocalTar
     // stashed address-free as run() would, laid over the shell's own.
     serve: async ({ address, node, server, configuration, secrets }) => {
       const { instance } = await ensureServiceInstance(scope, address);
-      const materialized = await materializeEnv(
-        input.devDir,
+      const materialized = materializeEnv(
+        await devServerRows(input.devDir, address),
         address,
         instance.port,
         configuration,

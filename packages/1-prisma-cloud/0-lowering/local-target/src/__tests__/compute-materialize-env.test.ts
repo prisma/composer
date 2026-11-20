@@ -3,7 +3,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { readDocument } from '@internal/input-document';
-import { materializeEnv } from '../compute.ts';
+import * as Redacted from 'effect/Redacted';
+import { deploymentRows, devServerRows, materializeEnv } from '../compute.ts';
 import { envStore } from '../dev-store.ts';
 
 const NAMES = ['STRIPE_SECRET_KEY', 'APP_ORIGIN'];
@@ -39,8 +40,14 @@ test('each service gets the current values of only the variables its own rows po
     UNRELATED_SECRET: 'not for any service',
   };
 
-  const billing = await materializeEnv(devDir, 'billing', 4000, {}, secrets);
-  const mailer = await materializeEnv(devDir, 'mailer', 4001, {}, secrets);
+  const billing = materializeEnv(
+    await devServerRows(devDir, 'billing'),
+    'billing',
+    4000,
+    {},
+    secrets,
+  );
+  const mailer = materializeEnv(await devServerRows(devDir, 'mailer'), 'mailer', 4001, {}, secrets);
 
   expect(billing['STRIPE_SECRET_KEY']).toBe('sk_test_1');
   expect(billing['APP_ORIGIN']).toBe('http://localhost:3000');
@@ -56,10 +63,16 @@ test('a value changed in the app secrets reaches the service on the next materia
       stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
     }),
   });
-  await materializeEnv(devDir, 'billing', 4000, {}, { STRIPE_SECRET_KEY: 'sk_test_old' });
+  materializeEnv(
+    await devServerRows(devDir, 'billing'),
+    'billing',
+    4000,
+    {},
+    { STRIPE_SECRET_KEY: 'sk_test_old' },
+  );
 
-  const billing = await materializeEnv(
-    devDir,
+  const billing = materializeEnv(
+    await devServerRows(devDir, 'billing'),
     'billing',
     4000,
     {},
@@ -77,7 +90,13 @@ test('a platform variable that is unset or empty is not given to the service', a
     }),
   });
 
-  const billing = await materializeEnv(devDir, 'billing', 4000, {}, { MAILER_KEY: '' });
+  const billing = materializeEnv(
+    await devServerRows(devDir, 'billing'),
+    'billing',
+    4000,
+    {},
+    { MAILER_KEY: '' },
+  );
 
   expect('STRIPE_SECRET_KEY' in billing).toBe(false);
   expect('MAILER_KEY' in billing).toBe(false);
@@ -93,8 +112,8 @@ test('a local deployment takes its secrets from the app secrets and its plain pl
   process.env['STRIPE_SECRET_KEY'] = 'shell';
   process.env['APP_ORIGIN'] = 'shell';
 
-  const billing = await materializeEnv(
-    devDir,
+  const billing = materializeEnv(
+    await devServerRows(devDir, 'billing'),
     'billing',
     4000,
     { APP_ORIGIN: 'https://pool.example' },
@@ -110,7 +129,13 @@ test('a plain platform variable whose value is not text is left out', async () =
     COMPOSER_WEB_INPUT: JSON.stringify({ origin: { $platform: { name: 'APP_ORIGIN' } } }),
   });
 
-  const web = await materializeEnv(devDir, 'web', 4000, { APP_ORIGIN: { host: 'x' } }, {});
+  const web = materializeEnv(
+    await devServerRows(devDir, 'web'),
+    'web',
+    4000,
+    { APP_ORIGIN: { host: 'x' } },
+    {},
+  );
 
   expect('APP_ORIGIN' in web).toBe(false);
 });
@@ -121,7 +146,13 @@ test('a dev server reads a typed variable from its env.json document, schema inc
   });
   await writeRows({ COMPOSER_MAILER_INPUT: document });
 
-  const mailer = await materializeEnv(devDir, 'mailer', 4000, { SMTP_PORT: '587' }, {});
+  const mailer = materializeEnv(
+    await devServerRows(devDir, 'mailer'),
+    'mailer',
+    4000,
+    { SMTP_PORT: '587' },
+    {},
+  );
 
   expect(mailer['SMTP_PORT']).toBe('587');
   const input = mailer['COMPOSER_MAILER_INPUT'] ?? '';
@@ -136,14 +167,7 @@ test("a service that runs its artifact gets a typed variable's text, and decodes
     port: { $platform: { name: 'SMTP_PORT', schema: { type: 'number' } } },
   };
 
-  const mailer = await materializeEnv(
-    devDir,
-    'mailer',
-    4000,
-    { SMTP_PORT: '587' },
-    {},
-    { inputDocument },
-  );
+  const mailer = materializeEnv({}, 'mailer', 4000, { SMTP_PORT: '587' }, {}, { inputDocument });
 
   expect(mailer['SMTP_PORT']).toBe('587');
   expect('COMPOSER_MAILER_INPUT' in mailer).toBe(false);
@@ -153,14 +177,13 @@ test("a service that runs its artifact gets a typed variable's text, and decodes
 });
 
 test("a service gets the variables its artifact's input document names, and not the document itself", async () => {
-  await writeRows({ COMPOSER_WEB_PORT: '3000' });
   const inputDocument = {
     stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
     origin: { $platform: { name: 'APP_ORIGIN' } },
   };
 
-  const web = await materializeEnv(
-    devDir,
+  const web = materializeEnv(
+    {},
     'web',
     4000,
     { APP_ORIGIN: 'http://localhost:3000', UNREAD_NAME: 'not read' },
@@ -175,39 +198,35 @@ test("a service gets the variables its artifact's input document names, and not 
   expect('COMPOSER_WEB_INPUT' in web).toBe(false);
 });
 
-test('a stale input document in env.json gives the service nothing when its artifact carries one', async () => {
-  await writeRows({
-    COMPOSER_WEB_INPUT: JSON.stringify({
-      old: { $platform: { name: 'OLD_SECRET', secret: true } },
-    }),
+test('a deployment gives its service the keys in its variables, and leaves out a key sent as null', () => {
+  const rows = deploymentRows({
+    COMPOSER_WEB_DB_URL: Redacted.make('postgres://local'),
+    COMPOSER_WEB_STREAMS_API_KEY: null,
   });
-  const inputDocument = {
-    stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } },
-  };
 
-  const web = await materializeEnv(
-    devDir,
+  expect(rows).toEqual({ COMPOSER_WEB_DB_URL: 'postgres://local' });
+});
+
+test("a service that runs its artifact gets its deployment's keys, the emulator's port over its own, and not env.json", async () => {
+  await writeRows({ COMPOSER_WEB_STALE: 'a row an older Composer wrote' });
+  const inputDocument = { stripeKey: { $platform: { name: 'STRIPE_SECRET_KEY', secret: true } } };
+
+  const web = materializeEnv(
+    deploymentRows({
+      COMPOSER_WEB_PORT: Redacted.make('3000'),
+      COMPOSER_WEB_DB_URL: Redacted.make('postgres://local'),
+      COMPOSER_WEB_STREAMS_API_KEY: null,
+    }),
     'web',
     4000,
     {},
-    { OLD_SECRET: 'sk_old', STRIPE_SECRET_KEY: 'sk_test_1' },
+    { STRIPE_SECRET_KEY: 'sk_test_1' },
     { inputDocument },
   );
 
-  expect('OLD_SECRET' in web).toBe(false);
+  expect(web['COMPOSER_WEB_PORT']).toBe('4000');
+  expect(web['COMPOSER_WEB_DB_URL']).toBe('postgres://local');
   expect(web['STRIPE_SECRET_KEY']).toBe('sk_test_1');
-  expect('COMPOSER_WEB_INPUT' in web).toBe(false);
-});
-
-test('a stale input document in env.json gives the service nothing when its artifact carries none', async () => {
-  await writeRows({
-    COMPOSER_WEB_INPUT: JSON.stringify({
-      old: { $platform: { name: 'OLD_SECRET', secret: true } },
-    }),
-  });
-
-  const web = await materializeEnv(devDir, 'web', 4000, {}, { OLD_SECRET: 'sk_old' }, {});
-
-  expect('OLD_SECRET' in web).toBe(false);
-  expect('COMPOSER_WEB_INPUT' in web).toBe(false);
+  expect('COMPOSER_WEB_STREAMS_API_KEY' in web).toBe(false);
+  expect('COMPOSER_WEB_STALE' in web).toBe(false);
 });

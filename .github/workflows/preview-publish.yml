@@ -56,6 +56,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # A preview install gets no pnpm patch, so a branch that needs one publishes no preview.
+      - name: Check no published package depends on a patched package
+        run: pnpm check:patched-dependencies
+
       - name: Build packages
         run: pnpm build
 
