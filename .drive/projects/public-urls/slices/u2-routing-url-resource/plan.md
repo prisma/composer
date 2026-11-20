@@ -40,3 +40,15 @@ Sam Goodwin's alchemy-run/alchemy#2701 and its base #2698 are replaced by the Al
   - `pnpm exec tsrs -b`
   - `pnpm exec oxfmt --check` and `pnpm exec oxlint` over the touched files
   - `pnpm docs:check-jsdoc` and `pnpm docs:gen`
+
+## Deadline: Prisma deletes the custom domain routes about 2026-12-21
+
+Will decided on 2026-11-20 that the platform's old custom domain routes (`/v1/services/{id}/domains`, `/v1/domains/{id}`, retry, and the `/v1/apps/{appId}/domains` aliases) are deprecated now and deleted 30 days after the deprecation reaches production, target 2026-12-21. The date moves only if these two switches have not been released by then; callers on old client versions are not waited for. The platform plan records it in pdp-control-plane, `projects/routing-urls/plans/plan.md`, on the branch `feat/routing-urls-hostname-states`.
+
+- **Alchemy:** `Prisma.RoutingUrl` is released, then `Prisma.CustomDomain` is deprecated and removed. Inside Alchemy the only caller of `Prisma.CustomDomain` is `Prisma.Website` (a site with a `domain`), so it must move to `Prisma.RoutingUrl` before the routes go. `Prisma.RoutingUrl` takes a `dns` option for this (Alchemy `8645d9bdb3`, under review).
+- **Composer:** a named hostname in `publicUrl()` creates a `Prisma.RoutingUrl` (P2 in the project plan). It needs the Alchemy release first.
+- **Not owned by this project:** the `prisma` CLI's `prisma service domain ...` commands call the old routes too.
+
+What can make Alchemy miss the date: the bot cannot open pull requests on alchemy-run, so Will opens them; the Distilled pull request merges first; and Alchemy pins a Distilled commit it cannot simply move forward, which only Alchemy's maintainers can settle. None of these is in our hands, so the pull requests should open as early as possible instead of waiting for the platform's error codes.
+
+**Error codes, approved 2026-11-20 and being built on the platform:** `quota-exceeded` (unchanged), `logical-id-taken`, `invalid-hostname`, `service-on-another-branch` (update), `service-not-on-a-branch` (create). The brief sent to the platform is [platform-error-codes-brief.md](platform-error-codes-brief.md).
