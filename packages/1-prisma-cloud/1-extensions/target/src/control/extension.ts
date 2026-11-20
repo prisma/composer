@@ -48,6 +48,7 @@ import { RESERVED_PROVIDER_PARAMS } from '../provider-params.ts';
 import { prismaCloudReporter } from '../reporting/reporter.ts';
 import { resourceId } from '../resource-ids.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
+import { SentKeysProvider } from '../sent-keys-resource.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 import { STREAMS_API_KEY } from '../streams-keys.ts';
 import { serializeDeployPreflightPayload } from './preflight-payload.ts';
@@ -330,6 +331,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
           OrmMigrationProvider(),
           S3CredentialsProvider(),
           GeneratedParamProvider(),
+          SentKeysProvider(),
           Prisma.ServiceKeyProvider(),
         ),
       ),

@@ -18,7 +18,6 @@ import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import { prismaCloudContainerOf } from './container.ts';
 import type { DeployPreflightPayload } from './control/preflight-payload.ts';
-import { type EnvKeyClash, findEnvKeyClashes } from './env-key-clash.ts';
 import { mapWithConcurrency } from './map-with-concurrency.ts';
 import { addReader, missingVariableNames, missingVariablesText } from './missing-variables-text.ts';
 import { resolveOrmConfig } from './orm-config.ts';
@@ -115,72 +114,6 @@ async function readPlatformVariable(
   return { updatedAt, managedBySystem };
 }
 
-/** Whether `key` has a row in the scope Composer writes its own rows to: production, or the environment's branch. */
-async function composerRowExists(
-  client: ManagementApiClient,
-  projectId: string,
-  branchId: string | undefined,
-  key: string,
-): Promise<boolean> {
-  const cls = classFor(branchId);
-  let exists = false;
-  await drivePagesAsync(
-    `environment variables named "${key}"`,
-    async (cursor) => {
-      const res = await listEnvVars(
-        client,
-        cursor === undefined
-          ? { projectId, class: cls, key }
-          : { projectId, class: cls, key, cursor },
-      );
-      if (res.error !== undefined) throw listFailedError(key, res.error);
-      return res.data ?? { data: [], pagination: { nextCursor: null, hasMore: false } };
-    },
-    (data) => {
-      exists ||= data.some((row) => row.branchId === (branchId ?? null));
-      return exists;
-    },
-  );
-  return exists;
-}
-
-/**
- * A clash blocks the deploy while the old owner's row still holds the key and has not moved to
- * its new key yet. Before the move, the deploy would fail on that key partway through; after it,
- * the key belongs to the new owner, and a new environment has neither row. The old owner's new key can
- * itself be a third node's old key (`shop.x`, `shop.shop.x`, `shop.shop.shop.x`); a row there
- * counts as moved only when that clash is not pending, so a whole chain is reported at once.
- * Along a chain every key is longer than the one before, so the walk ends.
- */
-async function pendingEnvKeyClashes(
-  client: ManagementApiClient,
-  projectId: string,
-  branchId: string | undefined,
-  clashes: readonly EnvKeyClash[],
-): Promise<readonly EnvKeyClash[]> {
-  const byKey = new Map(clashes.map((clash) => [clash.key, clash]));
-  const exists = new Map<string, Promise<boolean>>();
-  const rowExists = (key: string) => {
-    const known = exists.get(key);
-    if (known !== undefined) return known;
-    const found = composerRowExists(client, projectId, branchId, key);
-    exists.set(key, found);
-    return found;
-  };
-  const isPending = async (clash: EnvKeyClash): Promise<boolean> =>
-    (await rowExists(clash.key)) && !(await hasMoved(clash.oldOwnerNewKey));
-  const hasMoved = async (key: string): Promise<boolean> => {
-    if (!(await rowExists(key))) return false;
-    const next = byKey.get(key);
-    return next === undefined || !(await isPending(next));
-  };
-  const pending: EnvKeyClash[] = [];
-  for (const clash of clashes) {
-    if (await isPending(clash)) pending.push(clash);
-  }
-  return pending;
-}
-
 /** The preflight input typed against this extension's own client — the concrete form of the framework's erased `PreflightInput<unknown>`. */
 export type PrismaCloudPreflightInput = PreflightInput<ManagementApiClient>;
 
@@ -231,36 +164,6 @@ const managedBySystemError = (names: readonly string[]): Error =>
 const invalidInputError = (serviceAddress: string, message: string): Error =>
   new Error(`invalid input for service "${serviceAddress}": ${message}`);
 
-function envKeyClashError(
-  clashes: readonly EnvKeyClash[],
-  projectId: string,
-  branchId: string | undefined,
-  environment: string,
-): Error {
-  const scopeFlag =
-    branchId === undefined ? '--role production' : `--branch ${shellQuote(environment)}`;
-  const lines = clashes.map(
-    (c) =>
-      `  - ${c.key} belongs to "${c.oldOwner}" from the previous Composer release. ` +
-      `This release writes it for "${c.newOwner}", and moves "${c.oldOwner}"'s value to ${c.oldOwnerNewKey}.`,
-  );
-  const commands = clashes.map(
-    (c) =>
-      `      prisma project env delete ${shellQuote(c.key)} --project ${shellQuote(projectId)} ${scopeFlag}`,
-  );
-  return new Error(
-    "Deploy failed before any resource was created, changed or deleted; the branch's application " +
-      'topology has already been replaced and the build recorded. Moving to addresses that start with the app name ' +
-      "gives these environment variables a new owner, but each still holds its old owner's value:\n" +
-      `${lines.join('\n')}\n\n` +
-      'Delete each one, then deploy again. The deploy writes every value under its new key, so ' +
-      'nothing is lost; the running deployments keep their own copy until then.\n' +
-      `${commands.join('\n')}\n` +
-      'Or delete it in the Prisma Console: open the project, go to Environment variables, and ' +
-      `delete it under ${branchId === undefined ? 'Production' : `the branch "${environment}"`}.`,
-  );
-}
-
 async function managementClient(): Promise<ManagementApiClient> {
   if ((process.env['PRISMA_SERVICE_TOKEN'] ?? '').length === 0) throw tokenRequiredError();
   return Effect.runPromise(
@@ -297,15 +200,12 @@ export async function runPreflight(
   const names = [
     ...new Set([...services.flatMap((service) => service.names), ...unread.map((use) => use.name)]),
   ];
-  const clashes = findEnvKeyClashes(input.graph);
-  if (names.length === 0 && clashes.length === 0) {
+  if (names.length === 0) {
     input.report?.({ checked: 0, unset: [] });
     return { updatedAt: new Map() };
   }
 
   const client = composerClientOf(input.credentials) ?? deps?.client ?? (await managementClient());
-  const pending = await pendingEnvKeyClashes(client, projectId, branchId, clashes);
-  if (pending.length > 0) throw envKeyClashError(pending, projectId, branchId, input.environment);
 
   const rows = await mapWithConcurrency(names, LIST_CONCURRENCY, (name) =>
     readPlatformVariable(client, projectId, branchId, name),

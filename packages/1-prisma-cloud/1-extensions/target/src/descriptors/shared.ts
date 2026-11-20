@@ -94,6 +94,9 @@ const PLATFORM_NAME_LIMITS = {
   Bucket: { min: 1, max: 100 },
 } as const;
 
+/** The most variables the platform stores on one service; a `null` deletes a key and is not counted. */
+export const SERVICE_VARIABLE_LIMIT = 50;
+
 /**
  * Checks that the platform can hold the node's address as the name of its `kind` row (ADR-0057).
  * Fails naming the address and the limit; a name is never shortened or padded.

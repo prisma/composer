@@ -46,6 +46,47 @@ const managementApiHttpLayer = (origin: string) =>
     }),
   );
 
+type EnvironmentVariableService = Provider.ProviderService<Prisma.EnvironmentVariable>;
+
+/**
+ * Upstream's variable row provider, except that a row the platform refuses to
+ * delete because its recorded project, branch, class or key differ from the
+ * platform's is dropped from deploy state with a warning. Hosted deploys
+ * declare no rows, so every delete removes a row an older Composer wrote, and
+ * one such row would otherwise fail this deploy and every later one.
+ */
+const droppingMismatchedRows = (
+  service: EnvironmentVariableService,
+): EnvironmentVariableService => ({
+  ...service,
+  delete: (input) =>
+    service.delete(input).pipe(
+      Effect.catchIf(
+        (error) => error._tag === 'EnvironmentVariableConflict',
+        () =>
+          Effect.logWarning(
+            `Composer could not delete the variable ${input.output.key} that an older Composer wrote, ` +
+              "because the platform's record of it no longer matches the deploy state. Composer has " +
+              'stopped tracking it. Delete it in Console if it is still listed.',
+          ),
+      ),
+    ),
+  ...(service.modes === undefined
+    ? {}
+    : {
+        modes: {
+          live: Effect.map(service.modes.live, droppingMismatchedRows),
+          local: Effect.map(service.modes.local, droppingMismatchedRows),
+        },
+      }),
+});
+
+export const environmentVariableProvider = () =>
+  Provider.effect(
+    Prisma.EnvironmentVariable,
+    Effect.map(Prisma.EnvironmentVariable.Provider, droppingMismatchedRows),
+  ).pipe(Layer.provide(Prisma.EnvironmentVariableProvider()));
+
 /**
  * Upstream alchemy's live providers for the postgres family (Project,
  * Database, Connection), the compute family (App, Deployment,
@@ -65,7 +106,7 @@ const upstreamPrismaProviders = (baseUrl: string, clientSupplied: boolean) =>
     Prisma.ConnectionProvider(),
     Prisma.AppProvider(),
     Prisma.DeploymentProvider(),
-    Prisma.EnvironmentVariableProvider(),
+    environmentVariableProvider(),
     Prisma.BucketProvider(),
     Prisma.BucketAccessKeyProvider(),
     Prisma.CustomDomainProvider(),

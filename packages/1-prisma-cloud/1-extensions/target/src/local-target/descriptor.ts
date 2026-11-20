@@ -19,6 +19,7 @@ import { GeneratedParamProvider } from '../generated-param-resource.ts';
 import { LocalOrmMigrationProvider } from '../orm-migration-resource.ts';
 import { PgWarmProvider } from '../pg-warm-resource.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
+import { SentKeysProvider } from '../sent-keys-resource.ts';
 import { devAttach } from './attach.ts';
 import { devContainerDescriptor } from './container.ts';
 import { runDevEmulators } from './emulators.ts';
@@ -49,6 +50,7 @@ export function localTargetDescriptor(): LocalTargetDescriptor {
           LocalOrmMigrationProvider(),
           S3CredentialsProvider(),
           GeneratedParamProvider(),
+          SentKeysProvider(),
           Prisma.ServiceKeyProvider(),
         ),
       ),
