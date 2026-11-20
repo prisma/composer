@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Reads the built `dist` of the three public packages and fails when:
-// - a `.mjs` file has no `.map` beside it, unless it only re-exports other
+// - a `.mjs` or `.d.mts` file has no `.map` beside it, unless it only re-exports other
 //   chunks or is rolldown's runtime chunk;
 // - a map source is an absolute path (POSIX or Windows) or a URL;
 // - a map names our own code (not under `node_modules/`, or under

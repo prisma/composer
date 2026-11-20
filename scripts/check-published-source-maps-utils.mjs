@@ -8,7 +8,7 @@ const ABSOLUTE_OR_URL = /^(?:[a-z][a-z0-9+.-]*:|[\\/])/i;
 const ORM_OR_PRETTIER = /(?:^|\/)node_modules\/(?:@prisma\/orm-|prettier\/)/;
 const IN_DIST = /(?:^|\/)dist\//;
 const RE_EXPORT_LINE =
-  /^(?:import \{[^}]*\} from "[^"]+";|export \{[^}]*\}(?: from "[^"]+")?;|export \* from "[^"]+";)$/;
+  /^(?:import (?:\{[^}]*\} from )?"[^"]+";|export \{[^}]*\}(?: from "[^"]+")?;|export \* from "[^"]+";)$/;
 
 function isOwnCode(source) {
   return !source.includes('node_modules/') || source.includes('node_modules/@internal/');
@@ -30,7 +30,7 @@ export function sourceMapProblems(distDirs) {
       problems.push(`${dist}: missing; build the public packages first`);
       continue;
     }
-    for (const name of globSync('**/*.mjs', { cwd: dist }).sort()) {
+    for (const name of globSync('**/*.{mjs,d.mts}', { cwd: dist }).sort()) {
       const file = join(dist, name);
       if (!existsSync(`${file}.map`) && !needsNoMap(file)) {
         problems.push(`${file}: has no source map`);
