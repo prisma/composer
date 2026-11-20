@@ -24,16 +24,15 @@
  * target, so the first deploy applies the committed baseline like any other
  * migration. No synthesis of any kind runs at deploy: never `dbInit` (schema
  * synthesized from the contract) and never `dbUpdate` (synthesized
- * diff-and-apply). A missing authored path (`MIGRATION_PATH_NOT_FOUND`) is a
- * structured refusal whose message names the two exits — `prisma db update`
- * for local iteration, `prisma contract emit && prisma migration plan` to
- * author the path for shipping. A runner failure fails the deploy as a typed
- * `OrmMigrationError` (not swallowed). PN applies each migration in its own
+ * diff-and-apply). Any failed `migrate` — no authored path, a marker the
+ * graph does not contain, a step that errors — fails the deploy as a typed
+ * `OrmMigrationError` (not swallowed) that carries Prisma ORM's own error and
+ * advice. PN applies each migration in its own
  * transaction, so a failed apply is atomic and resume-safe — the marker and
  * schema are left as the last committed step.
  */
 
-import { createPostgresControlClient } from '@prisma/orm-postgres/control';
+import { type ControlClient, createPostgresControlClient } from '@prisma/orm-postgres/control';
 import { readRef } from '@prisma/orm-toolchain/migration-tools/refs';
 import {
   APP_SPACE_ID,
@@ -63,11 +62,8 @@ export interface OrmMigrationOutcome {
 }
 
 /**
- * Why a migration failed the deploy. `MIGRATION_PATH_NOT_FOUND` — no authored
- * migration path from the marker's state (or from empty, for a fresh
- * database) to the target ref. `RUNNER_FAILED` — a migration errored while
- * applying. `CONTRACT_INVALID` — the contract carries no
- * `storage.storageHash`, so no target can be resolved.
+ * A failure Composer finds before Prisma ORM runs. `CONTRACT_INVALID` — the
+ * contract carries no `storage.storageHash`, so no target can be resolved.
  * `CONTRACT_ARTIFACT_UNREADABLE` — the emitted `contract.json` identified by
  * `prisma.config.ts` could not be loaded. `CONTRACT_IDENTITY_MISMATCH` — the
  * config-loaded emitted contract's storage hash does not match the database
@@ -75,54 +71,73 @@ export interface OrmMigrationOutcome {
  * named a `targetRef` with no readable `migrations/app/refs/<name>.json`.
  */
 export type OrmMigrationFailureCode =
-  | 'MIGRATION_PATH_NOT_FOUND'
-  | 'RUNNER_FAILED'
   | 'CONTRACT_INVALID'
   | 'CONTRACT_ARTIFACT_UNREADABLE'
   | 'CONTRACT_IDENTITY_MISMATCH'
   | 'TARGET_REF_NOT_FOUND';
 
-/** A deploy-failing migration error — surfaced, never swallowed. */
-export class OrmMigrationError extends Error {
-  readonly _tag = 'OrmMigrationError';
-  readonly code: OrmMigrationFailureCode;
-  /** PN's structured explanation, when present. */
-  readonly why: string | undefined;
-  constructor(code: OrmMigrationFailureCode, summary: string, why?: string) {
-    super(`Prisma ORM migrate (${code}): ${summary}`);
-    this.name = 'OrmMigrationError';
-    this.code = code;
-    this.why = why;
-  }
+/** The error a failed Prisma ORM `migrate` returns. */
+export type OrmMigrateFailure = Extract<
+  Awaited<ReturnType<ControlClient['migrate']>>,
+  { readonly ok: false }
+>['failure'];
+
+type OrmNextAction = NonNullable<OrmMigrateFailure['nextActions']>[number];
+
+/** Prisma ORM's advice names its binary `{bin}`; Composer's commands run in the same `prisma` CLI. */
+function withBinaryName(text: string): string {
+  return text.replaceAll('{bin}', 'prisma');
+}
+
+function nextActionLine(action: OrmNextAction): string {
+  const target = action.command ?? action.url;
+  return target === undefined || target === action.label
+    ? `→ ${action.label}`
+    : `→ ${action.label}: ${target}`;
+}
+
+/** The failure as the `prisma` CLI prints a diagnostic: code and summary, why, next actions (the fix when there are none), docs. */
+function migrateFailureText(failure: OrmMigrateFailure): string {
+  const [whyFirst, ...whyRest] = failure.why?.split('\n') ?? [];
+  const actions = failure.nextActions ?? [];
+  const advice =
+    actions.length > 0
+      ? actions.map(nextActionLine)
+      : failure.fix === undefined
+        ? []
+        : [`→ ${failure.fix}`];
+  return withBinaryName(
+    [
+      `[${failure.code}] ${failure.message}`,
+      ...(whyFirst === undefined ? [] : [`  why: ${whyFirst}`]),
+      ...whyRest.map((line) => `       ${line}`),
+      ...advice,
+      ...(failure.docsUrl === undefined ? [] : [`  docs: ${failure.docsUrl}`]),
+    ].join('\n'),
+  );
 }
 
 /**
- * The replay-only refusal for a missing authored path. The pipeline never
- * authors schema, so the only fix is to bring one of the two sides along:
- * update the database directly (local iteration) or author and commit the
- * missing migrations (shipping). The same message serves a deploy against a
- * cloud database and a `dev` run against the local emulator database.
+ * A deploy-failing migration error — surfaced, never swallowed. Built from a
+ * failed `migrate`, it is Prisma ORM's own error: its code, its `why`, and a
+ * message with the ORM's advice in it.
  */
-function noPathRefusal(
-  summary: string,
-  markerHashBefore: string | null,
-  aggregate: boolean,
-): string {
-  // The marker speaks for the APP space only; with extension packs declared
-  // the failed space's own start state is unknown here, so no source-state
-  // claim is made for aggregate migrations.
-  const from = aggregate
-    ? 'The committed migrations/ directory has no authored path to the target in every declared migration space'
-    : markerHashBefore === null
-      ? 'The database carries no schema marker and the committed migrations/ directory has no authored path from empty to the target'
-      : `The committed migrations/ directory has no authored path from the database's current schema (${markerHashBefore}) to the target`;
-  return (
-    `${from} — the deploy pipeline only replays authored migrations, it never creates schema itself. ` +
-    'Iterating locally? Bring the database along with `prisma db update`. ' +
-    'Shipping? Author the migration path — `prisma contract emit && prisma migration plan --name <slug>` ' +
-    '(baseline first if the migration graph is empty) — and commit migrations/. ' +
-    `(${summary})`
-  );
+export class OrmMigrationError extends Error {
+  readonly _tag = 'OrmMigrationError';
+  readonly code: OrmMigrationFailureCode | OrmMigrateFailure['code'];
+  readonly why: string | undefined;
+  constructor(code: OrmMigrationFailureCode, summary: string, why?: string);
+  constructor(failure: OrmMigrateFailure);
+  constructor(source: OrmMigrationFailureCode | OrmMigrateFailure, summary?: string, why?: string) {
+    super(
+      typeof source === 'string'
+        ? `Prisma ORM migrate (${source}): ${summary}`
+        : migrateFailureText(source),
+    );
+    this.name = 'OrmMigrationError';
+    this.code = typeof source === 'string' ? source : source.code;
+    this.why = typeof source === 'string' ? why : source.why;
+  }
 }
 
 /**
@@ -219,8 +234,8 @@ export async function isAtTargetRef(url: string, ref: PnTargetRef): Promise<bool
  * Bring the database at `url` to the target ref via PN's authored migrations.
  * Reads the live marker, decides no-op / migrate
  * ({@link decideMigrationAction}), applies, and throws a typed
- * {@link OrmMigrationError} on a no-path or runner failure. `migrationsDir` is
- * the on-disk migrations root and `ref` the resolved target
+ * {@link OrmMigrationError} carrying Prisma ORM's error when `migrate` fails.
+ * `migrationsDir` is the on-disk migrations root and `ref` the resolved target
  * ({@link resolveTargetRef} — both resolved by the lowering, which also keys
  * the OrmMigration resource on them). `refName` (the resource's `targetRef`,
  * when set) is threaded into `migrate` so PN targets the named ref's hash and
@@ -237,8 +252,8 @@ export async function applyOrmMigration(opts: {
 }): Promise<OrmMigrationOutcome> {
   const connection = normalizeSslMode(opts.url);
   // Retry the connect+operation past PPG's cold-start (see withConnectionRetry).
-  // A real migration failure (no-path / runner) is a OrmMigrationError — never a
-  // connection transient — so it surfaces immediately, never retried.
+  // A failed migrate is an OrmMigrationError — never a connection transient —
+  // so it surfaces immediately, never retried.
   return withConnectionRetry(
     () =>
       runMigration(
@@ -285,28 +300,17 @@ async function runMigration(
     // path planning (the same refHash/refInvariants/refName the CLI's
     // `migrate --to` passes); with the default head, PN's own head-ref
     // semantics apply. Fails on no path / runner error; never synthesizes.
+    // The database is the one this deploy provisioned, not the one
+    // prisma.config.ts names, so the ORM's advice prints `--db <url>`.
     const result = await client.migrate({
       contract: contractJson,
       migrationsDir,
-      invocation: { cwd: process.cwd(), configPath: undefined, dbGiven: false },
+      invocation: { cwd: process.cwd(), configPath: undefined, dbGiven: true },
       ...(refName !== undefined
         ? { refHash: ref.hash, refInvariants: ref.invariants, refName }
         : {}),
     });
-    if (!result.ok) {
-      if (result.failure.code === 'MIGRATION.PATH_UNREACHABLE') {
-        throw new OrmMigrationError(
-          'MIGRATION_PATH_NOT_FOUND',
-          noPathRefusal(result.failure.message, markerHashBefore, extensionPacks.length > 0),
-          result.failure.why,
-        );
-      }
-      throw new OrmMigrationError(
-        'RUNNER_FAILED',
-        `${result.failure.code}: ${result.failure.message}`,
-        result.failure.why,
-      );
-    }
+    if (!result.ok) throw new OrmMigrationError(result.failure);
     return { action, targetHash: ref.hash, markerHashBefore };
   } finally {
     await client.close();

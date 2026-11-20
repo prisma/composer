@@ -2,19 +2,23 @@
  * The safety-critical migration decision + apply logic (ref-based
  * target per review R4), proven against a real local Postgres — isolated from
  * the Alchemy stack / Prisma Cloud provisioning. Exercises `applyOrmMigration`
- * end to end in three shapes (replay-only: the pipeline never synthesizes):
+ * end to end (replay-only: the pipeline never synthesizes). A failed migrate
+ * throws OrmMigrationError carrying Prisma ORM's own error, whose whole text
+ * each failure case asserts:
  *
  * No authored graph (empty migrations dir):
- *   - empty DB → the structured refusal: OrmMigrationError
- *     (MIGRATION_PATH_NOT_FOUND) naming both exits (`prisma db update` /
- *     `prisma migration plan`), DB left untouched
+ *   - empty DB → MIGRATION.PATH_UNREACHABLE, DB left untouched
  *
  * Authored baseline (EMPTY → widgetHash, built via PN's own migration-tools
  * writers so hashes and manifests are the real thing):
  *   - empty DB           → `migrate` replays the baseline and signs the marker
  *   - same target re-run → `noop`
- *   - no authored path   → throws OrmMigrationError(MIGRATION_PATH_NOT_FOUND),
- *                          DB left unchanged
+ *   - no authored path   → MIGRATION.PATH_UNREACHABLE, DB left unchanged
+ *   - a migrations dir that does not contain the marker's contract →
+ *                          MIGRATION.MARKER_MISMATCH, DB left unchanged
+ *
+ * A baseline whose step errors in the database → MIGRATION.EXECUTION_FAILED,
+ * DB left untouched.
  *
  * Authored graph with a DATA invariant:
  *   - a fresh DB whose target ref REQUIRES an invariant goes through
@@ -54,6 +58,7 @@ import {
 import {
   authorWidgetBackfill,
   authorWidgetInit,
+  authorWidgetInitThatFails,
   BACKFILL_INVARIANT,
   widgetHash,
 } from './widget-migrations-fixture.ts';
@@ -68,6 +73,16 @@ if (pg === undefined) {
 }
 
 const gadgetHash = targetStorageHash(gadgetContractJson);
+
+async function rejection(run: Promise<unknown>): Promise<OrmMigrationError> {
+  try {
+    await run;
+  } catch (error) {
+    expect(error).toBeInstanceOf(OrmMigrationError);
+    return error as OrmMigrationError;
+  }
+  throw new Error('expected applyOrmMigration to fail');
+}
 
 async function readMarker(
   url: string,
@@ -101,30 +116,29 @@ describe.skipIf(pg === undefined)(
       if (migrationsDir !== undefined) fs.rmSync(migrationsDir, { recursive: true, force: true });
     });
 
-    test('empty DB, empty migrations dir → refuses with both exits named; DB untouched', async () => {
+    test("empty DB, empty migrations dir → Prisma ORM's no-path error; DB untouched", async () => {
       expect(await readMarker(db.url)).toBeNull();
 
       const ref = await resolveTargetRef(migrationsDir, widgetContractJson);
       expect(ref).toEqual({ hash: widgetHash, invariants: [] });
 
-      let thrown: unknown;
-      try {
-        await applyOrmMigration({
-          url: db.url,
-          contractJson: widgetContractJson,
-          migrationsDir,
-          ref,
-        });
-      } catch (e) {
-        thrown = e;
-      }
+      const error = await rejection(
+        applyOrmMigration({ url: db.url, contractJson: widgetContractJson, migrationsDir, ref }),
+      );
 
-      expect(thrown).toBeInstanceOf(OrmMigrationError);
-      const error = thrown as OrmMigrationError;
-      expect(error.code).toBe('MIGRATION_PATH_NOT_FOUND');
-      // The refusal names both exits: local iteration and authoring the path.
-      expect(error.message).toContain('prisma db update');
-      expect(error.message).toContain('prisma contract emit && prisma migration plan');
+      expect(error.code).toBe('MIGRATION.PATH_UNREACHABLE');
+      expect(error.message).toBe(
+        [
+          '[MIGRATION.PATH_UNREACHABLE] No on-disk migrations for contract space "app"',
+          `  why: migrate is replay-only: a contract space that declares managed storage elements must have an authored migration graph on disk. Space "app" has no migrations under \`${migrationsDir}/app/\` but its head ref targets "${widgetHash}".`,
+          '→ Plan the missing edge: prisma migration plan --name <slug>',
+          '→ Apply it: prisma db migrate',
+          '→ A rollback (reverse) plan is expected to contain destructive (DROP) operations — review them before applying',
+          '→ Plan a rename with --rename old:new; re-adding a required field without a safe default, or a type change that needs data, may need you to fill in the planned migration.ts',
+          '→ Inspect the on-disk graph: prisma migration list',
+          '→ Inspect a bundle in the path you expected: prisma migration show <bundle>',
+        ].join('\n'),
+      );
       // Nothing was applied — the pipeline never synthesizes.
       expect(await readMarker(db.url)).toBeNull();
     });
@@ -185,27 +199,104 @@ describe.skipIf(pg === undefined)('applyOrmMigration — authored baseline (repl
     expect((await readMarker(url))?.storageHash).toBe(widgetHash);
   });
 
-  test('marker at a different hash with no authored path → fails, DB unchanged', async () => {
+  test("marker at a different hash with no authored path → Prisma ORM's no-path error, DB unchanged", async () => {
     // The DB is currently signed at widgetHash. Target a DIFFERENT contract
-    // (gadget) with no authored migration between the two — migrate must fail
-    // with MIGRATION_PATH_NOT_FOUND and leave the marker at widgetHash.
+    // (gadget) with no authored migration between the two.
     expect((await readMarker(url))?.storageHash).toBe(widgetHash);
     expect(gadgetHash).not.toBe(widgetHash);
 
     const ref = await resolveTargetRef(migrationsDir, gadgetContractJson);
-    let thrown: unknown;
-    try {
-      await applyOrmMigration({ url, contractJson: gadgetContractJson, migrationsDir, ref });
-    } catch (e) {
-      thrown = e;
-    }
+    const error = await rejection(
+      applyOrmMigration({ url, contractJson: gadgetContractJson, migrationsDir, ref }),
+    );
 
-    expect(thrown).toBeInstanceOf(OrmMigrationError);
-    expect((thrown as OrmMigrationError).code).toBe('MIGRATION_PATH_NOT_FOUND');
+    expect(error.code).toBe('MIGRATION.PATH_UNREACHABLE');
+    expect(error.message).toBe(
+      [
+        '[MIGRATION.PATH_UNREACHABLE] Current contract has no planned migration path',
+        `  why: No migration edge connects the current state "${widgetHash}" to the target "${gadgetHash}" in contract space "app". The on-disk migration graph does not join the two, and migrate replays existing edges — it never invents one.`,
+        `→ Plan the missing edge: prisma migration plan --from ${widgetHash} --to ${gadgetHash} --name <slug>`,
+        `→ Apply it: prisma db migrate --to ${gadgetHash}`,
+        '→ A rollback (reverse) plan is expected to contain destructive (DROP) operations — review them before applying',
+        '→ Plan a rename with --rename old:new; re-adding a required field without a safe default, or a type change that needs data, may need you to fill in the planned migration.ts',
+        '→ Inspect the on-disk graph: prisma migration list',
+        '→ Inspect a bundle in the path you expected: prisma migration show <bundle>',
+      ].join('\n'),
+    );
     // Failed apply left the marker (and schema) unchanged.
     expect((await readMarker(url))?.storageHash).toBe(widgetHash);
   });
+
+  test("marker at a contract the migrations do not contain → Prisma ORM's marker error with its recovery commands", async () => {
+    // The DB is signed at widgetHash, and this migrations dir has no
+    // migration that starts or ends there.
+    expect((await readMarker(url))?.storageHash).toBe(widgetHash);
+    const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pn-other-'));
+    try {
+      const ref = await resolveTargetRef(otherDir, gadgetContractJson);
+      const error = await rejection(
+        applyOrmMigration({
+          url,
+          contractJson: gadgetContractJson,
+          migrationsDir: otherDir,
+          ref,
+        }),
+      );
+
+      expect(error.code).toBe('MIGRATION.MARKER_MISMATCH');
+      expect(error.message).toBe(
+        [
+          '[MIGRATION.MARKER_MISMATCH] The database is at a contract that is not in the migration graph',
+          `  why: The database's marker names ${widgetHash}, which no migration in ${path.relative(process.cwd(), path.join(otherDir, 'app'))} starts or ends at. A migration it applied was planned again or deleted, or \`db update\` moved it to a contract no migration ends at.`,
+          '→ Unless this database changes only through migrations, as production does, move it with db update; its data stays:',
+          '→ Preview the changes: prisma db update --dry-run --db <url>',
+          '→ Reconcile the database: prisma db update --db <url>',
+          `→ Otherwise plan a migration from the empty contract to its current contract, then one to ${gadgetHash}, and deploy again.`,
+        ].join('\n'),
+      );
+      expect((await readMarker(url))?.storageHash).toBe(widgetHash);
+    } finally {
+      fs.rmSync(otherDir, { recursive: true, force: true });
+    }
+  });
 });
+
+describe.skipIf(pg === undefined)(
+  'applyOrmMigration — a migration that fails while it applies',
+  () => {
+    if (pg === undefined) return;
+    let migrationsDir: string;
+    let db: TestDatabase;
+
+    beforeAll(async () => {
+      migrationsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pn-fail-'));
+      await authorWidgetInitThatFails(migrationsDir);
+      db = await createTestDatabase(pg.url);
+    });
+    afterAll(async () => {
+      await db?.drop().catch(() => {});
+      if (migrationsDir !== undefined) fs.rmSync(migrationsDir, { recursive: true, force: true });
+    });
+
+    test("the step errors → Prisma ORM's execution error; DB untouched", async () => {
+      const ref = await resolveTargetRef(migrationsDir, widgetContractJson);
+      const error = await rejection(
+        applyOrmMigration({ url: db.url, contractJson: widgetContractJson, migrationsDir, ref }),
+      );
+
+      expect(error.code).toBe('MIGRATION.EXECUTION_FAILED');
+      expect(error.message).toBe(
+        [
+          '[MIGRATION.EXECUTION_FAILED] Operation table.Widget failed during execution: create table "Widget"',
+          '  why: division by zero. The failed apply changed nothing.',
+          '→ Resolve the cause the failure names, then re-run `prisma db migrate --db <url>`',
+          '  docs: https://docs.prisma.io/docs/orm/v8/reference/error-reference#MIGRATION.EXECUTION_FAILED',
+        ].join('\n'),
+      );
+      expect(await readMarker(db.url)).toBeNull();
+    });
+  },
+);
 
 describe.skipIf(pg === undefined)(
   'applyOrmMigration — authored graph with a data invariant',

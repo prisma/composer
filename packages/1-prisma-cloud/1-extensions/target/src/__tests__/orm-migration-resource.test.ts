@@ -329,6 +329,6 @@ describe.skipIf(pg === undefined)('OrmMigration reconcile routes through applyOr
 
     expect(outcome.failed).toBe(true);
     expect(outcome.error).toBeInstanceOf(OrmMigrationError);
-    expect((outcome.error as OrmMigrationError).code).toBe('MIGRATION_PATH_NOT_FOUND');
+    expect((outcome.error as OrmMigrationError).code).toBe('MIGRATION.PATH_UNREACHABLE');
   });
 });

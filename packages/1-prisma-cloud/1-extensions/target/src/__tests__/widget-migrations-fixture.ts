@@ -9,6 +9,8 @@
  *   - `authorWidgetBackfill`: widgetHash → widgetHash, a `data`-class op
  *     carrying `invariantId` — the A→A self-edge only invariant routing can
  *     select — plus a named ref `with-backfill` requiring the invariant.
+ *   - `authorWidgetInitThatFails`: the same edge as the baseline, whose step
+ *     errors in the database, for a migration that fails while it applies.
  */
 import * as path from 'node:path';
 import { computeMigrationHash } from '@prisma/orm-toolchain/migration-tools/hash';
@@ -72,6 +74,33 @@ export async function authorWidgetInit(migrationsDir: string): Promise<void> {
     path.join(appDir, '20260712T0001_init'),
     { ...initMeta, migrationHash: computeMigrationHash(initMeta, initOps) },
     initOps,
+  );
+}
+
+/** EMPTY → widgetHash, whose only step fails in the database: `SELECT 1/0`. */
+export async function authorWidgetInitThatFails(migrationsDir: string): Promise<void> {
+  const appDir = spaceMigrationDirectory(migrationsDir, APP_SPACE_ID);
+  const ops = [
+    {
+      id: 'table.Widget',
+      label: 'Create table "Widget"',
+      operationClass: 'additive' as const,
+      target: { id: 'postgres' },
+      precheck: [],
+      execute: [{ description: 'create table "Widget"', sql: 'SELECT 1/0', params: [] }],
+      postcheck: [],
+    },
+  ];
+  const meta = {
+    from: null,
+    to: widgetHash,
+    providedInvariants: [],
+    createdAt: '2026-07-12T00:00:00.000Z',
+  };
+  await writeMigrationPackage(
+    path.join(appDir, '20260712T0001_init'),
+    { ...meta, migrationHash: computeMigrationHash(meta, ops) },
+    ops,
   );
 }
 
