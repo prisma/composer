@@ -1,120 +1,102 @@
 #!/usr/bin/env node
-// Every source map the three public packages publish must lead a user back to
-// our TypeScript, and `@prisma/composer-prisma-cloud/auth/testing` must not
-// carry its own copy of the Prisma ORM.
+// Reads the built `dist` of the three public packages and fails when:
+// - a `.mjs` file has no `.map` beside it, unless it holds only import and
+//   export lines or is rolldown's runtime chunk;
+// - a map source is an absolute path (POSIX or Windows) or a URL;
+// - a map names our own code (not under `node_modules/`, or under
+//   `node_modules/@internal/`) inside a `dist` folder instead of its `.ts`;
+// - a JavaScript map has no `sourcesContent` for our own code;
+// - a map has a source from `@prisma/orm-*` or `prettier`: the app installs
+//   the Prisma ORM, and Composer must not ship a copy (ADR-0046).
 //
-// The public packages bundle the internal packages' built `dist`, which in
-// turn bundles other internal packages' `dist`. Rolldown does not read the map
-// beside a built input file on its own, so without the
-// `carryIncomingSourceMaps` plugin in `@internal/tsdown-config` each step names
-// the previous step's `dist` file as its source, and a stack trace or debugger
-// lands in generated code the user does not have.
-//
-// For each map in each public package's `dist`, a source fails when it is an
-// absolute path, or when it is our own code (not under `node_modules/`) and
-// still sits in a `dist` folder. A JavaScript map also fails when it lacks
-// `sourcesContent` for our own code. Declaration maps are exempt from that
-// last rule: TypeScript never writes `sourcesContent` into them, and
-// rolldown-plugin-dts strips it.
-//
-// The ORM is a peer dependency the app installs (ADR-0046). `auth/testing`
-// once inlined it with `prettier`, about 8 MB, because its tsdown pass
-// inlined every `@prisma/` package. The check reads the maps of
-// `dist/auth/testing.mjs` and every chunk it imports, and fails on any
-// source from `@prisma/orm-*` or `prettier`. That relies on the maps being
-// composed: an uncomposed map names only the internal `dist` file, which the
-// first half of this check already rejects.
+// Declaration maps are exempt from the `sourcesContent` rule: TypeScript does
+// not write it into them, and rolldown-plugin-dts strips it.
 //
 // Requires the three public packages to be built.
 //
 // Usage: node scripts/check-published-source-maps.mjs
 
 import { existsSync, globSync, readFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const PACKAGES = ['composer', 'composer-cli', 'composer-prisma-cloud'].map((name) =>
-  join(repoRoot, 'packages/9-public', name, 'dist'),
-);
-const AUTH_TESTING = join(
-  repoRoot,
-  'packages/9-public/composer-prisma-cloud/dist/auth/testing.mjs',
-);
-const FORBIDDEN_IN_AUTH_TESTING = /node_modules\/(?:@prisma\/orm-|prettier\/)/;
+const ABSOLUTE_OR_URL = /^(?:[a-z][a-z0-9+.-]*:|[\\/])/i;
+const ORM_OR_PRETTIER = /(?:^|\/)node_modules\/(?:@prisma\/orm-|prettier\/)/;
+const IN_DIST = /(?:^|\/)dist\//;
 
-const failures = [];
-const report = (file, message) => failures.push(`${relative(repoRoot, file)}: ${message}`);
-
-function readMap(mapFile) {
-  return JSON.parse(readFileSync(mapFile, 'utf8'));
+function isOwnCode(source) {
+  return !source.includes('node_modules/') || source.includes('node_modules/@internal/');
 }
 
-function isThirdParty(source) {
-  return source.includes('node_modules/');
+function needsNoMap(file) {
+  if (basename(file).startsWith('rolldown-runtime-')) return true;
+  const lines = readFileSync(file, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() !== '');
+  return lines.every((line) => /^(?:import|export)\b/.test(line));
 }
 
-for (const dist of PACKAGES) {
-  if (!existsSync(dist)) {
-    report(dist, 'missing; build the public packages first');
-    continue;
-  }
-  const mapFiles = globSync('**/*.map', { cwd: dist }).sort();
-  if (mapFiles.length === 0) report(dist, 'contains no source maps');
-  for (const name of mapFiles) {
-    const mapFile = join(dist, name);
-    const map = readMap(mapFile);
-    const isDeclarationMap = /\.d\.[cm]?ts\.map$/.test(name);
-    for (const [index, source] of (map.sources ?? []).entries()) {
-      if (isAbsolute(source)) {
-        report(mapFile, `source is an absolute path: ${source}`);
-        continue;
+/** Every problem with the source maps in `distDirs`, one message each. */
+export function sourceMapProblems(distDirs) {
+  const problems = [];
+  for (const dist of distDirs) {
+    if (!existsSync(dist)) {
+      problems.push(`${dist}: missing; build the public packages first`);
+      continue;
+    }
+    for (const name of globSync('**/*.mjs', { cwd: dist }).sort()) {
+      const file = join(dist, name);
+      if (!existsSync(`${file}.map`) && !needsNoMap(file))
+        problems.push(`${file}: has no source map`);
+    }
+    for (const name of globSync('**/*.map', { cwd: dist }).sort()) {
+      const mapFile = join(dist, name);
+      const map = JSON.parse(readFileSync(mapFile, 'utf8'));
+      const isDeclarationMap = /\.d\.[cm]?ts\.map$/.test(name);
+      const inlined = [];
+      for (const [index, source] of (map.sources ?? []).entries()) {
+        if (ABSOLUTE_OR_URL.test(source)) {
+          problems.push(`${mapFile}: source is an absolute path or URL: ${source}`);
+          continue;
+        }
+        if (ORM_OR_PRETTIER.test(source)) inlined.push(source);
+        if (!isOwnCode(source)) continue;
+        if (IN_DIST.test(source))
+          problems.push(`${mapFile}: source is built output, not our TypeScript: ${source}`);
+        if (!isDeclarationMap && typeof map.sourcesContent?.[index] !== 'string') {
+          problems.push(`${mapFile}: no sourcesContent for ${source}`);
+        }
       }
-      if (isThirdParty(source)) continue;
-      if (/(?:^|\/)dist\//.test(source))
-        report(mapFile, `source is built output, not our TypeScript: ${source}`);
-      if (!isDeclarationMap && typeof map.sourcesContent?.[index] !== 'string') {
-        report(mapFile, `no sourcesContent for ${source}`);
+      if (inlined.length > 0) {
+        problems.push(
+          `${mapFile}: inlines ${inlined.length} source files of the Prisma ORM or prettier, which the app installs itself; first: ${inlined[0]}`,
+        );
       }
     }
   }
+  return problems;
 }
 
-function relativeImports(file) {
-  const code = readFileSync(file, 'utf8');
-  const specifiers = code.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)["'](\.{1,2}\/[^"']+)["']/g);
-  return [...specifiers]
-    .map((match) => resolve(dirname(file), match[1]))
-    .filter((imported) => existsSync(imported));
+function isDirectRun() {
+  return (
+    process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].split('/').pop())
+  );
 }
 
-if (existsSync(AUTH_TESTING)) {
-  const seen = new Set();
-  const queue = [AUTH_TESTING];
-  while (queue.length > 0) {
-    const file = queue.pop();
-    if (seen.has(file)) continue;
-    seen.add(file);
-    queue.push(...relativeImports(file));
-    const mapFile = `${file}.map`;
-    if (!existsSync(mapFile)) continue;
-    const inlined = (readMap(mapFile).sources ?? []).filter((source) =>
-      FORBIDDEN_IN_AUTH_TESTING.test(source),
-    );
-    if (inlined.length > 0) {
-      report(
-        file,
-        `inlines ${inlined.length} source files of the Prisma ORM or prettier, which the app installs itself; first: ${inlined[0]}`,
-      );
-    }
+if (isDirectRun()) {
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const dists = ['composer', 'composer-cli', 'composer-prisma-cloud'].map((name) =>
+    join(repoRoot, 'packages/9-public', name, 'dist'),
+  );
+  const problems = sourceMapProblems(dists).map((problem) =>
+    problem.replace(`${repoRoot}${sep}`, ''),
+  );
+  if (problems.length > 0) {
+    console.error(`Published source maps: ${problems.length} problem(s)\n`);
+    for (const problem of problems) console.error(`  ${problem}`);
+    process.exit(1);
   }
-} else {
-  report(AUTH_TESTING, 'missing; build @prisma/composer-prisma-cloud first');
+  console.log(
+    'Every published source map names our TypeScript, and none carries the Prisma ORM or prettier.',
+  );
 }
-
-if (failures.length > 0) {
-  console.error(`Published source maps: ${failures.length} problem(s)\n`);
-  for (const failure of failures) console.error(`  ${failure}`);
-  process.exit(1);
-}
-console.log('Published source maps name our TypeScript, and auth/testing inlines no Prisma ORM.');

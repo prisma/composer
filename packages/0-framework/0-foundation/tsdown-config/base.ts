@@ -1,19 +1,20 @@
 import type { Rolldown, UserConfig } from 'tsdown';
 
-/**
- * Rolldown 1.2 ignores the `.map` beside a built input file, so a bundle of
- * another workspace package's `dist` would name that `dist` as its source.
- * Loading the map with the code lets rolldown compose it back to our `.ts`.
- * Third-party packages under `node_modules` keep rolldown's default.
- */
+// Bundlers do not read a built input's own source map, so bundling another workspace
+// package's dist would name that dist as the source. Loading the map lets rolldown compose it.
 export const carryIncomingSourceMaps: Rolldown.Plugin = {
   name: 'carry-incoming-source-maps',
   load: {
     filter: { id: { include: /\.(?:m?js|d\.m?ts)$/, exclude: /[\\/]node_modules[\\/]/ } },
     async handler(id) {
-      const map = await this.fs.readFile(`${id}.map`, { encoding: 'utf8' }).catch(() => null);
-      if (map === null) return null;
-      return { code: await this.fs.readFile(id, { encoding: 'utf8' }), map };
+      const code = await this.fs.readFile(id, { encoding: 'utf8' });
+      const mapUrl = /\/\/# sourceMappingURL=(\S+)\s*$/.exec(code)?.[1];
+      if (mapUrl === undefined || mapUrl.startsWith('data:')) return null;
+      const directory = id.slice(0, Math.max(id.lastIndexOf('/'), id.lastIndexOf('\\')) + 1);
+      return {
+        code,
+        map: await this.fs.readFile(directory + decodeURI(mapUrl), { encoding: 'utf8' }),
+      };
     },
   },
 };
