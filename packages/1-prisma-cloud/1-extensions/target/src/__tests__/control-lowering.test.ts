@@ -1715,7 +1715,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       graph: { root: { id: 'shop' } },
       opts: {},
     } as unknown as LowerContext;
-    const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const provisioned = {
+      serviceId: 'auth-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+      endpointDomain: 'https://auth-svc.example',
+    };
     const artifact = { path: '/tmp/auth.tar.gz', sha256: 'sha-auth' };
     const serialized = {
       environment: [
@@ -1760,7 +1764,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       ],
     ]);
     expect(result.outputs).toEqual({
-      url: 'https://shop.auth.deployment.example',
+      url: 'https://auth-svc.example',
       projectId: 'shop-project#cloud-id',
       serviceId: 'deployment-app-of:shop.auth.deployment',
     });
@@ -1770,7 +1774,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       {
         kind: 'compute-service',
         id: 'auth-svc#cloud-id',
-        url: 'https://shop.auth.deployment.example',
+        url: 'https://auth-svc.example',
       },
     ]);
   });
@@ -1783,7 +1787,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       graph: { root: { id: 'shop' } },
       opts: {},
     } as unknown as LowerContext;
-    const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const provisioned = {
+      serviceId: 'auth-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+      endpointDomain: 'https://auth-svc.example',
+    };
     const artifact = { path: '/tmp/auth.tar.gz', sha256: 'sha-auth' };
     const serialized = {
       environment: [],
@@ -1805,7 +1813,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       {
         kind: 'compute-service',
         id: 'auth-svc#cloud-id',
-        url: 'https://shop.auth.deployment.example',
+        url: 'https://auth-svc.example',
         details: {
           input: '{"stripeKey":$platform STRIPE_SECRET_KEY}',
           absent: 'greeting → ENV_GREETING\nregion → ENV_REGION',
@@ -1822,7 +1830,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       graph: { root: { id: 'shop' } },
       opts: {},
     } as unknown as LowerContext;
-    const provisioned = { serviceId: 'mailer-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const provisioned = {
+      serviceId: 'mailer-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+      endpointDomain: 'https://mailer-svc.example',
+    };
     const artifact = { path: '/tmp/mailer.tar.gz', sha256: 'sha-mailer' };
     const serialized = {
       environment: [],
@@ -1847,7 +1859,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       {
         kind: 'compute-service',
         id: 'mailer-svc#cloud-id',
-        url: 'https://shop.mailer.deployment.example',
+        url: 'https://mailer-svc.example',
         details: { input: '{"port":$platform SMTP_PORT (number),"from":$platform EMAIL_FROM}' },
       },
     ]);
@@ -1861,7 +1873,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       graph: { root: { id: 'shop' } },
       opts: {},
     } as unknown as LowerContext;
-    const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const provisioned = {
+      serviceId: 'auth-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+      endpointDomain: 'https://auth-svc.example',
+    };
     const artifact = { path: '/tmp/auth.tar.gz', sha256: 'sha-auth' };
     const serialized = {
       environment: [],
@@ -1883,7 +1899,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       {
         kind: 'compute-service',
         id: 'auth-svc#cloud-id',
-        url: 'https://shop.auth.deployment.example',
+        url: 'https://auth-svc.example',
         details: {
           input: '{"stripeKey":$platform STRIPE_SECRET_KEY}',
         },
@@ -2008,7 +2024,11 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
       graph: { root: { id: 'shop' } },
       opts: {},
     } as unknown as LowerContext;
-    const provisioned = { serviceId: 'store-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+    const provisioned = {
+      serviceId: 'store-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+      endpointDomain: 'https://store-svc.example',
+    };
     const artifact = { path: '/tmp/store.tar.gz', sha256: 'sha-store' };
     const serialized = {
       environment: [{ id: 'STORE_PORT-var#cloud-id', key: 'STORE_PORT' }],
@@ -2026,7 +2046,7 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
 
     // The four S3Config fields a consumer's s3() slot resolves by name, plus url.
     expect(result.outputs).toEqual({
-      url: 'https://shop.store.deployment.example',
+      url: 'https://store-svc.example',
       projectId: 'shop-project#cloud-id',
       serviceId: 'deployment-app-of:shop.store.deployment',
       bucket: 'streams',
@@ -2041,7 +2061,7 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
       {
         kind: 'compute-service',
         id: 'store-svc#cloud-id',
-        url: 'https://shop.store.deployment.example',
+        url: 'https://store-svc.example',
       },
     ]);
   });
@@ -3102,7 +3122,11 @@ describe('resource IDs are built from the full address, and each declares the ID
     run(
       serviceDescriptorOf(target, 'compute').deploy(
         ctx as unknown as LowerContext,
-        { serviceId: 'shop.auth.api#cloud-id', projectId: 'shop-project#cloud-id' },
+        {
+          serviceId: 'shop.auth.api#cloud-id',
+          projectId: 'shop-project#cloud-id',
+          endpointDomain: 'https://shop.auth.api.example',
+        },
         { path: '/tmp/api.tar.gz', sha256: 'sha-api' },
         { environment: [], triggers: {}, platformVariables: [], port: 3000 },
       ),

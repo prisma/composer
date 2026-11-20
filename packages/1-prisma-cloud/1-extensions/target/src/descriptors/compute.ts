@@ -121,6 +121,15 @@ function originOf(
   });
 }
 
+function urlOf(provisioned: ComputeProvisioned): Output.Output<string> {
+  return Output.map(provisioned.endpointDomain, (domain) => {
+    if (domain === undefined) {
+      throw new Error('the App reported no endpoint domain for the service.');
+    }
+    return domain;
+  });
+}
+
 function isComputeProvisioned(value: unknown): value is ComputeProvisioned {
   return typeof value === 'object' && value !== null && 'endpointDomain' in value;
 }
@@ -396,12 +405,16 @@ export function computeDescriptor(
         }).pipe(fromLegacyId(legacyNodeResourceId(app, address, 'deploy')));
         // `url` IS published here: a Compute service's deployed URL is a
         // public endpoint, and this descriptor is the only party that knows
-        // that. Both fields are still unresolved Output references at this
-        // point — apply resolves them before the report's runner sees them.
-        //
+        // that. It is the App's endpoint domain, known from the App's create,
+        // not the deployment's: the deployment promotes itself on every deploy,
+        // so its domain is unresolved while planning, and a consumer whose
+        // environment holds this URL would get a new deployment every time.
+        // `serviceId` does wait for the promotion, because the custom domain
+        // that reads it is bound to the live deployment.
+        const url = urlOf(provisioned);
         return {
           outputs: {
-            url: deployment.appEndpointDomain,
+            url,
             projectId: provisioned.projectId,
             serviceId: deployment.appId,
           },
@@ -409,7 +422,7 @@ export function computeDescriptor(
             {
               kind: 'compute-service',
               id: provisioned.serviceId,
-              url: deployment.appEndpointDomain,
+              url,
               ...inputDetails(serialized),
             },
           ],
@@ -433,14 +446,7 @@ export function computeDescriptor(
             ...variableClassAndBranch(application),
           }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(graph.root.id, address))));
         }
-        const url = Output.map(provisioned.endpointDomain, (domain) => {
-          if (domain === undefined) {
-            throw new Error(
-              'the App reported no endpoint domain for a service without a deployment.',
-            );
-          }
-          return domain;
-        });
+        const url = urlOf(provisioned);
         return {
           outputs: { url, projectId: provisioned.projectId, serviceId: provisioned.serviceId },
           entities: [
