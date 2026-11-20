@@ -52,3 +52,11 @@ Will decided on 2026-11-20 that the platform's old custom domain routes (`/v1/se
 What can make Alchemy miss the date: the bot cannot open pull requests on alchemy-run, so Will opens them; the Distilled pull request merges first; and Alchemy pins a Distilled commit it cannot simply move forward, which only Alchemy's maintainers can settle. None of these is in our hands, so the pull requests should open as early as possible instead of waiting for the platform's error codes.
 
 **Error codes, approved 2026-11-20 and being built on the platform:** `quota-exceeded` (unchanged), `logical-id-taken`, `invalid-hostname`, `service-on-another-branch` (update), `service-not-on-a-branch` (create). The brief sent to the platform is [platform-error-codes-brief.md](platform-error-codes-brief.md).
+
+## Added 2026-11-20: `dns` on RoutingUrl, and Website off CustomDomain
+
+Two more dispatches on the same Alchemy branch, each reviewed with `drive-code-review` before the next starts. Still one Alchemy pull request.
+
+- **D4. `dns` on `Prisma.RoutingUrl`.** Built as Alchemy `8645d9bdb3`. Under review together with `dcc35d3f4`, the last fix from the fourth review, which no reviewer had seen.
+- **D5. `Prisma.Website` uses `Prisma.RoutingUrl`.** `Website/FrameworkSite.ts` declares one RoutingUrl for `domain` and passes `dns` through; no CustomDomain, no DomainOwnership. The upgrade from the released Alchemy keeps the hostname serving (see [spec.md](spec.md)); the mechanism is the implementer's to find, and it stops and reports if the hostname cannot be kept serving without a platform change. `Prisma.CustomDomain` gets a deprecation note. Tests in `test/Prisma/Website/CustomDomainDns.test.ts` and the Website guide are updated.
+- **Then:** update `pr-bodies/alchemy.md`, and run the final `drive-code-review` across the whole branch before handing Will the compare links.

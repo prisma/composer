@@ -38,7 +38,11 @@ After: `Prisma.RoutingUrl` creates the platform row at once, with no DNS. The de
 
 **Don't declare both resources for one exact hostname.** D2's `Prisma.DomainOwnership` takes over an `unverified` row it finds by domain without `--adopt`, and deletes it on destroy. The platform creates exactly that row for a RoutingUrl. So a stack that declares both a `Prisma.RoutingUrl` and a `Prisma.DomainOwnership` for the same exact hostname can delete the row the RoutingUrl relies on. D3's JSDoc and guide say so.
 
-**`Prisma.CustomDomain` stays** for now. The platform keeps `/v1/services/{id}/domains` as a view over RoutingUrls for one deprecation cycle. Composer switches in P2.
+**`Prisma.CustomDomain` is deprecated, and nothing in Alchemy uses it** (Will, 2026-11-20). The platform deletes `/v1/services/{id}/domains` and its sibling routes about 2026-12-21. `Prisma.CustomDomain` keeps working until then and carries a deprecation note that names `Prisma.RoutingUrl`. Its removal from Alchemy is a later change. Composer switches in P2.
+
+**`Prisma.RoutingUrl` takes an optional `dns`** (Will, 2026-11-20; this brings forward what design note 8 left as a follow-on, on the Alchemy side only). With a DNS adapter, the deploy publishes the TXT record that proves ownership and the CNAME to the switchboard. It publishes those two records and does nothing else: Prisma creates the domain ownership itself, so no `Prisma.DomainOwnership` is declared. The published records come from sources that are the same on every deploy (the workspace's verification endpoint and the service's switchboard address), never from the RoutingUrl's `records` attribute, which lists only records still to publish and would make the adapter delete a record in use. The records are published before the RoutingUrl is reconciled, so a hostname change with `dns` passes the check above in the same deploy. The deploy does not wait for `active`.
+
+**`Prisma.Website` attaches its hostname with `Prisma.RoutingUrl`** (Will, 2026-11-20). A site with `domain` declares one RoutingUrl for the hostname and passes its `dns` through. It declares no `Prisma.CustomDomain` and no `Prisma.DomainOwnership`. Two behaviours change, and the guide says so: a site whose DNS is not ready now deploys and reports `pending` where it used to fail, and its `url` is the hostname's URL from the first deploy. A site deployed with the released Alchemy (a CNAME published through the adapter and a `Prisma.CustomDomain`) must keep serving through the upgrade deploy: the RoutingUrl takes over the row Prisma recorded for the custom domain, and removing the old `Prisma.CustomDomain` and the old DNS records must not delete that row or the records the hostname now relies on.
 
 ## Coherence rationale
 
@@ -50,12 +54,12 @@ In:
 - alchemy-run/distilled: regenerate `@distilled.cloud/prisma` from the deployed spec, so the RoutingUrl operations and their typed errors exist.
 - alchemy-run/alchemy `packages/prisma`: `RoutingUrl.ts`, its provider (live and local), its export, and Providers registration.
 - Tests in `packages/integration-tests/test/Prisma/`, following Alchemy's own conventions, with a live test against production using credentials confirmed before dispatch.
+- The `dns` option on `Prisma.RoutingUrl`; `Prisma.Website`'s `domain` option moved to `Prisma.RoutingUrl`; a deprecation note on `Prisma.CustomDomain`.
 - The resource's JSDoc; a short section in the Compute custom-domain guide. (`docs:gen` produces no reference page for any Prisma resource.)
 
 Deliberately out:
-- Publishing DNS records through a DNS adapter for a RoutingUrl ([design note 8](../../design-notes.md): a follow-on).
-- Removing or deprecating `Prisma.CustomDomain`.
-- `Prisma.Website`'s `domain` option.
+- Removing `Prisma.CustomDomain` from Alchemy.
+- Composer publishing DNS (design note 8 stays a follow-on for Composer).
 - Any Composer change (P2).
 
 ## Done conditions
@@ -65,4 +69,8 @@ Deliberately out:
 - A row found by `logicalId` is updated in place; a row with no `logicalId` on the same service and hostname is adopted; a conflicting row fails with an error that names it.
 - A hostname change on an `active` row whose new hostname has no verified domain ownership fails before any `PATCH`, and a test proves no request was sent.
 - Destroy deletes the row and sends no domain ownership request.
+- With `dns`, a first deploy publishes exactly the TXT and the CNAME; a redeploy after the row is `active` with an empty `records` list removes nothing; destroy removes both records and sends no domain ownership request.
+- A `Prisma.Website` with a `domain` declares a RoutingUrl and no CustomDomain or DomainOwnership; with DNS not ready it deploys and reports `pending`.
+- A `Prisma.Website` state written by the released Alchemy redeploys with one row for the hostname left on the platform and its DNS records still published, and a test proves no delete was sent for that row.
+- No source file in `packages/prisma/src` other than `CustomDomain.ts` and the exports refers to `Prisma.CustomDomain`.
 - Released in an Alchemy version Composer can depend on.
